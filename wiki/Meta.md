@@ -1,3 +1,4 @@
+This page outlines the heuristics by which this game should be designed and implemented. The details specified in all other pages can be freely changed as long as you believe that it better fits the considerations outlined here.
 # Concept
 The goal of this game is to make you feel like an adventurer in a believable world. 
 1. Make a character
@@ -25,7 +26,6 @@ The goal here is that since the underlying game mechanics are physically based, 
 Suppose we are implementing travel in the overworld and we find realistic travel times / world scales to be unfun (holding W for 10 hours on a road to get to a rest stop). We should instead use the interface to skip over these segments, therefore a fast travel system. It would still actually simulate the travel in a realistic manner though, so you will need to have food and rest and all that. What if micromanaging food is tedious? Same solution, abstract it in the interface. I don't really care whether my character eats his grains or his jerky or his rice. I just want to know how many days worth of food he has, he can automatically eat it as he goes. When I go back to town, I just want to give him a food budget and he chooses whatever level of nutrition is suitable for it (like 10 days on a cheap budget means grains, 10 days on a luxurious budget means jerky).
 
 The abstractions however should be fairly scalable. If you *want* to walk for 10 hours to your destination, you can. If you want to manually pull food out of your inventory and eat it, you can. The lowest level of abstraction should be very precise, down to the level of which hand you are holding something in or which pocket you put it in. We should start with the lowest level of abstraction then work our way up, therefore the first iteration of the game should be more of an immersive sim than adventure sim or RPG.
-
 ## World and Lore
 ### "Kirkland Signature"
 When you go to Costco and buy Kirkland Signature peanuts, you do not get xtreme flavor blasted japapeno nacho-cheese chocolate-covered peanuts. You can get salted peanuts or unsalted. Maybe you will like the flavor-blasted peanuts more, but you *know* that the Kirkland Signature ones will at least be solid. Their brand represents that which is generic, but high-quality. These aren't Great Value (Walmart) peanuts, they're Kirkland Signature. That is to say, we will be making our world very generic, but it should still be high-quality. Think Tolkien, or a more toned-down version of Warhammer Fantasy.

@@ -1,5 +1,45 @@
-* Whether an attack hits your enemy, and whether an enemy's attack hits you, should be determined by both stats and player skill. 
-* Combat should not be unnecessarily complicated. We don't want players to have to memorize a bunch of arbitrary combos. Any complexity that it does have should be on account of it actually working like this in the real world
+# Equations
+## Does it hit?
+[input_accuracy](Controls) is the value from 0 to 1 representing how close the player put their cursor on the center of any of the target's hitboxes. Its exact formula will have to come about through testing. 
+
+[input_defense](Controls) is the value from 0 to 1 representing how quickly the defender pressed the dodge/parry button after the attack began. Like with input_accuracy, we aren't sure exactly what this will be but a value of 1.0 would correspond to pro-gamer reaction time (0.1s) and ~0.75 would correspond to old person reaction time (0.25s).
+
+[skill_check](Stats) is based on your skills, attributes, and focus
+For NPCs these numbers are just randomized in a normal distribution around an average player skill level.
+```
+fn diminishing_bonus(value)
+	5 * (1-e^(-value/2))
+
+const CARRY_WEIGHT_PER_STRENGTH = 5
+fn encumbrance_penalty(character):
+	e^-(character.strength * CARRY_WEIGHT_PER_STRENGTH)
+
+accuracy = skill_check(melee, 0) + weapon_accuracy) * input_accuracy
+if defender_is_dodging:
+	armor_dodge_penalty = 0.5-1, not based on weight but rather whether movement is restricted on joints
+	encumbrance_penalty = 0-1
+	defense = dodge_input * (skill_check(dodge, 0) * armor_dodge_penalty)
+if defender_is_blocking:
+	block_check = skill_check(block, 0)
+	shield_size_bonus = "weapon:0, buckler:1-2, normal shield:2-4, pavise:5"
+	defense = diminishing_bonus(block_check, shield_size_bonus)
+if defender_is_parrying:
+	block_check = skill_check(block, 0)
+	defense = parry_input * block_check
+hit < 0:
+    miss
+hit >=0 and <1:
+	glancing blow (attacker is now off-balance)
+hit >=1:
+	direct hit on armor/shield, the full value of the attack force is imparted on the enemy
+hit >=2 and weapon is precise:
+	precise_hit = min((hit-2), attacker_precision_accuracy)
+critical_hit = precise_hit - armor_coverage:
+critical_hit >= 0:
+	ignore armor
+else:
+	stay as a direct hit
+```
 ## Attacking
 * Accuracy is determined by how accurate you are--how close do you keep the crosshairs on the enemy for the duration of the attack.
 * If its locked-on to the center of their neck for the entire attack then you have a 1.0 multiplier on accuracy
@@ -10,7 +50,53 @@
 * If you press it the microinstant before the attack actually hits, or not at all, you get a 0.0 multiplier
 * You also may get a penalty if you use the wrong defensive option. If an enemy is doing a R->L diagonal attack, and you duck to the left, you get no defense bonus. If they stab and you duck instead of dodging or blocking you get no defense bonus.
 * Blocking might basically always "succeed" but you are staggered somewhat by each attack, especially if they are very heavy. Do not attempt to block a giant's club, for example.
-## Poise
+## Poise (0-100%)
+A character's poise represents their footing, and corresponds to the state of their animation. When below half, they are "staggered" and cannot take any actions other than (slowly) moving, and when below zero, they are incapacitated. Most negative effects that a character has can affect their poise, past a certain threshold. Your poise is displayed as a white wheel in the center of the screen. Each factor that negatively affects your poise has a different color to differentiate them. The exact animation that gets displayed when stunned/incapacitated.
+### Balance (grey)
+The most direct way of losing poise, attacks which impart force on your character or losing your footing in difficult terrain can damage your balance. Damage to your balance constantly regenerates. Your mass and the directness of an attack determine how much balance damage you actually take, and your agility determines how quickly it is regenerated.
+```
+# use these for calibration
+# direct hits by trained warrior in joules: halberd ~600, longsword ~300, shortsword ~200
+# kg: armored knight ~90, goblin ~40
+const STAGGER_RESISTANCE_JOULES_PER_KG = 50
+const UPPER_MUSCLE_KG_PER_STRENGTH = 5
+const MUSCLE_KG_TO_JOULES = 10
+const UPPER_MUSCLE_KG_TO_PUNCH_KG = 0.1
+
+# attack_directness is 1.0 if square-on, 0.01 barely grazes, in-between is a glancing blow of some magnitude
+fn balance_damage(attacker, defender, attack_directness):
+	# todo: equation for calculating striking mass for a given weapon, for now its fixed
+	# balance_factor is 0 for a weapon balanced at the hilt, 1 for a weapon balanced at the tip
+	attacker_upper_muscle_kg = attacker.strength * UPPER_MUSCLE_KG_PER_STRENGTH
+	punch_kg = UPPER_MUSCLE_KG_TO_PUNCH_KG * attacker_upper_muscle_kg
+	striking_mass_kg = punch_kg + attacker.weapon.mass_kg * (1 + attacker.weapon.balance_factor * attacker.weapon.length_meters)
+	joules_of_attack = attacker_upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_kg
+	imparted_joules = attack_directness * joules_of_attack
+	resistance = STAGGER_RESISTANCE_JOULES_PER_KG * defender.mass_kg
+	defender.balance -= imparted_joules / resistance
+```
+### Breath (yellow)
+Breath damage (needs rename) represents how out of breath your character is. Most actions will not actually cause you to lose your breath faster than it regenerates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+```
+const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
+# someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
+const BREATH_PER_METERS_PER_SECOND = 0.0034
+ 
+fn update_stamina(player):
+	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+```
+### [Exhaustion](Energy) (black)
+This does not significantly deteriorate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
+### Pain (pink)
+Immediate pain from attacks quickly recovers, but injuries can be a source of constant pain. Pain is divided by will.
+### Blood (red)
+Unbandaged wounds will cause you to bleed out, which will eventually incapacitate you due to poise damage.
+### Disease/Poison (green)
+Not in MVP, but this would represent both nausea and paralysis.
+### [Morale](Morale) (blue)
+Morale only starts affecting poise when it goes below 0, at which point each negative point of morale translates to -1% of poise damage. You can think of morale damage to poise as "fear", if it's below 50% then you are too hesitant to attack and if its below zero then you're cowering on the ground.
+
 * Attacking isn't usually going to cause damage to an enemy, at least if they are wearing armor and/or have a shield. But it can damage their poise.
 * Poise can be in four states: Balanced, off-balance, staggered, or knockdown.
 * Receiving a good, direct hit can reduce your poise.
@@ -30,9 +116,9 @@
 * Another benefit of poise is that you also don't really have to actively keep track of health. You aren't damaged most of the time, and when you are it should be very obvious because its debilitating. No need to put a health bar on the screen at all times.
 	* I like the "lethality" system in newer Total War games. Units in your formation don't have individual health to keep track of, they are simply either dead or alive. This means that an initial volley of arrows doesn't produce zero casualties due to one arrow not being enough to overcome a unit's health, and that you can represent the formation's health with a headcount instead of total health pool which is pretty abstract.
 ## Stats
-* A surgeon has very high dexterity. So does a locksmith. But they don't necessarily know how to do each other's jobs, so you can't just simplify stats down to attributes. However, it would probably be easier for a surgeon to learn lockpicking than it would for most people, so you can't just simplify stats down to skills either.
-* But skills that you do not have trained still don't actually have to be listed in the interface. You don't see "Computers: 0" on every character in the 1500s...
-* When coming up with attributes, try and keep it based on biology/physics. For example, a character's attack speed is mostly a function of strength, not dexterity, because strength determines how fast you can accelerate your arm or change direction. Dexterity would make your attacks more accurate.
+
+
+
 * Skills should account for the fact that they can be related
 	* If we want different skills for different melee weapon types, they should have some way to overlap
 	* If you spend 10000 hours mastering the blade while your classmates are out partying, you're probably at least decent with an axe even if you've never used one
