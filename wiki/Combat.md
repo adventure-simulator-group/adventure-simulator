@@ -50,10 +50,12 @@ else:
 * If you press it the microinstant before the attack actually hits, or not at all, you get a 0.0 multiplier
 * You also may get a penalty if you use the wrong defensive option. If an enemy is doing a R->L diagonal attack, and you duck to the left, you get no defense bonus. If they stab and you duck instead of dodging or blocking you get no defense bonus.
 * Blocking might basically always "succeed" but you are staggered somewhat by each attack, especially if they are very heavy. Do not attempt to block a giant's club, for example.
-## Poise (0-100%)
+## Poise (white)
 A character's poise represents their footing, and corresponds to the state of their animation. When below half, they are "staggered" and cannot take any actions other than (slowly) moving, and when below zero, they are incapacitated. Most negative effects that a character has can affect their poise, past a certain threshold. Your poise is displayed as a white wheel in the center of the screen. Each factor that negatively affects your poise has a different color to differentiate them. The exact animation that gets displayed when stunned/incapacitated.
-### Balance (grey)
-The most direct way of losing poise, attacks which impart force on your character or losing your footing in difficult terrain can damage your balance. Damage to your balance constantly regenerates. Your mass and the directness of an attack determine how much balance damage you actually take, and your agility determines how quickly it is regenerated.
+
+Each of the following factors range from 0 to at least 1, and are all subtracted from your poise.
+### Imbalance (grey)
+The most direct way of losing poise, attacks which impart force on your character or losing your footing in difficult terrain can cause imbalance. Imbalance constantly recuperates. Your mass and the directness of an attack determine how much imbalance you actually take, and your agility determines how quickly it is regenerated.
 ```
 # use these for calibration
 # direct hits by trained warrior in joules: halberd ~600, longsword ~300, shortsword ~200
@@ -73,10 +75,10 @@ fn balance_damage(attacker, defender, attack_directness):
 	joules_of_attack = attacker_upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_kg
 	imparted_joules = attack_directness * joules_of_attack
 	resistance = STAGGER_RESISTANCE_JOULES_PER_KG * defender.mass_kg
-	defender.balance -= imparted_joules / resistance
+	defender.imbalance += imparted_joules / resistance
 ```
-### Breath (yellow)
-Breath damage (needs rename) represents how out of breath your character is. Most actions will not actually cause you to lose your breath faster than it regenerates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+### Exhaustion (black)
+Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
 ```
 const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
 # someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
@@ -86,35 +88,42 @@ fn update_stamina(player):
 	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
 	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
 ```
-### [Exhaustion](Energy) (black)
-This does not significantly deteriorate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
 ### Pain (pink)
-Immediate pain from attacks quickly recovers, but injuries can be a source of constant pain. Pain is divided by will.
-### Blood (red)
-Unbandaged wounds will cause you to bleed out, which will eventually incapacitate you due to poise damage.
-### Disease/Poison (green)
-Not in MVP, but this would represent both nausea and paralysis.
-### [Morale](Morale) (blue)
-Morale only starts affecting poise when it goes below 0, at which point each negative point of morale translates to -1% of poise damage. You can think of morale damage to poise as "fear", if it's below 50% then you are too hesitant to attack and if its below zero then you're cowering on the ground.
+[Injuries](Health) are a source of constant pain. Pain is divided by will. 
 
-* Attacking isn't usually going to cause damage to an enemy, at least if they are wearing armor and/or have a shield. But it can damage their poise.
-* Poise can be in four states: Balanced, off-balance, staggered, or knockdown.
-* Receiving a good, direct hit can reduce your poise.
-* The less poise you have, the less defense you actually get from trying to dodge or block.
-* Your poise quickly recovers, so if you knock an enemy off-balance you should exploit the opportunity while you can
-* A sufficiently powerful attack can send you straight from balanced to knockdown
-* A sufficiently accurate attack (or ineffective dodge) can directly damage an enemy, even if they're armored. A knight that's just standing still is vulnerable to a dagger through the eye-slit, or a supernaturally skilled elven warrior can kill an armored orc without first having to stagger him.
-* The goal of poise mainly is to represent a minor cost to failure in combat without having to actually injure characters.
-	* We want the game's systems like health and damage to be fairly realistic
-	* I fell off a scooter and stubbed my toe recently, I had to limp for a week. I got an appendectomy which put four tiny clean incisions in my belly, I was all-but incapacitated for two days. We need player characters to be able to get hit in combat without actually becoming injured for weeks or months.
-	* So the idea is that you're wearing a reasonable amount of armor and its pretty unlikely for an enemy to outright kill or incapacitate you in any given attack, only if you screw up twice or thrice in quick succession.
-* Poise also serves a similar role to stamina in "souls" games, except ideally can be represented by the animation system instead of a bar
-	* There are four *discrete* states to poise, because if its continuous then players will be unsure exactly what amount they currently have and will therefore want to look at a visual meter. If we don't give them a meter, they will just mod it in.
-	* The question is how do you take the inputs to this, which are continuous, and map them to four states. I think we can just do this randomly. If you are staggered by an attack that would put you 0.35 of the way between staggered and knockdown, then it just has a 65% of putting you in stagger and 35% of knockdown.
-	* Poise regenerates at a consistent speed so you don't really need a bar for this if you've played a lot. If you were put in stagger half a second ago then your muscle memory knows that you'll be balanced again in a quarter second.
-	* If this doesn't work well then it can just be a bar, or perhaps a wheel like the stamina wheel in Breath of the Wild/Tears of the Kingdom.
-* Another benefit of poise is that you also don't really have to actively keep track of health. You aren't damaged most of the time, and when you are it should be very obvious because its debilitating. No need to put a health bar on the screen at all times.
-	* I like the "lethality" system in newer Total War games. Units in your formation don't have individual health to keep track of, they are simply either dead or alive. This means that an initial volley of arrows doesn't produce zero casualties due to one arrow not being enough to overcome a unit's health, and that you can represent the formation's health with a headcount instead of total health pool which is pretty abstract.
+$$
+pain(damage, will) = \frac{damage}{damage + \alpha will}\, e^{-\beta will};\alpha=0.25;\beta=0.2
+$$
+
+```
+fn update_pain_factor(character):
+	damage = character.body_parts.iter().map(|p| p.damage).sum()
+	character.pain = pain(damage, character.will)
+```
+### Blood loss (red)
+Unbandaged wounds will cause you to bleed out, which will eventually incapacitate you due to poise damage.
+```
+const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70
+fn determine_max_blood(character):
+	character.max_blood = character.body_weight * ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT
+
+const PERCENT_BLOOD_VOLUME_CAPACITY_RECOVERED_PER_DAY = 0.01
+const SECONDS_PER_DAY = 86400
+fn update_blood(character, dt):
+	unbandaged_damage = character.body_parts.iter().map(|p| p.damage - p.bandaged_damage - p.scarred_damage)
+	character.blood += dt * character.max_blood * PERCENT_BLOOD_VOLUME_CAPACITY_RECOVERED_PER_DAY / SECONDS_PER_DAY
+	character.blood -= dt * unbandaged_damage
+
+fn update_scarred_damage:
+	
+
+fn update_blood_loss_poise_factor(character):
+	percentage_of_total_blood_volume_lost = character.blood / character.max_blood
+```
+### [Fear](Morale) (blue)
+Morale only starts affecting poise when it goes below 0, at which point each negative point of morale becomes fear, translating to -1% of poise damage.
+### [Fatigue](Energy) (clear)
+This does not significantly deteriorate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
 ## Stats
 
 
