@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Stats.md",
+                "file": "Health.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Stats"
+              "title": "Health"
             }
           }
         ],
@@ -186,20 +186,20 @@
   },
   "active": "d5145e7c386cafdd",
   "lastOpenFiles": [
-    "Character.md",
-    "Stats.md",
-    "Constitution.md",
     "Combat.md",
+    "Slots.md",
+    "Health.md",
+    "Implementation.md",
+    "Stats.md",
+    "Character.md",
+    "Constitution.md",
     "Untitled.md",
     "Controls.md",
     "Energy.md",
-    "Health.md",
-    "Implementation.md",
     "Inventory.md",
     "Magic.md",
     "Roadmap.md",
     "Settlement.md",
-    "Slots.md",
     "Team.md",
     "Travel.md",
     "Quests.md",
