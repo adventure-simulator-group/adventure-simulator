@@ -1,4 +1,3 @@
-
 * Characters are created by investing some amount of favor into them.
 * The more powerful the character, the more favor you need to invest.
 * The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
@@ -45,6 +44,7 @@ Have both a beast form and human form that they can shift between. The exact typ
 * Its if you want the mechanics of an elf/dragon/beasts/etc but don't want the pointy ears/dragon form/beast form.
 * These come from breeding between mundane and fey-blooded people.
 * In the case of fey-bloods that can shift between forms, the half-bloods may not be able to shift and instead take on some intermediate characteristics of the two forms.
+	* Yes, half-blooded beastmen are the "designated furry race"
 * I think gnomes are just elf-hobbit hybrids
 ## Vilebloods
 * When a mundane character consumes fey blood you can *become* fey-blooded.
@@ -59,4 +59,4 @@ Have both a beast form and human form that they can shift between. The exact typ
 * Vampires are created by true/undead vampires who offer mortals their blood and bury them alive, after they suffocate to death they become vampires
 * Zombies and skeletons do not have elf-blood, but are risen via necromancy. These are mindless and must be consciously puppeted by a necromancer.
 * Ghouls/wights are zombies/skeletons that have a soul bound to them (ritual requires elf-blood). They are not mindless and although bound to a necromancer, can act autonomously.
-* A lich is a necromancer that turns themself into a wight. Since their soul is bound to themself, they are the only type of wight with free will.
+* A lich is a necromancer that turns themself into a wight. Since their soul is bound to themself, they are the only type of wight with free will. This also implies the possibility of ghoul-liches, who retain their flesh.
