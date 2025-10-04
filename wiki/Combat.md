@@ -16,7 +16,7 @@ Broadly speaking, the flow goes like this:
 	2. shield = defender.shield_bonus()
 		1. # 0 for weapon, 1-2 for a small shield, 2-4 for normal, 5 for pavise
 $$
-defense(shield,block) = 5 \cdot \left(1 - e^{-\tfrac{shield+block}{2}}\right)
+\operatorname{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
 $$
 4. if character is parrying:
 	1. defense = block_defense * 1.5 * [input reflex](Controls)
@@ -85,7 +85,7 @@ fn update_stamina(player):
 [Injuries](Health) are a source of constant pain. Pain is divided by will. 
 
 $$
-pain(damage, will) = \frac{damage}{damage + \alpha will}\, e^{-\beta will};\alpha=0.5;\beta=0.2
+\operatorname{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\, e^{-\beta\cdot\mathrm{will}};\;\alpha=0.5;\;\beta=0.2
 $$
 
 ```
