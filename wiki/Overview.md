@@ -1,21 +1,20 @@
 # Adventure Simulator (working title)
-* Fantasy immersive sim/RPG
-	* Similar works: Kenshi, Mount & Blade, Dwarf Fortress Adventure Mode
-* World is mid-1500s Earth, except with inexplicable fantasy elements interspersed throughout
-	* Warhammer Fantasy, except more grounded
-* Game mechanics are realistic, but...
-	* Anything tedious or boring should be automated
-		* Fast travel, micromanaging inventory
-	* Anything frustrating or unfun should be handled at the content-level
-		* For example, most fantasy enemies have poor eyesight to make stealth more fun or players can rely on supernatural luck to not have their characters constantly dying to stray arrows
-* Will eventually be multiplayer, and should design architecture accordingly, but can defer this feature to a later milestone
-	* We are fine sacrificing latency for simplicity for now, server can mediate all player actions
-* [Controls](Controls) are flexible to suit different preferences, you can either control your character directly as you would in an action game, or order them around like a unit in an RTS game
-* [Combat](Combat) is a hybrid between action and tab targeting. You actively block/dodge/duck, but we aren't actually doing collision checks. Animations use inverse kinematics to ensure hit/miss.
-* [Magic](Magic) is "soft"--unreliable and sometimes difficult to distinguish from coincidence
-* You can either create an expensive immortal [character](Character) or pick a cheap randomized mortal one. The former gives you more of a traditional RPG experience, the latter is for more of a roguelike/extraction experience
-	* You also are expected to have several characters, which is also helpful in case one gets seriously injured and the realistic healing system means they'll be incapacitated for awhile
-* To be [implemented](Implementation) with [Bevy](https:///bevyengine.org), favoring procedurally generated assets and using placeholders until such systems are complete
-* No specific timeline for the [roadmap](Roadmap) yet, we want the early phase to be more exploratory
-	* This is not a for-profit endeavor expecting an ROI in the near future. We simply want this game to exist, and we want to do it right. We do like timelines and feel that they help get things done, but they need to be negotiated with everyone after we all have a chance to seriously consider the plan.
-* This wiki is not a sacred text that must be strictly adhered to, it is in fact deliberately vague about any aspect of the implementation we aren't yet sure about. Use your own judgement when filling in the gaps, though you should understand the [meta-level](Meta) reasoning behind many of these ideas.
+## Pitch
+Adventure Simulator is a web-first pseudo-MMO. The golden age of web games had a number of pseudo-MMO games like Neopets or Club Penguin (and actual MMOs, such as Runescape) that have since largely had their markets captured by mobile games and native desktop games. But WASM and WebGPU have opened up a new opportunity to create a kind of web-first game that has not really been possible to do until recently, with near-feature and performance parity with native applications.
+
+Our goal is to create a unified, massively-multiplayer world that sidesteps the nightmarish networking challenge of a unified world server by having its "world" be structured as a database with an asynchronous AJAX interface, then instancing individual parties on their own virtual servers whenever they engage enemies in real-time combat.
+
+Player characters spend downtime, purchase [equipment](Inventory), join parties, and embark on [quests](Quests) from [settlements](Settlement), which also serve as a bulletin-board-like social hub. Then, in the course of the quests they've undertaken, load into the real-time WebGPU-rendered combat simulation when their party arrives at their destination or is randomly attacked along the way.
+
+On a gameplay-level, the nearest games for inspiration are Mount and Blade, Battle Brothers, Starsector, and (to some extent) Kenshi. Like the former three, the world is separated between the "tactical" layer and the "strategic" layer. In Adventure Simulator, the tactical layer is a real-time simulation, while the strategic one advances is in discrete chunks of time (essentially, fast travel/resting). But it features the same basic formula of recruiting a party to adventure with, defeating enemies in randomly generated missions, then using your hard-earned rewards to buy equipment.
+
+Players can also control multiple [characters](Character), which can be either mortal or immortal. Mortal characters offer a more roguelike/extraction-esque experience, with fast progression and frequent deaths. When a mortal character dies, any wealth not on their person will be inherited by your other characters. Immortal characters offer a more conventional RPG/MMO-experience, which emulates the cost of mortal characters with costly respawns and slow [healing](Health).
+## Setting
+The world of Adventure Simulator is a fantastical version of Earth. Warhammer Fantasy players or readers of pre-Tolkien fantasy will be familiar with the idea, but essentially the setting is fundamentally based on historical renaissance Earth (approximately ~1543) with generic fantasy elements inexplicably sprinkled throughout.
+
+The heuristic here is to place fantasy elements in places that don't fundamentally alter historical conditions too much. Elves generally keep to forests or fictional islands, Dwarves dwell within mountains, and creatures like orcs, goblins, beastmen, and the undead either roam as hordes or occupy fictional caves or forgotten underworld crypts. To the extent that the kingdoms of men *interact* with these fantastical elements is generally in hiring heroes to deal with the nuisances caused by hostile fantasy creatures. Elves and Dwarves are uninterested in human political squabbles over borders and wars of succession, and fantastical enemies never really pose a strategic threat to human kingdoms, so the historical and fantastical elements of the setting can generally avoid stepping on each others' toes.
+
+To start, the playable section of Earth will be limited to Italy. But in the long term, we will gradually expand to all of Europe and beyond.
+
+## Open-source
+Adventure Simulator is designed not *only* to facilitate a fantasy game, but its open source nature means that, once it has tools to enable this, modders can come in and take it in all sorts of unexpected directions in the future. They could do total conversions to other fantasy settings, sci-fi, or... [something else](https://fxtwitter.com/warlockracy/status/1489001741337169926).
