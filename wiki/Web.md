@@ -1,0 +1,5 @@
+Adventure Simulator is both a game and a website. [Settlements](Settlement) are boards, [characters](Character) have profiles, and all of the menus like [inventory](Inventory) or [stats](Stats) are actual HTML. All of these pages have URLs and play friendly with web browser functionality like bookmarks, navigation, and accessibility tools.
+
+The real-time [combat](Combat)/[stealth](Stealth) simulation is the only part of the MVP that is not web-native. Being 3D, they are simulated and rendered via the webgpu WASM binary. This binary should be loaded at all times, even if you're in a menu, where its essentially inactive with the menu rendered on top of it, so that its ready to go.
+
+Despite ostensibly having a lot of different pages, the game/website is *actually* a client-side-rendered SPA. When you arrive at a settlement from the map and open up your inventory, we will just 

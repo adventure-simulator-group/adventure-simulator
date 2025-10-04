@@ -27,12 +27,26 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Scenario.md",
+                "file": "Controls.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Scenario"
+              "title": "Controls"
+            }
+          },
+          {
+            "id": "297dc575533824c3",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Overview.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Overview"
             }
           },
           {
@@ -50,7 +64,7 @@
             }
           }
         ],
-        "currentTab": 1
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -198,8 +212,12 @@
       "bases:Create new base": false
     }
   },
-  "active": "1d4531af7fcdf0a6",
+  "active": "297dc575533824c3",
   "lastOpenFiles": [
+    "Implementation.md",
+    "Untitled.md",
+    "Web.md",
+    "Controls.md",
     "Time.md",
     "Scenario.md",
     "Settlement.md",
@@ -207,7 +225,6 @@
     "Models.md",
     "Encumbrance.md",
     "Energy.md",
-    "Controls.md",
     "Slots.md",
     "Stats.md",
     "Untitled.base",
@@ -216,7 +233,6 @@
     "Untitled",
     "Character.md",
     "Health.md",
-    "Implementation.md",
     "Constitution.md",
     "Inventory.md",
     "Magic.md",
@@ -227,8 +243,6 @@
     "Networking.md",
     "Morale.md",
     "SM Scope 2.md",
-    "SM scope.md",
-    "Meta.md",
     "team"
   ]
 }
