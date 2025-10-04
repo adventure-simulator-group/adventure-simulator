@@ -18,3 +18,7 @@ To start, the playable section of Earth will be limited to Italy. But in the lon
 
 ## Open-source
 Adventure Simulator is designed not *only* to facilitate a fantasy game, but its open source nature means that, once it has tools to enable this, modders can come in and take it in all sorts of unexpected directions in the future. They could do total conversions to other fantasy settings, sci-fi, or... [something else](https://fxtwitter.com/warlockracy/status/1489001741337169926).
+
+# What to read next
+1. Read a [story](Scenario) describing what playing the game might actually entail
+2. Read up on how all this will actually be [implemented](Implementation)
