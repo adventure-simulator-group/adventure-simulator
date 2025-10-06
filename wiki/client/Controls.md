@@ -1,8 +1,8 @@
-This page only covers controls exclusively relating to movement, attacking, and blocking/dodging. Hotkeys are described on the [slots](Slots) page, and menus are described in their respective pages:
-* [Travel screen](Travel)
-* [Inventory](Inventory)
-* [Character select](Character)
-* [Stats](Stats)
+This page only covers controls exclusively relating to movement, attacking, and blocking/dodging. Hotkeys are described on the [slots](Slots.md) page, and menus are described in their respective pages:
+* [Travel screen](Travel.md)
+* [Inventory](Inventory.md)
+* [Character select](Character.md)
+* [Stats](Stats.md)
 # Goals
 In order of importance:
 ## Unambiguous
@@ -39,7 +39,7 @@ The direct controls are designed primarily for first-person, but we can later ad
 	* Default aim state when equipping something is off.
 	* For melee weapons, aiming means stabbing while not aiming is swinging
 	* For ranged weapons, aiming means shooting while not aiming is bashing
-	* Aiming while pressing a [hand button](Slots) with an item in your hand causes you to throw, when not aiming you simply drop it.
+	* Aiming while pressing a [hand button](Slots.md) with an item in your hand causes you to throw, when not aiming you simply drop it.
 # Indirect
 You can relinquish direct control of your character to an AI and direct them with RTS-like controls. This would generally be used to navigate large boring areas, order around multiple characters, or simply because you don't enjoy action games.
 
@@ -58,11 +58,11 @@ These controls do give an idea how they might work when controlling an army with
 * Hold left stick click+stick up or down/scroll up or down - camera Y level
 * LB+RB|group/ctrl+LMB|group - select multiple
 	* Everything you select is added to your selection until LB/ctrl is released
-	* Press a [group](Slots) button to select whichever party member that you have bound to that slot. You can select multiple before releasing.
+	* Press a [group](Slots.md) button to select whichever party member that you have bound to that slot. You can select multiple before releasing.
 		* Pressing an *empty* group button binds the last selected character to that group
 	* If you select another character *twice*, it switches to *their* character's slot menu. In a hierarchy, they are forced to have their commander on the same slot that their commander has themselves. Thus, you can use this to traverse the tree without having line of sight to everyone.
 		* This is a bit awkward, but you shouldn't normally be skipping the chain of command anyway.
-	* When LB/ctrl is held, you see all slotted party members with [incapacitation](Combat) wheels around their portraits. Each portrait is placed on its respective [group](Slots). When a specific character is selected, you see a more detailed summary
+	* When LB/ctrl is held, you see all slotted party members with [incapacitation](Combat.md) wheels around their portraits. Each portrait is placed on its respective [group](Slots.md). When a specific character is selected, you see a more detailed summary
 		* In a hierarchy, these summaries include aggregated information about everyone under their command. They also get two incapacitation wheels, the outer one is the average for everyone under their command.
 		* Ammunition (if ranged)
 		* Morale
@@ -77,8 +77,8 @@ These buttons are not available when a grab or select button is held due to over
 
 > I have not thought too hard about their mapping, they should be remapped so that the most common buttons to press are the most convenient to move your finger to
 
-* toggle [inventory](Inventory) menu
-* toggle logout/[character](Character) menu
+* toggle [inventory](Inventory.md) menu
+* toggle logout/[character](Character.md) menu
 * toggle [quest](Quest) menu
 * toggle [rest](Rest) menu
 * toggle direct/indirect control
@@ -89,13 +89,13 @@ These buttons are not available when a grab or select button is held due to over
 		* Strategic - More like a GSG 
 			* Similar to the map in Mount & Blade, you see a banner for your party and enemy parties.
 			* There is a fog of war, with places that you've been but cannot see being greyed out and places you have not been styled like a more abstract paper map.
-* Skip [time](Time)
-	* Normally this toggled between real-world time and [sim-time](Time). When camped, it skips straight to the end of your rest. However, this is automatically interrupted if the party spots an enemy or encounters difficult terrain.
+* Skip [time](Time.md)
+	* Normally this toggled between real-world time and [sim-time](Time.md). When camped, it skips straight to the end of your rest. However, this is automatically interrupted if the party spots an enemy or encounters difficult terrain.
 	* In the strategic camera you continue to see the map at a consistent speed. In the tactical or direct camera, we can display a cinematic montage of travel or night passing (not in MVP).
 # Direct combat Input Terms
 This is a hybrid system between a real action game and something that has merely the illusion of an action game. Essentially, we aren't *actually* simulating everything based on hitboxes and projectile trajectories. But we do still want to utilize some of the player's mechanical skills, specifically their reaction time and accuracy. This is trivial to [cheat](Networking), but since combat is still largely based on stats and mediated entirely by the server this isn't a huge deal.
 
-When controlled by NPCs or indirect mode, these are randomized server-side in a standard distribution around arbitrary average values that we pick... [usually](Magic)...
+When controlled by NPCs or indirect mode, these are randomized server-side in a standard distribution around arbitrary average values that we pick... [usually](Magic.md)...
 ## Precision
 is the value from 0 to 1 representing how close the player placed the aiming reticle on the center of any of the target's hitboxes. Its exact formula will have to come about through testing. 
 ## Reflex

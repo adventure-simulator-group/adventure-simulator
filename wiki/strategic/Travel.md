@@ -1,4 +1,6 @@
-We technically have an open world, but its not really an open world game in the sense that most people consider it. If you've played the 1.0 version of Mount and Blade or early versions of Starsector you should have an idea of what to expect here.
+TODO: rewrite for HTML-based strategic interface
+
+We technically have an open world, but its not really an open world game in the sense that most people consider it. If you've played the 1.0 version of Mount and Blade (before you could walk around in settlements), Battle Brothers, or early versions of Starsector you should have an idea of what to expect here.
 
 Essentially, the travel map is a minigame where each "party" (players or enemies) has three stats: speed, detection, and stealth.
 ## Speed
