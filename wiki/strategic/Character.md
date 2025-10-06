@@ -29,8 +29,8 @@ No different than their Tolkien/Warhammer depiction
 * They are very expensive to create (and to respawn), making them ideal for players who want to create a specific character to their liking and not have their progress frequently set back by deaths.
 * Their biological traits generally make the game less punishing.
 	* For example, they pass out quickly from blood loss, but form scar tissue extremely quickly meaning that slight injuries will incapacitate them but rarely result in death
-	* They [convalesce](Health) very quickly
-	* Most of their physical [attributes](Stats) are very high, with the exception of gut which is extremely low
+	* They [convalesce](Health.md) very quickly
+	* Most of their physical [attributes](Stats.md) are very high, with the exception of gut which is extremely low
 * They are essentially incarnated from the spirit world, usually to help humans in the war against evil.
 ### Elves
 No different than their Tolkien/Warhammer depiction

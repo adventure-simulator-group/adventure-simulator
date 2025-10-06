@@ -1,9 +1,9 @@
 1. Minimum Viable Product
-	1. A dude can fight another dude in standing melee combat
+	1. A dude can fight another dude in standing melee [combat](Combat)
 	2. Prone/supine controls, can be knocked down and get back up
 	3. Can pick up and fight with different types of melee weapons
 	4. Ranged combat
-	5. Advanced movement (climbing, sliding on sloped surfaces, navigating difficult terrain)
+	5. Advanced movement (climbing, sliding on sloped surfaces, navigating hazardous terrain like fording a river)
 	6. Stats system (attributes, skills, track damage to different body parts)
 	7. Inventory system
 	8. Empty world from 1500s geological data

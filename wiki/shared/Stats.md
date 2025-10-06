@@ -90,7 +90,7 @@ Skills are divided into two categories: mental and physical. The former is gover
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs, they are not increased via an abstract XP/leveling system and very little of their value comes from actually using them during gameplay. Instead they are *trained* during your character's off-screen daily schedule. We are not actually simulating a schedule, at least not for the MVP, instead you're basically just allocating a ratio between your skills (which is given a sensible default when picking a character) and your character is ostensibly spending time training them on their own time.
 
-The main difference between this and directly allocating skill points is that if your character is [convalescing](Health) or [traveling](Travel) they won't be able to train most of their skills. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in the parentheses next to a listed skill here is the number of hours that it takes for it to be 50% effective. The rate of increase from training is lower the higher they get, providing an upper-asymptote for how skilled a character can be in a particular skill. Additionally, skills atrophy with disuse, so even an immortal elf or vampire cannot become optimal at everything (though they may get close) due to there being only so many hours in a day.
+The main difference between this and directly allocating skill points is that if your character is [convalescing](Health.md) or [traveling](Travel.md) they won't be able to train most of their skills. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in the parentheses next to a listed skill here is the number of hours that it takes for it to be 50% effective. The rate of increase from training is lower the higher they get, providing an upper-asymptote for how skilled a character can be in a particular skill. Additionally, skills atrophy with disuse, so even an immortal elf or vampire cannot become optimal at everything (though they may get close) due to there being only so many hours in a day.
 ## Intuitive vs Trained
 Intuitive skills can be attempted without training, the check is an average between their associated attribute and the training rank. Trained skills on the other hand receive no benefit without actual training regardless of how high their associated attribute is, the training value is a ceiling. Most skills relevant to the MVP happen to be intuitive.
 
@@ -130,7 +130,7 @@ fn skill_check(player, skill, focus_level):
 Each skill is represented in the stats window as a pair of horizontal bars. One represents the value as if focus_level was 0, the other as if it were 2. Each bar is measured in terms of hours trained, with non-equidistant ticks at each whole number value of the skill check. Any penalties such as from encumbrance, armor, or injuries are designated by a color on the bar, so that the white portion shows how much the skill currently is, while the colored portions show how much each penalty is affecting the final value.
 ## Mental
 ### Will (intuitive, 5000 hours)
-Ability to resist [pain](Combat) or avoid [morale](Morale) penalties.
+Ability to resist [pain](Combat.md) or avoid [morale](Morale.md) penalties.
 0. Generalized anxiety disorder / panic disorder
 1. Coward
 2. Cautious, sensitive to pain
@@ -138,7 +138,7 @@ Ability to resist [pain](Combat) or avoid [morale](Morale) penalties.
 4. Brave hero
 5. Zen monk
 ### Charisma (intuitive, 20000 hours)
-There's no persuasion system or anything for the MVP, this is just a [morale](Morale) buff for the party. You lose focus during combat, so instinct gives you tactical morale while intelligence gives you traveling morale.
+There's no persuasion system or anything for the MVP, this is just a [morale](Morale.md) buff for the party. You lose focus during combat, so instinct gives you tactical morale while intelligence gives you traveling morale.
 0. Autistic
 1. Cold and aloof
 2. Boring
@@ -146,7 +146,7 @@ There's no persuasion system or anything for the MVP, this is just a [morale](Mo
 4. Funny
 5. Professional bard
 ### Medicine (trained, 10000 hours)
-The MVP is not going to have a herbalism system or diseases, so whoever has the highest medicine skill simply gives a party-wide bonus to [health recovery speed](Health).
+The MVP is not going to have a herbalism system or diseases, so whoever has the highest medicine skill simply gives a party-wide bonus to [health recovery speed](Health.md).
 0. Provides no help to anyone injured
 1. Knows to disinfect wounds with alcohol
 2. Can treat common diseases (flu/cold)
@@ -155,7 +155,7 @@ The MVP is not going to have a herbalism system or diseases, so whoever has the 
 5. Can treat all organ damage and all diseases
 ## Physical
 ### Melee (intuitive, 8000 hours)
-Agility helps you hit enemies that are actively trying to dodge or block your [attacks](Combat), precision helps you hit enemies that are unaware of you or staggered.
+Agility helps you hit enemies that are actively trying to dodge or block your [attacks](Combat.md), precision helps you hit enemies that are unaware of you or staggered.
 0. Has never been shown how to use a weapon or observed for an extended period of time
 1. Can split firewood with an axe, zombies
 2. Peasant levy, orcs, goblins
@@ -179,7 +179,7 @@ The larger your shield is, the less you rely on your block skill to use it effec
 4. Knights, heroes
 5. Elven swordmasters
 ### Stealth (intuitive, 8000 hours)
-Agility reduces the noise that you make while moving, precision reduces the radius at which your party can be detected at when [traveling](Travel).
+Agility reduces the noise that you make while moving, precision reduces the radius at which your party can be detected at when [traveling](Travel.md).
 0. Has never even attempted to steal cookies from the cookie jar
 1. Most people
 2. Can tiptoe around the house in socks without waking anyone, usually
@@ -195,7 +195,7 @@ Relevant both for poise in melee and speed in difficult terrain
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 ### Surgeon (trained, 10000 hours)
-The speed at which you bandage/splint [wounds](Health) and the healing rate, once-bandaged
+The speed at which you bandage/splint [wounds](Health.md) and the healing rate, once-bandaged
 0. Cannot reliably apply a bandage
 1. Can dress a wound or apply a tourniquet
 2. Can stitch skin, probably shouldn't
