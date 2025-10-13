@@ -6,9 +6,9 @@ It is in this layer that you create [characters](Characters), embark on [quests]
 
 Further details about the implementation are described in the [networking](Networking) page
 
->Halbe: *My* assumption is that the underlying database for this is Postgres and the server is Rocket, but I am a full-stack web developer, and to a hammer every problem is a nail. I can vaguely conceive of an unusual configuration Bevy with an HTTP plugin that is essentially running on an event-based schedule which could sort of be made to act like Rocket+SQL, but I have no idea if this would be a good idea. It would presumably only be something that we'd do for consistency with the tactical layer.
+>Halbe: *My* assumption is that the underlying database for this is Postgres and the server is Rocket, but I am a web developer, and to a hammer every problem is a nail. I can vaguely conceive of an unusual configuration Bevy with an HTTP plugin that is essentially running on an event-based schedule which could sort of be made to act like Rocket+SQL, but I have no idea if this would be a good idea. It would presumably only be something that we'd do for consistency with the tactical layer.
 ## Tactical Layer
-When the party enters [combat](Combat.md), approaches enemies in [stealth](Stealth.md), or must navigate dangerous [terrain](Terrain), the strategic layer composes a scene and passes it to the WASM binary of the "tactical layer". This is a real-time simulation in Bevy implemented by a generalist game programmer. Since UDP is not available on the web, the [networking](Networking) must be facilitated by websockets.
+When the party enters [combat](Combat.md), approaches enemies in [stealth](Stealth.md), or must navigate dangerous [terrain](Terrain), the strategic layer composes a scene and passes it to the WASM binary of the "tactical layer". This is a real-time simulation in Bevy implemented by a generalist game programmer. Since UDP is not available on the web, the [networking](Networking) must be facilitated by websockets or data-star.
 
 For at least the MVP, the simulation tactical layer is (tentatively) entirely done through the server, latency be damned. What we like about this is that it places an upper bound on how effective a cheater can be and it cleanly separates what clients are responsible for and what the server is responsible for. Clients handle input and rendering, server handles all the game logic. The felt-latency is mitigated by the fact that the animation system can eagerly act on input and that combat is mostly centered around weapons that attack more slowly than server latency. Only crossbows and firearms will necessarily have felt-latency to your inputs.
 
@@ -17,8 +17,6 @@ There *is* physics running on the tactical layer, but characters are just capsul
 >Halbe: If the developer implementing this feels that rollback with more advanced physics is hardly more difficult to implement, or even easier, then they can make their case for it. I am skeptical though.
 
 Once it concludes, the outcome of the tactical simulation is passed back to the strategic layer.
-
-Further details about the implementation are described in the [networking](Networking) page
 
 ## Client Layer
 This exclusively exists on the client. The current state of the tactical layer is constantly received from the tactical layer server. The client layer has only two responsibilities, rendering the state of the tactical layer to the client, and passing input back to the server. Since combat is *not* dependent on animations, it is free to adjust the characters' animation state to immediately respond to inputs, and has a window of flexibility with things like the exact position of any character.
