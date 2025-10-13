@@ -1,9 +1,8 @@
 # Attributes
 The maximum value of your characters' attributes is determined by their genetics, but the actual value may be quite a bit lower if they are not properly conditioned. For example, even if you have the theoretical ability to build a large amount of muscle, if you have poor nutrition or don't exercise then you will realize very little of it. Conditioning is different for each attribute, but generally no one will be able to condition all of their attributes to their maximum potential due to there only being 24 hours in a day.
 
-Attributes are grouped between Torso/Limbs/Head. Damage to one of these areas will affect all attributes within.
-## Torso
-These attributes are associated mainly with your torso, specifically with the organs within. If we want to get very extra with the details, they could actually be separated further so that endurance is specifically damaged by upper-torso damage due to it being the location of the heart and lungs. But this is fine for now.
+Attributes are grouped between Chest/Stomach/Head/Limbs (L/R, A/L). Damage to one of these areas will affect all attributes within.
+## Chest
 ### Endurance
 Represents the strength of your heart, capacity of your lungs, and proportion of slow-twitch/fast-twitch muscle fiber. It determines how long you can go without suffering from exhaustion and how fast you move when traveling. Conditioned by traveling on foot.
 0. Asphyxiated
@@ -13,8 +12,9 @@ Represents the strength of your heart, capacity of your lungs, and proportion of
 4. Professional soldiers
 5. Adventuring heroes
 6. Undead (cannot be tired)
+## Stomach
 ### Immunity
-How well your immune system protects against disease and poisons.
+This is essentially a combination of the liver, spleen, and other organs which regulate your immune system and ability to filter out toxins.
 0. AIDS
 1. Infants
 2. Sheltered nobles and children
@@ -22,7 +22,7 @@ How well your immune system protects against disease and poisons.
 4. Elves and city-folk
 5. Vampires (immune to disease)
 ### Gut
-How how edible food needs to be in order for you to effectively digest it and how much variety you need to be decently healthy. Cooking makes food more edible, but food that is more fibrous and less nutritious can only be improved by so much.
+Your stomach, intestines, pancreas, and other organs involved with your digestive system. Determines how edible food needs to be in order for you to effectively digest it and how much variety you need to be decently healthy. Cooking makes food more edible, but food that is more fibrous and less nutritious can only be improved by so much.
 0. Vampires (cannot digest food, must get calories directly from blood glucose)
 1. Elves (can only eat meat, fat, and luxurious elven plants)
 2. Nobles, orcs
