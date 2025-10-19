@@ -16,6 +16,8 @@ The heuristic here is to place fantasy elements in places that don't fundamental
 
 For the MVP, the playable section of Earth will be limited to Italy. But in the long term, we will gradually expand to all of Europe and beyond.
 # Open-source
+We tentatively intend to keep everything GPL-3.0, but are willing to hear out the case for other licenses.
+
 Adventure Simulator is designed not *only* to facilitate a fantasy game, but its open source nature means that modders can come in and take it in all sorts of unexpected directions in the future. They could do total conversions to other fantasy settings, sci-fi, or... [something else](https://fxtwitter.com/warlockracy/status/1489001741337169926).
 # Design Philosophy
 We would like the underlying gameplay systems to be *realistic*, as this generally offers an unambiguous answer to any design question. Its not always easy to [find out what that answer *is*](https://en.wikipedia.org/wiki/Scientific_method), nor is it always easy to implement without resorting to simplified abstractions (quantum physics are not in-scope for the MVP, to say the least). But all of the imperfect answers at least point in the same direction.
@@ -29,3 +31,49 @@ Being that this is a fantasy world, the fantastical elements are free variables 
 It should be easy create content for the game, and to that end, using low-fidelity procedural assets greatly reduces the barrier to this. This doesn't mean that we don't care about fidelity at all, but that it must necessarily come from procedural iteration rather than a trained CG artist. The system which Nintendo uses for Miis, for example, is a better example of how we might approach a character creator than, say, Baldur's Gate III. But that doesn't mean that we're going for an especially cartoony art style, either. There's nothing preventing a system like that from applying to more realistically proportioned characters (as they did, more or less, with Breath of the Wild and its sequel).
 # Funding and Legal
 We are in the process of registering with [Open Source Collective](https://oscollective.org/), a 501(c)(6) that handles the legal and administrative overhead for facilitating donors to pay contributors. The two founders, Bruno Segovia and Adler Halbe, are willing to contribute serious portions of their incomes to see at least a prototype of this through. Their contributions will largely be in the form of cash, however, as their day jobs from whence this cash originates are pretty intensive. But they will be available most days, especially in the evenings, to offer guidance and help coordinate the project.
+
+Once the game works well enough to start hosting (and is sufficiently fun to be worth anyone's time), we will try and transition to a more sustainable funding model where players can have a single character per-account for free, but multi-character accounts would require a subscription which we use to hire more developers and pay for server costs.
+
+Everything will remain completely open source and non-profit throughout this, however. Adler and Bruno have no intention of profiting from this project, they simply wish for it to exist.
+
+# Open (paid) positions
+All positions are remote-only and with no zoom meetings (unless you actually want to). Contact adler@adventuresim.org to apply.
+## Strategic-layer programmer - $40k USD/yr
+Design and implement the asynchronous strategic layer of the game: the database, HATEOAS interface, and gameplay systems.
+### Required skills
+- Attribute-driven frontend frameworks required ([data-star](https://data-star.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc)
+- Diverse enough array of database architectures to have a strong opinion on which should be used here (we could even unify with the tactical-layer ECS, but that would be weird)
+- [Rust](https://rust-lang.org/)
+### Recommended skills
+- Entity Component Systems like [Bevy](https://bevy.org)
+- [data-star](https://data-star.dev)
+- Real-time networking
+- Devops
+- Cloud infrastructure
+## Tactical-layer programmer - $40k USD/yr
+Design and implement the real-time tactical layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both layers, you can apply for both and negotiate *up to* 80k. 
+### Required skills
+- [Bevy](https://bevy.org)
+- Real-time networking
+### Recommended skills
+- [data-star](https://data-star.dev)
+- Devops
+- Cloud infrastructure
+- Newtonian physics (gameplay equations generally use variables in SI physics terms)
+- Linear algebra
+## Procedural graphics programmer - $40k USD/yr
+Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be tentatively GPL-3.0, but if you want a dual license or MIT/Apache we're willing to negotiate.
+### Required skills
+- [CSG](https://en.wikipedia.org/wiki/Constructive_solid_geometry) primitives and operations
+- Advancing front
+- Distance fields
+- [Rust](https://rust-lang.org)
+### Recommended skills
+- [wgpu](https://wgpu.rs/)
+- [Bevy](https://bevy.org)
+- Procedural modeling (Houdini, Blender geometry nodes, etc)
+- Procedural textures
+- Character creators (morph targets, texture compositing, etc)
+- Physically based rendering concepts
+## Other contributions
+If you think that you can help in some other way, like writing or testing, send an email to adler@adventuresim.org
