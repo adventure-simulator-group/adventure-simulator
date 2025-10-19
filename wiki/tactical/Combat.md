@@ -37,14 +37,17 @@ A character's incapacitation represents the sum of all disabling effects on them
 
 Each of the following factors range from 0% to at least 100%.
 ### Imbalance (white)
+> Halbe: This was written in terms of energy, but might make more sense in terms of momentum.
+
 The most direct way of being incapacitated, attacks which impart force on your character or losing your footing in difficult terrain can cause imbalance. Imbalance constantly recuperates. Your mass and the directness of an attack determine how much imbalance you actually take, and your agility determines how quickly it is regenerated.
 ```
 # use these for calibration
-# direct hits by trained warrior in kilojoules: halberd ~0.6, longsword ~0.3, shortsword ~0.2
+# direct hits by trained warrior in joules: halberd ~120, longsword ~70, shortsword ~30 dagger ~20
+# longbow arrow 80
 # kg: armored knight ~90, goblin ~40
-const STAGGER_RESISTANCE_KILOJOULES_PER_KG = 0.05
+const STAGGER_RESISTANCE_JOULES_PER_KG = 10
 const UPPER_MUSCLE_KG_PER_STRENGTH = 5
-const MUSCLE_KG_TO_KILOJOULES = 0.01
+const MUSCLE_KG_TO_JOULES = 2
 const UPPER_MUSCLE_KG_TO_PUNCH_KG = 0.1
 
 # attack_directness is 1.0 if square-on, 0.01 barely grazes, in-between is a glancing blow of some magnitude
@@ -54,10 +57,10 @@ fn balance_damage(attacker, defender, attack_directness):
 	attacker_upper_muscle_kg = attacker.strength * UPPER_MUSCLE_KG_PER_STRENGTH
 	punch_kg = UPPER_MUSCLE_KG_TO_PUNCH_KG * attacker_upper_muscle_kg
 	striking_mass_kg = punch_kg + attacker.weapon.mass_kg * (1 + attacker.weapon.balance_factor * attacker.weapon.length_meters)
-	kilojoules_of_attack = attacker_upper_muscle_kg * MUSCLE_KG_TO_KILOJOULES * striking_kg
-	imparted_kilojoules = attack_directness * kilojoules_of_attack
-	resistance = STAGGER_RESISTANCE_KILOJOULES_PER_KG * defender.mass_kg
-	defender.imbalance += imparted_kilojoules / resistance
+	joules_of_attack = attacker_upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_kg
+	imparted_joules = attack_directness * joules_of_attack
+	resistance = STAGGER_RESISTANCE_JOULES_PER_KG * defender.mass_kg
+	defender.imbalance += imparted_joules / resistance
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
@@ -89,10 +92,32 @@ Morale only starts affecting incapacitation when it goes below 0, at which point
 ### [Fatigue](Energy.md) (black)
 This does not significantly accumulate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
 
-# Damage
-Each piece of armor has a "cut threshold" and "blunt threshold", both are in terms of kilojoules. When piercing attack connects, the imparted_kilojoules is subtracted by the cut threshold to determine how much energy penetrates the armor, if any. For a slash weapon (sword/axe), the cut threshold is multiplied by two. Any energy that penetrates is then applied as damage to the flesh.
+# Penetrating
+Each piece of armor has a "resistance" and "padding", both are in terms of joules. When attack connects, the imparted_joules is subtracted by the resistance to determine how much energy penetrates the armor, if any. Weapons also have a "penetration" coefficient. The actual resistance used for the attack is:
+$$
+finalResistance = resistance-flexibility\cdot{resistance}\cdot{penetration}
+$$
+Penetration coefficient examples:
+- Clubs: 0.1
+- Maces: 0.5
+- Swords/axes/musket ball: 1.0
+- Broadhead arrows or spear: 2.0
+- Mail breaker, rapier, or bodkin arrows: 4.0 
 
-Energy which is absorbed by the cut threshold, or energy from a blunt weapon, is the blunt energy. 50% of blunt energy is applied as unbalance, as described above, and the other 50% is subtracted by the blunt threshold to determine blunt damage.
+Any energy that penetrates is then applied as cut damage.
+
+Energy which is absorbed by the resistance, is the blunt energy. 50% of blunt energy is applied as unbalance, as described above, and the other 50% is subtracted by the padding to determine blunt damage.
+# Damage
+## Cut
+Cut damage is divided by the penetration coefficient before being applied. This represents the greater surface area of flesh that is being torn up. Essentially, this makes axes and swords particularly ineffective against armor, but does extra damage against flesh.
+
+Calibration:
+- 80kg male's forearm is about 1.2kg
+- A 20j direct hit dagger stab against an unarmored forearm should do just enough damage to incapacitate
+- The point of having more powerful attacks is not to do more damage to flesh, but to get past armor
+- A knight in full-plate still should be vulnerable to a mail breaker or bodkin arrow in the gaps between plates which are guarded only by chainmail
+- A 20j stab from a mail breaker should just barely be able to penetrate chainmail and damage flesh
+## Blunt
 
 > Halbe: We may want to distinguish between bruising and bone fracturing, perhaps by picking an arbitrary amount of blunt damage energy after which it starts to fracture the bone.
 
@@ -100,16 +125,16 @@ Energy which is absorbed by the cut threshold, or energy from a blunt weapon, is
 ## Durability
 Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
 $$
-DurabilityDamage = 1 - resilience * (ImpartedKilojoules - threshold)
+DurabilityDamage = 1 - resilience * (ImpartedJoules - threshold)
 $$
 Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low durability). Solid, ductile materials which deform plastically have very low resilience (like metal plate). And most flexible materials have fairly high resilience, since they are able to absorb a lot of the force as they bend.
 
 ## Examples 
-(cut, blunt, durability, flexibility, brittleness)
+(resistance, padding, durability, flexibility, brittleness)
 
-> These numbers are not super well thought out
-- 3mm steel breastplate (6c, 6b, 1000, 0, 0)
-- Steel chainmail (4c, 3b, 1000, 0.8, 0)
-- Padded gambeson (3c, 3b, 250, 0.3, 0.7, 0)
-- 3mm steel brigandine (5c, 4b, 600, 0.4, 0)
-- 7mm wooden shield (5c, 5b, 100, 0.1, 0.9)
+> Halbe: These numbers are not super well thought out
+- 3mm steel breastplate (120r, 60p, 1000, 0, 0)
+- Steel chainmail (70r, 40p, 1000, 0.8, 0)
+- Padded gambeson (60r, 40p, 250, 0.3, 0.6, 0)
+- 3mm steel brigandine (100r, 40p, 600, 0.4, 0)
+- 7mm wooden shield (100r, 20p, 100, 0.1, 0.9)
