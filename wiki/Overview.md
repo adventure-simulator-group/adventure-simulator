@@ -1,48 +1,72 @@
-# Adventure Simulator (working title)
-## A web-first pseudo-MMO
-The golden age of web games had a number of pseudo-MMO games like Neopets or Club Penguin (and actual MMOs, such as Runescape) that have since largely had their markets captured by mobile games and native desktop games. But [Wasm](https://webassembly.org/), [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API), and [data-star](https://data-star.dev/) have opened up a new opportunity to create a kind of web-first game that has not really been possible to do until recently, with near-feature and performance parity with native applications.
+# _Adventure Simulator_ (working title)
+_Adventure Simulator_ is a web-first pseudo-MMO using data-star, WASM, and WebGPU to make a sort of game which has been impossible to build until now.
+
+# A web-first pseudo-MMO
+The golden age of browser-based web games yielded a number of "pseudo-MMO" games, like _Neopets_ and _Club Penguin_,[^1] whose markets have since largely been captured by mobile games and native desktop games. However, new technologies like [Wasm](https://webassembly.org/), [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API), and [data-star](https://data-star.dev/) allow us to make a kind of web-first game that has not been possible to do until recently: one with near-feature and performance parity with native applications.
+
+[^1]: And actual MMOs, such as _Runescape_ and _AdventureQuest_.
 ## Bulletin Board World
-Our plan is to sidestep the nightmarish networking challenge of a unified world server by having its "world" be structured as a database with an asynchronous [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) interface, then instancing individual parties on their own virtual servers whenever they engage enemies in real-time combat. Any real-time networking can quickly become dangerously complex though, which is why we intend to keep as much state as possible on the server and use server-sent events for clients to render a sort of network-driven "[immediate mode](https://en.wikipedia.org/wiki/Immediate_mode_(computer_graphics))" view of the world.
+A traditional MMO usually relies on a central, authoritative server which maintains the live state of the game world, runs simulation logic in real time, and pushes state updates to clients dozens of times per second. Designing and implementing this server presents an enormously complex networking problem.[^2] Our plan is to sidestep these challenges by designing our "world" as a database -- a collection of information about places, players, and events -- and having players interact with this world through an asynchronous, web-style [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) interface that handles actions one at a time. When players _do_ need real-time action, e.g. when they engage enemies in combat, we create a private virtual server just for their party. However, since _any_ real-time networking can quickly become dangerously complex, we intend to keep as much state as possible on the server, using server-sent events to push updates directly to the client's screen as events happen.[^3]
 
-Player characters spend downtime, purchase equipment, join parties, and embark on quests from settlements, which also serve as a bulletin board-like social hub. Then, in the course of the quests they've undertaken, load into the real-time WebGPU-rendered combat simulation when their party arrives at their destination or is randomly attacked along the way.
-## Gameplay
-The nearest games for inspiration are Mount and Blade, Battle Brothers, Starsector, and (to some extent) Kenshi. Like the former three, the world is separated between the "tactical" layer and the "strategic" layer. In Adventure Simulator, the tactical layer is a real-time simulation, while the strategic layer advances is in discrete chunks of time (generally fast travel/resting). But it features the same basic formula of recruiting a party to adventure with, defeating enemies in randomly generated missions, then using your hard-earned rewards to buy equipment.
+Player characters spend their downtime in settlements: persistent, bulletin board-like social hubs where they can purchase equipment, join parties, and embark on quests. When their party sets out on a quest, players will load into the real-time, WebGPU-rendered combat simulation when they arrive their destination or are randomly attacked along the way.
 
-Players can also control multiple characters, which can be either mortal or immortal. Mortal characters offer a more roguelike/extraction-esque experience, with fast progression and frequent deaths. When one of your mortal characters dies, any wealth not on their person will be inherited by your other characters. Immortal characters offer a more conventional RPG/MMO-experience, which emulates the cost of mortal characters with costly respawns and slow healing.
+[^2]: This unified server has to handle massive concurrency, synchronize thousands of players in real time, ensure consistency so everyone sees the game world, and maintain low latency. However, we don't have to do any of this on a bulletin board because there are no active connections to maintain. As soon as the server responds to your request, it forgets that you exist.
+
+[^3]: We end up rendering a sort of network-driven "[immediate mode](https://en.wikipedia.org/wiki/Immediate_mode_(computer_graphics))" view of the world.
+# Gameplay
+The nearest games for inspiration are [*Mount and Blade*](https://www.taleworlds.com/en/games/mountandblade), [*Battle Brothers*](https://battlebrothersgame.com/), [*Starsector*](https://fractalsoftworks.com/), and to some extent [*Kenshi*](https://lofigames.com/).
+
+Like the former three, the world of _Adventure Simulator_ is separated between the "tactical" layer (a real-time simulation) and the "strategic" layer (which advances in discrete chunks of time, generally after fast travel or resting). We have the same basic gameplay formula: a player recruits a party to adventure with, defeats enemies in randomly generated missions, and uses their hard-earned rewards to buy equipment.
+
+Like in _Kenshi_, players can control multiple characters, though _Adventure Simulator_ characters can be either mortal or immortal. Mortal characters offer a more roguelike/extraction-esque experience, with fast progression and frequent deaths. When one of your mortal characters dies, any wealth not on their person will be inherited by your other characters. Immortal characters offer a more conventional RPG/MMO experience, which emulates the cost of mortal characters with costly respawns and slow healing.[^4]
+
+[^4]: Mortal characters will probably be randomly generated by default; the idea is that players who prefer custom characters will naturally gravitate to the immortal option.
 # Setting
-The world of Adventure Simulator is a fantastical version of Earth. Warhammer Fantasy players or readers of pre-Tolkien fantasy will be familiar with the idea, but essentially the setting is historical renaissance Earth (approximately ~1543) with generic fantasy elements inexplicably sprinkled throughout.
+The world of _Adventure Simulator_ is a fantastical version of Earth. _Warhammer Fantasy_ players or readers of pre-Tolkien fantasy will be familiar with the idea: essentially, the setting is historical Renaissance Earth with generic fantasy elements inexplicably sprinkled throughout.[^5]
 
-The heuristic here is to place fantasy elements in places that don't fundamentally alter historical conditions too much. Elves generally keep to forests or fictitious islands, Dwarves dwell within mountains, and creatures like orcs, goblins, beastmen, and the undead either roam as hordes or infest caves, crypts, and abandoned Dwarven settlements. To the extent that the kingdoms of men interact with these fantastical elements is generally in hiring heroes to deal with the nuisances caused by hostile fantasy creatures. Elves and Dwarves are uninterested in human political squabbles over borders and wars of succession, and fantastical enemies never really pose a strategic threat to human kingdoms, so the historical and fantastical elements of the setting can generally avoid stepping on each others' toes.
+The heuristic here is to place fantasy elements in places that don't fundamentally alter historical conditions too much. Elves generally keep to forests or fictitious islands; Dwarves dwell within mountains; and creatures like Orcs, Goblins, Beastmen, and the Undead either roam as hordes or infest caves, crypts, and abandoned Dwarven settlements. To the extent that the kingdoms of Men interact with these fantastical elements, it is generally in hiring heroes to deal with the nuisances caused by hostile fantasy creatures. Elves and Dwarves are uninterested in Human political squabbles over borders and wars of succession, and fantastical enemies never really pose a strategic threat to Human kingdoms, so the historical and fantastical elements of the setting can generally avoid stepping on each others' toes.
 
-For the MVP, the playable section of Earth will be limited to Italy. But in the long term, we will gradually expand to all of Europe and beyond.
-# Open-source
-We tentatively intend to keep everything GPL-3.0, but are willing to hear out the case for other licenses.
+For the MVP, the playable section of Earth will be limited to Italy.[^6] In the long term, we will gradually expand to all of Europe and beyond.
 
-Adventure Simulator is designed not *only* to facilitate a fantasy game, but its open source nature means that modders can come in and take it in all sorts of unexpected directions in the future. They could do total conversions to other fantasy settings, sci-fi, or... [something else](https://fxtwitter.com/warlockracy/status/1489001741337169926).
-# Design Philosophy
-We would like the underlying gameplay systems to be *realistic*, as this generally offers an unambiguous answer to any design question. Its not always easy to [find out what that answer *is*](https://en.wikipedia.org/wiki/Scientific_method), nor is it always easy to implement without resorting to simplified abstractions (quantum physics are not in-scope for the MVP, to say the least). But all of the imperfect answers at least point in the same direction.
+[^5]: To be precise, we are approximately set in 1543 AD: the [near-height](https://commons.wikimedia.org/wiki/File:Habsburg_Empire_of_Charles_V.png) of [Charles V](https://en.wikipedia.org/wiki/Charles_V,_Holy_Roman_Emperor)'s reign, the year the Portuguese reached Japan, and the earliest possible time when all major cultures of the world are at least indirectly aware of each other. Any later and you get too much "shot", not enough "pike".
 
-The real world is not always as fun as a game ought to be, though. Fortunately, there are two ways to circumvent this:
-## Abstraction-based Approach
-Holding W to walk 50km between settlements is not particularly fun. Nor is resting for several months to heal a serious injury. But these activities exist at the strategic layer of the game, and therefore a player can skip forward in time. Likewise, micromanaging inventory isn't particularly fun, but as the game becomes complex enough to necessitate this, we can also add tools to automate it (set a desired weight limit and value/weight ratio for loot).
-## Content-based Approach
-Being that this is a fantasy world, the fantastical elements are free variables for us to balance the game with. Suppose real-life combat is too fast for it to be viable to reliably dodge most attacks. We can simply give common fantasy enemies like goblins, orcs, or skeletons, such poor melee skills that an agile player character can reliably dodge them. Or suppose stealth is too frustrating with realistic detection ranges, we can just ensure that these fantasy creatures tend to have very poor eyesight.
+[^6]: Renaissance Italy offers huge cultural and geographic diversity in a relatively small area: within a few hundred kilometers, you have bustling city-states, mountain fortresses in the Alps, rural farmland and villages, and ancient Roman ruins. With warring city-states and feuding families aplenty, it also offers the perfect economy for professional adventurers, while being instantly recognizable even to non-historians (think Da Vinci, Machiavelli, and the Medicis). Perhaps most importantly, a setting like Renaissance Italy with both a vibrant fashion scene and relentless political violence creates many opportunities to showcase our procedural graphics generator, which can dynamically create clothes and render clothing damage.
+# Open-Source
+We tentatively intend to keep everything GPL-3.0, but we are willing to hear out the case for other licenses.
+
+_Adventure Simulator_ is not designed _solely_ to facilitate a fantasy game. Its open source nature means that modders can come in and take it in all sorts of unexpected directions in the future. They may do total conversions to other fantasy settings, sci-fi, or... [something else](https://fxtwitter.com/warlockracy/status/1489001741337169926).
 # Flexibility > Fidelity
-It should be easy create content for the game, and to that end, using low-fidelity procedural assets greatly reduces the barrier to this. This doesn't mean that we don't care about fidelity at all, but that it must necessarily come from procedural iteration rather than a trained CG artist. The system which Nintendo uses for Miis, for example, is a better example of how we might approach a character creator than, say, Baldur's Gate III. But that doesn't mean that we're going for an especially cartoony art style, either. There's nothing preventing a system like that from applying to more realistically proportioned characters (as they did, more or less, with Breath of the Wild and its sequel).
+It should be easy for players to create content for the game, and to that end, we use low-fidelity procedural assets to greatly reduce the barrier to entry. This doesn't mean that we don't care about fidelity at all; it means fidelity must necessarily come from procedural iteration rather than a trained CG artist. The system Nintendo uses for Miis, for example, is a better example of how we might approach a character creator than, say, [_Baldur's Gate III_](https://baldursgate3.game/). But that doesn't mean that we're going for an especially cartoony art style, either; there's nothing preventing a system like that from applying to more realistically proportioned characters ([as Nintendo did](https://www.reddit.com/r/Games/comments/kq4a65/npcs_in_the_legend_of_zelda_breath_of_the_wild/), more or less, with _Breath of the Wild_ and its sequel).
+# Design Philosophy
+We would like the underlying gameplay systems to be *realistic*, as the real world can generally offer an unambiguous answer to any design question. It's not always easy to [find out what that answer *is*](https://en.wikipedia.org/wiki/Scientific_method), nor is it always easy to implement the real world solution without resorting to simplified abstractions,[^7] but all the imperfect answers at least point in the same direction.
+
+[^7]: Quantum physics is not in-scope for the MVP, to say the least.
+
+The real world is not always as fun as a game ought to be. Fortunately, there are two ways to circumvent this:
+## Abstraction-Based Approach
+We can abstract away the parts of the real world that are not particularly fun.
+
+Holding W to walk 50 km between settlements is not particularly fun, nor is resting for several months to heal a serious injury, but if we put these activities in the ["strategic layer"](#Gameplay) of the game (separate from the real-time "tactical layer"), a player can skip them by fast-forwarding in time.
+
+Likewise, micromanaging inventory is not particularly fun, but as the game becomes complex enough to necessitate this, we can also add tools to automate it, such as setting a desired weight limit and value/weight ratio for loot. _Kenshi_ comes close to this.
+## Content-Based Approach
+We can design the non-real parts of the world to be more fun.
+
+Being that this is a fantasy world, the fantastical elements are free variables for us to balance the game with. Suppose real-life combat is too fast for it to be viable to reliably dodge most attacks. We can simply give common fantasy enemies like Goblins, Orcs, and Skeletons such poor melee skills that an agile player character can reliably dodge them. Or suppose stealth is too frustrating with realistic detection ranges. We can just ensure that these fantasy creatures tend to have very poor eyesight.
 # Funding and Legal
-We are in the process of registering with [Open Source Collective](https://oscollective.org/), a 501(c)(6) that handles the legal and administrative overhead for facilitating donors to pay contributors. The two founders, Bruno Segovia and Adler Halbe, are willing to contribute serious portions of their incomes to see at least a prototype of this through. Their contributions will largely be in the form of cash, however, as their day jobs from whence this cash originates are pretty intensive. But they will be available most days, especially in the evenings, to offer guidance and help coordinate the project.
+We are in the process of registering with [Open Source Collective](https://oscollective.org/), a 501(c)(6) that handles the legal and administrative overhead for facilitating donors to pay contributors. The two founders, Bruno Segovia and Adler Halbe, are willing to contribute serious portions of their incomes to see at least a prototype of this through. Their contributions will largely be in the form of cash, however, as their day jobs from which this cash originates are pretty intensive. But they will be available most days, especially in the evenings (PST), to offer guidance and help coordinate the project.
 
 Once the game works well enough to start hosting (and is sufficiently fun to be worth anyone's time), we will try and transition to a more sustainable funding model where players can have a single character per-account for free, but multi-character accounts would require a subscription which we use to hire more developers and pay for server costs.
 
-Everything will remain completely open source and non-profit throughout this, however. Adler and Bruno have no intention of profiting from this project, they simply wish for it to exist.
+Everything will remain completely open-source and non-profit throughout this, however. Adler and Bruno have no intention of profiting from this project. They simply wish for it to exist.
 
 # Open (paid) positions
-All positions are remote-only and with no zoom meetings (unless you actually want to). Contact adler@adventuresim.org to apply.
+All positions are remote-only and with no Zoom meetings (unless you actually want them). Contact halbe@adventuresim.org to apply.
 ## Strategic-layer programmer - $40k USD/yr
-Design and implement the asynchronous strategic layer of the game: the database, HATEOAS interface, and gameplay systems.
+Design and implement the asynchronous strategic layer of the game: the database, [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) interface, and gameplay systems.
 ### Required skills
-- Attribute-driven frontend frameworks required ([data-star](https://data-star.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc)
-- Diverse enough array of database architectures to have a strong opinion on which should be used here (we could even unify with the tactical-layer ECS, but that would be weird)
+- Attribute-driven frontend frameworks required ([data-star](https://data-star.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc.)
+- Diverse enough array of database architectures to have a strong opinion on which should be used here. (We could even unify with the tactical-layer ECS, but that would be weird.)
 - [Rust](https://rust-lang.org/)
 ### Recommended skills
 - Entity Component Systems like [Bevy](https://bevy.org)
@@ -51,7 +75,7 @@ Design and implement the asynchronous strategic layer of the game: the database,
 - Devops
 - Cloud infrastructure
 ## Tactical-layer programmer - $40k USD/yr
-Design and implement the real-time tactical layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both layers, you can apply for both and negotiate *up to* 80k. 
+Design and implement the real-time tactical layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both layers, you can apply for both and negotiate for *up to* $80k.
 ### Required skills
 - [Bevy](https://bevy.org)
 - Real-time networking
@@ -62,7 +86,7 @@ Design and implement the real-time tactical layer of the game, both the server a
 - Newtonian physics (gameplay equations generally use variables in SI physics terms)
 - Linear algebra
 ## Procedural graphics programmer - $40k USD/yr
-Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be tentatively GPL-3.0, but if you want a dual license or MIT/Apache we're willing to negotiate.
+Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be tentatively GPL-3.0, but if you want a dual license or MIT/Apache, we're willing to negotiate.
 ### Required skills
 - [CSG](https://en.wikipedia.org/wiki/Constructive_solid_geometry) primitives and operations
 - Advancing front
@@ -76,4 +100,4 @@ Design and implement a plugin to generate models for game objects. The plugin, l
 - Character creators (morph targets, texture compositing, etc)
 - Physically based rendering concepts
 ## Other contributions
-If you think that you can help in some other way, like writing or testing, send an email to adler@adventuresim.org
+If you think that you can help in some other way, like writing or testing, send an email to halbe@adventuresim.org.
