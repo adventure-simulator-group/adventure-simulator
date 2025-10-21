@@ -19,57 +19,6 @@ Player characters spend their downtime in settlements: persistent, bulletin boar
 
 [^4]: We end up rendering a sort of network-driven ["immediate mode"](https://en.wikipedia.org/wiki/Immediate_mode_(computer_graphics)) view of the world.
 
-### A simplified example
-To query a player's current location, the client sends:
-```http
-GET /players/42/location
-```
-The server responds:
-```json
-{
-  "name": "Forest Clearing",
-  "description": "You are standing in a quiet clearing surrounded by tall pines. A dirt path leads north.",
-  "entities": [
-    { "type": "npc", "id": "wolf-7", "name": "Hungry Wolf" },
-    { "type": "item", "id": "herb-12", "name": "Healing Herb" }
-  ],
-  "_links": {
-    "self": { "href": "/players/42/location" },
-    "north": { "href": "/world/zones/forest/path" },
-    "pickUpHerb": { "href": "/players/42/actions/pickup/herb-12", "method": "POST" },
-    "attackWolf": { "href": "/players/42/actions/attack/wolf-7", "method": "POST" }
-  }
-}
-```
-If the player clicks "Pick Up Herb", the client doesn't calculate anything locally; it just follows the provided link:
-```http
-POST /players/42/actions/pickup/herb-12
-```
-The server asynchronously processes this and returns:
-```json
-{
-  "result": "success",
-  "message": "You picked up a Healing Herb.",
-  "_links": {
-    "inventory": { "href": "/players/42/inventory" },
-    "returnToLocation": { "href": "/players/42/location" }
-  }
-}
-```
-When someone else visits this same clearing:
-```http
-GET /world/zones/forest/clearing
-```
-They might get:
-```json
-{
-  "entities": [
-    { "type": "npc", "id": "wolf-7", "name": "Hungry Wolf" }
-  ],
-  "note": "Someone recently picked the herb here."
-}
-```
-The herb is gone because it is a shared resource in the database: no live simulation needed, just a persisted state change.
 ## Gameplay
 The nearest games for inspiration are [*Mount and Blade*](https://www.taleworlds.com/en/games/mountandblade), [*Battle Brothers*](https://battlebrothersgame.com/), [*Starsector*](https://fractalsoftworks.com/), and to some extent [*Kenshi*](https://lofigames.com/).
 
