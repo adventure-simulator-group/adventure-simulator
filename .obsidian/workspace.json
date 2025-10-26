@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "wiki/shared/Morale.md",
+                "file": "README.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Morale"
+              "title": "README"
             }
           }
         ]
@@ -171,8 +171,8 @@
   },
   "active": "ba04c2971ee9e642",
   "lastOpenFiles": [
-    "wiki/shared/Stats.md",
     "wiki/shared/Morale.md",
+    "wiki/shared/Stats.md",
     "wiki/tactical/Combat.md",
     "Combat^Incapacitation.md",
     "wiki/Roadmap.md",
