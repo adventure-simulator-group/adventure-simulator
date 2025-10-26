@@ -153,6 +153,18 @@ The MVP is not going to have a herbalism system or diseases, so whoever has the 
 3. Can treat some organ damage and uncommon diseases
 4. Can treat most organ damage and rare diseases
 5. Can treat all organ damage and all diseases
+
+### Faith (trained, 5000 hours)
+This is a special sort of skill that also has an associated religion. You can only have faith in one religion. The upside of it is that it multiplies the [morale](Morale) bonus that you get from the charisma check of allies of the same faith (perhaps the min of each of your faiths is the multiplier). The downside is that it divides the morale bonus if you are of different faiths (add faiths together then divide?). Thus having 0 faith is advantageous in the unusual situation where you need a party of mixed faith.
+
+> Halbe: After the MVP we may want to move this into a separate system from skills called "Personality" which is more immutable and balanced via tradeoffs. "Religion" could stay as a skill, representing one's knowledge of a given religion, and is a requirement for the charisma-multiplier morale bonus from faith. Faith might also be renamed to "Conviction" and come with more downsides to balance out its huge upside, like one's unwillingness to compromise could make it difficult to deal with "morally flexible" characters. 
+
+0. Agnostic, atheist, or only only identifies with the faith to participate in holidays and not be ostracized.
+1. Actually does pray and ostensibly believe, but doesn't think about it often in day-to-day life
+2. Regularly attends church and will feel guilty for skipping, but still often view most of their life through a secular lens
+3. Prays daily and means it, but not eager to become a martyr. Doubts only when faith is tested by serious adversity.
+4. Willing to live an ascetic life. Will almost certainly not blaspheme or convert even when tortured
+5. Will eagerly martyr for a righteous opportunity
 ## Physical
 ### Melee (intuitive, 8000 hours)
 Agility helps you hit enemies that are actively trying to dodge or block your [attacks](Combat.md), precision helps you hit enemies that are unaware of you or staggered.
