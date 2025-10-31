@@ -31,6 +31,11 @@ Due to the fact that the front is advancing in UV space, not 3D space, an import
 1. The heuristic for placing vertices can forbid placing any vertex to the left of a neighbor to its left, in UV space, or to the right of its neighbor to the right.
 2. We assume that the hierarchy of bones are not self-intersecting
 3. Because of this, in theory this can greatly speed up the algorithm since there's no need to test for intersections.
+
+### But what about the shoulder?
+Many a plan to procedurally generate a skinned character mesh has been defeated by the most infamous of joints. Essentially the idea is to forget about trying to weight it correctly or even do the topology correctly. Instead, after the mesh is generated (Lets just say in a T-pose, for example), we then apply an animation that lowers the arms, putting it in the worst-case scenario, but *then* calculate where each given vertex *would* be if it were placed on the surface again (as described above). Since these are distance fields, which combine in a smooth metaball-like fashion, the surface of the armpit will actually be quite a bit lower now as the arm and chest distance fields now nearly overlap.
+
+There will no doubt need to be a lot of tweaking (perhaps the armpit is now *too* low) but this may just produce a mesh that looks more correct when the arms are down. Therefore we save this as a morph target, and animate it according to how much the upper arm bone is currently lowered. This can also be done to every joint, as even though none are quite as bad as the shoulder they still might benefit from it due to the fact that none of them will have particularly good topology or thoughtful vertex weights.
 ## Third-Pass: Heightmaps
 This is the feature that enables characters, specifically body meshes, to actually look pretty realistic. As established, each bone has a UV semi-cylinder/semi-capsule space used for placing vertices. But we can reuse this as not only a universal space for textures, but to apply a heightmap to the distance field function that converts UV->3D.
 
