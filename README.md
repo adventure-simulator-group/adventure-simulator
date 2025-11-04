@@ -1,15 +1,15 @@
 # _Adventure Simulator_ (working title)
-_Adventure Simulator_ is a web-first pseudo-MMO using data-star, Wasm, and WebGPU to make a kind of game which has been impossible to build until now.
+_Adventure Simulator_ is a web-first pseudo-MMO using Datastar, Wasm, and WebGPU to make a kind of game which has been impossible to build until now.
 
 ## A web-first pseudo-MMO
-The golden age of browser-based web games yielded a number of "pseudo-MMO" games, like _Neopets_ and _Club Penguin_,[^1] whose markets have since largely been captured by mobile apps and native desktop games. However, new technologies like [Wasm](https://webassembly.org/), [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API), and [data-star](https://data-star.dev/) allow us to make a kind of web-first game that has not been possible until recently: one with near-feature and performance parity with native applications.
+The golden age of browser-based web games yielded a number of "pseudo-MMO" games, like _Neopets_ and _Club Penguin_,[^1] whose markets have since largely been captured by mobile apps and native desktop games. However, new technologies like [Wasm](https://webassembly.org/), [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API), and [Datastar](https://Datastar.dev/) allow us to make a kind of web-first game that has not been possible until recently: one with near-feature and performance parity with native applications.
 
 [^1]: And actual MMOs, such as _Runescape_ and _AdventureQuest_.
 
 ### Bulletin-board world
 A traditional MMO relies on a central, authoritative server which maintains the live state of the game world, runs simulation logic in real time, and pushes state updates to clients dozens of times per second. Designing and implementing this server presents a host of enormously complex networking challenges.[^2] Our plan is to sidestep these challenges by representing our world as a ["bulletin board"](https://en.wikipedia.org/wiki/Bulletin_board_system):[^3] a database contains information about players, places, and quests, and players interact with this world-database by making discrete actions through an asynchronous, [web-style](https://en.wikipedia.org/wiki/HATEOAS) interface. When players do need real-time action, e.g. when they engage enemies in combat, we create a private virtual server just for their party. Since _any_ real-time networking can quickly become dangerously complex, we intend to keep as much state as possible on the server, using server-sent events to push updates directly to the client as events happen.[^4]
 
-Player characters spend their downtime in settlements: persistent, bulletin board-like social hubs where they can purchase equipment, join parties, and embark on quests. When their party sets out on a quest, players will load into the real-time, WebGPU-rendered combat simulation when they arrive their destination or are randomly attacked along the way. When the real-time simulation is no longer required, players transition back into the discrete hypertext format. In short, we aren't building a normal web game which uses Wasm and WebGPU to run in the browser; we are building a hypertext bulletin board game which can act like a normal game when needed, like in combat, and where most of the game logic isn't even running in the browser but rather streamed, via data-star, from the server.
+Player characters spend their downtime in settlements: persistent, bulletin board-like social hubs where they can purchase equipment, join parties, and embark on quests. When their party sets out on a quest, players will load into the real-time, WebGPU-rendered combat simulation when they arrive their destination or are randomly attacked along the way. When the real-time simulation is no longer required, players transition back into the discrete hypertext format. In short, we aren't building a normal web game which uses Wasm and WebGPU to run in the browser; we are building a hypertext bulletin board game which can act like a normal game when needed, like in combat, and where most of the game logic isn't even running in the browser but rather streamed, via Datastar, from the server.
 
 [^2]: This unified server has to handle massive concurrency, synchronize thousands of players in real time, ensure consistency so everyone sees the game world, and maintain low latency. However, we don't have to do any of this on a bulletin board because there are no active connections to maintain. As soon as the server responds to your request, it forgets that you exist.
 
@@ -84,37 +84,37 @@ Probably not. We want to be very selective about adding board members. However, 
 ## Open (paid) positions
 All positions are remote-only and with no Zoom meetings (unless you actually want them). Contact <halbe@adventuresim.org> to apply.
 
-### Strategic-layer programmer - $40k USD/yr
+### Full-stack developer - $40k USD/yr
 Design and implement the asynchronous strategic layer of the game: the database, [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) interface, and gameplay systems.
 
 #### Required skills
-- Attribute-driven frontend frameworks required ([data-star](https://data-star.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc.)
-- Diverse enough array of database architectures to have a strong opinion on which should be used here. (We could even unify with the tactical-layer ECS, but that would be weird.)
+- Attribute-driven frontend frameworks required ([Datastar](https://Datastar.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc.)
+- Diverse enough array of database architectures to have a strong opinion on which should be used here.
 - [Rust](https://rust-lang.org/)
 
 #### Recommended skills
 - Entity Component Systems like [Bevy](https://bevy.org)
-- [data-star](https://data-star.dev)
+- [Datastar](https://Datastar.dev)
 - Real-time networking
 - Devops
 - Cloud infrastructure
 
-### Tactical-layer programmer - $40k USD/yr
-Design and implement the real-time tactical layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both layers, you can apply for both and negotiate for *up to* $80k.
+### Game programmer - $40k USD/yr
+Design and implement the real-time layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both this and webdev, you can apply for both and negotiate for *up to* $80k.
 
 #### Required skills
 - [Bevy](https://bevy.org)
 - Real-time networking
 
 #### Recommended skills
-- [data-star](https://data-star.dev)
+- [Datastar](https://Datastar.dev)
 - Devops
 - Cloud infrastructure
 - Newtonian physics (gameplay equations generally put variables in SI units)
 - Linear algebra
 
 ### Procedural graphics programmer - $40k USD/yr
-Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be tentatively GPL-3.0, but if you want a dual license or MIT/Apache, we're willing to negotiate.
+Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be a dual license of GPL-3.0 + proprietary. You will be able to license its proprietary use for your own project so long as it isn't in the fashion industry, as we are in the process of setting up a deal with a fashion company (if it goes through then we'll also be hiring for more positions).
 
 #### Required skills
 - [CSG](https://en.wikipedia.org/wiki/Constructive_solid_geometry) primitives and operations
