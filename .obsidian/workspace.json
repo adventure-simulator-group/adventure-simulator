@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "wiki/strategic/Factions.md",
+                "file": "README.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Factions"
+              "title": "README"
             }
           }
         ]
@@ -171,10 +171,11 @@
   },
   "active": "ba04c2971ee9e642",
   "lastOpenFiles": [
-    "wiki/strategic/Oblitus.md",
     "wiki/shared/Magic.md",
     "wiki/shared/Inventory.md",
+    "wiki/tactical/Combat.md",
     "wiki/strategic/Factions.md",
+    "wiki/strategic/Oblitus.md",
     "wiki/strategic/Quests.md",
     "Factions^Foundation.md",
     "wiki/Scenario.md",
@@ -189,7 +190,6 @@
     "wiki/client/Controls.md",
     "fashion.md",
     "wiki/shared/Morale.md",
-    "wiki/tactical/Combat.md",
     "Combat^Incapacitation.md",
     "wiki/Roadmap.md"
   ]
