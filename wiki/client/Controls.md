@@ -5,21 +5,23 @@ This page only covers controls relating to movement, attacking, and blocking/dod
 * [Character select](Character.md)
 * [Stats](Stats.md)
 
-At this point in development, much of this page is liable to change in the near future. We assume many developers will be interested in helping design the game, so in this page, we provide first our design goals and then a proposal for a control scheme which meets those goals.
+Much of this page is liable to change in the near future. We assume many of our developers will be interested in taking ownership and providing input on game design, which we strongly encourage. Thus, the goal of this page isn't really to describe the game's controls; the top priority is to provide a list of design goals and principles for the controls, mostly downstream of the principles laid out in the [readme](/README.md). After that, we provide a tentative proposal/outline for a control scheme which meets those goals.
 
 ## Goals
-Above all else, the game should be playable by someone who's never played a game in his life. This principle goes beyond controls and into most of the game's systems; for instance, we imagine that instead of a difficulty setting, the player can just tweak a knob to abstract away all the technical RPG stuff and controls so most of his actions are CPU-controlled and his character's stats can be generated from "I want to be a big strong guy with a warhammer." But controls are a big part of it. One consequence of this principle is that we'd rather follow operating system conventions than video game conventions wherever we can, especially for menus and any RTS-like controls. Video game conventions are designed for people who've played a lot of video games; OS conventions are designed for people.
+In order of importance, we want controls which are unambiguous; comprehensive; immediate; convenient; and intuitive.[^00]
 
-Those are some important notes to keep in mind, but they're more *philosophy* than *goals*, which would belie the header we've given this section. More concretely, then, goals: in order of importance, we want controls which are unambiguous, comprhensive, immediate, convenient, and intuitive.
+[^00]: Also, as a broad note, we would rather follow operating system conventions than video game conventions wherever we can, especially for menus and any RTS-like controls. Video game conventions are designed for people who've played a lot of video games; OS conventions are designed for people.
 
 ### Unambiguous
 We are opposed to "context-sensitive actions" where the response to user input depends on the state of the game, particularly when the state is something continuous like your character's position or what you're looking at.
 
-![A screenshot of *HITMAN 2* (2018) illustrating the game's... colorful use of context-sensitive actions. I say this as a fan.](https://i.redd.it/w3mwmybfsrl21.jpg "I couldn't find the gif of Agent 47 on a balcony trying to press E to dump a body in a container and instead pressing E to dump a body over the railing into the crowd below. This will make do.")
+![A screenshot of *HITMAN 2* (2018) illustrating the game's prolific context-sensitive actions. I say this as a fan.](https://i.redd.it/w3mwmybfsrl21.jpg "I couldn't find the gif of Agent 47 trying to press E to dump a body in a container and instead pressing E to dump a body over a railing into the crowd below. This will suffice.")
 
 Certainly context-sensitive actions can make your controls "simpler" in the sense that you're using fewer buttons, but it'll also make them a *lot* more cumbersome than they have to be, and your player may end up quite surprised by what his character ends up doing in response to a given input. There are games with "simple" controls, enabled by context-sensitive actions, where no matter how much you play them, you can't perform these actions on instinct because you must always ensure the context is appropriate for them. That's not to mention anything with menus, which are worse for this on an entirely different level.
 
-None of this for us! [*Space Station 13*](https://spacestation13.com/)'s controls are [nowhere close to ideal](https://paradisestation.org/wiki/images/0/04/Keyboard-layout-complete.png), but what they have going for them is that once you get *used* to the controls, they're very good at becoming instinct. This is a quality worth replicating.
+None of this for us! [*Space Station 13*](https://spacestation13.com/)'s controls are [nowhere close to ideal](https://paradisestation.org/wiki/images/0/04/Keyboard-layout-complete.png), but what they have going for them is that once you get *used* to the controls, they're very good at becoming instinct: a quality very much worth replicating. Our contrarian view is that reliable beats simple every time.[^0]
+
+[^0]: By "every time", we mean it. We believe that given enough playtime, someone who's never played a game in his life would *prefer* a game with *SS13*-like unambiguous controls to a game with *Hitman*'s. On the subject of mass appeal, compare our view to Stanley Kubrick's: *Kubrick likened the understanding of his films to popular music, in that **whatever the background or intellect of the individual, a Beatles record, for instance, can be appreciated both by the Alabama truck driver and the young Cambridge intellectual**, because their "emotions and subconscious are far more similar than their intellects". He believed that the subconscious emotional reaction experienced by audiences was far more powerful in the film medium than in any other traditional verbal form, and was one of the reasons why he often relied on long periods in his films without dialogue, placing emphasis on images and sound... When deciding on a subject for a film, there were many aspects that he looked for, and he always made films which would **"appeal to every sort of viewer, whatever their expectation of film"**.* In short, contrary to popular belief, if you want to best appeal to the masses, you don't actually *want* to simplify things. *2001: A Space Odyssey* was the highest-grossing film of 1968 in the United States and Canada. There's a [Pareto frontier](https://en.wikipedia.org/wiki/Pareto_front) of artistic merit and mass appeal, on which sat Kubrick and the Beatles, and we're aiming right for it.
 
 ### Comprehensive
 You should be able to make your character do anything he or she could physically do which would be situationally advantageous.[^1]
@@ -39,7 +41,9 @@ Buttons that you press often should be near your fingers. Buttons that you press
 ### Intuitive
 All else being equal, it'll be nice if the game's controls are intuitive and easy to learn, but this isn't a priority.
 
-To the extent that the game's controls *are* complex, it'll be great if the complexity is optional, especially at the character level. Playing as an alchemist with a bandolier of different potions and doodads might require you to use more buttons than a naked barbarian with a big stick, and starter players may be encouraged to play characters more like the latter.
+To the extent that the game's controls are complex, it'll be great if the complexity is optional, especially at the character level. Playing as an alchemist with a bandolier of different potions and doodads might require you to use more buttons than a naked barbarian with a big stick, and starter players may be encouraged to play characters more like the latter.
+
+But ultimately, our contrarian view is that new players don't actually want "simple" controls; they want [reliable](#unambiguous) controls. Insofar as that's true, following the previous guidelines should already get us where we want to be *vis-à-vis* accessibility.
 
 ## Proposal
 With our design goals established, we now suggest a tentative outline for the control scheme.
