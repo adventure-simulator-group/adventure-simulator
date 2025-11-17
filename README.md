@@ -114,7 +114,7 @@ Design and implement the real-time layer of the game, both the server and the cl
 - Linear algebra
 
 ### Procedural graphics programmer - $40k USD/yr
-Design and implement a plugin to generate models for game objects. The plugin, like the rest of the game, will be a dual license of GPLv3 + proprietary. You will be able to license its proprietary use for your own project so long as it isn't in the fashion industry, as we are in the process of setting up a deal with a fashion company (if it goes through, we'll also be hiring for more positions).
+Design and implement a plugin to generate models for game objects. Like the rest of the game, the plugin will be GPLv3, but you will be able to dual-license its use for your own proprietary project so long as it isn't in the fashion industry, as we are in the process of setting up a deal with a fashion company (if it goes through, we'll also be hiring for more positions).
 
 #### Required skills
 - [CSG](https://en.wikipedia.org/wiki/Constructive_solid_geometry) primitives and operations
