@@ -63,9 +63,9 @@ The same principle for graphics applies to audio. A good introduction to procedu
 ### Physically based gameplay
 We would like the underlying gameplay systems to be *realistic*, as the real world can generally offer an unambiguous answer to any design question. It's not always easy to [*discover* that answer](https://en.wikipedia.org/wiki/Scientific_method), nor is it always easy to implement it without resorting to simplified abstractions,[^10] but all the imperfect solutions at least point in the same direction. Call this philosophy *physically based gameplay*, parallel to ["physically based rendering"](https://en.wikipedia.org/wiki/Physically_based_rendering) for graphics.[^11]
 
-[^10]: A game like *Team Fortress 2*, a deliberately cartoony and unrealistic-looking game, still employs "physically based rendering" in that its visuals are *based on* real-world lighting and material values, just tweaked and exaggerated to produce an unreal effect; the values come from somewhere other than pure arbitrary imagination. Also known as "you need to know the rules in order to break them."
+[^10]: Quantum physics is not in-scope for the MVP, to say the least.
 
-[^11]: Quantum physics is not in-scope for the MVP, to say the least.
+[^11]: A game like *Team Fortress 2*, deliberately cartoony and unrealistic-looking, still employs "physically based rendering" in that its visuals are *based on* real-world lighting and material values, just tweaked and exaggerated to produce an unreal effect. The base values come from somewhere other than pure arbitrary imagination. Also known as "you need to know the rules in order to break them."
 
 The real world is not always as fun as a game ought to be. Fortunately, there are two ways to get around this:
 
