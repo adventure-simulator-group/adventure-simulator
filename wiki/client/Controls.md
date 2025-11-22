@@ -1,9 +1,9 @@
 # Controls
 This page only covers controls relating to movement, attacking, and blocking/dodging. Hotkeys are described on the [slots](Slots.md) page, and menus are described in their respective pages:
-* [Travel screen](Travel.md)
-* [Inventory](Inventory.md)
-* [Character select](Character.md)
-* [Stats](Stats.md)
+* [Travel screen](/wiki/strategic/Travel.md)
+* [Inventory](/wiki/shared/Inventory.md)
+* [Character select](/wiki/strategic/Character.md)
+* [Stats](/wiki/shared/Stats.md)
 
 Much of this page is liable to change in the near future. We assume many of our developers will be interested in taking ownership and providing input on game design, which we strongly encourage. Thus, the goal of this page isn't really to describe the game's controls; the top priority is to provide a list of design goals and principles for the controls, mostly downstream of the principles laid out in the [readme](/README.md). After that, we provide a tentative proposal/outline for a control scheme which meets those goals.
 
