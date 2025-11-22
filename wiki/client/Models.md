@@ -72,7 +72,7 @@ The main thing we need to support this is an alpha mask which specifies where th
 
 Once the outer surface of a clothing mesh is completed, we can use a [solidify algorithm](https://docs.blender.org/manual/en/latest/modeling/modifiers/generate/solidify.html) to turn it into a proper model.
 
-Unlike in the [third version](#third-version-heightmaps), we probably wouldn't have the heightmap for clothing with respect to the surface of the skin -- otherwise, a baggy shirt on a ripped guy would have abs -- but rather with respect to a "convex-only version" of the base body mesh. That is, we would generate a version of the base body's heightmap where any [convex surface](https://en.wikipedia.org/wiki/Convex_function) is pushed outwards until it is no longer convex.
+Unlike in the [third version](#third-version-heightmaps), we probably wouldn't have the heightmap for clothing with respect to the surface of the skin -- otherwise, a baggy shirt on a ripped guy would have abs -- but rather with respect to a "convex-only version" of the base body mesh. That is, we would generate a version of the base body's heightmap where any [concave surface](https://en.wikipedia.org/wiki/Concave_function) is pushed outwards until it is no longer concave.
 
 Armor is like clothing, except in the case of non-flexible material like metal plates, all vertices need to have $1.0$ weight with a single bone regardless of their location. Without an extremely detailed physics simulation, this will mean lots of clipping, but this is acceptable.
 
