@@ -95,7 +95,7 @@ The main difference between this and directly allocating skill points is that if
 Intuitive skills can be attempted without training, the check is an average between their associated attribute and the training rank. Trained skills on the other hand receive no benefit without actual training regardless of how high their associated attribute is, the training value is a ceiling. Most skills relevant to the MVP happen to be intuitive.
 
 ## Formula
-```
+```rs
 # TODO: pain_penalty, morale_penalty
 
 

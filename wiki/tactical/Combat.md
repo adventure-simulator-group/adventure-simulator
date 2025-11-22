@@ -40,7 +40,7 @@ Each of the following factors range from 0% to at least 100%.
 > Halbe: This was written in terms of energy, but might make more sense in terms of momentum.
 
 The most direct way of being incapacitated, attacks which impart force on your character or losing your footing in difficult terrain can cause imbalance. Imbalance constantly recuperates. Your mass and the directness of an attack determine how much imbalance you actually take, and your agility determines how quickly it is regenerated.
-```
+```rs
 # use these for calibration
 # direct hits by trained warrior in joules: halberd ~120, longsword ~70, shortsword ~30 dagger ~20
 # longbow arrow 80
@@ -64,7 +64,7 @@ fn balance_damage(attacker, defender, attack_directness):
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
-```
+```rs
 const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
 # someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
 const BREATH_PER_METERS_PER_SECOND = 0.0034
@@ -80,7 +80,7 @@ $$
 \operatorname{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\, e^{-\beta\cdot\mathrm{will}};\;\alpha=0.5;\;\beta=0.2
 $$
 
-```
+```rs
 fn update_pain_factor(character):
 	damage = character.body_parts.iter().map(|p| p.damage).sum()
 	character.pain = pain(damage, character.will)
