@@ -2,7 +2,7 @@ Morale is a stat which defaults to zero, meaning no penalties. There are no bene
 
 To determine a characters' morale, all of the positive and negative factors are first separately consolidated via a function that adds them with diminishing returns. Essentially this function sorts the effects from highest to lowest, then iterates through them, adding each subsequent effect at a reduced penalty. It may look something like this:
 
-```rust
+```rs
 let mut positive_effects: Vec<f32> = ...;
 positive_effects.sort().reverse();
 let mut negative_effects: Vec<f32> = ...;

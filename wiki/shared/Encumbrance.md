@@ -1,4 +1,4 @@
-```
+```rs
 const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH = 5
 const WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS = 30
 # todo: should this be linear or nonlinear?

@@ -16,7 +16,7 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 # Healing
 
-```
+```rs
 const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70
 fn determine_max_blood(character):
 	character.max_blood = character.body_weight * ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT

@@ -1,4 +1,4 @@
-```
+```rs
 struct StrataMap {
   map: [[SmallVec<Layer, 4>; 32]; 32]
   materials: SmallVec<Material, 4>
