@@ -3,12 +3,15 @@ As a rule, we'll be keeping game assets as simple as possible. We want to make i
 
 Subject to that constraint, however, we want the game to look as good as possible, so the game will use [procedural models](https://en.wikipedia.org/wiki/Procedural_modeling): high-fidelity *algorithmically created* assets. In theory, an eight-year-old should be able to use our algorithms to make content that looks as good as the rest of the game.
 
-## Halbe's proposed algorithm
+## Halbe's proposed algorithm for humanoids
 Below we propose a method of generating a character mesh. By the fourth version, we have a humanoid body with muscle and flesh, and the tools we've used to get us there can give us clothing and armor with with little additional required functionality.
 
-## Mesh Resolution
-`smooth_theta` is a variable passed into the mesher that describes approximately the detail that it should be created at. The basis for it is essentially:
+### Mesh resolution
+`smooth_theta` is a variable passed into the mesher which describes approximately the detail that it should be created at. We define it as:
+
 > The theta in radians between the surface normals of any two faces on an ostensibly round surface.
+
+So, for example, a value of $\pi/8$ implies that a cylinder ought to have 16 vertices in its rings.
 
 The value of `smooth_theta` depends on how far away the mesh is from the camera, how large its bounding box is, and screen resolution. It should be set so that when looking at a sphere, it is difficult to see the flat polygonal edges of it against the background. This also means there is a dynamic LOD system: meshes are regenerated if the distance gets, say, close enough that the ideal `smooth_theta` is half the current value, or so far that it's twice the current value.
 
@@ -65,7 +68,7 @@ We are under no illusion that a system as simple as this can handle geometry lik
 
 The simplest version of this doesn't even include separate meshes for the facial features; they're just textures that get overlaid onto the face.
 
-## Fifth version: clothing and armor
+### Fifth version: clothing and armor
 By now, we have a mesher with an unambiguous, universal coordinate system for the surface of the body (from the [second version](#second-version-distance-fields-and-vertex-weights)) and a way to encode height (from the [third](#third-version-heightmaps)). We can use this same mesher to produce meshes for body-conforming equipment entirely through texture data.
 
 The main thing we need to support this is an alpha mask which specifies where the clothing is and isn't. For instance, on a T-shirt, past (say) $V=0.3$ on the upper arms, the value of this mask would go from 1 to 0. We could also use this to create holes in clothing, which the mesher would treat similarly to intersections between bones.
@@ -75,5 +78,3 @@ Once the outer surface of a clothing mesh is completed, we can use a [solidify a
 Unlike in the [third version](#third-version-heightmaps), we probably wouldn't have the heightmap for clothing with respect to the surface of the skin -- otherwise, a baggy shirt on a ripped guy would have abs -- but rather with respect to a "convex-only version" of the base body mesh. That is, we would generate a version of the base body's heightmap where any [concave surface](https://en.wikipedia.org/wiki/Concave_function) is pushed outwards until it is no longer concave.
 
 Armor is like clothing, except in the case of non-flexible material like metal plates, all vertices need to have $1.0$ weight with a single bone regardless of their location. Without an extremely detailed physics simulation, this will mean lots of clipping, but this is acceptable.
-
-So, for example, a value of $\pi/8$ implies that a cylinder ought to have 16 vertices in its rings.
