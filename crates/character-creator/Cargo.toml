@@ -1,0 +1,7 @@
+[package]
+name = "character-creator"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy.workspace = true
