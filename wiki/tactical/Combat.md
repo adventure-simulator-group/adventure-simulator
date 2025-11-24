@@ -13,10 +13,8 @@ Broadly speaking, the flow goes like this:
 3. calculate block_defense:
 	1. block = defender.skill_check(block)
 	2. shield = defender.shield_bonus()
-		1. # 0 for weapon, 1-2 for a small shield, 2-4 for normal, 5 for pavise
-$$
-\operatorname{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
-$$
+		1. 0 for weapon, 1-2 for a small shield, 2-4 for normal, 5 for pavise
+$$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)$$
 4. if character is parrying:
 	1. defense = block_defense * 1.5 * [input reflex](Controls.md)
 5. if character is dodging:
