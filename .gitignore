@@ -26,3 +26,7 @@ wiki/.obsidian/
 
 # Direnv
 .direnv
+
+# Mdbook
+book
+index.html
