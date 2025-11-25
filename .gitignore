@@ -23,3 +23,7 @@ target
 # Obsidian
 wiki/.obsidian/
 .obsidian
+
+# Dev certificates (regenerate locally)
+apps/certificates/*.pem
+apps/certificates/digest.txt
