@@ -1,0 +1,6 @@
+[book]
+title = "Adventure Simulator"
+src = "wiki"
+
+[build]
+create-missing = false
