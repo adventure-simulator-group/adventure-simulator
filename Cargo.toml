@@ -1,10 +1,49 @@
 [workspace]
-resolver = "2"
-members = ["crates/*"]
+resolver = "3"
+members = [
+    "crates/*",
+    "apps/*/*",
+]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-bevy = "0.17.3"
+bevy = { version = "0.17.3", features = ["serialize"] }
+lightyear = { version = "0.25.5", default-features = false }
+lightyear_frame_interpolation = { version = "0.25.5", default-features = false }
+lightyear_examples_common = { version = "0.25.5", default-features = false }
+leafwing-input-manager = { version = "0.19", default-features = false }
+avian3d = { version = "0.4", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }
+console_error_panic_hook = "0.1.7"
+async-compat = "0.2.3"
+cfg-if = "1.0"
+clap = { version = "4.5.4", features = ["derive"] }
+tracing = "0.1.40"
+rand = "0.9"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
+bevy-inspector-egui = { version = "0.35", default-features = false, features = [
+    "bevy_pbr",
+    "bevy_image",
+    "bevy_render",
+    "egui_open_url",
+] }
+bevy_egui = { version = "0.38", default-features = false, features = [
+    "open_url",
+    "default_fonts",
+    "render",
+] }
+
+[workspace.lints.rust]
+dead_code = "allow"
+unused_variables = "allow"
+
+[workspace.lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
+[patch.crates-io]
+lightyear_examples_common = { path = "apps/multiplayer/lightyear_examples_common" }

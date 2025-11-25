@@ -1,0 +1,87 @@
+[package]
+name = "lightyear_examples_common"
+version = "0.25.5"
+edition = "2021"
+description = "Common harness for the lightyear examples"
+readme = "../README.md"
+repository = "https://github.com/cBournhonesque/lightyear"
+keywords = ["bevy", "multiplayer", "networking", "netcode", "gamedev"]
+categories = ["game-development", "network-programming"]
+license = "MIT OR Apache-2.0"
+exclude = ["/tests"]
+
+[features]
+default = ["client", "server", "netcode", "udp"]
+client = ["lightyear/client"]
+server = ["lightyear/server"]
+netcode = ["lightyear/netcode"]
+udp = ["lightyear/udp"]
+steam = ["lightyear/steam"]
+debug = ["gui", "lightyear/metrics"]
+
+# this serves as a bit of "workspace-hack" crate by enabling all bevy features needed by examples.
+# you can read about workspace-hack crates here: https://docs.rs/cargo-hakari/latest/cargo_hakari/about/index.html
+# even though we're not using cargo-hakari.
+
+gui = [
+  "dep:bevy-inspector-egui",
+  "bevy/bevy_asset",
+  "bevy/bevy_render",
+  "bevy/bevy_pbr",
+  "bevy/bevy_scene",
+  "bevy/bevy_core_pipeline",
+  "bevy/bevy_gizmos",
+  "bevy/tonemapping_luts",
+  "bevy/smaa_luts",
+  "bevy/default_font",
+  "bevy/png",
+  "bevy/hdr",
+  "bevy/x11",
+  "bevy/webgl2",
+  "bevy/bevy_winit",
+  "bevy/bevy_picking",
+  "bevy/bevy_sprite",
+  "bevy/bevy_sprite_render",
+  "bevy/bevy_text",
+  "bevy/bevy_ui",
+  "bevy/bevy_ui_picking_backend",
+  "bevy/bevy_ui_render",
+  "bevy/bevy_window",
+]
+
+[dependencies]
+lightyear = { "workspace" = true, features = [
+  "interpolation",
+  "prediction",
+  "replication",
+  "webtransport",
+  "webtransport_self_signed",
+  "webtransport_dangerous_configuration",
+  "websocket",
+  "websocket_self_signed",
+  "udp",
+] }
+async-compat.workspace = true
+cfg-if.workspace = true
+clap.workspace = true
+serde.workspace = true
+bevy = { workspace = true, features = [
+  "bevy_state",
+  "bevy_log",
+  "reflect_auto_register",
+] }
+bevy-inspector-egui = { workspace = true, optional = true }
+bevy_egui = { workspace = true, optional = true }
+tracing.workspace = true
+
+[target."cfg(target_family = \"wasm\")".dependencies]
+console_error_panic_hook.workspace = true
+rand.workspace = true
+getrandom.workspace = true
+getrandom_02.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+doc = false
