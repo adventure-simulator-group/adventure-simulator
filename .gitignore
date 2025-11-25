@@ -24,6 +24,6 @@ target
 wiki/.obsidian/
 .obsidian
 
-# Dev certificates (regenerate locally)
-apps/certificates/*.pem
-apps/certificates/digest.txt
+# Dev certificates (regenerate locally) - ignore everything except helper scripts
+apps/certificates/*
+!apps/certificates/*.sh
