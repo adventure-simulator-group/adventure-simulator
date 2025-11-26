@@ -29,6 +29,7 @@
 - [StrataMap](shared/StrataMap.md)
 
 # Strategic
+- [Character](strategic/Character.md)
 - [Quests](strategic/Quests.md)
 - [Settlement](strategic/Settlement.md)
 - [Time](strategic/Time.md)

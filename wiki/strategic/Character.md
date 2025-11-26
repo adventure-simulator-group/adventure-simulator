@@ -47,6 +47,7 @@ These generally look like normal humans, except they can be immortal and customi
 In the case of feybloods who can shift between forms, the half-bloods may be unable to shift. Instead, they might take on some intermediate characteristics of the two forms.
 
 > Halbe: Yes, half-blooded beastmen are the "designated furry race." And I think gnomes are just elf-halfling hybrids.
+
 > Bruno: And I was expecting something tasteful and classy, like the half-bloods are our way of capturing the aesthetic of ancient Egyptian deities in a post-Christian world. Alas.
 ### Vilebloods
 When a mundane character consumes fey blood, he can *become* fey-blooded. However, this is evil, so it also curses him. The exact nature of the curse depends on the kind of fey blood.
