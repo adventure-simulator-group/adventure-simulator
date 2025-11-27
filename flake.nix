@@ -17,6 +17,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             mdbook
+            mdbook-linkcheck
           ];
         };
       });

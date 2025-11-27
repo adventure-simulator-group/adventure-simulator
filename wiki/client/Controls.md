@@ -1,11 +1,11 @@
 # Controls
 This page only covers controls relating to movement, attacking, and blocking/dodging. Hotkeys are described on the [slots](Slots.md) page, and menus are described in their respective pages:
-* [Travel screen](/wiki/strategic/Travel.md)
-* [Inventory](/wiki/shared/Inventory.md)
-* [Character select](/wiki/strategic/Character.md)
-* [Stats](/wiki/shared/Stats.md)
+* [Travel screen](../strategic/Travel.md)
+* [Inventory](../shared/Inventory.md)
+* [Character select](../strategic/Character.md)
+* [Stats](../shared/Stats.md)
 
-Much of this page is liable to change in the near future. We assume many of our developers will be interested in taking ownership and providing input on game design, which we strongly encourage. Thus, the goal of this page isn't really to describe the game's controls; the top priority is to provide a list of design goals and principles for the controls, mostly downstream of the principles laid out in the [readme](/README.md). After that, we provide a tentative proposal/outline for a control scheme which meets those goals.
+Much of this page is liable to change in the near future. We assume many of our developers will be interested in taking ownership and providing input on game design, which we strongly encourage. Thus, the goal of this page isn't really to describe the game's controls; the top priority is to provide a list of design goals and principles for the controls, mostly downstream of the principles laid out in the [readme](../../README.md). After that, we provide a tentative proposal/outline for a control scheme which meets those goals.
 
 ## Goals
 In order of importance, we want controls which are unambiguous; comprehensive; immediate; convenient; and intuitive.[^00]
@@ -61,25 +61,25 @@ These are designed primarily for the first person, but we can add a third-person
 
 > Halbe: I assume that first person is easier because with third-person cameras, you need to handle a lot of edge cases to avoid awkwardness in tight spaces or near thin obstacles like trees, not to mention smoothing out the motion or reconciling the shoulder offset when aiming. However, if I am mistaken in my assumptions, we should implement whichever is easier for the MVP.
 
-| **M+KB** | **Controller** | **Function** | **Notes** |
-|-|-|-|-|
-| <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. |
-| Mouse | Right Stick | Look. |
-| LMB | RT | Attack!
-| Release <kbd>SPACE</kbd> | Full LT | Dodge or jump. | <ul><li>A quick tap is more like a hop or dash. Holding the button for a bit before releasing makes it a full-body jump. You can tell whether you have held long enough for a full jump by the state of your character's animation.<li>LT has to be held all the way, then released, to jump.
+| **M+KB**                                         | **Controller** | **Function**   | **Notes**                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------ | -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick     | Movement.      |                                                                                                                                                                                                                                                                                               |
+| Mouse                                            | Right Stick    | Look.          |                                                                                                                                                                                                                                                                                               |
+| LMB                                              | RT             | Attack!        |                                                                                                                                                                                                                                                                                               |
+| Release <kbd>SPACE</kbd>                         | Full LT        | Dodge or jump. | <ul><li>A quick tap is more like a hop or dash. Holding the button for a bit before releasing makes it a full-body jump. You can tell whether you have held long enough for a full jump by the state of your character's animation.<li>LT has to be held all the way, then released, to jump. |
 | <kbd>SHIFT</kbd> | Partial LT | Crouch or duck. | <ul><li>When crouching and attacked, your character automatically ducks in an appropriate direction, but only if you were not crouching before the attack began.<li>LT is only held partially here, so releasing it to un-crouch does not cause you to jump.
 | <kbd>CTRL</kbd> | Left Stick Click | Prone–standing toggle. | <ul><li>Jump while held to dive.<li>Crouch to orient your character in the direction the camera is facing.<li>When prone, your character automatically switches to supine based on how you look around. Looking forward, you're prone; looking at your toes, you're supine.<li>Once prone/supine, jump causes you to roll if in a lateral direction, scamper otherwise. This is a very mediocre dodge.
 | Scroll | Right Stick Click | Aim. | <ul><li>Scrolling is an idempotent aiming input: up puts you in aim, down back to normal.<li>Default aim state when equipping something is off.<li>For melee weapons, stabbing without aiming = swinging.<li>For ranged weapons, shooting without aiming = bashing.<li>Aiming while pressing a [hand button](Slots.md) with an item in your hand causes you to throw. When not aiming, you simply drop it.
 
 This is somewhere between a real action game and an RPG wearing an action game's skin. We aren't actually simulating everything based on hitboxes and projectile trajectories, but we still want to use some of the player's mechanical skills, specifically accuracy and reaction time.[^3]
 
-[^3]: This is trivial to [cheat](Networking), but since combat is still (largely) based on stats and (entirely) mediated by the server, it's not a huge deal.
+[^3]: This is trivial to [cheat](../Networking.md), but since combat is still (largely) based on stats and (entirely) mediated by the server, it's not a huge deal.
 
 * **Precision** is the value between 0 and 1 representing how close to the center of any of the target's hitboxes the player placed the aiming reticle. The exact formula for this number will have to come about through testing.
 * **Reflex** is the value between 0 and 1 representing how quickly the defender pressed the dodge/parry button after the attack began. Like with precision, we aren't sure exactly how to derive this, but a value of 1.0 would correspond to pro gamer reaction time (0.1s) and ~0.75 would correspond to old person reaction time (0.25s).
   * There is no need to "time" your input to correspond with when an attack will actually hit as is convention in most action games. As soon as an enemy begins its attack animation, you should press the button.
 
-For CPU-controlled characters (NPCs or [indirect mode](#indirect-controls)), the server... [usually](Magic.md)... randomly samples these parameters from a normal distribution with some mean and variance of our choice.
+For CPU-controlled characters (NPCs or [indirect mode](#indirect-controls)), the server... [usually](../shared/Magic.md)... randomly samples these parameters from a normal distribution with some mean and variance of our choice.
 
 ### Indirect controls
 We *may* have some version of this concept in the MVP if only because much of the underlying behavior is shared with NPCs controlled by the server. You are essentially giving NPCs orders through the same system that the AI uses to give them orders.
@@ -90,7 +90,7 @@ The following outline gives an idea of how things might work when controlling an
 |-|-|-|-|
 | RMB | RT | Move to. | While in combat, characters automatically attack enemies in range, so moving to an enemy is just attacking it in melee.
 | LMB | RB | Select. | <ul><li>When pointing at a character, select it. <li>Hold and drag to box select. <li>You can select characters controlled by other players and give them orders. This won't take control of their characters, but the players will see whatever you ordered them.
-| <kbd>CTRL</kbd>+LMB/[`Group`](Slots.md) | LB+RB/[`Group`](Slots.md) | Select multiple. | <ul><li>Everything you select is added to your selection until the key is released. <li>Press a [group](Slots.md) button to select whichever party member you have bound to that slot. You can select multiple before releasing. Pressing an *empty* group button binds the last selected character to that group. <li>If you select a character *twice*, you switch to that character's slot menu. In a hierarchy, a character is forced to have his commander in the same slot that the commander has *him*. Thus, you can use this to traverse the tree without having line of sight to everyone.[^4] <li>When <kbd>CTRL</kbd>/LB is held, you see all slotted party members, each with an [incapacitation wheel](Combat.md) around its portrait. When a specific character is selected, you see a more detailed summary. <ul><li>In a hierarchy, a selected character's summary includes aggregated information about everyone under his command, and the selected character gets two incapacitation wheels, the outer one being the average for everyone under his command. <li>The stats tracked might include the following: <ul><li>Morale <li>Encumbrance <li>Value of loot <li>Encumbrance (if ranged)
+| <kbd>CTRL</kbd>+LMB/[`Group`](Slots.md) | LB+RB/[`Group`](Slots.md) | Select multiple. | <ul><li>Everything you select is added to your selection until the key is released. <li>Press a [group](Slots.md) button to select whichever party member you have bound to that slot. You can select multiple before releasing. Pressing an *empty* group button binds the last selected character to that group. <li>If you select a character *twice*, you switch to that character's slot menu. In a hierarchy, a character is forced to have his commander in the same slot that the commander has *him*. Thus, you can use this to traverse the tree without having line of sight to everyone.[^4] <li>When <kbd>CTRL</kbd>/LB is held, you see all slotted party members, each with an [incapacitation wheel](../tactical/Combat.md) around its portrait. When a specific character is selected, you see a more detailed summary. <ul><li>In a hierarchy, a selected character's summary includes aggregated information about everyone under his command, and the selected character gets two incapacitation wheels, the outer one being the average for everyone under his command. <li>The stats tracked might include the following: <ul><li>Morale <li>Encumbrance <li>Value of loot <li>Encumbrance (if ranged)
 | MMB+Mouse | Left Stick | Rotate camera.
 | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Right Stick | Pan camera.
 | Scroll | Hold Left Stick Click + Left Stick Up/Down | Adjust camera Y-level.
@@ -107,11 +107,11 @@ These inputs would theoretically find use in both direct and indirect modes.
 >
 > Bruno: It'll likely be the case that these inputs are unavailable when a grab or select button is held due to overlapping with [slots](Slots.md). When you hold RB, X is a slot/group button representing a holster on your left hip; if you aren't holding RB, X can be used for one of the menu inputs below.
 
-* Toggle [inventory](Inventory.md) menu.
-* Toggle logout/[character](Character.md) menu.
-* Toggle [quest](Quest) menu.
-* Toggle [rest](Rest) menu.
+* Toggle [inventory](../shared/Inventory.md) menu.
+* Toggle logout/[character](../strategic/Character.md) menu.
+* Toggle [quest](../strategic/Quests.md) menu.
+* Toggle [rest](../shared/Health.md) menu.
 * Toggle direct/indirect control.
-* Skip [time](Time.md).
-	* In normal use, this toggles between real time and [sim-time](Time.md). When camped, it skips straight to the end of your rest. Either way, it's automatically interrupted if the party spots an enemy or encounters difficult terrain.
+* Skip [time](../strategic/Time.md).
+	* In normal use, this toggles between real time and [sim-time](../strategic/Time.md). When camped, it skips straight to the end of your rest. Either way, it's automatically interrupted if the party spots an enemy or encounters difficult terrain.
 	* In the strategic layer (GSG mode), you continue to see the map at a consistent speed. In the direct camera or tactical layer (RTS mode), we can display a cinematic montage of travel or night passing. Not in MVP.

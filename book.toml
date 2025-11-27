@@ -4,3 +4,13 @@ src = "wiki"
 
 [build]
 create-missing = false
+
+[output.html]
+mathjax-support = true
+admonitions = true
+site-url = "https://adventuresim.org"
+git-repository-url = "https://github.com/adventure-simulator-group/adventure-simulator"
+
+[output.linkcheck]
+exclude = [ '.+@.+\..+' ] # exclude emails
+traverse-parent-directories = true

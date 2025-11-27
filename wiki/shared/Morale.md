@@ -1,4 +1,4 @@
-Morale is a stat which defaults to zero, meaning no penalties. There are no benefits to morale above zero, except that it is a buffer against receiving morale penalties. The penalty for negative morale applies to [incapacitation](Combat).
+Morale is a stat which defaults to zero, meaning no penalties. There are no benefits to morale above zero, except that it is a buffer against receiving morale penalties. The penalty for negative morale applies to [incapacitation](../tactical/Combat.md).
 
 To determine a characters' morale, all of the positive and negative factors are first separately consolidated via a function that adds them with diminishing returns. Essentially this function sorts the effects from highest to lowest, then iterates through them, adding each subsequent effect at a reduced penalty. It may look something like this:
 
@@ -30,7 +30,7 @@ let final_morale = cumulative_positive - cumulative_negative / character.skill_c
 ```
 
 # Positive Morale Effects
-- [Charisma skill check](Stats) from each party member
+- [Charisma skill check](Stats.md) from each party member
 	- Multiplied by mutual faith of the given party member and that of oneself
 	- Divided by total conflicting faith of the pair (could alternatively be negative)
 - Food quality
@@ -40,7 +40,7 @@ let final_morale = cumulative_positive - cumulative_negative / character.skill_c
 - Allied power / enemy power
 	- If the total strength of your force is greater than the enemy, apply the difference as positive morale
 # Negative Morale Effects
-- [Injuries](Health)
+- [Injuries](Health.md)
 - Disease
 - Recent defeats
 	- Huge penalty when seeing an ally die or flee

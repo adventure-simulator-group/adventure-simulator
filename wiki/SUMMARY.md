@@ -17,23 +17,26 @@
 - [Controls](client/Controls.md)
 - [Models](client/Models.md)
 - [Slots](client/Slots.md)
+- [WIP: Animation](client/Animation.md)
 
 # Shared
 - [Encumbrance](shared/Encumbrance.md)
 - [Energy](shared/Energy.md)
 - [Health](shared/Health.md)
-- [Inventory](shared/Inventory.md)
 - [Magic](shared/Magic.md)
 - [Morale](shared/Morale.md)
 - [Stats](shared/Stats.md)
 - [StrataMap](shared/StrataMap.md)
+- [WIP: Inventory](shared/Inventory.md)
+- [WIP: Terrain](shared/Terrain.md)
 
 # Strategic
 - [Character](strategic/Character.md)
 - [Quests](strategic/Quests.md)
-- [Settlement](strategic/Settlement.md)
 - [Time](strategic/Time.md)
 - [Travel](strategic/Travel.md)
+- [WIP: Settlement](strategic/Settlement.md)
+- [WIP: Trade](strategic/Trade.md)
 
 # Tactical
 - [Combat](tactical/Combat.md)

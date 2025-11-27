@@ -1,9 +1,9 @@
 # Character
-Characters are created by investing some amount of [favor](/wiki/shared/Magic) into them. The more powerful the character, as determined by their [stats](/wiki/shared/Stats), the more favor you need to invest. The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
+Characters are created by investing some amount of [favor](../shared/Magic.md) into them. The more powerful the character, as determined by their [stats](../shared/Stats.md), the more favor you need to invest. The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
 
 You aren't exactly spawning a character into the world; ostensibly, you are obtaining control over a character who already exists! This means you don't always have to start "fresh" with a young, untrained character with no background. You can create a wealthy, skilled character simply by spending a lot of favor on him.
 ## Mortal
-Mortal characters [age](/wiki/strategic/Time) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
+Mortal characters [age](../strategic/Time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
 ### Humans
 [Default](https://en.wikipedia.org/wiki/Human).
 ### Dwarves
@@ -11,7 +11,7 @@ Inspired by their Tolkien/*Warhammer* depiction. A proud, stubborn, greedy, ~~sh
 
 Dwarves who shame their kin by dishonoring the ancestors, breaking oaths, or engaging with prissy Elven nonsense like magic may be exiled at best, at worst compelled to redeem their honor by undertaking various suicide missions to retake an ancestral realm.
 
-As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the [MVP](/wiki/Roadmap) or tentatively even the next phase.
+As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the [MVP](../Roadmap.md) or tentatively even the next phase.
 ### Halflings
 Inspired by their Tolkien/*Warhammer* depiction. A small, jovial, provincial people generally unconcerned with the matters of the "big people." Would be found in small idyllic villages here and there. Not important enough for the MVP.
 ### Orcs/Goblins
@@ -23,13 +23,13 @@ Inspired by *Warhammer Fantasy* Skaven, though with the technology level toned d
 ## Immortal
 Immortal characters [do not age](https://en.wikipedia.org/wiki/Biological_immortality), will respawn if killed, and can be customized in detail. Their purpose is to give players the option of a more conventional RPG playstyle than the punishing roguelike experience of mortal characters.[^1]
 
-[^1]: However, everyone's first character (and probably the next several) will be mortal; mortal characters are playable on free accounts, and players can obtain their first with zero [favor](/wiki/shared/Magic). 
+[^1]: However, everyone's first character (and probably the next several) will be mortal; mortal characters are playable on free accounts, and players can obtain their first with zero [favor](../shared/Magic.md). 
 
-Respawning an immortal character requires a [favor](/wiki/shared/Magic) cost equivalent to the death cost of a similarly valuable mortal character. The cost may even be *higher* for immortal characters, so players would be ill-advised to use them for suicide missions. However, what immortal characters lack in cost efficiency, they compensate for with a higher effective skill ceiling, having unlimited time to train their [skills](/wiki/shared/Stats).[^2]
+Respawning an immortal character requires a [favor](../shared/Magic.md) cost equivalent to the death cost of a similarly valuable mortal character. The cost may even be *higher* for immortal characters, so players would be ill-advised to use them for suicide missions. However, what immortal characters lack in cost efficiency, they compensate for with a higher effective skill ceiling, having unlimited time to train their [skills](../shared/Stats.md).[^2]
 
 [^2]: Albeit with drastically diminishing returns.
 
-Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current [roadmap](/wiki/Roadmap.md), Elves are the only immortal race planned.
+Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current [roadmap](../Roadmap.md), Elves are the only immortal race planned.
 ### Elves
 Inspired by their Tolkien/*Warhammer* depiction. Tall, beautiful, and haughty, Elves live in either deep forests or fictitious islands. They are generally morally good. Exceptions include the evil "Dark Elves" and the somewhat more neutral, ecoterroristic "Wood Elves."
 ### Dragons

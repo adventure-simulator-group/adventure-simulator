@@ -1,14 +1,15 @@
 # Organization
 ## Strategic Layer
-The "strategic layer" is the layer of the game which essentially exists at the map- level. It is asynchronous and facilitated by a [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) HTML interface (generated via [maud](https://maud.lambda.xyz/)). It is essentially akin to the [map/travel](Travel.md) screens of Mount and Blade, Battle Brothers, or Starsector, where the party fast-travels from location to location and interacts with services in [settlements](Settlement.md) via menus.
+The "strategic layer" is the layer of the game which essentially exists at the map- level. It is asynchronous and facilitated by a [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) HTML interface (generated via [maud](https://maud.lambda.xyz/)). It is essentially akin to the [map/travel](strategic/Travel.md) screens of Mount and Blade, Battle Brothers, or Starsector, where the party fast-travels from location to location and interacts with services in [settlements](strategic/Settlement.md) via menus.
 
-It is in this layer that you create [characters](Characters), embark on [quests](Quests.md), recover [health](Health.md), and manage [inventory](Inventory.md). [Time](Time.md) does not advance continuously for each client, it advances in discrete chunks whenever the party leader interacts with the server. For the MVP, there is not actually a visible map client-side, quests just tell you how long the server calculates it will take to get there and what hazards you will/might encounter along the way. Later we can implement a webgpu-rendered map layer and float HTML elements on top of it like Google Maps.
+It is in this layer that you create [characters](strategic/Character.md), embark on [quests](strategic/Quests.md), recover [health](shared/Health.md), and manage [inventory](shared/Inventory.md). [Time](strategic/Time.md) does not advance continuously for each client, it advances in discrete chunks whenever the party leader interacts with the server. For the MVP, there is not actually a visible map client-side, quests just tell you how long the server calculates it will take to get there and what hazards you will/might encounter along the way. Later we can implement a webgpu-rendered map layer and float HTML elements on top of it like Google Maps.
 
-Further details about the implementation are described in the [networking](Networking) page
+Further details about the implementation are described in the [networking](Networking.md) page
 
 >Halbe: *My* assumption is that the underlying database for this is Postgres and the server is Rocket, but I am a web developer, and to a hammer every problem is a nail. I can vaguely conceive of an unusual configuration Bevy with an HTTP plugin that is essentially running on an event-based schedule which could sort of be made to act like Rocket+SQL, but I have no idea if this would be a good idea. It would presumably only be something that we'd do for consistency with the tactical layer.
+
 ## Tactical Layer
-When the party enters [combat](Combat.md), approaches enemies in [stealth](Stealth.md), or must navigate dangerous [terrain](Terrain), the strategic layer composes a scene and passes it to the WASM binary of the "tactical layer". This is a real-time simulation in Bevy implemented by a generalist game programmer. Since UDP is not available on the web, the [networking](Networking) must be facilitated by websockets or data-star.
+When the party enters [combat](tactical/Combat.md), approaches enemies in [stealth](tactical/Stealth.md), or must navigate dangerous [terrain](shared/Terrain.md), the strategic layer composes a scene and passes it to the WASM binary of the "tactical layer". This is a real-time simulation in Bevy implemented by a generalist game programmer. Since UDP is not available on the web, the [networking](Networking.md) must be facilitated by websockets or data-star.
 
 For at least the MVP, the simulation tactical layer is (tentatively) entirely done through the server, latency be damned. What we like about this is that it places an upper bound on how effective a cheater can be and it cleanly separates what clients are responsible for and what the server is responsible for. Clients handle input and rendering, server handles all the game logic. The felt-latency is mitigated by the fact that the animation system can eagerly act on input and that combat is mostly centered around weapons that attack more slowly than server latency. Only crossbows and firearms will necessarily have felt-latency to your inputs.
 
@@ -25,12 +26,12 @@ For example, when a character is standing still and the user gives a forward mov
 
 Likewise, when the user starts an attack, their character can begin a wind-up animation while it waits until the server-authoritative time that their attack actually begins. If its an attack against another player, that player will receive the packet indicating that they are being attacked *after* the server-authoritative time, and will render a faster attack animation to catch up such that from the perspective of both clients and the server, the attack actually lands at the same time. When an attack begins, the server is saying "Character A will attack character B at time T".
 
-There is only one way that the client-layer can affect what happens on the tactical layer: input. But input *can* be based on client-authoritative animation state in one narrow context: deciding the [precision](Controls.md) of an attack and what part of the enemy's body the player is trying to attack. Cheaters can report always having perfectly precise attacks with instant dodge/parry reaction times, which is fine, because they're still constrained by character [stats](Stats.md).
+There is only one way that the client-layer can affect what happens on the tactical layer: input. But input *can* be based on client-authoritative animation state in one narrow context: deciding the [precision](client/Controls.md) of an attack and what part of the enemy's body the player is trying to attack. Cheaters can report always having perfectly precise attacks with instant dodge/parry reaction times, which is fine, because they're still constrained by character [stats](shared/Stats.md).
 
 Though not necessarily in the MVP, secondary physics can be implemented at this layer for things like animation physics or particle effects. Basically they have no effect on the tactical layer.
 
 ## Model Layer
-The actual [models](Models.md) used for all client-rendered assets are procedurally generated client-side. They will not look very good, at least for the MVP, but essentially there is a plugin that takes all relevant information about a character or object and generates a model for it.
+The actual [models](client/Models.md) used for all client-rendered assets are procedurally generated client-side. They will not look very good, at least for the MVP, but essentially there is a plugin that takes all relevant information about a character or object and generates a model for it.
 
 Though it is *on* the client, it can be thought of as a different layer since the developer implementing the client layer can know nothing about this other than adding the model-generating plugin to the client app.
 ## Shared Library
@@ -40,7 +41,7 @@ There are two types of things which need to be shared between layers, components
 * For the MVP this is just Avian3d's collider component.
 * Not all collider types would be supported for the MVP though
 * Later on this will be a more fundamental component that allows for more complex shapes from which the Avian3d collider is generated.
-#### [StrataMap](shared/StrataMap)
+#### [StrataMap](shared/StrataMap.md)
 * Describes everything you need to know about the material composition of an entity
 * When combined with Shape (and Transform for scale), contains all of the information needed to compute all physics properties *and* generate the model.
 * Simple placeholder version for MVP presumes that each entity only is made of one material
@@ -63,4 +64,4 @@ Implements the strategic-layer, needs some experience with HTMX and/or Alpine AJ
 ## Tactical+Client-Layer Game Programmer
 Implements all of the tactical layer and a simple version of the client-layer (input, not necessarily animation).
 ## Graphics programmer
-Will be implementing a plugin for the [model](Models.md) layer, to be used in the client layer. Should have experience with procedural modeling algorithms, specifically advancing front, and comfortable with geometry and linear algebra.
+Will be implementing a plugin for the [model](client/Models.md) layer, to be used in the client layer. Should have experience with procedural modeling algorithms, specifically advancing front, and comfortable with geometry and linear algebra.

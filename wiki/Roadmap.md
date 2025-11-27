@@ -1,34 +1,34 @@
 # Minimum Viable Product
 These features demonstrate everything needed for the basic gameplay loop. It won't necessarily be a very fun game at this point, but gives an idea of the potential once each of these barebones systems are fleshed out more.
 
-1. A dude can fight another dude in standing melee [combat](Combat)
-2. Prone/supine [controls](Controls), can be knocked down and get back up
+1. A dude can fight another dude in standing melee [combat](tactical/Combat.md)
+2. Prone/supine [controls](client/Controls.md), can be knocked down and get back up
 3. Can pick up and fight with different types of melee weapons
 4. Ranged combat (server authoritative, no rollback)
 5. Advanced movement (climbing, sliding on sloped surfaces, navigating hazardous terrain like fording a river)
-6. [Stats](Stats) system (attributes, skills, track damage to different body parts)
-7. [Slot](Slots) system
+6. [Stats](shared/Stats.md) system (attributes, skills, track damage to different body parts)
+7. [Slot](client/Slots.md) system
 8. Empty world from 1500s geological data
 9. Populate world with settlements extrapolated from population data (settlements are just a coordinate, name, and population level for now)
 10. Generic humanoid enemy types like orcs, goblins, and bandits
-11. [Travel](Travel) system with random hostile encounters
-12. Randomly generated [quests](Quests) (see: Battle Brothers for good templates)
-13. Rest system for [health](Health) recovery
+11. [Travel](strategic/Travel.md) system with random hostile encounters
+12. Randomly generated [quests](strategic/Quests.md) (see: Battle Brothers for good templates)
+13. Rest system for [health](shared/Health.md) recovery
 14. Inventory management (loot/buy/sell items)
 15. Food/water/sleep system
 # Polished Product
 With these features, the game becomes something that we can imagine players actually wanting to pay for. A fun, unique product rather than a mere tech demo.
 
-1. [Procedural modeling plugin](Models)
+1. [Procedural modeling plugin](client/Models.md)
 2. In-game editor for procedural models - design your own clothes or equipment
 3. Urban levels (houses, castles, etc and quests that involve them like thievery or assassination)
-4. Improved [stealth](Stealth) detection AI (investigate noises, raise alarms, patrol routes?)
+4. Improved [stealth](tactical/Stealth.md) detection AI (investigate noises, raise alarms, patrol routes?)
 5. Level editor - design your own house
 6. PVP
 7. More humanoid enemy types: beastmen, undead, ogres, and trolls
 8. Non-humanoid enemy types like wolves or giant spiders
-9. More detailed [downtime](Time) (pick a job to earn a wage at)
-10. Elves and the immortal [character](Character) system
+9. More detailed [downtime](strategic/Time.md) (pick a job to earn a wage at)
+10. Elves and the immortal [character](strategic/Character.md) system
 	1. Also need to make settlements and assets for them
 	2. Character creator
 # Simulation
@@ -43,7 +43,7 @@ Not required for the basic gameplay loop or polish, but increase the verisimilit
 # Not in roadmap but could be
 These are all neat but aren't required for the game to feel complete. However, if someone on the team is very passionate about one of them then we can prioritize it.
 
-1. [Magic](Magic) system, implement on a per-element basis in order of whatever is easiest
+1. [Magic](shared/Magic.md) system, implement on a per-element basis in order of whatever is easiest
 	1. Wind magic is probably the easiest, just force fields in Avian that also cause unbalance. Will look much cooler with dust/leaf particles.
 	2. Light seems fairly easy, as long as its just for illumination and some kind of blinding effect
 	3. Shadow would be invisibility, especially in darkness

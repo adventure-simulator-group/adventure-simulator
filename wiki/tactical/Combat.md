@@ -1,22 +1,22 @@
 # Does it hit?
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
-	1. The attacker's melee [skill check](Skills)
+	1. The attacker's melee [skill check](../shared/Stats.md#Skills)
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
-	3. Multiply final value by [input precision](Controls.md)
+	3. Multiply final value by [input precision](../client/Controls.md)
 2. calculate dodge_defense:
 	1. Calculate armor_dodge_term from their armor.
 		1. This isn't actually the weight of the armor, its based on articulations on joints.
 		2. Full-plate gives 0.6, full-body chainmail is 0.8, and unobstructed joints is 1.0
-	2. Calculate [encumbrance_term](Encumbrance.md) from total weight versus leg-strength
-	3. Multiply a dodge [skill_check](Stats.md) by armor_dodge_term and encumbrance_term
+	2. Calculate [encumbrance_term](../shared/Encumbrance.md) from total weight versus leg-strength
+	3. Multiply a dodge [skill_check](../shared/Stats.md#Skills) by armor_dodge_term and encumbrance_term
 3. calculate block_defense:
 	1. block = defender.skill_check(block)
 	2. shield = defender.shield_bonus()
 		1. 0 for weapon, 1-2 for a small shield, 2-4 for normal, 5 for pavise
 $$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)$$
 4. if character is parrying:
-	1. defense = block_defense * 1.5 * [input reflex](Controls.md)
+	1. defense = block_defense * 1.5 * [input reflex](../client/Controls.md)
 5. if character is dodging:
 	1. defense = dodge_defense * input_reflex
 6. else:
@@ -72,7 +72,7 @@ fn update_stamina(player):
 	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
 ```
 ### Pain (pink)
-[Injuries](Health.md) are a source of constant pain. Pain is divided by will. 
+[Injuries](../shared/Health.md) are a source of constant pain. Pain is divided by will. 
 
 $$
 \operatorname{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\, e^{-\beta\cdot\mathrm{will}};\;\alpha=0.5;\;\beta=0.2
@@ -84,10 +84,10 @@ fn update_pain_factor(character):
 	character.pain = pain(damage, character.will)
 ```
 ### Blood loss (red)
-Unbandaged [wounds](Health.md) will cause you to bleed out, which will eventually incapacitate you.
-### [Fear](Morale.md) (blue)
+Unbandaged [wounds](../shared/Health.md) will cause you to bleed out, which will eventually incapacitate you.
+### [Fear](../shared/Morale.md) (blue)
 Morale only starts affecting incapacitation when it goes below 0, at which point each negative point of morale becomes fear, translating to 1% incapacitation.
-### [Fatigue](Energy.md) (black)
+### [Fatigue](../shared/Energy.md) (black)
 This does not significantly accumulate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
 
 # Penetrating
@@ -119,7 +119,7 @@ Calibration:
 
 > Halbe: We may want to distinguish between bruising and bone fracturing, perhaps by picking an arbitrary amount of blunt damage energy after which it starts to fracture the bone.
 
-> Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](Stats) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
+> Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](../shared/Stats.md) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
 ## Durability
 Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
 $$
