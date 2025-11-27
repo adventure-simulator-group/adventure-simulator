@@ -30,6 +30,7 @@ jobs:
           repo: Michael-F-Bryan/mdbook-linkcheck
           tag: v0.7.7
           cache: true
+          chmod: 0755
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
