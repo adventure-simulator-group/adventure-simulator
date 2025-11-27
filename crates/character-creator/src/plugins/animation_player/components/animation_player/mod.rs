@@ -12,9 +12,7 @@ pub struct AnimationPlayer;
 pub struct CharacterBaseRotation(pub Quat);
 
 impl AnimationPlayer {
-    pub fn spawn(
-        mut commands: Commands,
-    ) {
+    pub fn spawn(mut commands: Commands) {
         // Instructions
         commands.spawn((
             Text::new(concat!(
@@ -33,7 +31,6 @@ impl AnimationPlayer {
                 ..default()
             },
         ));
-        
     }
 
     // An `AnimationPlayer` is automatically added to the scene when it's ready.
@@ -82,10 +79,7 @@ impl AnimationPlayer {
 
     pub fn gamepad_control(
         gamepad: Single<&Gamepad>,
-        mut characters: Query<
-            (&mut Transform, &CharacterBaseRotation),
-            With<AnimationGraphHandle>,
-        >,
+        mut characters: Query<(&mut Transform, &CharacterBaseRotation), With<AnimationGraphHandle>>,
     ) {
         let Some(left_stick_x) = gamepad.get(GamepadAxis::LeftStickX) else {
             return;
@@ -111,7 +105,10 @@ impl AnimationPlayer {
 
     pub fn keyboard_control(
         keyboard_input: Res<ButtonInput<KeyCode>>,
-        mut animation_players: Query<(&mut bevy::animation::AnimationPlayer, &mut AnimationTransitions)>,
+        mut animation_players: Query<(
+            &mut bevy::animation::AnimationPlayer,
+            &mut AnimationTransitions,
+        )>,
         animations: Res<Animations>,
         mut current_animation: Local<usize>,
     ) {

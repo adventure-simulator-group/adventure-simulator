@@ -2291,6 +2291,8 @@ name = "character-creator"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_ecs",
+ "bevy_mesh",
 ]
 
 [[package]]

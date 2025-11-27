@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 bevy.workspace = true
+bevy_mesh = "0.17.3"
+bevy_ecs = "0.17.3"
