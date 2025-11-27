@@ -90,53 +90,6 @@ Due to being open source, if at any time Adventure Simulator Group starts "[ensh
 Probably not. We want to be very selective about adding board members. However, if you think that you can make a good case, send an email to our CEO, [Bruno Segovia](mailto:bruno@adventuresim.org).
 
 ## Open (paid) positions
-All positions are remote-only and with no Zoom meetings (unless you actually want them). Contact <halbe@adventuresim.org> to apply.
+~~All positions are remote-only and with no Zoom meetings (unless you actually want them). Contact <halbe@adventuresim.org> to apply.~~
 
-### Full-stack developer - $40k USD/yr
-Design and implement the asynchronous strategic layer of the game: the database, [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS) interface, and gameplay systems.
-
-#### Required skills
-- Attribute-driven frontend frameworks required ([Datastar](https://Datastar.dev), [HTMX](https://htmx.org/), or [Alpine](https://alpinejs.dev/), etc.)
-- Diverse enough array of database architectures to have a strong opinion on which should be used here.
-- [Rust](https://rust-lang.org/)
-
-#### Recommended skills
-- Entity component systems like [Bevy](https://bevy.org)
-- [Datastar](https://Datastar.dev)
-- Real-time networking
-- Devops
-- Cloud infrastructure
-
-### Game programmer - $40k USD/yr
-Design and implement the real-time layer of the game, both the server and the client. If you think that you are a cracked 10xer wizard that can do both this and webdev, you can apply for both and negotiate for *up to* $80k.
-
-#### Required skills
-- [Bevy](https://bevy.org)
-- Real-time networking
-
-#### Recommended skills
-- [Datastar](https://Datastar.dev)
-- Devops
-- Cloud infrastructure
-- Newtonian physics (gameplay equations generally put variables in SI units)
-- Linear algebra
-
-### Procedural graphics programmer - $40k USD/yr
-Design and implement a plugin to generate models for game objects. Like the rest of the game, the plugin will be GPLv3, but you will be able to dual-license its use for your own proprietary project so long as it isn't in the fashion industry, as we are in the process of setting up a deal with a fashion company (if it goes through, we'll also be hiring for more positions).
-
-#### Required skills
-- [CSG](https://en.wikipedia.org/wiki/Constructive_solid_geometry) primitives and operations
-- Advancing front
-- Distance fields
-- [Rust](https://rust-lang.org)
-
-#### Recommended skills
-- [wgpu](https://wgpu.rs/)
-- [Bevy](https://bevy.org)
-- Procedural modeling (Houdini, Blender geometry nodes, etc)
-- Procedural textures
-- Character creators (morph targets, texture compositing, etc)
-- Physically based rendering concepts
-
-### Other contributions
-If you think that you can help in some other way, like writing or testing, send an email to <halbe@adventuresim.org>.
+Having hired our first round of developers, we are not currently seeking applicants for any positions. We will likely initiate another developer hiring round in January. In the meantime, if you think you can contribute in some other way like writing or testing, send an email to <halbe@adventuresim.org>.
