@@ -38,6 +38,7 @@ Intelligent [dragons](https://en.wikipedia.org/wiki/Dragon) who can take on a hu
 > Halbe: *I* am certainly not going to try and animate dragon flight.
 ### Beastmen
 *(rename "Beastlings"? "Shifters"?)*
+
 Beastmen have both a beast form and human form that they may shift between. The exact type of beast depends on whatever would be local to them. Can be felines, canines, serpentines, equestrians, lizards, and more.
 
 Probably not in the MVP. Might be in the polished product at least for wolves.
