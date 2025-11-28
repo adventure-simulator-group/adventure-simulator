@@ -2,8 +2,8 @@ use bevy::asset::RenderAssetUsages;
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
-use bevy_ecs::hierarchy::ChildOf;
-use bevy_mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues};
+use bevy::ecs::hierarchy::ChildOf;
+use bevy::mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues};
 
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
@@ -95,11 +95,14 @@ impl Scene {
             return;
         }
 
-        let Some((entity, skinned)) = skinned_meshes.iter().next() else {
+        let new_skinned_meshes: Vec<(Entity, &SkinnedMesh)> = skinned_meshes.iter().collect();
+        let Some((_, skinned)) = new_skinned_meshes.first() else {
             return;
         };
 
-        let Some(mesh) = Self::build_bone_cylinder_mesh(skinned, &globals, &parents) else {
+        let skinned = (*skinned).clone();
+
+        let Some(mesh) = Self::build_bone_cylinder_mesh(&skinned, &globals, &parents) else {
             return;
         };
 
@@ -113,10 +116,12 @@ impl Scene {
             Name::new("BoneCylinderDebugMesh"),
         ));
 
-        commands
-            .entity(entity)
-            .insert(Visibility::Hidden)
-            .insert(Name::new("OriginalCharacterMesh"));
+        for (entity, _) in &new_skinned_meshes {
+            commands
+                .entity(*entity)
+                .insert(Visibility::Hidden)
+                .insert(Name::new("OriginalCharacterMesh"));
+        }
 
         *already_replaced = true;
     }
