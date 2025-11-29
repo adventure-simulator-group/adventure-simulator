@@ -49,7 +49,7 @@ Your entire inventory won't necessarily fit into the slot system, which is fine.
 
 A bag still occupies a slot, but it can hold multiple items. For example, a backpack is a bag which is slung over your shoulder(s).[^1] To access a bag's internal contents, you must grab the bag into one of your hands; when you are holding the bag, the grab button for the hand opposite the hand holding the bag is used to grab/place into it, and the hand holding the bag functions normally: if you simply press the associated grab button, you will drop the bag, and if you hold it and press a slot, you will place the bag in that slot.
 
-[^1]: In the real world, carrying a backpack on one shoulder can lead to strain, pain, and posture problems. It is always recommended to use both shoulder straps. We will likely model this in-game at some point. Probably not MVP.
+[^1]: In the real world, carrying a backpack on one shoulder can lead to strain, pain, and posture problems. It is always recommended to use both shoulder straps.
 ## Alternative controls
 The goal of the slot system is to obviate the need for menus in inventory management, for the most part, and thereby simplify most aspects of inventory management. Following the philosophy laid out in the [Controls](Controls.md) page, it will likely be hard to learn but ultimately speed up gameplay for experienced users on account of its consistency and unambiguity.
 
