@@ -26,7 +26,7 @@ Next, in order to connect the bones, we convert their capsule meshes into 3D [si
 With the 3D distance field capsule primitives giving us a function to place vertices onto, we now have the basis for [constructive solid geometry](https://en.wikipedia.org/wiki/Constructive_solid_geometry). We place vertices and build triangles according to a modified version of [advancing front](https://www.sciencedirect.com/topics/engineering/advancing-front-method).
 
 #### Polar-space advancing front tree (rename to whatever you want)
-Every vertex begins as a polar [UV coordinate](https://en.wikipedia.org/wiki/Glossary_of_computer_graphics#uv_coordinates) on a bone, $U,V\in[0,1]$, with some arbitrary angle picked for the orientation of $U = 0$ (probably whatever places it at the back, assuming T-pose, like along the spine for the torso).
+Every vertex begins as a polar [UV coordinate](https://en.wikipedia.org/wiki/Glossary_of_computer_graphics#uv_coordinates) on a bone, $U,V\in\[0,1\]$, with some arbitrary angle picked for the orientation of $U = 0$ (probably whatever places it at the back, assuming T-pose, like along the spine for the torso).
 
 A bone is sort of between a capsule and a [cylinder](https://en.wikipedia.org/wiki/Cylinder). $V = 1$ on a leaf bone (or $V = 0$ on the root bone) is always the center, like the apex of a capsule, and has no defined $U$. However, $V = 1$ on a bone which has another bone connected to its end has a defined $U$. There is essentially a $V > 1$ value due to the connection between the bones acting like a capsule, rather than a cylinder. You can think of this however you want, but essentially when two bones are 90 degrees from each other, the joint between them is still nice and spherical.
 

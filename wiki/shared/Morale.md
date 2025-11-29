@@ -45,4 +45,5 @@ let final_morale = cumulative_positive - cumulative_negative / character.skill_c
 - Recent defeats
 	- Huge penalty when seeing an ally die or flee
 - Enemy power / allied power
-	- Multiplied by the "fear multiplier" of the enemy. For most this would be 1.0, but we would give undead high multipliers and demons a huge multiplier. 
+	- Multiplied by the "fear multiplier" of the enemy. For most this would be 1.0, but we would give undead high multipliers and demons a huge multiplier.
+	- This should be one of the reasons that player characters are better at dealing with fantasy enemies than knights and soldiers. Adventurers (especially when accompanied by bards and/or clerics) should have much higher morale bonuses than normal characters.
