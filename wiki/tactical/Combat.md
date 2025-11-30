@@ -1,3 +1,5 @@
+# Combat
+**Combat** is the solemn duty of any good knight or mercenary, and until our [fashion](../client/Models.md) module is sufficiently robust, it'll be what players spend most of their time doing. That means we must get it right!
 # Does it hit?
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
