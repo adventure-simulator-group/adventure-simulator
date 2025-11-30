@@ -11,7 +11,7 @@ Below we propose a method of generating a character mesh. By the fourth version,
 
 > The theta in radians between the surface normals of any two faces on an ostensibly round surface.
 
-So, for example, a value of $\pi/8$ implies that a cylinder ought to have 16 vertices in its rings.
+So, for example, a value of π / 8 implies that a cylinder ought to have 16 vertices in its rings.
 
 The value of `smooth_theta` depends on how far away the mesh is from the camera, how large its bounding box is, and screen resolution. It should be set so that when looking at a sphere, it is difficult to see the flat polygonal edges of it against the background. This also means there is a dynamic LOD system: meshes are regenerated if the distance gets, say, close enough that the ideal `smooth_theta` is half the current value, or so far that it's twice the current value.
 
@@ -21,16 +21,20 @@ The simplest possible mesh for a character is one which conforms precisely to th
 Let's say each bone is a [capsule](https://en.wikipedia.org/wiki/Capsule_(geometry)). Traverse the [skeletal hierarchy](https://www.researchgate.net/figure/Human-skeleton-and-the-corresponding-hierarchical-structure_fig3_328011229) and generate a capsule mesh for each bone with the [vertices](https://en.wikipedia.org/wiki/Polygon_mesh#Vertices) all [skinned](http://wiki.polycount.com/wiki/Vertex_skinning) to that bone.
 
 ### Second version: distance fields and vertex weights
-Next, in order to connect the bones, we convert their capsule meshes into 3D [signed distance fields](https://en.wikipedia.org/wiki/Signed_distance_function) (SDFs). This affords two distinct advantages: it's easy to combine SDFs in a way that smooths out the joints, and for each point $p$ on the surface, to estimate a given bone $b$'s influence on $p$, we can just evaluate $b$'s SDF (a real-valued function) on $p$; taking this "influence" estimate on each bone and point automatically gives us the skinning weights for all bone-on-point pairs.
+Next, in order to connect the bones, we convert their capsule meshes into 3D [signed distance fields](https://en.wikipedia.org/wiki/Signed_distance_function) (SDFs). This affords two distinct advantages: it's easy to combine SDFs in a way that smooths out the joints, and for each point *p* on the surface, to estimate a given bone *b*'s influence on *p*, we can just evaluate *b*'s SDF (a real-valued function) on *p*; taking this "influence" estimate on each bone and point automatically gives us the skinning weights for all bone-on-point pairs.
 
 With the 3D distance field capsule primitives giving us a function to place vertices onto, we now have the basis for [constructive solid geometry](https://en.wikipedia.org/wiki/Constructive_solid_geometry). We place vertices and build triangles according to a modified version of [advancing front](https://www.sciencedirect.com/topics/engineering/advancing-front-method).
 
 #### Polar-space advancing front tree (rename to whatever you want)
-Every vertex begins as a polar [UV coordinate](https://en.wikipedia.org/wiki/Glossary_of_computer_graphics#uv_coordinates) on a bone, $U,V\in\[0,1\]$, with some arbitrary angle picked for the orientation of $U = 0$ (probably whatever places it at the back, assuming T-pose, like along the spine for the torso).
+Every vertex begins as a polar [UV coordinate](https://en.wikipedia.org/wiki/Glossary_of_computer_graphics#uv_coordinates) on a bone,
 
-A bone is sort of between a capsule and a [cylinder](https://en.wikipedia.org/wiki/Cylinder). $V = 1$ on a leaf bone (or $V = 0$ on the root bone) is always the center, like the apex of a capsule, and has no defined $U$. However, $V = 1$ on a bone which has another bone connected to its end has a defined $U$. There is essentially a $V > 1$ value due to the connection between the bones acting like a capsule, rather than a cylinder. You can think of this however you want, but essentially when two bones are 90 degrees from each other, the joint between them is still nice and spherical.
+$$U,V\in[0,1]$$
 
-We begin at $(0, 0)$ at the base of the pelvis and start constructing a [triangle fan](https://en.wikipedia.org/wiki/Triangle_fan). The heuristic for placing vertices is based on the `smooth_theta` parameter, both for what $V$ to place it at as well as what $U$. Once we have a fan, all of the vertices except for the apex are our advancing front.
+with some arbitrary angle picked for the orientation of *U* = 0 (probably whatever places it at the back, assuming T-pose, like along the spine for the torso).
+
+A bone is sort of between a capsule and a [cylinder](https://en.wikipedia.org/wiki/Cylinder). *V* = 1 on a leaf bone (or *V* = 0 on the root bone) is always the center, like the apex of a capsule, and has no defined *U*. However, *V* = 1 on a bone which has another bone connected to its end has a defined *U*. There is essentially a *V* > 1 value due to the connection between the bones acting like a capsule, rather than a cylinder. You can think of this however you want, but essentially when two bones are 90 degrees from each other, the joint between them is still nice and spherical.
+
+We begin at (0, 0) at the base of the pelvis and start constructing a [triangle fan](https://en.wikipedia.org/wiki/Triangle_fan). The heuristic for placing vertices is based on the `smooth_theta` parameter, both for what *V* to place it at as well as what *U*. Once we have a fan, all of the vertices except for the apex are our advancing front.
 
 There are two types of ways that the advancing front on a given bone handles connected bones. In the simple case, the other bone is a continuation of the shape of the current one. The relationship between the upper arm and forearm, or along spine bones, follows this pattern. In this case, the front seamlessly transitions between the bones using the pseudo-capsule method described above.
 
@@ -71,10 +75,10 @@ The simplest version of this doesn't even include separate meshes for the facial
 ### Fifth version: clothing and armor
 By now, we have a mesher with an unambiguous, universal coordinate system for the surface of the body (from the [second version](#second-version-distance-fields-and-vertex-weights)) and a way to encode height (from the [third](#third-version-heightmaps)). We can use this same mesher to produce meshes for body-conforming equipment entirely through texture data.
 
-The main thing we need to support this is an alpha mask which specifies where the clothing is and isn't. For instance, on a T-shirt, past (say) $V=0.3$ on the upper arms, the value of this mask would go from 1 to 0. We could also use this to create holes in clothing, which the mesher would treat similarly to intersections between bones.
+The main thing we need to support this is an alpha mask which specifies where the clothing is and isn't. For instance, on a T-shirt, past (say) *V* = 0.3 on the upper arms, the value of this mask would go from 1 to 0. We could also use this to create holes in clothing, which the mesher would treat similarly to intersections between bones.
 
 Once the outer surface of a clothing mesh is completed, we can use a [solidify algorithm](https://docs.blender.org/manual/en/latest/modeling/modifiers/generate/solidify.html) to turn it into a proper model.
 
 Unlike in the [third version](#third-version-heightmaps), we probably wouldn't have the heightmap for clothing with respect to the surface of the skin -- otherwise, a baggy shirt on a ripped guy would have abs -- but rather with respect to a "convex-only version" of the base body mesh. That is, we would generate a version of the base body's heightmap where any [concave surface](https://en.wikipedia.org/wiki/Concave_function) is pushed outwards until it is no longer concave.
 
-Armor is like clothing, except in the case of non-flexible material like metal plates, all vertices need to have $1.0$ weight with a single bone regardless of their location. Without an extremely detailed physics simulation, this will mean lots of clipping, but this is acceptable.
+Armor is like clothing, except in the case of non-flexible material like metal plates, all vertices need to have 1.0 weight with a single bone regardless of their location. Without an extremely detailed physics simulation, this will mean lots of clipping, but this is acceptable.
