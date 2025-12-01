@@ -91,7 +91,7 @@ fn update_stamina(player):
 [Injuries](../shared/Health.md) are a source of constant pain. Pain is divided by will. 
 
 $$
-\operatorname{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\, e^{-\beta\cdot\mathrm{will}};\;\alpha=0.5;\;\beta=0.2
+\mathrm{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\cdot e^{-\beta\cdot\mathrm{will}};\ \alpha=0.5,\ \beta=0.2
 $$
 
 ```rs
