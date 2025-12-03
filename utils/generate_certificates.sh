@@ -1,11 +1,42 @@
+#!/usr/bin/env bash
+# 
 # Generates a self-signed certificate valid for 14 days, to use for webtransport.
 # Can be run from any directory. Pass SANs as comma-separated arg, e.g.:
-# ./generate.sh "127.0.0.1,localhost"
-set -euo pipefail
+# ./generate_certificates.sh "127.0.0.1,localhost"
+ 
+DEFAULT_DOMAINS="127.0.0.1,localhost"
+set -eo pipefail
+
+# Show usage message
+usage() {
+    cat << EOF
+Usage: $0 [DOMAIN1, DOMAIN2, ...]
+
+Generate certificates for a comma-separated list of domains.
+If no domain list is provided, the following defaults are used:
+  $DEFAULT_DOMAINS
+
+Examples:
+  $0
+  $0 "192.168.0.1,www.example.com"
+
+Options:
+  -h, --help    Show this help message and exit.
+EOF
+}
+
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+esac
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$SCRIPT_DIR"
-SANS_RAW="${1:-127.0.0.1,localhost}"
+SANS_RAW="${1:-$DEFAULT_DOMAINS}"
+
+echo "Generating certificates for ${SANS_RAW}..."
 
 IFS=',' read -ra SAN_ITEMS <<< "$SANS_RAW"
 ALT_NAMES=""

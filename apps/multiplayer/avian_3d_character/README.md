@@ -34,5 +34,5 @@ To test the example in wasm, you can run the following commands: `bevy run web`
 
 You will need a valid SSL certificate to test the example in wasm using webtransport. You will need to run the following
 commands to generate a self-signed certificate:
-- `cd "$(git rev-parse --show-toplevel)" && sh certificates/generate.sh` (to generate the temporary SSL
+- `cd "$(git rev-parse --show-toplevel)" && sh utils/generate.sh` (to generate the temporary SSL
   certificates, they are only valid for 2 weeks)
