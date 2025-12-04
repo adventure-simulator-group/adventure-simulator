@@ -20,9 +20,9 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Dev certificates (regenerate locally) - ignore everything except helper scripts
-apps/certificates/*
-!apps/certificates/*.sh
+# Dev tools - ignore everything except helper scripts
+utils/*
+!utils/*.sh
 
 # Obsidian
 wiki/.obsidian/
