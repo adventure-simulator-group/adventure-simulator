@@ -46,10 +46,7 @@ impl CharacterModel {
         ));
     }
 
-    pub fn update(
-        mut characters: Query<&mut Transform, With<CharacterModel>>,
-        time: Res<Time>,
-    ) {
+    pub fn update(mut characters: Query<&mut Transform, With<CharacterModel>>, time: Res<Time>) {
         for mut transform in &mut characters {
             transform.rotation = Quat::from_rotation_y(time.elapsed_secs() as f32);
         }

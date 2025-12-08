@@ -1,13 +1,14 @@
 use bevy::asset::RenderAssetUsages;
+use bevy::ecs::hierarchy::ChildOf;
 use bevy::light::CascadeShadowConfigBuilder;
+use bevy::mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues};
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
-use bevy::ecs::hierarchy::ChildOf;
-use bevy::mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues};
 
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
 
+use crate::plugins::animation_player::components::OrbitalCamera;
 use crate::plugins::animation_player::resources::{Animations, SceneHandle};
 
 const MODEL_PATH: &str = "models/animated/Michelle.glb";
@@ -47,10 +48,27 @@ impl Scene {
             graph_handle,
         });
 
+        // Model
+        let scene_handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(MODEL_PATH));
+        let model = commands
+            .spawn((
+                SceneRoot(scene_handle.clone()),
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
+        commands.insert_resource(SceneHandle {
+            scene: scene_handle,
+        });
+
         // Camera
         commands.spawn((
             Camera3d::default(),
             Transform::from_xyz(0.0, 1.0, 4.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
+            OrbitalCamera {
+                focus: Some(model),
+                ..default()
+            },
         ));
 
         // Plane
@@ -73,13 +91,6 @@ impl Scene {
             }
             .build(),
         ));
-
-        // Model
-        let scene_handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(MODEL_PATH));
-        commands.spawn(SceneRoot(scene_handle.clone()));
-        commands.insert_resource(SceneHandle {
-            scene: scene_handle,
-        });
     }
 
     pub fn swap_mesh_for_cylinders(
@@ -135,13 +146,13 @@ impl Scene {
         for (index, joint) in skinned_mesh.joints.iter().enumerate() {
             joint_indices.insert(*joint, index as u16);
         }
-    
+
         let mut positions = Vec::new();
         let mut normals = Vec::new();
         let mut joint_index_data = Vec::new();
         let mut joint_weight_data = Vec::new();
         let mut indices = Vec::new();
-    
+
         for (child_index, joint_entity) in skinned_mesh.joints.iter().enumerate() {
             let Ok(parent) = parents.get(*joint_entity) else {
                 continue;
@@ -156,7 +167,7 @@ impl Scene {
             let Ok(child_transform) = globals.get(*joint_entity) else {
                 continue;
             };
-    
+
             let start = parent_transform.translation();
             let end = child_transform.translation();
             let direction = end - start;
@@ -170,35 +181,35 @@ impl Scene {
             } else {
                 Quat::from_rotation_arc(Vec3::Y, axis)
             };
-    
+
             let base_index = positions.len() as u32;
             let resolution = BONE_SEGMENT_RESOLUTION.max(3);
             for ring in 0..resolution {
                 let angle = TAU * (ring as f32 / resolution as f32);
                 let (sin, cos) = angle.sin_cos();
                 let normal = rotation * Vec3::new(cos, 0.0, sin);
-    
+
                 for step in 0..=1 {
                     let t = step as f32;
                     let local = Vec3::new(BONE_RADIUS * cos, t * length, BONE_RADIUS * sin);
                     let position = rotation * local + start;
-    
+
                     positions.push(position.to_array());
                     normals.push(normal.to_array());
-    
+
                     let child_index = child_index as u16;
                     joint_index_data.push([parent_index, child_index, 0, 0]);
                     joint_weight_data.push([1.0 - t, t, 0.0, 0.0]);
                 }
             }
-    
+
             for ring in 0..resolution {
                 let next = (ring + 1) % resolution;
                 let bottom_current = base_index + (ring * 2) as u32;
                 let top_current = bottom_current + 1;
                 let bottom_next = base_index + (next * 2) as u32;
                 let top_next = bottom_next + 1;
-    
+
                 indices.extend_from_slice(&[
                     bottom_current,
                     top_current,
@@ -209,11 +220,11 @@ impl Scene {
                 ]);
             }
         }
-    
+
         if positions.is_empty() {
             return None;
         }
-    
+
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
@@ -229,7 +240,7 @@ impl Scene {
             VertexAttributeValues::Float32x4(joint_weight_data),
         );
         mesh.insert_indices(Indices::U32(indices));
-    
+
         Some(mesh)
-    }    
+    }
 }

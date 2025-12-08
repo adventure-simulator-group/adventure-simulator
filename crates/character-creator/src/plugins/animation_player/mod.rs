@@ -16,7 +16,8 @@ impl Plugin for AnimationPlayerPlugin {
             .add_systems(Update, components::AnimationPlayer::start)
             .add_systems(Update, components::AnimationPlayer::gamepad_control)
             .add_systems(Startup, components::CharacterModel::spawn)
-            .add_systems(Update, components::CharacterModel::update);
+            .add_systems(Update, components::CharacterModel::update)
+            .add_systems(Update, components::OrbitalCamera::update);
 
         if components::Scene::DISPLAY_BONE_CYLINDERS {
             app.add_systems(Update, components::Scene::swap_mesh_for_cylinders);

@@ -79,27 +79,18 @@ impl AnimationPlayer {
 
     pub fn gamepad_control(
         gamepad: Single<&Gamepad>,
-        mut characters: Query<(&mut Transform, &CharacterBaseRotation), With<AnimationGraphHandle>>,
+        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
+        time: Res<Time>,
     ) {
-        let Some(left_stick_x) = gamepad.get(GamepadAxis::LeftStickX) else {
-            return;
-        };
-        let Some(left_stick_y) = gamepad.get(GamepadAxis::LeftStickY) else {
-            return;
-        };
+        for mut camera in &mut cameras {
+            if let Some(right_stick_x) = gamepad.get(GamepadAxis::RightStickX) {
+                camera.yaw -= right_stick_x * 2.0 * time.delta_secs();
+            }
 
-        let stick = Vec2::new(left_stick_x, left_stick_y);
-        const DEADZONE_SQUARED: f32 = 0.01;
-        if stick.length_squared() < DEADZONE_SQUARED {
-            return;
-        }
-
-        let direction = Vec3::new(stick.x, 0.0, -stick.y).normalize();
-        let yaw = direction.x.atan2(direction.z);
-        let target_rotation = Quat::from_rotation_y(yaw);
-
-        for (mut transform, base_rotation) in &mut characters {
-            transform.rotation = target_rotation * base_rotation.0;
+            if let Some(right_stick_y) = gamepad.get(GamepadAxis::RightStickY) {
+                camera.radius -= right_stick_y * 10.0 * time.delta_secs();
+                camera.radius = camera.radius.clamp(2.0, 20.0);
+            }
         }
     }
 

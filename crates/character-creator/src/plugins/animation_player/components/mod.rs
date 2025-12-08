@@ -1,7 +1,9 @@
 mod animation_player;
-mod scene;
 mod character_model;
+mod orbital_camera;
+mod scene;
 
 pub use animation_player::*;
-pub use scene::*;
 pub use character_model::*;
+pub use orbital_camera::*;
+pub use scene::*;
