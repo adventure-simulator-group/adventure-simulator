@@ -43,7 +43,7 @@ impl DistanceField {
             depth,
         }
     }
-    
+
     pub fn add_sphere(&mut self, center: Vec3, radius: f32, voxel_size: f32) {
         let (width, height, depth) = self.dimensions();
         let origin = MarchingCubes::grid_origin(width, height, depth, voxel_size);
@@ -51,7 +51,8 @@ impl DistanceField {
         for z in 0..depth {
             for y in 0..height {
                 for x in 0..width {
-                    let world_position = MarchingCubes::sample_to_world(origin, x, y, z, voxel_size);
+                    let world_position =
+                        MarchingCubes::sample_to_world(origin, x, y, z, voxel_size);
                     let distance = world_position.distance(center) - radius;
                     let current = self.get(x, y, z);
                     self.set(x, y, z, current.min(distance));
@@ -88,27 +89,33 @@ impl From<DistanceField> for VoxelField {
 }
 
 const GRID_SIZE: usize = 36;
-const VOXEL_SIZE: f32 = 0.12;
-const ISO_LEVEL: f32 = 0.0;
+const ISO_LEVEL: f32 = 0.0; // This should always be 0.0, it's the level that defines where the surface lies.
 
 #[derive(Resource)]
 struct MarchingCubesConfig {
     radius: f32,
     min_radius: f32,
     max_radius: f32,
+    voxel_size: f32,
+    min_voxel_size: f32,
+    max_voxel_size: f32,
     dirty: bool,
 }
 
 impl Default for MarchingCubesConfig {
     fn default() -> Self {
-        let min_radius = GRID_SIZE as f32 * VOXEL_SIZE * 0.1;
-        let max_radius = GRID_SIZE as f32 * VOXEL_SIZE * 0.6;
-        let radius = GRID_SIZE as f32 * VOXEL_SIZE * 0.35;
+        let voxel_size = 0.12;
+        let min_radius = GRID_SIZE as f32 * voxel_size * 0.1;
+        let max_radius = GRID_SIZE as f32 * voxel_size * 0.6;
+        let radius = GRID_SIZE as f32 * voxel_size * 0.35;
 
         Self {
             radius,
             min_radius,
             max_radius,
+            voxel_size,
+            min_voxel_size: 0.05,
+            max_voxel_size: 0.5,
             dirty: true,
         }
     }
@@ -136,11 +143,18 @@ fn setup(
     mut config: ResMut<MarchingCubesConfig>,
 ) {
     let mut distance_field = DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE);
-    distance_field.add_sphere(Vec3::splat(-config.radius * 0.3), config.radius, VOXEL_SIZE);
-    distance_field.add_sphere(Vec3::splat(config.radius * 0.3), config.radius, VOXEL_SIZE);
+    distance_field.add_sphere(
+        Vec3::splat(-config.radius * 0.3),
+        config.radius,
+        config.voxel_size,
+    );
+    distance_field.add_sphere(
+        Vec3::splat(config.radius * 0.3),
+        config.radius,
+        config.voxel_size,
+    );
 
-    let voxel_field: VoxelField = distance_field.clone().into();
-    let mesh = MarchingCubes::generate_mesh(&distance_field, &voxel_field, ISO_LEVEL, VOXEL_SIZE);
+    let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, config.voxel_size);
 
     let mesh_handle = meshes.add(mesh);
     commands.insert_resource(MarchingCubesMeshHandle(mesh_handle.clone()));
@@ -184,6 +198,21 @@ fn marching_cubes_ui(mut contexts: EguiContexts, mut config: ResMut<MarchingCube
                     config.dirty = true;
                 }
                 ui.label(format!("{:.2}", config.radius));
+
+                ui.separator();
+
+                ui.label("Voxel Size");
+                let mut current_voxel = config.voxel_size;
+                let slider_voxel = egui::Slider::new(
+                    &mut current_voxel,
+                    config.min_voxel_size..=config.max_voxel_size,
+                )
+                .text("meters");
+                if ui.add(slider_voxel).changed() {
+                    config.voxel_size = current_voxel;
+                    config.dirty = true;
+                }
+                ui.label(format!("{:.3}", config.voxel_size));
             });
     }
 }
@@ -202,11 +231,18 @@ fn update_marching_cubes_mesh(
     }
 
     let mut distance_field = DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE);
-    distance_field.add_sphere(Vec3::splat(-config.radius * 0.3), config.radius, VOXEL_SIZE);
-    distance_field.add_sphere(Vec3::splat(config.radius * 0.3), config.radius, VOXEL_SIZE);
+    distance_field.add_sphere(
+        Vec3::splat(-config.radius * 0.3),
+        config.radius,
+        config.voxel_size,
+    );
+    distance_field.add_sphere(
+        Vec3::splat(config.radius * 0.3),
+        config.radius,
+        config.voxel_size,
+    );
 
-    let voxel_field: VoxelField = distance_field.clone().into();
-    let mesh = MarchingCubes::generate_mesh(&distance_field, &voxel_field, ISO_LEVEL, VOXEL_SIZE);
+    let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, config.voxel_size);
 
     if let Some(existing) = meshes.get_mut(&mesh_handle.0) {
         *existing = mesh;
@@ -277,12 +313,7 @@ impl MeshBuilder {
 pub struct MarchingCubes;
 
 impl MarchingCubes {
-    pub fn generate_mesh(
-        distance_field: &DistanceField,
-        voxel_field: &VoxelField,
-        iso_level: f32,
-        voxel_size: f32,
-    ) -> Mesh {
+    pub fn generate_mesh(distance_field: &DistanceField, iso_level: f32, voxel_size: f32) -> Mesh {
         let (width, height, depth) = distance_field.dimensions();
 
         if width < 2 || height < 2 || depth < 2 {
@@ -299,14 +330,15 @@ impl MarchingCubes {
             for y in 0..(height - 1) {
                 for x in 0..(width - 1) {
                     let (cube_index, samples, corners) =
-                        Self::get_cell_data(distance_field, voxel_field, origin, x, y, z, voxel_size);
+                        Self::get_cell_data(distance_field, origin, x, y, z, voxel_size, iso_level);
 
                     let edge_mask = EDGE_TABLE[cube_index];
                     if edge_mask == 0 {
                         continue;
                     }
 
-                    let edge_vertices = Self::calculate_intersections(edge_mask, iso_level, samples, corners);
+                    let edge_vertices =
+                        Self::calculate_intersections(edge_mask, iso_level, samples, corners);
 
                     Self::process_triangles(cube_index, &edge_vertices, &mut builder);
                 }
@@ -318,26 +350,28 @@ impl MarchingCubes {
 
     fn get_cell_data(
         distance_field: &DistanceField,
-        voxel_field: &VoxelField,
         origin: Vec3,
         x: usize,
         y: usize,
         z: usize,
-        voxel_size: f32
+        voxel_size: f32,
+        iso_level: f32,
     ) -> (usize, [f32; 8], [Vec3; 8]) {
         let mut cube_index = 0usize;
         let mut samples = [0.0f32; 8];
         let mut corners = [Vec3::ZERO; 8];
 
-        for (corner_idx, &(dx, dy, dz)) in VERTEX_OFFSETS.iter().enumerate() {
-            let sample_x = x + dx;
-            let sample_y = y + dy;
-            let sample_z = z + dz;
-            samples[corner_idx] = *distance_field.get(sample_x, sample_y, sample_z);
-            corners[corner_idx] = Self::sample_to_world(origin, sample_x, sample_y, sample_z, voxel_size);
+        for (i, &(dx, dy, dz)) in VERTEX_OFFSETS.iter().enumerate() {
+            let sx = x + dx;
+            let sy = y + dy;
+            let sz = z + dz;
 
-            if *voxel_field.get(sample_x, sample_y, sample_z) {
-                cube_index |= 1 << corner_idx;
+            let d = *distance_field.get(sx, sy, sz);
+            samples[i] = d;
+            corners[i] = Self::sample_to_world(origin, sx, sy, sz, voxel_size);
+
+            if d < iso_level {
+                cube_index |= 1 << i;
             }
         }
 
@@ -368,7 +402,8 @@ impl MarchingCubes {
 
     fn process_triangles(cube_index: usize, edge_vertices: &[Vec3; 12], builder: &mut MeshBuilder) {
         let mut tri_index = 0usize;
-        while tri_index + 2 < TRI_TABLE[cube_index].len() && TRI_TABLE[cube_index][tri_index] != -1 {
+        while tri_index + 2 < TRI_TABLE[cube_index].len() && TRI_TABLE[cube_index][tri_index] != -1
+        {
             let idx0 = TRI_TABLE[cube_index][tri_index] as usize;
             let idx1 = TRI_TABLE[cube_index][tri_index + 1] as usize;
             let idx2 = TRI_TABLE[cube_index][tri_index + 2] as usize;
@@ -456,22 +491,29 @@ mod tests {
 
         let mut distance_field = DistanceField::new(size, size, size);
         distance_field.add_sphere(Vec3::ZERO, radius, voxel_size);
-        
+
         let voxel_field: VoxelField = distance_field.clone().into();
         let mesh = MarchingCubes::generate_mesh(&distance_field, &voxel_field, 0.0, voxel_size);
 
-        assert!(matches!(mesh.primitive_topology(), PrimitiveTopology::TriangleList));
-        
-        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap().as_float3().unwrap();
+        assert!(matches!(
+            mesh.primitive_topology(),
+            PrimitiveTopology::TriangleList
+        ));
+
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .unwrap()
+            .as_float3()
+            .unwrap();
         // A sphere should generate some vertices
         assert!(positions.len() > 0);
-        
+
         // Check if index count is divisible by 3 (triangles)
         if let Some(Indices::U32(indices)) = mesh.indices() {
-             assert!(indices.len() > 0);
-             assert_eq!(indices.len() % 3, 0);
+            assert!(indices.len() > 0);
+            assert_eq!(indices.len() % 3, 0);
         } else {
-             panic!("Mesh should have U32 indices");
+            panic!("Mesh should have U32 indices");
         }
     }
 }

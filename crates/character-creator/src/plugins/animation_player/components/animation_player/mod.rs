@@ -82,15 +82,19 @@ impl AnimationPlayer {
         mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
         time: Res<Time>,
     ) {
-        for mut camera in &mut cameras {
-            if let Some(right_stick_x) = gamepad.get(GamepadAxis::RightStickX) {
-                camera.yaw -= right_stick_x * 2.0 * time.delta_secs();
-            }
+        let right_stick_x = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
+        let right_stick_y = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
 
-            if let Some(right_stick_y) = gamepad.get(GamepadAxis::RightStickY) {
-                camera.radius -= right_stick_y * 10.0 * time.delta_secs();
-                camera.radius = camera.radius.clamp(2.0, 20.0);
-            }
+        let stick = Vec2::new(right_stick_x, right_stick_y);
+        const DEADZONE_SQUARED: f32 = 0.01;
+        if stick.length_squared() < DEADZONE_SQUARED {
+            return;
+        }
+
+        for mut camera in &mut cameras {
+            camera.yaw -= right_stick_x * 2.0 * time.delta_secs();
+            camera.radius -= right_stick_y * 10.0 * time.delta_secs();
+            camera.radius = camera.radius.clamp(2.0, 20.0);
         }
     }
 
