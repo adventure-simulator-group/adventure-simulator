@@ -1,0 +1,48 @@
+[package]
+name = "adventure-simulator-net"
+description = "Adventure Simulator: Server/Client shared netcode library"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["server", "client"]
+server = ["lightyear/server"]
+client = ["lightyear/client"]
+
+[dependencies]
+lightyear = { "workspace" = true, features = [
+  # "interpolation",
+  # "prediction",
+  "replication",
+  "client",
+  "server",
+  "netcode",
+  "webtransport",
+  "webtransport_self_signed",
+  "webtransport_dangerous_configuration",
+  "websocket",
+  "websocket_self_signed",
+  "udp",
+] }
+async-compat.workspace = true
+serde.workspace = true
+bevy = { workspace = true, features = [
+  "bevy_state",
+  "bevy_log",
+  "reflect_auto_register",
+] }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[target."cfg(target_family = \"wasm\")".dependencies]
+console_error_panic_hook.workspace = true
+# rand.workspace = true
+# getrandom.workspace = true
+# getrandom_02.workspace = true
+
+[lints]
+workspace = true
