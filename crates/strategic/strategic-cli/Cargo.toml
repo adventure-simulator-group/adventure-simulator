@@ -1,0 +1,11 @@
+[package]
+name = "strategic-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+strategic-db = { path = "../strategic-db" }
+strategic-core = { path = "../strategic-core" }
+anyhow = "1"

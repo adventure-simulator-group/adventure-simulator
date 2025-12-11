@@ -5,6 +5,7 @@ members = [
     "crates/adventure-simulator-server",
     "crates/adventure-simulator-client",
     "crates/character-creator",
+    "crates/strategic/*",
 ]
 exclude = ["/wiki", "/utils"]
 
