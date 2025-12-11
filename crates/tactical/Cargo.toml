@@ -1,6 +1,0 @@
-[package]
-name = "tactical"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
