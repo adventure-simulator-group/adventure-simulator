@@ -1,15 +1,31 @@
-# Strategic demo stack
+# Strategic layer (Postgres + HTTP + SSE)
 
-Minimal scaffolding for the strategic layer demo:
+This folder is an early, intentionally small “strategic layer” scaffold:
 
-- `strategic-core`: shared types (quests, statuses).
-- `strategic-db`: Postgres access + schema/seed helpers (demo quests via app seeds, e.g., `quest.pet_cat`).
-- `strategic-server`: axum HTTP server exposing `/health`, `/quests/:id`, `/quests/:id/complete`.
-- `strategic-plugin`: Bevy-friendly HTTP client wrapper for the strategic API.
-- `strategic-cli`: simple seeding CLI.
+- `strategic-core`: shared types (quests, characters, inventory, loot).
+- `strategic-db`: Postgres schema + transactional DB operations.
+- `strategic-server`: axum HTTP server (JSON API + Datastar-friendly HTML + SSE).
+- `strategic-plugin`: Bevy-friendly HTTP client wrapper (WIP).
+- `strategic-cli`: helper CLI to upsert quests into Postgres.
 
-Quick start:
-1. Start Postgres (example): `docker run -d --name strategic-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15`
-2. Seed (example quest via CLI or app-specific seeder): `cargo run -p strategic-cli -- --database-url postgres://postgres:postgres@localhost:5432/strategic --id quest.pet_cat --title "Pet the Cat" --description "Say hello and pet the cat."`
-3. Serve: `cargo run -p strategic-server`
-4. From the tactical/lightyear side, POST to `/quests/{id}/complete` to mark a quest complete.
+## Quick start
+
+1) Start Postgres (Docker):
+
+`docker run -d --name strategic-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15`
+
+Create the database once:
+
+`docker exec -it strategic-db createdb -U postgres strategic`
+
+2) Run the strategic server:
+
+`DATABASE_URL=postgres://postgres:postgres@localhost:5432/strategic cargo run -p strategic-server`
+
+3) Open the Datastar overlay (served by `strategic-server`):
+
+`http://127.0.0.1:8080/overlay/`
+
+4) Run the playable demo (spawns a player, quest objects, and a hazard bot):
+
+`cargo run -p adventure-simulator-demo`

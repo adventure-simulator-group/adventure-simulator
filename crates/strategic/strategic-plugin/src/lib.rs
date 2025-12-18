@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
-use strategic_core::Quest;
+use strategic_core::{Character, InventoryItem, Quest, RewardGrant};
 
 /// Bevy plugin that injects a simple HTTP client for the strategic layer.
 pub struct StrategicPlugin {
@@ -43,10 +43,36 @@ impl StrategicClient {
         self.get(&format!("/quests/{quest_id}")).await
     }
 
-    /// Mark a quest as complete.
-    pub async fn complete_quest(&self, quest_id: &str) -> reqwest::Result<()> {
-        let url = format!("{}/quests/{quest_id}/complete", self.base_url);
+    pub async fn get_character(&self, character_id: &str) -> reqwest::Result<Character> {
+        self.get(&format!("/api/characters/{character_id}")).await
+    }
+
+    pub async fn get_inventory(&self, character_id: &str) -> reqwest::Result<Vec<InventoryItem>> {
+        self.get(&format!("/api/characters/{character_id}/inventory")).await
+    }
+
+    pub async fn start_quest(&self, character_id: &str, quest_id: &str) -> reqwest::Result<()> {
+        let url = format!(
+            "{}/api/characters/{character_id}/quests/{quest_id}/start",
+            self.base_url
+        );
         self.http.post(url).send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn complete_quest(
+        &self,
+        character_id: &str,
+        quest_id: &str,
+        rewards: Option<RewardGrant>,
+    ) -> reqwest::Result<()> {
+        let url = format!(
+            "{}/api/characters/{character_id}/quests/{quest_id}/complete",
+            self.base_url
+        );
+        let req = self.http.post(url);
+        let req = if let Some(r) = rewards { req.json(&r) } else { req };
+        req.send().await?.error_for_status()?;
         Ok(())
     }
 
