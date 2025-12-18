@@ -1,0 +1,32 @@
+# https://github.com/bevyengine/bevy/blob/main/.cargo/config_fast_builds.toml
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-fuse-ld=mold", # Use mold linker
+  "-Z", "share-generics=y",       # (Nightly) Make the current crate share its generic instantiations
+  "-Z", "threads=0",              # (Nightly) Use improved multithreading with the recommended amount of threads.
+]
+
+# NOTE: you must install [Mach-O LLD Port](https://lld.llvm.org/MachO/index.html) on mac. you can easily do this by installing llvm which includes lld with the "brew" package manager:
+# `brew install llvm`
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-fuse-ld=/usr/local/opt/llvm/bin/ld64.lld", # Use LLD Linker
+  "-Z", "share-generics=y",                                   # (Nightly) Make the current crate share its generic instantiations
+  "-Z", "threads=0",                                          # (Nightly) Use improved multithreading with the recommended amount of threads.
+]
+
+[target.aarch64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld", # Use LLD Linker
+  "-Z", "share-generics=y",                                      # (Nightly) Make the current crate share its generic instantiations
+  "-Z", "threads=0",                                             # (Nightly) Use improved multithreading with the recommended amount of threads.
+]
+
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe" # Use LLD Linker
+rustflags = [
+  "-Z", "share-generics=n", # (Nightly)
+  "-Z", "threads=0",        # (Nightly) Use improved multithreading with the recommended amount of threads.
+]
