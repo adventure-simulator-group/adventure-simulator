@@ -6,15 +6,70 @@
     utils = {
       url = "github:numtide/flake-utils";
     };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, utils, }:
+  outputs = { self, nixpkgs, utils, rust-overlay }:
     utils.lib.eachSystem ["aarch64-linux" "x86_64-linux"] (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        # Use rust overlay to override rust from nixpkgs to the latest nightly rust
+        # (and also tools: cargo + clippy)
+        overlays = [(import rust-overlay)];
+        pkgs = import nixpkgs { inherit system overlays; };
+
+        rustBuildInputs = with pkgs; [
+          (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+          mold
+          pkg-config
+        ];
+
+        requiredLibsLinux = with pkgs; [
+          libudev-zero
+          alsa-lib
+          vulkan-loader
+
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXrandr
+          xorg.libXi
+
+          libxkbcommon
+
+          freetype
+          fontconfig
+          expat
+          libGL
+          wayland
+        ];
+
+        # IDE/shell dependencies
+        developPrograms = with pkgs; [
+          cargo-edit
+          clippy
+          rust-analyzer-unwrapped
+          just
+        ];
+
+        mkLinuxLdLibraryPathExport = libs: ''
+            FLAKE_LIBDIR="${pkgs.lib.makeLibraryPath libs}"
+            RUST_LIBDIR=$(rustc --print target-libdir)
+            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FLAKE_LIBDIR:$RUST_LIBDIR:target/debug/deps:target/debug:${pkgs.stdenv.cc.cc.lib}/lib"
+        '';
       in
-      rec {
-        devShells.default = pkgs.mkShell {
+      {
+        # `nix develop`
+        devShells.default = pkgs.mkShell rec {
+          nativeBuildInputs = developPrograms ++ rustBuildInputs;
+          buildInputs = requiredLibsLinux;
+
+          shellHook = ''
+            ${mkLinuxLdLibraryPathExport buildInputs}
+          '';
+        };
+        devShells.mdbook = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             mdbook
             mdbook-linkcheck
