@@ -34,3 +34,6 @@ wiki/.obsidian/
 # Mdbook
 book
 /index.html
+
+# WASM bindgen output (generated)
+ui/spacetimedb_bevy_demo/pkg/

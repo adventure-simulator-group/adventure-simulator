@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Adventure Simulator · SpacetimeDB Strategic Demo</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div class="overlay">
+    <header class="overlay-header">
+      <div class="overlay-title">SpacetimeDB Strategic Demo</div>
+      <div class="overlay-subtitle">Public network · Static HTML/JS · WASM-friendly</div>
+
+      <div class="overlay-controls">
+        <label>Host <input id="stdb-host" type="text" spellcheck="false" /></label>
+        <label>DB <input id="stdb-db" type="text" spellcheck="false" /></label>
+      </div>
+      <div class="overlay-controls">
+        <label>Character <input id="stdb-character-id" type="text" spellcheck="false" /></label>
+        <label>Name <input id="stdb-display-name" type="text" spellcheck="false" /></label>
+      </div>
+      <div class="overlay-actions">
+        <button id="stdb-connect">Connect</button>
+        <button id="stdb-disconnect" disabled>Disconnect</button>
+      </div>
+    </header>
+
+    <div id="overlay-root">
+      <div id="overlay-banner" class="banner">Waiting…</div>
+      <div class="panel">No data yet.</div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

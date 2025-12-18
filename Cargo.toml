@@ -4,6 +4,7 @@ members = [
     "crates/adventure-simulator-net",
     "crates/adventure-simulator-server",
     "crates/adventure-simulator-client",
+    "crates/adventure-simulator-stdb-bevy-web-demo",
     "crates/character-creator",
     "crates/strategic/*",
 ]
