@@ -18,7 +18,10 @@
         # Use rust overlay to override rust from nixpkgs to the latest nightly rust
         # (and also tools: cargo + clippy)
         overlays = [(import rust-overlay)];
-        pkgs = import nixpkgs { inherit system overlays; };
+        pkgs = import nixpkgs {
+          inherit system overlays;
+          config.allowUnfree = true;
+        };
 
         rustBuildInputs = with pkgs; [
           (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
@@ -51,6 +54,7 @@
           clippy
           rust-analyzer-unwrapped
           just
+          spacetimedb
         ];
 
         mkLinuxLdLibraryPathExport = libs: ''
