@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
-use crate::plugins::{AnimationPlayerPlugin, MarchingCubesPlugin};
+use crate::plugins::AnimationPlayerPlugin;
+use marching_cubes_plugin::MarchingCubesPlugin;
 
 pub fn main() {
     App::new()

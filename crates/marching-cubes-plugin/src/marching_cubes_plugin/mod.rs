@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
-use crate::plugins::{DistanceField, MarchingCubes};
+use crate::{DistanceField, MarchingCubes};
 
 const GRID_SIZE: usize = 36;
 const ISO_LEVEL: f32 = 0.0; // This should always be 0.0, it's the level that defines where the surface lies.

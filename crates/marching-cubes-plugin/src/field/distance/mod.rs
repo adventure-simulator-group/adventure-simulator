@@ -1,5 +1,5 @@
 use super::Field;
-use crate::plugins::MarchingCubes;
+use crate::MarchingCubes;
 use bevy::math::Vec3;
 
 pub type Distance = f32;
