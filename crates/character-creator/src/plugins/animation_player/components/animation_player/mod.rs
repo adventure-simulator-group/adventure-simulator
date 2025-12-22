@@ -23,6 +23,7 @@ impl AnimationPlayer {
                 "L: loop forever\n",
                 "return: change animation\n",
                 "gamepad: rotate character with left stick\n",
+                "WASD: rotate camera and zoom\n",
             )),
             Node {
                 position_type: PositionType::Absolute,
@@ -106,6 +107,8 @@ impl AnimationPlayer {
         )>,
         animations: Res<Animations>,
         mut current_animation: Local<usize>,
+        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
+        time: Res<Time>,
     ) {
         for (mut player, mut transitions) in &mut animation_players {
             let Some((&playing_animation_index, _)) = player.playing_animations().next() else {
@@ -182,6 +185,24 @@ impl AnimationPlayer {
                 let playing_animation = player.animation_mut(playing_animation_index).unwrap();
                 playing_animation.set_repeat(RepeatAnimation::Forever);
             }
+        }
+
+        for mut camera in &mut cameras {
+            if keyboard_input.pressed(KeyCode::KeyA) {
+                camera.yaw -= 2.0 * time.delta_secs();
+            }
+            if keyboard_input.pressed(KeyCode::KeyD) {
+                camera.yaw += 2.0 * time.delta_secs();
+            }
+
+            if keyboard_input.pressed(KeyCode::KeyW) {
+                camera.radius -= 10.0 * time.delta_secs();
+            }
+            if keyboard_input.pressed(KeyCode::KeyS) {
+                camera.radius += 10.0 * time.delta_secs();
+            }
+
+            camera.radius = camera.radius.clamp(2.0, 20.0);
         }
     }
 }
