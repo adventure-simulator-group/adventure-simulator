@@ -1,7 +1,0 @@
-[package]
-name = "strategic-core"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-serde = { workspace = true, features = ["derive"] }
