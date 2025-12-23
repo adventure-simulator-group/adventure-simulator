@@ -5,8 +5,8 @@ use strategic_db::StrategicDb;
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
-    /// Postgres connection string
-    #[arg(long, default_value = "postgres://postgres:postgres@localhost:5432/strategic")]
+    /// Spacetime endpoint (mutation URL)
+    #[arg(long, default_value = "")]
     database_url: String,
 
     /// Quest id to upsert
@@ -26,13 +26,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut args = Args::parse();
-    if args.database_url.is_empty() {
-        if let Ok(env_url) = std::env::var("DATABASE_URL") {
-            args.database_url = env_url;
-        }
+    let mut config = strategic_db::DbConfig::from_env();
+    if !args.database_url.is_empty() {
+        config.endpoint = Some(args.database_url.clone());
     }
-    let db = StrategicDb::connect(&args.database_url, 5).await?;
-    db.ensure_schema().await?;
+    let db = StrategicDb::connect(config).await?;
     let quest = strategic_core::Quest {
         id: args.id,
         title: args.title,
@@ -40,7 +38,12 @@ async fn main() -> anyhow::Result<()> {
         status: strategic_core::QuestStatus::Available,
         reward: args.reward,
     };
-    db.upsert_quest(&quest).await?;
-    println!("Upserted quest {} at {}", quest.id, args.database_url);
+    db.upsert_quest(&quest)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    println!(
+        "Upserted quest {} via Spacetime endpoint {}",
+        quest.id, args.database_url
+    );
     Ok(())
 }

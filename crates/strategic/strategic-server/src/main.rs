@@ -1,28 +1,26 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
+use async_stream::stream;
 use axum::{
     body::Bytes,
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
     response::sse::{Event, KeepAlive, Sse},
+    response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
-use async_stream::stream;
 use strategic_core::{Character, CharacterLifeState, InventoryItem, LootBag, Quest, RewardGrant};
-use strategic_db::StrategicDb;
+use strategic_db::{DbConfig, DbError, StrategicDb};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/strategic".to_string());
-
-    let db = StrategicDb::connect(&database_url, 5).await?;
-    db.ensure_schema().await?;
+    let db = StrategicDb::connect(DbConfig::from_env())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     let (tx, _rx) = broadcast::channel::<UiEvent>(64);
 
@@ -103,7 +101,10 @@ async fn get_quest(State(state): State<AppState>, Path(id): Path<String>) -> imp
     }
 }
 
-async fn upsert_quest_api(State(state): State<AppState>, Json(quest): Json<Quest>) -> impl IntoResponse {
+async fn upsert_quest_api(
+    State(state): State<AppState>,
+    Json(quest): Json<Quest>,
+) -> impl IntoResponse {
     if let Err(err) = state.db.upsert_quest(&quest).await {
         eprintln!("failed to upsert quest: {err:?}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -128,11 +129,20 @@ async fn character_state_html(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     match render_overlay_inner_html(&state.db, &id, None).await {
-        Ok(html) => ([
-            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (axum::http::HeaderName::from_static("datastar-selector"), "#overlay-root"),
-            (axum::http::HeaderName::from_static("datastar-mode"), "inner"),
-        ], html)
+        Ok(html) => (
+            [
+                (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (
+                    axum::http::HeaderName::from_static("datastar-selector"),
+                    "#overlay-root",
+                ),
+                (
+                    axum::http::HeaderName::from_static("datastar-mode"),
+                    "inner",
+                ),
+            ],
+            html,
+        )
             .into_response(),
         Err(RenderError::NotFound) => StatusCode::NOT_FOUND.into_response(),
         Err(RenderError::Db(err)) => {
@@ -142,7 +152,10 @@ async fn character_state_html(
     }
 }
 
-async fn character_events(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn character_events(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let mut rx = state.tx.subscribe();
     let stream = stream! {
         if let Ok(initial) = render_overlay_inner_html(&state.db, &id, Some("Connected")).await {
@@ -158,7 +171,10 @@ async fn character_events(State(state): State<AppState>, Path(id): Path<String>)
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-async fn get_character_json(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn get_character_json(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match state.db.get_character(&id).await {
         Ok(Some(character)) => Json(character).into_response(),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
@@ -169,7 +185,10 @@ async fn get_character_json(State(state): State<AppState>, Path(id): Path<String
     }
 }
 
-async fn get_inventory_json(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn get_inventory_json(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match state.db.list_inventory(&id).await {
         Ok(items) => Json(items).into_response(),
         Err(err) => {
@@ -179,7 +198,10 @@ async fn get_inventory_json(State(state): State<AppState>, Path(id): Path<String
     }
 }
 
-async fn list_loot_bags(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn list_loot_bags(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match state.db.list_loot_bags(&id).await {
         Ok(bags) => Json(bags).into_response(),
         Err(err) => {
@@ -261,7 +283,10 @@ async fn damage_character(
     }
 }
 
-async fn respawn_character(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn respawn_character(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match state.db.respawn(&id).await {
         Ok(character) => {
             broadcast_character_update(&state, &id, Some("Respawn attempt")).await;
@@ -367,7 +392,7 @@ async fn broadcast_character_update(state: &AppState, character_id: &str, banner
 
 enum RenderError {
     NotFound,
-    Db(sqlx::Error),
+    Db(DbError),
 }
 
 async fn render_overlay_inner_html(
@@ -389,7 +414,10 @@ async fn render_overlay_inner_html(
         .list_character_quest_statuses(character_id)
         .await
         .map_err(RenderError::Db)?;
-    let loot_bags = db.list_loot_bags(character_id).await.map_err(RenderError::Db)?;
+    let loot_bags = db
+        .list_loot_bags(character_id)
+        .await
+        .map_err(RenderError::Db)?;
 
     let mut out = String::new();
     out.push_str(&render_banner_html(banner));
@@ -403,7 +431,9 @@ async fn render_overlay_inner_html(
 fn datastar_patch_event(html: &str) -> Event {
     Event::default()
         .event("datastar-patch-elements")
-        .data(format!("selector #overlay-root\nmode inner\nelements {html}"))
+        .data(format!(
+            "selector #overlay-root\nmode inner\nelements {html}"
+        ))
 }
 
 fn render_banner_html(banner: Option<&str>) -> String {
@@ -473,7 +503,10 @@ fn render_quests_html(
 
     let mut rows = String::new();
     for q in quests {
-        let status = status_map.get(q.id.as_str()).copied().unwrap_or("not-started");
+        let status = status_map
+            .get(q.id.as_str())
+            .copied()
+            .unwrap_or("not-started");
         let accept = format!(
             r#"@post('/api/characters/{}/quests/{}/start')"#,
             escape_html(character_id),
