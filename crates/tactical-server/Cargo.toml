@@ -16,8 +16,7 @@ bevy = { workspace = true, default-features = false, features = [
     "bevy_log",
     "multi_threaded",
 ] }
-adventure-simulator-net = { path = "../adventure-simulator-net", features = ["server"] }
-lightyear = { workspace = true, features = ["replication", "server", "netcode", "webtransport"] }
+adventure-simulator-net = { workspace = true, features = ["server"] }
 
 # GLB/GLTF parsing (headless)
 gltf = "1.4"

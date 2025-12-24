@@ -1,14 +1,21 @@
 //! Tactical Server - Lightyear-based authoritative game server for tactical missions
 //!
 //! This server:
-//! - Runs as a separate OS process, spawned by strategic-api
-//! - Uses WebTransport for browser WASM client connectivity
+//! - Runs as a separate OS process, spawned by SpacetimeDB client
+//! - Uses adventure-simulator-net for multi-protocol networking (WebTransport, WebSocket, UDP)
 //! - Loads spawn points from GLB files (headless parsing via gltf crate)
 //! - Validates join tokens using HMAC shared secret
-//! - Auto-terminates after mission timeout and commits results to strategic-api
+//! - Auto-terminates after mission timeout and commits results
+//!
+//! Supports two backends:
+//! - SpacetimeDB: Use --spacetimedb-url to commit directly to SpacetimeDB
+//! - HTTP API: Use --strategic-api-url to commit via strategic-api HTTP endpoint
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use adventure_simulator_net::prelude::*;
+use adventure_simulator_net::protocol::WebTransportCertificateSettings;
 use bevy::prelude::*;
 use clap::Parser;
 use hmac::{Hmac, Mac};
@@ -44,9 +51,18 @@ struct Args {
     #[arg(long)]
     asset_path: String,
 
-    /// URL of the strategic API server
+    /// URL of the strategic API server (legacy HTTP backend)
     #[arg(long, default_value = "http://127.0.0.1:8080")]
     strategic_api_url: String,
+
+    /// URL of the SpacetimeDB server (preferred backend)
+    /// Format: http://localhost:3000
+    #[arg(long)]
+    spacetimedb_url: Option<String>,
+
+    /// SpacetimeDB module name
+    #[arg(long, default_value = "strategic-stdb-module")]
+    spacetimedb_module: String,
 
     /// HMAC secret for token validation
     #[arg(long)]
@@ -101,13 +117,16 @@ fn main() {
         }
     };
 
-    // Run Bevy app
+    // Run Bevy app with adventure-simulator-net
     App::new()
         .add_plugins(MinimalPlugins)
+        .add_plugins(AdventureSimulatorNetPlugins)
         .insert_resource(MissionConfig {
             mission_id: args.mission_id.clone(),
             scene_key: args.scene_key.clone(),
             strategic_api_url: args.strategic_api_url.clone(),
+            spacetimedb_url: args.spacetimedb_url.clone(),
+            spacetimedb_module: args.spacetimedb_module.clone(),
             hmac_secret: args.hmac_secret.clone(),
             port: args.port,
         })
@@ -129,6 +148,8 @@ struct MissionConfig {
     #[allow(dead_code)]
     scene_key: String,
     strategic_api_url: String,
+    spacetimedb_url: Option<String>,
+    spacetimedb_module: String,
     #[allow(dead_code)]
     hmac_secret: String,
     #[allow(dead_code)]
@@ -144,21 +165,28 @@ struct MissionState {
     committed: bool,
 }
 
-fn setup_server(config: Res<MissionConfig>, state: Res<MissionState>) {
+fn setup_server(mut commands: Commands, config: Res<MissionConfig>, state: Res<MissionState>) {
     info!("=== Tactical Server Setup ===");
     info!("Mission ID: {}", config.mission_id);
     info!("Scene Key: {}", config.scene_key);
     info!("Port: {}", config.port);
     info!("Spawn markers loaded: {}", state.spawn_markers.len());
 
-    // In a full implementation, we would:
-    // 1. Initialize Lightyear server with WebTransport
-    // 2. Set up replication for game entities
-    // 3. Spawn player entities at spawn_player markers
-    // 4. Spawn enemy entities at spawn_enemy_* markers
-    // 5. Handle combat and game logic
+    // Create server address
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port);
 
-    // For MVP, we just log the setup
+    // Spawn Lightyear server using adventure-simulator-net
+    // Using WebTransport with auto-generated self-signed certificate
+    info!("Starting Lightyear server on {} (WebTransport)", addr);
+    commands.spawn(AdventureSimulatorServer {
+        addr,
+        protocol: ServerProtocol::WebTransport {
+            certificate: WebTransportCertificateSettings::default(),
+        },
+        protocol_settings: ProtocolSettings::default(),
+    });
+
+    // Log spawn markers
     for marker in &state.spawn_markers {
         match marker.marker_type {
             SpawnMarkerType::Player => {
@@ -177,6 +205,7 @@ fn setup_server(config: Res<MissionConfig>, state: Res<MissionState>) {
     }
 
     info!("Server ready! Will timeout in {} seconds", MISSION_TIMEOUT_SECS);
+    info!("Clients can connect via WebTransport (or fallback to WebSocket/UDP)");
 }
 
 #[allow(deprecated)]
@@ -197,12 +226,24 @@ fn check_mission_timeout(
 
         // Spawn async task to commit (we'll do this synchronously for MVP)
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(commit_mission(
-            &config.strategic_api_url,
-            &config.mission_id,
-            success,
-            xp_gained,
-        ));
+
+        // Choose backend: prefer SpacetimeDB if configured
+        let result = if let Some(ref stdb_url) = config.spacetimedb_url {
+            rt.block_on(commit_mission_spacetimedb(
+                stdb_url,
+                &config.spacetimedb_module,
+                &config.mission_id,
+                success,
+                xp_gained,
+            ))
+        } else {
+            rt.block_on(commit_mission_http(
+                &config.strategic_api_url,
+                &config.mission_id,
+                success,
+                xp_gained,
+            ))
+        };
 
         match result {
             Ok(_) => info!("Mission committed successfully"),
@@ -230,12 +271,13 @@ fn log_status_periodically(state: Res<MissionState>) {
     }
 }
 
-async fn commit_mission(
+/// Commit mission results via HTTP API (legacy strategic-api backend)
+async fn commit_mission_http(
     strategic_api_url: &str,
     mission_id: &str,
     success: bool,
     xp_gained: i32,
-) -> Result<(), reqwest::Error> {
+) -> Result<(), String> {
     let client = reqwest::Client::new();
 
     #[derive(serde::Serialize)]
@@ -275,9 +317,51 @@ async fn commit_mission(
     };
 
     let url = format!("{}/api/mission/commit", strategic_api_url);
-    info!("Committing mission to {}", url);
+    info!("Committing mission to HTTP API: {}", url);
 
-    client.post(&url).json(&req).send().await?;
+    client.post(&url).json(&req).send().await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Commit mission results via SpacetimeDB reducer
+async fn commit_mission_spacetimedb(
+    spacetimedb_url: &str,
+    module_name: &str,
+    mission_id: &str,
+    success: bool,
+    xp_gained: i32,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+
+    // Build items JSON
+    let items_json = if success {
+        r#"[{"item_id":"gold_coin","qty":5},{"item_id":"health_potion","qty":1}]"#
+    } else {
+        "[]"
+    };
+
+    // SpacetimeDB HTTP API: POST /database/call/{module}/{reducer}
+    // Body: JSON array of reducer arguments
+    let url = format!("{}/database/call/{}/commit_mission", spacetimedb_url, module_name);
+    info!("Committing mission to SpacetimeDB: {}", url);
+
+    // Arguments: [mission_id, success, xp_gained, items_gained_json]
+    let args = serde_json::json!([mission_id, success, xp_gained, items_json]);
+
+    let resp = client.post(&url)
+        .header("Content-Type", "application/json")
+        .body(args.to_string())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_else(|_| "unknown".to_string());
+        return Err(format!("SpacetimeDB commit failed: {} - {}", status, body));
+    }
 
     Ok(())
 }
