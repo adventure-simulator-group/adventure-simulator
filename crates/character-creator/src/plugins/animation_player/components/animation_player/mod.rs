@@ -53,49 +53,4 @@ impl AnimationPlayer {
                 .insert(CharacterBaseRotation(transform.rotation));
         }
     }
-
-    pub fn gamepad_control(
-        gamepad: Single<&Gamepad>,
-        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
-        time: Res<Time>,
-    ) {
-        let right_stick_x = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
-        let right_stick_y = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
-
-        let stick = Vec2::new(right_stick_x, right_stick_y);
-        const DEADZONE_SQUARED: f32 = 0.01;
-        if stick.length_squared() < DEADZONE_SQUARED {
-            return;
-        }
-
-        for mut camera in &mut cameras {
-            camera.yaw -= right_stick_x * 2.0 * time.delta_secs();
-            camera.radius -= right_stick_y * 10.0 * time.delta_secs();
-            camera.radius = camera.radius.clamp(2.0, 20.0);
-        }
-    }
-
-    pub fn keyboard_control(
-        keyboard_input: Res<ButtonInput<KeyCode>>,
-        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
-        time: Res<Time>,
-    ) {
-        for mut camera in &mut cameras {
-            if keyboard_input.pressed(KeyCode::KeyA) {
-                camera.yaw -= 2.0 * time.delta_secs();
-            }
-            if keyboard_input.pressed(KeyCode::KeyD) {
-                camera.yaw += 2.0 * time.delta_secs();
-            }
-
-            if keyboard_input.pressed(KeyCode::KeyW) {
-                camera.radius -= 10.0 * time.delta_secs();
-            }
-            if keyboard_input.pressed(KeyCode::KeyS) {
-                camera.radius += 10.0 * time.delta_secs();
-            }
-
-            camera.radius = camera.radius.clamp(2.0, 20.0);
-        }
-    }
 }
