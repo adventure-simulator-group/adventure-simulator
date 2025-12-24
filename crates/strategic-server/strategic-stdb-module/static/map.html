@@ -242,7 +242,7 @@
             <h2>1. Setup Character & Party</h2>
             <div class="form-row">
                 <input type="text" id="characterId" placeholder="Character ID (e.g., hero-1)" value="hero-1">
-                <input type="text" id="characterName" placeholder="Character Name" value="Sir Demo">
+                <input type="text" id="characterName" placeholder="Character Name" value="Agarthan Explorer">
                 <button onclick="createCharacter()">Create Character</button>
             </div>
             <div class="form-row">
@@ -299,8 +299,16 @@
         <div class="mission-panel" id="missionPanel">
             <h2>Active Mission</h2>
             <div class="mission-info" id="missionInfo"></div>
-            <button onclick="simulateMissionEnd(true)">Simulate Victory (+50 XP, +items)</button>
-            <button onclick="simulateMissionEnd(false)" style="margin-left:10px;">Simulate Defeat</button>
+            <div style="margin-top: 15px;">
+                <button onclick="enterWorld()" style="background: linear-gradient(135deg, #2a6a2a, #1a4a1a); border-color: #4f4; font-size: 1.1rem; padding: 12px 24px;">
+                    🎮 Enter World
+                </button>
+            </div>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                <p style="color: #666; font-size: 0.85rem; margin-bottom: 10px;">Or simulate mission result:</p>
+                <button onclick="simulateMissionEnd(true)">Simulate Victory (+50 XP, +items)</button>
+                <button onclick="simulateMissionEnd(false)" style="margin-left:10px;">Simulate Defeat</button>
+            </div>
         </div>
 
         <div id="log">
@@ -311,8 +319,26 @@
     <!-- SpacetimeDB SDK -->
     <script type="module">
         // SpacetimeDB configuration
-        const SPACETIME_HOST = 'http://localhost:3000';
+        const DEFAULT_SPACETIME_HOST = 'http://localhost:3000';
         const MODULE_NAME = 'strategic-stdb-module';
+
+        function resolveSpacetimeHost() {
+            const params = new URLSearchParams(window.location.search);
+            const override = params.get('spacetimedb') || params.get('spacetime');
+            if (override) {
+                return override;
+            }
+
+            if (!window.location.hostname) {
+                return DEFAULT_SPACETIME_HOST;
+            }
+
+            const port = params.get('spacetimedb_port') || '3000';
+            return `${window.location.protocol}//${window.location.hostname}:${port}`;
+        }
+
+        const SPACETIME_HOST = resolveSpacetimeHost();
+        const SPACETIME_DB = `${SPACETIME_HOST}/v1/database/${MODULE_NAME}`;
 
         let state = {
             connected: false,
@@ -368,10 +394,10 @@
 
         async function callReducer(reducerName, args) {
             // SpacetimeDB HTTP API endpoint format:
-            // POST /database/call/{database}/{reducer}
+            // POST /v1/database/{database}/call/{reducer}
             // Body: JSON array of arguments
 
-            const url = `${SPACETIME_HOST}/database/call/${MODULE_NAME}/${reducerName}`;
+            const url = `${SPACETIME_DB}/call/${reducerName}`;
 
             try {
                 const resp = await fetch(url, {
@@ -392,9 +418,38 @@
             }
         }
 
+        function decodeSqlRows(resultSets) {
+            if (!Array.isArray(resultSets)) return [];
+            const rows = [];
+
+            for (const result of resultSets) {
+                const elements = result?.schema?.elements;
+                if (!Array.isArray(elements) || !Array.isArray(result?.rows)) {
+                    continue;
+                }
+
+                const columns = elements.map((element, index) => {
+                    if (element?.name && typeof element.name === 'object' && 'some' in element.name) {
+                        return element.name.some;
+                    }
+                    return element?.name ?? `col_${index}`;
+                });
+
+                for (const row of result.rows) {
+                    const obj = {};
+                    columns.forEach((col, index) => {
+                        obj[col] = row[index];
+                    });
+                    rows.push(obj);
+                }
+            }
+
+            return rows;
+        }
+
         async function queryTable(tableName, filter = null) {
             // SpacetimeDB HTTP API for queries
-            const url = `${SPACETIME_HOST}/database/sql/${MODULE_NAME}`;
+            const url = `${SPACETIME_DB}/sql`;
             const query = filter
                 ? `SELECT * FROM ${tableName} WHERE ${filter}`
                 : `SELECT * FROM ${tableName}`;
@@ -411,7 +466,8 @@
                     throw new Error(`Query failed: ${text}`);
                 }
 
-                return await resp.json();
+                const payload = await resp.json();
+                return decodeSqlRows(payload);
             } catch (e) {
                 log(`Error querying ${tableName}: ${e.message}`);
                 return [];
@@ -561,6 +617,22 @@
             }
         };
 
+        window.enterWorld = function() {
+            if (!state.currentMission) {
+                log('No active mission to enter');
+                return;
+            }
+
+            const sceneKey = state.currentMission.scene_key;
+            const missionId = state.currentMission.id;
+
+            log(`Entering world: ${sceneKey} (${missionId})`);
+
+            // Navigate to the game page with mission parameters
+            const gameUrl = `game.html?scene=${encodeURIComponent(sceneKey)}&mission=${encodeURIComponent(missionId)}`;
+            window.location.href = gameUrl;
+        };
+
         async function refreshPlayerState() {
             if (!state.characterId) return;
 
@@ -589,7 +661,7 @@
 
             try {
                 // Try to ping the SpacetimeDB server
-                const resp = await fetch(`${SPACETIME_HOST}/database/info/${MODULE_NAME}`);
+                const resp = await fetch(`${SPACETIME_DB}`);
 
                 if (resp.ok) {
                     updateConnectionStatus('connected', `Connected to SpacetimeDB (${MODULE_NAME})`);
@@ -603,7 +675,7 @@
                 updateConnectionStatus('disconnected', 'Not connected - start SpacetimeDB and deploy the module');
                 log(`Connection failed: ${e.message}`);
                 log('To start: spacetime start');
-                log('To publish: cd crates/strategic/strategic-stdb-module && spacetime publish strategic-stdb-module');
+                log('To publish: cd crates/strategic-server/strategic-stdb-module && spacetime publish strategic-stdb-module');
             }
         }
 

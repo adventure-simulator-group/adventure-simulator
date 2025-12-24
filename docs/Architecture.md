@@ -140,13 +140,13 @@ spacetime start
 ### 3. Publish the Module
 
 ```bash
-cd crates/strategic/strategic-stdb-module
+cd crates/strategic-server/strategic-stdb-module
 spacetime publish strategic-stdb-module
 ```
 
 ### 4. Open the UI
 
-Open `crates/strategic/strategic-stdb-module/static/map.html` in a browser
+Open `crates/strategic-server/strategic-stdb-module/static/map.html` in a browser
 
 ### 5. Demo Flow
 
@@ -181,9 +181,9 @@ Spawn points are defined in GLB/GLTF files using node naming:
 
 ### Legacy PostgreSQL/Axum Code (Deleted)
 
-- ❌ `crates/strategic/strategic-db` - PostgreSQL layer with SQLx
-- ❌ `crates/strategic/strategic-api` - Axum HTTP REST API
-- ❌ `crates/strategic/strategic-core` - Shared types
+- ❌ `crates/strategic-server/strategic-db` - PostgreSQL layer with SQLx
+- ❌ `crates/strategic-server/strategic-api` - Axum HTTP REST API
+- ❌ `crates/strategic-server/strategic-core` - Shared types
 - ❌ `crates/adventure-simulator-demo` - HTTP client demo
 
 ### Tactical State Removed from DB

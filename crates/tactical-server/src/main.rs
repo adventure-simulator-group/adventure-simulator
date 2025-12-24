@@ -51,6 +51,14 @@ struct Args {
     #[arg(long)]
     asset_path: String,
 
+    /// Path to WebTransport TLS certificate (PEM)
+    #[arg(long)]
+    webtransport_cert: Option<String>,
+
+    /// Path to WebTransport TLS private key (PEM)
+    #[arg(long)]
+    webtransport_key: Option<String>,
+
     /// URL of the strategic API server (legacy HTTP backend)
     #[arg(long, default_value = "http://127.0.0.1:8080")]
     strategic_api_url: String,
@@ -81,6 +89,18 @@ fn main() {
         .init();
 
     let args = Args::parse();
+    let webtransport_certificate = match (&args.webtransport_cert, &args.webtransport_key) {
+        (Some(cert), Some(key)) => WebTransportCertificateSettings::FromFile {
+            cert: cert.clone(),
+            key: key.clone(),
+        },
+        (None, None) => WebTransportCertificateSettings::default(),
+        _ => {
+            error!("--webtransport-cert and --webtransport-key must be provided together");
+            std::process::exit(2);
+        }
+    };
+
     info!("Starting tactical server for mission {}", args.mission_id);
     info!("Scene: {}, Asset: {}", args.scene_key, args.asset_path);
     info!("Listening on port {}", args.port);
@@ -129,6 +149,7 @@ fn main() {
             spacetimedb_module: args.spacetimedb_module.clone(),
             hmac_secret: args.hmac_secret.clone(),
             port: args.port,
+            webtransport_certificate,
         })
         .insert_resource(MissionState {
             started_at: std::time::Instant::now(),
@@ -154,6 +175,7 @@ struct MissionConfig {
     hmac_secret: String,
     #[allow(dead_code)]
     port: u16,
+    webtransport_certificate: WebTransportCertificateSettings,
 }
 
 #[derive(Resource)]
@@ -176,12 +198,19 @@ fn setup_server(mut commands: Commands, config: Res<MissionConfig>, state: Res<M
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port);
 
     // Spawn Lightyear server using adventure-simulator-net
-    // Using WebTransport with auto-generated self-signed certificate
     info!("Starting Lightyear server on {} (WebTransport)", addr);
+    match &config.webtransport_certificate {
+        WebTransportCertificateSettings::FromFile { cert, key } => {
+            info!("WebTransport certificate: {} (key: {})", cert, key);
+        }
+        WebTransportCertificateSettings::AutoSelfSigned(_) => {
+            info!("WebTransport certificate: auto self-signed");
+        }
+    }
     commands.spawn(AdventureSimulatorServer {
         addr,
         protocol: ServerProtocol::WebTransport {
-            certificate: WebTransportCertificateSettings::default(),
+            certificate: config.webtransport_certificate.clone(),
         },
         protocol_settings: ProtocolSettings::default(),
     });

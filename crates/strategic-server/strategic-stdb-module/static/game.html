@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventure Simulator - Tactical Game</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a2e;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-family: system-ui, -apple-system, sans-serif;
+            z-index: 100;
+            transition: opacity 0.5s ease-out;
+        }
+        #loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,215,0,0.2);
+            border-top-color: #ffd700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            font-size: 1.2rem;
+            color: #888;
+            margin-bottom: 10px;
+        }
+        .loading-progress {
+            width: 200px;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .loading-bar {
+            width: 0%;
+            height: 100%;
+            background: #ffd700;
+            transition: width 0.3s ease-out;
+        }
+        #back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 50;
+            padding: 10px 20px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            font-family: system-ui;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #back-button:hover {
+            background: rgba(255,215,0,0.2);
+            border-color: #ffd700;
+        }
+        #mission-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 50;
+            padding: 15px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: #fff;
+            font-family: system-ui;
+            font-size: 13px;
+            max-width: 250px;
+        }
+        #mission-info h3 {
+            color: #ffd700;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        #mission-info p {
+            color: #888;
+            margin-bottom: 5px;
+        }
+        #mission-info .value {
+            color: #fff;
+        }
+        #error-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 46, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-family: system-ui;
+            z-index: 200;
+        }
+        #error-overlay.visible {
+            display: flex;
+        }
+        .error-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        .error-message {
+            font-size: 1.1rem;
+            color: #f44;
+            margin-bottom: 20px;
+            text-align: center;
+            max-width: 400px;
+        }
+        .error-details {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .retry-button {
+            padding: 12px 30px;
+            background: #3a3a6a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .retry-button:hover {
+            background: #4a4a7a;
+            border-color: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <div id="loading-overlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading Adventure Simulator...</div>
+            <div class="loading-progress">
+                <div class="loading-bar" id="loading-bar"></div>
+            </div>
+        </div>
+
+        <button id="back-button" onclick="exitGame()">← Back to Map</button>
+
+        <div id="mission-info">
+            <h3>Mission Info</h3>
+            <p>Scene: <span class="value" id="info-scene">-</span></p>
+            <p>Mission ID: <span class="value" id="info-mission-id">-</span></p>
+            <p>Controls:</p>
+            <p style="color: #4af; font-size: 12px;">WASD - Move</p>
+            <p style="color: #4af; font-size: 12px;">Arrow Keys - Camera</p>
+        </div>
+
+        <div id="error-overlay">
+            <div class="error-icon">⚠️</div>
+            <div class="error-message" id="error-message">Failed to load game</div>
+            <div class="error-details">Please check your browser supports WebGL2 and WebAssembly</div>
+            <button class="retry-button" onclick="location.reload()">Retry</button>
+            <button class="retry-button" onclick="exitGame()" style="margin-top: 10px; background: transparent;">Back to Map</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Parse URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const sceneKey = params.get('scene') || 'unknown';
+        const missionId = params.get('mission') || 'local-' + Date.now().toString(36);
+
+        // Update mission info display
+        document.getElementById('info-scene').textContent = sceneKey;
+        document.getElementById('info-mission-id').textContent = missionId.slice(0, 15) + '...';
+
+        // Loading progress simulation
+        let progress = 0;
+        const loadingBar = document.getElementById('loading-bar');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const errorOverlay = document.getElementById('error-overlay');
+
+        function updateProgress(value) {
+            progress = Math.min(100, value);
+            loadingBar.style.width = progress + '%';
+        }
+
+        // Simulate initial progress while loading WASM
+        const progressInterval = setInterval(() => {
+            if (progress < 80) {
+                updateProgress(progress + Math.random() * 10);
+            }
+        }, 200);
+
+        // Exit game function
+        window.exitGame = function() {
+            // Try to return to map.html, or go back in history
+            if (document.referrer && document.referrer.includes('map.html')) {
+                window.location.href = document.referrer;
+            } else {
+                window.location.href = 'map.html';
+            }
+        };
+
+        // Show error
+        function showError(message) {
+            clearInterval(progressInterval);
+            document.getElementById('error-message').textContent = message;
+            errorOverlay.classList.add('visible');
+            loadingOverlay.classList.add('hidden');
+        }
+
+        // Load the WASM module
+        async function loadGame() {
+            try {
+                // Check for WebGL2 support
+                const canvas = document.getElementById('game-canvas');
+                const gl = canvas.getContext('webgl2');
+                if (!gl) {
+                    showError('WebGL2 is not supported in your browser');
+                    return;
+                }
+
+                updateProgress(30);
+
+                // Import the WASM module
+                // Built by: just build-wasm
+                // Outputs to: static/wasm/adventure-simulator-client.js
+                const wasmPath = './wasm/adventure-simulator-client.js';
+
+                try {
+                    const module = await import(wasmPath);
+                    updateProgress(70);
+
+                    // Initialize the Bevy app
+                    await module.default();
+                    updateProgress(100);
+
+                    // Hide loading overlay
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('hidden');
+                    }, 300);
+
+                    clearInterval(progressInterval);
+                } catch (importError) {
+                    console.error('Failed to import WASM module:', importError);
+
+                    // If WASM not found, show helpful error
+                    if (importError.message.includes('Failed to fetch') ||
+                        importError.message.includes('404') ||
+                        importError.message.includes('NetworkError')) {
+                        showError('Game not built yet. Run: just build-wasm');
+                    } else {
+                        showError('Failed to load game: ' + importError.message);
+                    }
+                }
+            } catch (error) {
+                console.error('Game loading error:', error);
+                showError('Failed to initialize game: ' + error.message);
+            }
+        }
+
+        // Start loading
+        loadGame();
+
+        // Handle keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                exitGame();
+            }
+        });
+    </script>
+</body>
+</html>

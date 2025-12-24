@@ -1,49 +1,350 @@
-use std::net::SocketAddr;
+//! Adventure Simulator - WASM Tactical Client
+//!
+//! A Bevy-based 3D game client that runs in the browser (WASM).
+//! Features:
+//! - WASD movement with a capsule character
+//! - Camera follow system
+//! - Ground plane and skybox
+//! - Ready for Lightyear networking integration
 
-use adventure_simulator_net::{
-    client::AdventureSimulatorClient,
-    lightyear::prelude::{client::InputDelayConfig, *},
-    AdventureSimulatorNetPlugins,
-};
 use bevy::prelude::*;
-use clap::Parser;
 
-#[derive(Parser, Debug)]
-#[command(version, about)]
-struct AppConfig {
-    /// Client ID
-    #[arg(long)]
-    id: u64,
-    /// Server addr
-    #[arg(long)]
-    server_addr: SocketAddr,
-}
+#[cfg(target_family = "wasm")]
+use console_error_panic_hook;
+
+/// Player movement speed (units per second)
+const PLAYER_SPEED: f32 = 5.0;
+/// Camera distance from player
+const CAMERA_DISTANCE: f32 = 10.0;
+/// Camera height offset
+const CAMERA_HEIGHT: f32 = 5.0;
 
 fn main() {
+    // Set up panic hook for better WASM error messages
+    #[cfg(target_family = "wasm")]
+    console_error_panic_hook::set_once();
+
     App::new()
-        .add_plugins((DefaultPlugins, AdventureSimulatorNetPlugins))
-        .insert_resource(AmbientLight {
-            color: Color::WHITE,
-            brightness: 2000.,
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Adventure Simulator - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                ..default()
+            }),
             ..default()
-        })
-        .add_systems(Startup, setup_client_system)
+        }))
+        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+        .add_systems(Startup, setup)
+        .add_systems(Update, (player_movement, camera_follow, update_ui))
         .run();
 }
 
-fn setup_client_system(mut commands: Commands) -> Result {
-    let AppConfig { id, server_addr } = AppConfig::try_parse()?;
+/// Marker component for the player entity
+#[derive(Component)]
+struct Player;
 
+/// Marker component for the main camera
+#[derive(Component)]
+struct MainCamera;
+
+/// UI text for displaying controls
+#[derive(Component)]
+struct ControlsText;
+
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Ground plane
     commands.spawn((
-        AdventureSimulatorClient {
-            id,
-            server_addr,
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.2, 0.5, 0.2),
+            perceptual_roughness: 0.9,
             ..default()
-        },
-        InputTimeline(Timeline::from(
-            Input::default().with_input_delay(InputDelayConfig::fixed_input_delay(0)),
-        )),
+        })),
+        Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 
-    Ok(())
+    // Grid lines for visual reference
+    for i in -5..=5 {
+        let x = i as f32 * 5.0;
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.05, 0.02, 50.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(0.4, 0.4, 0.4, 0.5),
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            })),
+            Transform::from_xyz(x, 0.01, 0.0),
+        ));
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(50.0, 0.02, 0.05))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(0.4, 0.4, 0.4, 0.5),
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            })),
+            Transform::from_xyz(0.0, 0.01, x),
+        ));
+    }
+
+    // Player (capsule character)
+    let player_entity = commands
+        .spawn((
+            Player,
+            Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.8, 0.3, 0.3),
+                metallic: 0.3,
+                perceptual_roughness: 0.5,
+                ..default()
+            })),
+            Transform::from_xyz(0.0, 1.0, 0.0),
+        ))
+        .id();
+
+    // Direction indicator (small cone on top of player)
+    commands.spawn((
+        Mesh3d(meshes.add(Cone::new(0.2, 0.4))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.8, 0.0),
+            emissive: LinearRgba::new(1.0, 0.8, 0.0, 1.0),
+            ..default()
+        })),
+        Transform::from_xyz(0.0, 1.0, -0.3)
+            .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        ChildOf(player_entity),
+    ));
+
+    // Some obstacles/props for visual interest
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(5.0, 0.5, 5.0),
+        Color::srgb(0.4, 0.4, 0.8),
+    );
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(-5.0, 0.5, 5.0),
+        Color::srgb(0.8, 0.4, 0.4),
+    );
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(5.0, 0.5, -5.0),
+        Color::srgb(0.4, 0.8, 0.4),
+    );
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(-5.0, 0.5, -5.0),
+        Color::srgb(0.8, 0.8, 0.4),
+    );
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(10.0, 0.75, 0.0),
+        Color::srgb(0.6, 0.3, 0.6),
+    );
+    spawn_prop(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(-10.0, 0.75, 0.0),
+        Color::srgb(0.3, 0.6, 0.6),
+    );
+
+    // Lighting
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 10000.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    commands.insert_resource(AmbientLight {
+        color: Color::srgb(0.4, 0.4, 0.6),
+        brightness: 500.0,
+        affects_lightmapped_meshes: true,
+    });
+
+    // Camera
+    commands.spawn((
+        MainCamera,
+        Camera3d::default(),
+        Transform::from_xyz(0.0, CAMERA_HEIGHT, CAMERA_DISTANCE).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    // UI - Controls text
+    commands.spawn((
+        ControlsText,
+        Text::new("WASD to move | Arrow keys to rotate camera"),
+        TextFont {
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(20.0),
+            left: Val::Px(20.0),
+            ..default()
+        },
+    ));
+
+    // Position indicator
+    commands.spawn((
+        Text::new("Position: (0.0, 0.0)"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(20.0),
+            left: Val::Px(20.0),
+            ..default()
+        },
+    ));
+}
+
+fn spawn_prop(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    position: Vec3,
+    color: Color,
+) {
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.0, position.y * 2.0, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: color,
+            metallic: 0.2,
+            perceptual_roughness: 0.7,
+            ..default()
+        })),
+        Transform::from_translation(position),
+    ));
+}
+
+fn player_movement(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut query: Query<&mut Transform, With<Player>>,
+    camera_query: Query<&Transform, (With<MainCamera>, Without<Player>)>,
+) {
+    let Ok(camera_transform) = camera_query.single() else {
+        return;
+    };
+
+    // Get camera forward/right vectors (flatten to XZ plane)
+    let camera_forward = camera_transform.forward();
+    let forward = Vec3::new(camera_forward.x, 0.0, camera_forward.z).normalize_or_zero();
+    let right = Vec3::new(-camera_forward.z, 0.0, camera_forward.x).normalize_or_zero();
+
+    let mut direction = Vec3::ZERO;
+
+    if keyboard.pressed(KeyCode::KeyW) {
+        direction += forward;
+    }
+    if keyboard.pressed(KeyCode::KeyS) {
+        direction -= forward;
+    }
+    if keyboard.pressed(KeyCode::KeyA) {
+        direction -= right;
+    }
+    if keyboard.pressed(KeyCode::KeyD) {
+        direction += right;
+    }
+
+    if direction.length_squared() > 0.0 {
+        direction = direction.normalize();
+    }
+
+    for mut transform in &mut query {
+        let movement = direction * PLAYER_SPEED * time.delta_secs();
+        transform.translation += movement;
+
+        // Clamp to ground bounds
+        transform.translation.x = transform.translation.x.clamp(-24.0, 24.0);
+        transform.translation.z = transform.translation.z.clamp(-24.0, 24.0);
+
+        // Rotate to face movement direction
+        if direction.length_squared() > 0.01 {
+            let target_rotation = Quat::from_rotation_y((-direction.x).atan2(-direction.z));
+            transform.rotation = transform.rotation.slerp(target_rotation, 10.0 * time.delta_secs());
+        }
+    }
+}
+
+fn camera_follow(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    player_query: Query<&Transform, With<Player>>,
+    mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
+) {
+    let Some(player_transform) = player_query.iter().next().cloned() else {
+        return;
+    };
+
+    let Ok(mut camera_transform) = camera_query.single_mut() else {
+        return;
+    };
+
+    // Calculate current camera angle around player
+    let current_offset = camera_transform.translation - player_transform.translation;
+    let mut current_angle = current_offset.x.atan2(current_offset.z);
+
+    // Rotate camera with arrow keys
+    let rotation_speed = 2.0;
+    if keyboard.pressed(KeyCode::ArrowLeft) {
+        current_angle += rotation_speed * time.delta_secs();
+    }
+    if keyboard.pressed(KeyCode::ArrowRight) {
+        current_angle -= rotation_speed * time.delta_secs();
+    }
+
+    // Calculate new camera position
+    let target_x = player_transform.translation.x + current_angle.sin() * CAMERA_DISTANCE;
+    let target_z = player_transform.translation.z + current_angle.cos() * CAMERA_DISTANCE;
+    let target_y = player_transform.translation.y + CAMERA_HEIGHT;
+
+    let target_position = Vec3::new(target_x, target_y, target_z);
+
+    // Smooth camera follow
+    camera_transform.translation = camera_transform
+        .translation
+        .lerp(target_position, 5.0 * time.delta_secs());
+
+    // Look at player
+    camera_transform.look_at(player_transform.translation + Vec3::Y * 1.0, Vec3::Y);
+}
+
+fn update_ui(
+    player_query: Query<&Transform, With<Player>>,
+    mut text_query: Query<&mut Text, Without<ControlsText>>,
+) {
+    let Some(player_transform) = player_query.iter().next() else {
+        return;
+    };
+
+    for mut text in &mut text_query {
+        text.0 = format!(
+            "Position: ({:.1}, {:.1})",
+            player_transform.translation.x, player_transform.translation.z
+        );
+    }
 }

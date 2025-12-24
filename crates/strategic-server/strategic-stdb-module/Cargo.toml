@@ -8,4 +8,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 log = "0.4"
-spacetimedb = "1.1"
+spacetimedb = "=1.11.0"

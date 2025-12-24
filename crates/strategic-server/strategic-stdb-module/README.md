@@ -51,7 +51,7 @@ Tactical state lives in the `tactical-server` game state and is discarded when m
 spacetime start
 
 # Publish module
-cd crates/strategic/strategic-stdb-module
+cd crates/strategic-server/strategic-stdb-module
 spacetime publish strategic-stdb-module
 
 # Open UI
