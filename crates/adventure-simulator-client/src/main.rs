@@ -244,11 +244,9 @@ fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut query: Query<&mut Transform, With<Player>>,
-    camera_query: Query<&Transform, (With<MainCamera>, Without<Player>)>,
+    camera: Single<&Transform, (With<MainCamera>, Without<Player>)>,
 ) {
-    let Ok(camera_transform) = camera_query.single() else {
-        return;
-    };
+    let camera_transform = camera.into_inner();
 
     // Get camera forward/right vectors (flatten to XZ plane)
     let camera_forward = camera_transform.forward();
