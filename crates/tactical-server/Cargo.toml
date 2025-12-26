@@ -8,36 +8,18 @@ name = "tactical-server"
 path = "src/main.rs"
 
 [dependencies]
-# Bevy + Lightyear for real-time networking
-bevy = { workspace = true, default-features = false, features = [
-    "bevy_asset",
-    "bevy_scene",
-    "bevy_state",
-    "bevy_log",
-    "multi_threaded",
-] }
+# Bevy + Lightyear
+bevy = { workspace = true, default-features = false, features = ["multi_threaded"] }
 adventure-simulator-net = { workspace = true, features = ["server"] }
 
-# GLB/GLTF parsing (headless)
-gltf = "1.4"
-
-# CLI and config
+# CLI
 clap = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = "1"
 
-# Async runtime for HTTP calls
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Async HTTP for SpacetimeDB calls
+tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# HMAC token validation
-hmac = "0.12"
-sha2 = "0.10"
-base64 = "0.22"
 
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Utils
-rand = { workspace = true }

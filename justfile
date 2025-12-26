@@ -99,7 +99,7 @@ publish server=spacetime_url:
 
 # Publish and clear the module database
 publish-reset server=spacetime_url:
-    @cd "{{strategic_dir}}" && spacetime publish --delete-data always --server {{server}} {{spacetime_module}}
+    @cd "{{strategic_dir}}" && spacetime publish --delete-data=always --server {{server}} {{spacetime_module}}
 
 # Serve the strategic UI locally
 serve-ui:
@@ -180,9 +180,9 @@ status:
 build-strategic:
     @cd "{{strategic_dir}}" && spacetime build
 
-# Build the tactical server
+# Build the tactical server and spawner
 build-tactical:
-    @cargo build --package tactical-server
+    @cargo build --package tactical-server --package tactical-spawner
 
 # Build the WASM client
 build-wasm:
@@ -202,36 +202,22 @@ build-wasm:
 # Build everything
 build-all: build-strategic build-tactical build-wasm
 
-# Run the tactical server (self-signed certificate in memory)
-tactical mission_id="mission-local-1" scene_key="town_a" asset_path="assets/TownA.glb" hmac_secret="local-dev-secret" spacetimedb_url="{{spacetime_url}}":
+# Run the tactical spawner (watches for pending missions and starts servers)
+spawner:
+    @cargo run --package tactical-spawner -- \
+        --spacetimedb-url {{spacetime_url}} \
+        --spacetimedb-module {{spacetime_module}} \
+        --tactical-server-bin "$(pwd)/target/debug/tactical-server" \
+        --base-port {{tactical_port}}
+
+# Run a single tactical server (for testing)
+tactical mission_id="test-mission" scene_key="town_a":
     @cargo run --package tactical-server -- \
         --port {{tactical_port}} \
         --mission-id {{mission_id}} \
         --scene-key {{scene_key}} \
-        --asset-path {{asset_path}} \
-        --spacetimedb-url {{spacetimedb_url}} \
-        --spacetimedb-module {{spacetime_module}} \
-        --hmac-secret {{hmac_secret}}
-
-# Run the tactical server using the generated certificate files
-tactical-cert mission_id="mission-local-1" scene_key="town_a" asset_path="assets/TownA.glb" hmac_secret="local-dev-secret" spacetimedb_url="{{spacetime_url}}":
-    @cargo run --package tactical-server -- \
-        --port {{tactical_port}} \
-        --mission-id {{mission_id}} \
-        --scene-key {{scene_key}} \
-        --asset-path {{asset_path}} \
-        --spacetimedb-url {{spacetimedb_url}} \
-        --spacetimedb-module {{spacetime_module}} \
-        --hmac-secret {{hmac_secret}} \
-        --webtransport-cert "{{cert_pem}}" \
-        --webtransport-key "{{cert_key}}"
-
-# Convenience recipes for the sample scenes
-tactical-town-a:
-    @just tactical scene_key="town_a" asset_path="assets/TownA.glb"
-
-tactical-town-b:
-    @just tactical scene_key="town_b" asset_path="assets/TownB.glb"
+        --spacetimedb-url {{spacetime_url}} \
+        --spacetimedb-module {{spacetime_module}}
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":
