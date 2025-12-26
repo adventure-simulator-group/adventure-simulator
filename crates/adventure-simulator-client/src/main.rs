@@ -327,12 +327,10 @@ fn camera_follow(
 }
 
 fn update_ui(
-    player_query: Query<&Transform, With<Player>>,
+    player: Single<&Transform, With<Player>>,
     mut text_query: Query<&mut Text, Without<ControlsText>>,
 ) {
-    let Some(player_transform) = player_query.iter().next() else {
-        return;
-    };
+    let player_transform = player.into_inner();
 
     for mut text in &mut text_query {
         text.0 = format!(
