@@ -291,16 +291,11 @@ fn player_movement(
 fn camera_follow(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    player_query: Query<&Transform, With<Player>>,
-    mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
+    player Single<&Transform, With<Player>>,
+    mut camera: Single<&mut Transform, (With<MainCamera>, Without<Player>)>,
 ) {
-    let Some(player_transform) = player_query.iter().next().cloned() else {
-        return;
-    };
-
-    let Ok(mut camera_transform) = camera_query.single_mut() else {
-        return;
-    };
+    let player_transform = player.into_inner();
+    let mut camera_transform = camera.into_inner();
 
     // Calculate current camera angle around player
     let current_offset = camera_transform.translation - player_transform.translation;
