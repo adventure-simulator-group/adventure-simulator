@@ -244,11 +244,9 @@ fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut query: Query<&mut Transform, With<Player>>,
-    camera_query: Query<&Transform, (With<MainCamera>, Without<Player>)>,
+    camera: Single<&Transform, (With<MainCamera>, Without<Player>)>,
 ) {
-    let Ok(camera_transform) = camera_query.single() else {
-        return;
-    };
+    let camera_transform = camera.into_inner();
 
     // Get camera forward/right vectors (flatten to XZ plane)
     let camera_forward = camera_transform.forward();
@@ -293,16 +291,11 @@ fn player_movement(
 fn camera_follow(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    player_query: Query<&Transform, With<Player>>,
-    mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
+    player Single<&Transform, With<Player>>,
+    mut camera: Single<&mut Transform, (With<MainCamera>, Without<Player>)>,
 ) {
-    let Some(player_transform) = player_query.iter().next().cloned() else {
-        return;
-    };
-
-    let Ok(mut camera_transform) = camera_query.single_mut() else {
-        return;
-    };
+    let player_transform = player.into_inner();
+    let mut camera_transform = camera.into_inner();
 
     // Calculate current camera angle around player
     let current_offset = camera_transform.translation - player_transform.translation;
@@ -334,12 +327,10 @@ fn camera_follow(
 }
 
 fn update_ui(
-    player_query: Query<&Transform, With<Player>>,
+    player: Single<&Transform, With<Player>>,
     mut text_query: Query<&mut Text, Without<ControlsText>>,
 ) {
-    let Some(player_transform) = player_query.iter().next() else {
-        return;
-    };
+    let player_transform = player.into_inner();
 
     for mut text in &mut text_query {
         text.0 = format!(
