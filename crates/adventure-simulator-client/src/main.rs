@@ -291,7 +291,7 @@ fn player_movement(
 fn camera_follow(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    player Single<&Transform, With<Player>>,
+    player: Single<&Transform, With<Player>>,
     mut camera: Single<&mut Transform, (With<MainCamera>, Without<Player>)>,
 ) {
     let player_transform = player.into_inner();
