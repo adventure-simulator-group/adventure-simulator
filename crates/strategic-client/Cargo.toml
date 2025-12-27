@@ -1,0 +1,22 @@
+[package]
+name = "strategic-client"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "strategic-client"
+path = "src/main.rs"
+
+[dependencies]
+strategic-stdb-client = { path = "../strategic-stdb-client" }
+bevy = { version = "0.15", default-features = false, features = [
+    "bevy_winit",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_text",
+    "bevy_ui",
+    "default_font",
+    "x11",
+] }
+bevy_egui = "0.32"
+clap = { version = "4", features = ["derive"] }

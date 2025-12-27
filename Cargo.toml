@@ -6,10 +6,11 @@ members = [
     "crates/adventure-simulator-client",
     "crates/character-creator",
     "crates/strategic-server/*",
+    "crates/strategic-stdb-client",
     "crates/tactical-server",
     "crates/tactical-spawner",
 ]
-exclude = ["/wiki", "/utils", "crates/strategic-server/strategic-stdb-client"]
+exclude = ["/wiki", "/utils"]
 
 [workspace.package]
 version = "0.1.0"

@@ -13,7 +13,6 @@
             min-height: 100vh;
         }
 
-        /* Strategic View */
         #strategic-view {
             padding: 20px;
             max-width: 800px;
@@ -39,7 +38,6 @@
         }
         button { cursor: pointer; }
         button:hover { background: #3a3a6a; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .form-row { display: flex; gap: 10px; margin-bottom: 10px; }
         .form-row input { flex: 1; }
@@ -60,51 +58,13 @@
             transition: all 0.2s;
         }
         .location:hover { border-color: #ffd700; transform: translateY(-3px); }
-        .location.disabled { opacity: 0.5; pointer-events: none; }
-        .location .icon { font-size: 2.5rem; margin-bottom: 10px; }
-        .location h3 { margin-bottom: 5px; }
-        .location p { color: #888; font-size: 0.9rem; }
-
-        .inventory { display: flex; flex-wrap: wrap; gap: 8px; }
-        .item { background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
 
         #status { color: #888; text-align: center; padding: 10px; }
         #status.error { color: #f44; }
         #status.success { color: #4f4; }
-
-        /* Tactical View (game canvas) */
-        #tactical-view {
-            display: none;
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: #000;
-        }
-        #tactical-view.active { display: block; }
-        #game-canvas { width: 100%; height: 100%; }
-
-        #game-overlay {
-            position: absolute;
-            top: 20px; left: 20px;
-            z-index: 10;
-        }
-        #leave-btn {
-            background: rgba(0,0,0,0.7);
-            border: 1px solid #666;
-            padding: 10px 20px;
-        }
-        #game-status {
-            position: absolute;
-            top: 20px; right: 20px;
-            background: rgba(0,0,0,0.7);
-            padding: 15px;
-            border-radius: 8px;
-            z-index: 10;
-        }
     </style>
 </head>
 <body>
-    <!-- Strategic View (map/menus) -->
     <div id="strategic-view">
         <h1>Adventure Simulator</h1>
 
@@ -122,85 +82,29 @@
                 <div class="stat"><div class="stat-value" id="stat-xp">0</div><div class="stat-label">XP</div></div>
                 <div class="stat"><div class="stat-value" id="stat-level">1</div><div class="stat-label">Level</div></div>
             </div>
-            <h2 style="margin-top:20px;">Inventory</h2>
-            <div class="inventory" id="inventory"><em>Empty</em></div>
         </div>
 
         <div class="panel" id="locations-panel" style="display:none;">
             <h2>Select Destination</h2>
             <div class="locations">
                 <div class="location" onclick="enterMission('town_a')">
-                    <div class="icon">🏘️</div>
                     <h3>Town A</h3>
                     <p>A peaceful village</p>
                 </div>
                 <div class="location" onclick="enterMission('town_b')">
-                    <div class="icon">🏰</div>
                     <h3>Town B</h3>
                     <p>A fortified town</p>
                 </div>
             </div>
         </div>
 
-        <div id="status">Connecting to SpacetimeDB...</div>
+        <div id="status">Ready</div>
     </div>
 
-    <!-- Tactical View (3D game) -->
-    <div id="tactical-view">
-        <canvas id="game-canvas"></canvas>
-        <div id="game-overlay">
-            <button id="leave-btn" onclick="leaveMission()">← Leave Mission</button>
-        </div>
-        <div id="game-status">
-            <div>Scene: <span id="game-scene">-</span></div>
-            <div>Status: <span id="game-connection">Connecting...</span></div>
-        </div>
-    </div>
-
-    <script type="module">
-        // Config
-        const SPACETIME_HOST = window.location.hostname
-            ? `${window.location.protocol}//${window.location.hostname}:3000`
-            : 'http://localhost:3000';
+    <script>
+        const API = 'http://' + window.location.hostname + ':3000';
         const MODULE = 'strategic-stdb-module';
-        const API = `${SPACETIME_HOST}/v1/database/${MODULE}`;
-
-        // State
         let characterId = null;
-        let currentMission = null;
-
-        // SpacetimeDB helpers
-        async function callReducer(name, args) {
-            const resp = await fetch(`${API}/call/${name}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(args)
-            });
-            if (!resp.ok) throw new Error(await resp.text());
-        }
-
-        async function query(sql) {
-            const resp = await fetch(`${API}/sql`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: sql
-            });
-            if (!resp.ok) throw new Error(await resp.text());
-            const data = await resp.json();
-
-            // Decode SpacetimeDB response format
-            const rows = [];
-            for (const result of data) {
-                if (!result?.schema?.elements || !result?.rows) continue;
-                const cols = result.schema.elements.map(e => e.name?.some || e.name);
-                for (const row of result.rows) {
-                    const obj = {};
-                    cols.forEach((c, i) => obj[c] = row[i]);
-                    rows.push(obj);
-                }
-            }
-            return rows;
-        }
 
         function setStatus(msg, type = '') {
             const el = document.getElementById('status');
@@ -208,8 +112,30 @@
             el.className = type;
         }
 
-        // Character management
-        window.createCharacter = async function() {
+        async function callReducer(reducer, args) {
+            const res = await fetch(`${API}/database/call/${MODULE}/${reducer}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(args)
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || res.statusText);
+            }
+            return res.json().catch(() => ({}));
+        }
+
+        async function query(sql) {
+            const res = await fetch(`${API}/database/sql/${MODULE}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: sql })
+            });
+            if (!res.ok) throw new Error(res.statusText);
+            return res.json();
+        }
+
+        async function createCharacter() {
             const name = document.getElementById('charName').value.trim();
             if (!name) return;
 
@@ -219,120 +145,41 @@
                 setStatus('Character created!', 'success');
                 document.getElementById('character-panel').style.display = 'block';
                 document.getElementById('locations-panel').style.display = 'block';
-                refreshCharacter();
             } catch (e) {
                 setStatus('Error: ' + e.message, 'error');
             }
-        };
-
-        async function refreshCharacter() {
-            if (!characterId) return;
-
-            // Get character
-            const chars = await query(`SELECT * FROM character WHERE id = '${characterId}'`);
-            if (chars.length > 0) {
-                document.getElementById('stat-xp').textContent = chars[0].xp;
-                document.getElementById('stat-level').textContent = chars[0].level;
-            }
-
-            // Get inventory
-            const items = await query(`SELECT * FROM inventory_item WHERE character_id = '${characterId}'`);
-            const inv = document.getElementById('inventory');
-            if (items.length > 0) {
-                inv.innerHTML = items.map(i => `<div class="item">${i.item_id} x${i.qty}</div>`).join('');
-            } else {
-                inv.innerHTML = '<em>Empty</em>';
-            }
         }
 
-        // Mission management
-        window.enterMission = async function(sceneKey) {
+        async function enterMission(sceneKey) {
             if (!characterId) return;
-
             try {
                 setStatus('Starting mission...', '');
                 await callReducer('enter_mission', [characterId, sceneKey]);
-
-                // Poll for server ready
-                pollForServer(sceneKey);
+                setStatus('Mission started! Server spawning...', 'success');
+                pollForServer();
             } catch (e) {
                 setStatus('Error: ' + e.message, 'error');
             }
-        };
+        }
 
-        async function pollForServer(sceneKey) {
-            const checkInterval = setInterval(async () => {
-                const servers = await query(
-                    `SELECT * FROM tactical_server WHERE character_id = '${characterId}' AND status != 'ended'`
-                );
-
-                if (servers.length > 0) {
-                    const server = servers[0];
-                    currentMission = server;
-
-                    if (server.status === 'ready') {
-                        clearInterval(checkInterval);
-                        enterTacticalView(server);
-                    } else if (server.status === 'pending') {
-                        setStatus('Waiting for server to start...', '');
+        async function pollForServer() {
+            for (let i = 0; i < 30; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const result = await query(`SELECT * FROM tactical_server WHERE character_id = '${characterId}'`);
+                    if (result.rows && result.rows.length > 0) {
+                        const server = result.rows[0];
+                        if (server.status && server.status.tag === 'Ready') {
+                            setStatus(`Server ready at ${server.host}:${server.port}`, 'success');
+                            return;
+                        }
                     }
+                } catch (e) {
+                    console.log('Poll error:', e);
                 }
-            }, 500);
-
-            // Timeout after 30 seconds
-            setTimeout(() => {
-                clearInterval(checkInterval);
-                if (!currentMission || currentMission.status !== 'ready') {
-                    setStatus('Server timeout. Run: just tactical', 'error');
-                }
-            }, 30000);
-        }
-
-        function enterTacticalView(server) {
-            document.getElementById('strategic-view').style.display = 'none';
-            document.getElementById('tactical-view').classList.add('active');
-            document.getElementById('game-scene').textContent = server.scene_key;
-            document.getElementById('game-connection').textContent =
-                `${server.host}:${server.port}`;
-
-            // Load WASM game
-            loadGame(server);
-        }
-
-        async function loadGame(server) {
-            try {
-                const module = await import('./wasm/adventure-simulator-client.js');
-                await module.default();
-                document.getElementById('game-connection').textContent = 'Connected!';
-            } catch (e) {
-                document.getElementById('game-connection').textContent = 'WASM not built. Run: just build-wasm';
-                console.error('Failed to load game:', e);
             }
+            setStatus('Server spawn timeout', 'error');
         }
-
-        window.leaveMission = async function() {
-            if (currentMission) {
-                await callReducer('leave_mission', [currentMission.mission_id]);
-            }
-            currentMission = null;
-            document.getElementById('tactical-view').classList.remove('active');
-            document.getElementById('strategic-view').style.display = 'block';
-            refreshCharacter();
-            setStatus('Left mission', '');
-        };
-
-        // Init
-        async function init() {
-            try {
-                await fetch(`${API}`);
-                setStatus('Connected! Create a character to begin.', 'success');
-            } catch (e) {
-                setStatus('Not connected. Run: just dev', 'error');
-            }
-        }
-
-        init();
-        setInterval(refreshCharacter, 5000);
     </script>
 </body>
 </html>

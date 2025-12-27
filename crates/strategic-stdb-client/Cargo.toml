@@ -1,0 +1,7 @@
+[package]
+name = "strategic-stdb-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk = "1.1"

@@ -1,14 +1,15 @@
 //! Tactical Spawner - Watches SpacetimeDB and spawns tactical-server processes
 //!
-//! Polls for "pending" missions and starts a tactical-server process for each one.
-//! Simple and minimal - just enough to demonstrate the architecture.
+//! Subscribes to the tactical_server table and spawns a server process
+//! whenever a new "pending" mission appears.
 
 use std::collections::HashSet;
 use std::process::Command;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use clap::Parser;
-use serde::Deserialize;
+use strategic_stdb_client::spacetimedb_sdk::{DbContext, Table};
+use strategic_stdb_client::{DbConnection, TacticalServerTableAccess, TacticalStatus};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -31,24 +32,12 @@ struct Args {
     #[arg(long, default_value = "6000")]
     base_port: u16,
 
-    /// Poll interval in milliseconds
-    #[arg(long, default_value = "1000")]
-    poll_interval_ms: u64,
-
     /// Public host for clients to connect to
     #[arg(long, default_value = "localhost")]
     public_host: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct TacticalServer {
-    mission_id: String,
-    scene_key: String,
-    status: String,
-}
-
-#[tokio::main]
-async fn main() {
+fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -58,144 +47,109 @@ async fn main() {
 
     let args = Args::parse();
     info!("Starting tactical spawner");
-    info!("SpacetimeDB: {}/{}", args.spacetimedb_url, args.spacetimedb_module);
-    info!("Tactical server binary: {}", args.tactical_server_bin);
-
-    let mut spawned_missions: HashSet<String> = HashSet::new();
-    let mut next_port = args.base_port;
-
-    loop {
-        match poll_pending_missions(&args).await {
-            Ok(pending) => {
-                for mission in pending {
-                    if spawned_missions.contains(&mission.mission_id) {
-                        continue;
-                    }
-
-                    info!(
-                        "Spawning tactical-server for mission {} (scene: {})",
-                        mission.mission_id, mission.scene_key
-                    );
-
-                    let port = next_port;
-                    next_port += 1;
-
-                    // Spawn the tactical-server process
-                    match Command::new(&args.tactical_server_bin)
-                        .args([
-                            "--mission-id",
-                            &mission.mission_id,
-                            "--scene-key",
-                            &mission.scene_key,
-                            "--port",
-                            &port.to_string(),
-                            "--spacetimedb-url",
-                            &args.spacetimedb_url,
-                            "--spacetimedb-module",
-                            &args.spacetimedb_module,
-                            "--public-host",
-                            &args.public_host,
-                        ])
-                        .spawn()
-                    {
-                        Ok(child) => {
-                            info!(
-                                "Spawned tactical-server (pid {}) on port {}",
-                                child.id(),
-                                port
-                            );
-                            spawned_missions.insert(mission.mission_id);
-                        }
-                        Err(e) => {
-                            error!("Failed to spawn tactical-server: {}", e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Failed to poll SpacetimeDB: {}", e);
-            }
-        }
-
-        tokio::time::sleep(Duration::from_millis(args.poll_interval_ms)).await;
-    }
-}
-
-async fn poll_pending_missions(args: &Args) -> Result<Vec<TacticalServer>, String> {
-    let client = reqwest::Client::new();
-    let url = format!(
-        "{}/v1/database/{}/sql",
+    info!(
+        "SpacetimeDB: {}/{}",
         args.spacetimedb_url, args.spacetimedb_module
     );
+    info!("Tactical server binary: {}", args.tactical_server_bin);
 
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "text/plain")
-        .body("SELECT * FROM tactical_server WHERE status = 'pending'")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    // Shared state for tracking spawned missions and port allocation
+    let spawned: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let next_port: Arc<Mutex<u16>> = Arc::new(Mutex::new(args.base_port));
 
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
+    // Connect to SpacetimeDB
+    let conn = DbConnection::builder()
+        .with_uri(&args.spacetimedb_url)
+        .with_module_name(&args.spacetimedb_module)
+        .on_connect(|_ctx, _identity, _address| {
+            info!("Connected to SpacetimeDB");
+        })
+        .on_connect_error(|_ctx, err| {
+            error!("Connection error: {:?}", err);
+        })
+        .build()
+        .expect("Failed to connect to SpacetimeDB");
 
-    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    // Parse SpacetimeDB response format
-    let mut missions = Vec::new();
-    if let Some(results) = data.as_array() {
-        for result in results {
-            let schema = result.get("schema").and_then(|s| s.get("elements"));
-            let rows = result.get("rows").and_then(|r| r.as_array());
-
-            if let (Some(schema), Some(rows)) = (schema, rows) {
-                let cols: Vec<&str> = schema
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|e| {
-                                e.get("name")
-                                    .and_then(|n| n.get("some").or(Some(n)))
-                                    .and_then(|n| n.as_str())
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                for row in rows {
-                    if let Some(row_arr) = row.as_array() {
-                        let mut mission_id = String::new();
-                        let mut scene_key = String::new();
-                        let mut status = String::new();
-
-                        for (i, col) in cols.iter().enumerate() {
-                            if let Some(val) = row_arr.get(i) {
-                                match *col {
-                                    "mission_id" => {
-                                        mission_id = val.as_str().unwrap_or("").to_string()
-                                    }
-                                    "scene_key" => {
-                                        scene_key = val.as_str().unwrap_or("").to_string()
-                                    }
-                                    "status" => status = val.as_str().unwrap_or("").to_string(),
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        if !mission_id.is_empty() && status == "pending" {
-                            missions.push(TacticalServer {
-                                mission_id,
-                                scene_key,
-                                status,
-                            });
-                        }
-                    }
+    // Subscribe to tactical_server table
+    conn.subscription_builder()
+        .on_applied(|ctx| {
+            info!("Subscription applied, checking existing pending missions...");
+            for server in ctx.db.tactical_server().iter() {
+                if server.status == TacticalStatus::Pending {
+                    info!("Found existing pending mission: {}", server.mission_id);
                 }
             }
-        }
-    }
+        })
+        .subscribe(["SELECT * FROM tactical_server"]);
 
-    Ok(missions)
+    // Set up callback for new pending missions
+    let spawned_clone = spawned.clone();
+    let next_port_clone = next_port.clone();
+    let bin = args.tactical_server_bin.clone();
+    let stdb_url = args.spacetimedb_url.clone();
+    let stdb_module = args.spacetimedb_module.clone();
+    let public_host = args.public_host.clone();
+
+    conn.db.tactical_server().on_insert(move |_ctx, server| {
+        if server.status != TacticalStatus::Pending {
+            return;
+        }
+
+        let mut spawned = spawned_clone.lock().unwrap();
+        if spawned.contains(&server.mission_id) {
+            return;
+        }
+
+        let port = {
+            let mut p = next_port_clone.lock().unwrap();
+            let port = *p;
+            *p += 1;
+            port
+        };
+
+        info!(
+            "Spawning tactical-server for mission {} (scene: {}) on port {}",
+            server.mission_id, server.scene_key, port
+        );
+
+        match Command::new(&bin)
+            .args([
+                "--mission-id",
+                &server.mission_id,
+                "--scene-key",
+                &server.scene_key,
+                "--port",
+                &port.to_string(),
+                "--spacetimedb-url",
+                &stdb_url,
+                "--spacetimedb-module",
+                &stdb_module,
+                "--public-host",
+                &public_host,
+            ])
+            .spawn()
+        {
+            Ok(child) => {
+                info!("Spawned tactical-server (pid {})", child.id());
+                spawned.insert(server.mission_id.clone());
+            }
+            Err(e) => {
+                error!("Failed to spawn tactical-server: {}", e);
+            }
+        }
+    });
+
+    info!("Listening for pending missions...");
+
+    // Run the connection loop, listening to WebSocket events
+    loop {
+        match conn.frame_tick() {
+            Ok(_) => {}
+            Err(e) => {
+                warn!("Connection error: {}", e);
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }

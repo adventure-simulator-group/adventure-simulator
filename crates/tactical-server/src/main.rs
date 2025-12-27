@@ -7,18 +7,18 @@
 //! 4. Calls commit_mission reducer on timeout/exit
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
 
 use adventure_simulator_net::prelude::*;
 use adventure_simulator_net::protocol::WebTransportCertificateSettings;
+use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::Parser;
-use tracing::{error, info};
+use strategic_stdb_client::{commit_mission, DbConnection, tactical_server_ready};
 
 /// Mission timeout in seconds
-const MISSION_TIMEOUT_SECS: u64 = 120;
+const MISSION_TIMEOUT_SECS: f32 = 5.0;
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "tactical-server")]
 #[command(about = "Tactical mission server for Adventure Simulator")]
 struct Args {
@@ -34,7 +34,7 @@ struct Args {
     #[arg(long)]
     scene_key: String,
 
-    /// SpacetimeDB URL (e.g., http://localhost:3000)
+    /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
 
@@ -48,71 +48,70 @@ struct Args {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("tactical_server=info".parse().unwrap())
-                .add_directive("bevy_app=warn".parse().unwrap())
-                .add_directive("bevy_ecs=warn".parse().unwrap()),
-        )
-        .init();
-
     let args = Args::parse();
-    info!("Starting tactical server for mission {}", args.mission_id);
-    info!("Scene: {}, Port: {}", args.scene_key, args.port);
 
-    // Notify SpacetimeDB that we're ready (blocking before app starts)
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    if let Err(e) = rt.block_on(notify_server_ready(&args)) {
-        error!("Failed to notify SpacetimeDB: {}", e);
-        std::process::exit(1);
-    }
-
-    // Run Bevy app
     App::new()
         .add_plugins(MinimalPlugins)
-        .add_plugins(AdventureSimulatorNetPlugins)
-        .insert_resource(MissionConfig {
-            mission_id: args.mission_id.clone(),
-            scene_key: args.scene_key.clone(),
-            spacetimedb_url: args.spacetimedb_url.clone(),
-            spacetimedb_module: args.spacetimedb_module.clone(),
-            port: args.port,
+        .add_plugins(LogPlugin {
+            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+            ..default()
         })
+        .add_plugins(AdventureSimulatorNetPlugins)
+        .insert_resource(args)
         .insert_resource(MissionState {
-            started_at: std::time::Instant::now(),
+            timeout: Timer::from_seconds(MISSION_TIMEOUT_SECS, TimerMode::Once),
             enemies_killed: 0,
             committed: false,
         })
-        .add_systems(Startup, setup_server)
+        .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
         .add_systems(Update, check_mission_timeout)
         .run();
 }
 
 #[derive(Resource)]
-struct MissionConfig {
-    mission_id: String,
-    scene_key: String,
-    spacetimedb_url: String,
-    spacetimedb_module: String,
-    port: u16,
-}
+struct SpacetimeConn(DbConnection);
 
 #[derive(Resource)]
 struct MissionState {
-    started_at: std::time::Instant,
+    timeout: Timer,
     enemies_killed: u32,
     committed: bool,
 }
 
-fn setup_server(mut commands: Commands, config: Res<MissionConfig>) {
+fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) {
+    info!("Starting tactical server for mission {}", args.mission_id);
+    info!("Scene: {}, Port: {}", args.scene_key, args.port);
+
+    info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
+    let conn = DbConnection::builder()
+        .with_uri(&args.spacetimedb_url)
+        .with_module_name(&args.spacetimedb_module)
+        .build()
+        .expect("Failed to connect to SpacetimeDB");
+
+    info!("Calling tactical_server_ready reducer");
+    conn.reducers
+        .tactical_server_ready(
+            args.mission_id.clone(),
+            args.public_host.clone(),
+            args.port,
+            String::new(), // cert_digest
+        )
+        .expect("Failed to call tactical_server_ready");
+
+    conn.frame_tick().ok();
+    info!("SpacetimeDB notified - server marked as ready");
+
+    commands.insert_resource(SpacetimeConn(conn));
+}
+
+fn setup_server(mut commands: Commands, args: Res<Args>) {
     info!("=== Tactical Server Ready ===");
-    info!("Mission: {}", config.mission_id);
-    info!("Scene: {}", config.scene_key);
+    info!("Mission: {}", args.mission_id);
+    info!("Scene: {}", args.scene_key);
 
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.port);
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), args.port);
 
-    // Start Lightyear server with auto self-signed cert
     commands.spawn(AdventureSimulatorServer {
         addr,
         protocol: ServerProtocol::WebTransport {
@@ -121,97 +120,41 @@ fn setup_server(mut commands: Commands, config: Res<MissionConfig>) {
         protocol_settings: ProtocolSettings::default(),
     });
 
-    info!("Listening on port {} (WebTransport)", config.port);
+    info!("Listening on port {} (WebTransport)", args.port);
     info!("Will timeout in {} seconds", MISSION_TIMEOUT_SECS);
 }
 
-#[allow(deprecated)]
 fn check_mission_timeout(
-    config: Res<MissionConfig>,
+    time: Res<Time>,
+    conn: Res<SpacetimeConn>,
+    args: Res<Args>,
     mut state: ResMut<MissionState>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
 ) {
-    let elapsed = state.started_at.elapsed();
+    state.timeout.tick(time.delta());
 
-    if elapsed >= Duration::from_secs(MISSION_TIMEOUT_SECS) && !state.committed {
+    if state.timeout.just_finished() && !state.committed {
         info!("Mission timeout, committing results...");
         state.committed = true;
 
         let success = state.enemies_killed > 0;
         let xp_gained = (state.enemies_killed * 25) as i32;
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        if let Err(e) = rt.block_on(commit_mission(&config, success, xp_gained)) {
-            error!("Failed to commit mission: {}", e);
+        match conn
+            .0
+            .reducers
+            .commit_mission(args.mission_id.clone(), success, xp_gained)
+        {
+            Ok(_) => {
+                conn.0.frame_tick().ok();
+                info!("Mission committed successfully");
+            }
+            Err(e) => {
+                error!("Failed to commit mission: {}", e);
+            }
         }
 
         info!("Shutting down");
         exit.write(AppExit::Success);
     }
-}
-
-/// Notify SpacetimeDB that we're ready
-async fn notify_server_ready(args: &Args) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let url = format!(
-        "{}/v1/database/{}/call/tactical_server_ready",
-        args.spacetimedb_url, args.spacetimedb_module
-    );
-
-    // Args: [mission_id, host, port, cert_digest]
-    // For now, cert_digest is empty (auto self-signed certs change each run)
-    let body = serde_json::json!([
-        args.mission_id,
-        args.public_host,
-        args.port,
-        "" // cert_digest - would need to extract from wtransport
-    ]);
-
-    info!("Notifying SpacetimeDB: {}", url);
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("{}: {}", status, text));
-    }
-
-    info!("SpacetimeDB notified - server marked as ready");
-    Ok(())
-}
-
-/// Commit mission results to SpacetimeDB
-async fn commit_mission(config: &MissionConfig, success: bool, xp_gained: i32) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let url = format!(
-        "{}/v1/database/{}/call/commit_mission",
-        config.spacetimedb_url, config.spacetimedb_module
-    );
-
-    // Args: [mission_id, success, xp_gained]
-    let body = serde_json::json!([config.mission_id, success, xp_gained]);
-
-    info!("Committing mission to SpacetimeDB");
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("{}: {}", status, text));
-    }
-
-    info!("Mission committed successfully");
-    Ok(())
 }

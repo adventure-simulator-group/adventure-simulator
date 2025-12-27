@@ -12,14 +12,8 @@ path = "src/main.rs"
 bevy = { workspace = true, default-features = false, features = ["multi_threaded"] }
 adventure-simulator-net = { workspace = true, features = ["server"] }
 
+# SpacetimeDB client
+strategic-stdb-client = { path = "../strategic-stdb-client" }
+
 # CLI
 clap = { workspace = true }
-serde_json = "1"
-
-# Async HTTP for SpacetimeDB calls
-tokio = { version = "1", features = ["rt-multi-thread"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# Logging
-tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

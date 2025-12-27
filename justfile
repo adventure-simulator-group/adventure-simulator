@@ -108,7 +108,7 @@ serve-ui:
         echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
     else \
         rm -f "{{http_pid}}"; \
-        python3 -m http.server {{ui_port}} --bind 127.0.0.1 --directory "{{strategic_static}}" >"{{http_log}}" 2>&1 & \
+        python3 -m http.server {{ui_port}} --directory "{{strategic_static}}" --bind 127.0.0.1 >"{{http_log}}" 2>&1 & \
         echo $! > "{{http_pid}}"; \
         sleep 1; \
         echo "UI server running on http://localhost:{{ui_port}}/map.html"; \
@@ -121,7 +121,7 @@ serve-ui-public:
         echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
     else \
         rm -f "{{http_pid}}"; \
-        python3 -m http.server {{ui_port}} --bind {{public_bind}} --directory "{{strategic_static}}" >"{{http_log}}" 2>&1 & \
+        python3 -m http.server {{ui_port}} --directory "{{strategic_static}}" --bind {{public_bind}} >"{{http_log}}" 2>&1 & \
         echo $! > "{{http_pid}}"; \
         sleep 1; \
         echo "UI server running on http://{{public_bind}}:{{ui_port}}/map.html"; \
@@ -180,8 +180,14 @@ status:
 build-strategic:
     @cd "{{strategic_dir}}" && spacetime build
 
+# Generate SpacetimeDB SDK client bindings
+generate-stdb-client:
+    @echo "Generating SpacetimeDB client bindings..."
+    @spacetime generate --lang rust --out-dir crates/strategic-stdb-client/src --project-path "{{strategic_dir}}"
+    @echo "Bindings generated in crates/strategic-stdb-client/src/"
+
 # Build the tactical server and spawner
-build-tactical:
+build-tactical: generate-stdb-client
     @cargo build --package tactical-server --package tactical-spawner
 
 # Build the WASM client
