@@ -1,5 +1,5 @@
 [package]
-name = "strategic-stdb-client"
+name = "strategic-db-client"
 version.workspace = true
 edition.workspace = true
 

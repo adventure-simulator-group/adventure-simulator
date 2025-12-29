@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 # SpacetimeDB SDK
-strategic-stdb-client = { path = "../strategic-stdb-client" }
+strategic-db-client = { path = "../strategic-db-client" }
 
 # CLI
 clap = { workspace = true }

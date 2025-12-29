@@ -8,8 +8,8 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use clap::Parser;
-use strategic_stdb_client::spacetimedb_sdk::{DbContext, Table};
-use strategic_stdb_client::{DbConnection, TacticalServerTableAccess, TacticalStatus};
+use strategic_db_client::spacetimedb_sdk::{DbContext, Table};
+use strategic_db_client::{DbConnection, TacticalServerTableAccess, TacticalStatus};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -21,7 +21,7 @@ struct Args {
     spacetimedb_url: String,
 
     /// SpacetimeDB module name
-    #[arg(long, default_value = "strategic-stdb-module")]
+    #[arg(long, default_value = "strategic-db")]
     spacetimedb_module: String,
 
     /// Path to tactical-server binary

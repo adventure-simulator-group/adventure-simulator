@@ -1,5 +1,5 @@
 [package]
-name = "strategic-stdb-module"
+name = "strategic-db"
 version.workspace = true
 edition.workspace = true
 

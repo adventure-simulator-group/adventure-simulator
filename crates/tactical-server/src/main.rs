@@ -13,10 +13,10 @@ use adventure_simulator_net::protocol::WebTransportCertificateSettings;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::Parser;
-use strategic_stdb_client::{commit_mission, DbConnection, tactical_server_ready};
+use strategic_db_client::{commit_mission, DbConnection, tactical_server_ready};
 
-/// Mission timeout in seconds
-const MISSION_TIMEOUT_SECS: f32 = 5.0;
+/// Mission timeout in seconds (how long the server stays up waiting for players)
+const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "tactical-server")]

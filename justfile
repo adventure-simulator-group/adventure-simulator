@@ -10,9 +10,9 @@ tactical_port := "6000"
 public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
-spacetime_module := "strategic-stdb-module"
+spacetime_module := "strategic-db"
 
-strategic_dir := "crates/strategic-server/strategic-stdb-module"
+strategic_dir := "crates/strategic-db"
 strategic_static := strategic_dir + "/static"
 
 run_dir := "/tmp/adventure-simulator-1"
@@ -101,14 +101,14 @@ publish server=spacetime_url:
 publish-reset server=spacetime_url:
     @cd "{{strategic_dir}}" && spacetime publish --delete-data=always --server {{server}} {{spacetime_module}}
 
-# Serve the strategic UI locally
+# Serve the strategic UI locally (with proxy to SpacetimeDB)
 serve-ui:
     @mkdir -p "{{run_dir}}"
     @if [ -f "{{http_pid}}" ] && kill -0 "$(cat "{{http_pid}}")" 2>/dev/null; then \
         echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
     else \
         rm -f "{{http_pid}}"; \
-        python3 -m http.server {{ui_port}} --directory "{{strategic_static}}" --bind 127.0.0.1 >"{{http_log}}" 2>&1 & \
+        SPACETIMEDB_URL={{spacetime_url}} python3 "{{strategic_static}}/serve.py" {{ui_port}} >"{{http_log}}" 2>&1 & \
         echo $! > "{{http_pid}}"; \
         sleep 1; \
         echo "UI server running on http://localhost:{{ui_port}}/map.html"; \
@@ -121,7 +121,7 @@ serve-ui-public:
         echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
     else \
         rm -f "{{http_pid}}"; \
-        python3 -m http.server {{ui_port}} --directory "{{strategic_static}}" --bind {{public_bind}} >"{{http_log}}" 2>&1 & \
+        SPACETIMEDB_URL={{spacetime_url}} python3 "{{strategic_static}}/serve.py" {{ui_port}} >"{{http_log}}" 2>&1 & \
         echo $! > "{{http_pid}}"; \
         sleep 1; \
         echo "UI server running on http://{{public_bind}}:{{ui_port}}/map.html"; \
@@ -181,13 +181,13 @@ build-strategic:
     @cd "{{strategic_dir}}" && spacetime build
 
 # Generate SpacetimeDB SDK client bindings
-generate-stdb-client:
+generate-db-client:
     @echo "Generating SpacetimeDB client bindings..."
-    @spacetime generate --lang rust --out-dir crates/strategic-stdb-client/src --project-path "{{strategic_dir}}"
-    @echo "Bindings generated in crates/strategic-stdb-client/src/"
+    @spacetime generate --lang rust --out-dir crates/strategic-db-client/src --project-path "{{strategic_dir}}"
+    @echo "Bindings generated in crates/strategic-db-client/src/"
 
 # Build the tactical server and spawner
-build-tactical: generate-stdb-client
+build-tactical: generate-db-client
     @cargo build --package tactical-server --package tactical-spawner
 
 # Build the WASM client

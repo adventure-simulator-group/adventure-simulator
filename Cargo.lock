@@ -7375,18 +7375,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42862065c9e685d08cc3d9f6c609d4b46bd9684ec7e9420688eb979213469582"
 
 [[package]]
-name = "strategic-stdb-client"
-version = "0.1.0"
-dependencies = [
- "spacetimedb-sdk",
-]
-
-[[package]]
-name = "strategic-stdb-module"
+name = "strategic-db"
 version = "0.1.0"
 dependencies = [
  "log",
  "spacetimedb",
+]
+
+[[package]]
+name = "strategic-db-client"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb-sdk",
 ]
 
 [[package]]
@@ -7504,7 +7504,7 @@ dependencies = [
  "adventure-simulator-net",
  "bevy",
  "clap",
- "strategic-stdb-client",
+ "strategic-db-client",
 ]
 
 [[package]]
@@ -7512,7 +7512,7 @@ name = "tactical-spawner"
 version = "0.1.0"
 dependencies = [
  "clap",
- "strategic-stdb-client",
+ "strategic-db-client",
  "tracing",
  "tracing-subscriber",
 ]

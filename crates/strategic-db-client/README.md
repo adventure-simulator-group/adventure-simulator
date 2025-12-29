@@ -1,4 +1,4 @@
-# strategic-stdb-client
+# strategic-db-client
 
 Auto-generated SpacetimeDB SDK client bindings for the strategic module.
 
@@ -9,7 +9,7 @@ The `src/` directory contains auto-generated bindings. **Do not edit these files
 Regenerate with:
 
 ```bash
-just generate-stdb-client
+just generate-db-client
 ```
 
 Or manually:
@@ -17,8 +17,8 @@ Or manually:
 ```bash
 spacetime generate \
   --lang rust \
-  --out-dir crates/strategic-stdb-client/src \
-  --project-path crates/strategic-server/strategic-stdb-module
+  --out-dir crates/strategic-db-client/src \
+  --project-path crates/strategic-db
 ```
 
 Regenerate whenever the SpacetimeDB module schema changes (tables, reducers).

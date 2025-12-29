@@ -13,7 +13,7 @@ bevy = { workspace = true, default-features = false, features = ["multi_threaded
 adventure-simulator-net = { workspace = true, features = ["server"] }
 
 # SpacetimeDB client
-strategic-stdb-client = { path = "../strategic-stdb-client" }
+strategic-db-client = { path = "../strategic-db-client" }
 
 # CLI
 clap = { workspace = true }

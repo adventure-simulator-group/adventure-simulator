@@ -5,8 +5,8 @@ members = [
     "crates/adventure-simulator-server",
     "crates/adventure-simulator-client",
     "crates/character-creator",
-    "crates/strategic-server/*",
-    "crates/strategic-stdb-client",
+    "crates/strategic-db",
+    "crates/strategic-db-client",
     "crates/tactical-server",
     "crates/tactical-spawner",
 ]

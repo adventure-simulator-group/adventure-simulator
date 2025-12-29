@@ -76,16 +76,6 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
 
-### Removed Tables (tactical state - now in-memory only)
-
-These were **removed** because they belong in tactical game state:
-- ❌ `hp_current` / `hp_max` / `alive` / `deaths` / `respawn_at_ms` (from character table)
-- ❌ `loot_bag` / `loot_bag_item` tables
-- ❌ `damage_character` reducer
-- ❌ `respawn_character` reducer
-- ❌ `drop_inventory_as_loot` helper
-- ❌ Any position/coordinate fields
-
 ## tactical-server
 
 The tactical server is a headless Bevy application that:
@@ -176,33 +166,6 @@ Spawn points are defined in GLB/GLTF files using node naming:
 | `spawn_enemy` / `spawn_enemy_*` | Enemy | Enemy spawn point(s) |
 | `spawn_item` / `spawn_item_*` | Item | Item pickup location(s) |
 | `exit` / `exit_*` | Exit | Mission exit point(s) |
-
-## What Was Removed
-
-### Legacy PostgreSQL/Axum Code (Deleted)
-
-- ❌ `crates/strategic-server/strategic-db` - PostgreSQL layer with SQLx
-- ❌ `crates/strategic-server/strategic-api` - Axum HTTP REST API
-- ❌ `crates/strategic-server/strategic-core` - Shared types
-- ❌ `crates/adventure-simulator-demo` - HTTP client demo
-
-### Tactical State Removed from DB
-
-All of the following now live ONLY in tactical-server game state:
-
-- ❌ HP (current/max)
-- ❌ Alive/dead status
-- ❌ Death count
-- ❌ Respawn timers
-- ❌ Loot bags
-- ❌ Enemy positions
-- ❌ Player positions
-- ❌ Damage application
-- ❌ Loot drops on death
-
-**These are computed during the mission and discarded when the mission ends.**
-
-Only XP and items are persisted to SpacetimeDB.
 
 ## Benefits of This Architecture
 
