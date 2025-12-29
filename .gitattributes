@@ -1,0 +1,2 @@
+*.lock -diff
+crates/strategic-db-client/src/** linguist-generated=true -diff merge=ours

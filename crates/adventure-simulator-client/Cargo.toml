@@ -7,10 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-adventure-simulator-net = { workspace = true, features = ["client"] }
-serde.workspace = true
 bevy = { workspace = true, default-features = true, features = [] }
-clap.workspace = true
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true
