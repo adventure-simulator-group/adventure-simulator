@@ -8,6 +8,9 @@ license.workspace = true
 
 [dependencies]
 bevy = { workspace = true, default-features = true, features = [] }
+avian3d.workspace = true
+bevy_ahoy.workspace = true
+bevy_enhanced_input.workspace = true
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true
