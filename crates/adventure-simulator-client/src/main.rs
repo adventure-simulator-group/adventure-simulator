@@ -305,12 +305,34 @@ fn update_ui(
     }
 }
 
-fn capture_cursor(mut cursor: Single<&mut CursorOptions>) {
+fn capture_cursor(
+    mut commands: Commands,
+    player: Single<Entity, With<PlayerInput>>,
+    mut cursor: Single<&mut CursorOptions>,
+) {
+    if !cursor.visible {
+        return;
+    }
+
+    commands
+        .entity(player.into_inner())
+        .insert(ContextActivity::<PlayerInput>::ACTIVE);
     cursor.grab_mode = CursorGrabMode::Locked;
     cursor.visible = false;
 }
 
-fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
+fn release_cursor(
+    mut commands: Commands,
+    player: Single<Entity, With<PlayerInput>>,
+    mut cursor: Single<&mut CursorOptions>,
+) {
+    if cursor.visible {
+        return;
+    }
+
+    commands
+        .entity(player.into_inner())
+        .insert(ContextActivity::<PlayerInput>::INACTIVE);
     cursor.visible = true;
     cursor.grab_mode = CursorGrabMode::None;
 }
