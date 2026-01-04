@@ -40,6 +40,11 @@ pub fn update_distance_field(
         config.depth as f32 * config.voxel_size / 2.0
     );
 
+    // Pre-calculate inverse transforms for all shapes
+    let shape_data: Vec<_> = shapes.iter().map(|(shape, transform, op)| {
+        (shape, transform.to_matrix().inverse(), op.unwrap_or(&SdfOperation::Union))
+    }).collect();
+
     // Parallelize? For now, simple loop
     for z in 0..config.depth {
         for y in 0..config.height {
@@ -50,29 +55,12 @@ pub fn update_distance_field(
                     z as f32 * config.voxel_size,
                 );
 
-                // let mut current_dist = f32::INFINITY; 
-                // Actually, standard marching cubes usually assumes a union of everything implies the surface.
-                // But with CSG, order matters or we need a specific way to combine.
-                // For a loose collection of shapes, "Union" is the default.
-                
-                // Simplified CSG: 
-                // We'll iterate all shapes and apply them to the field.
-                // But wait, `distance_field` is our canvas.
-                // If we initialize it to INFINITY, we can Union (min) everything.
-                // For subtraction, we need to operate on the existing value.
-                
-                // Let's grab the current value at this voxel
-                let mut voxel_val = distance_field.get(x, y, z).clone();
-                if voxel_val == f32::INFINITY {
-                     // If it's fresh, we treat it as "outside"
-                     // Ideally we want to constructive solid geometry (CSG).
-                     // Simple approach: Union all simple shapes first?
-                     // Or just iterate linear order.
-                }
+                // Initialize with infinity
+                let mut voxel_val = f32::INFINITY;
 
-                for (shape, transform, op) in shapes.iter() {
+                for (shape, inverse_transform, op) in &shape_data {
                     // Convert world_pos to local space of the shape
-                    let local_pos = transform.to_matrix().inverse().transform_point3(world_pos);
+                    let local_pos = inverse_transform.transform_point3(world_pos);
                     
                     let shape_dist = match shape {
                         SdfShape::Sphere { radius } => {
@@ -84,25 +72,11 @@ pub fn update_distance_field(
                         }
                     };
                     
-                    // Apply global scale (uniform only approximation)
-                    // let scale = transform.scale.max_element(); 
-                    // let final_dist = shape_dist * scale; 
-                    // Correct SDF scaling is tricky with non-uniform scale. 
-                    // Let's assume uniform scale or no scale for MVP.
-                    
-                    let op = op.unwrap_or(&SdfOperation::Union);
-                    
                     match op {
                         SdfOperation::Union => {
                             voxel_val = voxel_val.min(shape_dist);
                         }
                         SdfOperation::Intersection => {
-                            // Intersecting with infinity (initial) is bad if we start there.
-                            // If voxel_val is INF, and we Intersect, we get shape_dist?
-                            // Standard CSG: max(d1, d2).
-                            // If d1 is INF, result is INF (empty).
-                            // So intersection only makes sense if there is *something* there.
-                            // For MVP, lets assume Union is the base, and we iterate.
                              if voxel_val == f32::INFINITY {
                                  voxel_val = shape_dist;
                              } else {
@@ -110,7 +84,6 @@ pub fn update_distance_field(
                              }
                         }
                         SdfOperation::Subtraction => {
-                             // max(d1, -d2)
                              if voxel_val != f32::INFINITY {
                                  voxel_val = voxel_val.max(-shape_dist);
                              }
