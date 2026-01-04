@@ -1,23 +1,26 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
-use crate::{DistanceField, MarchingCubes};
+use crate::MarchingCubes;
+use distance_field_plugin::{
+    components::{SdfShape, SdfOperation},
+    field::DistanceField,
+    SdfConfig,
+};
 
 const GRID_SIZE: usize = 36;
-const ISO_LEVEL: f32 = 0.0; // This should always be 0.0, it's the level that defines where the surface lies.
+const ISO_LEVEL: f32 = 0.0;
 
 #[derive(Resource)]
-pub struct MarchingCubesConfig {
+pub struct MarchingCubesUIState {
     radius: f32,
     min_radius: f32,
     max_radius: f32,
-    voxel_size: f32,
     min_voxel_size: f32,
     max_voxel_size: f32,
-    dirty: bool,
 }
 
-impl Default for MarchingCubesConfig {
+impl Default for MarchingCubesUIState {
     fn default() -> Self {
         let voxel_size = 0.12;
         let min_radius = GRID_SIZE as f32 * voxel_size * 0.1;
@@ -28,10 +31,8 @@ impl Default for MarchingCubesConfig {
             radius,
             min_radius,
             max_radius,
-            voxel_size,
             min_voxel_size: 0.05,
             max_voxel_size: 0.5,
-            dirty: true,
         }
     }
 }
@@ -44,7 +45,7 @@ pub struct MarchingCubesPlugin;
 impl Plugin for MarchingCubesPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin::default())
-            .init_resource::<MarchingCubesConfig>()
+            .init_resource::<MarchingCubesUIState>()
             .add_systems(Startup, Self::setup)
             .add_systems(EguiPrimaryContextPass, Self::marching_cubes_ui)
             .add_systems(Update, Self::update_marching_cubes_mesh);
@@ -56,25 +57,32 @@ impl MarchingCubesPlugin {
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        mut config: ResMut<MarchingCubesConfig>,
+        mut sdf_config: ResMut<SdfConfig>,
+        ui_state: Res<MarchingCubesUIState>,
     ) {
-        let mut distance_field = DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE);
-        distance_field.add_sphere(
-            Vec3::splat(-config.radius * 0.3),
-            config.radius,
-            config.voxel_size,
-        );
-        distance_field.add_sphere(
-            Vec3::splat(config.radius * 0.3),
-            config.radius,
-            config.voxel_size,
-        );
+        // Configure SDF
+        sdf_config.width = GRID_SIZE;
+        sdf_config.height = GRID_SIZE;
+        sdf_config.depth = GRID_SIZE;
+        sdf_config.voxel_size = 0.12;
 
-        let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, config.voxel_size);
+        // Spawn Shapes
+        commands.spawn((
+            SdfShape::Sphere { radius: ui_state.radius },
+            SdfOperation::Union,
+            Transform::from_xyz(-ui_state.radius * 0.3, -ui_state.radius * 0.3, -ui_state.radius * 0.3),
+        ));
 
+        commands.spawn((
+            SdfShape::Sphere { radius: ui_state.radius },
+            SdfOperation::Union,
+            Transform::from_xyz(ui_state.radius * 0.3, ui_state.radius * 0.3, ui_state.radius * 0.3),
+        ));
+
+        // Initial empty mesh, will be updated by system
+        let mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()); 
         let mesh_handle = meshes.add(mesh);
         commands.insert_resource(MarchingCubesMeshHandle(mesh_handle.clone()));
-        config.dirty = false;
 
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.7, 0.9),
@@ -100,42 +108,52 @@ impl MarchingCubesPlugin {
         ));
     }
 
-    fn marching_cubes_ui(mut contexts: EguiContexts, mut config: ResMut<MarchingCubesConfig>) {
+    fn marching_cubes_ui(
+        mut contexts: EguiContexts,
+        mut ui_state: ResMut<MarchingCubesUIState>,
+        mut sdf_config: ResMut<SdfConfig>,
+        mut shapes: Query<&mut SdfShape>,
+    ) {
         if let Ok(ctx) = contexts.ctx_mut() {
             egui::Window::new("Marching Cubes")
                 .default_width(220.0)
                 .show(ctx, |ui| {
                     ui.label("Sphere Radius");
-                    let mut current = config.radius;
+                    let mut current = ui_state.radius;
                     let slider =
-                        egui::Slider::new(&mut current, config.min_radius..=config.max_radius)
+                        egui::Slider::new(&mut current, ui_state.min_radius..=ui_state.max_radius)
                             .text("meters");
                     if ui.add(slider).changed() {
-                        config.radius = current;
-                        config.dirty = true;
+                        ui_state.radius = current;
+                        // Update all spheres
+                        for mut shape in shapes.iter_mut() {
+                            if let SdfShape::Sphere { radius } = &mut *shape {
+                                *radius = current; // Simplification: set all spheres to same radius
+                            }
+                        }
                     }
-                    ui.label(format!("{:.2}", config.radius));
+                    ui.label(format!("{:.2}", ui_state.radius));
 
                     ui.separator();
 
                     ui.label("Voxel Size");
-                    let mut current_voxel = config.voxel_size;
+                    let mut current_voxel = sdf_config.voxel_size;
                     let slider_voxel = egui::Slider::new(
                         &mut current_voxel,
-                        config.min_voxel_size..=config.max_voxel_size,
+                        ui_state.min_voxel_size..=ui_state.max_voxel_size,
                     )
                     .text("meters");
                     if ui.add(slider_voxel).changed() {
-                        config.voxel_size = current_voxel;
-                        config.dirty = true;
+                        sdf_config.voxel_size = current_voxel;
                     }
-                    ui.label(format!("{:.3}", config.voxel_size));
+                    ui.label(format!("{:.3}", sdf_config.voxel_size));
                 });
         }
     }
 
     fn update_marching_cubes_mesh(
-        mut config: ResMut<MarchingCubesConfig>,
+        distance_field: Res<DistanceField>,
+        sdf_config: Res<SdfConfig>,
         mesh_handle: Option<Res<MarchingCubesMeshHandle>>,
         mut meshes: ResMut<Assets<Mesh>>,
     ) {
@@ -143,27 +161,14 @@ impl MarchingCubesPlugin {
             return;
         };
 
-        if !config.dirty {
+        if !distance_field.is_changed() && !sdf_config.is_changed() {
             return;
         }
 
-        let mut distance_field = DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE);
-        distance_field.add_sphere(
-            Vec3::splat(-config.radius * 0.3),
-            config.radius,
-            config.voxel_size,
-        );
-        distance_field.add_sphere(
-            Vec3::splat(config.radius * 0.3),
-            config.radius,
-            config.voxel_size,
-        );
-
-        let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, config.voxel_size);
+        let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, sdf_config.voxel_size);
 
         if let Some(existing) = meshes.get_mut(&mesh_handle.0) {
             *existing = mesh;
         }
-        config.dirty = false;
     }
 }

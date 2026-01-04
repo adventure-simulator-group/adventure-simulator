@@ -1,6 +1,7 @@
 mod tables;
-pub use tables::*;
+pub use distance_field_plugin::field::Field;
 
+use tables::{EDGE_TABLE, TRI_TABLE, VERTEX_OFFSETS, EDGE_CONNECTIONS};
 use bevy::{
     asset::RenderAssetUsages,
     math::Vec3,

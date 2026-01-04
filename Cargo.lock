@@ -2292,6 +2292,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "distance-field-plugin",
  "marching-cubes-plugin",
 ]
 
@@ -2843,6 +2844,13 @@ name = "disqualified"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9c272297e804878a2a4b707cfcfc6d2328b5bb936944613b4fdf2b9269afdfd"
+
+[[package]]
+name = "distance-field-plugin"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
 
 [[package]]
 name = "dlib"
@@ -4941,6 +4949,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "distance-field-plugin",
 ]
 
 [[package]]
