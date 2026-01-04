@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "crates/adventure-simulator-net",
-    "crates/adventure-simulator-server",
     "crates/adventure-simulator-client",
     "crates/character-creator",
     "crates/strategic-db",
