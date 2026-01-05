@@ -6,6 +6,7 @@ pub struct OrbitalCamera {
     pub pitch: f32,
     pub yaw: f32,
     pub focus: Option<Entity>,
+    pub focus_offset: Vec3,
 }
 
 impl Default for OrbitalCamera {
@@ -15,6 +16,7 @@ impl Default for OrbitalCamera {
             pitch: 0.5,
             yaw: 0.0,
             focus: None,
+            focus_offset: Vec3::ZERO,
         }
     }
 }
@@ -27,7 +29,7 @@ impl OrbitalCamera {
         for (mut camera_transform, orbit) in &mut cameras {
             if let Some(focus_entity) = orbit.focus {
                 if let Ok(focus_transform) = transforms.get(focus_entity) {
-                    let focus_translation = focus_transform.translation();
+                    let focus_translation = focus_transform.translation() + orbit.focus_offset;
 
                     let rotation = Quat::from_axis_angle(Vec3::Y, orbit.yaw)
                         * Quat::from_axis_angle(Vec3::X, -orbit.pitch);
@@ -82,7 +84,25 @@ impl OrbitalCamera {
                 camera.radius += 10.0 * time.delta_secs();
             }
 
-            camera.radius = camera.radius.clamp(2.0, 20.0);
+            // Q/E for Up/Down movement (modifying focus_offset.y)
+            if keyboard_input.pressed(KeyCode::KeyQ) {
+                camera.focus_offset.y -= 5.0 * time.delta_secs();
+            }
+            if keyboard_input.pressed(KeyCode::KeyE) {
+                camera.focus_offset.y += 5.0 * time.delta_secs();
+            }
+
+            // R/F for Look Up/Down (modifying pitch)
+            // Pitch is usually clamped to avoid weird flipping at poles, e.g. -89 to +89 degrees
+            if keyboard_input.pressed(KeyCode::KeyR) {
+                camera.pitch -= 2.0 * time.delta_secs();
+            }
+            if keyboard_input.pressed(KeyCode::KeyF) {
+                camera.pitch += 2.0 * time.delta_secs();
+            }
+
+            camera.radius = camera.radius.clamp(2.0, 50.0);
+            camera.pitch = camera.pitch.clamp(-1.5, 1.5);
         }
     }
 }
