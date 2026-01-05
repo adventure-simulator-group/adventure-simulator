@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Resource, Clone)]
+#[derive(Component, Clone)]
 pub struct Field<T> where T: Send + Sync + 'static {
     data: Vec<T>,
     width: usize,

@@ -12,11 +12,8 @@ pub struct DistanceFieldPlugin;
 
 impl Plugin for DistanceFieldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SdfConfig>()
-            // Initialize with default size
-            .insert_resource(DistanceField::new_distance_field(36, 36, 36))
-            .register_type::<SdfShape>()
-            //.register_type::<SdfOperation>()
+        app.register_type::<SdfShape>()
+            .register_type::<SdfConfig>()
             .add_systems(Update, (update_distance_field, debug_sdf));
     }
 }

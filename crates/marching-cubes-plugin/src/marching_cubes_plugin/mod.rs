@@ -57,33 +57,19 @@ impl MarchingCubesPlugin {
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        mut sdf_config: ResMut<SdfConfig>,
         ui_state: Res<MarchingCubesUIState>,
     ) {
-        // Configure SDF
-        sdf_config.width = GRID_SIZE;
-        sdf_config.height = GRID_SIZE;
-        sdf_config.depth = GRID_SIZE;
-        sdf_config.voxel_size = 0.12;
-
-        // Spawn Shapes
-        commands.spawn((
-            SdfShape::Sphere { radius: ui_state.radius },
-            SdfOperation::Union,
-            Transform::from_xyz(-ui_state.radius * 0.3, -ui_state.radius * 0.3, -ui_state.radius * 0.3),
-        ));
-
-        commands.spawn((
-            SdfShape::Sphere { radius: ui_state.radius },
-            SdfOperation::Union,
-            Transform::from_xyz(ui_state.radius * 0.3, ui_state.radius * 0.3, ui_state.radius * 0.3),
-        ));
-
-        // Initial empty mesh, will be updated by system
+        // Create Mesh Handle
         let mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()); 
         let mesh_handle = meshes.add(mesh);
-        commands.insert_resource(MarchingCubesMeshHandle(mesh_handle.clone()));
-
+        
+        // Register Mesh Handle resource? 
+        // No, with multiple fields, we can't have a single handle resource driving them all easily unless we want them all to share the same mesh (which they don't).
+        // The `update_marching_cubes_mesh` system will query entities.
+        // So we just attach `Mesh3d` to the volume entity.
+        // We'll rename `MarchingCubesMeshHandle` or just remove it if it's unused.
+        // But `marching_cubes_ui` might need it? No, UI updates components.
+        
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.7, 0.9),
             metallic: 0.05,
@@ -91,11 +77,73 @@ impl MarchingCubesPlugin {
             ..default()
         });
 
-        commands.spawn((
-            Mesh3d(mesh_handle),
-            MeshMaterial3d(material_handle),
-            Transform::default(),
+        // Spawn Volume
+        let volume_entity = commands.spawn((
+            DistanceField::new_distance_field(GRID_SIZE, GRID_SIZE, GRID_SIZE),
+            SdfConfig {
+                width: GRID_SIZE,
+                height: GRID_SIZE,
+                depth: GRID_SIZE,
+                voxel_size: 0.12,
+                ..default()
+            },
+            Mesh3d(mesh_handle.clone()),
+            MeshMaterial3d(material_handle.clone()),
+            Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
+        )).id();
+        
+        // Spawn Shapes as Children
+        commands.entity(volume_entity).with_children(|parent| {
+            parent.spawn((
+                SdfShape::Sphere { radius: ui_state.radius },
+                SdfOperation::Union,
+                Transform::from_xyz(-ui_state.radius * 0.3, -ui_state.radius * 0.3, -ui_state.radius * 0.3),
+            ));
+
+            parent.spawn((
+                SdfShape::Sphere { radius: ui_state.radius },
+                SdfOperation::Union,
+                Transform::from_xyz(ui_state.radius * 0.3, ui_state.radius * 0.3, ui_state.radius * 0.3),
+            ));
+        });
+
+        // Spawn a SECOND independent SDF volume to verify multi-SDF support
+        let volume_entity_2 = commands.spawn((
+            DistanceField::new_distance_field(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2),
+            SdfConfig {
+                width: GRID_SIZE / 2,
+                height: GRID_SIZE / 2,
+                depth: GRID_SIZE / 2,
+                voxel_size: 0.15,
+                ..default()
+            },
+            Mesh3d(mesh_handle.clone()), 
+            Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
+        )).id();
+        
+        // We need to create a new mesh asset for the second volume
+        let mesh_2 = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default());
+        let mesh_handle_2 = meshes.add(mesh_2);
+        
+        // Re-spawn volume 2 with correct mesh handle
+        commands.entity(volume_entity_2).insert((
+            Mesh3d(mesh_handle_2),
+            MeshMaterial3d(material_handle.clone()),
         ));
+
+        // Add shapes to second volume
+        commands.entity(volume_entity_2).with_children(|parent| {
+             parent.spawn((
+                SdfShape::Box { size: Vec3::splat(0.6) },
+                SdfOperation::Union,
+                Transform::IDENTITY,
+            ));
+             parent.spawn((
+                SdfShape::Box { size: Vec3::new(0.2, 1.0, 0.2) }, // Make it smaller to fit
+                SdfOperation::Union,
+                Transform::from_xyz(0.5, 0.0, 0.5),
+            ));
+        });
 
         commands.spawn((
             PointLight {
@@ -111,8 +159,8 @@ impl MarchingCubesPlugin {
     fn marching_cubes_ui(
         mut contexts: EguiContexts,
         mut ui_state: ResMut<MarchingCubesUIState>,
-        mut sdf_config: ResMut<SdfConfig>,
         mut shapes: Query<&mut SdfShape>,
+        mut configs: Query<&mut SdfConfig>,
     ) {
         if let Ok(ctx) = contexts.ctx_mut() {
             egui::Window::new("Marching Cubes")
@@ -137,38 +185,37 @@ impl MarchingCubesPlugin {
                     ui.separator();
 
                     ui.label("Voxel Size");
-                    let mut current_voxel = sdf_config.voxel_size;
+                    // We just pick the first one to display? Or local state?
+                    let mut current_voxel = configs.iter().next().map(|c| c.voxel_size).unwrap_or(0.12);
+                    
                     let slider_voxel = egui::Slider::new(
                         &mut current_voxel,
                         ui_state.min_voxel_size..=ui_state.max_voxel_size,
                     )
                     .text("meters");
                     if ui.add(slider_voxel).changed() {
-                        sdf_config.voxel_size = current_voxel;
+                        for mut config in configs.iter_mut() {
+                            config.voxel_size = current_voxel;
+                        }
                     }
-                    ui.label(format!("{:.3}", sdf_config.voxel_size));
+                    ui.label(format!("{:.3}", current_voxel));
                 });
         }
     }
 
     fn update_marching_cubes_mesh(
-        distance_field: Res<DistanceField>,
-        sdf_config: Res<SdfConfig>,
-        mesh_handle: Option<Res<MarchingCubesMeshHandle>>,
         mut meshes: ResMut<Assets<Mesh>>,
+        // Iterate all entities that have a DistanceField and an SdfConfig and a Mesh
+        query: Query<(&DistanceField, &SdfConfig, &Mesh3d), Changed<DistanceField>>,
     ) {
-        let Some(mesh_handle) = mesh_handle else {
-            return;
-        };
-
-        if !distance_field.is_changed() && !sdf_config.is_changed() {
-            return;
-        }
-
-        let mesh = MarchingCubes::generate_mesh(&distance_field, ISO_LEVEL, sdf_config.voxel_size);
-
-        if let Some(existing) = meshes.get_mut(&mesh_handle.0) {
-            *existing = mesh;
+        for (distance_field, sdf_config, mesh3d) in query.iter() {
+             // We only run if changed (Changed filter handles this efficienty)
+             // Generate Mesh
+             let mesh = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, sdf_config.voxel_size);
+             
+             if let Some(existing) = meshes.get_mut(&mesh3d.0) {
+                 *existing = mesh;
+             }
         }
     }
 }

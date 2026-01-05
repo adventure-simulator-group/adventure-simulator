@@ -164,7 +164,7 @@ mod tests {
         let voxel_size = 1.0;
         let radius = 2.5;
 
-        let mut distance_field = DistanceField::new(size, size, size);
+        let mut distance_field = DistanceField::new_distance_field(size, size, size);
         distance_field.add_sphere(Vec3::ZERO, radius, voxel_size);
 
         let mesh = MarchingCubes::generate_mesh(&distance_field, 0.0, voxel_size);
