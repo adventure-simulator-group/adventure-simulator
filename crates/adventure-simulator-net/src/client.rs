@@ -25,7 +25,6 @@ impl Plugin for AdventureSimulatorClientPlugin {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub enum ClientProtocol {
-    Udp,
     WebTransport { certificate_digest: String },
     WebSocket,
 }
@@ -47,7 +46,7 @@ impl Default for AdventureSimulatorClient {
             id: 0,
             server_addr: DEFAULT_SERVER_ADDR,
             addr: DEFAULT_CLIENT_ADDR,
-            protocol: ClientProtocol::Udp,
+            protocol: ClientProtocol::WebSocket,
             protocol_settings: Default::default(),
         }
     }
@@ -90,11 +89,6 @@ impl AdventureSimulatorClient {
             };
 
             match protocol {
-                #[cfg(not(target_family = "wasm"))]
-                ClientProtocol::Udp => {
-                    add_netcode(&mut entity_mut)?;
-                    entity_mut.insert(UdpIo::default());
-                }
                 ClientProtocol::WebTransport { certificate_digest } => {
                     add_netcode(&mut entity_mut)?;
                     entity_mut.insert(WebTransportClientIo { certificate_digest });
