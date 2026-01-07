@@ -4,6 +4,7 @@
 //! whenever a new "pending" mission appears.
 
 use std::collections::HashSet;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -33,8 +34,8 @@ struct Args {
     base_port: u16,
 
     /// Public host for clients to connect to
-    #[arg(long, default_value = "localhost")]
-    public_host: String,
+    #[arg(long, default_value_t = Ipv4Addr::UNSPECIFIED)]
+    host: Ipv4Addr,
 }
 
 fn main() {
@@ -88,7 +89,7 @@ fn main() {
     let bin = args.tactical_server_bin.clone();
     let stdb_url = args.spacetimedb_url.clone();
     let stdb_module = args.spacetimedb_module.clone();
-    let public_host = args.public_host.clone();
+    let host = args.host.clone();
 
     conn.db.tactical_server().on_insert(move |_ctx, server| {
         if server.status != TacticalStatus::Pending {
@@ -118,14 +119,12 @@ fn main() {
                 &server.mission_id,
                 "--scene-key",
                 &server.scene_key,
-                "--port",
-                &port.to_string(),
+                "--addr",
+                &SocketAddr::new(host.into(), port).to_string(),
                 "--spacetimedb-url",
                 &stdb_url,
                 "--spacetimedb-module",
                 &stdb_module,
-                "--public-host",
-                &public_host,
             ])
             .spawn()
         {

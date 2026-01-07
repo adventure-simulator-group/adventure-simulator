@@ -8,8 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct TacticalServerReadyArgs {
     pub mission_id: String,
-    pub host: String,
-    pub port: u16,
+    pub addr: String,
     pub cert_digest: String,
 }
 
@@ -17,8 +16,7 @@ impl From<TacticalServerReadyArgs> for super::Reducer {
     fn from(args: TacticalServerReadyArgs) -> Self {
         Self::TacticalServerReady {
             mission_id: args.mission_id,
-            host: args.host,
-            port: args.port,
+            addr: args.addr,
             cert_digest: args.cert_digest,
         }
     }
@@ -43,8 +41,7 @@ pub trait tactical_server_ready {
     fn tactical_server_ready(
         &self,
         mission_id: String,
-        host: String,
-        port: u16,
+        addr: String,
         cert_digest: String,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `tactical_server_ready`.
@@ -56,9 +53,7 @@ pub trait tactical_server_ready {
     /// to cancel the callback.
     fn on_tactical_server_ready(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u16, &String)
-            + Send
-            + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String) + Send + 'static,
     ) -> TacticalServerReadyCallbackId;
     /// Cancel a callback previously registered by [`Self::on_tactical_server_ready`],
     /// causing it not to run in the future.
@@ -69,38 +64,34 @@ impl tactical_server_ready for super::RemoteReducers {
     fn tactical_server_ready(
         &self,
         mission_id: String,
-        host: String,
-        port: u16,
+        addr: String,
         cert_digest: String,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "tactical_server_ready",
             TacticalServerReadyArgs {
                 mission_id,
-                host,
-                port,
+                addr,
                 cert_digest,
             },
         )
     }
     fn on_tactical_server_ready(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u16, &String)
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String)
             + Send
             + 'static,
     ) -> TacticalServerReadyCallbackId {
         TacticalServerReadyCallbackId(self.imp.on_reducer(
             "tactical_server_ready",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
                             reducer:
                                 super::Reducer::TacticalServerReady {
                                     mission_id,
-                                    host,
-                                    port,
+                                    addr,
                                     cert_digest,
                                 },
                             ..
@@ -110,7 +101,7 @@ impl tactical_server_ready for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, mission_id, host, port, cert_digest)
+                callback(ctx, mission_id, addr, cert_digest)
             }),
         ))
     }
