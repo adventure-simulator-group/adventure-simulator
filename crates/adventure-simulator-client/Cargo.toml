@@ -8,12 +8,11 @@ license.workspace = true
 
 [dependencies]
 bevy = { workspace = true, default-features = true, features = [] }
+clap.workspace = true
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true
-
-[package.metadata.bevy_cli.web]
-rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]
+wasm-bindgen.workspace = true
 
 [lints]
 workspace = true

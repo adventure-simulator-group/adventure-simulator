@@ -90,7 +90,9 @@ name = "adventure-simulator-client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "clap",
  "console_error_panic_hook",
+ "wasm-bindgen",
 ]
 
 [[package]]

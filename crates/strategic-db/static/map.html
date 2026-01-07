@@ -300,6 +300,11 @@
             try {
                 const module = await import('./wasm/adventure-simulator-client.js');
                 await module.default();
+                await module.wasm_run([
+                    "adventure-simulator-client",
+                    "--server-addr", server.addr,
+                    "--id", "0"
+                ]);
                 document.getElementById('game-connection').textContent = 'Connected!';
             } catch (e) {
                 document.getElementById('game-connection').textContent = 'WASM not built. Run: just build-wasm';
