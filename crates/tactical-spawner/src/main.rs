@@ -4,7 +4,7 @@
 //! whenever a new "pending" mission appears.
 
 use std::collections::HashSet;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -35,7 +35,7 @@ struct Args {
 
     /// Public host for clients to connect to
     #[arg(long, default_value_t = Ipv4Addr::UNSPECIFIED)]
-    host: Ipv4Addr,
+    host: IpAddr,
 }
 
 fn main() {
@@ -120,7 +120,7 @@ fn main() {
                 "--scene-key",
                 &server.scene_key,
                 "--addr",
-                &SocketAddr::new(host.into(), port).to_string(),
+                &SocketAddr::new(host, port).to_string(),
                 "--spacetimedb-url",
                 &stdb_url,
                 "--spacetimedb-module",
