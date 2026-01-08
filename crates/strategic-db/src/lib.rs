@@ -62,8 +62,7 @@ pub struct TacticalServer {
     pub scene_key: String,
     pub status: TacticalStatus,
     /// Connection info (written by tactical-server)
-    pub host: String,
-    pub port: u16,
+    pub addr: String,
     pub cert_digest: String,
     /// Character in this mission
     pub character_id: String,
@@ -123,18 +122,26 @@ pub fn enter_mission(
     }
 
     // Check not already in a mission
-    if ctx.db.tactical_server().iter().any(|t| t.character_id == character_id && t.status != TacticalStatus::Ended) {
+    if ctx
+        .db
+        .tactical_server()
+        .iter()
+        .any(|t| t.character_id == character_id && t.status != TacticalStatus::Ended)
+    {
         return Err("Already in a mission".into());
     }
 
-    let mission_id = format!("{}-{}", character_id, ctx.timestamp.to_micros_since_unix_epoch());
+    let mission_id = format!(
+        "{}-{}",
+        character_id,
+        ctx.timestamp.to_micros_since_unix_epoch()
+    );
 
     ctx.db.tactical_server().insert(TacticalServer {
         mission_id: mission_id.clone(),
         scene_key,
         status: TacticalStatus::Pending,
-        host: String::new(),
-        port: 0,
+        addr: String::new(),
         cert_digest: String::new(),
         character_id,
     });
@@ -148,8 +155,7 @@ pub fn enter_mission(
 pub fn tactical_server_ready(
     ctx: &ReducerContext,
     mission_id: String,
-    host: String,
-    port: u16,
+    addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
     let Some(mut server) = ctx.db.tactical_server().mission_id().find(&mission_id) else {
@@ -157,12 +163,11 @@ pub fn tactical_server_ready(
     };
 
     server.status = TacticalStatus::Ready;
-    server.host = host;
-    server.port = port;
+    server.addr = addr.clone();
     server.cert_digest = cert_digest;
     ctx.db.tactical_server().mission_id().update(server);
 
-    log::info!("Mission {} ready on port {}", mission_id, port);
+    log::info!("Mission {} ready on {}", mission_id, addr);
     Ok(())
 }
 
@@ -198,7 +203,12 @@ pub fn commit_mission(
     server.status = TacticalStatus::Ended;
     ctx.db.tactical_server().mission_id().update(server);
 
-    log::info!("Mission {} ended: success={}, xp={}", mission_id, success, xp_gained);
+    log::info!(
+        "Mission {} ended: success={}, xp={}",
+        mission_id,
+        success,
+        xp_gained
+    );
     Ok(())
 }
 
@@ -218,7 +228,9 @@ pub fn leave_mission(ctx: &ReducerContext, mission_id: String) -> Result<(), Str
 
 fn add_item(ctx: &ReducerContext, character_id: &str, item_id: &str, qty: i32) {
     // Find existing stack
-    let existing = ctx.db.inventory_item()
+    let existing = ctx
+        .db
+        .inventory_item()
         .character_id()
         .filter(&character_id.to_string())
         .find(|i| i.item_id == item_id);

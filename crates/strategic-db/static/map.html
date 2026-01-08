@@ -292,7 +292,7 @@
             document.getElementById('strategic-view').style.display = 'none';
             document.getElementById('tactical-view').classList.add('active');
             document.getElementById('game-scene').textContent = server.scene_key;
-            document.getElementById('game-connection').textContent = `${server.host}:${server.port}`;
+            document.getElementById('game-connection').textContent = server.addr;
             loadGame(server);
         }
 

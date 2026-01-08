@@ -12,8 +12,7 @@ pub struct TacticalServer {
     pub mission_id: String,
     pub scene_key: String,
     pub status: TacticalStatus,
-    pub host: String,
-    pub port: u16,
+    pub addr: String,
     pub cert_digest: String,
     pub character_id: String,
 }
