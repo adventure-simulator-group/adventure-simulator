@@ -2294,6 +2294,7 @@ dependencies = [
  "bevy_egui",
  "distance-field-plugin",
  "marching-cubes-plugin",
+ "sphere-tracing-plugin",
 ]
 
 [[package]]
@@ -7002,6 +7003,13 @@ dependencies = [
  "robust",
  "serde",
  "smallvec",
+]
+
+[[package]]
+name = "sphere-tracing-plugin"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

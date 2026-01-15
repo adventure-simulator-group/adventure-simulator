@@ -1,0 +1,9 @@
+[package]
+name = "sphere-tracing-plugin"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy.workspace = true
+[lints]
+workspace = true
