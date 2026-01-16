@@ -21,8 +21,8 @@ const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
 #[command(name = "tactical-server")]
 #[command(about = "Tactical mission server for Adventure Simulator")]
 struct Args {
-    /// Address to listen on
-    #[arg(long, default_value = "0.0.0.0:6000")]
+    /// Public address to use in clients to connect
+    #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
 
     /// Unique mission instance ID

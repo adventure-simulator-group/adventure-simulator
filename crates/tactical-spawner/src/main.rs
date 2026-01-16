@@ -34,8 +34,8 @@ struct Args {
     base_port: u16,
 
     /// Public host for clients to connect to
-    #[arg(long, default_value_t = Ipv4Addr::UNSPECIFIED)]
-    host: IpAddr,
+    #[arg(long, default_value_t = Ipv4Addr::LOCALHOST)]
+    host: Ipv4Addr,
 }
 
 fn main() {
@@ -89,7 +89,7 @@ fn main() {
     let bin = args.tactical_server_bin.clone();
     let stdb_url = args.spacetimedb_url.clone();
     let stdb_module = args.spacetimedb_module.clone();
-    let host = args.host.clone();
+    let public_host = args.host.clone();
 
     conn.db.tactical_server().on_insert(move |_ctx, server| {
         if server.status != TacticalStatus::Pending {
@@ -120,7 +120,7 @@ fn main() {
                 "--scene-key",
                 &server.scene_key,
                 "--addr",
-                &SocketAddr::new(host, port).to_string(),
+                &SocketAddr::new(public_host.into(), port).to_string(),
                 "--spacetimedb-url",
                 &stdb_url,
                 "--spacetimedb-module",
