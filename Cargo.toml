@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/adventure-simulator-net",
     "crates/adventure-simulator-client",
+    "crates/adventure-simulator-core",
     "crates/character-creator",
     "crates/strategic-db",
     "crates/strategic-db-client",
@@ -19,6 +20,8 @@ license = "GPL-3.0"
 
 [workspace.dependencies]
 adventure-simulator-net = { version = "0.1.0", default-features = false }
+adventure-simulator-core = { version = "0.1.0" }
+
 bevy = { version = "0.17.3", default-features = false }
 lightyear = { version = "0.25.5", default-features = false }
 lightyear_frame_interpolation = { version = "0.25.5", default-features = false }
@@ -55,5 +58,6 @@ too_many_arguments = "allow"
 
 [patch.crates-io]
 adventure-simulator-net = { path = "crates/adventure-simulator-net" }
+adventure-simulator-core = { path = "crates/adventure-simulator-core" }
 # bevy_ahoy requires bleeding edge avian3d
 avian3d = { git = "https://github.com/avianphysics/avian" }

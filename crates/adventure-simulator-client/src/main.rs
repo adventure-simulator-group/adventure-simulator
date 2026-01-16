@@ -7,6 +7,8 @@
 //! - Ground plane and skybox
 //! - Ready for Lightyear networking integration
 
+use adventure_simulator_core::Player;
+
 use avian3d::{prelude::*, PhysicsPlugins};
 use bevy::{
     ecs::{lifecycle::HookContext, world::DeferredWorld},
@@ -59,9 +61,6 @@ fn main() {
 }
 
 #[derive(Component, Default, Debug)]
-struct Player;
-
-#[derive(Component, Default, Debug)]
 #[component(on_add = PlayerInput::on_add)]
 struct PlayerInput;
 
@@ -106,7 +105,6 @@ fn setup(
     // Ground plane
     commands.spawn((
         RigidBody::Static,
-        // Collider::heightfield(vec![vec![0.0; 50]; 50], Vec3::splat(1.0)),
         Collider::half_space(Vec3::Y),
         Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
