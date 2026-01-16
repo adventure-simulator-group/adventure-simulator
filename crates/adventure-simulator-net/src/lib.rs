@@ -3,6 +3,7 @@ compile_error!("The `server` feature cannot be enabled when compiling for wasm32
 
 #[cfg(feature = "client")]
 pub mod client;
+pub mod netcode;
 pub mod protocol;
 #[cfg(feature = "server")]
 pub mod server;
@@ -36,6 +37,7 @@ const DEFAULT_SERVER_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
 bevy::app::plugin_group! {
     #[derive(Debug)]
     pub struct AdventureSimulatorNetPlugins {
+        crate::netcode:::AdventureSimulatorNetcodePlugin,
         #[custom(cfg(feature = "server"))]
         crate::server:::AdventureSimulatorServerPlugin,
         #[custom(cfg(feature = "client"))]

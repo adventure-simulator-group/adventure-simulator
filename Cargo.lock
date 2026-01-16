@@ -89,10 +89,19 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "adventure-simulator-client"
 version = "0.1.0"
 dependencies = [
+ "adventure-simulator-core",
  "bevy",
  "clap",
  "console_error_panic_hook",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "adventure-simulator-core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "serde",
 ]
 
 [[package]]

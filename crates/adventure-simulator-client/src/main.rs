@@ -9,6 +9,7 @@
 
 use std::net::SocketAddr;
 
+use adventure_simulator_core::Player;
 use bevy::prelude::*;
 use clap::Parser;
 
@@ -69,10 +70,6 @@ fn run(args: Args) {
         .insert_resource(args)
         .run();
 }
-
-/// Marker component for the player entity
-#[derive(Component)]
-struct Player;
 
 /// Marker component for the main camera
 #[derive(Component)]
