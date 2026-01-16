@@ -4,7 +4,6 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use crate::MarchingCubes;
 use distance_field_plugin::{
     components::{SdfShape, SdfOperation, DistanceField},
-    SdfConfig,
 };
 
 const GRID_SIZE: usize = 36;
@@ -78,14 +77,7 @@ impl MarchingCubesPlugin {
 
         // Spawn Volume
         let volume_entity = commands.spawn((
-            DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE),
-            SdfConfig {
-                width: GRID_SIZE,
-                height: GRID_SIZE,
-                depth: GRID_SIZE,
-                voxel_size: 0.12,
-                ..default()
-            },
+            DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12),
             Mesh3d(mesh_handle.clone()),
             MeshMaterial3d(material_handle.clone()),
             Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
@@ -108,14 +100,7 @@ impl MarchingCubesPlugin {
 
         // Spawn a SECOND independent SDF volume to verify multi-SDF support
         let volume_entity_2 = commands.spawn((
-            DistanceField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2),
-            SdfConfig {
-                width: GRID_SIZE / 2,
-                height: GRID_SIZE / 2,
-                depth: GRID_SIZE / 2,
-                voxel_size: 0.15,
-                ..default()
-            },
+            DistanceField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
             Mesh3d(mesh_handle.clone()), 
             Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
         )).id();
@@ -159,7 +144,7 @@ impl MarchingCubesPlugin {
         mut contexts: EguiContexts,
         mut ui_state: ResMut<MarchingCubesUIState>,
         mut shapes: Query<&mut SdfShape>,
-        mut configs: Query<&mut SdfConfig>,
+        mut fields: Query<&mut DistanceField>,
     ) {
         if let Ok(ctx) = contexts.ctx_mut() {
             egui::Window::new("Marching Cubes")
@@ -185,7 +170,7 @@ impl MarchingCubesPlugin {
 
                     ui.label("Voxel Size");
                     // We just pick the first one to display? Or local state?
-                    let mut current_voxel = configs.iter().next().map(|c| c.voxel_size).unwrap_or(0.12);
+                    let mut current_voxel = fields.iter().next().map(|c| c.voxel_size).unwrap_or(0.12);
                     
                     let slider_voxel = egui::Slider::new(
                         &mut current_voxel,
@@ -193,8 +178,8 @@ impl MarchingCubesPlugin {
                     )
                     .text("meters");
                     if ui.add(slider_voxel).changed() {
-                        for mut config in configs.iter_mut() {
-                            config.voxel_size = current_voxel;
+                        for mut field in fields.iter_mut() {
+                            field.voxel_size = current_voxel;
                         }
                     }
                     ui.label(format!("{:.3}", current_voxel));
@@ -205,12 +190,12 @@ impl MarchingCubesPlugin {
     fn update_marching_cubes_mesh(
         mut meshes: ResMut<Assets<Mesh>>,
         // Iterate all entities that have a DistanceField and an SdfConfig and a Mesh
-        query: Query<(&DistanceField, &SdfConfig, &Mesh3d), Changed<DistanceField>>,
+        query: Query<(&DistanceField, &Mesh3d), Changed<DistanceField>>,
     ) {
-        for (distance_field, sdf_config, mesh3d) in query.iter() {
+        for (distance_field, mesh3d) in query.iter() {
              // We only run if changed (Changed filter handles this efficienty)
              // Generate Mesh
-             let mesh = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, sdf_config.voxel_size);
+             let mesh = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, distance_field.voxel_size);
              
              if let Some(existing) = meshes.get_mut(&mesh3d.0) {
                  *existing = mesh;

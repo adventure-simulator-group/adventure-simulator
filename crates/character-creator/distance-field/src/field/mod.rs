@@ -1,25 +1,28 @@
-use bevy_math::Vec3;
-
 #[derive(Clone)]
 pub struct Field<T> where T: Send + Sync + 'static {
-    data: Vec<T>,
-    width: usize,
-    height: usize,
-    depth: usize,
+    pub data: Vec<T>,
+    pub width: usize,
+    pub height: usize,
+    pub depth: usize,
+    pub voxel_size: f32,
 }
 
-pub type Distance = f32;
-pub type DistanceField = Field<Distance>;
-
 impl<T> Field<T> where T: Send + Sync + 'static {
-    pub fn new(width: usize, height: usize, depth: usize, initial_value: T) -> Self 
+    pub fn new(width: usize, height: usize, depth: usize, voxel_size: f32, initial_value: T) -> Self 
     where T: Clone {
         Self {
             data: vec![initial_value; width * height * depth],
             width,
             height,
             depth,
+            voxel_size,
         }
+    }
+
+    pub fn set_all(&mut self, value: T)
+    where T: Clone
+    {
+        self.data.fill(value);
     }
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> &T {
@@ -36,36 +39,5 @@ impl<T> Field<T> where T: Send + Sync + 'static {
 
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.data.iter_mut()
-    }
-}
-
-impl DistanceField {
-    pub fn new_distance_field(width: usize, height: usize, depth: usize) -> Self {
-        Self::new(width, height, depth, Distance::INFINITY)
-    }
-
-    pub fn add_sphere(&mut self, center: Vec3, radius: f32, voxel_size: f32) {
-        // Simple SDF addition (min)
-        let (width, height, depth) = self.dimensions();
-        let origin = Vec3::new(
-            -(width as f32 - 1.0) * 0.5 * voxel_size,
-            -(height as f32 - 1.0) * 0.5 * voxel_size,
-            -(depth as f32 - 1.0) * 0.5 * voxel_size,
-        );
-
-        for z in 0..depth {
-            for y in 0..height {
-                for x in 0..width {
-                    let world_position = origin + Vec3::new(
-                        x as f32 * voxel_size,
-                        y as f32 * voxel_size,
-                        z as f32 * voxel_size,
-                    );
-                    let distance = world_position.distance(center) - radius;
-                    let current = self.get(x, y, z);
-                    self.set(x, y, z, current.min(distance));
-                }
-            }
-        }
     }
 }

@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(Component, Clone, Copy, Debug, Reflect)]
+#[derive(Component, Clone, Copy, Debug)]
 pub enum SdfShape {
     Sphere { radius: f32 },
     Box { size: Vec3 },

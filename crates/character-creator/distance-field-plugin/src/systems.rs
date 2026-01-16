@@ -3,18 +3,16 @@ use crate::components::*;
 
 impl DistanceField {
     pub fn update(
-        mut fields: Query<(Entity, &SdfConfig, &mut DistanceField, &GlobalTransform, Option<&Children>)>,
+        mut fields: Query<(Entity, &mut DistanceField, &GlobalTransform, Option<&Children>)>,
         shapes: Query<(&SdfShape, &GlobalTransform, Option<&SdfOperation>)>,
     ) {
-        for (_entity, config, mut distance_field, field_transform, children) in fields.iter_mut() {
-            for val in distance_field.iter_mut() {
-                *val = f32::INFINITY;
-            }
+        for (_entity, mut distance_field, field_transform, children) in fields.iter_mut() {
+            distance_field.clear();
 
             let local_origin = Vec3::new(
-                -(config.width as f32) * config.voxel_size / 2.0,
-                -(config.height as f32) * config.voxel_size / 2.0,
-                -(config.depth as f32) * config.voxel_size / 2.0
+                -(distance_field.width as f32) * distance_field.voxel_size / 2.0,
+                -(distance_field.height as f32) * distance_field.voxel_size / 2.0,
+                -(distance_field.depth as f32) * distance_field.voxel_size / 2.0
             );
 
             let mut relevant_shapes: Vec<(&SdfShape, &GlobalTransform, Option<&SdfOperation>)> = Vec::new();
@@ -38,13 +36,13 @@ impl DistanceField {
                 (shape, field_to_shape, op.copied().unwrap_or(SdfOperation::Union))
             }).collect();
 
-            for z in 0..config.depth {
-                for y in 0..config.height {
-                    for x in 0..config.width {
+            for z in 0..distance_field.depth {
+                for y in 0..distance_field.height {
+                    for x in 0..distance_field.width {
                         let voxel_field_pos = local_origin + Vec3::new(
-                            x as f32 * config.voxel_size,
-                            y as f32 * config.voxel_size,
-                            z as f32 * config.voxel_size,
+                            x as f32 * distance_field.voxel_size,
+                            y as f32 * distance_field.voxel_size,
+                            z as f32 * distance_field.voxel_size,
                         );
 
                         let mut voxel_val = f32::INFINITY;
@@ -89,14 +87,14 @@ impl DistanceField {
     }
 
     pub fn debug(
-        fields: Query<(&SdfConfig, &GlobalTransform)>,
+        fields: Query<(&DistanceField, &GlobalTransform)>,
         mut gizmos: Gizmos,
     ) {
-        for (config, transform) in fields.iter() {
+        for (field, transform) in fields.iter() {
             let size = Vec3::new(
-                config.width as f32 * config.voxel_size,
-                config.height as f32 * config.voxel_size,
-                config.depth as f32 * config.voxel_size,
+                field.width as f32 * field.voxel_size,
+                field.height as f32 * field.voxel_size,
+                field.depth as f32 * field.voxel_size,
             );
             
             let (_scale, rotation, translation) = transform.to_scale_rotation_translation();
