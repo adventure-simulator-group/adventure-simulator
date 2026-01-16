@@ -148,7 +148,7 @@
         </div>
         <div id="game-status">
             <div>Scene: <span id="game-scene">-</span></div>
-            <div>Status: <span id="game-connection">Connecting...</span></div>
+            <div>Server: <span id="game-connection">Connecting...</span></div>
         </div>
     </div>
 
@@ -302,10 +302,8 @@
                 await module.default();
                 await module.wasm_run([
                     "adventure-simulator-client",
-                    "--server-addr", server.addr,
-                    "--id", "0"
+                    "--token", server.token,
                 ]);
-                document.getElementById('game-connection').textContent = 'Connected!';
             } catch (e) {
                 document.getElementById('game-connection').textContent = 'WASM not built. Run: just build-wasm';
                 console.error('Failed to load game:', e);

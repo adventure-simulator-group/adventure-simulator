@@ -9,6 +9,7 @@
 use std::net::SocketAddr;
 
 use adventure_simulator_net::prelude::*;
+use adventure_simulator_net::server::ProtocolSettings;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
@@ -17,6 +18,9 @@ use strategic_db_client::{commit_mission, tactical_server_ready, DbConnection};
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
 
+/// Server's protocol version, used for connection token validation.
+const PROTOCOL_ID: u64 = 0;
+
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "tactical-server")]
 #[command(about = "Tactical mission server for Adventure Simulator")]
@@ -24,6 +28,10 @@ struct Args {
     /// Public address to use in clients to connect
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
+
+    /// Private key used to generate a secure connection token.
+    #[arg(long, default_value_t = HexPrivateKey::default())]
+    connection_private_key: HexPrivateKey,
 
     /// Unique mission instance ID
     #[arg(long)]
@@ -52,6 +60,10 @@ struct Args {
         conflicts_with = "timeout"
     )]
     no_timeout: bool,
+
+    /// Write connect token to a "tactical-server.token" file.
+    #[arg(long, action = ArgAction::SetTrue)]
+    dump_connect_token: bool,
 }
 
 fn main() {
@@ -70,9 +82,13 @@ fn main() {
                 .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
             enemies_killed: 0,
             committed: false,
+            connect_token: default(),
         })
         .insert_resource(args)
-        .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
+        .add_systems(
+            Startup,
+            (setup_server, ApplyDeferred, connect_spacetimedb).chain(),
+        )
         .add_systems(Update, check_mission_timeout)
         .run();
 }
@@ -85,11 +101,16 @@ struct MissionState {
     timeout: Option<Timer>,
     enemies_killed: u32,
     committed: bool,
+    connect_token: HexConnectToken,
 }
 
-fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
+fn connect_spacetimedb(
+    mut commands: Commands,
+    args: Res<Args>,
+    state: Res<MissionState>,
+) -> Result {
     info!("Starting tactical server for mission {}", args.mission_id);
-    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
+    info!("Scene: {}, Public addr: {}", args.scene_key, args.addr);
 
     info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
     let conn = DbConnection::builder()
@@ -100,7 +121,11 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
 
     info!("Calling tactical_server_ready reducer");
     conn.reducers
-        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
+        .tactical_server_ready(
+            args.mission_id.clone(),
+            args.addr.to_string(),
+            state.connect_token.to_string(),
+        )
         .expect("Failed to call tactical_server_ready");
 
     conn.frame_tick()?;
@@ -111,21 +136,39 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     Ok(())
 }
 
-fn setup_server(mut commands: Commands, args: Res<Args>) {
+fn setup_server(
+    mut commands: Commands,
+    args: Res<Args>,
+    mut state: ResMut<MissionState>,
+) -> Result {
     info!("=== Tactical Server Ready ===");
     info!("Mission: {}", args.mission_id);
     info!("Scene: {}", args.scene_key);
 
-    commands.spawn(AdventureSimulatorServer {
+    let server = AdventureSimulatorServer {
         addr: args.addr,
-        protocol: ServerProtocol::WebSocket,
-        protocol_settings: ProtocolSettings::default(),
-    });
+        protocol_settings: ProtocolSettings {
+            id: PROTOCOL_ID,
+            private_key: args.connection_private_key.clone(),
+        },
+    };
+    state.connect_token = server.generate_token(0)?;
 
-    info!("Listening on {} (WebSocket)", args.addr);
     if !args.no_timeout {
         info!("Will timeout in {} seconds", args.timeout);
     }
+
+    if args.dump_connect_token {
+        let mut file = std::fs::File::options()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("tactical-server.token")?;
+        file.write(state.connect_token.to_string().as_bytes())?;
+    }
+
+    commands.spawn(server);
+    Ok(())
 }
 
 fn check_mission_timeout(

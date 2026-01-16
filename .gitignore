@@ -24,6 +24,9 @@ target
 utils/*
 !utils/*.sh
 
+# Development temp files
+tactical-server.token
+
 # Obsidian
 wiki/.obsidian/
 .obsidian

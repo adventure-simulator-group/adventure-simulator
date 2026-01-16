@@ -5,7 +5,8 @@ use bevy::prelude::*;
 use serde::Deserialize;
 
 use crate::prelude::ProtocolSettings;
-use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
+use crate::token::HexConnectToken;
+use crate::{DEFAULT_CLIENT_ADDR, FIXED_TICK_DURATION};
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use lightyear::netcode::client_plugin::NetcodeConfig;
@@ -34,8 +35,7 @@ pub enum ClientProtocol {
 #[component(immutable, on_add = Self::on_add)]
 #[require(Name = Name::from("Client"), Client)]
 pub struct AdventureSimulatorClient {
-    pub id: u64,
-    pub server_addr: SocketAddr,
+    pub token: HexConnectToken,
     pub addr: SocketAddr,
     pub protocol: ClientProtocol,
     pub protocol_settings: ProtocolSettings,
@@ -44,8 +44,7 @@ pub struct AdventureSimulatorClient {
 impl Default for AdventureSimulatorClient {
     fn default() -> Self {
         Self {
-            id: 0,
-            server_addr: DEFAULT_SERVER_ADDR,
+            token: HexConnectToken::default(),
             addr: DEFAULT_CLIENT_ADDR,
             protocol: ClientProtocol::Udp,
             protocol_settings: Default::default(),
@@ -59,61 +58,23 @@ impl AdventureSimulatorClient {
         world.commands().queue(move |world: &mut World| -> Result {
             let mut entity_mut = world.entity_mut(entity);
             let AdventureSimulatorClient {
-                id: client_id,
-                server_addr,
+                token,
                 addr,
                 protocol,
                 protocol_settings,
             } = entity_mut.take::<Self>().unwrap();
+
+            let token = ConnectToken::try_from_bytes(&*token)?;
+            let auth = Authentication::Token(token);
+            let netcode_config = default();
+
             entity_mut.insert((
                 LocalAddr(addr),
-                PeerAddr(server_addr),
                 ReplicationReceiver::default(),
+                NetcodeClient::new(auth, netcode_config)?,
+                WebSocketClientIo { config },
             ));
 
-            let add_netcode = |entity_mut: &mut EntityWorldMut| -> Result {
-                // use dummy zeroed key explicitly here.
-                let auth = Authentication::Manual {
-                    server_addr: server_addr,
-                    client_id: client_id,
-                    private_key: protocol_settings.private_key.0,
-                    protocol_id: protocol_settings.id,
-                };
-                let netcode_config = NetcodeConfig {
-                    // Make sure that the server times out clients when their connection is closed
-                    client_timeout_secs: 3,
-                    token_expire_secs: -1,
-                    ..default()
-                };
-                entity_mut.insert(NetcodeClient::new(auth, netcode_config)?);
-                Ok(())
-            };
-
-            match protocol {
-                #[cfg(not(target_family = "wasm"))]
-                ClientProtocol::Udp => {
-                    add_netcode(&mut entity_mut)?;
-                    entity_mut.insert(UdpIo::default());
-                }
-                ClientProtocol::WebTransport { certificate_digest } => {
-                    add_netcode(&mut entity_mut)?;
-                    entity_mut.insert(WebTransportClientIo { certificate_digest });
-                }
-                ClientProtocol::WebSocket => {
-                    add_netcode(&mut entity_mut)?;
-                    let config = {
-                        #[cfg(target_family = "wasm")]
-                        {
-                            ClientConfig::default()
-                        }
-                        #[cfg(not(target_family = "wasm"))]
-                        {
-                            ClientConfig::builder().with_no_cert_validation()
-                        }
-                    };
-                    entity_mut.insert(WebSocketClientIo { config });
-                }
-            };
             world.trigger(Connect { entity });
             Ok(())
         });

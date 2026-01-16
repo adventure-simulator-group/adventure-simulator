@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 bevy = { workspace = true, default-features = true, features = [] }
 adventure-simulator-core.workspace = true
+adventure-simulator-net = { workspace = true, features = ["client"] }
 clap.workspace = true
 
 [target."cfg(target_family = \"wasm\")".dependencies]
