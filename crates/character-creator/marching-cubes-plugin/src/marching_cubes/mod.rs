@@ -1,5 +1,6 @@
 mod tables;
 
+use distance_field_plugin::DistanceField;
 use tables::{EDGE_TABLE, TRI_TABLE, VERTEX_OFFSETS, EDGE_CONNECTIONS};
 use bevy::{
     asset::RenderAssetUsages,
@@ -7,7 +8,7 @@ use bevy::{
     mesh::{Mesh, PrimitiveTopology},
 };
 
-use super::{DistanceField, MeshBuilder};
+use super::MeshBuilder;
 
 pub struct MarchingCubes;
 

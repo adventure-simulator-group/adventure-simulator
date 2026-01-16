@@ -12,10 +12,25 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
+distance-field = { path = "crates/character-creator/distance-field" }
+distance-field-plugin = { path = "crates/character-creator/distance-field-plugin" }
 marching-cubes-plugin = { path = "crates/character-creator/marching-cubes-plugin" }
 sphere-tracing-plugin = { path = "crates/character-creator/sphere-tracing-plugin" }
 
 bevy = { version = "0.17.3", features = ["serialize"] }
+bevy_math = { version = "0.17.3" }
+bevy-inspector-egui = { version = "0.35", default-features = false, features = [
+    "bevy_pbr",
+    "bevy_image",
+    "bevy_render",
+    "egui_open_url",
+] }
+bevy_egui = { version = "0.38", default-features = false, features = [
+    "open_url",
+    "default_fonts",
+    "render",
+] }
+
 lightyear = { version = "0.25.5", default-features = false }
 lightyear_frame_interpolation = { version = "0.25.5", default-features = false }
 lightyear_examples_common = { version = "0.25.5", default-features = false }
@@ -30,17 +45,7 @@ tracing = "0.1.40"
 rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
-bevy-inspector-egui = { version = "0.35", default-features = false, features = [
-    "bevy_pbr",
-    "bevy_image",
-    "bevy_render",
-    "egui_open_url",
-] }
-bevy_egui = { version = "0.38", default-features = false, features = [
-    "open_url",
-    "default_fonts",
-    "render",
-] }
+shrinkwraprs = "0.3.0"
 
 [workspace.lints.rust]
 dead_code = "allow"

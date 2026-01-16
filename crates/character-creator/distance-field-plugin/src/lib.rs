@@ -1,11 +1,9 @@
 use bevy::prelude::*;
 
 pub mod components;
-pub mod field;
 pub mod systems;
 
 pub use components::*;
-pub use field::*;
 pub use systems::*;
 
 pub struct DistanceFieldPlugin;

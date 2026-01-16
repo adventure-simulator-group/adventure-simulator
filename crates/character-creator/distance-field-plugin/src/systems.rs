@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use crate::components::*;
-use crate::field::*;
 
 #[derive(Component, Reflect)]
 pub struct SdfConfig {

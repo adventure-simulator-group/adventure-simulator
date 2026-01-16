@@ -1,12 +1,15 @@
-use bevy::prelude::*;
+use bevy_math::Vec3;
 
-#[derive(Component, Clone)]
+#[derive(Clone)]
 pub struct Field<T> where T: Send + Sync + 'static {
     data: Vec<T>,
     width: usize,
     height: usize,
     depth: usize,
 }
+
+pub type Distance = f32;
+pub type DistanceField = Field<Distance>;
 
 impl<T> Field<T> where T: Send + Sync + 'static {
     pub fn new(width: usize, height: usize, depth: usize, initial_value: T) -> Self 
@@ -35,9 +38,6 @@ impl<T> Field<T> where T: Send + Sync + 'static {
         self.data.iter_mut()
     }
 }
-
-pub type Distance = f32;
-pub type DistanceField = Field<Distance>;
 
 impl DistanceField {
     pub fn new_distance_field(width: usize, height: usize, depth: usize) -> Self {

@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { workspace = true }
+distance-field.workspace = true
+bevy.workspace = true
+shrinkwraprs.workspace = true

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use shrinkwraprs::Shrinkwrap;
 
 #[derive(Component, Clone, Copy, Debug, Reflect)]
 pub enum SdfShape {
@@ -17,5 +18,15 @@ pub enum SdfOperation {
 impl Default for SdfOperation {
     fn default() -> Self {
         Self::Union
+    }
+}
+
+#[derive(Component, Shrinkwrap)]
+#[shrinkwrap(mutable)]
+pub struct DistanceField(pub distance_field::Field<f32>);
+
+impl DistanceField {
+    pub fn new(x: usize, y: usize, z: usize) -> Self {
+        Self(distance_field::Field::new_distance_field(x, y, z))
     }
 }

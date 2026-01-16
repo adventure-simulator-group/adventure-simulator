@@ -3,8 +3,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
 use crate::MarchingCubes;
 use distance_field_plugin::{
-    components::{SdfShape, SdfOperation},
-    field::DistanceField,
+    components::{SdfShape, SdfOperation, DistanceField},
     SdfConfig,
 };
 
@@ -79,7 +78,7 @@ impl MarchingCubesPlugin {
 
         // Spawn Volume
         let volume_entity = commands.spawn((
-            DistanceField::new_distance_field(GRID_SIZE, GRID_SIZE, GRID_SIZE),
+            DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE),
             SdfConfig {
                 width: GRID_SIZE,
                 height: GRID_SIZE,
@@ -109,7 +108,7 @@ impl MarchingCubesPlugin {
 
         // Spawn a SECOND independent SDF volume to verify multi-SDF support
         let volume_entity_2 = commands.spawn((
-            DistanceField::new_distance_field(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2),
+            DistanceField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2),
             SdfConfig {
                 width: GRID_SIZE / 2,
                 height: GRID_SIZE / 2,
