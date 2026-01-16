@@ -63,7 +63,7 @@ pub struct TacticalServer {
     pub status: TacticalStatus,
     /// Connection info (written by tactical-server)
     pub addr: String,
-    pub cert_digest: String,
+    pub token: String,
     /// Character in this mission
     pub character_id: String,
 }
@@ -142,7 +142,7 @@ pub fn enter_mission(
         scene_key,
         status: TacticalStatus::Pending,
         addr: String::new(),
-        cert_digest: String::new(),
+        token: String::new(),
         character_id,
     });
 
@@ -156,7 +156,7 @@ pub fn tactical_server_ready(
     ctx: &ReducerContext,
     mission_id: String,
     addr: String,
-    cert_digest: String,
+    token: String,
 ) -> Result<(), String> {
     let Some(mut server) = ctx.db.tactical_server().mission_id().find(&mission_id) else {
         return Err("Mission not found".into());
@@ -164,7 +164,7 @@ pub fn tactical_server_ready(
 
     server.status = TacticalStatus::Ready;
     server.addr = addr.clone();
-    server.cert_digest = cert_digest;
+    server.token = token;
     ctx.db.tactical_server().mission_id().update(server);
 
     log::info!("Mission {} ready on {}", mission_id, addr);

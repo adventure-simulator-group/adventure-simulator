@@ -13,7 +13,7 @@ pub struct TacticalServer {
     pub scene_key: String,
     pub status: TacticalStatus,
     pub addr: String,
-    pub cert_digest: String,
+    pub token: String,
     pub character_id: String,
 }
 

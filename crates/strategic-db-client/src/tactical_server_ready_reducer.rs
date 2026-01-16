@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct TacticalServerReadyArgs {
     pub mission_id: String,
     pub addr: String,
-    pub cert_digest: String,
+    pub token: String,
 }
 
 impl From<TacticalServerReadyArgs> for super::Reducer {
@@ -17,7 +17,7 @@ impl From<TacticalServerReadyArgs> for super::Reducer {
         Self::TacticalServerReady {
             mission_id: args.mission_id,
             addr: args.addr,
-            cert_digest: args.cert_digest,
+            token: args.token,
         }
     }
 }
@@ -42,7 +42,7 @@ pub trait tactical_server_ready {
         &self,
         mission_id: String,
         addr: String,
-        cert_digest: String,
+        token: String,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `tactical_server_ready`.
     ///
@@ -65,14 +65,14 @@ impl tactical_server_ready for super::RemoteReducers {
         &self,
         mission_id: String,
         addr: String,
-        cert_digest: String,
+        token: String,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "tactical_server_ready",
             TacticalServerReadyArgs {
                 mission_id,
                 addr,
-                cert_digest,
+                token,
             },
         )
     }
@@ -92,7 +92,7 @@ impl tactical_server_ready for super::RemoteReducers {
                                 super::Reducer::TacticalServerReady {
                                     mission_id,
                                     addr,
-                                    cert_digest,
+                                    token,
                                 },
                             ..
                         },
@@ -101,7 +101,7 @@ impl tactical_server_ready for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, mission_id, addr, cert_digest)
+                callback(ctx, mission_id, addr, token)
             }),
         ))
     }

@@ -69,7 +69,7 @@ pub enum Reducer {
     TacticalServerReady {
         mission_id: String,
         addr: String,
-        cert_digest: String,
+        token: String,
     },
 }
 
