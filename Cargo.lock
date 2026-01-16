@@ -2291,6 +2291,14 @@ name = "character-creator"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "character-creator-plugin",
+]
+
+[[package]]
+name = "character-creator-plugin"
+version = "0.1.0"
+dependencies = [
+ "bevy",
  "bevy_egui",
  "distance-field-plugin",
  "marching-cubes-plugin",
@@ -2948,6 +2956,10 @@ dependencies = [
  "smallvec",
  "unicode-segmentation",
 ]
+
+[[package]]
+name = "egui-character-creator"
+version = "0.1.0"
 
 [[package]]
 name = "either"

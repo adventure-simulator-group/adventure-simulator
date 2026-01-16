@@ -1,16 +1,23 @@
 use bevy::prelude::*;
 
-use crate::plugins::animation_player::components::CustomMaterial;
+use components::CustomMaterial;
+use marching_cubes_plugin::MarchingCubesPlugin;
+use distance_field_plugin::DistanceFieldPlugin;
+use sphere_tracing_plugin::SphereTracingPlugin;
 
 pub mod components;
 pub mod resources;
 
-pub struct AnimationPlayerPlugin;
+pub struct CharacterCreatorPlugin;
 
-impl Plugin for AnimationPlayerPlugin {
+impl Plugin for CharacterCreatorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<CustomMaterial>::default());
-        app.add_systems(Startup, components::Scene::spawn)
+        app
+            .add_plugins(MaterialPlugin::<CustomMaterial>::default())
+            .add_plugins(DistanceFieldPlugin)
+            .add_plugins(MarchingCubesPlugin)
+            .add_plugins(SphereTracingPlugin)
+            .add_systems(Startup, components::Scene::spawn)
             .add_systems(Update, components::AnimationPlayer::start)
             .add_systems(Startup, components::CharacterModel::spawn)
             .add_systems(Update, components::CharacterModel::update)

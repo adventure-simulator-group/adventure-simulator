@@ -8,8 +8,8 @@ use bevy::render::render_resource::PrimitiveTopology;
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
 
-use crate::plugins::animation_player::components::OrbitalCamera;
-use crate::plugins::animation_player::resources::{Animations, SceneHandle};
+use crate::plugin::components::OrbitalCamera;
+use crate::plugin::resources::{Animations, SceneHandle};
 
 const MODEL_PATH: &str = "models/animated/Michelle.glb";
 const BONE_RADIUS: f32 = 0.01;

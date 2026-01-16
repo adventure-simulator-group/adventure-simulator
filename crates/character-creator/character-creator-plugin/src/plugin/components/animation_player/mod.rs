@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use std::time::Duration;
 
-use crate::plugins::animation_player::resources::{Animations, SceneHandle};
+use crate::plugin::resources::{Animations, SceneHandle};
 
 pub struct AnimationPlayer;
 

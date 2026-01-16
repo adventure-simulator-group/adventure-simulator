@@ -1,2 +1,2 @@
-pub mod application;
-pub mod plugins;
+mod plugin;
+pub use plugin::*;

@@ -17,6 +17,7 @@ distance-field-plugin = { path = "crates/character-creator/distance-field-plugin
 marching-cubes = { path = "crates/character-creator/marching-cubes" }
 marching-cubes-plugin = { path = "crates/character-creator/marching-cubes-plugin" }
 sphere-tracing-plugin = { path = "crates/character-creator/sphere-tracing-plugin" }
+character-creator-plugin = { path = "crates/character-creator/character-creator-plugin" }
 
 bevy = { version = "0.17.3", features = ["serialize"] }
 bevy_math = "0.17.3"

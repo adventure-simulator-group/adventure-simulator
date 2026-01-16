@@ -45,7 +45,7 @@ impl OrbitalCamera {
 
     pub fn gamepad_control(
         gamepad: Single<&Gamepad>,
-        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
+        mut cameras: Query<&mut crate::plugin::components::OrbitalCamera>,
         time: Res<Time>,
     ) {
         let right_stick_x = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
@@ -66,7 +66,7 @@ impl OrbitalCamera {
 
     pub fn keyboard_control(
         keyboard_input: Res<ButtonInput<KeyCode>>,
-        mut cameras: Query<&mut crate::plugins::animation_player::components::OrbitalCamera>,
+        mut cameras: Query<&mut crate::plugin::components::OrbitalCamera>,
         time: Res<Time>,
     ) {
         for mut camera in &mut cameras {
