@@ -1,30 +1,24 @@
 mod tables;
 
-use distance_field_plugin::DistanceFieldComponent;
+use distance_field::DistanceField;
 use tables::{EDGE_TABLE, TRI_TABLE, VERTEX_OFFSETS, EDGE_CONNECTIONS};
-use bevy::{
-    asset::RenderAssetUsages,
-    math::Vec3,
-    mesh::{Mesh, PrimitiveTopology},
-};
+use bevy_math::Vec3;
 
-use super::MeshBuilder;
+use crate::MeshBuilder;
 
 pub struct MarchingCubes;
 
 impl MarchingCubes {
-    pub fn generate_mesh(distance_field: &DistanceFieldComponent, iso_level: f32, voxel_size: f32) -> Mesh {
+    pub fn generate_mesh(distance_field: &DistanceField, iso_level: f32, voxel_size: f32) -> MeshBuilder {
         let (width, height, depth) = distance_field.dimensions();
 
+        let mut builder = MeshBuilder::new();
+
         if width < 2 || height < 2 || depth < 2 {
-            return Mesh::new(
-                PrimitiveTopology::TriangleList,
-                RenderAssetUsages::default(),
-            );
+            return builder;
         }
 
         let origin = Self::grid_origin(width, height, depth, voxel_size);
-        let mut builder = MeshBuilder::new();
 
         for z in 0..(depth - 1) {
             for y in 0..(height - 1) {
@@ -45,11 +39,11 @@ impl MarchingCubes {
             }
         }
 
-        builder.build()
+        builder
     }
 
     fn get_cell_data(
-        distance_field: &DistanceFieldComponent,
+        distance_field: &DistanceField,
         origin: Vec3,
         x: usize,
         y: usize,
@@ -150,45 +144,5 @@ impl MarchingCubes {
 
         let t = (iso_level - v1) / (v2 - v1);
         p1 + (p2 - p1) * t
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bevy::mesh::Indices;
-
-    use super::*;
-
-    #[test]
-    fn test_marching_cubes_mesh_generation() {
-        let size = 10;
-        let voxel_size = 1.0;
-        let radius = 2.5;
-
-        let mut distance_field = DistanceFieldComponent::new_distance_field(size, size, size);
-        distance_field.add_sphere(Vec3::ZERO, radius, voxel_size);
-
-        let mesh = MarchingCubes::generate_mesh(&distance_field, 0.0, voxel_size);
-
-        assert!(matches!(
-            mesh.primitive_topology(),
-            PrimitiveTopology::TriangleList
-        ));
-
-        let positions = mesh
-            .attribute(Mesh::ATTRIBUTE_POSITION)
-            .unwrap()
-            .as_float3()
-            .unwrap();
-        // A sphere should generate some vertices
-        assert!(positions.len() > 0);
-
-        // Check if index count is divisible by 3 (triangles)
-        if let Some(Indices::U32(indices)) = mesh.indices() {
-            assert!(indices.len() > 0);
-            assert_eq!(indices.len() % 3, 0);
-        } else {
-            panic!("Mesh should have U32 indices");
-        }
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "marching-cubes"
+version.workspace = true
+edition.workspace = true
+
+[features]
+bevy = ["bevy_mesh", "bevy_asset"]
+
+[dependencies]
+distance-field.workspace = true
+bevy_math.workspace = true
+bevy_mesh = { workspace = true, optional = true }
+bevy_asset = { workspace = true, optional = true }
+
+[lints]
+workspace = true

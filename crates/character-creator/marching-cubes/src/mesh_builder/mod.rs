@@ -1,6 +1,4 @@
-use bevy::asset::RenderAssetUsages;
-use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
-use bevy::prelude::*;
+use bevy_math::*;
 
 pub struct MeshBuilder {
     positions: Vec<[f32; 3]>,
@@ -48,16 +46,25 @@ impl MeshBuilder {
         self.indices
             .extend([base_index, base_index + 1, base_index + 2]);
     }
+}
 
-    pub fn build(self) -> Mesh {
-        let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
-        mesh.insert_indices(Indices::U32(self.indices));
-        mesh
+#[cfg(feature = "bevy")]
+mod bevy {
+    use super::MeshBuilder;
+    use bevy_mesh::*;
+    use bevy_asset::RenderAssetUsages;
+
+    impl MeshBuilder {
+        pub fn build(self) -> Mesh {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
+            mesh.insert_indices(Indices::U32(self.indices));
+            mesh
+        }
     }
 }

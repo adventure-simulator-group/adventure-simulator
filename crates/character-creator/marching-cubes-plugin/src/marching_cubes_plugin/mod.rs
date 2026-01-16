@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
-use crate::MarchingCubes;
+use marching_cubes::MarchingCubes;
 use distance_field_plugin::{
     SdfBox, SdfShape, SdfSphere, components::{DistanceFieldComponent, SdfShapeComponent}
 };
@@ -60,14 +60,7 @@ impl MarchingCubesPlugin {
         // Create Mesh Handle
         let mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()); 
         let mesh_handle = meshes.add(mesh);
-        
-        // Register Mesh Handle resource? 
-        // No, with multiple fields, we can't have a single handle resource driving them all easily unless we want them all to share the same mesh (which they don't).
-        // The `update_marching_cubes_mesh` system will query entities.
-        // So we just attach `Mesh3d` to the volume entity.
-        // We'll rename `MarchingCubesMeshHandle` or just remove it if it's unused.
-        // But `marching_cubes_ui` might need it? No, UI updates components.
-        
+                
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.7, 0.9),
             metallic: 0.05,
@@ -185,17 +178,13 @@ impl MarchingCubesPlugin {
 
     fn update_marching_cubes_mesh(
         mut meshes: ResMut<Assets<Mesh>>,
-        // Iterate all entities that have a DistanceField and an SdfConfig and a Mesh
         query: Query<(&DistanceFieldComponent, &Mesh3d), Changed<DistanceFieldComponent>>,
     ) {
         for (distance_field, mesh3d) in query.iter() {
-             // We only run if changed (Changed filter handles this efficienty)
-             // Generate Mesh
-             let mesh = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, distance_field.voxel_size);
-             
-             if let Some(existing) = meshes.get_mut(&mesh3d.0) {
-                 *existing = mesh;
-             }
+            if let Some(existing) = meshes.get_mut(&mesh3d.0) {
+                let mesh_builder = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, distance_field.voxel_size);
+                *existing = mesh_builder.build();
+            }
         }
     }
 }

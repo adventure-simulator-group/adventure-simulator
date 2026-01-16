@@ -4963,12 +4963,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "marching-cubes"
+version = "0.1.0"
+dependencies = [
+ "bevy_asset",
+ "bevy_math",
+ "bevy_mesh",
+ "distance-field",
+]
+
+[[package]]
 name = "marching-cubes-plugin"
 version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
  "distance-field-plugin",
+ "marching-cubes",
 ]
 
 [[package]]
