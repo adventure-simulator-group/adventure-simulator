@@ -1,3 +1,5 @@
+#![feature(iterator_try_collect)]
+
 #[cfg(all(target_arch = "wasm32", feature = "server"))]
 compile_error!("The `server` feature cannot be enabled when compiling for wasm32.");
 

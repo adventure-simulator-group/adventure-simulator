@@ -6,7 +6,9 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
+use std::io::Write;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use adventure_simulator_net::prelude::*;
 use adventure_simulator_net::server::ProtocolSettings;
@@ -28,6 +30,14 @@ struct Args {
     /// Public address to use in clients to connect
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
+
+    /// Certificate to use for secure websocket connection.
+    #[arg(long, default_value = "cert.pem")]
+    cert_file: PathBuf,
+
+    /// Private key to use for secure websocket connection.
+    #[arg(long, default_value = "key.pem")]
+    key_file: PathBuf,
 
     /// Private key used to generate a secure connection token.
     #[arg(long, default_value_t = HexPrivateKey::default())]
@@ -151,6 +161,8 @@ fn setup_server(
             id: PROTOCOL_ID,
             private_key: args.connection_private_key.clone(),
         },
+        cert: args.cert_file.clone(),
+        key: args.key_file.clone(),
     };
     state.connect_token = server.generate_token(0)?;
 

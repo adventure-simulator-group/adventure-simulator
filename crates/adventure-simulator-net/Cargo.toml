@@ -8,8 +8,9 @@ license.workspace = true
 
 [features]
 default = ["server", "client"]
-server = ["lightyear/server"]
-client = ["lightyear/client"]
+# TODO: fix upstream that both of client/server is needed
+server = ["lightyear/client", "lightyear/server"]
+client = ["lightyear/client", "lightyear/server"]
 
 [dependencies]
 lightyear = { "workspace" = true, features = [

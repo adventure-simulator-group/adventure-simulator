@@ -6,7 +6,6 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 spacetime_port := "3000"
 ui_port := "8000"
-tactical_port := "6000"
 public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
@@ -21,9 +20,7 @@ http_log := run_dir + "/http.log"
 stdb_pid := run_dir + "/spacetime.pid"
 stdb_log := run_dir + "/spacetime.log"
 
-cert_dir := "utils"
-cert_pem := cert_dir + "/cert.pem"
-cert_key := cert_dir + "/key.pem"
+cert_dir := "utils/certs"
 
 # Default recipe - show available commands
 default:
@@ -209,28 +206,40 @@ build-wasm:
 build-all: build-strategic build-tactical build-wasm
 
 # Run the tactical spawner (watches for pending missions and starts servers)
-spawner: build-tactical
+spawner port="6000": build-tactical
     @cargo run --package tactical-spawner -- \
         --spacetimedb-url {{spacetime_url}} \
         --spacetimedb-module {{spacetime_module}} \
         --tactical-server-bin "$(pwd)/target/debug/tactical-server" \
-        --base-port {{tactical_port}}
+        --base-port {{port}}
 
 # Run a single tactical server (for testing)
-tactical mission_id="test-mission" scene_key="town_a":
+# For generating local dev certificates, see `just certs`
+tactical mission_id="test-mission" scene_key="town_a" port="6000":
     @cargo run --package tactical-server -- \
-        --addr "0.0.0.0:{{tactical_port}}" \
+        --addr "127.0.0.1:{{port}}" \
         --mission-id {{mission_id}} \
         --scene-key {{scene_key}} \
         --spacetimedb-url {{spacetime_url}} \
         --spacetimedb-module {{spacetime_module}} \
-        --no-timeout
+        --no-timeout \
+        --dump-connect-token \
+        --cert-file "{{cert_dir}}/cert.pem" \
+        --key-file "{{cert_dir}}/key.pem"
 
-# Generate self-signed WebTransport certificates
-certs sans="127.0.0.1,localhost":
-    @command -v openssl >/dev/null 2>&1 || { echo "Missing openssl. Install it before running."; exit 1; }
-    @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
-    @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
+# Run a native tactical client (for testing `just tactical`)
+# For generating local dev certificates, see `just certs`
+client token_file="tactical-server.token":
+    @cargo run --package adventure-simulator-client -- \
+        --token `cat {{ token_file }}` \
+        --ca-cert-file "{{cert_dir}}/ca_cert.pem" \
+        --cert-file "{{cert_dir}}/cert.pem" \
+        --key-file "{{cert_dir}}/key.pem"
+
+# Generate self-signed local websocket certificates
+certs:
+    @command -v mkcert >/dev/null 2>&1 || { echo "Missing mkcert. Install it before running."; exit 1; }
+    @bash "{{cert_dir}}/generate_certificates.sh"
 
 # Workspace utilities
 check:

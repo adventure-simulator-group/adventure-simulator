@@ -1,16 +1,15 @@
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use bevy::prelude::*;
 use serde::Deserialize;
 
-use crate::prelude::ProtocolSettings;
 use crate::token::HexConnectToken;
 use crate::{DEFAULT_CLIENT_ADDR, FIXED_TICK_DURATION};
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
-use lightyear::netcode::client_plugin::NetcodeConfig;
-use lightyear::netcode::NetcodeClient;
+use lightyear::netcode::{ConnectToken, NetcodeClient};
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
 
@@ -37,8 +36,9 @@ pub enum ClientProtocol {
 pub struct AdventureSimulatorClient {
     pub token: HexConnectToken,
     pub addr: SocketAddr,
-    pub protocol: ClientProtocol,
-    pub protocol_settings: ProtocolSettings,
+    pub ca_cert: Option<PathBuf>,
+    pub cert: Option<PathBuf>,
+    pub key: Option<PathBuf>,
 }
 
 impl Default for AdventureSimulatorClient {
@@ -46,8 +46,9 @@ impl Default for AdventureSimulatorClient {
         Self {
             token: HexConnectToken::default(),
             addr: DEFAULT_CLIENT_ADDR,
-            protocol: ClientProtocol::Udp,
-            protocol_settings: Default::default(),
+            ca_cert: None,
+            cert: None,
+            key: None,
         }
     }
 }
@@ -60,13 +61,26 @@ impl AdventureSimulatorClient {
             let AdventureSimulatorClient {
                 token,
                 addr,
-                protocol,
-                protocol_settings,
+                ca_cert,
+                cert,
+                key,
             } = entity_mut.take::<Self>().unwrap();
 
             let token = ConnectToken::try_from_bytes(&*token)?;
             let auth = Authentication::Token(token);
-            let netcode_config = default();
+
+            let netcode_config = match (ca_cert, cert, key) {
+                #[cfg(not(target_family = "wasm"))]
+                (Some(ca_cert), Some(cert), Some(key)) => {
+                    Self::client_config_encrypted_local(ca_cert, cert, key)?
+                },
+                #[cfg(target_family = "wasm")]
+                (Some(_), Some(_), Some(_)) => {
+                    warn!("Can't create a safe connection using a local ca_cert, cert and key on wasm. Only native SSL is available on wasm.");
+                    Self::client_config_encrypted()
+                },
+                _ => Self::client_config_encrypted()
+            };
 
             entity_mut.insert((
                 LocalAddr(addr),
@@ -78,6 +92,41 @@ impl AdventureSimulatorClient {
             world.trigger(Connect { entity });
             Ok(())
         });
+    }
+
+    fn client_config_encrypted() -> ClientConfig {
+        #[cfg(target_family = "wasm")]
+        {
+            ClientConfig::default()
+        }
+        #[cfg(not(target_family = "wasm"))]
+        {
+            ClientConfig::builder().with_native_certs()
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn client_config_encrypted_local(
+        ca_cert: impl AsRef<Path>,
+        cert: impl AsRef<Path>,
+        key: impl AsRef<Path>,
+    ) -> Result<ClientConfig> {
+        use lightyear::prelude::rustls::pki_types::{
+            pem::PemObject, CertificateDer, PrivateKeyDer,
+        };
+
+        let ca_cert_chain = CertificateDer::pem_file_iter(ca_cert)?.try_collect::<Vec<_>>()?;
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add_parsable_certificates(ca_cert_chain);
+
+        let cert_chain = CertificateDer::pem_file_iter(cert)?.try_collect::<Vec<_>>()?;
+        let key = PrivateKeyDer::from_pem_file(key)?;
+
+        Ok(ClientConfig::builder().with_tls_config(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_client_auth_cert(cert_chain, key)?,
+        ))
     }
 }
 
