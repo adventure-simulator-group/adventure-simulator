@@ -1,16 +1,6 @@
 mod prelude;
-
-use bevy::prelude::*;
-
 pub mod components;
-mod systems;
+pub mod plugin;
 
 pub use components::*;
-
-pub struct DistanceFieldPlugin;
-
-impl Plugin for DistanceFieldPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, (DistanceField::update, DistanceField::debug));
-    }
-}
+pub use plugin::*;

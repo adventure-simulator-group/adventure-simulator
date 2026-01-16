@@ -3,7 +3,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
 use crate::MarchingCubes;
 use distance_field_plugin::{
-    components::{SdfShape, SdfOperation, DistanceField},
+    SdfBox, SdfShape, SdfSphere, components::{DistanceFieldComponent, SdfShapeComponent}
 };
 
 const GRID_SIZE: usize = 36;
@@ -77,7 +77,7 @@ impl MarchingCubesPlugin {
 
         // Spawn Volume
         let volume_entity = commands.spawn((
-            DistanceField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12),
+            DistanceFieldComponent::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12),
             Mesh3d(mesh_handle.clone()),
             MeshMaterial3d(material_handle.clone()),
             Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
@@ -86,21 +86,19 @@ impl MarchingCubesPlugin {
         // Spawn Shapes as Children
         commands.entity(volume_entity).with_children(|parent| {
             parent.spawn((
-                SdfShape::Sphere { radius: ui_state.radius },
-                SdfOperation::Union,
+                SdfShapeComponent::from(SdfSphere { radius: ui_state.radius }),
                 Transform::from_xyz(-ui_state.radius * 0.3, -ui_state.radius * 0.3, -ui_state.radius * 0.3),
             ));
 
             parent.spawn((
-                SdfShape::Sphere { radius: ui_state.radius },
-                SdfOperation::Union,
+                SdfShapeComponent::from(SdfSphere { radius: ui_state.radius }),
                 Transform::from_xyz(ui_state.radius * 0.3, ui_state.radius * 0.3, ui_state.radius * 0.3),
             ));
         });
 
         // Spawn a SECOND independent SDF volume to verify multi-SDF support
         let volume_entity_2 = commands.spawn((
-            DistanceField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
+            DistanceFieldComponent::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
             Mesh3d(mesh_handle.clone()), 
             Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
         )).id();
@@ -118,13 +116,11 @@ impl MarchingCubesPlugin {
         // Add shapes to second volume
         commands.entity(volume_entity_2).with_children(|parent| {
              parent.spawn((
-                SdfShape::Box { size: Vec3::splat(0.6) },
-                SdfOperation::Union,
+                SdfShapeComponent::from(SdfBox { size: Vec3::splat(0.6) }),
                 Transform::IDENTITY,
             ));
              parent.spawn((
-                SdfShape::Box { size: Vec3::new(0.2, 1.0, 0.2) }, // Make it smaller to fit
-                SdfOperation::Union,
+                SdfShapeComponent::from(SdfBox { size: Vec3::new(0.2, 1.0, 0.2) }), // Make it smaller to fit
                 Transform::from_xyz(0.5, 0.0, 0.5),
             ));
         });
@@ -143,8 +139,8 @@ impl MarchingCubesPlugin {
     fn marching_cubes_ui(
         mut contexts: EguiContexts,
         mut ui_state: ResMut<MarchingCubesUIState>,
-        mut shapes: Query<&mut SdfShape>,
-        mut fields: Query<&mut DistanceField>,
+        mut shapes: Query<&mut SdfShapeComponent>,
+        mut fields: Query<&mut DistanceFieldComponent>,
     ) {
         if let Ok(ctx) = contexts.ctx_mut() {
             egui::Window::new("Marching Cubes")
@@ -159,8 +155,8 @@ impl MarchingCubesPlugin {
                         ui_state.radius = current;
                         // Update all spheres
                         for mut shape in shapes.iter_mut() {
-                            if let SdfShape::Sphere { radius } = &mut *shape {
-                                *radius = current; // Simplification: set all spheres to same radius
+                            if let SdfShapeComponent(SdfShape::Sphere(sphere)) = &mut *shape {
+                                sphere.radius = current; // Simplification: set all spheres to same radius
                             }
                         }
                     }
@@ -190,7 +186,7 @@ impl MarchingCubesPlugin {
     fn update_marching_cubes_mesh(
         mut meshes: ResMut<Assets<Mesh>>,
         // Iterate all entities that have a DistanceField and an SdfConfig and a Mesh
-        query: Query<(&DistanceField, &Mesh3d), Changed<DistanceField>>,
+        query: Query<(&DistanceFieldComponent, &Mesh3d), Changed<DistanceFieldComponent>>,
     ) {
         for (distance_field, mesh3d) in query.iter() {
              // We only run if changed (Changed filter handles this efficienty)

@@ -1,14 +1,7 @@
 use crate::prelude::*;
 
-#[derive(Component, Clone, Copy, Debug, PartialEq, Reflect)]
-pub enum SdfOperation {
-    Union,
-    Intersection,
-    Subtraction,
-}
+pub use distance_field::SdfOperation;
 
-impl Default for SdfOperation {
-    fn default() -> Self {
-        Self::Union
-    }
-}
+#[derive(Component, Default, Clone, Copy, Debug, PartialEq)]
+pub struct SdfOperationComponent(pub SdfOperation);
+

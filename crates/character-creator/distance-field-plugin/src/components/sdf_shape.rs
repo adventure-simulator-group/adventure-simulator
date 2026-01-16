@@ -1,8 +1,11 @@
 use crate::prelude::*;
+pub use distance_field::shape::*;
 
-#[derive(Component, Clone, Copy, Debug)]
-pub enum SdfShape {
-    Sphere { radius: f32 },
-    Box { size: Vec3 },
-    // We can add torus, etc. later
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct SdfShapeComponent(pub SdfShape);
+
+impl<T: Into<SdfShape>> From<T> for SdfShapeComponent {
+    fn from(shape: T) -> Self {
+        Self(shape.into())
+    }
 }

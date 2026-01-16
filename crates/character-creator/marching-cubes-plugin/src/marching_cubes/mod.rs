@@ -1,6 +1,6 @@
 mod tables;
 
-use distance_field_plugin::DistanceField;
+use distance_field_plugin::DistanceFieldComponent;
 use tables::{EDGE_TABLE, TRI_TABLE, VERTEX_OFFSETS, EDGE_CONNECTIONS};
 use bevy::{
     asset::RenderAssetUsages,
@@ -13,7 +13,7 @@ use super::MeshBuilder;
 pub struct MarchingCubes;
 
 impl MarchingCubes {
-    pub fn generate_mesh(distance_field: &DistanceField, iso_level: f32, voxel_size: f32) -> Mesh {
+    pub fn generate_mesh(distance_field: &DistanceFieldComponent, iso_level: f32, voxel_size: f32) -> Mesh {
         let (width, height, depth) = distance_field.dimensions();
 
         if width < 2 || height < 2 || depth < 2 {
@@ -49,7 +49,7 @@ impl MarchingCubes {
     }
 
     fn get_cell_data(
-        distance_field: &DistanceField,
+        distance_field: &DistanceFieldComponent,
         origin: Vec3,
         x: usize,
         y: usize,
@@ -165,7 +165,7 @@ mod tests {
         let voxel_size = 1.0;
         let radius = 2.5;
 
-        let mut distance_field = DistanceField::new_distance_field(size, size, size);
+        let mut distance_field = DistanceFieldComponent::new_distance_field(size, size, size);
         distance_field.add_sphere(Vec3::ZERO, radius, voxel_size);
 
         let mesh = MarchingCubes::generate_mesh(&distance_field, 0.0, voxel_size);
