@@ -46,10 +46,16 @@ impl DistanceFieldComponent {
     }
 
     pub fn debug(
-        fields: Query<(&DistanceFieldComponent, &GlobalTransform)>,
+        fields: Query<(&DistanceFieldComponent, &GlobalTransform, Option<&Visibility>)>,
         mut gizmos: Gizmos,
     ) {
-        for (field, transform) in fields.iter() {
+        for (field, transform, visibility) in fields.iter() {
+            if let Some(viz) = visibility {
+                if viz == &Visibility::Hidden {
+                    continue;
+                }
+            }
+
             let size = Vec3::new(
                 field.width as f32 * field.voxel_size,
                 field.height as f32 * field.voxel_size,

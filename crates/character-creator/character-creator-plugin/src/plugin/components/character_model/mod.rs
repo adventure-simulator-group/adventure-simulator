@@ -1,4 +1,5 @@
 use bevy::{prelude::*, render::render_resource::AsBindGroup, shader::ShaderRef};
+use crate::plugin::components::InDebugScene;
 
 const SHADER_ASSET_PATH: &str = "shaders/custom_material.wgsl";
 
@@ -43,6 +44,8 @@ impl CharacterModel {
             })),
             Transform::from_xyz(0.0, 1.0, -2.0),
             CharacterModel,
+            InDebugScene,
+            Visibility::default(),
         ));
     }
 

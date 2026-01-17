@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use marching_cubes::MarchingCubes;
 use distance_field_plugin::{
@@ -45,7 +45,6 @@ impl Plugin for MarchingCubesPlugin {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<MarchingCubesUIState>()
             .add_systems(Startup, Self::setup)
-            .add_systems(EguiPrimaryContextPass, Self::marching_cubes_ui)
             .add_systems(Update, Self::update_marching_cubes_mesh);
     }
 }
@@ -129,7 +128,7 @@ impl MarchingCubesPlugin {
         ));
     }
 
-    fn marching_cubes_ui(
+    pub fn marching_cubes_ui(
         mut contexts: EguiContexts,
         mut ui_state: ResMut<MarchingCubesUIState>,
         mut shapes: Query<&mut SdfShapeComponent>,

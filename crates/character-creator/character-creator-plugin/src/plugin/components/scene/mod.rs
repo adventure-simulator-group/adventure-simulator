@@ -10,6 +10,7 @@ use std::f32::consts::{PI, TAU};
 
 use crate::plugin::components::OrbitalCamera;
 use crate::plugin::resources::{Animations, SceneHandle};
+use crate::plugin::components::InCharacterScene;
 
 const MODEL_PATH: &str = "models/animated/Michelle.glb";
 const BONE_RADIUS: f32 = 0.01;
@@ -55,6 +56,7 @@ impl Scene {
                 SceneRoot(scene_handle.clone()),
                 Transform::default(),
                 GlobalTransform::default(),
+                InCharacterScene,
             ))
             .id();
         commands.insert_resource(SceneHandle {
