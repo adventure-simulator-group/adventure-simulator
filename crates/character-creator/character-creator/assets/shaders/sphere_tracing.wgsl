@@ -35,22 +35,8 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>) -> f32 {
 fn fragment(
     mesh: VertexOutput,
 ) -> @location(0) vec4<f32> {
-    // Transform fragments to model space or use world space logic depending on need.
-    // For simplicity, let's assume we want to sphere trace IN object space (local space).
-    // The VertexOutput usually contains world_position.
-    // However, for standard material usage, we might want to do standard PBR interaction,
-    // but here we are completely overriding the fragment shader.
-
-    // A simple setup:
-    // Ray origin is the camera position in world space.
-    // Ray direction is from camera to fragment world position.
-    
     let ro = view.world_position;
     let rd = normalize(mesh.world_position.xyz - ro);
-
-    // This is world space ray marching. If we want it restricted to the cube volume, 
-    // we just march. The cube geometry purely serves as the bounds for rasterization to trigger this shader.
-    // If the sphere is outside, it might clip, which is expected for sphere tracing inside a volume.
 
     let t = ray_march(ro, rd);
 
@@ -58,9 +44,7 @@ fn fragment(
         return vec4<f32>(1.0, 1.0, 1.0, 0.1); 
     }
 
-    // Simple lighting based on normal
     let p = ro + rd * t;
-    // central difference for normal
     let eps = 0.001;
     let sphere_center = material.sphere_params.xyz;
     let sphere_radius = material.sphere_params.w;
@@ -73,5 +57,5 @@ fn fragment(
     let light_dir = normalize(vec3<f32>(1.0, 1.0, 1.0));
     let diff = max(dot(n, light_dir), 0.0);
     
-    return vec4<f32>(1.0) * (diff + 0.1); // + ambient
+    return vec4<f32>(vec3<f32>(1.0) * (diff + 0.1), 1.0);
 }
