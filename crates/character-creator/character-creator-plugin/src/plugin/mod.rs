@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-use components::CustomMaterial;
 use marching_cubes_plugin::MarchingCubesPlugin;
 use distance_field_plugin::DistanceFieldPlugin;
 use sphere_tracing_plugin::SphereTracingPlugin;
@@ -16,7 +15,6 @@ impl Plugin for CharacterCreatorPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_state::<components::SceneState>()
-            .add_plugins(MaterialPlugin::<CustomMaterial>::default())
             .add_plugins(DistanceFieldPlugin)
             .add_plugins(MarchingCubesPlugin)
             .add_plugins(SphereTracingPlugin)
