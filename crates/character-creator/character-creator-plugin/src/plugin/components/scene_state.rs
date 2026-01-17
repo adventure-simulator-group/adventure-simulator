@@ -4,11 +4,15 @@ use bevy::prelude::*;
 pub enum SceneState {
     #[default]
     Character,
-    Debug,
+    MarchingCubes,
+    SphereTracing,
 }
 
 #[derive(Component)]
 pub struct InCharacterScene;
 
 #[derive(Component)]
-pub struct InDebugScene;
+pub struct InMarchingCubesScene;
+
+#[derive(Component)]
+pub struct InSphereTracingScene;

@@ -126,6 +126,7 @@ impl Scene {
             Mesh3d(mesh_handle),
             MeshMaterial3d(material_handle),
             skinned.clone(),
+            InCharacterScene,
             Name::new("BoneCylinderDebugMesh"),
         ));
 

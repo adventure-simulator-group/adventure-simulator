@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::plugin::components::InDebugScene;
+use crate::plugin::components::InCharacterScene;
 
 #[derive(Component)]
 pub struct CharacterModel;
@@ -9,7 +9,7 @@ impl CharacterModel {
         commands.spawn((
             Transform::from_xyz(0.0, 1.0, -2.0),
             CharacterModel,
-            InDebugScene,
+            InCharacterScene,
             Visibility::default(),
         ));
     }
