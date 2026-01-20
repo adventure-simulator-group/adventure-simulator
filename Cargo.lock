@@ -90,6 +90,7 @@ name = "adventure-simulator-client"
 version = "0.1.0"
 dependencies = [
  "adventure-simulator-core",
+ "adventure-simulator-net",
  "avian3d",
  "bevy",
  "bevy_ahoy",

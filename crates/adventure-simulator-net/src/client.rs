@@ -46,7 +46,9 @@ impl Default for AdventureSimulatorClient {
             id: 0,
             server_addr: DEFAULT_SERVER_ADDR,
             addr: DEFAULT_CLIENT_ADDR,
-            protocol: ClientProtocol::WebSocket,
+            protocol: ClientProtocol::WebTransport {
+                certificate_digest: String::new(),
+            },
             protocol_settings: Default::default(),
         }
     }

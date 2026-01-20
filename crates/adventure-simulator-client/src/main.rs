@@ -8,12 +8,12 @@
 //! - Ready for Lightyear networking integration
 
 use adventure_simulator_core::Player;
+use adventure_simulator_net::prelude::*;
 use avian3d::{prelude::*, PhysicsPlugins};
 use bevy::prelude::*;
 use bevy::{
     ecs::{lifecycle::HookContext, world::DeferredWorld},
     input::common_conditions::input_just_pressed,
-    prelude::*,
     window::{CursorGrabMode, CursorOptions},
 };
 use bevy_ahoy::{
@@ -29,13 +29,6 @@ use std::net::SocketAddr;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
-/// Player movement speed (units per second)
-const PLAYER_SPEED: f32 = 5.0;
-/// Camera distance from player
-const CAMERA_DISTANCE: f32 = 10.0;
-/// Camera height offset
-const CAMERA_HEIGHT: f32 = 5.0;
-
 #[derive(Parser, Debug, Resource)]
 #[command(version, about)]
 struct Args {
@@ -45,6 +38,9 @@ struct Args {
     /// Server addr
     #[arg(long)]
     server_addr: SocketAddr,
+    /// Web transport digest
+    #[arg(long)]
+    digest: String,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -77,13 +73,13 @@ fn run(args: Args) {
             ..default()
         }))
         .add_plugins((
+            AdventureSimulatorNetPlugins,
             PhysicsPlugins::default(),
-            EnhancedInputPlugin,
             AhoyPlugin::default(),
         ))
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
         .add_input_context::<PlayerInput>()
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, setup_client))
         .add_systems(
             Update,
             (
@@ -132,6 +128,17 @@ impl PlayerInput {
 /// UI text for displaying controls
 #[derive(Component)]
 struct ControlsText;
+
+fn setup_client(mut commands: Commands, args: Res<Args>) {
+    commands.spawn(AdventureSimulatorClient {
+        id: args.id,
+        server_addr: args.server_addr.clone(),
+        protocol: ClientProtocol::WebTransport {
+            certificate_digest: args.digest.clone(),
+        },
+        ..default()
+    });
+}
 
 fn setup(
     mut commands: Commands,

@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use lightyear::netcode::PRIVATE_KEY_BYTES;
+use lightyear::{netcode::PRIVATE_KEY_BYTES, prelude::Identity};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 pub const SEND_INTERVAL: Duration = Duration::from_millis(100);
@@ -78,6 +78,65 @@ impl Default for WebTransportCertificateSettings {
             "::1".to_string(),
         ];
         WebTransportCertificateSettings::AutoSelfSigned(sans)
+    }
+}
+
+impl WebTransportCertificateSettings {
+    #[cfg(not(target_family = "wasm"))]
+    pub fn digest(&self) -> String {
+        let identity: Identity = self.into();
+        identity.certificate_chain().as_slice()[0]
+            .hash()
+            .to_string()
+            .replace(":", "")
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl From<&WebTransportCertificateSettings> for Identity {
+    fn from(wt: &WebTransportCertificateSettings) -> Identity {
+        match wt {
+            WebTransportCertificateSettings::AutoSelfSigned(sans) => {
+                // In addition to and Subject Alternate Names (SAN) added via the config,
+                // we add the public ip and domain for edgegap, if detected, and also
+                // any extra values specified via the SELF_SIGNED_SANS environment variable.
+                let mut sans = sans.clone();
+                // Are we running on edgegap?
+                // TODO: remove `std::env::var`
+                if let Ok(public_ip) = std::env::var("ARBITRIUM_PUBLIC_IP") {
+                    sans.push(public_ip);
+                    sans.push("*.pr.edgegap.net".to_string());
+                }
+                // generic env to add domains and ips to SAN list:
+                // SELF_SIGNED_SANS="example.org,example.com,127.1.1.1"
+                // TODO: remove `std::env::var`
+                if let Ok(san) = std::env::var("SELF_SIGNED_SANS") {
+                    sans.extend(san.split(',').map(|s| s.to_string()));
+                }
+                let identity = Identity::self_signed(sans).unwrap();
+                identity
+            }
+            WebTransportCertificateSettings::FromFile {
+                cert: cert_pem_path,
+                key: private_key_pem_path,
+            } => {
+                // this is async because we need to load the certificate from io
+                // we need async_compat because wtransport expects a tokio reactor
+
+                use bevy::tasks::IoTaskPool;
+                let identity = IoTaskPool::get()
+                    .scope(|s| {
+                        s.spawn(async_compat::Compat::new(async {
+                            Identity::load_pemfiles(cert_pem_path, private_key_pem_path)
+                                .await
+                                .unwrap()
+                        }));
+                    })
+                    .pop()
+                    .unwrap();
+                identity
+            }
+        }
     }
 }
 

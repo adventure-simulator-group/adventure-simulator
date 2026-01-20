@@ -6,9 +6,9 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
-use std::net::SocketAddr;
+use std::{io::Write, net::SocketAddr};
 
-use adventure_simulator_net::prelude::*;
+use adventure_simulator_net::{prelude::*, protocol::WebTransportCertificateSettings};
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
@@ -22,7 +22,7 @@ const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
 #[command(about = "Tactical mission server for Adventure Simulator")]
 struct Args {
     /// Address to listen on
-    #[arg(long, default_value = "0.0.0.0:6000")]
+    #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
 
     /// Unique mission instance ID
@@ -52,6 +52,10 @@ struct Args {
         conflicts_with = "timeout"
     )]
     no_timeout: bool,
+
+    /// TODO: remove when we switch to web socket
+    #[arg(long, action = ArgAction::SetTrue)]
+    dump_digest: bool,
 }
 
 fn main() {
@@ -111,21 +115,35 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     Ok(())
 }
 
-fn setup_server(mut commands: Commands, args: Res<Args>) {
+fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
     info!("=== Tactical Server Ready ===");
     info!("Mission: {}", args.mission_id);
     info!("Scene: {}", args.scene_key);
 
+    let certificate: WebTransportCertificateSettings = default();
+    if args.dump_digest {
+        let mut file = std::fs::File::options()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("tactical-server.digest")?;
+
+        let digest = certificate.digest();
+        file.write(digest.as_bytes())?;
+        info!("Wrote server webtransport digest to: ./tactical-server.digest");
+    }
+
     commands.spawn(AdventureSimulatorServer {
         addr: args.addr,
-        protocol: ServerProtocol::WebSocket,
+        protocol: ServerProtocol::WebTransport { certificate },
         protocol_settings: ProtocolSettings::default(),
     });
 
-    info!("Listening on {} (WebSocket)", args.addr);
     if !args.no_timeout {
         info!("Will timeout in {} seconds", args.timeout);
     }
+
+    Ok(())
 }
 
 fn check_mission_timeout(
