@@ -6,25 +6,24 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 
 use adventure_simulator_net::prelude::*;
-use adventure_simulator_net::protocol::WebTransportCertificateSettings;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
-use clap::Parser;
-use strategic_db_client::{commit_mission, DbConnection, tactical_server_ready};
+use clap::{ArgAction, Parser};
+use strategic_db_client::{commit_mission, tactical_server_ready, DbConnection};
 
-/// Mission timeout in seconds (how long the server stays up waiting for players)
+/// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "tactical-server")]
 #[command(about = "Tactical mission server for Adventure Simulator")]
 struct Args {
-    /// Port to listen on
-    #[arg(long, default_value = "6000")]
-    port: u16,
+    /// Address to listen on
+    #[arg(long, default_value = "0.0.0.0:6000")]
+    addr: SocketAddr,
 
     /// Unique mission instance ID
     #[arg(long)]
@@ -42,9 +41,17 @@ struct Args {
     #[arg(long, default_value = "strategic-stdb-module")]
     spacetimedb_module: String,
 
-    /// Public host for clients to connect to
-    #[arg(long, default_value = "localhost")]
-    public_host: String,
+    /// Mission timeout in seconds (how long the server stays up waiting for players)
+    #[arg(long, default_value_t = MISSION_TIMEOUT_SECS)]
+    timeout: f32,
+
+    /// Disable the timeout entirely
+    #[arg(
+        long,
+        action = ArgAction::SetTrue,
+        conflicts_with = "timeout"
+    )]
+    no_timeout: bool,
 }
 
 fn main() {
@@ -57,12 +64,14 @@ fn main() {
             ..default()
         })
         .add_plugins(AdventureSimulatorNetPlugins)
-        .insert_resource(args)
         .insert_resource(MissionState {
-            timeout: Timer::from_seconds(MISSION_TIMEOUT_SECS, TimerMode::Once),
+            timeout: (!args.no_timeout)
+                .then_some(args.timeout)
+                .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
             enemies_killed: 0,
             committed: false,
         })
+        .insert_resource(args)
         .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
         .add_systems(Update, check_mission_timeout)
         .run();
@@ -73,14 +82,14 @@ struct SpacetimeConn(DbConnection);
 
 #[derive(Resource)]
 struct MissionState {
-    timeout: Timer,
+    timeout: Option<Timer>,
     enemies_killed: u32,
     committed: bool,
 }
 
-fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) {
+fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     info!("Starting tactical server for mission {}", args.mission_id);
-    info!("Scene: {}, Port: {}", args.scene_key, args.port);
+    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
     info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
     let conn = DbConnection::builder()
@@ -91,18 +100,15 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) {
 
     info!("Calling tactical_server_ready reducer");
     conn.reducers
-        .tactical_server_ready(
-            args.mission_id.clone(),
-            args.public_host.clone(),
-            args.port,
-            String::new(), // cert_digest
-        )
+        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
         .expect("Failed to call tactical_server_ready");
 
-    conn.frame_tick().ok();
+    conn.frame_tick()?;
     info!("SpacetimeDB notified - server marked as ready");
 
     commands.insert_resource(SpacetimeConn(conn));
+
+    Ok(())
 }
 
 fn setup_server(mut commands: Commands, args: Res<Args>) {
@@ -110,18 +116,16 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
     info!("Mission: {}", args.mission_id);
     info!("Scene: {}", args.scene_key);
 
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), args.port);
-
     commands.spawn(AdventureSimulatorServer {
-        addr,
-        protocol: ServerProtocol::WebTransport {
-            certificate: WebTransportCertificateSettings::AutoSelfSigned(Default::default()),
-        },
+        addr: args.addr,
+        protocol: ServerProtocol::WebSocket,
         protocol_settings: ProtocolSettings::default(),
     });
 
-    info!("Listening on port {} (WebTransport)", args.port);
-    info!("Will timeout in {} seconds", MISSION_TIMEOUT_SECS);
+    info!("Listening on {} (WebSocket)", args.addr);
+    if !args.no_timeout {
+        info!("Will timeout in {} seconds", args.timeout);
+    }
 }
 
 fn check_mission_timeout(
@@ -130,31 +134,32 @@ fn check_mission_timeout(
     args: Res<Args>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
-) {
-    state.timeout.tick(time.delta());
-
-    if state.timeout.just_finished() && !state.committed {
-        info!("Mission timeout, committing results...");
-        state.committed = true;
-
-        let success = state.enemies_killed > 0;
-        let xp_gained = (state.enemies_killed * 25) as i32;
-
-        match conn
-            .0
-            .reducers
-            .commit_mission(args.mission_id.clone(), success, xp_gained)
-        {
-            Ok(_) => {
-                conn.0.frame_tick().ok();
-                info!("Mission committed successfully");
-            }
-            Err(e) => {
-                error!("Failed to commit mission: {}", e);
-            }
+) -> Result {
+    let is_timeout = match state.timeout {
+        Some(ref mut timer) => {
+            timer.tick(time.delta());
+            timer.is_finished()
         }
+        None => false,
+    };
 
-        info!("Shutting down");
-        exit.write(AppExit::Success);
+    if !is_timeout || state.committed {
+        return Ok(());
     }
+
+    info!("Mission timeout, committing results...");
+    state.committed = true;
+
+    let success = state.enemies_killed > 0;
+    let xp_gained = (state.enemies_killed * 25) as i32;
+
+    conn.0
+        .reducers
+        .commit_mission(args.mission_id.clone(), success, xp_gained)?;
+    conn.0.frame_tick()?;
+    info!("Mission committed successfully");
+
+    info!("Shutting down");
+    exit.write(AppExit::Success);
+    Ok(())
 }

@@ -8,8 +8,8 @@
 //! - Ready for Lightyear networking integration
 
 use adventure_simulator_core::Player;
-
 use avian3d::{prelude::*, PhysicsPlugins};
+use bevy::prelude::*;
 use bevy::{
     ecs::{lifecycle::HookContext, world::DeferredWorld},
     input::common_conditions::input_just_pressed,
@@ -22,14 +22,49 @@ use bevy_ahoy::{
     AhoyPlugin, CharacterController,
 };
 use bevy_enhanced_input::{action::Action, actions, bindings, prelude::*, EnhancedInputPlugin};
+use clap::Parser;
 #[cfg(target_family = "wasm")]
 use console_error_panic_hook;
+use std::net::SocketAddr;
+#[cfg(target_family = "wasm")]
+use wasm_bindgen::prelude::*;
 
+/// Player movement speed (units per second)
+const PLAYER_SPEED: f32 = 5.0;
+/// Camera distance from player
+const CAMERA_DISTANCE: f32 = 10.0;
+/// Camera height offset
+const CAMERA_HEIGHT: f32 = 5.0;
+
+#[derive(Parser, Debug, Resource)]
+#[command(version, about)]
+struct Args {
+    /// Client ID
+    #[arg(long)]
+    id: u64,
+    /// Server addr
+    #[arg(long)]
+    server_addr: SocketAddr,
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn main() {
+    run(Args::parse());
+}
+
+#[cfg(target_family = "wasm")]
 fn main() {
     // Set up panic hook for better WASM error messages
-    #[cfg(target_family = "wasm")]
     console_error_panic_hook::set_once();
+}
 
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_run(args: Vec<String>) {
+    run(Args::parse_from(args));
+}
+
+fn run(args: Args) {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -57,6 +92,7 @@ fn main() {
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
             ),
         )
+        .insert_resource(args)
         .run();
 }
 

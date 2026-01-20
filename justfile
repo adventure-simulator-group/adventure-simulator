@@ -209,7 +209,7 @@ build-wasm:
 build-all: build-strategic build-tactical build-wasm
 
 # Run the tactical spawner (watches for pending missions and starts servers)
-spawner:
+spawner: build-tactical
     @cargo run --package tactical-spawner -- \
         --spacetimedb-url {{spacetime_url}} \
         --spacetimedb-module {{spacetime_module}} \
@@ -219,11 +219,12 @@ spawner:
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="town_a":
     @cargo run --package tactical-server -- \
-        --port {{tactical_port}} \
+        --addr "0.0.0.0:{{tactical_port}}" \
         --mission-id {{mission_id}} \
         --scene-key {{scene_key}} \
         --spacetimedb-url {{spacetime_url}} \
-        --spacetimedb-module {{spacetime_module}}
+        --spacetimedb-module {{spacetime_module}} \
+        --no-timeout
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":

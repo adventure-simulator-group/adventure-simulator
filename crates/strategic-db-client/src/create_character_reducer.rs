@@ -65,7 +65,6 @@ impl create_character for super::RemoteReducers {
         CreateCharacterCallbackId(self.imp.on_reducer(
             "create_character",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

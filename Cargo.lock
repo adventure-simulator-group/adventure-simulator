@@ -89,21 +89,36 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "adventure-simulator-client"
 version = "0.1.0"
 dependencies = [
+ "adventure-simulator-core",
  "avian3d",
  "bevy",
  "bevy_ahoy",
  "bevy_enhanced_input",
+ "clap",
  "console_error_panic_hook",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "adventure-simulator-core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "serde",
 ]
 
 [[package]]
 name = "adventure-simulator-net"
 version = "0.1.0"
 dependencies = [
+ "adventure-simulator-core",
  "async-compat",
  "bevy",
  "console_error_panic_hook",
+ "getrandom 0.2.16",
+ "getrandom 0.3.4",
  "lightyear",
+ "rand 0.9.2",
  "serde",
  "serde_json",
  "thiserror 2.0.17",

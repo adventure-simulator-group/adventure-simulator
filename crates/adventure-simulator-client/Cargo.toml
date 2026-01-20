@@ -12,12 +12,11 @@ avian3d.workspace = true
 bevy_ahoy.workspace = true
 bevy_enhanced_input.workspace = true
 adventure-simulator-core.workspace = true
+clap.workspace = true
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true
-
-[package.metadata.bevy_cli.web]
-rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]
+wasm-bindgen.workspace = true
 
 [lints]
 workspace = true
