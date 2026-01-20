@@ -224,15 +224,13 @@ tactical mission_id="test-mission" scene_key="town_a":
         --scene-key {{scene_key}} \
         --spacetimedb-url {{spacetime_url}} \
         --spacetimedb-module {{spacetime_module}} \
-        --no-timeout \
-        --dump-digest
+        --no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
-client id="0" digest_file="tactical-server.digest":
+client id="0":
     @cargo run --package adventure-simulator-client -- \
         --id "{{id}}" \
-        --server-addr "127.0.0.1:{{tactical_port}}" \
-        --digest `cat {{ digest_file }}`
+        --server-addr "127.0.0.1:{{tactical_port}}"
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":

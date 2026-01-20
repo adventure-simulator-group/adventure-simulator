@@ -6,9 +6,9 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
-use std::{io::Write, net::SocketAddr};
+use std::net::SocketAddr;
 
-use adventure_simulator_net::{prelude::*, protocol::WebTransportCertificateSettings};
+use adventure_simulator_net::prelude::*;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
@@ -52,10 +52,6 @@ struct Args {
         conflicts_with = "timeout"
     )]
     no_timeout: bool,
-
-    /// TODO: remove when we switch to web socket
-    #[arg(long, action = ArgAction::SetTrue)]
-    dump_digest: bool,
 }
 
 fn main() {
@@ -120,22 +116,8 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
     info!("Mission: {}", args.mission_id);
     info!("Scene: {}", args.scene_key);
 
-    let certificate: WebTransportCertificateSettings = default();
-    if args.dump_digest {
-        let mut file = std::fs::File::options()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open("tactical-server.digest")?;
-
-        let digest = certificate.digest();
-        file.write(digest.as_bytes())?;
-        info!("Wrote server webtransport digest to: ./tactical-server.digest");
-    }
-
     commands.spawn(AdventureSimulatorServer {
         addr: args.addr,
-        protocol: ServerProtocol::WebTransport { certificate },
         protocol_settings: ProtocolSettings::default(),
     });
 

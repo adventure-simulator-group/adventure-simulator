@@ -21,7 +21,7 @@ use bevy_ahoy::{
     input::{Jump, Movement, RotateCamera},
     AhoyPlugin, CharacterController,
 };
-use bevy_enhanced_input::{action::Action, actions, bindings, prelude::*, EnhancedInputPlugin};
+use bevy_enhanced_input::{action::Action, actions, bindings, prelude::*};
 use clap::Parser;
 #[cfg(target_family = "wasm")]
 use console_error_panic_hook;
@@ -38,9 +38,6 @@ struct Args {
     /// Server addr
     #[arg(long)]
     server_addr: SocketAddr,
-    /// Web transport digest
-    #[arg(long)]
-    digest: String,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -133,9 +130,6 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
         id: args.id,
         server_addr: args.server_addr.clone(),
-        protocol: ClientProtocol::WebTransport {
-            certificate_digest: args.digest.clone(),
-        },
         ..default()
     });
 }

@@ -16,11 +16,7 @@ adventure-simulator-core.workspace = true
 lightyear = { "workspace" = true, features = [
   "replication",
   "netcode",
-  "webtransport",
-  "webtransport_self_signed",
-  "webtransport_dangerous_configuration",
-  "websocket",
-  "websocket_self_signed",
+  "udp",
   "input_bei",
 ] }
 async-compat.workspace = true
