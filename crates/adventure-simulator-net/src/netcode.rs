@@ -1,17 +1,35 @@
-use adventure_simulator_core::Player;
+use adventure_simulator_core::prelude::*;
 use bevy::prelude::*;
-use lightyear::{input::config::InputConfig, prelude::input::bei::InputPlugin};
+use lightyear::{
+    input::config::InputConfig,
+    prelude::{
+        input::{bei::InputPlugin, InputRegistryExt},
+        AppComponentExt,
+    },
+};
 
 #[derive(Default)]
 pub struct AdventureSimulatorNetcodePlugin;
 
 impl Plugin for AdventureSimulatorNetcodePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(InputPlugin::<Player> {
-            config: InputConfig::<Player> {
-                rebroadcast_inputs: true,
-                ..default()
-            },
+        app.add_plugins(InputPlugin::<Player>::new(InputConfig::<Player> {
+            rebroadcast_inputs: true,
+            ..default()
+        }));
+        app.register_input_action::<input::Movement>();
+        app.register_input_action::<input::Jump>();
+        app.register_input_action::<input::RotateCamera>();
+
+        #[cfg(feature = "server")]
+        app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin {
+            replication_mode: lightyear::avian3d::plugin::AvianReplicationMode::Transform,
+            ..default()
         });
+
+        app.register_component::<Player>();
+        app.register_component::<PlayerId>();
+        app.register_component::<GameSceneId>();
+        app.register_component::<Transform>();
     }
 }

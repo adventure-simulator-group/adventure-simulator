@@ -9,6 +9,9 @@ license.workspace = true
 [dependencies]
 bevy.workspace = true
 serde.workspace = true
+bevy_enhanced_input.workspace = true
+avian3d.workspace = true
+bevy_ahoy.workspace = true
 
 [lints]
 workspace = true

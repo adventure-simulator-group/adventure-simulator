@@ -8,7 +8,15 @@
 
 use std::net::SocketAddr;
 
-use adventure_simulator_net::prelude::*;
+use adventure_simulator_core::prelude::{input, *};
+use adventure_simulator_net::{
+    lightyear::prelude::{
+        server::{self, ClientOf},
+        *,
+    },
+    prelude::*,
+    protocol::SEND_INTERVAL,
+};
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
@@ -63,7 +71,7 @@ fn main() {
             filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
             ..default()
         })
-        .add_plugins(AdventureSimulatorNetPlugins)
+        .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -74,6 +82,9 @@ fn main() {
         .insert_resource(args)
         .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
         .add_systems(Update, check_mission_timeout)
+        .add_observer(on_new_client_added_hook)
+        .add_observer(on_new_client_connected_hook)
+        .add_observer(on_server_started_hook)
         .run();
 }
 
@@ -161,5 +172,67 @@ fn check_mission_timeout(
 
     info!("Shutting down");
     exit.write(AppExit::Success);
+    Ok(())
+}
+
+fn on_server_started_hook(
+    _event: On<Add, server::Started>,
+    args: Res<Args>,
+    mut commands: Commands,
+) {
+    // Spawn physical scene
+    commands.spawn((
+        GameSceneId(args.scene_key.clone()),
+        RigidBody::Static,
+        Collider::half_space(Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    info!("Creating a game scene for {}", args.scene_key);
+}
+
+fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
+    commands.entity(event.entity).insert((
+        ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
+        ReplicationReceiver::default(),
+    ));
+
+    info!(
+        "New link added: {:?} is now a replication sender/receiver.",
+        event.entity
+    );
+}
+
+fn on_new_client_connected_hook(
+    event: On<Add, Connected>,
+    query: Query<&RemoteId, With<ClientOf>>,
+    mut commands: Commands,
+) -> Result {
+    let client_id = query.get(event.entity)?;
+    let client_id = client_id.0;
+    let entity = commands
+        .spawn((
+            Player,
+            PlayerId(client_id.to_bits()),
+            CharacterController::default(),
+            Collider::cylinder(0.4, 1.2),
+            Transform::from_xyz(0.0, 200.0, 0.0),
+            Replicate::to_clients(NetworkTarget::All),
+            ControlledBy {
+                owner: event.entity,
+                lifetime: Default::default(),
+            },
+            // actions!(PlayerInput[
+            //     Action::<input::Movement>::new(),
+            //     Action::<input::Jump>::new(),
+            // ]),
+        ))
+        .id();
+
+    info!(
+        "Create player entity {:?} for client {:?}",
+        entity, client_id
+    );
     Ok(())
 }

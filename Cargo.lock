@@ -91,10 +91,7 @@ version = "0.1.0"
 dependencies = [
  "adventure-simulator-core",
  "adventure-simulator-net",
- "avian3d",
  "bevy",
- "bevy_ahoy",
- "bevy_enhanced_input",
  "clap",
  "console_error_panic_hook",
  "wasm-bindgen",
@@ -104,7 +101,10 @@ dependencies = [
 name = "adventure-simulator-core"
 version = "0.1.0"
 dependencies = [
+ "avian3d",
  "bevy",
+ "bevy_ahoy",
+ "bevy_enhanced_input",
  "serde",
 ]
 
@@ -755,8 +755,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_ahoy"
-version = "0.0.1"
-source = "git+https://github.com/janhohenheim/bevy_ahoy#076938b06e0371323bea871b5ad277988dc54493"
+version = "0.0.2"
+source = "git+https://github.com/janhohenheim/bevy_ahoy#0feac0cf4f82fd472f4eacc62677c441c0c6a838"
 dependencies = [
  "avian3d",
  "avian_pickup",
@@ -7548,6 +7548,7 @@ dependencies = [
 name = "tactical-server"
 version = "0.1.0"
 dependencies = [
+ "adventure-simulator-core",
  "adventure-simulator-net",
  "bevy",
  "clap",

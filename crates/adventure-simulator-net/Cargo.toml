@@ -18,6 +18,7 @@ lightyear = { "workspace" = true, features = [
   "netcode",
   "udp",
   "input_bei",
+  "avian3d",
 ] }
 async-compat.workspace = true
 serde.workspace = true
