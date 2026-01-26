@@ -9,7 +9,7 @@
 
 use adventure_simulator_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventure_simulator_core::prelude::*;
-use adventure_simulator_net::lightyear::prelude::{LinkOf, ReplicationSender, SendUpdatesMode};
+use adventure_simulator_net::lightyear::prelude::{ReplicationSender, SendUpdatesMode};
 use adventure_simulator_net::prelude::*;
 use adventure_simulator_net::protocol::SEND_INTERVAL;
 use bevy::prelude::*;
@@ -188,29 +188,6 @@ fn on_game_scene_added_hook(
         })),
     ));
 
-    // Grid lines for visual reference
-    for i in -5..=5 {
-        let x = i as f32 * 5.0;
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(0.05, 0.02, 50.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgba(0.4, 0.4, 0.4, 0.5),
-                alpha_mode: AlphaMode::Blend,
-                ..default()
-            })),
-            Transform::from_xyz(x, 0.01, 0.0),
-        ));
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(50.0, 0.02, 0.05))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgba(0.4, 0.4, 0.4, 0.5),
-                alpha_mode: AlphaMode::Blend,
-                ..default()
-            })),
-            Transform::from_xyz(0.0, 0.01, x),
-        ));
-    }
-
     // Some obstacles/props for visual interest
     let mut spawn_prop = |position: Vec3, color: Color| {
         commands.spawn((
@@ -255,7 +232,7 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             // Adding character controller to sync the camera, but this component
             // requires a bunch of physics components. The actual physic simulation
-            // is done on the server, so it doesn't do much harm.
+            // is done on the server, so it shouldn't do much harm.
             CharacterController::default(),
             actions!(Player[
                 (

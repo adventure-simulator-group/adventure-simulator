@@ -1,15 +1,5 @@
 use bevy::prelude::*;
-use bevy_enhanced_input::EnhancedInputPlugin;
 use serde::{Deserialize, Serialize};
-
-#[derive(Default)]
-pub struct AdventureSimulatorPlayerPlugin;
-
-impl Plugin for AdventureSimulatorPlayerPlugin {
-    fn build(&self, app: &mut App) {
-        // app.add_plugins(EnhancedInputPlugin);
-    }
-}
 
 /// Marker component for a player entity, for both client-controlled
 /// active player and other players.

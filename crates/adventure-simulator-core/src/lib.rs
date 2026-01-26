@@ -15,7 +15,9 @@ pub mod prelude {
     pub use crate::scene::GameSceneId;
     pub use crate::AdventureSimulatorCorePlugins;
     pub use avian3d::prelude::*;
-    pub use bevy_ahoy::{camera::CharacterControllerCameraOf, input, CharacterController};
+    pub use bevy_ahoy::{
+        camera::CharacterControllerCameraOf, input, CharacterController, CharacterControllerState,
+    };
     pub use bevy_enhanced_input::{self, prelude::*};
 }
 
@@ -23,6 +25,5 @@ bevy::app::plugin_group! {
     #[derive(Debug)]
     pub struct AdventureSimulatorCorePlugins {
         crate::physics:::AdventureSimulatorPhysicsPlugin,
-        crate::player:::AdventureSimulatorPlayerPlugin
     }
 }

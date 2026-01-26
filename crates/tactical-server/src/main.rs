@@ -8,7 +8,7 @@
 
 use std::net::SocketAddr;
 
-use adventure_simulator_core::prelude::{input, *};
+use adventure_simulator_core::prelude::*;
 use adventure_simulator_net::{
     lightyear::prelude::{
         server::{self, ClientOf},
@@ -221,14 +221,21 @@ fn on_new_client_connected_hook(
             Replicate::to_clients(NetworkTarget::All),
             ControlledBy {
                 owner: event.entity,
-                lifetime: Default::default(),
+                lifetime: default(),
             },
-            // actions!(PlayerInput[
-            //     Action::<input::Movement>::new(),
-            //     Action::<input::Jump>::new(),
-            // ]),
         ))
         .id();
+
+    // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
+    // it's more of a visor entity -- it will receive RotateCamera inputs,
+    // required for correct movement
+    commands.spawn((
+        CharacterControllerCameraOf::new(entity),
+        ControlledBy {
+            owner: event.entity,
+            lifetime: default(),
+        },
+    ));
 
     info!(
         "Create player entity {:?} for client {:?}",
