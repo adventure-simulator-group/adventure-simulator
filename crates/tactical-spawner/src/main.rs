@@ -34,7 +34,7 @@ struct Args {
     base_port: u16,
 
     /// Public host for clients to connect to
-    #[arg(long, default_value_t = Ipv4Addr::UNSPECIFIED)]
+    #[arg(long, default_value = "0.0.0.0")]
     host: IpAddr,
 }
 

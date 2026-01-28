@@ -11,6 +11,7 @@ path = "src/main.rs"
 # Bevy + Lightyear
 bevy = { workspace = true, default-features = false, features = ["multi_threaded"] }
 adventure-simulator-net = { workspace = true, features = ["server"] }
+adventure-simulator-core.workspace = true
 
 # SpacetimeDB client
 strategic-db-client = { path = "../strategic-db-client" }

@@ -1,0 +1,17 @@
+[package]
+name = "adventure-simulator-core"
+description = "Adventure Simulator: Tactical layer core library"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy.workspace = true
+serde.workspace = true
+bevy_enhanced_input.workspace = true
+avian3d.workspace = true
+bevy_ahoy.workspace = true
+
+[lints]
+workspace = true

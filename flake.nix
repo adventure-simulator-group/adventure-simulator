@@ -46,6 +46,7 @@
           expat
           libGL
           wayland
+          openssl
         ];
 
         # IDE/shell dependencies
@@ -55,6 +56,8 @@
           rust-analyzer-unwrapped
           just
           spacetimedb
+          python3
+          wasm-bindgen-cli_0_2_106
         ];
 
         mkLinuxLdLibraryPathExport = libs: ''
