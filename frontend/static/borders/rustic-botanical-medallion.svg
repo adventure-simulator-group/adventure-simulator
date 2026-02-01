@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rustic Botanical Medallion Ornament -->
+  <g id="rustic-botanical-medallion">
+    <!-- Outer decorative ring -->
+    <circle cx="100" cy="100" r="95" fill="none" stroke="#855956" stroke-width="6"/>
+    <circle cx="100" cy="100" r="88" fill="none" stroke="#A48366" stroke-width="3"/>
+    <circle cx="100" cy="100" r="82" fill="none" stroke="#75433D" stroke-width="2"/>
+
+    <!-- Background fill -->
+    <circle cx="100" cy="100" r="78" fill="#855956" opacity="0.15"/>
+
+    <!-- Eight petal/leaf flourishes -->
+    <path style="fill:#855956;" d="M100,20 Q115,50 100,80 Q85,50 100,20 Z"/>
+    <path style="fill:#855956;" d="M100,180 Q115,150 100,120 Q85,150 100,180 Z"/>
+    <path style="fill:#855956;" d="M20,100 Q50,115 80,100 Q50,85 20,100 Z"/>
+    <path style="fill:#855956;" d="M180,100 Q150,115 120,100 Q150,85 180,100 Z"/>
+
+    <!-- Diagonal leaf petals -->
+    <path style="fill:#A48366;" d="M35,35 Q65,55 80,80 Q55,65 35,35 Z"/>
+    <path style="fill:#A48366;" d="M165,35 Q135,55 120,80 Q145,65 165,35 Z"/>
+    <path style="fill:#A48366;" d="M35,165 Q65,145 80,120 Q55,135 35,165 Z"/>
+    <path style="fill:#A48366;" d="M165,165 Q135,145 120,120 Q145,135 165,165 Z"/>
+
+    <!-- Inner ring of accent dots -->
+    <circle cx="100" cy="55" r="8" fill="#935B51"/>
+    <circle cx="100" cy="145" r="8" fill="#935B51"/>
+    <circle cx="55" cy="100" r="8" fill="#935B51"/>
+    <circle cx="145" cy="100" r="8" fill="#935B51"/>
+
+    <!-- Center medallion -->
+    <circle cx="100" cy="100" r="35" fill="#75433D"/>
+    <circle cx="100" cy="100" r="28" fill="#855956"/>
+    <circle cx="100" cy="100" r="20" fill="#E9D899"/>
+    <circle cx="100" cy="100" r="12" fill="#BD9B64"/>
+    <circle cx="100" cy="100" r="5" fill="#75433D"/>
+
+    <!-- Small decorative dots around center -->
+    <circle cx="75" cy="75" r="4" fill="#E2CDC6"/>
+    <circle cx="125" cy="75" r="4" fill="#E2CDC6"/>
+    <circle cx="75" cy="125" r="4" fill="#E2CDC6"/>
+    <circle cx="125" cy="125" r="4" fill="#E2CDC6"/>
+
+    <!-- Outer accent circles -->
+    <circle cx="100" cy="25" r="4" fill="#E9D899"/>
+    <circle cx="100" cy="175" r="4" fill="#E9D899"/>
+    <circle cx="25" cy="100" r="4" fill="#E9D899"/>
+    <circle cx="175" cy="100" r="4" fill="#E9D899"/>
+  </g>
+</svg>

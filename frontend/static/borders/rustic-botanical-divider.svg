@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 400 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rustic Botanical Divider Ornament -->
+  <g id="rustic-botanical-divider">
+    <!-- Center medallion -->
+    <ellipse cx="200" cy="30" rx="35" ry="25" fill="#855956"/>
+    <ellipse cx="200" cy="30" rx="25" ry="18" fill="#A48366"/>
+    <ellipse cx="200" cy="30" rx="15" ry="10" fill="#E9D899"/>
+    <circle cx="200" cy="30" r="5" fill="#75433D"/>
+
+    <!-- Left flourish -->
+    <path style="fill:#855956;" d="M165,30 Q140,12 100,18 Q60,24 30,30 Q60,36 100,42 Q140,48 165,30 Z"/>
+    <path style="fill:#A48366;" d="M155,30 Q135,18 105,22 Q70,27 45,30 Q70,33 105,38 Q135,42 155,30 Z"/>
+    <path style="fill:#935B51;" d="M145,30 Q130,23 110,26 Q85,29 65,30 Q85,31 110,34 Q130,37 145,30 Z"/>
+
+    <!-- Right flourish (mirror) -->
+    <path style="fill:#855956;" d="M235,30 Q260,12 300,18 Q340,24 370,30 Q340,36 300,42 Q260,48 235,30 Z"/>
+    <path style="fill:#A48366;" d="M245,30 Q265,18 295,22 Q330,27 355,30 Q330,33 295,38 Q265,42 245,30 Z"/>
+    <path style="fill:#935B51;" d="M255,30 Q270,23 290,26 Q315,29 335,30 Q315,31 290,34 Q270,37 255,30 Z"/>
+
+    <!-- Decorative dots -->
+    <circle cx="80" cy="30" r="4" fill="#75433D"/>
+    <circle cx="120" cy="24" r="3" fill="#E2CDC6"/>
+    <circle cx="120" cy="36" r="3" fill="#E2CDC6"/>
+    <circle cx="320" cy="30" r="4" fill="#75433D"/>
+    <circle cx="280" cy="24" r="3" fill="#E2CDC6"/>
+    <circle cx="280" cy="36" r="3" fill="#E2CDC6"/>
+
+    <!-- End caps with botanical feel -->
+    <circle cx="15" cy="30" r="10" fill="#855956"/>
+    <circle cx="15" cy="30" r="6" fill="#E9D899"/>
+    <circle cx="15" cy="30" r="3" fill="#75433D"/>
+    <circle cx="385" cy="30" r="10" fill="#855956"/>
+    <circle cx="385" cy="30" r="6" fill="#E9D899"/>
+    <circle cx="385" cy="30" r="3" fill="#75433D"/>
+  </g>
+</svg>

@@ -1,0 +1,217 @@
+/* Design Tokens - Renaissance Scribe Theme */
+
+:root {
+  /* ============================================
+     PARCHMENT COLORS
+     ============================================ */
+  --parchment-lightest: #faf3e3;
+  --parchment-light: #f4e4c1;
+  --parchment-base: #e8d5a3;
+  --parchment-medium: #dcc78a;
+  --parchment-dark: #d4c089;
+  --parchment-aged: #c9b896;
+  --parchment-shadow: #b8a67a;
+
+  /* ============================================
+     INK COLORS
+     ============================================ */
+  --ink-black: #2c2416;
+  --ink-dark: #3a3020;
+  --ink-brown: #4a3c2a;
+  --ink-medium: #5c4d38;
+  --ink-light: #7a6b52;
+  --ink-faded: #998a6e;
+
+  /* Accent inks */
+  --ink-red: #8b3a3a;
+  --ink-red-dark: #6b2a2a;
+  --ink-gold: #b8963e;
+  --ink-gold-dark: #8a7030;
+  --ink-blue: #3a5a7a;
+
+  /* ============================================
+     BORDER & ORNAMENT COLORS
+     ============================================ */
+  --ornament-dark: #3d3425;
+  --ornament-medium: #5a4d3a;
+  --ornament-gold: #c4a44e;
+  --ornament-gold-light: #d4b86e;
+  --ornament-shadow: rgba(44, 36, 22, 0.3);
+  --ornament-highlight: rgba(255, 248, 230, 0.4);
+
+  /* ============================================
+     UI STATE COLORS
+     ============================================ */
+  --state-success: #4a6b3a;
+  --state-warning: #8b6b2a;
+  --state-danger: #8b3a3a;
+  --state-info: #3a5a6b;
+  --state-muted: #7a7a6a;
+
+  /* ============================================
+     TYPOGRAPHY
+     ============================================ */
+  /* Font Families */
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  --font-body: 'Crimson Text', 'Georgia', serif;
+  --font-stats: 'IM Fell English', 'Palatino', serif;
+  --font-mono: 'Courier New', monospace;
+
+  /* Font Sizes - Fluid Typography */
+  --text-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
+  --text-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
+  --text-base: clamp(0.9rem, 0.85rem + 0.25vw, 1rem);
+  --text-lg: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-xl: clamp(1.15rem, 1.05rem + 0.5vw, 1.25rem);
+  --text-2xl: clamp(1.35rem, 1.2rem + 0.75vw, 1.5rem);
+  --text-3xl: clamp(1.6rem, 1.4rem + 1vw, 1.875rem);
+  --text-4xl: clamp(2rem, 1.7rem + 1.5vw, 2.25rem);
+  --text-5xl: clamp(2.5rem, 2rem + 2.5vw, 3rem);
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Line Heights */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 2;
+
+  /* Letter Spacing */
+  --tracking-tighter: -0.05em;
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.15em;
+
+  /* ============================================
+     SPACING
+     ============================================ */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px */
+  --space-24: 6rem;     /* 96px */
+
+  /* ============================================
+     BORDER & FRAME DIMENSIONS
+     ============================================ */
+  --border-width-thin: 1px;
+  --border-width-base: 2px;
+  --border-width-thick: 4px;
+
+  --frame-border-width: 20px;
+  --frame-corner-size: 80px;
+  --frame-padding: var(--space-6);
+
+  /* Responsive frame sizes */
+  --frame-border-width-mobile: 12px;
+  --frame-corner-size-mobile: 48px;
+  --frame-padding-mobile: var(--space-4);
+
+  /* ============================================
+     BORDER RADIUS
+     ============================================ */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-base: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* ============================================
+     SHADOWS
+     ============================================ */
+  --shadow-inner: inset 0 2px 4px rgba(44, 36, 22, 0.1);
+  --shadow-sm: 0 1px 2px rgba(44, 36, 22, 0.1);
+  --shadow-base: 0 2px 4px rgba(44, 36, 22, 0.1), 0 1px 2px rgba(44, 36, 22, 0.06);
+  --shadow-md: 0 4px 6px rgba(44, 36, 22, 0.1), 0 2px 4px rgba(44, 36, 22, 0.06);
+  --shadow-lg: 0 10px 15px rgba(44, 36, 22, 0.1), 0 4px 6px rgba(44, 36, 22, 0.05);
+  --shadow-xl: 0 20px 25px rgba(44, 36, 22, 0.15), 0 10px 10px rgba(44, 36, 22, 0.04);
+
+  /* Paper edge shadow */
+  --shadow-paper:
+    0 1px 3px rgba(44, 36, 22, 0.12),
+    0 4px 8px rgba(44, 36, 22, 0.08),
+    0 8px 16px rgba(44, 36, 22, 0.04);
+
+  /* ============================================
+     Z-INDEX LAYERS
+     ============================================ */
+  --z-below: -1;
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+
+  /* ============================================
+     TRANSITIONS
+     ============================================ */
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+
+  --ease-linear: linear;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* ============================================
+     COMPONENT SIZES
+     ============================================ */
+  /* Medallion/Portrait sizes */
+  --medallion-sm: 40px;
+  --medallion-md: 64px;
+  --medallion-lg: 96px;
+  --medallion-xl: 128px;
+
+  /* Button sizes */
+  --btn-height-sm: 32px;
+  --btn-height-md: 40px;
+  --btn-height-lg: 48px;
+
+  /* Input sizes */
+  --input-height-sm: 32px;
+  --input-height-md: 40px;
+  --input-height-lg: 48px;
+
+  /* ============================================
+     LAYOUT
+     ============================================ */
+  --sidebar-width: 260px;
+  --sidebar-width-collapsed: 64px;
+  --header-height: 60px;
+  --chat-bar-height: 56px;
+  --content-max-width: 1400px;
+
+  /* ============================================
+     BREAKPOINTS (as custom properties for JS)
+     ============================================ */
+  --bp-mobile: 480px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+  --bp-wide: 1440px;
+}

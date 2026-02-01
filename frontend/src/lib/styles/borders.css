@@ -1,0 +1,736 @@
+/* Ornate Border System - Renaissance Style */
+
+/* ============================================
+   FRAME CONTAINER
+   Main wrapper for ornate bordered content
+   ============================================ */
+.frame {
+  position: relative;
+  background-color: var(--parchment-base);
+}
+
+.frame-content {
+  position: relative;
+  z-index: var(--z-base);
+  padding: var(--frame-padding);
+}
+
+/* ============================================
+   CORNER ORNAMENTS
+   Positioned at each corner of the frame
+   ============================================ */
+.frame-corners {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.corner {
+  position: absolute;
+  width: var(--frame-corner-size);
+  height: var(--frame-corner-size);
+  background-size: contain;
+  background-repeat: no-repeat;
+  z-index: var(--z-raised);
+}
+
+.corner-tl {
+  top: 0;
+  left: 0;
+  background-image: url('/borders/corner-ornament.svg');
+}
+
+.corner-tr {
+  top: 0;
+  right: 0;
+  background-image: url('/borders/corner-ornament.svg');
+  transform: scaleX(-1);
+}
+
+.corner-bl {
+  bottom: 0;
+  left: 0;
+  background-image: url('/borders/corner-ornament.svg');
+  transform: scaleY(-1);
+}
+
+.corner-br {
+  bottom: 0;
+  right: 0;
+  background-image: url('/borders/corner-ornament.svg');
+  transform: scale(-1, -1);
+}
+
+/* ============================================
+   EDGE BORDERS
+   Repeating patterns along frame edges
+   ============================================ */
+.frame-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.edge {
+  position: absolute;
+  background-repeat: repeat;
+  background-size: auto 100%;
+  z-index: var(--z-base);
+}
+
+.edge-top {
+  top: 0;
+  left: var(--frame-corner-size);
+  right: var(--frame-corner-size);
+  height: var(--frame-border-width);
+  background-image: url('/borders/border-horizontal.svg');
+  background-size: auto 100%;
+}
+
+.edge-bottom {
+  bottom: 0;
+  left: var(--frame-corner-size);
+  right: var(--frame-corner-size);
+  height: var(--frame-border-width);
+  background-image: url('/borders/border-horizontal.svg');
+  background-size: auto 100%;
+  transform: scaleY(-1);
+}
+
+.edge-left {
+  top: var(--frame-corner-size);
+  bottom: var(--frame-corner-size);
+  left: 0;
+  width: var(--frame-border-width);
+  background-image: url('/borders/border-vertical.svg');
+  background-size: 100% auto;
+  background-repeat: repeat-y;
+}
+
+.edge-right {
+  top: var(--frame-corner-size);
+  bottom: var(--frame-corner-size);
+  right: 0;
+  width: var(--frame-border-width);
+  background-image: url('/borders/border-vertical.svg');
+  background-size: 100% auto;
+  background-repeat: repeat-y;
+  transform: scaleX(-1);
+}
+
+/* ============================================
+   CSS-ONLY DECORATIVE BORDERS
+   Fallback when SVGs aren't loaded
+   ============================================ */
+.border-ornate {
+  border: var(--border-width-thick) solid var(--ornament-dark);
+  border-image: linear-gradient(
+    to right,
+    var(--ornament-dark) 0%,
+    var(--ornament-gold) 10%,
+    var(--ornament-gold) 90%,
+    var(--ornament-dark) 100%
+  ) 1;
+}
+
+.border-double {
+  border: var(--border-width-base) double var(--ornament-dark);
+  padding: var(--space-1);
+  outline: var(--border-width-thin) solid var(--ornament-dark);
+  outline-offset: var(--space-1);
+}
+
+.border-gold {
+  border: var(--border-width-base) solid var(--ornament-gold);
+  box-shadow:
+    inset 0 0 0 1px var(--ornament-gold-light),
+    0 0 0 1px var(--ornament-dark);
+}
+
+/* ============================================
+   DIVIDERS & SEPARATORS
+   ============================================ */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--ornament-gold) 20%,
+    var(--ornament-gold) 80%,
+    transparent
+  );
+}
+
+.divider-ornament {
+  width: 24px;
+  height: 24px;
+  background-image: url('/borders/divider.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Simple line dividers */
+.divider-line {
+  border: none;
+  border-top: 1px solid var(--parchment-shadow);
+  margin: var(--space-4) 0;
+}
+
+.divider-line-gold {
+  border: none;
+  border-top: 2px solid var(--ornament-gold);
+  margin: var(--space-4) 0;
+}
+
+.divider-double-line {
+  border: none;
+  border-top: 1px solid var(--ornament-dark);
+  margin: var(--space-4) 0;
+  position: relative;
+}
+
+.divider-double-line::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--ornament-dark);
+}
+
+/* ============================================
+   SECTION HEADER BORDERS
+   Underline decorations for headings
+   ============================================ */
+.heading-decorated {
+  position: relative;
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.heading-decorated::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    to right,
+    var(--ornament-gold) 0%,
+    var(--ornament-gold) 30%,
+    transparent 30%,
+    transparent 35%,
+    var(--ornament-dark) 35%,
+    var(--ornament-dark) 65%,
+    transparent 65%,
+    transparent 70%,
+    var(--ornament-gold) 70%,
+    var(--ornament-gold) 100%
+  );
+}
+
+.heading-underline {
+  position: relative;
+  padding-bottom: var(--space-2);
+}
+
+.heading-underline::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 60px;
+  height: 2px;
+  background-color: var(--ornament-gold);
+}
+
+/* ============================================
+   CARD BORDERS
+   For elevated content panels
+   ============================================ */
+.card-border {
+  border: 2px solid var(--parchment-shadow);
+  border-radius: var(--radius-sm);
+}
+
+.card-border-gold {
+  border: 2px solid var(--ornament-gold);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--ornament-dark);
+}
+
+.card-border-ornate {
+  border: 3px solid var(--ornament-dark);
+  border-radius: var(--radius-sm);
+  position: relative;
+}
+
+.card-border-ornate::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 1px solid var(--ornament-gold);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* ============================================
+   MEDALLION FRAME
+   Circular border for portraits
+   ============================================ */
+.medallion-frame {
+  position: relative;
+  border-radius: var(--radius-full);
+  padding: 4px;
+  background: linear-gradient(
+    135deg,
+    var(--ornament-gold-light) 0%,
+    var(--ornament-dark) 50%,
+    var(--ornament-gold) 100%
+  );
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+.medallion-frame-inner {
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background-color: var(--parchment-base);
+}
+
+.medallion-frame-ornate {
+  position: relative;
+  border-radius: var(--radius-full);
+  background-image: url('/borders/medallion-frame.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* ============================================
+   INSET BORDER (sunken content areas)
+   ============================================ */
+.border-inset {
+  border: 2px solid var(--parchment-shadow);
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.1),
+    inset -1px -1px 2px rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   RIBBON BANNER
+   For section titles
+   ============================================ */
+.ribbon {
+  position: relative;
+  display: inline-block;
+  padding: var(--space-2) var(--space-6);
+  background: var(--ornament-gold);
+  color: var(--ink-black);
+  font-family: var(--font-display);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.ribbon::before,
+.ribbon::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  border-style: solid;
+  border-width: 8px;
+}
+
+.ribbon::before {
+  left: 0;
+  border-color: var(--ornament-dark) transparent transparent var(--ornament-dark);
+}
+
+.ribbon::after {
+  right: 0;
+  border-color: var(--ornament-dark) var(--ornament-dark) transparent transparent;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+@media (max-width: 768px) {
+  .corner {
+    width: var(--frame-corner-size-mobile);
+    height: var(--frame-corner-size-mobile);
+  }
+
+  .edge-top,
+  .edge-bottom {
+    left: var(--frame-corner-size-mobile);
+    right: var(--frame-corner-size-mobile);
+    height: var(--frame-border-width-mobile);
+  }
+
+  .edge-left,
+  .edge-right {
+    top: var(--frame-corner-size-mobile);
+    bottom: var(--frame-corner-size-mobile);
+    width: var(--frame-border-width-mobile);
+  }
+
+  .frame-content {
+    padding: var(--frame-padding-mobile);
+  }
+}
+
+/* Simplified borders on mobile for performance */
+@media (max-width: 480px) {
+  .frame-corners,
+  .frame-edges {
+    display: none;
+  }
+
+  .frame {
+    border: 3px solid var(--ornament-dark);
+    border-radius: var(--radius-sm);
+  }
+
+  .frame::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border: 1px solid var(--ornament-gold);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+}
+
+/* ============================================
+   ILLUMINATED MANUSCRIPT ORNAMENTS
+   1500s Bible-inspired decorative elements
+   ============================================ */
+
+/* Tricolor ribbon border - interweaving red, blue, green */
+.border-illuminated {
+  border: 3px solid transparent;
+  border-image: linear-gradient(
+    90deg,
+    var(--ornament-blue) 0%,
+    var(--ornament-red) 25%,
+    var(--ornament-gold) 50%,
+    var(--ornament-green) 75%,
+    var(--ornament-blue) 100%
+  ) 1;
+}
+
+.border-illuminated-double {
+  border: 2px solid var(--ornament-blue);
+  outline: 2px solid var(--ornament-red);
+  outline-offset: 3px;
+  position: relative;
+}
+
+.border-illuminated-double::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border: 1px solid var(--ornament-green);
+  pointer-events: none;
+}
+
+/* Floral corner accent classes */
+.corner-floral {
+  position: relative;
+}
+
+.corner-floral::before,
+.corner-floral::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(
+    circle at center,
+    var(--ornament-gold) 20%,
+    var(--ornament-red) 40%,
+    transparent 60%
+  );
+  border-radius: var(--radius-full);
+}
+
+.corner-floral::before {
+  top: -12px;
+  left: -12px;
+}
+
+.corner-floral::after {
+  top: -12px;
+  right: -12px;
+}
+
+/* Ribbon banner - illuminated style */
+.ribbon-illuminated {
+  position: relative;
+  display: inline-block;
+  padding: var(--space-2) var(--space-8);
+  background: linear-gradient(
+    180deg,
+    var(--ornament-blue-light) 0%,
+    var(--ornament-blue) 50%,
+    var(--ornament-blue-dark) 100%
+  );
+  color: var(--parchment-lightest);
+  font-family: var(--font-display);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.ribbon-illuminated::before,
+.ribbon-illuminated::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  width: 20px;
+  height: calc(100% - 8px);
+  background: linear-gradient(
+    180deg,
+    var(--ornament-red-light) 0%,
+    var(--ornament-red) 50%,
+    var(--ornament-red-dark) 100%
+  );
+}
+
+.ribbon-illuminated::before {
+  left: -16px;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.ribbon-illuminated::after {
+  right: -16px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.ribbon-green {
+  background: linear-gradient(
+    180deg,
+    var(--ornament-green-light) 0%,
+    var(--ornament-green) 50%,
+    var(--ornament-green-dark) 100%
+  );
+}
+
+.ribbon-red {
+  background: linear-gradient(
+    180deg,
+    var(--ornament-red-light) 0%,
+    var(--ornament-red) 50%,
+    var(--ornament-red-dark) 100%
+  );
+}
+
+/* Illuminated divider with floral motif */
+.divider-illuminated {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+}
+
+.divider-illuminated::before,
+.divider-illuminated::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--ornament-blue) 15%,
+    var(--ornament-red) 35%,
+    var(--ornament-gold) 50%,
+    var(--ornament-red) 65%,
+    var(--ornament-blue) 85%,
+    transparent
+  );
+}
+
+.divider-illuminated-ornament {
+  width: 32px;
+  height: 32px;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--ornament-gold) 0%,
+    var(--ornament-gold) 25%,
+    transparent 25%
+  ),
+  radial-gradient(
+    circle at 50% 20%,
+    var(--ornament-red) 0%,
+    var(--ornament-red) 15%,
+    transparent 15%
+  ),
+  radial-gradient(
+    circle at 50% 80%,
+    var(--ornament-red) 0%,
+    var(--ornament-red) 15%,
+    transparent 15%
+  ),
+  radial-gradient(
+    circle at 20% 50%,
+    var(--ornament-blue) 0%,
+    var(--ornament-blue) 15%,
+    transparent 15%
+  ),
+  radial-gradient(
+    circle at 80% 50%,
+    var(--ornament-blue) 0%,
+    var(--ornament-blue) 15%,
+    transparent 15%
+  ),
+  radial-gradient(
+    circle at 30% 30%,
+    var(--ornament-green) 0%,
+    var(--ornament-green) 10%,
+    transparent 10%
+  ),
+  radial-gradient(
+    circle at 70% 30%,
+    var(--ornament-green) 0%,
+    var(--ornament-green) 10%,
+    transparent 10%
+  ),
+  radial-gradient(
+    circle at 30% 70%,
+    var(--ornament-green) 0%,
+    var(--ornament-green) 10%,
+    transparent 10%
+  ),
+  radial-gradient(
+    circle at 70% 70%,
+    var(--ornament-green) 0%,
+    var(--ornament-green) 10%,
+    transparent 10%
+  );
+}
+
+/* Vine border - flowing organic pattern */
+.border-vine {
+  position: relative;
+  border: 2px solid var(--ornament-green);
+}
+
+.border-vine::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 1px solid var(--ornament-green-muted);
+  background:
+    radial-gradient(circle at 0% 25%, var(--ornament-green) 3px, transparent 3px),
+    radial-gradient(circle at 100% 75%, var(--ornament-green) 3px, transparent 3px),
+    radial-gradient(circle at 50% 0%, var(--ornament-red) 2px, transparent 2px),
+    radial-gradient(circle at 50% 100%, var(--ornament-red) 2px, transparent 2px);
+  pointer-events: none;
+}
+
+/* Illuminated heading underline */
+.heading-illuminated {
+  position: relative;
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.heading-illuminated::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(
+    to right,
+    var(--ornament-red) 0%,
+    var(--ornament-red) 20%,
+    transparent 20%,
+    transparent 25%,
+    var(--ornament-blue) 25%,
+    var(--ornament-blue) 45%,
+    transparent 45%,
+    transparent 50%,
+    var(--ornament-gold) 50%,
+    var(--ornament-gold) 55%,
+    transparent 55%,
+    transparent 60%,
+    var(--ornament-green) 60%,
+    var(--ornament-green) 80%,
+    transparent 80%,
+    transparent 85%,
+    var(--ornament-red) 85%,
+    var(--ornament-red) 100%
+  );
+}
+
+/* Illuminated medallion frame */
+.medallion-illuminated {
+  position: relative;
+  border-radius: var(--radius-full);
+  padding: 5px;
+  background: conic-gradient(
+    from 0deg,
+    var(--ornament-red) 0deg,
+    var(--ornament-gold) 60deg,
+    var(--ornament-blue) 120deg,
+    var(--ornament-green) 180deg,
+    var(--ornament-gold) 240deg,
+    var(--ornament-red) 300deg,
+    var(--ornament-red) 360deg
+  );
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.15),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.medallion-illuminated-inner {
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background-color: var(--parchment-light);
+}
+
+/* Card with illuminated border */
+.card-illuminated {
+  border: 2px solid var(--ornament-blue);
+  border-radius: var(--radius-sm);
+  position: relative;
+  background-color: var(--parchment-light);
+}
+
+.card-illuminated::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid var(--ornament-gold);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.card-illuminated::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 1px solid var(--ornament-red);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}

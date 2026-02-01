@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eastern Elegance Medallion Ornament -->
+  <g id="eastern-elegance-medallion">
+    <!-- Outer carpet-style border -->
+    <circle cx="100" cy="100" r="95" fill="none" stroke="#6B4423" stroke-width="6"/>
+    <circle cx="100" cy="100" r="88" fill="none" stroke="#8B6914" stroke-width="4"/>
+    <circle cx="100" cy="100" r="82" fill="none" stroke="#DDBB8E" stroke-width="3"/>
+    <circle cx="100" cy="100" r="76" fill="none" stroke="#6B4423" stroke-width="2"/>
+
+    <!-- Fill background -->
+    <circle cx="100" cy="100" r="72" fill="#DDBB8E" opacity="0.3"/>
+
+    <!-- Eight-pointed Persian star pattern -->
+    <polygon points="100,30 110,70 150,50 130,90 170,100 130,110 150,150 110,130 100,170 90,130 50,150 70,110 30,100 70,90 50,50 90,70" fill="#8B6914"/>
+    <polygon points="100,42 108,72 140,58 125,92 158,100 125,108 140,142 108,128 100,158 92,128 60,142 75,108 42,100 75,92 60,58 92,72" fill="#6B4423"/>
+    <polygon points="100,55 106,78 128,68 118,95 145,100 118,105 128,132 106,122 100,145 94,122 72,132 82,105 55,100 82,95 72,68 94,78" fill="#C4956A"/>
+
+    <!-- Central dome/arch motif -->
+    <circle cx="100" cy="100" r="32" fill="#6B4423"/>
+    <circle cx="100" cy="100" r="26" fill="#8B6914"/>
+    <circle cx="100" cy="100" r="20" fill="#DDBB8E"/>
+    <circle cx="100" cy="100" r="14" fill="#C4956A"/>
+    <circle cx="100" cy="100" r="8" fill="#6B4423"/>
+    <circle cx="100" cy="100" r="3" fill="#DDBB8E"/>
+
+    <!-- Small decorative circles in carpet pattern -->
+    <circle cx="100" cy="45" r="5" fill="#6B4423"/>
+    <circle cx="100" cy="45" r="2" fill="#DDBB8E"/>
+    <circle cx="100" cy="155" r="5" fill="#6B4423"/>
+    <circle cx="100" cy="155" r="2" fill="#DDBB8E"/>
+    <circle cx="45" cy="100" r="5" fill="#6B4423"/>
+    <circle cx="45" cy="100" r="2" fill="#DDBB8E"/>
+    <circle cx="155" cy="100" r="5" fill="#6B4423"/>
+    <circle cx="155" cy="100" r="2" fill="#DDBB8E"/>
+
+    <!-- Diagonal accent circles -->
+    <circle cx="60" cy="60" r="4" fill="#8B6914"/>
+    <circle cx="140" cy="60" r="4" fill="#8B6914"/>
+    <circle cx="60" cy="140" r="4" fill="#8B6914"/>
+    <circle cx="140" cy="140" r="4" fill="#8B6914"/>
+  </g>
+</svg>

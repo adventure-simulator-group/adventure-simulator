@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 400 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Floral Coral Divider Ornament -->
+  <g id="floral-coral-divider">
+    <!-- Center medallion -->
+    <ellipse cx="200" cy="30" rx="35" ry="25" fill="#AF4C54"/>
+    <ellipse cx="200" cy="30" rx="25" ry="18" fill="#F79764"/>
+    <ellipse cx="200" cy="30" rx="15" ry="10" fill="#A9C1A3"/>
+    <circle cx="200" cy="30" r="5" fill="#AF4C54"/>
+
+    <!-- Left flourish -->
+    <path style="fill:#F79764;" d="M165,30 Q140,15 100,20 Q60,25 30,30 Q60,35 100,40 Q140,45 165,30 Z"/>
+    <path style="fill:#A9C1A3;" d="M155,30 Q135,20 105,23 Q70,27 45,30 Q70,33 105,37 Q135,40 155,30 Z"/>
+    <path style="fill:#AF4C54;" d="M145,30 Q130,25 110,27 Q85,29 65,30 Q85,31 110,33 Q130,35 145,30 Z"/>
+
+    <!-- Right flourish (mirror) -->
+    <path style="fill:#F79764;" d="M235,30 Q260,15 300,20 Q340,25 370,30 Q340,35 300,40 Q260,45 235,30 Z"/>
+    <path style="fill:#A9C1A3;" d="M245,30 Q265,20 295,23 Q330,27 355,30 Q330,33 295,37 Q265,40 245,30 Z"/>
+    <path style="fill:#AF4C54;" d="M255,30 Q270,25 290,27 Q315,29 335,30 Q315,31 290,33 Q270,35 255,30 Z"/>
+
+    <!-- Decorative dots -->
+    <circle cx="80" cy="30" r="4" fill="#AF4C54"/>
+    <circle cx="120" cy="25" r="3" fill="#F79764"/>
+    <circle cx="120" cy="35" r="3" fill="#F79764"/>
+    <circle cx="320" cy="30" r="4" fill="#AF4C54"/>
+    <circle cx="280" cy="25" r="3" fill="#F79764"/>
+    <circle cx="280" cy="35" r="3" fill="#F79764"/>
+
+    <!-- End caps -->
+    <circle cx="15" cy="30" r="8" fill="#F79764"/>
+    <circle cx="15" cy="30" r="4" fill="#A9C1A3"/>
+    <circle cx="385" cy="30" r="8" fill="#F79764"/>
+    <circle cx="385" cy="30" r="4" fill="#A9C1A3"/>
+  </g>
+</svg>

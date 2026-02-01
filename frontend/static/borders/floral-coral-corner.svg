@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Floral Coral Corner Ornament - Extracted from 3529892_64471.svg -->
+  <g id="floral-coral-corner">
+    <!-- Large outer flourish -->
+    <path style="fill:#F79764;" d="M10,10 Q50,5 80,20 Q100,35 110,60 Q115,80 100,95 Q85,105 60,100 Q40,95 25,75 Q15,55 10,30 Q8,18 10,10 Z"/>
+
+    <!-- Inner sage green accent -->
+    <path style="fill:#A9C1A3;" d="M20,20 Q45,18 65,30 Q80,42 85,60 Q88,75 75,85 Q60,92 45,85 Q32,78 25,60 Q20,45 20,30 Q19,24 20,20 Z"/>
+
+    <!-- Burgundy center detail -->
+    <path style="fill:#AF4C54;" d="M35,35 Q50,32 60,42 Q68,52 65,65 Q62,75 50,78 Q40,80 33,70 Q28,60 30,48 Q32,40 35,35 Z"/>
+
+    <!-- Small coral accent dots -->
+    <circle cx="25" cy="25" r="6" fill="#F79764"/>
+    <circle cx="75" cy="40" r="4" fill="#F79764"/>
+    <circle cx="45" cy="80" r="5" fill="#F79764"/>
+
+    <!-- Decorative lines -->
+    <path style="fill:none;stroke:#AF4C54;stroke-width:2;" d="M5,5 Q30,10 45,25"/>
+    <path style="fill:none;stroke:#A9C1A3;stroke-width:2;" d="M8,15 Q35,20 55,40"/>
+
+    <!-- Outer border flourish -->
+    <path style="fill:#AF4C54;" d="M0,0 L12,0 Q8,8 0,12 Z"/>
+    <path style="fill:#A9C1A3;" d="M0,15 L8,15 Q5,22 0,28 Z"/>
+    <path style="fill:#F79764;" d="M15,0 L28,0 Q22,5 15,8 Z"/>
+  </g>
+</svg>

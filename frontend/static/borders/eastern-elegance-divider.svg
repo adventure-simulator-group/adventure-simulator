@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 400 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eastern Elegance Divider Ornament -->
+  <g id="eastern-elegance-divider">
+    <!-- Center arch/dome medallion -->
+    <path style="fill:#6B4423;" d="M175,50 L175,25 Q200,0 225,25 L225,50 Z"/>
+    <path style="fill:#8B6914;" d="M180,50 L180,28 Q200,8 220,28 L220,50 Z"/>
+    <path style="fill:#DDBB8E;" d="M188,50 L188,32 Q200,18 212,32 L212,50 Z"/>
+    <path style="fill:#C4956A;" d="M195,50 L195,36 Q200,28 205,36 L205,50 Z"/>
+
+    <!-- Persian carpet-style border lines -->
+    <path style="fill:none;stroke:#6B4423;stroke-width:4;" d="M170,50 L20,50"/>
+    <path style="fill:none;stroke:#8B6914;stroke-width:2;" d="M170,45 L25,45"/>
+    <path style="fill:none;stroke:#DDBB8E;stroke-width:3;" d="M170,40 L30,40"/>
+
+    <path style="fill:none;stroke:#6B4423;stroke-width:4;" d="M230,50 L380,50"/>
+    <path style="fill:none;stroke:#8B6914;stroke-width:2;" d="M230,45 L375,45"/>
+    <path style="fill:none;stroke:#DDBB8E;stroke-width:3;" d="M230,40 L370,40"/>
+
+    <!-- Decorative circles along the line -->
+    <circle cx="60" cy="45" r="8" fill="#8B6914"/>
+    <circle cx="60" cy="45" r="5" fill="#DDBB8E"/>
+    <circle cx="60" cy="45" r="2" fill="#6B4423"/>
+
+    <circle cx="120" cy="45" r="6" fill="#6B4423"/>
+    <circle cx="120" cy="45" r="3" fill="#C4956A"/>
+
+    <circle cx="280" cy="45" r="6" fill="#6B4423"/>
+    <circle cx="280" cy="45" r="3" fill="#C4956A"/>
+
+    <circle cx="340" cy="45" r="8" fill="#8B6914"/>
+    <circle cx="340" cy="45" r="5" fill="#DDBB8E"/>
+    <circle cx="340" cy="45" r="2" fill="#6B4423"/>
+
+    <!-- End geometric squares -->
+    <rect x="5" y="38" width="12" height="12" fill="#6B4423"/>
+    <rect x="7" y="40" width="8" height="8" fill="#DDBB8E"/>
+    <rect x="9" y="42" width="4" height="4" fill="#8B6914"/>
+
+    <rect x="383" y="38" width="12" height="12" fill="#6B4423"/>
+    <rect x="385" y="40" width="8" height="8" fill="#DDBB8E"/>
+    <rect x="387" y="42" width="4" height="4" fill="#8B6914"/>
+  </g>
+</svg>

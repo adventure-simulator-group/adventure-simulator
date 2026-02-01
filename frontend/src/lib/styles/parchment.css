@@ -1,0 +1,258 @@
+/* Parchment Background Effects */
+
+/* ============================================
+   BASE PARCHMENT BACKGROUND
+   ============================================ */
+.parchment-bg {
+  background-color: var(--parchment-base);
+  background-image:
+    /* Noise texture layer */
+    url('/textures/parchment-noise.svg'),
+    /* Age stains layer */
+    url('/textures/parchment-stains.svg'),
+    /* Subtle gradient for depth */
+    linear-gradient(
+      135deg,
+      var(--parchment-light) 0%,
+      var(--parchment-base) 40%,
+      var(--parchment-aged) 100%
+    );
+  background-blend-mode: multiply, overlay, normal;
+  background-size: 200px 200px, 400px 400px, 100% 100%;
+}
+
+/* Fallback when textures aren't loaded */
+.parchment-bg-simple {
+  background: linear-gradient(
+    135deg,
+    var(--parchment-light) 0%,
+    var(--parchment-base) 40%,
+    var(--parchment-aged) 100%
+  );
+}
+
+/* ============================================
+   CSS-ONLY PARCHMENT TEXTURE
+   Uses multiple gradients to simulate paper
+   ============================================ */
+.parchment-texture {
+  background-color: var(--parchment-base);
+  background-image:
+    /* Fine grain noise simulation */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(200, 180, 140, 0.03) 2px,
+      rgba(200, 180, 140, 0.03) 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(180, 160, 120, 0.02) 2px,
+      rgba(180, 160, 120, 0.02) 4px
+    ),
+    /* Subtle color variations */
+    radial-gradient(
+      ellipse at 20% 30%,
+      var(--parchment-light) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 80% 70%,
+      var(--parchment-aged) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 60% 20%,
+      var(--parchment-dark) 0%,
+      transparent 40%
+    ),
+    /* Base gradient */
+    linear-gradient(
+      145deg,
+      var(--parchment-lightest) 0%,
+      var(--parchment-base) 50%,
+      var(--parchment-shadow) 100%
+    );
+}
+
+/* ============================================
+   PAPER VARIANTS
+   ============================================ */
+
+/* Fresh parchment - lighter, less aged */
+.parchment-fresh {
+  background-color: var(--parchment-lightest);
+  background-image:
+    linear-gradient(
+      135deg,
+      var(--parchment-lightest) 0%,
+      var(--parchment-light) 100%
+    );
+}
+
+/* Aged parchment - darker, more worn */
+.parchment-aged {
+  background-color: var(--parchment-aged);
+  background-image:
+    radial-gradient(
+      ellipse at 30% 20%,
+      rgba(139, 119, 91, 0.15) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 70% 80%,
+      rgba(139, 119, 91, 0.2) 0%,
+      transparent 40%
+    ),
+    linear-gradient(
+      145deg,
+      var(--parchment-aged) 0%,
+      var(--parchment-shadow) 100%
+    );
+}
+
+/* Vellum - smoother, more uniform */
+.parchment-vellum {
+  background-color: var(--parchment-light);
+  background-image:
+    linear-gradient(
+      180deg,
+      var(--parchment-light) 0%,
+      var(--parchment-base) 100%
+    );
+}
+
+/* ============================================
+   PAPER EDGE EFFECTS
+   ============================================ */
+
+/* Torn/rough edge on bottom */
+.paper-edge-bottom {
+  position: relative;
+}
+
+.paper-edge-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--parchment-shadow) 100%
+  );
+  opacity: 0.3;
+}
+
+/* Curled corner effect */
+.paper-curl {
+  position: relative;
+}
+
+.paper-curl::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    var(--parchment-shadow) 50%
+  );
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+/* ============================================
+   INNER SHADOW (INSET EFFECT)
+   Creates depth within content areas
+   ============================================ */
+.parchment-inset {
+  background-color: var(--parchment-dark);
+  box-shadow:
+    inset 0 2px 8px rgba(44, 36, 22, 0.15),
+    inset 0 -2px 8px rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   RAISED PAPER EFFECT
+   For cards, panels that float above base
+   ============================================ */
+.paper-raised {
+  background-color: var(--parchment-light);
+  box-shadow: var(--shadow-paper);
+  border: 1px solid var(--parchment-shadow);
+}
+
+.paper-raised:hover {
+  box-shadow:
+    0 2px 4px rgba(44, 36, 22, 0.15),
+    0 6px 12px rgba(44, 36, 22, 0.1),
+    0 12px 24px rgba(44, 36, 22, 0.05);
+}
+
+/* ============================================
+   VIGNETTE EFFECT
+   Darkening around edges
+   ============================================ */
+.parchment-vignette {
+  position: relative;
+}
+
+.parchment-vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(44, 36, 22, 0.1) 100%
+  );
+}
+
+/* ============================================
+   STAIN OVERLAY (decorative)
+   Random age spots and marks
+   ============================================ */
+.parchment-stained::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.15;
+  background-image:
+    radial-gradient(
+      ellipse at 15% 25%,
+      var(--parchment-shadow) 0%,
+      transparent 30%
+    ),
+    radial-gradient(
+      ellipse at 85% 75%,
+      var(--parchment-shadow) 0%,
+      transparent 25%
+    ),
+    radial-gradient(
+      ellipse at 45% 85%,
+      var(--parchment-shadow) 0%,
+      transparent 20%
+    );
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+.bg-parchment-lightest { background-color: var(--parchment-lightest); }
+.bg-parchment-light { background-color: var(--parchment-light); }
+.bg-parchment-base { background-color: var(--parchment-base); }
+.bg-parchment-medium { background-color: var(--parchment-medium); }
+.bg-parchment-dark { background-color: var(--parchment-dark); }
+.bg-parchment-aged { background-color: var(--parchment-aged); }
+.bg-parchment-shadow { background-color: var(--parchment-shadow); }

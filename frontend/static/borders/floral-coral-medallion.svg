@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Floral Coral Medallion Ornament -->
+  <g id="floral-coral-medallion">
+    <!-- Outer flourish ring -->
+    <circle cx="100" cy="100" r="95" fill="none" stroke="#F79764" stroke-width="6"/>
+    <circle cx="100" cy="100" r="88" fill="none" stroke="#A9C1A3" stroke-width="3"/>
+    <circle cx="100" cy="100" r="82" fill="none" stroke="#AF4C54" stroke-width="2"/>
+
+    <!-- Background fill -->
+    <circle cx="100" cy="100" r="78" fill="#F79764" opacity="0.2"/>
+
+    <!-- Eight petal flourishes -->
+    <path style="fill:#F79764;" d="M100,20 Q115,50 100,80 Q85,50 100,20 Z"/>
+    <path style="fill:#F79764;" d="M100,180 Q115,150 100,120 Q85,150 100,180 Z"/>
+    <path style="fill:#F79764;" d="M20,100 Q50,115 80,100 Q50,85 20,100 Z"/>
+    <path style="fill:#F79764;" d="M180,100 Q150,115 120,100 Q150,85 180,100 Z"/>
+
+    <!-- Diagonal petals -->
+    <path style="fill:#A9C1A3;" d="M35,35 Q65,55 80,80 Q55,65 35,35 Z"/>
+    <path style="fill:#A9C1A3;" d="M165,35 Q135,55 120,80 Q145,65 165,35 Z"/>
+    <path style="fill:#A9C1A3;" d="M35,165 Q65,145 80,120 Q55,135 35,165 Z"/>
+    <path style="fill:#A9C1A3;" d="M165,165 Q135,145 120,120 Q145,135 165,165 Z"/>
+
+    <!-- Inner ring of burgundy accents -->
+    <circle cx="100" cy="55" r="8" fill="#AF4C54"/>
+    <circle cx="100" cy="145" r="8" fill="#AF4C54"/>
+    <circle cx="55" cy="100" r="8" fill="#AF4C54"/>
+    <circle cx="145" cy="100" r="8" fill="#AF4C54"/>
+
+    <!-- Center medallion -->
+    <circle cx="100" cy="100" r="35" fill="#AF4C54"/>
+    <circle cx="100" cy="100" r="28" fill="#F79764"/>
+    <circle cx="100" cy="100" r="20" fill="#A9C1A3"/>
+    <circle cx="100" cy="100" r="12" fill="#AF4C54"/>
+    <circle cx="100" cy="100" r="5" fill="#F79764"/>
+
+    <!-- Small decorative dots around center -->
+    <circle cx="75" cy="75" r="4" fill="#F79764"/>
+    <circle cx="125" cy="75" r="4" fill="#F79764"/>
+    <circle cx="75" cy="125" r="4" fill="#F79764"/>
+    <circle cx="125" cy="125" r="4" fill="#F79764"/>
+  </g>
+</svg>

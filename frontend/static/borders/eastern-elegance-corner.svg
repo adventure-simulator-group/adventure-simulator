@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eastern Elegance Corner Ornament - Extracted from 9450088_2022.svg -->
+  <g id="eastern-elegance-corner">
+    <!-- Main tan flourish -->
+    <path style="fill:#DDBB8E;" d="M0,0 C40,0 70,5 90,20 C105,32 115,50 120,75 C125,95 120,110 100,120 C80,128 55,125 35,110 C18,95 5,70 0,40 Z"/>
+
+    <!-- Secondary brown layer -->
+    <path style="fill:#8B6914;" d="M5,5 C35,8 55,15 70,28 C82,40 90,55 92,72 C94,88 88,100 72,105 C58,110 40,105 28,92 C16,78 8,55 5,30 Z"/>
+
+    <!-- Tertiary darker accent -->
+    <path style="fill:#6B4423;" d="M15,15 C32,18 45,25 55,38 C62,48 66,60 65,72 C64,82 58,88 48,90 C38,92 28,86 22,75 C16,64 14,48 15,32 Z"/>
+
+    <!-- Inner tan detail -->
+    <path style="fill:#C4956A;" d="M28,28 C40,30 48,38 52,50 C55,60 52,68 44,72 C36,75 28,70 24,60 C21,50 22,40 28,28 Z"/>
+
+    <!-- Decorative circles - Persian carpet style -->
+    <circle cx="20" cy="20" r="6" fill="#8B6914"/>
+    <circle cx="20" cy="20" r="3" fill="#DDBB8E"/>
+    <circle cx="45" cy="30" r="4" fill="#6B4423"/>
+    <circle cx="30" cy="50" r="4" fill="#6B4423"/>
+    <circle cx="55" cy="55" r="3" fill="#C4956A"/>
+
+    <!-- Border pattern -->
+    <path style="fill:none;stroke:#8B6914;stroke-width:3;" d="M0,0 L80,0"/>
+    <path style="fill:none;stroke:#6B4423;stroke-width:2;" d="M0,6 L74,6"/>
+    <path style="fill:none;stroke:#8B6914;stroke-width:3;" d="M0,0 L0,80"/>
+    <path style="fill:none;stroke:#6B4423;stroke-width:2;" d="M6,0 L6,74"/>
+
+    <!-- Small geometric accents -->
+    <rect x="0" y="0" width="10" height="10" fill="#6B4423"/>
+    <rect x="2" y="2" width="6" height="6" fill="#DDBB8E"/>
+    <rect x="3" y="3" width="4" height="4" fill="#8B6914"/>
+  </g>
+</svg>

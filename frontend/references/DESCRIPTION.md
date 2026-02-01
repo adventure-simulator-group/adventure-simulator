@@ -1,0 +1,3 @@
+My aesthetic descriptions were, respectively:
+1. Make it look like a Latin manuscript made by a scribe who is talented but does not have the skills of a renaissance painter
+2. Make it look like an Italian architect from 1544 was hired to design a website. He isn't making it look like a building, per-se, with columns and arches and such, but uses the same sort of ornamentation that he is already familiar with at his new job

@@ -1,0 +1,255 @@
+/* Design Tokens - Illuminated Manuscript Theme */
+/* Inspired by 1500s Bible ornamentation with ribbons and florals */
+/* Original theme backed up in variables-original.css */
+
+:root {
+  /* ============================================
+     PARCHMENT COLORS - Lighter, Cream Vellum
+     ============================================ */
+  --parchment-lightest: #fdfbf7;
+  --parchment-light: #faf6ef;
+  --parchment-base: #f5f0e6;
+  --parchment-medium: #efe9db;
+  --parchment-dark: #e8e0cf;
+  --parchment-aged: #e2d9c6;
+  --parchment-shadow: #d4c9b4;
+
+  /* ============================================
+     INK COLORS
+     ============================================ */
+  --ink-black: #1a1612;
+  --ink-dark: #2d2620;
+  --ink-brown: #3d352a;
+  --ink-medium: #524839;
+  --ink-light: #6b5f4d;
+  --ink-faded: #8a7d68;
+
+  /* Illuminated Manuscript Inks */
+  --ink-red: #a83232;
+  --ink-red-dark: #8b2828;
+  --ink-gold: #c4a24e;
+  --ink-gold-dark: #a68a3e;
+  --ink-blue: #2e5a8c;
+
+  /* ============================================
+     ILLUMINATED ORNAMENT COLORS
+     Renaissance Bible-inspired palette
+     ============================================ */
+
+  /* Vermillion & Cinnabar Reds */
+  --ornament-red: #c44536;
+  --ornament-red-light: #d65a4a;
+  --ornament-red-dark: #9e3528;
+  --ornament-red-muted: #b8605a;
+
+  /* Ultramarine & Lapis Blues */
+  --ornament-blue: #2e5a8c;
+  --ornament-blue-light: #4a7ab0;
+  --ornament-blue-dark: #1e3d5f;
+  --ornament-blue-muted: #5c7a9e;
+
+  /* Verdigris & Malachite Greens */
+  --ornament-green: #3a7a5c;
+  --ornament-green-light: #4e9e78;
+  --ornament-green-dark: #2a5a42;
+  --ornament-green-muted: #5a8a72;
+
+  /* Gold Leaf accents */
+  --ornament-gold: #c9a227;
+  --ornament-gold-light: #ddb940;
+  --ornament-gold-dark: #a68518;
+  --ornament-gold-muted: #b8a050;
+
+  /* Legacy ornament vars (for compatibility) */
+  --ornament-dark: #3d352a;
+  --ornament-medium: #524839;
+  --ornament-shadow: rgba(26, 22, 18, 0.25);
+  --ornament-highlight: rgba(253, 251, 247, 0.5);
+
+  /* ============================================
+     FLORAL & RIBBON ACCENT COLORS
+     For decorative elements
+     ============================================ */
+  --accent-rose: #c45c72;
+  --accent-burgundy: #8c3a4a;
+  --accent-teal: #3a7a7a;
+  --accent-sage: #6a8a5a;
+  --accent-plum: #6a4a7a;
+  --accent-ochre: #c49a3a;
+
+  /* ============================================
+     UI STATE COLORS
+     ============================================ */
+  --state-success: #3a7a5c;
+  --state-warning: #c49a3a;
+  --state-danger: #c44536;
+  --state-info: #2e5a8c;
+  --state-muted: #8a7d68;
+
+  /* ============================================
+     TYPOGRAPHY
+     ============================================ */
+  /* Font Families */
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  --font-body: 'Crimson Text', 'Georgia', serif;
+  --font-stats: 'IM Fell English', 'Palatino', serif;
+  --font-mono: 'Courier New', monospace;
+
+  /* Font Sizes - Fluid Typography */
+  --text-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
+  --text-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
+  --text-base: clamp(0.9rem, 0.85rem + 0.25vw, 1rem);
+  --text-lg: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-xl: clamp(1.15rem, 1.05rem + 0.5vw, 1.25rem);
+  --text-2xl: clamp(1.35rem, 1.2rem + 0.75vw, 1.5rem);
+  --text-3xl: clamp(1.6rem, 1.4rem + 1vw, 1.875rem);
+  --text-4xl: clamp(2rem, 1.7rem + 1.5vw, 2.25rem);
+  --text-5xl: clamp(2.5rem, 2rem + 2.5vw, 3rem);
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Line Heights */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 2;
+
+  /* Letter Spacing */
+  --tracking-tighter: -0.05em;
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.15em;
+
+  /* ============================================
+     SPACING
+     ============================================ */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px */
+  --space-24: 6rem;     /* 96px */
+
+  /* ============================================
+     BORDER & FRAME DIMENSIONS
+     ============================================ */
+  --border-width-thin: 1px;
+  --border-width-base: 2px;
+  --border-width-thick: 4px;
+
+  --frame-border-width: 20px;
+  --frame-corner-size: 80px;
+  --frame-padding: var(--space-6);
+
+  /* Responsive frame sizes */
+  --frame-border-width-mobile: 12px;
+  --frame-corner-size-mobile: 48px;
+  --frame-padding-mobile: var(--space-4);
+
+  /* ============================================
+     BORDER RADIUS
+     ============================================ */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-base: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* ============================================
+     SHADOWS - Softer for lighter theme
+     ============================================ */
+  --shadow-inner: inset 0 2px 4px rgba(26, 22, 18, 0.08);
+  --shadow-sm: 0 1px 2px rgba(26, 22, 18, 0.08);
+  --shadow-base: 0 2px 4px rgba(26, 22, 18, 0.08), 0 1px 2px rgba(26, 22, 18, 0.04);
+  --shadow-md: 0 4px 6px rgba(26, 22, 18, 0.08), 0 2px 4px rgba(26, 22, 18, 0.04);
+  --shadow-lg: 0 10px 15px rgba(26, 22, 18, 0.08), 0 4px 6px rgba(26, 22, 18, 0.04);
+  --shadow-xl: 0 20px 25px rgba(26, 22, 18, 0.12), 0 10px 10px rgba(26, 22, 18, 0.03);
+
+  /* Paper edge shadow - lighter */
+  --shadow-paper:
+    0 1px 3px rgba(26, 22, 18, 0.1),
+    0 4px 8px rgba(26, 22, 18, 0.06),
+    0 8px 16px rgba(26, 22, 18, 0.03);
+
+  /* ============================================
+     Z-INDEX LAYERS
+     ============================================ */
+  --z-below: -1;
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+
+  /* ============================================
+     TRANSITIONS
+     ============================================ */
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+
+  --ease-linear: linear;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* ============================================
+     COMPONENT SIZES
+     ============================================ */
+  /* Medallion/Portrait sizes */
+  --medallion-sm: 40px;
+  --medallion-md: 64px;
+  --medallion-lg: 96px;
+  --medallion-xl: 128px;
+
+  /* Button sizes */
+  --btn-height-sm: 32px;
+  --btn-height-md: 40px;
+  --btn-height-lg: 48px;
+
+  /* Input sizes */
+  --input-height-sm: 32px;
+  --input-height-md: 40px;
+  --input-height-lg: 48px;
+
+  /* ============================================
+     LAYOUT
+     ============================================ */
+  --sidebar-width: 260px;
+  --sidebar-width-collapsed: 64px;
+  --header-height: 60px;
+  --chat-bar-height: 56px;
+  --content-max-width: 1400px;
+
+  /* ============================================
+     BREAKPOINTS (as custom properties for JS)
+     ============================================ */
+  --bp-mobile: 480px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+  --bp-wide: 1440px;
+}

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mughal Royal Medallion Ornament -->
+  <g id="mughal-royal-medallion">
+    <!-- Outer royal border -->
+    <circle cx="100" cy="100" r="95" fill="none" stroke="#2D16D3" stroke-width="6"/>
+    <circle cx="100" cy="100" r="88" fill="none" stroke="#E8B923" stroke-width="4"/>
+    <circle cx="100" cy="100" r="82" fill="none" stroke="#538237" stroke-width="3"/>
+
+    <!-- Royal blue base -->
+    <circle cx="100" cy="100" r="78" fill="#2D16D3" opacity="0.15"/>
+
+    <!-- Eight Mughal arch motifs around edge -->
+    <path style="fill:#2D16D3;" d="M95,15 Q100,5 105,15 L105,35 Q100,40 95,35 Z"/>
+    <path style="fill:#2D16D3;" d="M95,165 Q100,175 105,165 L105,185 Q100,195 95,185 Z" transform="rotate(180 100 100)"/>
+    <path style="fill:#2D16D3;" d="M15,95 Q5,100 15,105 L35,105 Q40,100 35,95 Z"/>
+    <path style="fill:#2D16D3;" d="M165,95 Q175,100 165,105 L185,105 Q195,100 185,95 Z" transform="rotate(180 100 100)"/>
+
+    <!-- Diagonal arch motifs -->
+    <path style="fill:#538237;" d="M32,32 Q25,25 32,18 L45,31 Q38,38 31,45 Z"/>
+    <path style="fill:#538237;" d="M168,32 Q175,25 168,18 L155,31 Q162,38 169,45 Z"/>
+    <path style="fill:#538237;" d="M32,168 Q25,175 32,182 L45,169 Q38,162 31,155 Z"/>
+    <path style="fill:#538237;" d="M168,168 Q175,175 168,182 L155,169 Q162,162 169,155 Z"/>
+
+    <!-- Large gold star -->
+    <polygon points="100,25 112,75 165,65 125,100 165,135 112,125 100,175 88,125 35,135 75,100 35,65 88,75" fill="#E8B923"/>
+    <polygon points="100,40 108,78 148,70 120,100 148,130 108,122 100,160 92,122 52,130 80,100 52,70 92,78" fill="#2D16D3"/>
+
+    <!-- Teal inner star -->
+    <polygon points="100,55 106,82 135,76 115,100 135,124 106,118 100,145 94,118 65,124 85,100 65,76 94,82" fill="#57828F"/>
+
+    <!-- Central medallion with arch -->
+    <circle cx="100" cy="100" r="28" fill="#538237"/>
+    <circle cx="100" cy="100" r="22" fill="#E8B923"/>
+    <path style="fill:#2D16D3;" d="M88,115 L88,90 Q100,75 112,90 L112,115 Z"/>
+    <path style="fill:#E8B923;" d="M92,115 L92,93 Q100,82 108,93 L108,115 Z"/>
+    <circle cx="100" cy="95" r="5" fill="#538237"/>
+    <circle cx="100" cy="95" r="2" fill="#E8B923"/>
+
+    <!-- Gold accent dots -->
+    <circle cx="100" cy="50" r="4" fill="#E8B923"/>
+    <circle cx="100" cy="150" r="4" fill="#E8B923"/>
+    <circle cx="50" cy="100" r="4" fill="#E8B923"/>
+    <circle cx="150" cy="100" r="4" fill="#E8B923"/>
+    <circle cx="65" cy="65" r="3" fill="#E8B923"/>
+    <circle cx="135" cy="65" r="3" fill="#E8B923"/>
+    <circle cx="65" cy="135" r="3" fill="#E8B923"/>
+    <circle cx="135" cy="135" r="3" fill="#E8B923"/>
+  </g>
+</svg>

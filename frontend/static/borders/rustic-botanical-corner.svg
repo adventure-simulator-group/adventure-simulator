@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rustic Botanical Corner Ornament - Extracted from 16337744 Katie Tang -->
+  <g id="rustic-botanical-corner">
+    <!-- Main burgundy/brown flourish -->
+    <path style="fill:#855956;" d="M0,0 L75,0 Q70,30 55,50 Q40,68 18,75 L0,80 Z"/>
+    <path style="fill:#855956;" d="M0,0 L0,75 Q30,70 50,55 Q68,40 75,18 L80,0 Z"/>
+
+    <!-- Darker accent layer -->
+    <path style="fill:#75433D;" d="M8,8 Q32,12 48,32 Q60,50 55,70 L45,65 Q50,48 40,38 Q30,28 10,25 Z"/>
+
+    <!-- Tan/cream secondary elements -->
+    <path style="fill:#A48366;" d="M55,5 Q72,15 78,38 Q82,55 68,62 Q76,42 55,5 Z"/>
+    <path style="fill:#A48366;" d="M5,55 Q15,72 38,78 Q55,82 62,68 Q42,76 5,55 Z"/>
+
+    <!-- Warm cream highlight details -->
+    <circle cx="22" cy="22" r="8" fill="#E9D899"/>
+    <circle cx="22" cy="22" r="4" fill="#855956"/>
+    <circle cx="48" cy="18" r="5" fill="#E2CDC6"/>
+    <circle cx="18" cy="48" r="5" fill="#E2CDC6"/>
+
+    <!-- Botanical leaf motifs -->
+    <path style="fill:#935B51;" d="M32,8 Q38,22 32,35 Q26,22 32,8 Z"/>
+    <path style="fill:#935B51;" d="M8,32 Q22,38 35,32 Q22,26 8,32 Z"/>
+
+    <!-- Inner decorative lines -->
+    <path style="fill:none;stroke:#BD9B64;stroke-width:3;" d="M0,85 L85,0"/>
+    <path style="fill:none;stroke:#A48366;stroke-width:2;" d="M0,95 L95,0"/>
+    <path style="fill:none;stroke:#935B51;stroke-width:2;" d="M0,105 L105,0"/>
+
+    <!-- Corner geometric pattern -->
+    <polygon points="0,0 15,0 0,15" fill="#E9D899"/>
+    <polygon points="0,0 10,0 0,10" fill="#BD9B64"/>
+    <polygon points="0,0 5,0 0,5" fill="#855956"/>
+
+    <!-- Small floral accent -->
+    <polygon points="38,38 40,33 43,38 48,36 45,40 48,43 43,41 40,46 38,41 33,43 36,40 33,36" fill="#E2CDC6"/>
+  </g>
+</svg>
