@@ -3,6 +3,53 @@
 	import PortraitMedallion from '$lib/components/characters/PortraitMedallion.svelte';
 	import type { Character, Party } from '$lib/spacetimedb/types';
 
+	// Extended character type with time tracking
+	interface CharacterWithTime extends Character {
+		currentTimeDays: number; // Days since year 0 in game world
+	}
+
+	// Renaissance month names
+	const MONTH_NAMES = [
+		'Januarius',
+		'Februarius',
+		'Martius',
+		'Aprilis',
+		'Maius',
+		'Junius',
+		'Julius',
+		'Augustus',
+		'September',
+		'October',
+		'November',
+		'December'
+	];
+
+	// Convert days to renaissance-style date
+	function formatRenaissanceDate(totalDays: number): { year: number; month: string; day: number } {
+		const year = Math.floor(totalDays / 365);
+		const dayOfYear = totalDays % 365;
+
+		// Calculate month and day (simplified 30-day months + remainder)
+		const daysInMonths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+		let remainingDays = dayOfYear;
+		let monthIndex = 0;
+
+		for (let i = 0; i < 12; i++) {
+			if (remainingDays < daysInMonths[i]) {
+				monthIndex = i;
+				break;
+			}
+			remainingDays -= daysInMonths[i];
+			monthIndex = i + 1;
+		}
+
+		return {
+			year: year,
+			month: MONTH_NAMES[monthIndex % 12],
+			day: remainingDays + 1
+		};
+	}
+
 	// Mock data for development
 	const mockParty: Party = {
 		id: 1n,
@@ -13,7 +60,10 @@
 		createdAt: BigInt(Date.now())
 	};
 
-	const mockMembers: Character[] = [
+	// Official time (server time) - all players should be within 1 year of this
+	const officialTimeDays = 568234; // Year 1556, around August
+
+	const mockMembers: CharacterWithTime[] = [
 		{
 			id: 1n,
 			ownerIdentity: 'mock',
@@ -28,7 +78,8 @@
 			xp: 2450n,
 			level: 5,
 			createdAt: BigInt(Date.now()),
-			updatedAt: BigInt(Date.now())
+			updatedAt: BigInt(Date.now()),
+			currentTimeDays: 568231 // 3 days behind official time
 		},
 		{
 			id: 2n,
@@ -44,7 +95,8 @@
 			xp: 1800n,
 			level: 4,
 			createdAt: BigInt(Date.now()),
-			updatedAt: BigInt(Date.now())
+			updatedAt: BigInt(Date.now()),
+			currentTimeDays: 568089 // About 5 months behind
 		},
 		{
 			id: 3n,
@@ -60,12 +112,12 @@
 			xp: 1200n,
 			level: 3,
 			createdAt: BigInt(Date.now()),
-			updatedAt: BigInt(Date.now())
+			updatedAt: BigInt(Date.now()),
+			currentTimeDays: 567869 // About 1 year behind (max allowed)
 		}
 	];
 
 	let selectedMemberId = $state<bigint | null>(null);
-
 
 	function selectMember(id: bigint) {
 		selectedMemberId = selectedMemberId === id ? null : id;
@@ -73,6 +125,13 @@
 
 	function isLeader(characterId: bigint): boolean {
 		return characterId === mockParty.leaderId;
+	}
+
+	function getTimeSyncStatus(memberTimeDays: number): 'synced' | 'behind' | 'far-behind' {
+		const daysBehind = officialTimeDays - memberTimeDays;
+		if (daysBehind <= 30) return 'synced';
+		if (daysBehind <= 180) return 'behind';
+		return 'far-behind';
 	}
 </script>
 
@@ -95,6 +154,8 @@
 				<h2 class="section-title">Party Roster</h2>
 				<div class="roster">
 					{#each mockMembers as member}
+						{@const date = formatRenaissanceDate(member.currentTimeDays)}
+						{@const syncStatus = getTimeSyncStatus(member.currentTimeDays)}
 						<div
 							class="member-card"
 							class:selected={selectedMemberId === member.id}
@@ -119,6 +180,14 @@
 									</span>
 									<span class="level-badge">Lvl {member.level}</span>
 								</div>
+							</div>
+							<div class="member-time" class:synced={syncStatus === 'synced'} class:behind={syncStatus === 'behind'} class:far-behind={syncStatus === 'far-behind'}>
+								<div class="time-ornament-top"></div>
+								<div class="time-year">{date.year}</div>
+								<div class="time-divider"></div>
+								<div class="time-month">{date.month}</div>
+								<div class="time-day">{date.day}</div>
+								<div class="time-ornament-bottom"></div>
 							</div>
 						</div>
 					{/each}
@@ -330,6 +399,132 @@
 		font-family: var(--font-stats);
 		font-size: var(--text-xs);
 		color: var(--ink-faded);
+	}
+
+	/* Time Display - Renaissance Style */
+	.member-time {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: var(--space-2) var(--space-3);
+		min-width: 90px;
+		background: linear-gradient(
+			135deg,
+			var(--parchment-light) 0%,
+			var(--parchment-base) 50%,
+			var(--parchment-light) 100%
+		);
+		border: 1px solid var(--parchment-shadow);
+		border-radius: var(--radius-sm);
+		position: relative;
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.5),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+	}
+
+	.member-time::before,
+	.member-time::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 60%;
+		height: 1px;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			var(--ornament-gold) 20%,
+			var(--ornament-gold) 80%,
+			transparent 100%
+		);
+	}
+
+	.member-time::before {
+		top: 4px;
+	}
+
+	.member-time::after {
+		bottom: 4px;
+	}
+
+	.member-time.synced {
+		border-color: var(--ornament-green);
+	}
+
+	.member-time.behind {
+		border-color: var(--ornament-gold);
+	}
+
+	.member-time.far-behind {
+		border-color: var(--ornament-red-muted);
+		background: linear-gradient(
+			135deg,
+			var(--parchment-light) 0%,
+			#f5ebe0 50%,
+			var(--parchment-light) 100%
+		);
+	}
+
+	.time-ornament-top,
+	.time-ornament-bottom {
+		width: 24px;
+		height: 6px;
+		background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 6'%3E%3Cpath d='M0 3 L4 1 L8 3 L12 0 L16 3 L20 1 L24 3' stroke='%23b8860b' fill='none' stroke-width='0.5'/%3E%3C/svg%3E") center/contain no-repeat;
+		opacity: 0.6;
+	}
+
+	.time-year {
+		font-family: var(--font-display);
+		font-size: var(--text-lg);
+		font-weight: 600;
+		color: var(--ink-dark);
+		letter-spacing: var(--tracking-wider);
+		line-height: 1;
+		margin-top: var(--space-1);
+	}
+
+	.time-divider {
+		width: 100%;
+		height: 1px;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			var(--ink-faded) 30%,
+			var(--ink-faded) 70%,
+			transparent 100%
+		);
+		margin: 2px 0;
+	}
+
+	.time-month {
+		font-family: var(--font-body);
+		font-size: var(--text-xs);
+		font-style: italic;
+		color: var(--ink-brown);
+		letter-spacing: var(--tracking-wide);
+		text-transform: capitalize;
+	}
+
+	.time-day {
+		font-family: var(--font-stats);
+		font-size: var(--text-sm);
+		font-weight: 500;
+		color: var(--ink-dark);
+		line-height: 1;
+		margin-bottom: var(--space-1);
+	}
+
+	/* Hover effect for time display */
+	.member-card:hover .member-time {
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.5),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+			0 2px 4px rgba(0, 0, 0, 0.1);
+	}
+
+	.member-time.far-behind .time-year {
+		color: var(--ornament-red);
 	}
 
 	.add-member-btn {
