@@ -173,14 +173,10 @@
 
 <PageFrame variant="full">
 	<div class="settlement-page">
-		<!-- Left Sidebar: Stats -->
+		<!-- Left Sidebar: Stats & Services -->
 		<aside class="sidebar sidebar-left">
 			<div class="sidebar-section">
 				<StatsPanel title="Population" stats={populationStats} />
-			</div>
-
-			<div class="sidebar-section">
-				<StatsPanel title="Governance" stats={governanceStats} />
 			</div>
 
 			<div class="sidebar-section">
@@ -239,13 +235,17 @@
 			</section>
 		</main>
 
-		<!-- Right Sidebar: About -->
+		<!-- Right Sidebar: About & Governance -->
 		<aside class="sidebar sidebar-right">
 			<div class="sidebar-section">
 				<h3 class="section-title">About {$currentSettlement?.name ?? 'Settlement'}</h3>
 				<p class="about-text">
 					{displaySettlement?.description ?? 'A settlement in the realm.'}
 				</p>
+			</div>
+
+			<div class="sidebar-section">
+				<StatsPanel title="Governance" stats={governanceStats} />
 			</div>
 
 			<div class="sidebar-section">
@@ -428,7 +428,7 @@
 	@media (min-width: 1024px) {
 		.settlement-page {
 			display: grid;
-			grid-template-columns: 240px 1fr 280px;
+			grid-template-columns: 360px 1fr 420px;
 			gap: var(--space-6);
 		}
 
@@ -449,7 +449,7 @@
 	@media (min-width: 768px) and (max-width: 1023px) {
 		.settlement-page {
 			display: grid;
-			grid-template-columns: 220px 1fr;
+			grid-template-columns: 330px 1fr;
 			gap: var(--space-4);
 		}
 
