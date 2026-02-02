@@ -58,8 +58,7 @@
 		top: 0;
 		z-index: var(--z-sticky);
 		background-color: var(--parchment-dark);
-		border-bottom: 2px solid var(--ornament-dark);
-		box-shadow: 0 2px 8px rgba(44, 36, 22, 0.15);
+		border-bottom: 1px solid var(--parchment-shadow);
 	}
 
 	.header-top {

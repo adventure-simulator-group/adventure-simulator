@@ -93,6 +93,11 @@
 						{/if}
 					</button>
 				{/each}
+				<button class="close-chat" onclick={() => chat.toggleChat()} aria-label="Close chat">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M18 6L6 18M6 6l12 12" />
+					</svg>
+				</button>
 			</div>
 
 			<!-- Messages -->
@@ -242,6 +247,19 @@
 		color: var(--ink-black);
 		border-bottom-color: var(--ornament-gold);
 		background-color: var(--parchment-light);
+	}
+
+	.close-chat {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: var(--space-2);
+		color: var(--ink-medium);
+		transition: color var(--duration-fast) var(--ease-out);
+	}
+
+	.close-chat:hover {
+		color: var(--ink-dark);
 	}
 
 	.channel-unread {

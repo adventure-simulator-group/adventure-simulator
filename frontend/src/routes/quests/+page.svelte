@@ -96,17 +96,6 @@
 		return 'var(--ornament-red)';
 	}
 
-	function getEnemyIcon(enemyType: string): string {
-		const icons: Record<string, string> = {
-			Bandits: '🗡️',
-			Wolves: '🐺',
-			Goblins: '👺',
-			Undead: '💀',
-			Orcs: '👹',
-			Beasts: '🐻'
-		};
-		return icons[enemyType] || '⚔️';
-	}
 
 	function acceptQuest(quest: Quest) {
 		console.log('Accepting quest:', quest.title);
@@ -167,7 +156,6 @@
 					onclick={() => (selectedQuest = selectedQuest?.id === quest.id ? null : quest)}
 				>
 					<div class="quest-header">
-						<span class="enemy-icon">{getEnemyIcon(quest.enemyType)}</span>
 						<h3 class="quest-title">{quest.title}</h3>
 						<span
 							class="difficulty-badge"
@@ -192,15 +180,12 @@
 
 					<div class="quest-rewards">
 						<div class="reward">
-							<span class="reward-icon">💰</span>
 							<span class="reward-value">{quest.rewardGold.toString()} Gold</span>
 						</div>
 						<div class="reward">
-							<span class="reward-icon">⭐</span>
 							<span class="reward-value">{quest.rewardXp.toString()} XP</span>
 						</div>
 						<div class="reward">
-							<span class="reward-icon">🙏</span>
 							<span class="reward-value">{quest.rewardFavor.toString()} Favor</span>
 						</div>
 					</div>
@@ -317,10 +302,6 @@
 		margin-bottom: var(--space-3);
 	}
 
-	.enemy-icon {
-		font-size: var(--text-xl);
-	}
-
 	.quest-title {
 		flex: 1;
 		font-family: var(--font-display);
@@ -382,10 +363,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-1);
-	}
-
-	.reward-icon {
-		font-size: var(--text-base);
 	}
 
 	.reward-value {

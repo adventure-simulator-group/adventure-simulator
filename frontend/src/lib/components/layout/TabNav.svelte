@@ -37,13 +37,6 @@
 			</li>
 		{/each}
 	</ul>
-
-	<!-- Decorative divider under tabs -->
-	<div class="tab-divider" aria-hidden="true">
-		<span class="divider-line"></span>
-		<span class="divider-ornament"></span>
-		<span class="divider-line"></span>
-	</div>
 </nav>
 
 <style>
@@ -89,38 +82,6 @@
 		background-color: var(--parchment-light);
 	}
 
-	/* Tab divider */
-	.tab-divider {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-2);
-		padding: var(--space-1) 0;
-	}
-
-	.divider-line {
-		flex: 1;
-		max-width: 120px;
-		height: 1px;
-		background: linear-gradient(
-			to right,
-			transparent,
-			var(--ornament-gold) 20%,
-			var(--ornament-gold) 80%,
-			transparent
-		);
-	}
-
-	.divider-ornament {
-		width: 16px;
-		height: 16px;
-		background-image: url('/borders/divider.svg');
-		background-size: contain;
-		background-repeat: no-repeat;
-		background-position: center;
-		opacity: 0.8;
-	}
-
 	/* Responsive: Bottom navigation on mobile */
 	@media (max-width: 768px) {
 		.tab-nav {
@@ -149,10 +110,6 @@
 		.tab-link.active {
 			border-bottom: none;
 			border-top-color: var(--ornament-gold);
-		}
-
-		.tab-divider {
-			display: none;
 		}
 	}
 </style>

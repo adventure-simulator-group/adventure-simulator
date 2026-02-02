@@ -3,8 +3,11 @@
 	import '$lib/styles/global.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import ChatBar from '$lib/components/layout/ChatBar.svelte';
+	import Header from '$lib/components/layout/Header.svelte';
 	import { connection } from '$lib/stores/connection';
 	import { characters } from '$lib/stores/character';
+	import { formattedDate, formattedTime } from '$lib/stores/time';
+	import { settlementName } from '$lib/stores/settlement';
 
 	let { children } = $props();
 
@@ -43,7 +46,10 @@
 </svelte:head>
 
 <div class="app parchment-texture">
-	{@render children()}
+	<Header gameDate={$formattedDate} gameTime={$formattedTime} settlementName={$settlementName} />
+	<main class="main-content">
+		{@render children()}
+	</main>
 	<ChatBar />
 </div>
 
@@ -52,5 +58,18 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.main-content {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Account for fixed bottom nav on mobile */
+	@media (max-width: 768px) {
+		.main-content {
+			padding-bottom: calc(60px + env(safe-area-inset-bottom));
+		}
 	}
 </style>

@@ -130,39 +130,19 @@
 	.medallion-frame {
 		position: relative;
 		border-radius: var(--radius-full);
-		padding: 3px;
-		background: linear-gradient(
-			135deg,
-			var(--ornament-gold-light) 0%,
-			var(--ornament-dark) 40%,
-			var(--ornament-gold) 100%
-		);
-		box-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.2),
-			inset 0 1px 2px rgba(255, 255, 255, 0.2);
-		transition: box-shadow var(--duration-fast) var(--ease-out);
-	}
-
-	.has-frame .medallion-frame {
-		background-image: url('/borders/medallion-frame.svg');
-		background-size: cover;
-		background-position: center;
-		padding: 8%;
+		padding: 2px;
+		background-color: var(--parchment-shadow);
+		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 
 	button.medallion:hover .medallion-frame {
-		box-shadow:
-			0 4px 8px rgba(0, 0, 0, 0.25),
-			inset 0 1px 2px rgba(255, 255, 255, 0.3),
-			0 0 12px rgba(196, 164, 78, 0.3);
+		background-color: var(--ink-medium);
 	}
 
 	/* Selected state */
 	.selected .medallion-frame {
-		box-shadow:
-			0 0 0 3px var(--ornament-gold),
-			0 4px 8px rgba(0, 0, 0, 0.3),
-			0 0 16px rgba(196, 164, 78, 0.4);
+		background-color: var(--ink-dark);
+		box-shadow: 0 0 0 2px var(--parchment-base), 0 0 0 4px var(--ink-dark);
 	}
 
 	/* Inner circle (portrait container) */
@@ -248,9 +228,6 @@
 	}
 
 	button.medallion:focus-visible .medallion-frame {
-		box-shadow:
-			0 0 0 3px var(--ornament-gold),
-			0 0 0 5px var(--parchment-base),
-			0 0 0 7px var(--ornament-dark);
+		box-shadow: 0 0 0 2px var(--parchment-base), 0 0 0 4px var(--ink-dark);
 	}
 </style>

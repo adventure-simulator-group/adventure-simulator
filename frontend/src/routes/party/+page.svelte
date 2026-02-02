@@ -66,28 +66,6 @@
 
 	let selectedMemberId = $state<bigint | null>(null);
 
-	function getStatusIcon(status: string): string {
-		const icons: Record<string, string> = {
-			Idle: '🏠',
-			Traveling: '🚶',
-			InMission: '⚔️',
-			Resting: '😴'
-		};
-		return icons[status] || '❓';
-	}
-
-	function getRaceIcon(race: string): string {
-		const icons: Record<string, string> = {
-			Human: '👤',
-			Elf: '🧝',
-			Dwarf: '🧔',
-			Halfling: '🧒',
-			Orc: '👹',
-			Goblin: '👺',
-			Ratling: '🐀'
-		};
-		return icons[race] || '👤';
-	}
 
 	function selectMember(id: bigint) {
 		selectedMemberId = selectedMemberId === id ? null : id;
@@ -107,7 +85,6 @@
 		<header class="page-header">
 			<h1>Party Management</h1>
 			<div class="party-status">
-				<span class="status-icon">{getStatusIcon(mockParty.status)}</span>
 				<span class="status-text">{mockParty.status}</span>
 			</div>
 		</header>
@@ -138,7 +115,7 @@
 								</div>
 								<div class="member-details">
 									<span class="race-badge">
-										{getRaceIcon(member.race)} {member.race}
+										{member.race}
 									</span>
 									<span class="level-badge">Lvl {member.level}</span>
 								</div>
@@ -163,7 +140,7 @@
 						<div class="member-details-grid">
 							<div class="detail-row">
 								<span class="detail-label">Race</span>
-								<span class="detail-value">{getRaceIcon(member.race)} {member.race}</span>
+								<span class="detail-value">{member.race}</span>
 							</div>
 							<div class="detail-row">
 								<span class="detail-label">Level</span>
@@ -207,19 +184,15 @@
 				<h2 class="section-title">Party Actions</h2>
 				<div class="action-buttons">
 					<a href="/quests" class="action-btn large">
-						<span class="action-icon">📜</span>
 						<span class="action-label">Browse Quests</span>
 					</a>
 					<button class="action-btn large" disabled={mockParty.questId === null}>
-						<span class="action-icon">⚔️</span>
 						<span class="action-label">Enter Mission</span>
 					</button>
 					<button class="action-btn large">
-						<span class="action-icon">😴</span>
 						<span class="action-label">Rest Party</span>
 					</button>
 					<button class="action-btn large danger">
-						<span class="action-icon">🚪</span>
 						<span class="action-label">Disband Party</span>
 					</button>
 				</div>
@@ -255,10 +228,6 @@
 		padding: var(--space-2) var(--space-4);
 		background: var(--parchment-dark);
 		border-radius: var(--radius-md);
-	}
-
-	.status-icon {
-		font-size: var(--text-xl);
 	}
 
 	.status-text {
@@ -491,10 +460,6 @@
 	.action-btn.large {
 		flex-direction: column;
 		padding: var(--space-4);
-	}
-
-	.action-icon {
-		font-size: var(--text-2xl);
 	}
 
 	.action-label {

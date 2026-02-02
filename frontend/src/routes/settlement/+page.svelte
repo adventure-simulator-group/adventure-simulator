@@ -136,13 +136,11 @@
 	// Reactive stats for the sidebar
 	const populationStats = $derived([
 		{
-			icon: '👥',
 			label: 'Population',
 			value: displaySettlement?.population?.toLocaleString() ?? '—',
 			progress: 70
 		},
 		{
-			icon: '📈',
 			label: 'Prosperity',
 			value: '78%',
 			progress: 78
@@ -158,7 +156,6 @@
 
 	const religionStats = $derived([
 		{
-			icon: '⛪',
 			label: 'Religion',
 			value: displaySettlement?.religion?.primary ?? '—',
 			progress: displaySettlement?.religion?.influence ?? 0
@@ -194,19 +191,15 @@
 				<h3 class="section-title">Services</h3>
 				<nav class="services-nav">
 					<a href="/settlement/merchants" class="service-link">
-						<span class="service-icon">🏪</span>
 						<span class="service-name">Merchants</span>
 					</a>
 					<a href="/settlement/tavern" class="service-link">
-						<span class="service-icon">🍺</span>
 						<span class="service-name">Tavern</span>
 					</a>
 					<a href="/settlement/quests" class="service-link">
-						<span class="service-icon">📜</span>
 						<span class="service-name">Quest Board</span>
 					</a>
 					<a href="/settlement/services" class="service-link">
-						<span class="service-icon">⚒️</span>
 						<span class="service-name">Smith</span>
 					</a>
 				</nav>
@@ -225,7 +218,6 @@
 				<div class="settlement-art">
 					<!-- Placeholder for settlement artwork -->
 					<div class="art-placeholder">
-						<span class="art-icon">🏰</span>
 						<span class="art-label">Settlement View</span>
 					</div>
 				</div>
@@ -325,10 +317,6 @@
 		color: var(--ink-dark);
 	}
 
-	.service-icon {
-		font-size: var(--text-lg);
-	}
-
 	.service-name {
 		font-family: var(--font-stats);
 		font-size: var(--text-sm);
@@ -385,11 +373,6 @@
 		justify-content: center;
 		gap: var(--space-2);
 		color: var(--ink-faded);
-	}
-
-	.art-icon {
-		font-size: 4rem;
-		opacity: 0.5;
 	}
 
 	.art-label {
