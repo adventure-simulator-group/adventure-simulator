@@ -1,0 +1,31 @@
+# Render.com deployment configuration
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: Connect your GitHub repo to Render, or use:
+#   render blueprint launch
+#
+# Note: You must set SPACETIMEDB_HOST and SPACETIMEDB_DATABASE
+# in the Render dashboard after deployment.
+
+services:
+  - type: web
+    name: adventure-simulator-web
+    runtime: docker
+    dockerfilePath: ./crates/strategic-web/Dockerfile
+    dockerContext: .
+    plan: free  # or starter, standard, etc.
+    healthCheckPath: /health
+    envVars:
+      # Render assigns a PORT env var - we construct BIND_ADDRESS from it
+      - key: BIND_ADDRESS
+        value: 0.0.0.0:10000
+      - key: STATIC_DIR
+        value: /static
+      # SpacetimeDB maincloud (default) - override in dashboard if using different host
+      - key: SPACETIMEDB_HOST
+        value: https://maincloud.spacetimedb.com
+      - key: SPACETIMEDB_DATABASE
+        value: strategic-db
+      # Optional auth token - set in dashboard if needed
+      - key: SPACETIMEDB_TOKEN
+        sync: false

@@ -1,0 +1,87 @@
+/**
+ * CSS Compatibility Layer
+ * Maps adventurebackups CSS variables to adventure-frontend Renaissance theme
+ */
+
+:root {
+	/* Background colors */
+	--color-bg-primary: var(--parchment-base);
+	--color-bg-secondary: var(--parchment-light);
+	--color-bg-tertiary: var(--parchment-dark);
+	--color-surface-hover: var(--parchment-medium);
+
+	/* Text colors */
+	--color-text-primary: var(--ink-dark);
+	--color-text-secondary: var(--ink-brown);
+	--color-text-muted: var(--ink-faded);
+
+	/* Border colors */
+	--color-border: var(--parchment-shadow);
+	--color-border-strong: var(--ornament-dark);
+
+	/* Accent colors */
+	--color-accent-primary: var(--ornament-gold);
+	--color-accent-secondary: var(--ornament-green);
+
+	/* Status colors */
+	--color-success: var(--ornament-green);
+	--color-warning: var(--ornament-gold);
+	--color-error: var(--ornament-red);
+
+	/* Health colors */
+	--color-health-full: var(--ornament-green);
+	--color-health-medium: var(--ornament-gold);
+	--color-health-critical: var(--ornament-red);
+	--color-health-destroyed: var(--ink-faded);
+
+	/* Incapacitation colors */
+	--color-incap-imbalance: #8b5cf6; /* Purple */
+	--color-incap-exhaustion: #f59e0b; /* Amber */
+	--color-incap-pain: #ef4444; /* Red */
+	--color-incap-blood: #dc2626; /* Dark red */
+	--color-incap-fear: #6366f1; /* Indigo */
+	--color-incap-fatigue: #64748b; /* Slate */
+
+	/* Skill category colors */
+	--color-skill-will: #8b5cf6;
+	--color-skill-charisma: #ec4899;
+	--color-skill-medicine: #10b981;
+	--color-skill-faith: #f59e0b;
+	--color-skill-melee: #ef4444;
+	--color-skill-ranged: #3b82f6;
+	--color-skill-block: #6366f1;
+	--color-skill-stealth: #64748b;
+	--color-skill-balance: #14b8a6;
+	--color-skill-surgeon: #84cc16;
+
+	/* Typography */
+	--font-family-display: var(--font-display);
+	--font-family-body: var(--font-body);
+	--font-weight-normal: 400;
+	--font-weight-medium: 500;
+	--font-weight-semibold: 600;
+	--font-weight-bold: 700;
+	--font-size-xs: var(--text-xs);
+	--font-size-sm: var(--text-sm);
+	--font-size-base: var(--text-base);
+	--font-size-lg: var(--text-lg);
+	--font-size-xl: var(--text-xl);
+
+	/* Spacing - map to existing space variables */
+	/* Note: adventure-frontend uses --space-N, adventurebackups may use different */
+
+	/* Border radius */
+	--radius-sm: var(--radius-sm);
+	--radius-md: var(--radius-md);
+	--radius-lg: var(--radius-lg);
+	--radius-full: var(--radius-full);
+
+	/* Shadows */
+	--shadow-sm: var(--shadow-sm);
+	--shadow-md: var(--shadow-md);
+	--shadow-lg: var(--shadow-lg);
+
+	/* Transitions */
+	--transition-fast: var(--duration-fast);
+	--transition-normal: var(--duration-normal);
+}
