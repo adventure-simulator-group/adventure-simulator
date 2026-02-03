@@ -15,6 +15,7 @@ clap.workspace = true
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true
 wasm-bindgen.workspace = true
+web-sys = { version = "0.3", features = ["Window", "Location"] }
 
 [lints]
 workspace = true

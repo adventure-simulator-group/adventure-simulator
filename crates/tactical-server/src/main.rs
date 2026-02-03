@@ -109,14 +109,6 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
         .build()
         .expect("Failed to connect to SpacetimeDB");
 
-    info!("Calling tactical_server_ready reducer");
-    conn.reducers
-        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
-        .expect("Failed to call tactical_server_ready");
-
-    conn.frame_tick()?;
-    info!("SpacetimeDB notified - server marked as ready");
-
     commands.insert_resource(SpacetimeConn(conn));
 
     Ok(())
@@ -129,6 +121,9 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
 
     commands.spawn(AdventureSimulatorServer {
         addr: args.addr,
+        protocol: ServerProtocol::WebTransport {
+            certificate: WebTransportCertificateSettings::default(),
+        },
         protocol_settings: ProtocolSettings::default(),
     });
 
@@ -178,8 +173,21 @@ fn check_mission_timeout(
 fn on_server_started_hook(
     _event: On<Add, server::Started>,
     args: Res<Args>,
+    conn: Res<SpacetimeConn>,
     mut commands: Commands,
 ) {
+    // Read certificate digest from file (written by server's on_add hook)
+    let cert_digest = std::fs::read_to_string("certificates/digest.txt").unwrap_or_default();
+
+    // Notify SpacetimeDB that server is ready with cert digest
+    info!("Calling tactical_server_ready reducer with cert_digest");
+    conn.0
+        .reducers
+        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), cert_digest)
+        .expect("Failed to call tactical_server_ready");
+    conn.0.frame_tick().ok();
+    info!("SpacetimeDB notified - server marked as ready");
+
     // Spawn physical scene
     commands.spawn((
         GameSceneId(args.scene_key.clone()),
