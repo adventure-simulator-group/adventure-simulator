@@ -238,6 +238,70 @@ certs sans="127.0.0.1,localhost":
     @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
     @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
 
+# Run WASM game in browser (standalone WebTransport test)
+web: preflight build-wasm spacetime-start publish
+    #!/usr/bin/env bash
+    set -e
+
+    # Remove old certificate so we can detect when new one is written
+    rm -f certificates/digest.txt
+
+    echo "Starting tactical server..."
+    cargo build --package tactical-server
+    cargo run --package tactical-server -- \
+        --addr "0.0.0.0:{{tactical_port}}" \
+        --mission-id web-test \
+        --scene-key town_a \
+        --spacetimedb-url {{spacetime_url}} \
+        --spacetimedb-module {{spacetime_module}} \
+        --no-timeout &
+    SERVER_PID=$!
+
+    # Wait for certificate to be generated
+    echo "Waiting for certificate..."
+    for i in {1..30}; do
+        if [ -f "certificates/digest.txt" ]; then
+            CERT=$(cat certificates/digest.txt)
+            if [ ${#CERT} -eq 64 ]; then
+                break
+            fi
+        fi
+        sleep 0.5
+    done
+
+    if [ ! -f "certificates/digest.txt" ]; then
+        echo "Certificate not generated!"
+        kill $SERVER_PID 2>/dev/null
+        exit 1
+    fi
+
+    CERT=$(cat certificates/digest.txt)
+    echo "Certificate: $CERT"
+
+    # Start UI server
+    echo "Starting web server..."
+    cd "{{strategic_static}}" && python3 -m http.server {{ui_port}} &
+    HTTP_PID=$!
+    sleep 1
+
+    URL="http://localhost:{{ui_port}}/test.html?server=127.0.0.1:{{tactical_port}}&cert=${CERT}"
+    echo ""
+    echo "==================================="
+    echo "Open in Chrome/Edge:"
+    echo "$URL"
+    echo "==================================="
+    echo ""
+
+    # Open browser
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$URL" >/dev/null 2>&1 || true
+    elif command -v open >/dev/null 2>&1; then
+        open "$URL" >/dev/null 2>&1 || true
+    fi
+
+    trap "kill $SERVER_PID $HTTP_PID 2>/dev/null" EXIT
+    wait
+
 # Workspace utilities
 check:
     @cargo check --workspace
