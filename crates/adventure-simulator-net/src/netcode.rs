@@ -29,7 +29,9 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
 
         app.register_component::<Player>();
         app.register_component::<PlayerId>();
-        app.register_component::<GameSceneId>();
         app.register_component::<Transform>();
+
+        app.register_component::<SceneId>();
+        app.register_component::<SceneTerrain>();
     }
 }

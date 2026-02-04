@@ -112,7 +112,7 @@ pub fn enter_mission(
     scene_key: String,
 ) -> Result<(), String> {
     // Validate scene
-    if scene_key != "town_a" && scene_key != "town_b" {
+    if scene_key != "hills" && scene_key != "desert" {
         return Err(format!("Invalid scene: {}", scene_key));
     }
 

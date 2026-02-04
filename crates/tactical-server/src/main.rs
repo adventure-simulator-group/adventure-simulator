@@ -6,6 +6,8 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
+mod terrain;
+
 use std::net::SocketAddr;
 
 use adventure_simulator_core::prelude::*;
@@ -22,8 +24,13 @@ use bevy::prelude::*;
 use clap::{ArgAction, Parser};
 use strategic_db_client::{commit_mission, tactical_server_ready, DbConnection};
 
+use crate::terrain::TerrainGenerator;
+
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
+
+/// Level map size.
+const TERRAIN_SIZE: usize = 100;
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "tactical-server")]
@@ -37,9 +44,17 @@ struct Args {
     #[arg(long)]
     mission_id: String,
 
-    /// Scene key (e.g., "town_a", "town_b")
+    /// Scene key (e.g., "hills", "desert")
     #[arg(long)]
     scene_key: String,
+
+    /// Scene allowed physical width (x-size).
+    #[arg(long, default_value_t = TERRAIN_SIZE)]
+    scene_width: usize,
+
+    /// Scene allowed physical depth (z-size).
+    #[arg(long, default_value_t = TERRAIN_SIZE)]
+    scene_depth: usize,
 
     /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
@@ -180,13 +195,53 @@ fn on_server_started_hook(
     args: Res<Args>,
     mut commands: Commands,
 ) {
+    let generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
+
+    let scene_height = match args.scene_key.as_str() {
+        "hills" => 7,
+        "desert" => 2,
+        id => {
+            warn!("Unknown scene: {id}");
+            0
+        }
+    };
+    let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
+    let terrain_collider = terrain.collider();
+
     // Spawn physical scene
     commands.spawn((
-        GameSceneId(args.scene_key.clone()),
+        SceneId(args.scene_key.clone()),
+        terrain,
         RigidBody::Static,
-        Collider::half_space(Vec3::Y),
+        terrain_collider,
         Transform::from_xyz(0.0, 0.0, 0.0),
         Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    // Spawn invisible walls at map ends
+    let scene_width = args.scene_width as f32;
+    let scene_depth = args.scene_depth as f32;
+    commands.spawn((
+        RigidBody::Static,
+        Transform::default(),
+        children![
+            (
+                Collider::half_space(Vec3::X),
+                Transform::from_xyz(-scene_width * 0.5, 0.0, 0.0),
+            ),
+            (
+                Collider::half_space(Vec3::NEG_X),
+                Transform::from_xyz(scene_width * 0.5, 0.0, 0.0),
+            ),
+            (
+                Collider::half_space(Vec3::Z),
+                Transform::from_xyz(0.0, 0.0, -scene_depth * 0.5),
+            ),
+            (
+                Collider::half_space(Vec3::NEG_Z),
+                Transform::from_xyz(0.0, 0.0, scene_depth * 0.5),
+            )
+        ],
     ));
 
     info!("Creating a game scene for {}", args.scene_key);
@@ -217,7 +272,8 @@ fn on_new_client_connected_hook(
             PlayerId(client_id.to_bits()),
             CharacterController::default(),
             Collider::cylinder(0.4, 1.2),
-            Transform::from_xyz(0.0, 200.0, 0.0),
+            CollisionMargin(0.01),
+            Transform::from_xyz(0.0, 50.0, 0.0),
             Replicate::to_clients(NetworkTarget::All),
             ControlledBy {
                 owner: event.entity,

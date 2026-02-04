@@ -12,6 +12,9 @@ use adventure_simulator_core::prelude::*;
 use adventure_simulator_net::lightyear::prelude::{ReplicationSender, SendUpdatesMode};
 use adventure_simulator_net::prelude::*;
 use adventure_simulator_net::protocol::SEND_INTERVAL;
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::light::light_consts::lux;
+use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::{
     input::common_conditions::input_just_pressed,
@@ -106,23 +109,26 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
 fn setup_scene(mut commands: Commands) {
     // Spawn a directional light
     commands.spawn((
-        Transform::from_xyz(0.0, 1.0, 0.0).looking_at(vec3(1.0, -2.0, -2.0), Vec3::Y),
+        Transform::default().looking_at(vec3(1.0, -2.0, -2.0), Vec3::Y),
         DirectionalLight {
             shadows_enabled: true,
+            illuminance: lux::OVERCAST_DAY * 2.0,
             ..default()
         },
     ));
 
     commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.4, 0.4, 0.6),
+        color: Srgba::rgb(1.0, 0.9, 0.9).into(),
         brightness: 500.0,
         affects_lightmapped_meshes: true,
+        ..default()
     });
 
     // Camera
     commands.spawn((
         Camera3d::default(),
-        // Transform::from_xyz(0.0, CAMERA_HEIGHT, CAMERA_DISTANCE).looking_at(Vec3::ZERO, Vec3::Y),
+        Tonemapping::BlenderFilmic,
+        Bloom::NATURAL,
     ));
 
     // UI - Controls text
@@ -160,53 +166,58 @@ fn setup_scene(mut commands: Commands) {
 }
 
 fn on_game_scene_added_hook(
-    event: On<Add, GameSceneId>,
+    event: On<Add, SceneId>,
     mut commands: Commands,
-    query: Query<&GameSceneId>,
+    query: Query<(&SceneId, &SceneTerrain)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
-    let id = query.get(event.entity)?;
+    let (id, terrain) = query.get(event.entity)?;
     info!("Spawning a scene {id:?}");
 
     let floor_color = match id.0.as_str() {
-        "town_a" => Color::srgb_u8(96, 108, 56),
-        "town_b" => Color::srgb_u8(221, 161, 94),
+        "hills" => Color::srgb_u8(96, 108, 56),
+        "desert" => Color::srgb_u8(221, 161, 94),
         id => {
             warn!("Unknown scene: {id}");
             Color::BLACK
         }
     };
 
-    // Ground plane
+    // Terrain mesh
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(100.0, 100.0))),
+        Mesh3d(meshes.add(terrain.mesh())),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: floor_color,
-            perceptual_roughness: 0.9,
+            perceptual_roughness: 0.8,
+            metallic: 0.0,
             ..default()
         })),
     ));
 
     // Some obstacles/props for visual interest
-    let mut spawn_prop = |position: Vec3, color: Color| {
+    let mut spawn_prop = |pos: Vec2, terrain: &SceneTerrain, color: Color| {
         commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.0, position.y * 2.0, 1.0))),
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: color,
-                metallic: 0.2,
-                perceptual_roughness: 0.7,
+                metallic: 0.5,
+                perceptual_roughness: 0.5,
                 ..default()
             })),
-            Transform::from_translation(position),
+            Transform::from_translation(Vec3::new(
+                pos.x,
+                terrain.height_at(pos).unwrap_or_default() + 1.0,
+                pos.y,
+            )),
         ));
     };
-    spawn_prop(Vec3::new(5.0, 0.5, 5.0), Color::srgb(0.4, 0.4, 0.8));
-    spawn_prop(Vec3::new(-5.0, 0.5, 5.0), Color::srgb(0.8, 0.4, 0.4));
-    spawn_prop(Vec3::new(5.0, 0.5, -5.0), Color::srgb(0.4, 0.8, 0.4));
-    spawn_prop(Vec3::new(-5.0, 0.5, -5.0), Color::srgb(0.8, 0.8, 0.4));
-    spawn_prop(Vec3::new(10.0, 0.75, 0.0), Color::srgb(0.6, 0.3, 0.6));
-    spawn_prop(Vec3::new(-10.0, 0.75, 0.0), Color::srgb(0.3, 0.6, 0.6));
+    spawn_prop(Vec2::new(5.0, 5.0), terrain, Color::srgb(0.4, 0.4, 0.8));
+    spawn_prop(Vec2::new(-5.0, 5.0), terrain, Color::srgb(0.8, 0.4, 0.4));
+    spawn_prop(Vec2::new(5.0, -5.0), terrain, Color::srgb(0.4, 0.8, 0.4));
+    spawn_prop(Vec2::new(-5.0, -5.0), terrain, Color::srgb(0.8, 0.8, 0.4));
+    spawn_prop(Vec2::new(10.0, 0.0), terrain, Color::srgb(0.6, 0.3, 0.6));
+    spawn_prop(Vec2::new(-10.0, 0.0), terrain, Color::srgb(0.3, 0.6, 0.6));
 
     Ok(())
 }

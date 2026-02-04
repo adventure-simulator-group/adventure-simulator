@@ -217,7 +217,7 @@ spawner: build-tactical
         --base-port {{tactical_port}}
 
 # Run a single tactical server (for testing)
-tactical mission_id="test-mission" scene_key="town_a":
+tactical mission_id="test-mission" scene_key="hills":
     @cargo run --package tactical-server -- \
         --addr "0.0.0.0:{{tactical_port}}" \
         --mission-id {{mission_id}} \
