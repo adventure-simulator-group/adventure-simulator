@@ -34,6 +34,3 @@ wiki/.obsidian/
 # Mdbook
 book
 /index.html
-
-# WebTransport certificates (auto-generated)
-certificates/

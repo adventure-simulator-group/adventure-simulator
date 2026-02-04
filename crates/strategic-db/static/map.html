@@ -298,14 +298,6 @@
 
         async function loadGame(server) {
             try {
-                // Set certificate digest in URL hash for WebTransport
-                if (server.cert_digest) {
-                    window.location.hash = server.cert_digest;
-                    console.log('Certificate digest set:', server.cert_digest);
-                } else {
-                    console.warn('No certificate digest available from server');
-                }
-
                 const module = await import('./wasm/adventure-simulator-client.js');
                 await module.default();
                 await module.wasm_run([

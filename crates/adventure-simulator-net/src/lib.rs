@@ -14,9 +14,7 @@ pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::AdventureSimulatorClient;
     pub use crate::lightyear;
-    pub use crate::protocol::{
-        ClientProtocol, ProtocolSettings, ServerProtocol, WebTransportCertificateSettings,
-    };
+    pub use crate::protocol::ProtocolSettings;
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;
     pub use crate::AdventureSimulatorNetPlugins;

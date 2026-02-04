@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use crate::prelude::ProtocolSettings;
+use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
@@ -8,11 +10,6 @@ use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::netcode::NetcodeClient;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
-use lightyear::websocket::client::WebSocketClientIo;
-use lightyear::webtransport::client::WebTransportClientIo;
-
-use crate::prelude::{ClientProtocol, ProtocolSettings};
-use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
 
 #[derive(Default)]
 pub struct AdventureSimulatorClientPlugin;
@@ -31,7 +28,6 @@ pub struct AdventureSimulatorClient {
     pub id: u64,
     pub server_addr: SocketAddr,
     pub addr: SocketAddr,
-    pub protocol: ClientProtocol,
     pub protocol_settings: ProtocolSettings,
 }
 
@@ -41,7 +37,6 @@ impl Default for AdventureSimulatorClient {
             id: 0,
             server_addr: DEFAULT_SERVER_ADDR,
             addr: DEFAULT_CLIENT_ADDR,
-            protocol: ClientProtocol::default(),
             protocol_settings: Default::default(),
         }
     }
@@ -56,14 +51,13 @@ impl AdventureSimulatorClient {
                 id: client_id,
                 server_addr,
                 addr,
-                protocol,
                 protocol_settings,
             } = entity_mut.take::<Self>().unwrap();
 
-            // Set up netcode authentication
+            // use dummy zeroed key explicitly here.
             let auth = Authentication::Manual {
-                server_addr,
-                client_id,
+                server_addr: server_addr,
+                client_id: client_id,
                 private_key: protocol_settings.private_key.0,
                 protocol_id: protocol_settings.id,
             };
@@ -73,36 +67,13 @@ impl AdventureSimulatorClient {
                 token_expire_secs: -1,
                 ..default()
             };
-
-            // Insert shared components
             entity_mut.insert((
                 NetcodeClient::new(auth, netcode_config)?,
                 LocalAddr(addr),
+                UdpIo::default(),
                 PeerAddr(server_addr),
                 ReplicationReceiver::default(),
             ));
-
-            // Insert transport-specific IO component
-            match protocol {
-                #[cfg(not(target_family = "wasm"))]
-                ClientProtocol::Udp => {
-                    entity_mut.insert(UdpIo::default());
-                }
-                #[cfg(target_family = "wasm")]
-                ClientProtocol::Udp => {
-                    panic!("UDP is not supported on WASM. Use WebTransport or WebSocket.");
-                }
-                ClientProtocol::WebTransport { certificate_digest } => {
-                    entity_mut.insert(WebTransportClientIo { certificate_digest });
-                }
-                ClientProtocol::WebSocket => {
-                    #[cfg(target_family = "wasm")]
-                    let config = ClientConfig::default();
-                    #[cfg(not(target_family = "wasm"))]
-                    let config = ClientConfig::builder().with_no_cert_validation();
-                    entity_mut.insert(WebSocketClientIo { config });
-                }
-            }
 
             world.trigger(Connect { entity });
             Ok(())
@@ -110,3 +81,44 @@ impl AdventureSimulatorClient {
     }
 }
 
+// /// Read certificate digest from alternate sources, for WASM builds.
+// // #[cfg(target_family = "wasm")]
+// #[allow(unreachable_patterns)]
+// pub fn modify_digest_on_wasm(client_settings: &mut ClientSettings) -> Option<String> {
+//     if let Some(new_digest) = get_digest_on_wasm() {
+//         match &client_settings.transport {
+//             ClientTransports::WebTransport { certificate_digest } => {
+//                 client_settings.transport = ClientTransports::WebTransport {
+//                     certificate_digest: new_digest.clone(),
+//                 };
+//                 Some(new_digest)
+//             }
+//             // This could be unreachable if only WebTransport feature is enabled.
+//             // hence we suppress this warning with the allow directive above.
+//             _ => None,
+//         }
+//     } else {
+//         None
+//     }
+// }
+
+// // #[cfg(target_family = "wasm")]
+// pub fn get_digest_on_wasm() -> Option<String> {
+//     let window = web_sys::window().expect("expected window");
+
+//     if let Ok(obj) = window.location().hash() {
+//         info!("Using cert digest from window.location().hash()");
+//         let cd = obj.replace("#", "");
+//         if cd.len() > 10 {
+//             // lazy sanity check.
+//             return Some(cd);
+//         }
+//     }
+
+//     if let Some(obj) = window.get("CERT_DIGEST") {
+//         info!("Using cert digest from window.CERT_DIGEST");
+//         return Some(obj.as_string().expect("CERT_DIGEST should be a string"));
+//     }
+
+//     None
+// }

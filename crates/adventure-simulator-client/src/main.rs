@@ -92,42 +92,11 @@ fn run(args: Args) {
 #[derive(Component)]
 struct ControlsText;
 
-/// Get the WebTransport certificate digest.
-/// - Native: reads from certificates/digest.txt at compile time
-/// - WASM: reads from URL hash (e.g., http://...#<digest>)
-fn get_certificate_digest() -> String {
-    #[cfg(target_family = "wasm")]
-    {
-        if let Some(window) = web_sys::window() {
-            if let Ok(hash) = window.location().hash() {
-                let digest = hash.trim_start_matches('#').to_string();
-                if digest.len() == 64 {
-                    info!("Using certificate digest from URL hash");
-                    return digest;
-                }
-            }
-        }
-        warn!("No certificate digest found in URL hash, connection may fail");
-        String::new()
-    }
-
-    #[cfg(not(target_family = "wasm"))]
-    {
-        include_str!("../../../certificates/digest.txt")
-            .trim()
-            .to_string()
-    }
-}
-
 fn setup_client(mut commands: Commands, args: Res<Args>) {
-    let certificate_digest = get_certificate_digest();
-    info!("Connecting with certificate digest: {}", certificate_digest);
-
     commands.spawn((
         AdventureSimulatorClient {
             id: args.id,
-            server_addr: args.server_addr,
-            protocol: ClientProtocol::WebTransport { certificate_digest },
+            server_addr: args.server_addr.clone(),
             ..default()
         },
         ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
