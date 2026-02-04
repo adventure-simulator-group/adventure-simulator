@@ -195,16 +195,16 @@ fn on_server_started_hook(
     args: Res<Args>,
     mut commands: Commands,
 ) {
-    let generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
-
-    let scene_height = match args.scene_key.as_str() {
-        "hills" => 7,
-        "desert" => 2,
+    let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
+    let (scene_height, gen_period) = match args.scene_key.as_str() {
+        "hills" => (30, 200.0),
+        "desert" => (2, 30.0),
         id => {
             warn!("Unknown scene: {id}");
-            0
+            (0, 1.0)
         }
     };
+    generator.period = gen_period;
     let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
     let terrain_collider = terrain.collider();
 
