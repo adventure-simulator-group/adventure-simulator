@@ -19,10 +19,6 @@ lightyear = { "workspace" = true, features = [
   "udp",
   "input_bei",
   "avian3d",
-  "webtransport",
-  "webtransport_self_signed",
-  "websocket",
-  "websocket_self_signed",
 ] }
 async-compat.workspace = true
 serde.workspace = true

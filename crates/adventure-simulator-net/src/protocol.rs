@@ -81,28 +81,6 @@ impl Default for WebTransportCertificateSettings {
     }
 }
 
-/// Server-side transport protocol selection
-#[derive(Debug, Clone, Default)]
-pub enum ServerProtocol {
-    #[default]
-    Udp,
-    WebTransport {
-        certificate: WebTransportCertificateSettings,
-    },
-    WebSocket,
-}
-
-/// Client-side transport protocol selection
-#[derive(Debug, Clone, Default)]
-pub enum ClientProtocol {
-    #[default]
-    Udp,
-    WebTransport {
-        certificate_digest: String,
-    },
-    WebSocket,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

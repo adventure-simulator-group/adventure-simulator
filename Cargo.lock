@@ -95,7 +95,6 @@ dependencies = [
  "clap",
  "console_error_panic_hook",
  "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
