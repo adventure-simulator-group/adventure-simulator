@@ -12,8 +12,11 @@ use adventure_simulator_core::prelude::*;
 use adventure_simulator_net::lightyear::prelude::{ReplicationSender, SendUpdatesMode};
 use adventure_simulator_net::prelude::*;
 use adventure_simulator_net::protocol::SEND_INTERVAL;
+use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::light_consts::lux;
+use bevy::light::AtmosphereEnvironmentMapLight;
+use bevy::pbr::{Atmosphere, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::{
@@ -109,26 +112,28 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
 fn setup_scene(mut commands: Commands) {
     // Spawn a directional light
     commands.spawn((
-        Transform::default().looking_at(vec3(1.0, -2.0, -2.0), Vec3::Y),
+        Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
         DirectionalLight {
             shadows_enabled: true,
-            illuminance: lux::OVERCAST_DAY * 2.0,
+            illuminance: lux::DIRECT_SUNLIGHT,
             ..default()
         },
     ));
 
-    commands.insert_resource(AmbientLight {
-        color: Srgba::rgb(1.0, 0.9, 0.9).into(),
-        brightness: 500.0,
-        affects_lightmapped_meshes: true,
-        ..default()
-    });
-
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Tonemapping::BlenderFilmic,
+        Projection::Perspective(PerspectiveProjection {
+            fov: 80.0_f32.to_radians(),
+            ..default()
+        }),
+        Atmosphere::EARTH,
+        AtmosphereEnvironmentMapLight::default(),
+        Exposure::SUNLIGHT,
+        Tonemapping::AcesFitted,
         Bloom::NATURAL,
+        Msaa::Off,
+        ScreenSpaceAmbientOcclusion::default(),
     ));
 
     // UI - Controls text

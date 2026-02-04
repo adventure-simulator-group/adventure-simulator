@@ -27,14 +27,14 @@ impl TerrainGenerator {
 
     pub fn generate(self, width: usize, height: usize, depth: usize) -> SceneTerrain {
         let mut noise = Noise::from(LayeredNoise::new(
-            NormedByDerivative::<f32, EuclideanLength, PeakDerivativeContribution>::default()
-                .with_falloff(0.3),
-            Persistence(0.6),
+            Normed::<f32>::default(),
+            Persistence(0.5),
             FractalLayers {
-                layer:
-                    Octave::<MixCellGradients<OrthoGrid, Smoothstep, QuickGradients, true>>::default(
-                    ),
-                lacunarity: 2.1,
+                // The layer to do fbm with
+                layer: Octave::<MixCellGradients<OrthoGrid, Smoothstep, QuickGradients>>::default(),
+                // How much to change the scale by between each repetition of the layer
+                lacunarity: 2.0,
+                // How many repetitions to do
                 amount: 8,
             },
         ));
