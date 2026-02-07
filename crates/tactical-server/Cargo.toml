@@ -8,6 +8,8 @@ name = "tactical-server"
 path = "src/main.rs"
 
 [dependencies]
+noiz.workspace = true
+
 # Bevy + Lightyear
 bevy = { workspace = true, default-features = false, features = ["multi_threaded"] }
 adventure-simulator-net = { workspace = true, features = ["server"] }

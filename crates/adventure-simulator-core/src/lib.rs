@@ -1,3 +1,5 @@
+#![feature(iter_array_chunks)]
+
 //! Core adventuresim bevy-centric library that is used both by
 //! tactical client and tactical server.
 //!
@@ -12,7 +14,7 @@ pub use avian3d;
 
 pub mod prelude {
     pub use crate::player::{Player, PlayerId};
-    pub use crate::scene::GameSceneId;
+    pub use crate::scene::{SceneId, SceneTerrain};
     pub use crate::AdventureSimulatorCorePlugins;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
