@@ -202,11 +202,11 @@ fn on_new_player_added_hook(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
     let id = query.get(event.entity)?;
-    info!("Added new player {:?}+{id:?}", event.entity);
+    info!("Added new player {:?}/{id:?}", event.entity);
 
     if args.id == id.0 {
         info!(
-            "New player {:?}+{id:?} is assigned to this client. Assuming control...",
+            "New player {:?}/{id:?} is assigned to this client. Assuming control...",
             event.entity
         );
 
@@ -245,7 +245,7 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb_u8(33, 158, 188),
+                base_color: id.color(),
                 metallic: 0.0,
                 perceptual_roughness: 1.0,
                 ..default()
@@ -253,7 +253,7 @@ fn on_new_player_added_hook(
             children![(
                 Mesh3d(meshes.add(Cuboid::new(0.6, 0.3, 0.4))),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::srgb_u8(255, 183, 3),
+                    base_color: id.color().lighter(0.2),
                     metallic: 0.0,
                     perceptual_roughness: 1.0,
                     ..default()
