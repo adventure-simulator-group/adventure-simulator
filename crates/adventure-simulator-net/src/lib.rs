@@ -37,10 +37,10 @@ const DEFAULT_SERVER_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
 bevy::app::plugin_group! {
     #[derive(Debug)]
     pub struct AdventureSimulatorNetPlugins {
-        crate::netcode:::AdventureSimulatorNetcodePlugin,
         #[custom(cfg(feature = "server"))]
         crate::server:::AdventureSimulatorServerPlugin,
         #[custom(cfg(feature = "client"))]
         crate::client:::AdventureSimulatorClientPlugin,
+        crate::netcode:::AdventureSimulatorNetcodePlugin,
     }
 }

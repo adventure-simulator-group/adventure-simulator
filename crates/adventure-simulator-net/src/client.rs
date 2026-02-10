@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::prelude::ProtocolSettings;
 use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
+use adventure_simulator_core::player::Player;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
@@ -18,6 +19,9 @@ impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         let tick_duration = Duration::from_secs_f64(FIXED_TICK_DURATION);
         app.add_plugins(ClientPlugins { tick_duration });
+
+        // On client, players should have interpolated components for better visuals.
+        app.register_required_components::<Player, Interpolated>();
     }
 }
 

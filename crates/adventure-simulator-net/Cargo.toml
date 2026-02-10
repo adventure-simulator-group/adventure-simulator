@@ -15,6 +15,7 @@ client = ["lightyear/client"]
 adventure-simulator-core.workspace = true
 lightyear = { "workspace" = true, features = [
   "replication",
+  "interpolation",
   "netcode",
   "udp",
   "input_bei",

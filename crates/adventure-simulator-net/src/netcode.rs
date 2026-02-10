@@ -4,7 +4,7 @@ use lightyear::{
     input::config::InputConfig,
     prelude::{
         input::{bei::InputPlugin, InputRegistryExt},
-        AppComponentExt,
+        AppComponentExt, InterpolationRegistrationExt, TransformLinearInterpolation,
     },
 };
 
@@ -29,7 +29,8 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
 
         app.register_component::<Player>();
         app.register_component::<PlayerId>();
-        app.register_component::<Transform>();
+        app.register_component::<Transform>()
+            .add_interpolation_with(TransformLinearInterpolation::lerp);
 
         app.register_component::<SceneId>();
         app.register_component::<SceneTerrain>();
