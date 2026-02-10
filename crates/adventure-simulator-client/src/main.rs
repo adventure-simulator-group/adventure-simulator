@@ -30,6 +30,8 @@ use std::net::SocketAddr;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+mod ui;
+
 #[derive(Parser, Debug, Resource)]
 #[command(version, about)]
 struct Args {
@@ -78,12 +80,12 @@ fn run(args: Args) {
                 }),
             AdventureSimulatorNetPlugins,
         ))
+        .add_plugins((ui::UiPlugin,))
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
         .add_systems(Startup, (setup_scene, setup_client))
         .add_systems(
             Update,
             (
-                update_ui,
                 capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
             ),
@@ -93,10 +95,6 @@ fn run(args: Args) {
         .insert_resource(args)
         .run();
 }
-
-/// UI text for displaying controls
-#[derive(Component)]
-struct ControlsText;
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn((
@@ -134,39 +132,6 @@ fn setup_scene(mut commands: Commands) {
         Bloom::NATURAL,
         Msaa::Off,
         ScreenSpaceAmbientOcclusion::default(),
-    ));
-
-    // UI - Controls text
-    commands.spawn((
-        ControlsText,
-        Text::new("WASD to move | Space to jump | Mouse to look around"),
-        TextFont {
-            font_size: 20.0,
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(20.0),
-            left: Val::Px(20.0),
-            ..default()
-        },
-    ));
-
-    // Position indicator
-    commands.spawn((
-        Text::new("Position: ..."),
-        TextFont {
-            font_size: 16.0,
-            ..default()
-        },
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(20.0),
-            left: Val::Px(20.0),
-            ..default()
-        },
     ));
 }
 
@@ -299,20 +264,6 @@ fn on_new_player_added_hook(
     }
 
     Ok(())
-}
-
-fn update_ui(
-    player: Single<(&Transform, &PlayerId), With<CharacterController>>,
-    mut text_query: Query<&mut Text, Without<ControlsText>>,
-) {
-    let (Transform { translation, .. }, &PlayerId(player_id)) = player.into_inner();
-
-    for mut text in &mut text_query {
-        text.0 = format!(
-            "Position: x: {:.1}, y: {:.1}, z: {:.1}\nPlayer ID: {player_id}",
-            translation.x, translation.y, translation.z
-        );
-    }
 }
 
 fn capture_cursor(

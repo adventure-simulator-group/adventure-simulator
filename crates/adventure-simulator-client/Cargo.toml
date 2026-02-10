@@ -8,9 +8,13 @@ license.workspace = true
 
 [dependencies]
 bevy = { workspace = true, default-features = true, features = [] }
+bevy_flair.workspace = true
 adventure-simulator-core.workspace = true
 adventure-simulator-net = { workspace = true, features = ["client"] }
 clap.workspace = true
+
+[target."cfg(not(target_family = \"wasm\"))".dependencies]
+bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 console_error_panic_hook.workspace = true

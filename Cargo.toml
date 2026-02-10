@@ -48,6 +48,7 @@ bevy_egui = { version = "0.38", default-features = false, features = [
 ] }
 bevy_ahoy = { git = "https://github.com/janhohenheim/bevy_ahoy" }
 bevy_enhanced_input = "0.20"
+bevy_flair = "0.6"
 noiz = "0.3.0"
 toml = "0.9.8"
 thiserror = "2.0.17"

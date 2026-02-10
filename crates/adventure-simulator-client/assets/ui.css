@@ -1,0 +1,43 @@
+@keyframes show-in {
+  from {
+    scale: 0.95;
+  }
+  to {
+    scale: 1.0;
+  }
+}
+
+:root {
+  width: 100%;
+  height: 100%;
+  font-size: 16px;
+
+  &>* {
+    margin: 20px;
+  }
+}
+
+text,span {
+  animation: 0.4s ease-out show-in;
+  text-shadow: #0007 1px 1px;
+}
+
+#position {
+  position: absolute;
+  top: 0px;
+
+  color: #bbf0a688;
+
+  &>span {
+    color: #eee8;
+  }
+}
+
+#controls-text {
+  position: absolute;
+  bottom: 0px;
+  left: 50%;
+  transform: translateX(-50%);
+
+  color: #fffa;
+}
