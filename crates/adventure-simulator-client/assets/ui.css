@@ -7,10 +7,15 @@
   }
 }
 
+.success { color: rgb(129, 199, 132); }
+.primary { color: rgb(144, 202, 249); }
+.error   { color: rgb(229, 115, 115); }
+
 :root {
   width: 100%;
   height: 100%;
   font-size: 16px;
+  color: #fffa;
 
   &>* {
     margin: 20px;
@@ -26,18 +31,25 @@ text,span {
   position: absolute;
   top: 0px;
 
-  color: #bbf0a688;
-
   &>span {
     color: #eee8;
   }
 }
 
-#controls-text {
+#controls {
   position: absolute;
   bottom: 0px;
   left: 50%;
   transform: translateX(-50%);
+}
 
-  color: #fffa;
+#connection {
+  position: absolute;
+  top: 0px;
+  right: 0%;
+
+  flex-direction: column;
+  background: #0009;
+  padding: 20px;
+  border-radius: 20px;
 }
