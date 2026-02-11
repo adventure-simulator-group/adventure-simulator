@@ -7,7 +7,10 @@ edition.workspace = true
 bevy.workspace = true
 bevy_egui.workspace = true
 distance-field-plugin.workspace = true
+distance-field.workspace = true
+anyhow = "1.0"
 marching-cubes = { workspace = true, features = ["bevy"] }
+pollster = "0.4"
 
 [lints]
 workspace = true

@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
-use marching_cubes::MarchingCubes;
+use distance_field::generator::Generator;
 use distance_field_plugin::{
-    SdfBox, SdfShape, SdfSphere, components::{DistanceFieldComponent, SdfShapeComponent}
+    components::{DistanceFieldComponent, SdfShapeComponent, StaticSdf},
+    SdfBox, SdfShape,
 };
+use marching_cubes::MarchingCubes;
 
 const GRID_SIZE: usize = 36;
 const ISO_LEVEL: f32 = 0.0;
@@ -57,9 +59,12 @@ impl MarchingCubesPlugin {
         ui_state: Res<MarchingCubesUIState>,
     ) {
         // Create Mesh Handle
-        let mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()); 
+        let mesh = Mesh::new(
+            bevy::render::render_resource::PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::default(),
+        );
         let mesh_handle = meshes.add(mesh);
-                
+
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.7, 0.9),
             metallic: 0.05,
@@ -67,38 +72,51 @@ impl MarchingCubesPlugin {
             ..default()
         });
 
-        // Spawn Volume
-        let volume_entity = commands.spawn((
-            DistanceFieldComponent::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12),
-            Mesh3d(mesh_handle.clone()),
-            MeshMaterial3d(material_handle.clone()),
-            Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
-        )).id();
-        
-        // Spawn Shapes as Children
-        commands.entity(volume_entity).with_children(|parent| {
-            parent.spawn((
-                SdfShapeComponent::from(SdfSphere { radius: ui_state.radius }),
-                Transform::from_xyz(-ui_state.radius * 0.3, -ui_state.radius * 0.3, -ui_state.radius * 0.3),
-            ));
+        // Start async generation
+        let generated = pollster::block_on(Generator::generate());
 
-            parent.spawn((
-                SdfShapeComponent::from(SdfSphere { radius: ui_state.radius }),
-                Transform::from_xyz(ui_state.radius * 0.3, ui_state.radius * 0.3, ui_state.radius * 0.3),
-            ));
-        });
+        // Use Generated SDF or Fallback
+        let distance_field_component = match generated {
+            Ok(df) => {
+                info!("SDF Generation Successful: {:?}", df.dimensions());
+                DistanceFieldComponent(df)
+            }
+            Err(e) => {
+                error!("SDF Generation Failed: {:?}", e);
+                // Fallback
+                DistanceFieldComponent::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12)
+            }
+        };
+
+        // Spawn Volume
+        let _volume_entity = commands
+            .spawn((
+                distance_field_component,
+                StaticSdf,
+                Mesh3d(mesh_handle.clone()),
+                MeshMaterial3d(material_handle.clone()),
+                Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
+            ))
+            .id();
+
+        // Removed Spawn Shapes as Children for the first volume to use generated SDF
 
         // Spawn a SECOND independent SDF volume to verify multi-SDF support
-        let volume_entity_2 = commands.spawn((
-            DistanceFieldComponent::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
-            Mesh3d(mesh_handle.clone()), 
-            Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
-        )).id();
-        
+        let volume_entity_2 = commands
+            .spawn((
+                DistanceFieldComponent::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
+                Mesh3d(mesh_handle.clone()),
+                Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
+            ))
+            .id();
+
         // We need to create a new mesh asset for the second volume
-        let mesh_2 = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default());
+        let mesh_2 = Mesh::new(
+            bevy::render::render_resource::PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::default(),
+        );
         let mesh_handle_2 = meshes.add(mesh_2);
-        
+
         // Re-spawn volume 2 with correct mesh handle
         commands.entity(volume_entity_2).insert((
             Mesh3d(mesh_handle_2),
@@ -107,12 +125,16 @@ impl MarchingCubesPlugin {
 
         // Add shapes to second volume
         commands.entity(volume_entity_2).with_children(|parent| {
-             parent.spawn((
-                SdfShapeComponent::from(SdfBox { size: Vec3::splat(0.6) }),
+            parent.spawn((
+                SdfShapeComponent::from(SdfBox {
+                    size: Vec3::splat(0.6),
+                }),
                 Transform::IDENTITY,
             ));
-             parent.spawn((
-                SdfShapeComponent::from(SdfBox { size: Vec3::new(0.2, 1.0, 0.2) }), // Make it smaller to fit
+            parent.spawn((
+                SdfShapeComponent::from(SdfBox {
+                    size: Vec3::new(0.2, 1.0, 0.2),
+                }), // Make it smaller to fit
                 Transform::from_xyz(0.5, 0.0, 0.5),
             ));
         });
@@ -158,8 +180,9 @@ impl MarchingCubesPlugin {
 
                     ui.label("Voxel Size");
                     // We just pick the first one to display? Or local state?
-                    let mut current_voxel = fields.iter().next().map(|c| c.voxel_size).unwrap_or(0.12);
-                    
+                    let mut current_voxel =
+                        fields.iter().next().map(|c| c.voxel_size).unwrap_or(0.12);
+
                     let slider_voxel = egui::Slider::new(
                         &mut current_voxel,
                         ui_state.min_voxel_size..=ui_state.max_voxel_size,
@@ -177,11 +200,15 @@ impl MarchingCubesPlugin {
 
     fn update_marching_cubes_mesh(
         mut meshes: ResMut<Assets<Mesh>>,
-        query: Query<(&DistanceFieldComponent, &Mesh3d), Changed<DistanceFieldComponent>>,
+        query: Query<(&DistanceFieldComponent, &Mesh3d)>,
     ) {
         for (distance_field, mesh3d) in query.iter() {
             if let Some(existing) = meshes.get_mut(&mesh3d.0) {
-                let mesh_builder = MarchingCubes::generate_mesh(distance_field, ISO_LEVEL, distance_field.voxel_size);
+                let mesh_builder = MarchingCubes::generate_mesh(
+                    distance_field,
+                    ISO_LEVEL,
+                    distance_field.voxel_size,
+                );
                 *existing = mesh_builder.build();
             }
         }

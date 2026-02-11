@@ -1,9 +1,11 @@
-pub mod field;
 pub mod distance_field;
-pub mod shape;
+pub mod field;
+pub mod generator;
 pub mod operation;
+pub mod shape;
 
-pub use field::*;
 pub use distance_field::*;
-pub use shape::*;
+pub use field::*;
+pub use generator::*;
 pub use operation::*;
+pub use shape::*;
