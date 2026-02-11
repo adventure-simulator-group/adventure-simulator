@@ -63,6 +63,10 @@ Environment variables:
 | `SPACETIMEDB_HOST` | `http://localhost:3000` | SpacetimeDB HTTP API URL |
 | `SPACETIMEDB_DATABASE` | `strategic-db` | SpacetimeDB database name |
 | `SPACETIMEDB_TOKEN` | (none) | Optional auth token |
+| `EDGEGAP_API_URL` | `https://api.edgegap.com` | Edgegap API base URL |
+| `EDGEGAP_API_TOKEN` | (none) | Edgegap API token (enables direct deployment mode) |
+| `EDGEGAP_APPLICATION_NAME` | `tactical-server` | Edgegap application name |
+| `EDGEGAP_VERSION_NAME` | `latest` | Edgegap application version |
 
 ## Routes
 
@@ -100,6 +104,11 @@ Environment variables:
 - `GET /quests/:id` - Quest details
 - `POST /quests/:id/accept` - Accept quest
 - `POST /quests/:id/abandon` - Abandon quest
+
+### Missions
+- `POST /missions/enter` - Enter a tactical mission (party leader only)
+- `GET /missions/:id/status` - Mission status page/fragment (authorized members only)
+- `POST /missions/:id/cancel` - Cancel mission (party leader or solo owner)
 
 ## Docker
 

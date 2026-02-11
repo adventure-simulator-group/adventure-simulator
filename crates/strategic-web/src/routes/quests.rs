@@ -56,13 +56,17 @@ async fn show_quest(
         // Get character
         let characters: Vec<Character> = state
             .db
-            .query(&format!("SELECT * FROM character WHERE id = '{}'", character_id))
+            .query(&format!(
+                "SELECT * FROM character WHERE id = '{}'",
+                character_id
+            ))
             .await
             .unwrap_or_default();
 
         if let Some(character) = characters.first() {
             // Check if at quest's settlement
-            let at_settlement = character.current_settlement_id.as_ref() == Some(&quest.settlement_id);
+            let at_settlement =
+                character.current_settlement_id.as_ref() == Some(&quest.settlement_id);
 
             // Check if party leader
             if let Some(party_id) = &character.party_id {
@@ -74,7 +78,8 @@ async fn show_quest(
 
                 if let Some(party) = parties.first() {
                     let is_leader = party.leader_id == character_id;
-                    can_accept = quest.status.to_lowercase() == "available" && at_settlement && is_leader;
+                    can_accept =
+                        quest.status.to_lowercase() == "available" && at_settlement && is_leader;
                     is_party_quest = quest.accepted_by.as_ref() == Some(party_id);
                 }
             }
@@ -82,7 +87,9 @@ async fn show_quest(
     }
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(quest_detail_page(quest, can_accept, is_party_quest, logged_in_as.as_deref()).into_string())
+    Html(
+        quest_detail_page(quest, can_accept, is_party_quest, logged_in_as.as_deref()).into_string(),
+    )
 }
 
 /// Helper to get character name for session display

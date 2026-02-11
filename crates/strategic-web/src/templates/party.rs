@@ -2,11 +2,17 @@
 
 use maud::{html, Markup};
 
-use super::{base_layout_with_session, card, empty_state, input_field, list_item, loading_indicator};
+use super::{
+    base_layout_with_session, card, empty_state, input_field, list_item, loading_indicator,
+};
 use crate::spacetimedb::{Character, Party, PartyMember, Quest};
 
 /// List all parties (optionally filtered by settlement)
-pub fn parties_list_page(parties: &[Party], settlement_filter: Option<&str>, logged_in_as: Option<&str>) -> Markup {
+pub fn parties_list_page(
+    parties: &[Party],
+    settlement_filter: Option<&str>,
+    logged_in_as: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="parties-page" {
             div class="page-header" {

@@ -20,6 +20,7 @@ use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TacticalStatus {
     Pending,
+    Failed,
     Ready,
     Ended,
 }
@@ -134,6 +135,23 @@ pub struct TacticalServer {
     pub cert_digest: String,
     /// Character in this mission
     pub character_id: String,
+    /// Party that initiated this mission (if any)
+    pub party_id: Option<String>,
+}
+
+/// Tracks Edgegap deployment API state for a mission
+/// Used by strategic-web to poll status and clean up on cancellation
+#[derive(Clone, Debug)]
+#[table(name = deployment_session, public)]
+pub struct DeploymentSession {
+    #[primary_key]
+    pub mission_id: String,
+    pub request_id: String,
+    pub party_id: String,
+    /// Edgegap deployment status string from /v1/status
+    pub status: String,
+    /// Last deployment error, if any
+    pub last_error: Option<String>,
 }
 
 // ============================================================================
@@ -299,7 +317,11 @@ pub fn create_party(
 
 /// Join an existing party
 #[reducer]
-pub fn join_party(ctx: &ReducerContext, character_id: String, party_id: String) -> Result<(), String> {
+pub fn join_party(
+    ctx: &ReducerContext,
+    character_id: String,
+    party_id: String,
+) -> Result<(), String> {
     let Some(mut character) = ctx.db.character().id().find(&character_id) else {
         return Err("Character not found".into());
     };
@@ -377,12 +399,7 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
     };
 
     // Remove all party memberships
-    let members: Vec<_> = ctx
-        .db
-        .party_member()
-        .party_id()
-        .filter(&party_id)
-        .collect();
+    let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
 
     for member in members {
         if let Some(mut character) = ctx.db.character().id().find(&member.character_id) {
@@ -449,7 +466,11 @@ pub fn create_quest(
 
 /// Accept a quest (character must be in a party)
 #[reducer]
-pub fn accept_quest(ctx: &ReducerContext, character_id: String, quest_id: String) -> Result<(), String> {
+pub fn accept_quest(
+    ctx: &ReducerContext,
+    character_id: String,
+    quest_id: String,
+) -> Result<(), String> {
     let Some(character) = ctx.db.character().id().find(&character_id) else {
         return Err("Character not found".into());
     };
@@ -497,7 +518,11 @@ pub fn accept_quest(ctx: &ReducerContext, character_id: String, quest_id: String
 
 /// Abandon a quest
 #[reducer]
-pub fn abandon_quest(ctx: &ReducerContext, character_id: String, quest_id: String) -> Result<(), String> {
+pub fn abandon_quest(
+    ctx: &ReducerContext,
+    character_id: String,
+    quest_id: String,
+) -> Result<(), String> {
     let Some(character) = ctx.db.character().id().find(&character_id) else {
         return Err("Character not found".into());
     };
@@ -554,12 +579,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
     };
 
     // Distribute rewards to all party members
-    let members: Vec<_> = ctx
-        .db
-        .party_member()
-        .party_id()
-        .filter(&party_id)
-        .collect();
+    let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
 
     let gold_reward = quest.gold_reward;
     let xp_reward = quest.xp_reward;
@@ -734,9 +754,12 @@ pub fn enter_mission(
     }
 
     // Check character exists
-    if ctx.db.character().id().find(&character_id).is_none() {
-        return Err("Character not found".into());
-    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(&character_id)
+        .ok_or_else(|| "Character not found".to_string())?;
 
     // Check not already in a mission
     if ctx
@@ -761,9 +784,93 @@ pub fn enter_mission(
         addr: String::new(),
         cert_digest: String::new(),
         character_id,
+        party_id: character.party_id.clone(),
     });
 
     log::info!("Mission {} created (pending)", mission_id);
+    Ok(())
+}
+
+/// Register Edgegap deployment request for a mission
+/// Called by strategic-web after creating an Edgegap deployment request
+#[reducer]
+pub fn register_deployment_session(
+    ctx: &ReducerContext,
+    mission_id: String,
+    request_id: String,
+    party_id: String,
+) -> Result<(), String> {
+    // Verify the mission exists
+    if ctx
+        .db
+        .tactical_server()
+        .mission_id()
+        .find(&mission_id)
+        .is_none()
+    {
+        return Err("Mission not found".into());
+    }
+
+    ctx.db.deployment_session().insert(DeploymentSession {
+        mission_id: mission_id.clone(),
+        request_id,
+        party_id,
+        status: "DEPLOYING".into(),
+        last_error: None,
+    });
+
+    log::info!("Deployment session registered for mission {}", mission_id);
+    Ok(())
+}
+
+/// Update deployment status for an active mission
+#[reducer]
+pub fn update_deployment_session_status(
+    ctx: &ReducerContext,
+    mission_id: String,
+    status: String,
+    last_error: Option<String>,
+) -> Result<(), String> {
+    let Some(mut session) = ctx.db.deployment_session().mission_id().find(&mission_id) else {
+        return Err("Deployment session not found".into());
+    };
+
+    session.status = status;
+    session.last_error = last_error;
+    ctx.db.deployment_session().mission_id().update(session);
+    Ok(())
+}
+
+/// Remove deployment session row for a mission
+#[reducer]
+pub fn clear_deployment_session(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
+    ctx.db.deployment_session().mission_id().delete(&mission_id);
+    Ok(())
+}
+
+/// Mark mission as failed and optionally persist deployment error details.
+#[reducer]
+pub fn mission_failed(
+    ctx: &ReducerContext,
+    mission_id: String,
+    reason: String,
+) -> Result<(), String> {
+    let Some(mut mission) = ctx.db.tactical_server().mission_id().find(&mission_id) else {
+        return Err("Mission not found".into());
+    };
+
+    mission.status = TacticalStatus::Failed;
+    mission.addr.clear();
+    mission.cert_digest.clear();
+    ctx.db.tactical_server().mission_id().update(mission);
+
+    if let Some(mut session) = ctx.db.deployment_session().mission_id().find(&mission_id) {
+        session.status = "FAILED".into();
+        session.last_error = Some(reason.clone());
+        ctx.db.deployment_session().mission_id().update(session);
+    }
+
+    log::warn!("Mission {} failed: {}", mission_id, reason);
     Ok(())
 }
 
@@ -804,14 +911,25 @@ pub fn commit_mission(
         return Ok(()); // Idempotent
     }
 
-    // Apply rewards
-    if let Some(mut character) = ctx.db.character().id().find(&server.character_id) {
-        if success && xp_gained > 0 {
+    // Apply rewards to all party members if this mission was started by a party.
+    // Fallback to single-character rewards for solo missions.
+    if success && xp_gained > 0 {
+        if let Some(party_id) = server.party_id.clone() {
+            for member in ctx.db.party_member().party_id().filter(&party_id) {
+                if let Some(mut character) = ctx.db.character().id().find(&member.character_id) {
+                    character.xp += xp_gained;
+                    character.level = 1 + character.xp / 100;
+                    ctx.db.character().id().update(character);
+
+                    add_item(ctx, &member.character_id, "gold_coin", 10);
+                    add_item(ctx, &member.character_id, "health_potion", 2);
+                }
+            }
+        } else if let Some(mut character) = ctx.db.character().id().find(&server.character_id) {
             character.xp += xp_gained;
             character.level = 1 + character.xp / 100;
-            ctx.db.character().id().update(character.clone());
+            ctx.db.character().id().update(character);
 
-            // Victory loot
             add_item(ctx, &server.character_id, "gold_coin", 10);
             add_item(ctx, &server.character_id, "health_potion", 2);
         }
@@ -819,6 +937,7 @@ pub fn commit_mission(
 
     server.status = TacticalStatus::Ended;
     ctx.db.tactical_server().mission_id().update(server);
+    ctx.db.deployment_session().mission_id().delete(&mission_id);
 
     log::info!(
         "Mission {} ended: success={}, xp={}",
@@ -836,6 +955,7 @@ pub fn leave_mission(ctx: &ReducerContext, mission_id: String) -> Result<(), Str
         server.status = TacticalStatus::Ended;
         ctx.db.tactical_server().mission_id().update(server);
     }
+    ctx.db.deployment_session().mission_id().delete(&mission_id);
     Ok(())
 }
 

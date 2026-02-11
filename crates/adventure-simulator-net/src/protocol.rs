@@ -72,11 +72,18 @@ pub enum WebTransportCertificateSettings {
 
 impl Default for WebTransportCertificateSettings {
     fn default() -> Self {
-        let sans = vec![
+        let mut sans = vec![
             "localhost".to_string(),
             "127.0.0.1".to_string(),
             "::1".to_string(),
         ];
+
+        // When running on Edgegap, add their domain and public IP as SANs
+        if let Ok(ip) = std::env::var("ARBITRIUM_PUBLIC_IP") {
+            sans.push(ip);
+            sans.push("*.pr.edgegap.net".to_string());
+        }
+
         WebTransportCertificateSettings::AutoSelfSigned(sans)
     }
 }

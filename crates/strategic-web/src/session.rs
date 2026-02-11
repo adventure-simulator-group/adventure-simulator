@@ -43,9 +43,7 @@ where
                 .await
                 .unwrap_or_default();
 
-            let character_id = jar
-                .get(CHARACTER_COOKIE)
-                .map(|c| c.value().to_string());
+            let character_id = jar.get(CHARACTER_COOKIE).map(|c| c.value().to_string());
 
             Ok(Session { character_id })
         }

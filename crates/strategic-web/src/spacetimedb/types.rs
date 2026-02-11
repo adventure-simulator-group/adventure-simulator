@@ -97,3 +97,23 @@ pub struct InventoryItem {
     pub item_id: String,
     pub qty: i32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TacticalServer {
+    pub mission_id: String,
+    pub scene_key: String,
+    pub status: String,
+    pub addr: String,
+    pub cert_digest: String,
+    pub character_id: String,
+    pub party_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentSession {
+    pub mission_id: String,
+    pub request_id: String,
+    pub party_id: String,
+    pub status: String,
+    pub last_error: Option<String>,
+}

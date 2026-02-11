@@ -15,7 +15,7 @@ fn convert_spacetime_value(value: &Value) -> Value {
             if let Some(tag) = arr[0].as_i64() {
                 match tag {
                     0 => convert_spacetime_value(&arr[1]), // Some(value)
-                    1 => Value::Null,                       // None
+                    1 => Value::Null,                      // None
                     _ => value.clone(),
                 }
             } else {
@@ -66,10 +66,7 @@ impl SpacetimeClient {
 
     /// Run a SQL query and return typed rows
     pub async fn query<T: DeserializeOwned>(&self, sql: &str) -> Result<Vec<T>> {
-        let url = format!(
-            "{}/v1/database/{}/sql",
-            self.base_url, self.database
-        );
+        let url = format!("{}/v1/database/{}/sql", self.base_url, self.database);
 
         let mut request = self.http.post(&url).body(sql.to_string());
 
@@ -125,10 +122,7 @@ impl SpacetimeClient {
 
     /// Run a SQL query and return raw JSON values
     pub async fn query_raw(&self, sql: &str) -> Result<Vec<Value>> {
-        let url = format!(
-            "{}/v1/database/{}/sql",
-            self.base_url, self.database
-        );
+        let url = format!("{}/v1/database/{}/sql", self.base_url, self.database);
 
         let mut request = self.http.post(&url).body(sql.to_string());
 

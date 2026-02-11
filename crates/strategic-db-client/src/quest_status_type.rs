@@ -6,16 +6,15 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Character {
-    pub id: String,
-    pub name: String,
-    pub xp: i32,
-    pub level: i32,
-    pub gold: i32,
-    pub current_settlement_id: Option<String>,
-    pub party_id: Option<String>,
+#[derive(Copy, Eq, Hash)]
+pub enum QuestStatus {
+    Available,
+
+    Accepted,
+
+    Completed,
 }
 
-impl __sdk::InModule for Character {
+impl __sdk::InModule for QuestStatus {
     type Module = super::RemoteModule;
 }

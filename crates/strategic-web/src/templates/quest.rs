@@ -2,7 +2,10 @@
 
 use maud::{html, Markup};
 
-use super::{base_layout_with_session, card, difficulty_stars, empty_state, gold_display, list_item, status_badge, xp_display};
+use super::{
+    base_layout_with_session, card, difficulty_stars, empty_state, gold_display, list_item,
+    status_badge, xp_display,
+};
 use crate::spacetimedb::Quest;
 
 /// List all quests
@@ -59,7 +62,12 @@ fn quest_list_item(quest: &Quest) -> Markup {
 }
 
 /// Quest detail page
-pub fn quest_detail_page(quest: &Quest, can_accept: bool, is_party_quest: bool, logged_in_as: Option<&str>) -> Markup {
+pub fn quest_detail_page(
+    quest: &Quest,
+    can_accept: bool,
+    is_party_quest: bool,
+    logged_in_as: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="quest-detail-page" {
             div class="page-header" {

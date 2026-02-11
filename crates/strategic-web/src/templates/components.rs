@@ -57,7 +57,13 @@ pub fn loading_indicator(id: &str) -> Markup {
 }
 
 /// A form input field
-pub fn input_field(name: &str, label: &str, input_type: &str, required: bool, value: Option<&str>) -> Markup {
+pub fn input_field(
+    name: &str,
+    label: &str,
+    input_type: &str,
+    required: bool,
+    value: Option<&str>,
+) -> Markup {
     html! {
         div class="form-group" {
             label for=(name) { (label) }
@@ -72,7 +78,12 @@ pub fn input_field(name: &str, label: &str, input_type: &str, required: bool, va
 }
 
 /// A select dropdown
-pub fn select_field(name: &str, label: &str, options: &[(&str, &str)], selected: Option<&str>) -> Markup {
+pub fn select_field(
+    name: &str,
+    label: &str,
+    options: &[(&str, &str)],
+    selected: Option<&str>,
+) -> Markup {
     html! {
         div class="form-group" {
             label for=(name) { (label) }

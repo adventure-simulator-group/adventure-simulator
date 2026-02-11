@@ -34,19 +34,19 @@ struct Args {
     addr: SocketAddr,
 
     /// Unique mission instance ID
-    #[arg(long)]
+    #[arg(long, env = "MISSION_ID")]
     mission_id: String,
 
     /// Scene key (e.g., "town_a", "town_b")
-    #[arg(long)]
+    #[arg(long, env = "SCENE_KEY")]
     scene_key: String,
 
     /// SpacetimeDB URI (e.g., http://localhost:3000)
-    #[arg(long, default_value = "http://localhost:3000")]
+    #[arg(long, env = "SPACETIMEDB_URL", default_value = "http://localhost:3000")]
     spacetimedb_url: String,
 
     /// SpacetimeDB module name
-    #[arg(long, default_value = "strategic-stdb-module")]
+    #[arg(long, env = "SPACETIMEDB_MODULE", default_value = "strategic-db")]
     spacetimedb_module: String,
 
     /// Mission timeout in seconds (how long the server stays up waiting for players)
@@ -62,8 +62,54 @@ struct Args {
     no_timeout: bool,
 }
 
+/// Detect Edgegap environment and override network bind address from env vars.
+/// Called before Bevy logging is initialized, so uses eprintln.
+fn apply_edgegap_overrides(args: &mut Args) {
+    let Some(public_ip) = std::env::var("ARBITRIUM_PUBLIC_IP").ok() else {
+        return;
+    };
+
+    eprintln!("[edgegap] Detected ARBITRIUM_PUBLIC_IP={}", public_ip);
+
+    // Find the game port from ARBITRIUM_PORT_* env vars
+    // Edgegap sets e.g. ARBITRIUM_PORT_GAME=12345
+    let external_port = std::env::vars()
+        .find_map(|(key, value)| {
+            if key.starts_with("ARBITRIUM_PORT_") {
+                value.parse::<u16>().ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(6000);
+
+    // Override addr: bind to 0.0.0.0 internally, advertise public address separately
+    args.addr = format!("0.0.0.0:{}", external_port)
+        .parse()
+        .unwrap_or(args.addr);
+
+    eprintln!(
+        "[edgegap] Listening on {}, public IP {}:{}",
+        args.addr, public_ip, external_port
+    );
+
+    // Mission metadata is injected by the deployment request as standard env vars:
+    // MISSION_ID, SCENE_KEY, SPACETIMEDB_URL, SPACETIMEDB_MODULE.
+}
+
+/// Stored alongside Args so connect_spacetimedb can advertise the public address
+#[derive(Resource)]
+struct EdgegapPublicAddr(Option<String>);
+
 fn main() {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    apply_edgegap_overrides(&mut args);
+
+    // Store the public address for advertising to SpacetimeDB
+    let public_addr = std::env::var("ARBITRIUM_PUBLIC_IP").ok().map(|ip| {
+        let port = args.addr.port();
+        format!("{}:{}", ip, port)
+    });
 
     App::new()
         .add_plugins(MinimalPlugins)
@@ -79,6 +125,7 @@ fn main() {
             enemies_killed: 0,
             committed: false,
         })
+        .insert_resource(EdgegapPublicAddr(public_addr))
         .insert_resource(args)
         .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
         .add_systems(Update, check_mission_timeout)
@@ -98,7 +145,11 @@ struct MissionState {
     committed: bool,
 }
 
-fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
+fn connect_spacetimedb(
+    mut commands: Commands,
+    args: Res<Args>,
+    public_addr: Res<EdgegapPublicAddr>,
+) -> Result {
     info!("Starting tactical server for mission {}", args.mission_id);
     info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
@@ -109,9 +160,16 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
         .build()
         .expect("Failed to connect to SpacetimeDB");
 
-    info!("Calling tactical_server_ready reducer");
+    // Advertise the public address (Edgegap) or local address
+    let advertised_addr = public_addr
+        .0
+        .as_deref()
+        .unwrap_or(&args.addr.to_string())
+        .to_string();
+
+    info!("Calling tactical_server_ready (addr={})", advertised_addr);
     conn.reducers
-        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
+        .tactical_server_ready(args.mission_id.clone(), advertised_addr, default())
         .expect("Failed to call tactical_server_ready");
 
     conn.frame_tick()?;

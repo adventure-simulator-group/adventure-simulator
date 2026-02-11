@@ -63,6 +63,7 @@ impl leave_mission for super::RemoteReducers {
         LeaveMissionCallbackId(self.imp.on_reducer(
             "leave_mission",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

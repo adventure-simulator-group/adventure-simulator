@@ -15,6 +15,7 @@ pub struct TacticalServer {
     pub addr: String,
     pub cert_digest: String,
     pub character_id: String,
+    pub party_id: Option<String>,
 }
 
 impl __sdk::InModule for TacticalServer {

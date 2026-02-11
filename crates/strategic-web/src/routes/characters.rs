@@ -12,7 +12,9 @@ use serde_json::json;
 use super::AppState;
 use crate::session::{clear_character_cookie, set_character_cookie, Session};
 use crate::spacetimedb::{Character, InventoryItem};
-use crate::templates::character::{character_detail_page, character_new_page, characters_list_page};
+use crate::templates::character::{
+    character_detail_page, character_new_page, characters_list_page,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -36,10 +38,7 @@ struct UpdateCharacterForm {
     name: String,
 }
 
-async fn list_characters(
-    State(state): State<AppState>,
-    session: Session,
-) -> Html<String> {
+async fn list_characters(State(state): State<AppState>, session: Session) -> Html<String> {
     let characters: Vec<Character> = state
         .db
         .query("SELECT * FROM character")
@@ -49,10 +48,7 @@ async fn list_characters(
     Html(characters_list_page(&characters, session.character_id()).into_string())
 }
 
-async fn new_character_form(
-    State(state): State<AppState>,
-    session: Session,
-) -> Html<String> {
+async fn new_character_form(State(state): State<AppState>, session: Session) -> Html<String> {
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(character_new_page(logged_in_as.as_deref()).into_string())
 }
@@ -112,7 +108,10 @@ async fn show_character(
     } else {
         get_character_name(&state, session.character_id()).await
     };
-    Html(character_detail_page(character, &inventory, is_current, logged_in_as.as_deref()).into_string())
+    Html(
+        character_detail_page(character, &inventory, is_current, logged_in_as.as_deref())
+            .into_string(),
+    )
 }
 
 async fn update_character(
@@ -128,10 +127,7 @@ async fn update_character(
     Redirect::to(&format!("/characters/{}", id))
 }
 
-async fn show_inventory(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Html<String> {
+async fn show_inventory(State(state): State<AppState>, Path(id): Path<String>) -> Html<String> {
     let inventory: Vec<InventoryItem> = state
         .db
         .query(&format!(

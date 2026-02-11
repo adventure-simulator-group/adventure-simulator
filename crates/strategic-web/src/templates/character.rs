@@ -2,11 +2,16 @@
 
 use maud::{html, Markup};
 
-use super::{base_layout_with_session, card, empty_state, input_field, list_item, loading_indicator};
+use super::{
+    base_layout_with_session, card, empty_state, input_field, list_item, loading_indicator,
+};
 use crate::spacetimedb::{Character, InventoryItem};
 
 /// List all characters
-pub fn characters_list_page(characters: &[Character], current_character_id: Option<&str>) -> Markup {
+pub fn characters_list_page(
+    characters: &[Character],
+    current_character_id: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="characters-page" {
             div class="page-header" {
@@ -92,7 +97,12 @@ pub fn character_new_page(logged_in_as: Option<&str>) -> Markup {
 }
 
 /// Character detail/sheet page
-pub fn character_detail_page(character: &Character, inventory: &[InventoryItem], is_current: bool, logged_in_as: Option<&str>) -> Markup {
+pub fn character_detail_page(
+    character: &Character,
+    inventory: &[InventoryItem],
+    is_current: bool,
+    logged_in_as: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="character-detail-page" {
             div class="page-header" {

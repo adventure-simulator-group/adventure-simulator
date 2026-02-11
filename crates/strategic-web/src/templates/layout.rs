@@ -8,7 +8,11 @@ pub fn base_layout(title: &str, content: Markup) -> Markup {
 }
 
 /// Base HTML layout with session info for "logged in as" display
-pub fn base_layout_with_session(title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
+pub fn base_layout_with_session(
+    title: &str,
+    content: Markup,
+    logged_in_as: Option<&str>,
+) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {

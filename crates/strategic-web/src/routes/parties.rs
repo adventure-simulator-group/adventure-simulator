@@ -125,8 +125,14 @@ async fn show_party(
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
-        party_detail_page(party, &members_with_chars, active_quest.as_ref(), is_leader, logged_in_as.as_deref())
-            .into_string(),
+        party_detail_page(
+            party,
+            &members_with_chars,
+            active_quest.as_ref(),
+            is_leader,
+            logged_in_as.as_deref(),
+        )
+        .into_string(),
     )
 }
 
@@ -156,18 +162,12 @@ async fn leave_party(
         return Redirect::to("/characters");
     };
 
-    let _ = state
-        .db
-        .call("leave_party", &[json!(character_id)])
-        .await;
+    let _ = state.db.call("leave_party", &[json!(character_id)]).await;
 
     Redirect::to("/parties")
 }
 
-async fn disband_party(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Redirect {
+async fn disband_party(State(state): State<AppState>, Path(id): Path<String>) -> Redirect {
     let _ = state.db.call("disband_party", &[json!(id)]).await;
 
     Redirect::to("/parties")

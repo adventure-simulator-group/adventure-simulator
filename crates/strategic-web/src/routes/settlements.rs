@@ -76,7 +76,10 @@ async fn show_settlement(
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(settlement_detail_page(settlement, &quests, &parties, logged_in_as.as_deref()).into_string())
+    Html(
+        settlement_detail_page(settlement, &quests, &parties, logged_in_as.as_deref())
+            .into_string(),
+    )
 }
 
 async fn noticeboard(

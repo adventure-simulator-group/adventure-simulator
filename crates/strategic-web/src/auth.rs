@@ -5,12 +5,7 @@
 //! This module provides placeholder auth middleware.
 //! In production, integrate with your identity provider.
 
-use axum::{
-    extract::Request,
-    http::StatusCode,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 
 /// Placeholder session data
 #[derive(Clone, Debug)]

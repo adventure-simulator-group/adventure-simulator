@@ -2,7 +2,10 @@
 
 use maud::{html, Markup};
 
-use super::{base_layout_with_session, card, difficulty_stars, empty_state, gold_display, list_item, status_badge, xp_display};
+use super::{
+    base_layout_with_session, card, difficulty_stars, empty_state, gold_display, list_item,
+    status_badge, xp_display,
+};
 use crate::spacetimedb::{Party, Quest, Settlement};
 
 /// List all settlements (map view)
@@ -126,7 +129,11 @@ pub fn settlement_detail_page(
 }
 
 /// Notice board page (quests)
-pub fn noticeboard_page(settlement: &Settlement, quests: &[Quest], logged_in_as: Option<&str>) -> Markup {
+pub fn noticeboard_page(
+    settlement: &Settlement,
+    quests: &[Quest],
+    logged_in_as: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="noticeboard-page" {
             div class="page-header" {
@@ -195,7 +202,11 @@ fn quest_preview_item(quest: &Quest) -> Markup {
 }
 
 /// Tavern page (party formation, social)
-pub fn tavern_page(settlement: &Settlement, parties: &[Party], logged_in_as: Option<&str>) -> Markup {
+pub fn tavern_page(
+    settlement: &Settlement,
+    parties: &[Party],
+    logged_in_as: Option<&str>,
+) -> Markup {
     let content = html! {
         div class="tavern-page" {
             div class="page-header" {
