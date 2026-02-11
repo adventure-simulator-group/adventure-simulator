@@ -1,0 +1,80 @@
+# Stage 1: Build the server binary
+# Using nightly for resolver = "3" (Cargo 2024 edition feature)
+FROM rustlang/rust:nightly-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    g++ \
+    libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy workspace manifests first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/adventure-simulator-net/Cargo.toml crates/adventure-simulator-net/Cargo.toml
+COPY crates/adventure-simulator-client/Cargo.toml crates/adventure-simulator-client/Cargo.toml
+COPY crates/adventure-simulator-core/Cargo.toml crates/adventure-simulator-core/Cargo.toml
+COPY crates/character-creator/Cargo.toml crates/character-creator/Cargo.toml
+COPY crates/strategic-db/Cargo.toml crates/strategic-db/Cargo.toml
+COPY crates/strategic-db-client/Cargo.toml crates/strategic-db-client/Cargo.toml
+COPY crates/strategic-web/Cargo.toml crates/strategic-web/Cargo.toml
+COPY crates/tactical-server/Cargo.toml crates/tactical-server/Cargo.toml
+COPY crates/tactical-spawner/Cargo.toml crates/tactical-spawner/Cargo.toml
+
+# Create dummy source files to cache dependency compilation
+RUN mkdir -p crates/adventure-simulator-net/src \
+             crates/adventure-simulator-client/src \
+             crates/adventure-simulator-core/src \
+             crates/character-creator/src \
+             crates/strategic-db/src \
+             crates/strategic-db-client/src \
+             crates/strategic-web/src \
+             crates/tactical-server/src \
+             crates/tactical-spawner/src && \
+    echo "pub fn _dummy() {}" > crates/adventure-simulator-net/src/lib.rs && \
+    echo "fn main() {}" > crates/adventure-simulator-client/src/main.rs && \
+    echo "pub fn _dummy() {}" > crates/adventure-simulator-core/src/lib.rs && \
+    echo "pub fn _dummy() {}" > crates/character-creator/src/lib.rs && \
+    echo "fn main() {}" > crates/character-creator/src/main.rs && \
+    echo "pub fn _dummy() {}" > crates/strategic-db/src/lib.rs && \
+    echo "pub fn _dummy() {}" > crates/strategic-db-client/src/lib.rs && \
+    echo "fn main() {}" > crates/strategic-web/src/main.rs && \
+    echo "fn main() {}" > crates/tactical-server/src/main.rs && \
+    echo "fn main() {}" > crates/tactical-spawner/src/main.rs
+
+# Build dependencies only (cached layer)
+RUN cargo build --release -p tactical-server 2>/dev/null || true
+
+# Copy real source for crates tactical-server depends on
+COPY crates/tactical-server/src crates/tactical-server/src
+COPY crates/adventure-simulator-net/src crates/adventure-simulator-net/src
+COPY crates/adventure-simulator-core/src crates/adventure-simulator-core/src
+COPY crates/strategic-db-client/src crates/strategic-db-client/src
+
+# Touch source files to invalidate dummy build cache
+RUN touch crates/tactical-server/src/main.rs \
+          crates/adventure-simulator-net/src/lib.rs \
+          crates/adventure-simulator-core/src/lib.rs \
+          crates/strategic-db-client/src/lib.rs
+
+# Build the real binary
+RUN cargo build --release -p tactical-server
+
+# Stage 2: Minimal runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 1000 gameserver
+USER gameserver
+WORKDIR /home/gameserver
+
+COPY --from=builder /app/target/release/tactical-server ./tactical-server
+
+EXPOSE 6000/udp
+
+ENTRYPOINT ["./tactical-server"]

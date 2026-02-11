@@ -40,3 +40,16 @@ index.html
 # generated wasm
 crates/strategic-db/**/static/wasm
 fly.toml
+
+# CI/CD and docs - not needed in Docker builds
+.git/
+.github/
+wiki/
+docs/
+book/
+*.md
+flake.nix
+flake.lock
+render.yaml
+justfile
+.envrc
