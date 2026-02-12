@@ -6,6 +6,7 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
+mod stdb;
 mod terrain;
 
 use std::net::SocketAddr;
@@ -22,9 +23,9 @@ use adventure_simulator_net::{
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
-use strategic_db_client::{commit_mission, tactical_server_ready, DbConnection};
+use strategic_db_client::*;
 
-use crate::terrain::TerrainGenerator;
+use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
 
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
@@ -87,6 +88,7 @@ fn main() {
             ..default()
         })
         .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
+        .add_plugins((stdb::SpacetimeDbPlugin,))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -95,16 +97,18 @@ fn main() {
             committed: false,
         })
         .insert_resource(args)
-        .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
-        .add_systems(Update, check_mission_timeout)
+        .add_systems(
+            Update,
+            (
+                check_mission_timeout,
+                setup_server.run_if(resource_added::<SpacetimeDb>),
+            ),
+        )
         .add_observer(on_new_client_added_hook)
         .add_observer(on_new_client_connected_hook)
         .add_observer(on_server_started_hook)
         .run();
 }
-
-#[derive(Resource)]
-struct SpacetimeConn(DbConnection);
 
 #[derive(Resource)]
 struct MissionState {
@@ -113,34 +117,12 @@ struct MissionState {
     committed: bool,
 }
 
-fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
-    info!("Starting tactical server for mission {}", args.mission_id);
-    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
-
-    info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
-    let conn = DbConnection::builder()
-        .with_uri(&args.spacetimedb_url)
-        .with_module_name(&args.spacetimedb_module)
-        .build()
-        .expect("Failed to connect to SpacetimeDB");
-
-    info!("Calling tactical_server_ready reducer");
-    conn.reducers
-        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
-        .expect("Failed to call tactical_server_ready");
-
-    conn.frame_tick()?;
-    info!("SpacetimeDB notified - server marked as ready");
-
-    commands.insert_resource(SpacetimeConn(conn));
-
-    Ok(())
-}
-
 fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
-    info!("=== Tactical Server Ready ===");
-    info!("Mission: {}", args.mission_id);
-    info!("Scene: {}", args.scene_key);
+    info!(
+        "Starting tactical server for mission '{}'...",
+        args.mission_id
+    );
+    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
     commands.spawn(AdventureSimulatorServer {
         addr: args.addr,
@@ -156,7 +138,7 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
 
 fn check_mission_timeout(
     time: Res<Time>,
-    conn: Res<SpacetimeConn>,
+    conn: Res<SpacetimeDb>,
     args: Res<Args>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
@@ -179,12 +161,10 @@ fn check_mission_timeout(
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.0
-        .reducers
+    conn.reducers
         .commit_mission(args.mission_id.clone(), success, xp_gained)?;
-    conn.0.frame_tick()?;
-    info!("Mission committed successfully");
 
+    info!("Mission committed successfully");
     info!("Shutting down");
     exit.write(AppExit::Success);
     Ok(())
@@ -193,8 +173,10 @@ fn check_mission_timeout(
 fn on_server_started_hook(
     _event: On<Add, server::Started>,
     args: Res<Args>,
+    mut conn: ResMut<SpacetimeDb>,
     mut commands: Commands,
-) {
+) -> Result {
+    info!("Creating a game scene for {}", args.scene_key);
     let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
     let (scene_height, gen_period) = match args.scene_key.as_str() {
         "hills" => (30, 200.0),
@@ -244,7 +226,31 @@ fn on_server_started_hook(
         ],
     ));
 
-    info!("Creating a game scene for {}", args.scene_key);
+    info!("Notifying spacetimedb that the server is ready...");
+
+    conn.reducers
+        .create_tactical_server(args.mission_id.clone(), args.scene_key.clone())?;
+    conn.reducers.tactical_server_ready(
+        args.mission_id.clone(),
+        args.addr.to_string(),
+        default(),
+    )?;
+
+    // FIXME: maybe don't do raw sql please ?
+    let _handle = conn.subscribe(format!(
+        "SELECT * FROM tactical_server WHERE mission_id = '{}'",
+        args.mission_id
+    ));
+    conn.on_insert(
+        RemoteTables::tactical_server,
+        move |_server: InRef<TacticalServer>, args: Res<Args>| {
+            info!("=== Tactical Server Ready ===");
+            info!("Mission: {}", args.mission_id);
+            info!("Scene: {}", args.scene_key);
+        },
+    );
+
+    Ok(())
 }
 
 fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
@@ -262,40 +268,56 @@ fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
 fn on_new_client_connected_hook(
     event: On<Add, Connected>,
     query: Query<&RemoteId, With<ClientOf>>,
-    mut commands: Commands,
+    args: Res<Args>,
+    mut conn: ResMut<SpacetimeDb>,
 ) -> Result {
     let client_id = query.get(event.entity)?;
     let client_id = client_id.0;
-    let entity = commands
-        .spawn((
-            Player,
-            PlayerId(client_id.to_bits()),
-            CharacterController::default(),
-            Collider::cylinder(0.4, 1.2),
-            CollisionMargin(0.01),
-            Transform::from_xyz(0.0, 50.0, 0.0),
-            Replicate::to_clients(NetworkTarget::All),
-            ControlledBy {
-                owner: event.entity,
-                lifetime: default(),
-            },
-        ))
-        .id();
+    let id = client_id.to_bits();
+    let owner = event.entity;
 
-    // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
-    // it's more of a visor entity -- it will receive RotateCamera inputs,
-    // required for correct movement
-    commands.spawn((
-        CharacterControllerCameraOf::new(entity),
-        ControlledBy {
-            owner: event.entity,
-            lifetime: default(),
+    conn.reducers.create_character(id)?;
+    conn.reducers.enter_mission(id, args.mission_id.clone())?;
+
+    conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
+    conn.on_insert(
+        RemoteTables::character,
+        move |InRef(character): InRef<Character>, mut commands: Commands| {
+            let entity = commands
+                .spawn((
+                    Player {
+                        name: character.name.clone(),
+                    },
+                    PlayerId(id),
+                    CharacterController::default(),
+                    Collider::cylinder(0.4, 1.2),
+                    CollisionMargin(0.01),
+                    Transform::from_xyz(0.0, 50.0, 0.0),
+                    Replicate::to_clients(NetworkTarget::All),
+                    ControlledBy {
+                        owner,
+                        lifetime: default(),
+                    },
+                ))
+                .id();
+
+            // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
+            // it's more of a visor entity -- it will receive RotateCamera inputs,
+            // required for correct movement
+            commands.spawn((
+                CharacterControllerCameraOf::new(entity),
+                ControlledBy {
+                    owner,
+                    lifetime: default(),
+                },
+            ));
+
+            info!(
+                "Created player entity {:?} for client {:?}: {character:?}",
+                entity, client_id
+            );
         },
-    ));
-
-    info!(
-        "Create player entity {:?} for client {:?}",
-        entity, client_id
     );
+
     Ok(())
 }

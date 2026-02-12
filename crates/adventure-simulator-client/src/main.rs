@@ -196,19 +196,19 @@ fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
     camera: Single<Entity, With<Camera3d>>,
-    query: Query<&PlayerId, With<Player>>,
+    query: Query<(&Player, &PlayerId)>,
     args: Res<Args>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
-    let id = query.get(event.entity)?;
-    info!("Added new player {:?}/{id:?}", event.entity);
+    let (Player { name }, id) = query.get(event.entity)?;
+    info!(
+        "Added new player {name} (ID: {} | {:?})",
+        id.0, event.entity
+    );
 
     if args.id == id.0 {
-        info!(
-            "New player {:?}/{id:?} is assigned to this client. Assuming control...",
-            event.entity
-        );
+        info!("New player is assigned to this client. Assuming control...",);
 
         commands.entity(event.entity).insert((
             // Adding character controller to sync the camera, but this component

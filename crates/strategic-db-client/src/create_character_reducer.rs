@@ -7,16 +7,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct CreateCharacterArgs {
-    pub id: String,
-    pub name: String,
+    pub id: u64,
 }
 
 impl From<CreateCharacterArgs> for super::Reducer {
     fn from(args: CreateCharacterArgs) -> Self {
-        Self::CreateCharacter {
-            id: args.id,
-            name: args.name,
-        }
+        Self::CreateCharacter { id: args.id }
     }
 }
 
@@ -36,7 +32,7 @@ pub trait create_character {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_create_character`] callbacks.
-    fn create_character(&self, id: String, name: String) -> __sdk::Result<()>;
+    fn create_character(&self, id: u64) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `create_character`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +42,7 @@ pub trait create_character {
     /// to cancel the callback.
     fn on_create_character(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
     ) -> CreateCharacterCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_character`],
     /// causing it not to run in the future.
@@ -54,13 +50,13 @@ pub trait create_character {
 }
 
 impl create_character for super::RemoteReducers {
-    fn create_character(&self, id: String, name: String) -> __sdk::Result<()> {
+    fn create_character(&self, id: u64) -> __sdk::Result<()> {
         self.imp
-            .call_reducer("create_character", CreateCharacterArgs { id, name })
+            .call_reducer("create_character", CreateCharacterArgs { id })
     }
     fn on_create_character(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
     ) -> CreateCharacterCallbackId {
         CreateCharacterCallbackId(self.imp.on_reducer(
             "create_character",
@@ -68,7 +64,7 @@ impl create_character for super::RemoteReducers {
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
-                            reducer: super::Reducer::CreateCharacter { id, name },
+                            reducer: super::Reducer::CreateCharacter { id },
                             ..
                         },
                     ..
@@ -76,7 +72,7 @@ impl create_character for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, id, name)
+                callback(ctx, id)
             }),
         ))
     }

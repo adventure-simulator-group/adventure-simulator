@@ -206,7 +206,7 @@
 
             characterId = name.toLowerCase().replace(/\s+/g, '-');
             try {
-                await callReducer('create_character', [characterId, name]);
+                await callReducer('create_character', [name]);
                 setStatus('Character created!', 'success');
                 document.getElementById('character-panel').style.display = 'block';
                 document.getElementById('inventory-panel').style.display = 'block';
@@ -259,7 +259,7 @@
                 }
 
                 setStatus('Starting mission...', '');
-                await callReducer('enter_mission', [characterId, sceneKey]);
+                await callReducer('create_mission_and_enter', [characterId, sceneKey]);
                 setStatus('Mission started! Server spawning...', 'success');
                 pollForServer(sceneKey);
             } catch (e) {

@@ -12,6 +12,7 @@
 //! 5. Mission ends → tactical-server commits results, exits
 
 use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 // ============================================================================
 // Types
@@ -33,10 +34,12 @@ pub enum TacticalStatus {
 #[table(name = character, public)]
 pub struct Character {
     #[primary_key]
-    pub id: String,
+    pub id: u64,
     pub name: String,
     pub xp: i32,
     pub level: i32,
+    #[index(btree)]
+    pub in_server: String,
 }
 
 /// Inventory item
@@ -47,7 +50,7 @@ pub struct InventoryItem {
     #[auto_inc]
     pub id: u64,
     #[index(btree)]
-    pub character_id: String,
+    pub character_id: u64,
     pub item_id: String,
     pub qty: i32,
 }
@@ -64,38 +67,59 @@ pub struct TacticalServer {
     /// Connection info (written by tactical-server)
     pub addr: String,
     pub cert_digest: String,
-    /// Character in this mission
-    pub character_id: String,
 }
 
 // ============================================================================
 // Reducers
 // ============================================================================
 
-/// Create or update a character
+/// Create a new character with generated name and add initial items to it
 #[reducer]
-pub fn create_character(ctx: &ReducerContext, id: String, name: String) -> Result<(), String> {
-    if ctx.db.character().id().find(&id).is_some() {
-        return Ok(()); // Already exists
-    }
+pub fn create_character(ctx: &ReducerContext, id: u64) -> Result<(), String> {
+    use petname::Generator;
+    use rand::SeedableRng;
 
-    ctx.db.character().insert(Character {
-        id: id.clone(),
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(id);
+    let name = petname::Petnames::default()
+        .generate(&mut rng, 2, " ")
+        .ok_or_else(|| format!("Can't generate a name for a character with id {id}"))?;
+
+    insert_new_character(ctx, name, id)
+}
+
+/// Create a new character with name and add initial items to it
+#[reducer]
+pub fn create_named_character(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    ctx.timestamp.hash(&mut hasher);
+    let id = hasher.finish();
+
+    insert_new_character(ctx, name, id)
+}
+
+#[reducer]
+fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(), String> {
+    log::info!("New character created: {name} (ID: {id})");
+
+    let character = ctx.db.character().insert(Character {
+        id,
         name,
         xp: 0,
         level: 1,
+        in_server: String::new(),
     });
 
     // Starter items
     ctx.db.inventory_item().insert(InventoryItem {
         id: 0,
-        character_id: id.clone(),
+        character_id: character.id,
         item_id: "torch".into(),
         qty: 1,
     });
     ctx.db.inventory_item().insert(InventoryItem {
         id: 0,
-        character_id: id,
+        character_id: character.id,
         item_id: "bandage".into(),
         qty: 3,
     });
@@ -103,50 +127,93 @@ pub fn create_character(ctx: &ReducerContext, id: String, name: String) -> Resul
     Ok(())
 }
 
-/// Player wants to enter a tactical mission
-/// Creates a "pending" entry - spawner will see this and start server
+/// Put character in an existing tactical server by its mission id.
 #[reducer]
 pub fn enter_mission(
     ctx: &ReducerContext,
-    character_id: String,
+    character_id: u64,
+    mission_id: String,
+) -> Result<(), String> {
+    // Check character exists
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(&character_id)
+        .ok_or_else(|| "Character not found".to_string())?;
+
+    // Check not already in a mission
+    if !character.in_server.is_empty() {
+        if ctx
+            .db
+            .tactical_server()
+            .mission_id()
+            .find(&character.in_server)
+            .is_some_and(|t| t.status != TacticalStatus::Ended)
+        {
+            return Err("Already in a mission".into());
+        }
+    }
+
+    let server = ctx
+        .db
+        .tactical_server()
+        .mission_id()
+        .find(&mission_id)
+        .ok_or_else(|| "Server not found".to_string())?;
+
+    character.in_server = server.mission_id;
+    ctx.db.character().id().update(character);
+
+    Ok(())
+}
+
+/// Start a new server for a mission and then put a character into it.
+#[reducer]
+pub fn create_mission_and_enter(
+    ctx: &ReducerContext,
+    character_id: u64,
     scene_key: String,
 ) -> Result<(), String> {
+    let mission_id = format!("{scene_key}-{}", ctx.timestamp.to_micros_since_unix_epoch());
+
+    create_tactical_server(ctx, mission_id.clone(), scene_key)?;
+    enter_mission(ctx, character_id, mission_id)?;
+
+    Ok(())
+}
+
+/// Start a new tactical server, if not already started.
+#[reducer]
+pub fn create_tactical_server(
+    ctx: &ReducerContext,
+    mission_id: String,
+    scene_key: String,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .tactical_server()
+        .mission_id()
+        .find(&mission_id)
+        .is_some()
+    {
+        return Ok(());
+    }
+
     // Validate scene
     if scene_key != "hills" && scene_key != "desert" {
         return Err(format!("Invalid scene: {}", scene_key));
     }
 
-    // Check character exists
-    if ctx.db.character().id().find(&character_id).is_none() {
-        return Err("Character not found".into());
-    }
-
-    // Check not already in a mission
-    if ctx
-        .db
-        .tactical_server()
-        .iter()
-        .any(|t| t.character_id == character_id && t.status != TacticalStatus::Ended)
-    {
-        return Err("Already in a mission".into());
-    }
-
-    let mission_id = format!(
-        "{}-{}",
-        character_id,
-        ctx.timestamp.to_micros_since_unix_epoch()
-    );
-
+    log::info!("Tactical server {mission_id} created (pending)");
     ctx.db.tactical_server().insert(TacticalServer {
-        mission_id: mission_id.clone(),
+        mission_id,
         scene_key,
         status: TacticalStatus::Pending,
         addr: String::new(),
         cert_digest: String::new(),
-        character_id,
     });
 
-    log::info!("Mission {} created (pending)", mission_id);
     Ok(())
 }
 
@@ -188,16 +255,18 @@ pub fn commit_mission(
     }
 
     // Apply rewards
-    if let Some(mut character) = ctx.db.character().id().find(&server.character_id) {
-        if success && xp_gained > 0 {
+    for mut character in ctx.db.character().in_server().filter(&server.mission_id) {
+        character.in_server.clear();
+        if xp_gained > 0 {
             character.xp += xp_gained;
             character.level = 1 + character.xp / 100;
-            ctx.db.character().id().update(character.clone());
-
-            // Victory loot
-            add_item(ctx, &server.character_id, "gold_coin", 10);
-            add_item(ctx, &server.character_id, "health_potion", 2);
         }
+        if success {
+            // Victory loot
+            add_item(ctx, character.id, "gold_coin", 10);
+            add_item(ctx, character.id, "health_potion", 2);
+        }
+        ctx.db.character().id().update(character);
     }
 
     server.status = TacticalStatus::Ended;
@@ -212,27 +281,17 @@ pub fn commit_mission(
     Ok(())
 }
 
-/// Leave/cancel a mission
-#[reducer]
-pub fn leave_mission(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
-    if let Some(mut server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
-        server.status = TacticalStatus::Ended;
-        ctx.db.tactical_server().mission_id().update(server);
-    }
-    Ok(())
-}
-
 // ============================================================================
 // Helpers
 // ============================================================================
 
-fn add_item(ctx: &ReducerContext, character_id: &str, item_id: &str, qty: i32) {
+fn add_item(ctx: &ReducerContext, character_id: u64, item_id: &str, qty: i32) {
     // Find existing stack
     let existing = ctx
         .db
         .inventory_item()
         .character_id()
-        .filter(&character_id.to_string())
+        .filter(character_id)
         .find(|i| i.item_id == item_id);
 
     match existing {

@@ -7,10 +7,11 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Character {
-    pub id: String,
+    pub id: u64,
     pub name: String,
     pub xp: i32,
     pub level: i32,
+    pub in_server: String,
 }
 
 impl __sdk::InModule for Character {

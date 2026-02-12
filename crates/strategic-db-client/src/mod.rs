@@ -10,10 +10,13 @@ pub mod character_table;
 pub mod character_type;
 pub mod commit_mission_reducer;
 pub mod create_character_reducer;
+pub mod create_mission_and_enter_reducer;
+pub mod create_named_character_reducer;
+pub mod create_tactical_server_reducer;
 pub mod enter_mission_reducer;
+pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
-pub mod leave_mission_reducer;
 pub mod tactical_server_ready_reducer;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
@@ -27,14 +30,24 @@ pub use commit_mission_reducer::{
 pub use create_character_reducer::{
     create_character, set_flags_for_create_character, CreateCharacterCallbackId,
 };
+pub use create_mission_and_enter_reducer::{
+    create_mission_and_enter, set_flags_for_create_mission_and_enter,
+    CreateMissionAndEnterCallbackId,
+};
+pub use create_named_character_reducer::{
+    create_named_character, set_flags_for_create_named_character, CreateNamedCharacterCallbackId,
+};
+pub use create_tactical_server_reducer::{
+    create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
+};
 pub use enter_mission_reducer::{
     enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
 };
+pub use insert_new_character_reducer::{
+    insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
+};
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
-pub use leave_mission_reducer::{
-    leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
-};
 pub use tactical_server_ready_reducer::{
     set_flags_for_tactical_server_ready, tactical_server_ready, TacticalServerReadyCallbackId,
 };
@@ -56,15 +69,26 @@ pub enum Reducer {
         xp_gained: i32,
     },
     CreateCharacter {
-        id: String,
-        name: String,
+        id: u64,
     },
-    EnterMission {
-        character_id: String,
+    CreateMissionAndEnter {
+        character_id: u64,
         scene_key: String,
     },
-    LeaveMission {
+    CreateNamedCharacter {
+        name: String,
+    },
+    CreateTacticalServer {
         mission_id: String,
+        scene_key: String,
+    },
+    EnterMission {
+        character_id: u64,
+        mission_id: String,
+    },
+    InsertNewCharacter {
+        name: String,
+        id: u64,
     },
     TacticalServerReady {
         mission_id: String,
@@ -82,8 +106,11 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::CommitMission { .. } => "commit_mission",
             Reducer::CreateCharacter { .. } => "create_character",
+            Reducer::CreateMissionAndEnter { .. } => "create_mission_and_enter",
+            Reducer::CreateNamedCharacter { .. } => "create_named_character",
+            Reducer::CreateTacticalServer { .. } => "create_tactical_server",
             Reducer::EnterMission { .. } => "enter_mission",
-            Reducer::LeaveMission { .. } => "leave_mission",
+            Reducer::InsertNewCharacter { .. } => "insert_new_character",
             Reducer::TacticalServerReady { .. } => "tactical_server_ready",
             _ => unreachable!(),
         }
@@ -101,13 +128,27 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 create_character_reducer::CreateCharacterArgs,
             >("create_character", &value.args)?
             .into()),
+            "create_mission_and_enter" => {
+                Ok(__sdk::parse_reducer_args::<
+                    create_mission_and_enter_reducer::CreateMissionAndEnterArgs,
+                >("create_mission_and_enter", &value.args)?
+                .into())
+            }
+            "create_named_character" => Ok(__sdk::parse_reducer_args::<
+                create_named_character_reducer::CreateNamedCharacterArgs,
+            >("create_named_character", &value.args)?
+            .into()),
+            "create_tactical_server" => Ok(__sdk::parse_reducer_args::<
+                create_tactical_server_reducer::CreateTacticalServerArgs,
+            >("create_tactical_server", &value.args)?
+            .into()),
             "enter_mission" => Ok(__sdk::parse_reducer_args::<
                 enter_mission_reducer::EnterMissionArgs,
             >("enter_mission", &value.args)?
             .into()),
-            "leave_mission" => Ok(__sdk::parse_reducer_args::<
-                leave_mission_reducer::LeaveMissionArgs,
-            >("leave_mission", &value.args)?
+            "insert_new_character" => Ok(__sdk::parse_reducer_args::<
+                insert_new_character_reducer::InsertNewCharacterArgs,
+            >("insert_new_character", &value.args)?
             .into()),
             "tactical_server_ready" => Ok(__sdk::parse_reducer_args::<
                 tactical_server_ready_reducer::TacticalServerReadyArgs,

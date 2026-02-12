@@ -17,6 +17,7 @@ adventure-simulator-core.workspace = true
 
 # SpacetimeDB client
 strategic-db-client = { path = "../strategic-db-client" }
+spacetimedb-sdk.workspace = true
 
 # CLI
 clap = { workspace = true }

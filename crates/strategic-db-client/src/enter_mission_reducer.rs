@@ -7,15 +7,15 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct EnterMissionArgs {
-    pub character_id: String,
-    pub scene_key: String,
+    pub character_id: u64,
+    pub mission_id: String,
 }
 
 impl From<EnterMissionArgs> for super::Reducer {
     fn from(args: EnterMissionArgs) -> Self {
         Self::EnterMission {
             character_id: args.character_id,
-            scene_key: args.scene_key,
+            mission_id: args.mission_id,
         }
     }
 }
@@ -36,7 +36,7 @@ pub trait enter_mission {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_enter_mission`] callbacks.
-    fn enter_mission(&self, character_id: String, scene_key: String) -> __sdk::Result<()>;
+    fn enter_mission(&self, character_id: u64, mission_id: String) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `enter_mission`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +46,7 @@ pub trait enter_mission {
     /// to cancel the callback.
     fn on_enter_mission(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
     ) -> EnterMissionCallbackId;
     /// Cancel a callback previously registered by [`Self::on_enter_mission`],
     /// causing it not to run in the future.
@@ -54,18 +54,18 @@ pub trait enter_mission {
 }
 
 impl enter_mission for super::RemoteReducers {
-    fn enter_mission(&self, character_id: String, scene_key: String) -> __sdk::Result<()> {
+    fn enter_mission(&self, character_id: u64, mission_id: String) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "enter_mission",
             EnterMissionArgs {
                 character_id,
-                scene_key,
+                mission_id,
             },
         )
     }
     fn on_enter_mission(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
     ) -> EnterMissionCallbackId {
         EnterMissionCallbackId(self.imp.on_reducer(
             "enter_mission",
@@ -76,7 +76,7 @@ impl enter_mission for super::RemoteReducers {
                             reducer:
                                 super::Reducer::EnterMission {
                                     character_id,
-                                    scene_key,
+                                    mission_id,
                                 },
                             ..
                         },
@@ -85,7 +85,7 @@ impl enter_mission for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, character_id, scene_key)
+                callback(ctx, character_id, mission_id)
             }),
         ))
     }
