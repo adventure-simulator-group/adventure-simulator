@@ -20,32 +20,40 @@ pub fn rendering_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
     meshes: Res<Assets<Mesh>>,
     mesh_query: Query<(&Mesh3d, &InheritedVisibility)>,
+    time: Res<Time>,
+    mut last_update: Local<f32>,
+    mut stats_cache: Local<(usize, usize, usize)>,
 ) {
+    if time.elapsed_secs() - *last_update > 1.0 {
+        let mut total_vertices = 0;
+        let mut total_triangles = 0;
+        let mut mesh_count = 0;
+
+        for (mesh_handle, visibility) in mesh_query.iter() {
+            if visibility.get() {
+                if let Some(mesh) = meshes.get(&mesh_handle.0) {
+                    mesh_count += 1;
+                    let vertex_count = mesh.count_vertices();
+                    total_vertices += vertex_count;
+
+                    if let Some(indices) = mesh.indices() {
+                        total_triangles += indices.len() / 3;
+                    } else {
+                        total_triangles += vertex_count / 3;
+                    }
+                }
+            }
+        }
+        *stats_cache = (mesh_count, total_vertices, total_triangles);
+        *last_update = time.elapsed_secs();
+    }
+
+    let (mesh_count, total_vertices, total_triangles) = *stats_cache;
+
     let fps = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
         .and_then(|diag| diag.smoothed())
         .unwrap_or(0.0);
-
-    let mut total_vertices = 0;
-    let mut total_triangles = 0;
-    let mut mesh_count = 0;
-
-    for (mesh_handle, visibility) in mesh_query.iter() {
-        if visibility.get() {
-            if let Some(mesh) = meshes.get(&mesh_handle.0) {
-                mesh_count += 1;
-                let vertex_count = mesh.count_vertices();
-                total_vertices += vertex_count;
-
-                if let Some(indices) = mesh.indices() {
-                    total_triangles += indices.len() / 3;
-                } else {
-                    total_triangles += vertex_count / 3;
-                }
-            }
-        }
-    }
-
     if let Ok(ctx) = contexts.ctx_mut() {
         egui::Area::new(egui::Id::new("rendering_stats"))
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))

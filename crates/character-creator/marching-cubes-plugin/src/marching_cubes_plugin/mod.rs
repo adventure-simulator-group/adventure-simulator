@@ -200,7 +200,7 @@ impl MarchingCubesPlugin {
 
     fn update_marching_cubes_mesh(
         mut meshes: ResMut<Assets<Mesh>>,
-        query: Query<(&DistanceFieldComponent, &Mesh3d)>,
+        query: Query<(&DistanceFieldComponent, &Mesh3d), Changed<DistanceFieldComponent>>,
     ) {
         for (distance_field, mesh3d) in query.iter() {
             if let Some(existing) = meshes.get_mut(&mesh3d.0) {
