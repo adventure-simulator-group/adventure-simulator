@@ -1,7 +1,12 @@
-use adventure_simulator_core::{player::PlayerId, prelude::CharacterController};
+use adventure_simulator_core::{
+    player::{Player, PlayerId},
+    prelude::CharacterController,
+};
 use adventure_simulator_net::lightyear::{connection::client::ClientState, prelude::*};
 use bevy::prelude::*;
 use bevy_flair::prelude::*;
+
+use crate::Args;
 
 pub struct UiPlugin;
 
@@ -9,7 +14,8 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FlairPlugin)
             .add_systems(Startup, setup_ui)
-            .add_systems(Update, (update_player_ui, update_connection_ui));
+            .add_systems(Update, (update_player_ui, update_connection_ui))
+            .add_observer(on_new_player_added_hook);
     }
 }
 
@@ -24,6 +30,17 @@ struct ClientInfoSpan;
 
 #[derive(Component)]
 struct ClientStatusSpan;
+
+#[derive(Component)]
+struct PlayersList;
+
+#[derive(Component)]
+#[relationship(relationship_target = PlayerSpan)]
+struct PlayerSpanOf(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = PlayerSpanOf, linked_spawn)]
+struct PlayerSpan(Vec<Entity>);
 
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
@@ -40,22 +57,34 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 children![(PositionSpan, TextSpan::default())]
             ),
             (
-                Name::new("connection"),
+                Name::new("info"),
                 Node::default(),
                 children![
                     (
-                        Text::new("Server: "),
-                        children![(ServerInfoSpan, TextSpan::default())]
-                    ),
-                    (
-                        Text::new("Client: "),
+                        Name::new("connection"),
+                        Node::default(),
                         children![
-                            (ClientInfoSpan, TextSpan::default()),
-                            (ClientStatusSpan, ClassList::default(), TextSpan::default())
+                            (
+                                Text::new("Server: "),
+                                children![(ServerInfoSpan, TextSpan::default())]
+                            ),
+                            (
+                                Text::new("Client: "),
+                                children![
+                                    (ClientInfoSpan, TextSpan::default()),
+                                    (ClientStatusSpan, ClassList::default(), TextSpan::default())
+                                ]
+                            ),
                         ]
                     ),
+                    (
+                        PlayersList,
+                        Name::new("players"),
+                        Node::default(),
+                        children![Text::new("Players:")]
+                    )
                 ]
-            )
+            ),
         ],
     ));
 }
@@ -104,4 +133,43 @@ fn update_connection_ui(
 
     spans.p2().0 .0 = status_text;
     *spans.p2().1 = ClassList::new(status_class);
+}
+
+fn on_new_player_added_hook(
+    event: On<Add, Player>,
+    mut commands: Commands,
+    query: Query<(&PlayerId, &Player)>,
+    args: Res<Args>,
+    players_list: Single<Entity, With<PlayersList>>,
+) -> Result {
+    let (id, player) = query.get(event.entity)?;
+
+    let class_list = if args.id == id.0 {
+        "player controlled"
+    } else {
+        "player"
+    };
+    commands.spawn((
+        ClassList::new(class_list),
+        Node::default(),
+        InlineStyle::new(&format!(
+            "--player-color: {}",
+            id.color().to_srgba().to_hex()
+        )),
+        children![
+            (ClassList::new("player-icon"), Node::default()),
+            (
+                ClassList::new("player-name"),
+                Text::new(player.name.clone()),
+            ),
+            (
+                ClassList::new("player-id"),
+                Text::new(format!("(ID: {})", id.0))
+            )
+        ],
+        ChildOf(players_list.into_inner()),
+        PlayerSpanOf(event.entity),
+    ));
+
+    Ok(())
 }

@@ -43,13 +43,44 @@ text,span {
   transform: translateX(-50%);
 }
 
-#connection {
+#info {
   position: absolute;
   top: 0px;
   right: 0%;
-
+  gap: 10px;
   flex-direction: column;
-  background: #0009;
-  padding: 20px;
-  border-radius: 20px;
+
+  &>* {
+    background: #0009;
+    padding: 20px;
+    border-radius: 20px;
+  }
+}
+
+#connection, #players {
+  flex-direction: column;
+}
+
+#players>.player {
+  padding: 4px;
+  color: var(--player-color);
+  gap: 10px;
+
+  &.controlled {
+    border: 1px #eee2;
+    border-top-width: 0px;
+    border-left-width: 0px;
+    border-right-width: 0px;
+    border-radius: 15%;
+  }
+  &>.player-icon {
+    width: 12px;
+    height: 12px;
+    align-self: center;
+    background: var(--player-color);
+    border-radius: 50%;
+  }
+  &>.player-id {
+    color: #eee8;
+  }
 }
