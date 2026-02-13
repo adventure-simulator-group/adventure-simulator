@@ -1,3 +1,5 @@
+#![feature(ptr_as_ref_unchecked)]
+
 //! Tactical Server - Minimal Lightyear game server
 //!
 //! Simple flow:
@@ -101,13 +103,18 @@ fn main() {
             Update,
             (
                 check_mission_timeout,
-                setup_server.run_if(resource_added::<SpacetimeDb>),
+                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
         .add_observer(on_new_client_added_hook)
         .add_observer(on_new_client_connected_hook)
         .add_observer(on_server_started_hook)
         .run();
+}
+
+#[derive(Component)]
+struct LoadingPlayer {
+    id: u64,
 }
 
 #[derive(Resource)]
@@ -136,6 +143,65 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
     Ok(())
 }
 
+fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
+    conn.on_insert(
+        RemoteTables::tactical_server,
+        on_stdb_insert_tactical_server,
+    );
+
+    conn.on_insert(RemoteTables::character, on_stdb_insert_character);
+}
+
+fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
+    info!("Synced a new tactical server from spacetimedb...");
+
+    match server.status {
+        TacticalStatus::Ready => {
+            info!("=== Tactical Server Ready ===");
+            info!("(server) Mission: {}", server.mission_id);
+            info!("(server) Scene  : {}", server.scene_key);
+        }
+        status => {
+            error!("Tactical server wasn't marked as ready: {status:?}");
+        }
+    }
+}
+
+fn on_stdb_insert_character(
+    InRef(character): InRef<Character>,
+    mut commands: Commands,
+    q_loading_characters: Query<(Entity, &LoadingPlayer, &ControlledBy)>,
+) {
+    info!("Synced a new character from spacetimedb...");
+
+    let Some((entity, _, controlled_by)) = q_loading_characters
+        .iter()
+        .find(|(_, loading, _)| loading.id == character.id)
+    else {
+        error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
+        return;
+    };
+
+    commands.entity(entity).remove::<LoadingPlayer>().insert((
+        Player {
+            name: character.name.clone(),
+        },
+        PlayerId(character.id),
+        CharacterController::default(),
+        Collider::cylinder(0.4, 1.2),
+        CollisionMargin(0.01),
+        Transform::from_xyz(0.0, 50.0, 0.0),
+        Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
+    // it's more of a visor entity -- it will receive RotateCamera inputs,
+    // required for correct movement
+    commands.spawn((CharacterControllerCameraOf::new(entity), *controlled_by));
+
+    info!("Player {entity:?} is loaded: {character:?}",);
+}
+
 fn check_mission_timeout(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
@@ -161,7 +227,7 @@ fn check_mission_timeout(
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.reducers
+    conn.reducers()
         .commit_mission(args.mission_id.clone(), success, xp_gained)?;
 
     info!("Mission committed successfully");
@@ -228,9 +294,9 @@ fn on_server_started_hook(
 
     info!("Notifying spacetimedb that the server is ready...");
 
-    conn.reducers
+    conn.reducers()
         .create_tactical_server(args.mission_id.clone(), args.scene_key.clone())?;
-    conn.reducers.tactical_server_ready(
+    conn.reducers().tactical_server_ready(
         args.mission_id.clone(),
         args.addr.to_string(),
         default(),
@@ -241,14 +307,6 @@ fn on_server_started_hook(
         "SELECT * FROM tactical_server WHERE mission_id = '{}'",
         args.mission_id
     ));
-    conn.on_insert(
-        RemoteTables::tactical_server,
-        move |_server: InRef<TacticalServer>, args: Res<Args>| {
-            info!("=== Tactical Server Ready ===");
-            info!("Mission: {}", args.mission_id);
-            info!("Scene: {}", args.scene_key);
-        },
-    );
 
     Ok(())
 }
@@ -269,54 +327,30 @@ fn on_new_client_connected_hook(
     event: On<Add, Connected>,
     query: Query<&RemoteId, With<ClientOf>>,
     args: Res<Args>,
+    mut commands: Commands,
     mut conn: ResMut<SpacetimeDb>,
 ) -> Result {
     let client_id = query.get(event.entity)?;
     let client_id = client_id.0;
     let id = client_id.to_bits();
-    let owner = event.entity;
 
-    conn.reducers.create_character(id)?;
-    conn.reducers.enter_mission(id, args.mission_id.clone())?;
+    conn.reducers().create_character(id)?;
+    conn.reducers().enter_mission(id, args.mission_id.clone())?;
 
     conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
-    conn.on_insert(
-        RemoteTables::character,
-        move |InRef(character): InRef<Character>, mut commands: Commands| {
-            let entity = commands
-                .spawn((
-                    Player {
-                        name: character.name.clone(),
-                    },
-                    PlayerId(id),
-                    CharacterController::default(),
-                    Collider::cylinder(0.4, 1.2),
-                    CollisionMargin(0.01),
-                    Transform::from_xyz(0.0, 50.0, 0.0),
-                    Replicate::to_clients(NetworkTarget::All),
-                    ControlledBy {
-                        owner,
-                        lifetime: default(),
-                    },
-                ))
-                .id();
+    let entity = commands
+        .spawn((
+            LoadingPlayer { id },
+            ControlledBy {
+                owner: event.entity,
+                lifetime: default(),
+            },
+        ))
+        .id();
 
-            // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
-            // it's more of a visor entity -- it will receive RotateCamera inputs,
-            // required for correct movement
-            commands.spawn((
-                CharacterControllerCameraOf::new(entity),
-                ControlledBy {
-                    owner,
-                    lifetime: default(),
-                },
-            ));
-
-            info!(
-                "Created player entity {:?} for client {:?}: {character:?}",
-                entity, client_id
-            );
-        },
+    info!(
+        "Created a new loading player entity {:?} for client {:?}",
+        entity, client_id
     );
 
     Ok(())

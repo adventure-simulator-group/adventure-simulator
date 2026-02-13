@@ -21,14 +21,18 @@ impl Plugin for SpacetimeDbPlugin {
 }
 
 // FIXME: frame tick and disconnect on shutown
-#[derive(Resource, Deref, DerefMut)]
+#[derive(Resource)]
 pub struct SpacetimeDb {
-    #[deref]
-    pub conn: DbConnection,
+    conn: DbConnection,
     world: Arc<SyncUnsafeCell<MaybeUninit<UnsafeWorldCell<'static>>>>,
 }
 
 impl SpacetimeDb {
+    /// Access spacetime db reducers.
+    pub fn reducers(&self) -> &RemoteReducers {
+        &self.conn.reducers
+    }
+
     /// Subscribe for spacetime db database changes.
     ///
     /// For native subsctiptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
@@ -44,18 +48,36 @@ impl SpacetimeDb {
             .subscribe(queries.into_queries())
     }
 
+    /// Create a new bevy system callback for new rows in a table.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// fn system(mut conn: ResMut<SpacetimeDb>) {
+    ///     conn.on_insert(RemoteTables::character, |InRef(character): InRef<Character>, mut commands: Commands| {
+    ///         commands.spawn(Name::from(character.name.clone()));
+    ///     });
+    /// }
+    /// ```
     pub fn on_insert<'a, T, TGet, S, M>(&'a mut self, table: TGet, system: S)
     where
         T: Table + 'a,
         TGet: FnOnce(&'a RemoteTables) -> T,
         S: IntoSystem<InRef<'static, T::Row>, (), M> + Send + Sync + 'static + Copy,
     {
-        let table = table(&self.db);
+        let table = table(&self.conn.db);
         let world = self.world.clone();
         table.on_insert(move |_ctx, new| {
             debug!("on_insert: {}", std::any::type_name::<T::Row>());
+
+            // SAFETY: `world` is set and used within one system: `update_spacetimedb`.
+            //         Spacetime will call this callback only when the inner connection is mid-update,
+            //         which in our case is single instance of `tick_frame` call when the world is valid.
             unsafe {
                 let world = world.get().as_mut().unwrap().assume_init_mut().world_mut();
+
+                // FIXME: `run_system_once_with` is extremely ineffecent,
+                //        we need to register the system once somehow
                 let system = IntoSystem::into_system(system);
                 world.run_system_once_with(system, new).unwrap();
             }
@@ -97,6 +119,9 @@ impl<const N: usize> IntoQueries for [String; N] {
 
 fn update_spacetimedb(world: &mut World) -> Result {
     world.resource_scope::<SpacetimeDb, _>(|world, stdb| -> Result {
+        // SAFETY: `world` is only used in callbacks, which are invoked in the subsequent
+        //         `frame_tick` call. We limit access to spacetime db to ensure that callbacks
+        //         will always have valid world attached.
         unsafe {
             stdb.world
                 .get()
@@ -104,7 +129,7 @@ fn update_spacetimedb(world: &mut World) -> Result {
                 .unwrap()
                 .write(std::mem::transmute(world.as_unsafe_world_cell()));
         }
-        stdb.frame_tick()?;
+        stdb.conn.frame_tick()?;
         Ok(())
     })
 }
