@@ -62,12 +62,13 @@ text,span {
 }
 
 #players>.player {
-  padding: 4px;
+  padding: 4px 10px;
   color: var(--player-color);
   gap: 10px;
 
   &.controlled {
-    border: 1px #eee2;
+    background: #0006;
+    border: 1px var(--player-color);
     border-top-width: 0px;
     border-left-width: 0px;
     border-right-width: 0px;
