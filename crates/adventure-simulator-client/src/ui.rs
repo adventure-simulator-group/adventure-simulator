@@ -47,6 +47,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         Node::default(),
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![
+            (Name::new("crosshair"), Node::default()),
             (
                 Name::new("controls"),
                 Text::new("WASD to move | Space to jump | Mouse to look around"),
@@ -93,13 +94,13 @@ fn update_player_ui(
     player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
     mut q_position_span: Query<&mut TextSpan, With<PositionSpan>>,
 ) {
-    let (transform, &PlayerId(player_id)) = player.into_inner();
+    let (transform, &PlayerId(_player_id)) = player.into_inner();
 
     if transform.is_changed() {
         let translation = transform.translation;
         for mut text in &mut q_position_span {
             text.0 = format!(
-                "{:.1} {:.1} {:.1}",
+                "{:.1}  {:.1}  {:.1}",
                 translation.x, translation.y, translation.z
             );
         }
@@ -162,10 +163,7 @@ fn on_new_player_added_hook(
                 ClassList::new("player-name"),
                 Text::new(player.name.clone()),
             ),
-            (
-                ClassList::new("player-id"),
-                Text::new(format!("(ID: {})", id.0))
-            )
+            (ClassList::new("player-id"), Text::new(format!("#{}", id.0)))
         ],
         ChildOf(players_list.into_inner()),
         PlayerSpanOf(event.entity),

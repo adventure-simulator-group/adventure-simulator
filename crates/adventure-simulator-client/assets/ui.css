@@ -1,3 +1,8 @@
+@font-face {
+    font-family: "SN Pro";
+    src: url("SNPro-VariableFont_wght.ttf");
+}
+
 @keyframes show-in {
   from {
     scale: 0.95;
@@ -16,6 +21,7 @@
   height: 100%;
   font-size: 16px;
   color: #fffa;
+  font-family: "SN Pro";
 
   &>* {
     margin: 20px;
@@ -24,7 +30,20 @@
 
 text,span {
   animation: 0.4s ease-out show-in;
+  scale: initial;
   text-shadow: #0007 1px 1px;
+}
+
+#crosshair {
+  background-image: url("crosshair.png");
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  margin-top: -36px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -100;
 }
 
 #position {
@@ -32,15 +51,15 @@ text,span {
   top: 0px;
 
   &>span {
-    color: #eee8;
+    color: #eee6;
   }
 }
 
 #controls {
   position: absolute;
   bottom: 0px;
-  left: 50%;
-  transform: translateX(-50%);
+  width: 100%;
+  text-align: center;
 }
 
 #info {
@@ -65,23 +84,25 @@ text,span {
   padding: 4px 10px;
   color: var(--player-color);
   gap: 10px;
+  align-items: center;
 
   &.controlled {
     background: #0006;
-    border: 1px var(--player-color);
-    border-top-width: 0px;
-    border-left-width: 0px;
-    border-right-width: 0px;
+    border: 1px #fff1;
     border-radius: 15%;
   }
   &>.player-icon {
-    width: 12px;
-    height: 12px;
-    align-self: center;
+    width: 8px;
+    height: 8px;
     background: var(--player-color);
     border-radius: 50%;
   }
+  &>.player-name {
+    flex-grow: 1;
+    min-width: 180px;
+    max-width: 250px;
+  }
   &>.player-id {
-    color: #eee8;
+    color: #fff3;
   }
 }
