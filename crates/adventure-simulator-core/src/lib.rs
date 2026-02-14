@@ -18,7 +18,8 @@ pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
-        camera::CharacterControllerCameraOf, input, CharacterController, CharacterControllerState,
+        camera::{CharacterControllerCamera, CharacterControllerCameraOf},
+        input, CharacterController, CharacterControllerState, CharacterLook,
     };
     pub use bevy_enhanced_input::{self, prelude::*};
 }

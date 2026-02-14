@@ -7,8 +7,8 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["server", "client"]
-server = ["lightyear/server", "lightyear/client"]
+default = []
+server = ["lightyear/server"]
 client = ["lightyear/client"]
 
 [dependencies]

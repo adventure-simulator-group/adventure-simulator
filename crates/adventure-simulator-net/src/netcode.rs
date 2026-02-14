@@ -19,7 +19,6 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
         }));
         app.register_input_action::<input::Movement>();
         app.register_input_action::<input::Jump>();
-        app.register_input_action::<input::RotateCamera>();
 
         #[cfg(feature = "server")]
         app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin {
@@ -31,6 +30,7 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
         app.register_component::<PlayerId>();
         app.register_component::<Transform>()
             .add_interpolation_with(TransformLinearInterpolation::lerp);
+        app.register_component::<CharacterLook>();
 
         app.register_component::<SceneId>();
         app.register_component::<SceneTerrain>();

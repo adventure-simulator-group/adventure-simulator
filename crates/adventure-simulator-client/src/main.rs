@@ -9,14 +9,12 @@
 
 use adventure_simulator_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventure_simulator_core::prelude::*;
-use adventure_simulator_net::lightyear::prelude::{ReplicationSender, SendUpdatesMode};
 use adventure_simulator_net::prelude::*;
-use adventure_simulator_net::protocol::SEND_INTERVAL;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::light_consts::lux;
 use bevy::light::AtmosphereEnvironmentMapLight;
-use bevy::pbr::{Atmosphere, ScreenSpaceAmbientOcclusion};
+use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::{
@@ -97,17 +95,14 @@ fn run(args: Args) {
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
-    commands.spawn((
-        AdventureSimulatorClient {
-            id: args.id,
-            server_addr: args.server_addr.clone(),
-            ..default()
-        },
-        ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
-    ));
+    commands.spawn(AdventureSimulatorClient {
+        id: args.id,
+        server_addr: args.server_addr.clone(),
+        ..default()
+    });
 }
 
-fn setup_scene(mut commands: Commands) {
+fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<ScatteringMedium>>) {
     // Spawn a directional light
     commands.spawn((
         Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -125,7 +120,7 @@ fn setup_scene(mut commands: Commands) {
             fov: 80.0_f32.to_radians(),
             ..default()
         }),
-        Atmosphere::EARTH,
+        Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         AtmosphereEnvironmentMapLight::default(),
         Exposure::SUNLIGHT,
         Tonemapping::AcesFitted,

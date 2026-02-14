@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::prelude::ProtocolSettings;
+use crate::protocol::SEND_INTERVAL;
 use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
 use adventure_simulator_core::player::Player;
 use bevy::ecs::lifecycle::HookContext;
@@ -77,6 +78,7 @@ impl AdventureSimulatorClient {
                 UdpIo::default(),
                 PeerAddr(server_addr),
                 ReplicationReceiver::default(),
+                ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
             ));
 
             world.trigger(Connect { entity });

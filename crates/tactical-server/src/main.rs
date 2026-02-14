@@ -20,9 +20,7 @@ use adventure_simulator_net::{
         *,
     },
     prelude::*,
-    protocol::SEND_INTERVAL,
 };
-use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
 use strategic_db_client::*;
@@ -84,11 +82,19 @@ fn main() {
     let args = Args::parse();
 
     App::new()
-        .add_plugins(MinimalPlugins)
-        .add_plugins(LogPlugin {
-            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-            ..default()
-        })
+        .add_plugins((
+            bevy::app::PanicHandlerPlugin,
+            bevy::app::TaskPoolPlugin::default(),
+            bevy::log::LogPlugin {
+                filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+                ..default()
+            },
+            bevy::time::TimePlugin,
+            bevy::transform::TransformPlugin,
+            bevy::app::ScheduleRunnerPlugin::default(),
+            #[cfg(any(all(unix, not(target_os = "horizon")), windows))]
+            bevy::app::TerminalCtrlCHandlerPlugin,
+        ))
         .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
         .add_plugins((stdb::SpacetimeDbPlugin,))
         .insert_resource(MissionState {
@@ -106,7 +112,6 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
-        .add_observer(on_new_client_added_hook)
         .add_observer(on_new_client_connected_hook)
         .add_observer(on_server_started_hook)
         .run();
@@ -170,13 +175,13 @@ fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
 fn on_stdb_insert_character(
     InRef(character): InRef<Character>,
     mut commands: Commands,
-    q_loading_characters: Query<(Entity, &LoadingPlayer, &ControlledBy)>,
+    q_loading_characters: Query<(Entity, &LoadingPlayer)>,
 ) {
     info!("Synced a new character from spacetimedb...");
 
-    let Some((entity, _, controlled_by)) = q_loading_characters
+    let Some((entity, _)) = q_loading_characters
         .iter()
-        .find(|(_, loading, _)| loading.id == character.id)
+        .find(|(_, loading)| loading.id == character.id)
     else {
         error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
         return;
@@ -193,11 +198,6 @@ fn on_stdb_insert_character(
         Transform::from_xyz(0.0, 50.0, 0.0),
         Replicate::to_clients(NetworkTarget::All),
     ));
-
-    // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
-    // it's more of a visor entity -- it will receive RotateCamera inputs,
-    // required for correct movement
-    commands.spawn((CharacterControllerCameraOf::new(entity), *controlled_by));
 
     info!("Player {entity:?} is loaded: {character:?}",);
 }
@@ -309,18 +309,6 @@ fn on_server_started_hook(
     ));
 
     Ok(())
-}
-
-fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
-    commands.entity(event.entity).insert((
-        ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
-        ReplicationReceiver::default(),
-    ));
-
-    info!(
-        "New link added: {:?} is now a replication sender/receiver.",
-        event.entity
-    );
 }
 
 fn on_new_client_connected_hook(

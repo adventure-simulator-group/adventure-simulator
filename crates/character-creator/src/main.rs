@@ -12,15 +12,13 @@ const MODEL_PATH: &str = "models/animated/Michelle.glb";
 
 fn main() {
     App::new()
-        .insert_resource(AmbientLight {
-            color: Color::WHITE,
-            brightness: 2000.,
-            ..default()
-        })
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
         .add_systems(Update, setup_scene_once_loaded)
-        .add_systems(Update, (monitor_scene_load, debug_gltf_events, debug_scene_events))
+        .add_systems(
+            Update,
+            (monitor_scene_load, debug_gltf_events, debug_scene_events),
+        )
         .add_systems(Update, keyboard_control)
         .run();
 }
@@ -60,6 +58,11 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 2.0, 8.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
+        AmbientLight {
+            color: Color::WHITE,
+            brightness: 2000.,
+            ..default()
+        },
     ));
 
     // Plane
@@ -275,4 +278,3 @@ fn debug_scene_events(mut events: MessageReader<AssetEvent<Scene>>) {
         info!("Scene asset event: {:?}", event);
     }
 }
-

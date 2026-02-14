@@ -22,39 +22,28 @@ license = "GPL-3.0"
 adventure-simulator-net = { version = "0.1.0", default-features = false }
 adventure-simulator-core = { version = "0.1.0" }
 
-bevy = { version = "0.17.3", default-features = false }
-lightyear = { version = "0.25.5", default-features = false }
-avian3d = { version = "0.4.1", default-features = false }
+bevy = { version = "0.18.0", default-features = false }
+lightyear = { version = "0.26.1", default-features = false }
+avian3d = { version = "0.6.0-rc.1", default-features = false }
+bevy_ahoy = { version = "0.1.0-rc.1", features = ["serialize"] }
+bevy_enhanced_input = "0.23"
+bevy_flair = "0.7"
+noiz = "0.4.0"
+
 serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
-async-compat = "0.2.3"
+async-compat = "0.2.5"
 cfg-if = "1.0"
-clap = { version = "4.5.4", features = ["derive", "env"] }
-tracing = "0.1.40"
+clap = { version = "4.5.58", features = ["derive", "env"] }
+tracing = "0.1.44"
 rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
-bevy-inspector-egui = { version = "0.35", default-features = false, features = [
-    "bevy_pbr",
-    "bevy_image",
-    "bevy_render",
-    "egui_open_url",
-] }
-bevy_egui = { version = "0.38", default-features = false, features = [
-    "open_url",
-    "default_fonts",
-    "render",
-] }
-bevy_ahoy = { git = "https://github.com/janhohenheim/bevy_ahoy" }
-bevy_enhanced_input = "0.20"
-bevy_flair = "0.6"
-noiz = "0.3.0"
-toml = "0.9.8"
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 wasm-bindgen = "=0.2.106"
-spacetimedb = "=1.11.0"
-spacetimedb-sdk = "1.1"
+spacetimedb = "=1.11"
+spacetimedb-sdk = "=1.11"
 
 [workspace.lints.clippy]
 type_complexity = "allow"
@@ -63,7 +52,8 @@ too_many_arguments = "allow"
 [patch.crates-io]
 adventure-simulator-net = { path = "crates/adventure-simulator-net" }
 adventure-simulator-core = { path = "crates/adventure-simulator-core" }
-# bevy_ahoy requires bleeding edge avian3d
-avian3d = { git = "https://github.com/avianphysics/avian" }
 # https://github.com/cBournhonesque/lightyear/pull/1405
-lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "impl-interpolated" }
+lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "avian-0.6.0-rc.1" }
+# https://github.com/janhohenheim/bevy_ahoy/pull/66
+# https://github.com/janhohenheim/bevy_ahoy/pull/67
+bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }

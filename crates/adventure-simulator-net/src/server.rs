@@ -8,6 +8,7 @@ use lightyear::prelude::server::*;
 use lightyear::prelude::*;
 
 use crate::prelude::ProtocolSettings;
+use crate::protocol::SEND_INTERVAL;
 use crate::{DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
 use bevy::ecs::world::DeferredWorld;
 
@@ -17,7 +18,8 @@ pub struct AdventureSimulatorServerPlugin;
 impl Plugin for AdventureSimulatorServerPlugin {
     fn build(&self, app: &mut App) {
         let tick_duration = Duration::from_secs_f64(FIXED_TICK_DURATION);
-        app.add_plugins(ServerPlugins { tick_duration });
+        app.add_plugins(ServerPlugins { tick_duration })
+            .add_observer(on_new_client_added_hook);
     }
 }
 
@@ -62,4 +64,16 @@ impl AdventureSimulatorServer {
             Ok(())
         });
     }
+}
+
+fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
+    commands.entity(event.entity).insert((
+        ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
+        ReplicationReceiver::default(),
+    ));
+
+    info!(
+        "New link added: {:?} is now a replication sender/receiver.",
+        event.entity
+    );
 }
