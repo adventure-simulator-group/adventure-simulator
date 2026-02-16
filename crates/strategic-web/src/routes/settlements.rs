@@ -55,15 +55,20 @@ async fn show_settlement(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    // Get available quests at this settlement
+    // Get quests at this settlement, then filter by available status in Rust.
+    // SpacetimeDB enums may not compare reliably with SQL string literals.
     let quests: Vec<Quest> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}' AND status = 'Available'",
+            "SELECT * FROM quest WHERE settlement_id = '{}'",
             id
         ))
         .await
         .unwrap_or_default();
+    let available_quests: Vec<Quest> = quests
+        .into_iter()
+        .filter(|q| is_available_status(&q.status))
+        .collect();
 
     // Get parties at this settlement
     let parties: Vec<Party> = state
@@ -77,7 +82,7 @@ async fn show_settlement(
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
-        settlement_detail_page(settlement, &quests, &parties, logged_in_as.as_deref())
+        settlement_detail_page(settlement, &available_quests, &parties, logged_in_as.as_deref())
             .into_string(),
     )
 }
@@ -231,4 +236,8 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
         .await
         .unwrap_or_default();
     characters.first().map(|c| c.name.clone())
+}
+
+fn is_available_status(status: &str) -> bool {
+    status.to_ascii_lowercase().contains("available")
 }

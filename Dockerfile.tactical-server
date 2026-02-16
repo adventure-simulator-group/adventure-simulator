@@ -44,6 +44,9 @@ RUN mkdir -p crates/adventure-simulator-net/src \
     echo "fn main() {}" > crates/tactical-server/src/main.rs && \
     echo "fn main() {}" > crates/tactical-spawner/src/main.rs
 
+# Provide a dummy git hash for spacetimedb-lib build script (no .git in Docker context)
+ENV SPACETIMEDB_NIX_BUILD_GIT_COMMIT=docker
+
 # Build dependencies only (cached layer)
 RUN cargo build --release -p tactical-server 2>/dev/null || true
 

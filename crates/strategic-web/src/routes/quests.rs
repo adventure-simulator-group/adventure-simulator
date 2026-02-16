@@ -79,7 +79,7 @@ async fn show_quest(
                 if let Some(party) = parties.first() {
                     let is_leader = party.leader_id == character_id;
                     can_accept =
-                        quest.status.to_lowercase() == "available" && at_settlement && is_leader;
+                        is_available_status(&quest.status) && at_settlement && is_leader;
                     is_party_quest = quest.accepted_by.as_ref() == Some(party_id);
                 }
             }
@@ -103,6 +103,10 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
         .await
         .unwrap_or_default();
     characters.first().map(|c| c.name.clone())
+}
+
+fn is_available_status(status: &str) -> bool {
+    status.to_ascii_lowercase().contains("available")
 }
 
 async fn accept_quest(

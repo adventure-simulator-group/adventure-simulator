@@ -2,28 +2,86 @@
 
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use serde_json::json;
 use serde_json::Value;
 
-use super::types::QueryResponse;
+use super::types::{AlgebraicType, QueryResponse};
 
-/// Convert SpacetimeDB value encoding to standard JSON
-/// SpacetimeDB encodes Option as: [0, value] = Some(value), [1, []] = None
-fn convert_spacetime_value(value: &Value) -> Value {
-    match value {
-        Value::Array(arr) if arr.len() == 2 => {
-            // Check if this is a SpacetimeDB Option encoding
-            if let Some(tag) = arr[0].as_i64() {
-                match tag {
-                    0 => convert_spacetime_value(&arr[1]), // Some(value)
-                    1 => Value::Null,                      // None
-                    _ => value.clone(),
-                }
-            } else {
-                value.clone()
-            }
-        }
-        _ => value.clone(),
+fn sum_variants(algebraic_type: &AlgebraicType) -> Option<&Vec<Value>> {
+    let AlgebraicType::Value(ty) = algebraic_type;
+    ty.get("Sum")?.get("variants")?.as_array()
+}
+
+fn variant_name(variant: &Value) -> Option<&str> {
+    variant.get("name")?.get("some")?.as_str()
+}
+
+fn is_option_sum(variants: &[Value]) -> bool {
+    if variants.len() != 2 {
+        return false;
     }
+
+    let names: Vec<_> = variants
+        .iter()
+        .filter_map(variant_name)
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+
+    names.iter().any(|n| n == "some") && names.iter().any(|n| n == "none")
+}
+
+/// Convert SpacetimeDB encoded values to normal JSON using schema type info.
+/// Handles:
+/// - Option<T>: [0, value] => value, [1, []] => null
+/// - Unit enums: [tag, []] => "VariantName"
+fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Value {
+    let Some(variants) = sum_variants(algebraic_type) else {
+        return value.clone();
+    };
+
+    let Value::Array(arr) = value else {
+        return value.clone();
+    };
+
+    if arr.len() != 2 {
+        return value.clone();
+    }
+
+    let Some(tag) = arr[0].as_u64() else {
+        return value.clone();
+    };
+    let Some(variant) = variants.get(tag as usize) else {
+        return value.clone();
+    };
+    let payload = &arr[1];
+
+    if is_option_sum(variants) {
+        if variant_name(variant)
+            .map(|n| n.eq_ignore_ascii_case("none"))
+            .unwrap_or(false)
+        {
+            return Value::Null;
+        }
+        return payload.clone();
+    }
+
+    // Most strategic layer enums are unit variants, encoded as empty tuple payload.
+    if payload
+        .as_array()
+        .map(|elements| elements.is_empty())
+        .unwrap_or(false)
+    {
+        return Value::String(variant_name(variant).unwrap_or("Unknown").to_string());
+    }
+
+    Value::Object(
+        [(
+            variant_name(variant).unwrap_or("Unknown").to_string(),
+            json!(payload),
+        )]
+        .into_iter()
+        .collect(),
+    )
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -86,12 +144,16 @@ impl SpacetimeClient {
 
         // Extract rows from the first result set
         if let Some(first) = query_response.first() {
-            // Get column names from schema
-            let column_names: Vec<&str> = first
+            // Get column metadata from schema
+            let columns: Vec<(&str, &AlgebraicType)> = first
                 .schema
                 .elements
                 .iter()
-                .filter_map(|e| e.name.as_ref().map(|n| n.some.as_str()))
+                .filter_map(|e| {
+                    e.name
+                        .as_ref()
+                        .map(|n| (n.some.as_str(), &e.algebraic_type))
+                })
                 .collect();
 
             // Convert array rows to objects using column names
@@ -102,9 +164,8 @@ impl SpacetimeClient {
                     if let Value::Array(values) = row {
                         let mut obj = serde_json::Map::new();
                         for (i, value) in values.iter().enumerate() {
-                            if let Some(&name) = column_names.get(i) {
-                                // Handle SpacetimeDB Option encoding: [0, value] = Some, [1, []] = None
-                                let converted = convert_spacetime_value(value);
+                            if let Some(&(name, algebraic_type)) = columns.get(i) {
+                                let converted = convert_spacetime_value(value, algebraic_type);
                                 obj.insert(name.to_string(), converted);
                             }
                         }

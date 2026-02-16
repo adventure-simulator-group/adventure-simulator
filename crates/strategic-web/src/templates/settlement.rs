@@ -78,6 +78,16 @@ pub fn settlement_detail_page(
             }
 
             div class="settlement-content" {
+                // Travel action
+                (card("Travel", html! {
+                    p { "Move your current character to this settlement." }
+                    form action=(format!("/settlements/{}/travel", settlement.id)) method="post" {
+                        button type="submit" class="btn btn-primary" {
+                            "Travel Here"
+                        }
+                    }
+                }))
+
                 // Overview
                 (card("About", html! {
                     p { "A " (population_description(settlement.population_level).to_lowercase()) " with various services available." }
@@ -181,7 +191,7 @@ fn quest_notice(quest: &Quest) -> Markup {
             div class="notice-enemy" {
                 "Target: " (quest.enemy_count) " " (quest.enemy_type)
             }
-            @if quest.status.to_lowercase() == "available" {
+            @if quest.status.to_lowercase().contains("available") {
                 form data-on-submit=(format!("@post('/quests/{}/accept')", quest.id)) {
                     button type="submit" class="btn btn-primary" {
                         "Accept Quest"

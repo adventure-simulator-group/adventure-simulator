@@ -57,13 +57,22 @@ async fn create_party(
 
     let id = format!("party-{}", chrono_id());
 
-    let _ = state
+    let result = state
         .db
         .call(
             "create_party",
             &[json!(id.clone()), json!(form.name), json!(leader_id)],
         )
         .await;
+
+    if let Err(error) = result {
+        tracing::warn!(
+            "Failed to create party for character {}: {:?}",
+            leader_id,
+            error
+        );
+        return Redirect::to("/parties/new");
+    }
 
     Redirect::to(&format!("/parties/{}", id))
 }

@@ -2,9 +2,7 @@
 
 use maud::{html, Markup};
 
-use super::{
-    base_layout_with_session, card, empty_state, input_field, list_item, loading_indicator,
-};
+use super::{base_layout_with_session, card, empty_state, input_field, list_item};
 use crate::spacetimedb::{Character, Party, PartyMember, Quest};
 
 /// List all parties (optionally filtered by settlement)
@@ -56,14 +54,14 @@ pub fn party_new_page(logged_in_as: Option<&str>) -> Markup {
             h2 { "Create New Party" }
 
             (card("Party Details", html! {
-                form #"party-form" data-on-submit="@post('/parties')" {
+                // Use regular form POST so browser follows redirects on session/auth failures.
+                form #"party-form" action="/parties" method="post" {
                     (input_field("name", "Party Name", "text", true, None))
 
                     div class="form-actions" {
                         button type="submit" class="btn btn-primary" {
                             "Create Party"
                         }
-                        (loading_indicator("create-loading"))
                     }
                 }
             }))
@@ -124,6 +122,9 @@ pub fn party_detail_page(
                         }
                     } @else {
                         p { "Traveling..." }
+                        a href="/settlements" class="btn btn-primary" {
+                            "Go to Settlements"
+                        }
                     }
                 }))
 
