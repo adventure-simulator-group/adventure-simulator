@@ -13,7 +13,7 @@ pub mod scene;
 pub use avian3d;
 
 pub mod prelude {
-    pub use crate::player::{Player, PlayerId};
+    pub use crate::player::{ControlledPlayer, Player, PlayerId};
     pub use crate::scene::{SceneId, SceneTerrain};
     pub use crate::AdventureSimulatorCorePlugins;
     pub use avian3d::prelude::*;

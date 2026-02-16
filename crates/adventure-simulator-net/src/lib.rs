@@ -3,6 +3,7 @@ compile_error!("The `server` feature cannot be enabled when compiling for wasm32
 
 #[cfg(feature = "client")]
 pub mod client;
+mod look;
 pub mod netcode;
 pub mod protocol;
 #[cfg(feature = "server")]
@@ -42,5 +43,6 @@ bevy::app::plugin_group! {
         #[custom(cfg(feature = "client"))]
         crate::client:::AdventureSimulatorClientPlugin,
         crate::netcode:::AdventureSimulatorNetcodePlugin,
+        crate::look:::AdventureSimulatorCharacterLookPlugin,
     }
 }

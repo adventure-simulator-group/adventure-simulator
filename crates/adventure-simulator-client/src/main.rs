@@ -28,6 +28,7 @@ use std::net::SocketAddr;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+mod player;
 mod ui;
 
 #[derive(Parser, Debug, Resource)]
@@ -78,7 +79,7 @@ fn run(args: Args) {
                 }),
             AdventureSimulatorNetPlugins,
         ))
-        .add_plugins((ui::UiPlugin,))
+        .add_plugins((ui::UiPlugin, player::PlayerPlugin))
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
         .add_systems(Startup, (setup_scene, setup_client))
         .add_systems(
@@ -88,7 +89,6 @@ fn run(args: Args) {
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
             ),
         )
-        .add_observer(on_new_player_added_hook)
         .add_observer(on_game_scene_added_hook)
         .insert_resource(args)
         .run();
@@ -138,7 +138,10 @@ fn on_game_scene_added_hook(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
     let (id, terrain) = query.get(event.entity)?;
-    info!("Spawning a scene {id:?}");
+    info!(
+        entity = ?event.entity,
+        "Spawning a scene {id:?}"
+    );
 
     let floor_color = match id.0.as_str() {
         "hills" => Color::srgb_u8(96, 108, 56),
@@ -183,80 +186,6 @@ fn on_game_scene_added_hook(
     spawn_prop(Vec2::new(-5.0, -5.0), terrain, Color::srgb(0.8, 0.8, 0.4));
     spawn_prop(Vec2::new(10.0, 0.0), terrain, Color::srgb(0.6, 0.3, 0.6));
     spawn_prop(Vec2::new(-10.0, 0.0), terrain, Color::srgb(0.3, 0.6, 0.6));
-
-    Ok(())
-}
-
-fn on_new_player_added_hook(
-    event: On<Add, Player>,
-    mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
-    query: Query<(&Player, &PlayerId)>,
-    args: Res<Args>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) -> Result {
-    let (Player { name }, id) = query.get(event.entity)?;
-    info!(
-        "Added new player {name} (ID: {} | {:?})",
-        id.0, event.entity
-    );
-
-    if args.id == id.0 {
-        info!("New player is assigned to this client. Assuming control...",);
-
-        commands.entity(event.entity).insert((
-            // Adding character controller to sync the camera, but this component
-            // requires a bunch of physics components. The actual physic simulation
-            // is done on the server, so it shouldn't do much harm.
-            CharacterController::default(),
-            actions!(Player[
-                (
-                    Action::<input::Movement>::new(),
-                    DeadZone::default(),
-                    Bindings::spawn((
-                        Cardinal::wasd_keys(),
-                        Axial::left_stick()
-                    ))
-                ),
-                (
-                    Action::<input::Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::South],
-                ),
-                (
-                    Action::<input::RotateCamera>::new(),
-                    Bindings::spawn((
-                        Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
-                        Axial::right_stick().with((Scale::splat(4.0), DeadZone::default())),
-                    ))
-                ),
-            ]),
-        ));
-
-        commands
-            .entity(camera.into_inner())
-            .insert(CharacterControllerCameraOf::new(event.entity));
-    } else {
-        commands.entity(event.entity).insert((
-            Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: id.color(),
-                metallic: 0.0,
-                perceptual_roughness: 1.0,
-                ..default()
-            })),
-            children![(
-                Mesh3d(meshes.add(Cuboid::new(0.6, 0.3, 0.4))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: id.color().lighter(0.2),
-                    metallic: 0.0,
-                    perceptual_roughness: 1.0,
-                    ..default()
-                })),
-                Transform::from_xyz(0.0, 0.6, 0.2)
-            )],
-        ));
-    }
 
     Ok(())
 }

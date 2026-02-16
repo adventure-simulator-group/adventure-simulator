@@ -14,7 +14,7 @@ pub struct AdventureSimulatorNetcodePlugin;
 impl Plugin for AdventureSimulatorNetcodePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InputPlugin::<Player>::new(InputConfig::<Player> {
-            rebroadcast_inputs: true,
+            rebroadcast_inputs: false,
             ..default()
         }));
         app.register_input_action::<input::Movement>();

@@ -1,5 +1,9 @@
 use bevy::prelude::*;
+use bevy_enhanced_input::prelude::Actions;
 use serde::{Deserialize, Serialize};
+
+/// BEI Component alias to mark players that are controlled by the present client.
+pub type ControlledPlayer = Actions<Player>;
 
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
