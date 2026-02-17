@@ -238,6 +238,52 @@ certs sans="127.0.0.1,localhost":
     @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
     @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
 
+# Windows development recipe
+# Local dev with native Windows exes (GPU accelerated, no WSLg, no UDP issues)
+# Cross-compiles server + client to Windows, stages to E:\adventure-sim-dev, runs both
+win-dev:
+    #!/usr/bin/env bash
+    set -e
+
+    WIN_TARGET="x86_64-pc-windows-gnu"
+    STAGE_DIR="/mnt/e/adventure-sim-dev"
+    SERVER_EXE="./target/${WIN_TARGET}/win-dev/tactical-server.exe"
+    CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventure-simulator-client.exe"
+
+    echo "Building server and client (Windows)..."
+    cargo build -p tactical-server -p adventure-simulator-client --target $WIN_TARGET --profile win-dev 2>&1
+
+    echo "Staging to E:\\adventure-sim-dev..."
+    mkdir -p "$STAGE_DIR"
+    cp "$SERVER_EXE" "$STAGE_DIR/tactical-server.exe"
+    cp "$CLIENT_EXE" "$STAGE_DIR/adventure-simulator-client.exe"
+    rsync -a --delete assets/ "$STAGE_DIR/assets/"
+    # Merge per-crate asset directories (Bevy does this automatically in cargo run)
+    for d in crates/*/assets/; do
+        [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
+    done
+
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill $SERVER_PID $CLIENT_PID 2>/dev/null
+        wait $SERVER_PID $CLIENT_PID 2>/dev/null
+    }
+    trap cleanup EXIT INT TERM
+
+    echo "Starting server..."
+    cd "$STAGE_DIR" && ./tactical-server.exe --mission-id test-mission --scene-key hills --no-timeout --spacetimedb-url http://localhost:{{spacetime_port}} --spacetimedb-module {{spacetime_module}} &
+    SERVER_PID=$!
+
+    echo "Waiting for server to start..."
+    sleep 3
+
+    echo "Starting client..."
+    cd "$STAGE_DIR" && ./adventure-simulator-client.exe --id 0 --server-addr 127.0.0.1:6000 &
+    CLIENT_PID=$!
+
+    wait
+
 # Workspace utilities
 check:
     @cargo check --workspace

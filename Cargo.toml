@@ -52,8 +52,13 @@ too_many_arguments = "allow"
 [patch.crates-io]
 adventure-simulator-net = { path = "crates/adventure-simulator-net" }
 adventure-simulator-core = { path = "crates/adventure-simulator-core" }
+
 # https://github.com/cBournhonesque/lightyear/pull/1405
 lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "avian-0.6.0-rc.1" }
 # https://github.com/janhohenheim/bevy_ahoy/pull/66
 # https://github.com/janhohenheim/bevy_ahoy/pull/67
 bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }
+
+[profile.win-dev]
+inherits = "dev"
+strip = "debuginfo"
