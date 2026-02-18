@@ -4,7 +4,7 @@ use lightyear::{
     input::config::InputConfig,
     prelude::{
         input::{bei::InputPlugin, InputRegistryExt},
-        AppComponentExt,
+        AppComponentExt, InterpolationRegistrationExt, PredictionRegistrationExt,
     },
 };
 
@@ -29,6 +29,14 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
         app.register_component::<Player>();
         app.register_component::<PlayerId>();
         app.register_component::<CharacterLook>();
+
+        app.register_component::<Position>()
+            .add_prediction()
+            .add_linear_interpolation();
+        app.register_component::<Rotation>()
+            .add_prediction()
+            .add_linear_interpolation();
+        app.register_component::<LinearVelocity>().add_prediction();
 
         app.register_component::<SceneId>();
         app.register_component::<SceneTerrain>();
