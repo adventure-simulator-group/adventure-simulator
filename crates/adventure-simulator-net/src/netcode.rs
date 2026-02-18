@@ -4,7 +4,7 @@ use lightyear::{
     input::config::InputConfig,
     prelude::{
         input::{bei::InputPlugin, InputRegistryExt},
-        AppComponentExt, InterpolationRegistrationExt, TransformLinearInterpolation,
+        AppComponentExt,
     },
 };
 
@@ -22,14 +22,12 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
 
         #[cfg(feature = "server")]
         app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin {
-            replication_mode: lightyear::avian3d::plugin::AvianReplicationMode::Transform,
+            replication_mode: lightyear::avian3d::plugin::AvianReplicationMode::Position,
             ..default()
         });
 
         app.register_component::<Player>();
         app.register_component::<PlayerId>();
-        app.register_component::<Transform>()
-            .add_interpolation_with(TransformLinearInterpolation::lerp);
         app.register_component::<CharacterLook>();
 
         app.register_component::<SceneId>();
