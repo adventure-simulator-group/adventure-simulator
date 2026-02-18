@@ -1,4 +1,5 @@
 use avian3d::{
+    dynamics::solver::islands::IslandSleepingPlugin,
     prelude::{PhysicsInterpolationPlugin, PhysicsTransformPlugin},
     PhysicsPlugins,
 };
@@ -21,10 +22,11 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
     fn build(&self, app: &mut App) {
         if self.enable_simulation {
             app.add_plugins((
-                PhysicsPlugins::default()
+                PhysicsPlugins::new(FixedPostUpdate)
                     .build()
                     .disable::<PhysicsTransformPlugin>()
-                    .disable::<PhysicsInterpolationPlugin>(),
+                    .disable::<PhysicsInterpolationPlugin>()
+                    .disable::<IslandSleepingPlugin>(),
                 AhoyPlugins::default(),
             ));
         } else {
