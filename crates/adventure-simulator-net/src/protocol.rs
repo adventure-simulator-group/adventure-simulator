@@ -3,7 +3,7 @@ use core::time::Duration;
 use lightyear::netcode::PRIVATE_KEY_BYTES;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-pub const SEND_INTERVAL: Duration = Duration::from_millis(100);
+pub const SEND_INTERVAL: Duration = Duration::from_millis(33);
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PrivateKey(pub [u8; PRIVATE_KEY_BYTES]);
