@@ -197,6 +197,7 @@ fn on_stdb_insert_character(
         CollisionMargin(0.01),
         Transform::from_xyz(0.0, 50.0, 0.0),
         Replicate::to_clients(NetworkTarget::All),
+        PredictionTarget::to_clients(NetworkTarget::All),
     ));
 
     info!("Player {entity:?} is loaded: {character:?}",);
