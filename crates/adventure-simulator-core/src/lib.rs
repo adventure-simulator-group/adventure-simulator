@@ -9,12 +9,14 @@
 pub mod physics;
 pub mod player;
 pub mod scene;
+pub mod terrain;
 
 pub use avian3d;
 
 pub mod prelude {
     pub use crate::player::{ControlledPlayer, Player, PlayerId};
     pub use crate::scene::{SceneId, SceneTerrain};
+    pub use crate::terrain::{TerrainGenerator, TerrainSeed};
     pub use crate::AdventureSimulatorCorePlugins;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{

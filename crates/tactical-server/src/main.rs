@@ -9,7 +9,6 @@
 //! 4. Calls commit_mission reducer on timeout/exit
 
 mod stdb;
-mod terrain;
 
 use std::net::SocketAddr;
 
@@ -25,7 +24,7 @@ use bevy::prelude::*;
 use clap::{ArgAction, Parser};
 use strategic_db_client::*;
 
-use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
+use crate::stdb::SpacetimeDb;
 
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
@@ -254,13 +253,14 @@ fn on_server_started_hook(
         }
     };
     generator.period = gen_period;
-    let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
+    let (terrain, terrain_seed) =
+        generator.generate_with_seed(args.scene_width, scene_height, args.scene_depth);
     let terrain_collider = terrain.collider();
 
-    // Spawn physical scene
+    // Spawn physical scene: replicate the small seed instead of the full heightmap
     commands.spawn((
         SceneId(args.scene_key.clone()),
-        terrain,
+        terrain_seed,
         RigidBody::Static,
         terrain_collider,
         Transform::from_xyz(0.0, 0.0, 0.0),

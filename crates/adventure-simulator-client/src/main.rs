@@ -131,17 +131,19 @@ fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<Sca
 }
 
 fn on_game_scene_added_hook(
-    event: On<Add, SceneId>,
+    event: On<Add, TerrainSeed>,
     mut commands: Commands,
-    query: Query<(&SceneId, &SceneTerrain)>,
+    query: Query<(&SceneId, &TerrainSeed)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
-    let (id, terrain) = query.get(event.entity)?;
+    let (id, seed) = query.get(event.entity)?;
     info!(
         entity = ?event.entity,
         "Spawning a scene {id:?}"
     );
+
+    let terrain = seed.generate();
 
     let floor_color = match id.0.as_str() {
         "hills" => Color::srgb_u8(96, 108, 56),
@@ -180,12 +182,12 @@ fn on_game_scene_added_hook(
             )),
         ));
     };
-    spawn_prop(Vec2::new(5.0, 5.0), terrain, Color::srgb(0.4, 0.4, 0.8));
-    spawn_prop(Vec2::new(-5.0, 5.0), terrain, Color::srgb(0.8, 0.4, 0.4));
-    spawn_prop(Vec2::new(5.0, -5.0), terrain, Color::srgb(0.4, 0.8, 0.4));
-    spawn_prop(Vec2::new(-5.0, -5.0), terrain, Color::srgb(0.8, 0.8, 0.4));
-    spawn_prop(Vec2::new(10.0, 0.0), terrain, Color::srgb(0.6, 0.3, 0.6));
-    spawn_prop(Vec2::new(-10.0, 0.0), terrain, Color::srgb(0.3, 0.6, 0.6));
+    spawn_prop(Vec2::new(5.0, 5.0), &terrain, Color::srgb(0.4, 0.4, 0.8));
+    spawn_prop(Vec2::new(-5.0, 5.0), &terrain, Color::srgb(0.8, 0.4, 0.4));
+    spawn_prop(Vec2::new(5.0, -5.0), &terrain, Color::srgb(0.4, 0.8, 0.4));
+    spawn_prop(Vec2::new(-5.0, -5.0), &terrain, Color::srgb(0.8, 0.8, 0.4));
+    spawn_prop(Vec2::new(10.0, 0.0), &terrain, Color::srgb(0.6, 0.3, 0.6));
+    spawn_prop(Vec2::new(-10.0, 0.0), &terrain, Color::srgb(0.3, 0.6, 0.6));
 
     Ok(())
 }

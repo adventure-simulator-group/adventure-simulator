@@ -39,6 +39,6 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
         app.register_component::<LinearVelocity>().add_prediction();
 
         app.register_component::<SceneId>();
-        app.register_component::<SceneTerrain>();
+        app.register_component::<TerrainSeed>();
     }
 }

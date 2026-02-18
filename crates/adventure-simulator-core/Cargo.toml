@@ -14,6 +14,7 @@ serde.workspace = true
 bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
+noiz.workspace = true
 
 [lints]
 workspace = true
