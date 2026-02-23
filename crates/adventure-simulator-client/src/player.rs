@@ -8,14 +8,19 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_new_player_added_hook);
-        app.add_systems(Update, update_character_look_rotation);
+        app.add_systems(Update, (setup_controlled_player, update_character_look_rotation));
     }
 }
+
+/// Marker component to defer controlled player setup to the next frame.
+/// This avoids deep observer nesting when `with_related::<ActionOf<Player>>`
+/// triggers lightyear's input replication observers during command flush.
+#[derive(Component)]
+struct PendingControlledPlayer;
 
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
     query: Query<(&Player, &PlayerId)>,
     args: Res<Args>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -30,37 +35,9 @@ fn on_new_player_added_hook(
             "New player is assigned to this client. Assuming control...",
         );
 
-        commands.entity(event.entity).insert((
-            // Adding character controller to sync the camera, but this component
-            // requires a bunch of physics components. The actual physic simulation
-            // is done on the server, so it shouldn't do much harm.
-            CharacterController::default(),
-            actions!(Player[
-                (
-                    Action::<input::Movement>::new(),
-                    DeadZone::default(),
-                    Bindings::spawn((
-                        Cardinal::wasd_keys(),
-                        Axial::left_stick()
-                    ))
-                ),
-                (
-                    Action::<input::Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::South],
-                ),
-                (
-                    Action::<input::RotateCamera>::new(),
-                    Bindings::spawn((
-                        Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
-                        Axial::right_stick().with((Scale::splat(4.0), DeadZone::default())),
-                    ))
-                ),
-            ]),
-        ));
-
         commands
-            .entity(camera.into_inner())
-            .insert(CharacterControllerCameraOf::new(event.entity));
+            .entity(event.entity)
+            .insert(PendingControlledPlayer);
     } else {
         commands.entity(event.entity).insert((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
@@ -84,6 +61,40 @@ fn on_new_player_added_hook(
     }
 
     Ok(())
+}
+
+fn setup_controlled_player(
+    mut commands: Commands,
+    query: Query<Entity, With<PendingControlledPlayer>>,
+    camera: Single<Entity, With<Camera3d>>,
+) {
+    let camera_entity = camera.into_inner();
+    for entity in &query {
+        commands
+            .entity(entity)
+            .remove::<PendingControlledPlayer>()
+            .insert(CharacterController::default())
+            .with_related::<ActionOf<Player>>((
+                Action::<input::Movement>::new(),
+                DeadZone::default(),
+                Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
+            ))
+            .with_related::<ActionOf<Player>>((
+                Action::<input::Jump>::new(),
+                bindings![KeyCode::Space, GamepadButton::South],
+            ))
+            .with_related::<ActionOf<Player>>((
+                Action::<input::RotateCamera>::new(),
+                Bindings::spawn((
+                    Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
+                    Axial::right_stick().with((Scale::splat(4.0), DeadZone::default())),
+                )),
+            ));
+
+        commands
+            .entity(camera_entity)
+            .insert(CharacterControllerCameraOf::new(entity));
+    }
 }
 
 fn update_character_look_rotation(

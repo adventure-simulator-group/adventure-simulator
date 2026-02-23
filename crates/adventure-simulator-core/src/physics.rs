@@ -29,6 +29,10 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
             ));
         } else {
             app.add_plugins((AhoyCameraPlugin,));
+            // Lightyear's avian3d integration registers systems (transform_to_position)
+            // that need these resources even when full physics simulation is disabled.
+            app.init_resource::<avian3d::prelude::PhysicsLengthUnit>();
+            app.init_resource::<avian3d::schedule::LastPhysicsTick>();
         }
     }
 }

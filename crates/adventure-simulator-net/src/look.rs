@@ -48,7 +48,7 @@ fn on_add_controlled_player_mock_character_look(
 ) {
     commands
         .entity(event.entity)
-        .insert(actions!(Player[(Action::<CharacterLookUpdate>::new())]));
+        .with_related::<ActionOf<Player>>((Action::<CharacterLookUpdate>::new(),));
 }
 
 #[cfg(feature = "client")]

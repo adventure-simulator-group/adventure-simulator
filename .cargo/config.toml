@@ -24,6 +24,13 @@ rustflags = [
   "-Z", "threads=0",                                             # (Nightly) Use improved multithreading with the recommended amount of threads.
 ]
 
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  "-C", "link-arg=-Wl,--stack,8388608", # 8MB stack to match Linux default
+  "-Z", "share-generics=y",
+  "-Z", "threads=0",
+]
+
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe" # Use LLD Linker
 rustflags = [
