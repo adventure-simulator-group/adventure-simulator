@@ -266,8 +266,8 @@ win-dev:
     cleanup() {
         echo ""
         echo "Shutting down..."
-        kill $SERVER_PID $CLIENT_PID 2>/dev/null
-        wait $SERVER_PID $CLIENT_PID 2>/dev/null
+        kill $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
+        wait $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
     }
     trap cleanup EXIT INT TERM
 
@@ -278,9 +278,15 @@ win-dev:
     echo "Waiting for server to start..."
     sleep 3
 
-    echo "Starting client..."
+    echo "Starting client 0..."
     cd "$STAGE_DIR" && ./adventure-simulator-client.exe --id 0 --server-addr 127.0.0.1:6000 &
-    CLIENT_PID=$!
+    CLIENT0_PID=$!
+
+    sleep 1
+
+    echo "Starting client 1..."
+    cd "$STAGE_DIR" && ./adventure-simulator-client.exe --id 1 --server-addr 127.0.0.1:6000 &
+    CLIENT1_PID=$!
 
     wait
 
