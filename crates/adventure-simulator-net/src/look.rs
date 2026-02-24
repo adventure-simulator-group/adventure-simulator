@@ -54,7 +54,7 @@ fn on_add_controlled_player_mock_character_look(
 #[cfg(feature = "client")]
 fn send_character_look_update(
     mut commands: Commands,
-    q_changed: Query<(Entity, &CharacterLook, &Actions<Player>), Changed<CharacterLook>>,
+    q_changed: Query<(Entity, &CharacterLook, &Actions<Player>)>,
     q_update_action: Query<Entity, With<Action<CharacterLookUpdate>>>,
 ) {
     for (entity, look, actions) in &q_changed {
