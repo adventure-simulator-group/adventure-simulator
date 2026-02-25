@@ -1,6 +1,6 @@
 use adventure_simulator_core::prelude::*;
 use bevy::prelude::*;
-use lightyear::prelude::{input::InputRegistryExt, *};
+use lightyear::prelude::input::InputRegistryExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default)]
@@ -14,7 +14,8 @@ impl Plugin for AdventureSimulatorCharacterLookPlugin {
         #[cfg(feature = "client")]
         {
             app.register_required_components_with::<ControlledPlayer, _>(|| {
-                ComponentReplicationOverrides::<CharacterLook>::default().disable_all()
+                lightyear::prelude::ComponentReplicationOverrides::<CharacterLook>::default()
+                    .disable_all()
             });
 
             app.add_systems(PostUpdate, send_character_look_update)
@@ -76,11 +77,12 @@ fn send_character_look_update(
 #[cfg(feature = "server")]
 fn on_character_look_received(
     event: On<Fire<CharacterLookUpdate>>,
-    mut q_look: Query<&mut CharacterLook>,
+    mut q_look: Query<(&mut CharacterLook, &mut Transform)>,
 ) -> Result {
-    let mut look = q_look.get_mut(event.context)?;
+    let (mut look, mut transform) = q_look.get_mut(event.context)?;
     look.yaw = event.value.x;
     look.pitch = event.value.y;
+    transform.rotation = Quat::from_rotation_y(look.yaw + std::f32::consts::PI);
 
     Ok(())
 }
