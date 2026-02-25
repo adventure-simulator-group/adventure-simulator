@@ -24,7 +24,9 @@ pub mod prelude {
 const FIXED_TIMESTEP_HZ: f64 = 64.0;
 const FIXED_TICK_DURATION: f64 = 1.0 / FIXED_TIMESTEP_HZ;
 /// 0 means that the OS will assign any available port
+#[cfg(feature = "client")]
 const DEFAULT_CLIENT_PORT: u16 = 0;
+#[cfg(feature = "client")]
 const DEFAULT_CLIENT_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
     std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
     DEFAULT_CLIENT_PORT,

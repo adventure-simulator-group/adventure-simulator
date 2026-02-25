@@ -73,6 +73,12 @@ impl AdventureSimulatorClient {
                 ..default()
             };
             entity_mut.insert((
+                InputTimelineConfig::default()
+                    .with_sync_config(SyncConfig {
+                        jitter_margin: SEND_INTERVAL,
+                        ..default()
+                    })
+                    .with_input_delay(InputDelayConfig::no_prediction()),
                 NetcodeClient::new(auth, netcode_config)?,
                 LocalAddr(addr),
                 UdpIo::default(),
