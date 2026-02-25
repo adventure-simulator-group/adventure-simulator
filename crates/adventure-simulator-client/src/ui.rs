@@ -3,7 +3,10 @@ use adventure_simulator_core::{
     prelude::CharacterController,
 };
 use adventure_simulator_net::lightyear::{connection::client::ClientState, prelude::*};
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+};
 use bevy_flair::prelude::*;
 
 use crate::Args;
@@ -14,13 +17,16 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FlairPlugin)
             .add_systems(Startup, setup_ui)
-            .add_systems(Update, (update_player_ui, update_connection_ui))
+            .add_systems(Update, (update_stats_ui, update_connection_ui))
             .add_observer(on_new_player_added_hook);
     }
 }
 
 #[derive(Component)]
 struct PositionSpan;
+
+#[derive(Component)]
+struct FpsSpan;
 
 #[derive(Component)]
 struct ServerInfoSpan;
@@ -53,9 +59,20 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 Text::new("WASD to move | Space to jump | Mouse to look around"),
             ),
             (
-                Name::new("position"),
-                Text::new("Position: "),
-                children![(PositionSpan, TextSpan::default())]
+                Name::new("stats"),
+                Node::default(),
+                children![
+                    (
+                        Name::new("position"),
+                        Text::new("Position: "),
+                        children![(PositionSpan, TextSpan::default())]
+                    ),
+                    (
+                        Name::new("fps"),
+                        Text::new("FPS: "),
+                        children![(FpsSpan, TextSpan::default())]
+                    ),
+                ]
             ),
             (
                 Name::new("info"),
@@ -90,20 +107,29 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
-fn update_player_ui(
+fn update_stats_ui(
+    diagnostics: Res<DiagnosticsStore>,
     player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
-    mut q_position_span: Query<&mut TextSpan, With<PositionSpan>>,
+    mut spans: ParamSet<(
+        Single<&mut TextSpan, With<PositionSpan>>,
+        Single<&mut TextSpan, With<FpsSpan>>,
+    )>,
 ) {
     let (transform, &PlayerId(_player_id)) = player.into_inner();
 
     if transform.is_changed() {
         let translation = transform.translation;
-        for mut text in &mut q_position_span {
-            text.0 = format!(
-                "{:.1}  {:.1}  {:.1}",
-                translation.x, translation.y, translation.z
-            );
-        }
+        spans.p0().0 = format!(
+            "{:.1}  {:.1}  {:.1}",
+            translation.x, translation.y, translation.z
+        );
+    }
+
+    if let Some(fps) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|fps| fps.smoothed())
+    {
+        spans.p1().0 = format!("{fps:.2}",);
     }
 }
 

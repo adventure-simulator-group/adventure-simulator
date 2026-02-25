@@ -12,11 +12,13 @@ use adventure_simulator_core::prelude::*;
 use adventure_simulator_net::prelude::*;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::light::light_consts::lux;
 use bevy::light::AtmosphereEnvironmentMapLight;
 use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::window::PresentMode;
 use bevy::{
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -61,16 +63,21 @@ pub fn wasm_run(args: Vec<String>) {
 
 fn run(args: Args) {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Adventure Simulator - Tactical".into(),
-                canvas: Some("#game-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Adventure Simulator - Tactical".into(),
+                    canvas: Some("#game-canvas".into()),
+                    fit_canvas_to_parent: true,
+                    prevent_default_event_handling: true,
+                    present_mode: PresentMode::AutoVsync,
+                    decorations: false,
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+            FrameTimeDiagnosticsPlugin::default(),
+        ))
         .add_plugins((
             AdventureSimulatorCorePlugins
                 .build()

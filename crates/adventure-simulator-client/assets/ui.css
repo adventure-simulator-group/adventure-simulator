@@ -46,11 +46,12 @@ text,span {
   z-index: -100;
 }
 
-#position {
+#stats {
+  flex-direction: column;
   position: absolute;
   top: 0px;
 
-  &>span {
+  &>*>span {
     color: #eee6;
   }
 }
