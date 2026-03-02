@@ -22,8 +22,7 @@ lightyear = { "workspace" = true, features = [
   "avian3d",
 ] }
 bevy_enhanced_input.workspace = true
-bevy = { workspace = true }
-async-compat.workspace = true
+bevy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
