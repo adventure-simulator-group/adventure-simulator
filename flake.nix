@@ -34,10 +34,10 @@
           alsa-lib
           vulkan-loader
 
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
+          libX11
+          libXcursor
+          libXrandr
+          libXi
 
           libxkbcommon
 
@@ -58,6 +58,7 @@
           spacetimedb
           python3
           wasm-bindgen-cli_0_2_106
+          binaryen
         ];
 
         mkLinuxLdLibraryPathExport = libs: ''
