@@ -6,10 +6,12 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = []
+meshgen = ["bevy/bevy_mesh"]
+
 [dependencies]
-bevy = { workspace = true, features = [
-  "bevy_mesh"
-] }
+bevy = { workspace = true, features = ["bevy_color"] }
 serde.workspace = true
 bevy_enhanced_input.workspace = true
 avian3d.workspace = true
