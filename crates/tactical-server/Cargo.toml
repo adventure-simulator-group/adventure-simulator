@@ -11,7 +11,7 @@ path = "src/main.rs"
 noiz.workspace = true
 
 # Bevy + Lightyear
-bevy = { workspace = true, default-features = false, features = ["multi_threaded"] }
+bevy = { workspace = true, features = ["multi_threaded"] }
 adventure-simulator-net = { workspace = true, features = ["server"] }
 adventure-simulator-core.workspace = true
 

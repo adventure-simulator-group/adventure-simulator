@@ -22,9 +22,16 @@ license = "GPL-3.0"
 adventure-simulator-net = { version = "0.1.0", default-features = false }
 adventure-simulator-core = { version = "0.1.0" }
 
-bevy = { version = "0.18.0", default-features = false }
+bevy = { version = "0.18.0", default-features = false, features = [
+  "reflect_auto_register",
+  "bevy_log",
+] }
 lightyear = { version = "0.26.1", default-features = false }
-avian3d = { version = "0.6.0-rc.1", default-features = false }
+avian3d = { version = "0.6.0-rc.1", default-features = false, features = [
+    "3d",
+    "f32",
+    "default-collider"
+] }
 bevy_ahoy = { version = "0.1.0-rc.1", features = ["serialize"] }
 bevy_enhanced_input = "0.23"
 bevy_flair = "0.7"
