@@ -81,53 +81,45 @@ impl SceneTerrain {
     }
 
     pub fn collider(&self) -> Collider {
-        let (positions, indices, _, _) = self.mesh_components();
-        let indices = indices
-            .into_iter()
-            .map(|index| index as u32)
-            .array_chunks()
-            .collect();
-
+        let (positions, indices, _) = self.mesh_components();
+        let indices = indices.into_iter().array_chunks().collect();
         let vertices = positions.iter().copied().map(Vec3::from_array).collect();
         Collider::trimesh(vertices, indices)
     }
 
     #[cfg(feature = "meshgen")]
     pub fn mesh(&self) -> Mesh {
-        let (positions, indices, normals, uvs) = self.mesh_components();
+        let (positions, indices, uvs) = self.mesh_components();
 
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD,
         );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
         mesh.insert_indices(Indices::U32(indices));
 
-        mesh.translated_by(
-            Vec3::new(self.grid_width() as f32, 0.0, self.grid_depth() as f32) * -0.5,
-        )
-        .scaled_by(Vec3::new(self.scale, 1.0, self.scale))
-        .with_computed_area_weighted_normals()
+        mesh.with_computed_area_weighted_normals()
     }
 
-    fn mesh_components(&self) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 3]>, Vec<[f32; 2]>) {
+    fn mesh_components(&self) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        let mesh_offset = Vec2::new(self.grid_width() as f32, self.grid_depth() as f32) * -0.5;
+
         let mut positions = Vec::with_capacity(self.heightmap.len());
-        let mut normals = Vec::with_capacity(self.heightmap.len());
         let mut uvs = Vec::with_capacity(self.heightmap.len());
         for x in 0..self.grid_width() {
             for z in 0..self.grid_depth() {
                 let i = z * self.grid_width() + x;
                 let y = self.heightmap[i];
 
-                positions.push([x as f32, y, z as f32]);
-
-                normals.push([0.0, 1.0, 0.0]); // placeholder
                 uvs.push([
                     x as f32 / (self.grid_width() - 1) as f32,
                     z as f32 / (self.grid_depth() - 1) as f32,
                 ]);
+
+                let x = (x as f32 + mesh_offset.x) * self.scale;
+                let z = (z as f32 + mesh_offset.y) * self.scale;
+                positions.push([x, y, z]);
             }
         }
 
@@ -147,6 +139,6 @@ impl SceneTerrain {
             }
         }
 
-        (positions, indices, normals, uvs)
+        (positions, indices, uvs)
     }
 }
