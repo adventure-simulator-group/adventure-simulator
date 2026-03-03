@@ -690,13 +690,14 @@ dependencies = [
  "bevy_transform",
  "bevy_utils",
  "rand 0.9.2",
+ "serde",
 ]
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9a7b350e3bb1767102698302bc37256cbd48422809984b98d292c40e2579aa9"
+checksum = "94bffc006df10ac2a68c83692d734a465f8ee6c5b384d8545a636f81d858f4bf"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -704,9 +705,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.37.1"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b092fe214090261288111db7a2b2c2118e5a7f30dc2569f1732c4069a6840549"
+checksum = "4321e568ed89bb5a7d291a7f37997c2c0df89809d7b6d12062c81ddb54aa782e"
 dependencies = [
  "cc",
  "cmake",
@@ -764,7 +765,7 @@ dependencies = [
 [[package]]
 name = "bevy_ahoy"
 version = "0.1.0-rc.1"
-source = "git+https://github.com/barsoosayque/bevy_ahoy?branch=adventuresim#ef828841350a3790006b26c05547742cd2a3922e"
+source = "git+https://github.com/barsoosayque/bevy_ahoy?branch=adventuresim#fc44ae25df5b61e440b6f51c8a7b68d1a6a166b5"
 dependencies = [
  "avian3d",
  "avian_pickup",
@@ -3375,9 +3376,9 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "erased-serde"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e8918065695684b2b0702da20382d5ae6065cf3327bc2d6436bd49a71ce9f3"
+checksum = "d2add8a07dd6a8d93ff627029c51de145e12686fbc36ecb298ac22e74cf02dec"
 dependencies = [
  "serde",
  "serde_core",
@@ -3763,20 +3764,20 @@ dependencies = [
  "cfg-if",
  "js-sys",
  "libc",
- "r-efi",
+ "r-efi 5.3.0",
  "wasip2",
  "wasm-bindgen",
 ]
 
 [[package]]
 name = "getrandom"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
+checksum = "0de51e6874e94e7bf76d726fc5d13ba782deca734ff60d5bb2fb2607c7406555"
 dependencies = [
  "cfg-if",
  "libc",
- "r-efi",
+ "r-efi 6.0.0",
  "wasip2",
  "wasip3",
 ]
@@ -4680,7 +4681,7 @@ dependencies = [
 [[package]]
 name = "lightyear"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -4723,7 +4724,7 @@ dependencies = [
 [[package]]
 name = "lightyear_aeronet"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -4737,7 +4738,7 @@ dependencies = [
 [[package]]
 name = "lightyear_avian2d"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "avian2d",
  "bevy_app",
@@ -4758,7 +4759,7 @@ dependencies = [
 [[package]]
 name = "lightyear_avian3d"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "avian3d",
  "bevy_app",
@@ -4779,7 +4780,7 @@ dependencies = [
 [[package]]
 name = "lightyear_connection"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4798,7 +4799,7 @@ dependencies = [
 [[package]]
 name = "lightyear_core"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4817,7 +4818,7 @@ dependencies = [
 [[package]]
 name = "lightyear_frame_interpolation"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4836,7 +4837,7 @@ dependencies = [
 [[package]]
 name = "lightyear_inputs"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4859,7 +4860,7 @@ dependencies = [
 [[package]]
 name = "lightyear_inputs_bei"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4880,7 +4881,7 @@ dependencies = [
 [[package]]
 name = "lightyear_inputs_leafwing"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4900,7 +4901,7 @@ dependencies = [
 [[package]]
 name = "lightyear_inputs_native"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4915,7 +4916,7 @@ dependencies = [
 [[package]]
 name = "lightyear_interpolation"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4939,7 +4940,7 @@ dependencies = [
 [[package]]
 name = "lightyear_link"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4955,7 +4956,7 @@ dependencies = [
 [[package]]
 name = "lightyear_messages"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4976,7 +4977,7 @@ dependencies = [
 [[package]]
 name = "lightyear_metrics"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_color",
@@ -4995,7 +4996,7 @@ dependencies = [
 [[package]]
 name = "lightyear_netcode"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -5020,7 +5021,7 @@ dependencies = [
 [[package]]
 name = "lightyear_prediction"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -5048,7 +5049,7 @@ dependencies = [
 [[package]]
 name = "lightyear_raw_connection"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -5063,7 +5064,7 @@ dependencies = [
 [[package]]
 name = "lightyear_replication"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "avian2d",
  "avian3d",
@@ -5098,7 +5099,7 @@ dependencies = [
 [[package]]
 name = "lightyear_serde"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
@@ -5118,7 +5119,7 @@ dependencies = [
 [[package]]
 name = "lightyear_steam"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "aeronet_steam",
@@ -5135,7 +5136,7 @@ dependencies = [
 [[package]]
 name = "lightyear_sync"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -5158,7 +5159,7 @@ dependencies = [
 [[package]]
 name = "lightyear_transport"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5186,7 +5187,7 @@ dependencies = [
 [[package]]
 name = "lightyear_udp"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -5202,7 +5203,7 @@ dependencies = [
 [[package]]
 name = "lightyear_ui"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_color",
@@ -5222,7 +5223,7 @@ dependencies = [
 [[package]]
 name = "lightyear_utils"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_ecs",
  "bevy_platform",
@@ -5237,7 +5238,7 @@ dependencies = [
 [[package]]
 name = "lightyear_web"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5249,7 +5250,7 @@ dependencies = [
 [[package]]
 name = "lightyear_websocket"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "aeronet_websocket",
@@ -5265,7 +5266,7 @@ dependencies = [
 [[package]]
 name = "lightyear_webtransport"
 version = "0.26.4"
-source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#40c704bfd15b80cc6611ecb6b28b6b4e6e426caa"
+source = "git+https://github.com/barsoosayque/lightyear?branch=avian-0.6.0-rc.1#d525116ec0d85ef5b8f5aa5ce448d04b00a38bae"
 dependencies = [
  "aeronet_io",
  "aeronet_webtransport",
@@ -6778,6 +6779,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
 name = "radix_trie"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8133,7 +8140,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
 dependencies = [
  "fastrand",
- "getrandom 0.4.1",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -8331,9 +8338,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.49.0"
+version = "1.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86"
+checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
 dependencies = [
  "bytes",
  "libc",
@@ -8698,7 +8705,7 @@ version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b672338555252d43fd2240c714dc444b8c6fb0a5c5335e65a07bba7742735ddb"
 dependencies = [
- "getrandom 0.4.1",
+ "getrandom 0.4.2",
  "js-sys",
  "serde_core",
  "wasm-bindgen",
