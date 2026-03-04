@@ -21,6 +21,7 @@ impl Plugin for CharacterCreatorPlugin {
             .add_plugins(MarchingCubesPlugin)
             .add_plugins(SphereTracingPlugin)
             .add_plugins(RenderingStatsPlugin)
+            .add_plugins(MeshPickingPlugin)
             .add_systems(
                 EguiPrimaryContextPass,
                 MarchingCubesPlugin::marching_cubes_ui
@@ -38,6 +39,13 @@ impl Plugin for CharacterCreatorPlugin {
 
         if components::Scene::DISPLAY_BONE_CYLINDERS {
             app.add_systems(Update, components::Scene::swap_mesh_for_cylinders);
+            app.add_systems(
+                PostUpdate,
+                (
+                    components::Scene::update_bone_segments,
+                    components::Scene::draw_bone_labels,
+                ),
+            );
         }
     }
 }
