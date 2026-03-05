@@ -36,7 +36,7 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(settlements_list_page(&settlements, logged_in_as.as_deref()).into_string())
+    Html(settlements_list_page(&settlements, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn show_settlement(
@@ -82,7 +82,7 @@ async fn show_settlement(
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
-        settlement_detail_page(settlement, &available_quests, &parties, logged_in_as.as_deref())
+        settlement_detail_page(settlement, &available_quests, &parties, logged_in_as.as_deref(), session.theme())
             .into_string(),
     )
 }
@@ -113,7 +113,7 @@ async fn noticeboard(
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(noticeboard_page(settlement, &quests, logged_in_as.as_deref()).into_string())
+    Html(noticeboard_page(settlement, &quests, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn tavern(
@@ -142,7 +142,7 @@ async fn tavern(
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(tavern_page(settlement, &parties, logged_in_as.as_deref()).into_string())
+    Html(tavern_page(settlement, &parties, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn merchants(
@@ -162,7 +162,7 @@ async fn merchants(
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(merchants_page(settlement, logged_in_as.as_deref()).into_string())
+    Html(merchants_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn smith(
@@ -182,7 +182,7 @@ async fn smith(
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(smith_page(settlement, logged_in_as.as_deref()).into_string())
+    Html(smith_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn inn(
@@ -202,7 +202,7 @@ async fn inn(
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(inn_page(settlement, logged_in_as.as_deref()).into_string())
+    Html(inn_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn travel(

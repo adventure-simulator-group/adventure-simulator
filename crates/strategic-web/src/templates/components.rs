@@ -2,33 +2,31 @@
 
 use maud::{html, Markup};
 
-/// A card component with parchment styling
-pub fn card(title: &str, content: Markup) -> Markup {
+/// A panel component with header and body
+pub fn panel(title: &str, content: Markup) -> Markup {
     html! {
-        div class="card" {
+        div class="panel" {
             @if !title.is_empty() {
-                div class="card-header" {
-                    h3 { (title) }
-                }
+                div class="panel-header" { (title) }
             }
-            div class="card-body" {
+            div class="panel-body" {
                 (content)
             }
         }
     }
 }
 
-/// A list item for characters, parties, etc.
+/// A clickable list item
 pub fn list_item(href: &str, title: &str, subtitle: Option<&str>) -> Markup {
     html! {
-        a href=(href) class="list-item" data-on-click=(format!("@get('{}')", href)) {
+        a href=(href) class="list-item" {
             div class="list-item-content" {
                 span class="list-item-title" { (title) }
                 @if let Some(sub) = subtitle {
                     span class="list-item-subtitle" { (sub) }
                 }
             }
-            span class="list-item-arrow" { "\u{25B6}" } // Right arrow
+            span class="list-item-arrow" { "\u{203A}" }
         }
     }
 }
@@ -50,8 +48,8 @@ pub fn button(label: &str, btn_type: &str, extra_class: Option<&str>) -> Markup 
 /// A loading indicator
 pub fn loading_indicator(id: &str) -> Markup {
     html! {
-        span id=(id) class="loading" hidden {
-            "Loading..."
+        span id=(id) class="loading-spinner" hidden {
+            "Loading"
         }
     }
 }
@@ -66,7 +64,7 @@ pub fn input_field(
 ) -> Markup {
     html! {
         div class="form-group" {
-            label for=(name) { (label) }
+            label for=(name) class="form-label" { (label) }
             input
                 type=(input_type)
                 id=(name)
@@ -86,7 +84,7 @@ pub fn select_field(
 ) -> Markup {
     html! {
         div class="form-group" {
-            label for=(name) { (label) }
+            label for=(name) class="form-label" { (label) }
             select id=(name) name=(name) {
                 @for (value, text) in options {
                     option value=(value) selected[Some(*value) == selected] {
@@ -104,9 +102,9 @@ pub fn difficulty_stars(level: i32) -> Markup {
         span class="difficulty" {
             @for i in 1..=5 {
                 @if i <= level {
-                    span class="star filled" { "\u{2605}" } // Filled star
+                    span class="star filled" { "\u{2605}" }
                 } @else {
-                    span class="star empty" { "\u{2606}" } // Empty star
+                    span class="star empty" { "\u{2606}" }
                 }
             }
         }
@@ -116,9 +114,9 @@ pub fn difficulty_stars(level: i32) -> Markup {
 /// Gold amount display
 pub fn gold_display(amount: i32) -> Markup {
     html! {
-        span class="gold" {
+        span class="gold-amount" {
             (amount)
-            span class="gold-icon" { "\u{1F4B0}" } // Money bag emoji
+            span class="gold-icon" {}
         }
     }
 }
@@ -126,7 +124,7 @@ pub fn gold_display(amount: i32) -> Markup {
 /// XP display
 pub fn xp_display(amount: i32) -> Markup {
     html! {
-        span class="xp" {
+        span class="xp-amount" {
             (amount)
             " XP"
         }
@@ -139,6 +137,10 @@ pub fn status_badge(status: &str) -> Markup {
         "available" => "badge badge-success",
         "accepted" => "badge badge-warning",
         "completed" => "badge badge-info",
+        "ready" => "badge badge-success",
+        "pending" | "searching" | "deploying" => "badge badge-warning",
+        "failed" => "badge badge-danger",
+        "ended" => "badge badge-info",
         _ => "badge",
     };
     html! {
@@ -152,10 +154,29 @@ pub fn empty_state(message: &str, action_href: Option<&str>, action_label: Optio
         div class="empty-state" {
             p { (message) }
             @if let (Some(href), Some(label)) = (action_href, action_label) {
-                a href=(href) class="btn btn-primary" data-on-click=(format!("@get('{}')", href)) {
+                a href=(href) class="btn btn-primary" {
                     (label)
                 }
             }
         }
+    }
+}
+
+/// Ornate divider
+pub fn divider() -> Markup {
+    html! {
+        div class="divider" {}
+    }
+}
+
+/// Population level description
+pub fn population_description(level: i32) -> &'static str {
+    match level {
+        1 => "Hamlet",
+        2 => "Village",
+        3 => "Town",
+        4 => "City",
+        5 => "Capital",
+        _ => "Unknown",
     }
 }

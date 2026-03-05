@@ -38,12 +38,12 @@ async fn list_parties(State(state): State<AppState>, session: Session) -> Html<S
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(parties_list_page(&parties, None, logged_in_as.as_deref()).into_string())
+    Html(parties_list_page(&parties, None, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn new_party_form(State(state): State<AppState>, session: Session) -> Html<String> {
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(party_new_page(logged_in_as.as_deref()).into_string())
+    Html(party_new_page(logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn create_party(
@@ -140,6 +140,7 @@ async fn show_party(
             active_quest.as_ref(),
             is_leader,
             logged_in_as.as_deref(),
+            session.theme(),
         )
         .into_string(),
     )

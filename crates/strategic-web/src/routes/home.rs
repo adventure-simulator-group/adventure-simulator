@@ -80,6 +80,7 @@ async fn home(State(state): State<AppState>, session: Session) -> Html<String> {
             current_settlement.as_ref(),
             active_party.as_ref(),
             active_quest.as_ref(),
+            session.theme(),
         )
         .into_string(),
     )

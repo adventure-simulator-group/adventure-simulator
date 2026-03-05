@@ -1,18 +1,37 @@
-//! Base layout template
+//! Base layout template - Three-column design with theme support
 
 use maud::{html, Markup, DOCTYPE};
 
-/// Base HTML layout with header, nav, and content area
-pub fn base_layout(title: &str, content: Markup) -> Markup {
-    base_layout_with_session(title, content, None)
+const THEMES: &[(&str, &str)] = &[
+    ("renaissance-gold", "Renaissance Gold"),
+    ("dark-arcanum", "Dark Arcanum"),
+    ("northern-frost", "Northern Frost"),
+    ("verdant-chronicle", "Verdant Chronicle"),
+    ("imperial-crimson", "Imperial Crimson"),
+];
+
+fn validated_theme(theme: &str) -> &str {
+    if THEMES.iter().any(|(id, _)| *id == theme) {
+        theme
+    } else {
+        "renaissance-gold"
+    }
 }
 
-/// Base HTML layout with session info for "logged in as" display
+/// Base HTML layout with three-column grid
+pub fn base_layout(title: &str, content: Markup, theme: &str) -> Markup {
+    base_layout_with_session(title, content, None, theme)
+}
+
+/// Base HTML layout with session info and theme
 pub fn base_layout_with_session(
     title: &str,
     content: Markup,
     logged_in_as: Option<&str>,
+    theme: &str,
 ) -> Markup {
+    let theme = validated_theme(theme);
+
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -21,33 +40,23 @@ pub fn base_layout_with_session(
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                // CSS
-                link rel="stylesheet" href="/static/css/variables.css";
-                link rel="stylesheet" href="/static/css/typography.css";
-                link rel="stylesheet" href="/static/css/parchment.css";
-                link rel="stylesheet" href="/static/css/borders.css";
-                link rel="stylesheet" href="/static/css/global.css";
-                link rel="stylesheet" href="/static/css/responsive.css";
+                // Theme CSS (loaded first so variables are available)
+                link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
+                // Shared CSS
+                link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css";
+                link rel="stylesheet" href="/static/css/components.css";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
             }
-            body class="parchment-bg" {
-                div class="app-container" {
-                    // Header
-                    (header_component(logged_in_as))
+            body {
+                div class="app" {
+                    (top_bar(logged_in_as, theme))
 
-                    // Navigation tabs
-                    (nav_tabs())
-
-                    // Main content
-                    main class="main-content" {
+                    div class="main-grid" {
                         (content)
                     }
-
-                    // Footer
-                    (footer_component())
                 }
             }
         }
@@ -59,67 +68,91 @@ pub fn fragment(content: Markup) -> Markup {
     content
 }
 
-fn header_component(logged_in_as: Option<&str>) -> Markup {
+fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
     html! {
-        header class="app-header" {
-            div class="header-left" {
-                h1 class="game-title" { "Adventure Simulator" }
-            }
-            div class="header-center" {
-                // Logged in status
-                @if let Some(name) = logged_in_as {
-                    span class="logged-in-status" {
-                        "Playing as: "
-                        strong { (name) }
-                    }
-                } @else {
-                    span class="logged-in-status not-logged-in" {
-                        "No character selected"
-                    }
+        header class="top-bar" {
+            div class="top-bar-left" {
+                h1 class="logo" {
+                    a href="/" { "Adventure Simulator" }
                 }
             }
-            div class="header-right" {
-                @if logged_in_as.is_some() {
+
+            nav class="top-bar-center" {
+                a href="/" class="nav-tab" { "Home" }
+                a href="/settlements" class="nav-tab" { "Settlements" }
+                a href="/quests" class="nav-tab" { "Quests" }
+                a href="/parties" class="nav-tab" { "Parties" }
+                a href="/characters" class="nav-tab" { "Characters" }
+            }
+
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" {
+                        "Playing as " strong { (name) }
+                    }
                     form action="/characters/logout" method="post" style="display:inline" {
                         button type="submit" class="btn btn-small" title="Switch Character" {
                             "Switch"
                         }
                     }
+                } @else {
+                    span class="player-name player-name-none" {
+                        "No character"
+                    }
                 }
-                button class="btn btn-icon" title="Settings" {
-                    span { "\u{2699}" } // Gear icon
+
+                div class="theme-switcher" {
+                    @for (id, _label) in THEMES {
+                        a href=(format!("/theme/{}", id))
+                            class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
+                            data-theme=(id)
+                            title=(_label)
+                        {}
+                    }
                 }
             }
         }
     }
 }
 
-fn nav_tabs() -> Markup {
+/// Helper to build a left sidebar section
+pub fn sidebar_section(title: &str, content: Markup) -> Markup {
     html! {
-        nav class="tab-nav" {
-            a href="/" class="tab" data-on-click="@get('/')" {
-                "Home"
+        div class="sidebar-section" {
+            @if !title.is_empty() {
+                h3 class="sidebar-header" { (title) }
             }
-            a href="/characters" class="tab" data-on-click="@get('/characters')" {
-                "Characters"
-            }
-            a href="/settlements" class="tab" data-on-click="@get('/settlements')" {
-                "Settlements"
-            }
-            a href="/parties" class="tab" data-on-click="@get('/parties')" {
-                "Parties"
-            }
-            a href="/quests" class="tab" data-on-click="@get('/quests')" {
-                "Quests"
-            }
+            (content)
         }
     }
 }
 
-fn footer_component() -> Markup {
+/// Helper for settlement service menu
+pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
+    let items = [
+        ("", "Overview"),
+        ("noticeboard", "Notice Board"),
+        ("tavern", "Tavern"),
+        ("merchants", "Merchants"),
+        ("smith", "Smith"),
+        ("inn", "Inn"),
+    ];
+
     html! {
-        footer class="app-footer" {
-            p { "Adventure Simulator - Strategic Layer" }
+        nav class="service-menu" {
+            @for (path, label) in items {
+                @let href = if path.is_empty() {
+                    format!("/settlements/{}", settlement_id)
+                } else {
+                    format!("/settlements/{}/{}", settlement_id, path)
+                };
+                @let is_active = active == path;
+                a href=(href)
+                    class=(if is_active { "service-menu-item active" } else { "service-menu-item" })
+                {
+                    (label)
+                }
+            }
         }
     }
 }

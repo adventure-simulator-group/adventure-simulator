@@ -45,12 +45,12 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Htm
         .await
         .unwrap_or_default();
 
-    Html(characters_list_page(&characters, session.character_id()).into_string())
+    Html(characters_list_page(&characters, session.character_id(), session.theme()).into_string())
 }
 
 async fn new_character_form(State(state): State<AppState>, session: Session) -> Html<String> {
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(character_new_page(logged_in_as.as_deref()).into_string())
+    Html(character_new_page(logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn create_character(
@@ -109,7 +109,7 @@ async fn show_character(
         get_character_name(&state, session.character_id()).await
     };
     Html(
-        character_detail_page(character, &inventory, is_current, logged_in_as.as_deref())
+        character_detail_page(character, &inventory, is_current, logged_in_as.as_deref(), session.theme())
             .into_string(),
     )
 }

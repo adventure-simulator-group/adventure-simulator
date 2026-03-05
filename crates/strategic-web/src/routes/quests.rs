@@ -29,7 +29,7 @@ async fn list_quests(State(state): State<AppState>, session: Session) -> Html<St
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(quests_list_page(&quests, logged_in_as.as_deref()).into_string())
+    Html(quests_list_page(&quests, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn show_quest(
@@ -88,7 +88,7 @@ async fn show_quest(
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
-        quest_detail_page(quest, can_accept, is_party_quest, logged_in_as.as_deref()).into_string(),
+        quest_detail_page(quest, can_accept, is_party_quest, logged_in_as.as_deref(), session.theme()).into_string(),
     )
 }
 

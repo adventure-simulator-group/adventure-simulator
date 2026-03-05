@@ -7,9 +7,15 @@ pub mod parties;
 pub mod quests;
 pub mod settlements;
 
-use axum::Router;
+use axum::{
+    extract::Path,
+    response::Response,
+    routing::get,
+    Router,
+};
 
 use crate::edgegap::EdgegapClient;
+use crate::session::{set_theme_cookie, Session};
 use crate::spacetimedb::SpacetimeClient;
 
 /// Application state shared across routes
@@ -30,5 +36,10 @@ pub fn build_router(state: AppState) -> Router {
         .merge(parties::routes())
         .merge(quests::routes())
         .merge(missions::routes())
+        .route("/theme/{name}", get(set_theme))
         .with_state(state)
+}
+
+async fn set_theme(Path(name): Path<String>) -> Response {
+    set_theme_cookie(&name, "/")
 }

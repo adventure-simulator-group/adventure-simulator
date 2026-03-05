@@ -3,20 +3,35 @@
 use maud::{html, Markup};
 
 use super::{
-    base_layout_with_session, card, difficulty_stars, empty_state, gold_display, list_item,
-    status_badge, xp_display,
+    base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
+    panel, sidebar_section, status_badge, xp_display,
 };
 use crate::spacetimedb::Quest;
 
 /// List all quests
-pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>) -> Markup {
+pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &str) -> Markup {
     let content = html! {
-        div class="quests-page" {
-            div class="page-header" {
-                h2 { "All Quests" }
-            }
+        aside class="left-sidebar" {
+            (sidebar_section("Quests", html! {
+                @if quests.is_empty() {
+                    (empty_state("No quests available.", None, None))
+                } @else {
+                    div #"quest-list" {
+                        @for quest in quests {
+                            (list_item(
+                                &format!("/quests/{}", quest.id),
+                                &quest.title,
+                                Some(&quest.settlement_id),
+                            ))
+                        }
+                    }
+                }
+            }))
+        }
 
-            // Filter tabs
+        main class="center-content" {
+            h2 class="page-title" { "All Quests" }
+
             div class="filter-tabs" {
                 button class="filter-tab active" { "All" }
                 button class="filter-tab" { "Available" }
@@ -27,38 +42,44 @@ pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>) -> Markup 
             @if quests.is_empty() {
                 (empty_state("No quests available.", None, None))
             } @else {
-                div #"quest-list" class="quest-list" {
-                    @for quest in quests {
-                        (quest_list_item(quest))
+                @for quest in quests {
+                    a href=(format!("/quests/{}", quest.id)) class="quest-card" {
+                        div class="quest-card-header" {
+                            span class="quest-card-title" { (quest.title) }
+                            (status_badge(&format!("{:?}", quest.status).replace("\"", "")))
+                        }
+                        p class="quest-card-desc" { (quest.description) }
+                        div class="quest-card-meta" {
+                            div {
+                                span style="font-size:var(--font-size-xs);color:var(--text-muted)" {
+                                    (quest.settlement_id)
+                                }
+                                " "
+                                (difficulty_stars(quest.difficulty))
+                            }
+                            div class="quest-card-reward" {
+                                (gold_display(quest.gold_reward))
+                                (xp_display(quest.xp_reward))
+                            }
+                        }
                     }
                 }
             }
         }
+
+        aside class="right-sidebar" {
+            (sidebar_section("Info", html! {
+                (panel("", html! {
+                    p style="font-size:var(--font-size-sm)" {
+                        "Select a quest to view details. "
+                        "You must be a party leader at the quest's settlement to accept it."
+                    }
+                }))
+            }))
+        }
     };
 
-    base_layout_with_session("Quests", content, logged_in_as)
-}
-
-fn quest_list_item(quest: &Quest) -> Markup {
-    html! {
-        a href=(format!("/quests/{}", quest.id)) class="quest-list-item" {
-            div class="quest-header" {
-                h3 { (quest.title) }
-                (status_badge(&format!("{:?}", quest.status).replace("\"", "")))
-            }
-            div class="quest-meta" {
-                span class="settlement" { (quest.settlement_id) }
-                span class="difficulty" {
-                    (difficulty_stars(quest.difficulty))
-                }
-            }
-            div class="quest-rewards" {
-                (gold_display(quest.gold_reward))
-                " / "
-                (xp_display(quest.xp_reward))
-            }
-        }
-    }
+    base_layout_with_session("Quests", content, logged_in_as, theme)
 }
 
 /// Quest detail page
@@ -67,107 +88,114 @@ pub fn quest_detail_page(
     can_accept: bool,
     is_party_quest: bool,
     logged_in_as: Option<&str>,
+    theme: &str,
 ) -> Markup {
     let content = html! {
-        div class="quest-detail-page" {
-            div class="page-header" {
-                h2 { (quest.title) }
+        aside class="left-sidebar" {
+            (sidebar_section("Quest", html! {
+                h4 style="font-family:var(--font-display);margin-bottom:0.25rem" { (quest.title) }
                 (status_badge(&format!("{:?}", quest.status).replace("\"", "")))
-            }
+            }))
 
-            div class="quest-grid" {
-                // Description card
-                (card("Description", html! {
-                    p { (quest.description) }
-                }))
+            (divider())
 
-                // Details card
-                (card("Details", html! {
-                    div class="detail-grid" {
-                        div class="detail" {
-                            span class="detail-label" { "Location" }
-                            a href=(format!("/settlements/{}", quest.settlement_id)) class="detail-value" {
-                                (quest.settlement_id)
-                            }
-                        }
-                        div class="detail" {
-                            span class="detail-label" { "Difficulty" }
-                            span class="detail-value" {
-                                (difficulty_stars(quest.difficulty))
-                            }
-                        }
-                        div class="detail" {
-                            span class="detail-label" { "Target" }
-                            span class="detail-value" {
-                                (quest.enemy_count) " " (quest.enemy_type)
-                            }
+            (sidebar_section("Description", html! {
+                p style="font-size:var(--font-size-sm)" { (quest.description) }
+            }))
+        }
+
+        main class="center-content" {
+            h2 class="page-title" { (quest.title) }
+
+            (panel("Details", html! {
+                div class="flex flex-col gap-sm" {
+                    div class="detail-row" {
+                        span class="detail-label" { "Location" }
+                        a href=(format!("/settlements/{}", quest.settlement_id)) class="detail-value text-accent" {
+                            (quest.settlement_id)
                         }
                     }
-                }))
-
-                // Rewards card
-                (card("Rewards", html! {
-                    div class="rewards-grid" {
-                        div class="reward" {
-                            span class="reward-label" { "Gold" }
-                            span class="reward-value" { (gold_display(quest.gold_reward)) }
-                        }
-                        div class="reward" {
-                            span class="reward-label" { "Experience" }
-                            span class="reward-value" { (xp_display(quest.xp_reward)) }
-                        }
+                    div class="detail-row" {
+                        span class="detail-label" { "Difficulty" }
+                        span class="detail-value" { (difficulty_stars(quest.difficulty)) }
                     }
-                }))
+                    div class="detail-row" {
+                        span class="detail-label" { "Target" }
+                        span class="detail-value" { (quest.enemy_count) " " (quest.enemy_type) }
+                    }
+                }
+            }))
 
-                // Status card
-                (card("Status", html! {
+            (panel("Rewards", html! {
+                div class="stat-grid" {
+                    div class="stat-item" {
+                        span class="stat-label" { "Gold" }
+                        span class="stat-value" { (gold_display(quest.gold_reward)) }
+                    }
+                    div class="stat-item" {
+                        span class="stat-label" { "Experience" }
+                        span class="stat-value" { (xp_display(quest.xp_reward)) }
+                    }
+                }
+            }))
+        }
+
+        aside class="right-sidebar" {
+            (sidebar_section("Status", html! {
+                (panel("", html! {
                     @match quest.status.to_lowercase().as_str() {
                         "available" => {
-                            p { "This quest is available to accept." }
+                            p style="font-size:var(--font-size-sm)" { "This quest is available." }
                             @if can_accept {
-                                form data-on-submit=(format!("@post('/quests/{}/accept')", quest.id)) {
-                                    button type="submit" class="btn btn-primary" {
-                                        "Accept Quest"
-                                    }
+                                form action=(format!("/quests/{}/accept", quest.id)) method="post" class="mt-1" {
+                                    button type="submit" class="btn btn-primary btn-block" { "Accept Quest" }
                                 }
                             } @else {
-                                p class="warning" { "You must be a party leader at this settlement to accept quests." }
+                                p class="text-muted" style="font-size:var(--font-size-xs);margin-top:0.5rem" {
+                                    "Must be a party leader at this settlement to accept."
+                                }
                             }
                         }
                         "accepted" => {
-                            p { "This quest has been accepted." }
+                            p style="font-size:var(--font-size-sm)" { "Quest accepted." }
                             @if let Some(party_id) = &quest.accepted_by {
-                                p { "Accepted by party: " (party_id) }
+                                p class="text-muted" style="font-size:var(--font-size-xs)" {
+                                    "Party: " (party_id)
+                                }
                             }
                             @if is_party_quest {
-                                form data-on-submit=(format!("@post('/quests/{}/abandon')", quest.id)) {
-                                    button type="submit" class="btn btn-danger" {
-                                        "Abandon Quest"
-                                    }
+                                form action=(format!("/quests/{}/abandon", quest.id)) method="post" class="mt-1" {
+                                    button type="submit" class="btn btn-danger btn-block" { "Abandon Quest" }
                                 }
                             }
                         }
                         "completed" => {
-                            p class="success" { "This quest has been completed!" }
+                            p class="text-success" style="font-size:var(--font-size-sm);font-weight:600" {
+                                "Quest completed!"
+                            }
                         }
                         _ => {
-                            p { "Status: " (quest.status) }
+                            p style="font-size:var(--font-size-sm)" { "Status: " (quest.status) }
                         }
                     }
                 }))
-            }
+            }))
         }
     };
 
-    base_layout_with_session(&quest.title, content, logged_in_as)
+    base_layout_with_session(&quest.title, content, logged_in_as, theme)
 }
 
 /// Quest list fragment for Datastar updates
 pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
     html! {
-        div #"quest-list" class="quest-list" {
+        div #"quest-list" {
             @for quest in quests {
-                (quest_list_item(quest))
+                (list_item(
+                    &format!("/quests/{}", quest.id),
+                    &quest.title,
+                    Some(&quest.settlement_id),
+                ))
             }
         }
     }

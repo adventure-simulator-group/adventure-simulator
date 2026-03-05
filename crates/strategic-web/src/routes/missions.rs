@@ -377,6 +377,7 @@ async fn mission_status(
                 deployment_status.as_deref(),
                 deployment_error.as_deref(),
                 Some(viewer.name.as_str()),
+                session.theme(),
             )
             .into_string(),
         )
