@@ -250,8 +250,10 @@ win-dev:
     SERVER_EXE="./target/${WIN_TARGET}/win-dev/tactical-server.exe"
     CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventure-simulator-client.exe"
 
-    echo "Building server and client (Windows)..."
-    cargo build -p tactical-server -p adventure-simulator-client --target $WIN_TARGET --profile win-dev 2>&1
+    echo "Building server (Windows)..."
+    cargo build -p tactical-server --target $WIN_TARGET --profile win-dev 2>&1
+    echo "Building client (Windows)..."
+    cargo build -p adventure-simulator-client --target $WIN_TARGET --profile win-dev 2>&1
 
     echo "Staging to E:\\adventure-sim-dev..."
     mkdir -p "$STAGE_DIR"
