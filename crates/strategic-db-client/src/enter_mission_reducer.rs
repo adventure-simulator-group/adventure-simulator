@@ -70,6 +70,7 @@ impl enter_mission for super::RemoteReducers {
         EnterMissionCallbackId(self.imp.on_reducer(
             "enter_mission",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

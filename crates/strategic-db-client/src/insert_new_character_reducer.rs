@@ -65,6 +65,7 @@ impl insert_new_character for super::RemoteReducers {
         InsertNewCharacterCallbackId(self.imp.on_reducer(
             "insert_new_character",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

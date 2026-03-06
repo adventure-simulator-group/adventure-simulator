@@ -70,6 +70,7 @@ impl create_mission_and_enter for super::RemoteReducers {
         CreateMissionAndEnterCallbackId(self.imp.on_reducer(
             "create_mission_and_enter",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
