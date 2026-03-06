@@ -10,14 +10,29 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    spacetimedb = {
+      url = "github:clockworklabs/SpacetimeDB/v1.11.3";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        rust-overlay.follows = "rust-overlay";
+      };
+    };
   };
 
-  outputs = { self, nixpkgs, utils, rust-overlay }:
-    utils.lib.eachSystem ["aarch64-linux" "x86_64-linux"] (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      utils,
+      rust-overlay,
+      spacetimedb,
+    }:
+    utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (
+      system:
       let
         # Use rust overlay to override rust from nixpkgs to the latest nightly rust
         # (and also tools: cargo + clippy)
-        overlays = [(import rust-overlay)];
+        overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
           config.allowUnfree = true;
@@ -34,10 +49,10 @@
           alsa-lib
           vulkan-loader
 
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
+          libX11
+          libXcursor
+          libXrandr
+          libXi
 
           libxkbcommon
 
@@ -50,20 +65,21 @@
         ];
 
         # IDE/shell dependencies
-        developPrograms = with pkgs; [
-          cargo-edit
-          clippy
-          rust-analyzer-unwrapped
-          just
-          spacetimedb
-          python3
-          wasm-bindgen-cli_0_2_106
-        ];
+        developPrograms =
+          (with pkgs; [
+            cargo-edit
+            clippy
+            rust-analyzer-unwrapped
+            just
+            python3
+            wasm-bindgen-cli_0_2_106
+            binaryen
+          ]) ++ [spacetimedb.packages.${system}.spacetime];
 
         mkLinuxLdLibraryPathExport = libs: ''
-            FLAKE_LIBDIR="${pkgs.lib.makeLibraryPath libs}"
-            RUST_LIBDIR=$(rustc --print target-libdir)
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FLAKE_LIBDIR:$RUST_LIBDIR:target/debug/deps:target/debug:${pkgs.stdenv.cc.cc.lib}/lib"
+          FLAKE_LIBDIR="${pkgs.lib.makeLibraryPath libs}"
+          RUST_LIBDIR=$(rustc --print target-libdir)
+          export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FLAKE_LIBDIR:$RUST_LIBDIR:target/debug/deps:target/debug:${pkgs.stdenv.cc.cc.lib}/lib"
         '';
       in
       {
@@ -82,5 +98,6 @@
             mdbook-linkcheck
           ];
         };
-      });
+      }
+    );
 }

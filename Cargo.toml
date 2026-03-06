@@ -21,12 +21,20 @@ license = "GPL-3.0"
 [workspace.dependencies]
 adventure-simulator-net = { version = "0.1.0", default-features = false }
 adventure-simulator-core = { version = "0.1.0" }
+strategic-db-client = { version = " 0.1.0" }
 
-bevy = { version = "0.18.0", default-features = false }
-lightyear = { version = "0.26.1", default-features = false }
-avian3d = { version = "0.6.0-rc.1", default-features = false }
-bevy_ahoy = { version = "0.1.0-rc.1", features = ["serialize"] }
-bevy_enhanced_input = "0.23"
+bevy = { version = "0.18.0", default-features = false, features = [
+  "reflect_auto_register",
+  "bevy_log",
+] }
+lightyear = { version = "0.26.4", default-features = false }
+avian3d = { version = "0.6.0-rc.1", default-features = false, features = [
+    "3d",
+    "f32",
+    "default-collider"
+] }
+bevy_ahoy = { version = "0.1.0-rc.1", default-features = false, features = ["serialize"] }
+bevy_enhanced_input = { version = "0.23", default-features = false }
 bevy_flair = "0.7"
 noiz = "0.4.0"
 
@@ -35,7 +43,7 @@ serde_json = "1"
 console_error_panic_hook = "0.1.7"
 async-compat = "0.2.5"
 cfg-if = "1.0"
-clap = { version = "4.5.58", features = ["derive", "env"] }
+clap = { version = "4.5.60", features = ["derive", "env"] }
 tracing = "0.1.44"
 rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
@@ -52,8 +60,12 @@ too_many_arguments = "allow"
 [patch.crates-io]
 adventure-simulator-net = { path = "crates/adventure-simulator-net" }
 adventure-simulator-core = { path = "crates/adventure-simulator-core" }
+strategic-db-client = { path = "crates/strategic-db-client" }
+
 # https://github.com/cBournhonesque/lightyear/pull/1405
+# https://github.com/cBournhonesque/lightyear/pull/1420
 lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "avian-0.6.0-rc.1" }
 # https://github.com/janhohenheim/bevy_ahoy/pull/66
 # https://github.com/janhohenheim/bevy_ahoy/pull/67
+# https://github.com/janhohenheim/bevy_ahoy/pull/76
 bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }

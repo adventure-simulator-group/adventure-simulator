@@ -85,6 +85,7 @@ impl tactical_server_ready for super::RemoteReducers {
         TacticalServerReadyCallbackId(self.imp.on_reducer(
             "tactical_server_ready",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

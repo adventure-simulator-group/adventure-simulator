@@ -7,9 +7,9 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-bevy = { workspace = true, default-features = true, features = [] }
+bevy.workspace = true
 bevy_flair.workspace = true
-adventure-simulator-core.workspace = true
+adventure-simulator-core = { workspace = true, features = ["meshgen"] }
 adventure-simulator-net = { workspace = true, features = ["client"] }
 clap.workspace = true
 
