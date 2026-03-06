@@ -8,4 +8,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 log = "0.4"
-spacetimedb = "=1.11.0"
+spacetimedb.workspace = true
+petname = { version = "2.0.2", default-features = false, features = ["default-words"] }
+rand = { version = "0.8", default-features = false, features = ["small_rng"] }

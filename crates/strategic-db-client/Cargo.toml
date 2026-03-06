@@ -4,4 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-spacetimedb-sdk = "1.1"
+spacetimedb-sdk.workspace = true

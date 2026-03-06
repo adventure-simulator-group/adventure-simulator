@@ -2,7 +2,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::prelude::ProtocolSettings;
+use crate::protocol::SEND_INTERVAL;
 use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
+use adventure_simulator_core::player::Player;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
@@ -18,6 +20,9 @@ impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         let tick_duration = Duration::from_secs_f64(FIXED_TICK_DURATION);
         app.add_plugins(ClientPlugins { tick_duration });
+
+        // On client, players should have interpolated components for better visuals.
+        app.register_required_components::<Player, Interpolated>();
     }
 }
 
@@ -68,11 +73,18 @@ impl AdventureSimulatorClient {
                 ..default()
             };
             entity_mut.insert((
+                InputTimelineConfig::default()
+                    .with_sync_config(SyncConfig {
+                        jitter_margin: SEND_INTERVAL,
+                        ..default()
+                    })
+                    .with_input_delay(InputDelayConfig::no_prediction()),
                 NetcodeClient::new(auth, netcode_config)?,
                 LocalAddr(addr),
                 UdpIo::default(),
                 PeerAddr(server_addr),
                 ReplicationReceiver::default(),
+                ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
             ));
 
             world.trigger(Connect { entity });

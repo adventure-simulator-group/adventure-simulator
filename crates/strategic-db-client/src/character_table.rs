@@ -81,7 +81,7 @@ impl<'ctx> __sdk::Table for CharacterTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Character>("character");
-    _table.add_unique_constraint::<String>("id", |row| &row.id);
+    _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
 pub struct CharacterUpdateCallbackId(__sdk::CallbackId);
 
@@ -119,7 +119,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.character().id().find(...)`.
 pub struct CharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Character, String>,
+    imp: __sdk::UniqueConstraintHandle<Character, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -127,7 +127,7 @@ impl<'ctx> CharacterTableHandle<'ctx> {
     /// Get a handle on the `id` unique index on the table `character`.
     pub fn id(&self) -> CharacterIdUnique<'ctx> {
         CharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
+            imp: self.imp.get_unique_constraint::<u64>("id"),
             phantom: std::marker::PhantomData,
         }
     }
@@ -136,7 +136,7 @@ impl<'ctx> CharacterTableHandle<'ctx> {
 impl<'ctx> CharacterIdUnique<'ctx> {
     /// Find the subscribed row whose `id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<Character> {
+    pub fn find(&self, col_val: &u64) -> Option<Character> {
         self.imp.find(col_val)
     }
 }

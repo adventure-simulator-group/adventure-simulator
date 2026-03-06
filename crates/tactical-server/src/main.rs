@@ -1,3 +1,5 @@
+#![feature(ptr_as_ref_unchecked)]
+
 //! Tactical Server - Minimal Lightyear game server
 //!
 //! Simple flow:
@@ -6,6 +8,7 @@
 //! 3. Runs game for clients
 //! 4. Calls commit_mission reducer on timeout/exit
 
+mod stdb;
 mod terrain;
 
 use std::net::SocketAddr;
@@ -17,14 +20,12 @@ use adventure_simulator_net::{
         *,
     },
     prelude::*,
-    protocol::SEND_INTERVAL,
 };
-use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
-use strategic_db_client::{commit_mission, tactical_server_ready, DbConnection};
+use strategic_db_client::*;
 
-use crate::terrain::TerrainGenerator;
+use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
 
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
@@ -81,12 +82,21 @@ fn main() {
     let args = Args::parse();
 
     App::new()
-        .add_plugins(MinimalPlugins)
-        .add_plugins(LogPlugin {
-            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-            ..default()
-        })
+        .add_plugins((
+            bevy::app::PanicHandlerPlugin,
+            bevy::app::TaskPoolPlugin::default(),
+            bevy::log::LogPlugin {
+                filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+                ..default()
+            },
+            bevy::time::TimePlugin,
+            bevy::transform::TransformPlugin,
+            bevy::app::ScheduleRunnerPlugin::default(),
+            #[cfg(any(all(unix, not(target_os = "horizon")), windows))]
+            bevy::app::TerminalCtrlCHandlerPlugin,
+        ))
         .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
+        .add_plugins((stdb::SpacetimeDbPlugin,))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -95,16 +105,22 @@ fn main() {
             committed: false,
         })
         .insert_resource(args)
-        .add_systems(Startup, (connect_spacetimedb, setup_server).chain())
-        .add_systems(Update, check_mission_timeout)
-        .add_observer(on_new_client_added_hook)
+        .add_systems(
+            Update,
+            (
+                check_mission_timeout,
+                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
+            ),
+        )
         .add_observer(on_new_client_connected_hook)
         .add_observer(on_server_started_hook)
         .run();
 }
 
-#[derive(Resource)]
-struct SpacetimeConn(DbConnection);
+#[derive(Component)]
+struct LoadingPlayer {
+    id: u64,
+}
 
 #[derive(Resource)]
 struct MissionState {
@@ -113,34 +129,12 @@ struct MissionState {
     committed: bool,
 }
 
-fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
-    info!("Starting tactical server for mission {}", args.mission_id);
-    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
-
-    info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
-    let conn = DbConnection::builder()
-        .with_uri(&args.spacetimedb_url)
-        .with_module_name(&args.spacetimedb_module)
-        .build()
-        .expect("Failed to connect to SpacetimeDB");
-
-    info!("Calling tactical_server_ready reducer");
-    conn.reducers
-        .tactical_server_ready(args.mission_id.clone(), args.addr.to_string(), default())
-        .expect("Failed to call tactical_server_ready");
-
-    conn.frame_tick()?;
-    info!("SpacetimeDB notified - server marked as ready");
-
-    commands.insert_resource(SpacetimeConn(conn));
-
-    Ok(())
-}
-
 fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
-    info!("=== Tactical Server Ready ===");
-    info!("Mission: {}", args.mission_id);
-    info!("Scene: {}", args.scene_key);
+    info!(
+        "Starting tactical server for mission '{}'...",
+        args.mission_id
+    );
+    info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
     commands.spawn(AdventureSimulatorServer {
         addr: args.addr,
@@ -154,9 +148,63 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
     Ok(())
 }
 
+fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
+    conn.on_insert(
+        RemoteTables::tactical_server,
+        on_stdb_insert_tactical_server,
+    );
+
+    conn.on_insert(RemoteTables::character, on_stdb_insert_character);
+}
+
+fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
+    info!("Synced a new tactical server from spacetimedb...");
+
+    match server.status {
+        TacticalStatus::Ready => {
+            info!("=== Tactical Server Ready ===");
+            info!("(server) Mission: {}", server.mission_id);
+            info!("(server) Scene  : {}", server.scene_key);
+        }
+        status => {
+            error!("Tactical server wasn't marked as ready: {status:?}");
+        }
+    }
+}
+
+fn on_stdb_insert_character(
+    InRef(character): InRef<Character>,
+    mut commands: Commands,
+    q_loading_characters: Query<(Entity, &LoadingPlayer)>,
+) {
+    info!("Synced a new character from spacetimedb...");
+
+    let Some((entity, _)) = q_loading_characters
+        .iter()
+        .find(|(_, loading)| loading.id == character.id)
+    else {
+        error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
+        return;
+    };
+
+    commands.entity(entity).remove::<LoadingPlayer>().insert((
+        Player {
+            name: character.name.clone(),
+        },
+        PlayerId(character.id),
+        CharacterController::default(),
+        Collider::cylinder(0.4, 1.2),
+        CollisionMargin(0.01),
+        Transform::from_xyz(0.0, 50.0, 0.0),
+        Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    info!("Player {entity:?} is loaded: {character:?}",);
+}
+
 fn check_mission_timeout(
     time: Res<Time>,
-    conn: Res<SpacetimeConn>,
+    conn: Res<SpacetimeDb>,
     args: Res<Args>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
@@ -179,12 +227,10 @@ fn check_mission_timeout(
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.0
-        .reducers
+    conn.reducers()
         .commit_mission(args.mission_id.clone(), success, xp_gained)?;
-    conn.0.frame_tick()?;
-    info!("Mission committed successfully");
 
+    info!("Mission committed successfully");
     info!("Shutting down");
     exit.write(AppExit::Success);
     Ok(())
@@ -193,8 +239,10 @@ fn check_mission_timeout(
 fn on_server_started_hook(
     _event: On<Add, server::Started>,
     args: Res<Args>,
+    mut conn: ResMut<SpacetimeDb>,
     mut commands: Commands,
-) {
+) -> Result {
+    info!("Creating a game scene for {}", args.scene_key);
     let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
     let (scene_height, gen_period) = match args.scene_key.as_str() {
         "hills" => (30, 200.0),
@@ -244,37 +292,43 @@ fn on_server_started_hook(
         ],
     ));
 
-    info!("Creating a game scene for {}", args.scene_key);
-}
+    info!("Notifying spacetimedb that the server is ready...");
 
-fn on_new_client_added_hook(event: On<Add, LinkOf>, mut commands: Commands) {
-    commands.entity(event.entity).insert((
-        ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
-        ReplicationReceiver::default(),
+    conn.reducers()
+        .create_tactical_server(args.mission_id.clone(), args.scene_key.clone())?;
+    conn.reducers().tactical_server_ready(
+        args.mission_id.clone(),
+        args.addr.to_string(),
+        default(),
+    )?;
+
+    // FIXME: maybe don't do raw sql please ?
+    let _handle = conn.subscribe(format!(
+        "SELECT * FROM tactical_server WHERE mission_id = '{}'",
+        args.mission_id
     ));
 
-    info!(
-        "New link added: {:?} is now a replication sender/receiver.",
-        event.entity
-    );
+    Ok(())
 }
 
 fn on_new_client_connected_hook(
     event: On<Add, Connected>,
     query: Query<&RemoteId, With<ClientOf>>,
+    args: Res<Args>,
     mut commands: Commands,
+    mut conn: ResMut<SpacetimeDb>,
 ) -> Result {
     let client_id = query.get(event.entity)?;
     let client_id = client_id.0;
+    let id = client_id.to_bits();
+
+    conn.reducers().create_character(id)?;
+    conn.reducers().enter_mission(id, args.mission_id.clone())?;
+
+    conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
     let entity = commands
         .spawn((
-            Player,
-            PlayerId(client_id.to_bits()),
-            CharacterController::default(),
-            Collider::cylinder(0.4, 1.2),
-            CollisionMargin(0.01),
-            Transform::from_xyz(0.0, 50.0, 0.0),
-            Replicate::to_clients(NetworkTarget::All),
+            LoadingPlayer { id },
             ControlledBy {
                 owner: event.entity,
                 lifetime: default(),
@@ -282,20 +336,10 @@ fn on_new_client_connected_hook(
         ))
         .id();
 
-    // bevy_ahoy's CharacterControllerCamera doesn't actually has to be camera,
-    // it's more of a visor entity -- it will receive RotateCamera inputs,
-    // required for correct movement
-    commands.spawn((
-        CharacterControllerCameraOf::new(entity),
-        ControlledBy {
-            owner: event.entity,
-            lifetime: default(),
-        },
-    ));
-
     info!(
-        "Create player entity {:?} for client {:?}",
+        "Created a new loading player entity {:?} for client {:?}",
         entity, client_id
     );
+
     Ok(())
 }

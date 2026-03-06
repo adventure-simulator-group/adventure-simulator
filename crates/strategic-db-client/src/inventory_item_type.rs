@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct InventoryItem {
     pub id: u64,
-    pub character_id: String,
+    pub character_id: u64,
     pub item_id: String,
     pub qty: i32,
 }
