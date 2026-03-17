@@ -13,7 +13,7 @@ The game uses a Mount & Blade style architecture:
 
 **Flow:**
 1. Player clicks a location in the browser → SpacetimeDB creates a "pending" mission
-2. Tactical spawner sees pending mission → starts a tactical-server process
+2. Tactical spawner sees pending mission → starts a adventuresim-tactical-server process
 3. Tactical server writes connection info to SpacetimeDB → status becomes "ready"
 4. Browser polls and sees "ready" → loads WASM game and connects to tactical server
 5. Mission ends → tactical server commits results and exits
@@ -77,7 +77,7 @@ just status           # Check service status
 just stop             # Stop all services
 
 # Building
-just build-tactical   # Build tactical-server and tactical-spawner
+just build-tactical   # Build adventuresim-tactical-server and adventuresim-tactical-server-dispatcher
 just build-all        # Build everything
 
 # Database
@@ -87,12 +87,12 @@ just publish-reset    # Publish and clear database
 
 ## Strategic UI
 
-The UI is served from `crates/strategic-server/strategic-stdb-module/static/`.
+The UI is served from `crates/adventuresim-stdb-module/static/`.
 `map.html` connects to SpacetimeDB at `http://localhost:3000`.
 
 ## Tactical Spawner
 
-The spawner polls SpacetimeDB for "pending" missions and starts tactical-server processes:
+The spawner polls SpacetimeDB for "pending" missions and starts adventuresim-tactical-server processes:
 
 ```bash
 just spawner

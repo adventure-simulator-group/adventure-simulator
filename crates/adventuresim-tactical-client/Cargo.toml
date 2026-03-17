@@ -1,0 +1,28 @@
+[package]
+name = "adventuresim-tactical-client"
+description = "Adventure Simulator: Wasm game client"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy.workspace = true
+bevy_flair.workspace = true
+adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
+adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
+clap.workspace = true
+
+[target."cfg(not(target_family = \"wasm\"))".dependencies]
+bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
+
+[target."cfg(target_family = \"wasm\")".dependencies]
+console_error_panic_hook.workspace = true
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "adventuresim-tactical-client"
+doc = false

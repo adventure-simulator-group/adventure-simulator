@@ -1,0 +1,19 @@
+[package]
+name = "adventuresim-tactical-server-dispatcher"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "adventuresim-tactical-server-dispatcher"
+path = "src/main.rs"
+
+[dependencies]
+# SpacetimeDB SDK
+adventuresim-stdb-client = { path = "../adventuresim-stdb-client" }
+
+# CLI
+clap = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

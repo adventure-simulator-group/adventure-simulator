@@ -1,0 +1,23 @@
+[package]
+name = "adventuresim-tactical-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "adventuresim-tactical-server"
+path = "src/main.rs"
+
+[dependencies]
+noiz.workspace = true
+
+# Bevy + Lightyear
+bevy = { workspace = true, features = ["multi_threaded"] }
+adventuresim-tactical-netcode = { workspace = true, features = ["server"] }
+adventuresim-tactical-core.workspace = true
+
+# SpacetimeDB client
+adventuresim-stdb-client.workspace = true 
+spacetimedb-sdk.workspace = true
+
+# CLI
+clap = { workspace = true }
