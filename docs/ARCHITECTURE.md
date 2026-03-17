@@ -7,7 +7,7 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 
 ## Key Principle
 
-**Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the tactical-server game state.**
+**Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the adventuresim-tactical-server game state.**
 
 The database stores ONLY:
 - Character progression (XP, level)
@@ -33,8 +33,8 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
               │ WebSocket                     │ WebTransport
               ▼                               ▼
 ┌─────────────────────────────┐   ┌──────────────────────────────┐
-│      SpacetimeDB            │   │     tactical-server          │
-│   strategic-stdb-module     │   │     (Bevy Headless Server)   │
+│      SpacetimeDB            │   │     adventuresim-tactical-server          │
+│   adventuresim-stdb-module     │   │     (Bevy Headless Server)   │
 │                             │   │                              │
 │  - Character progression    │   │  - Lightyear authoritative   │
 │  - Persistent inventory     │   │  - GLB spawn point parsing   │
@@ -76,7 +76,7 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
 
-## tactical-server
+## adventuresim-tactical-server
 
 The tactical server is a headless Bevy application that:
 
@@ -89,13 +89,13 @@ The tactical server is a headless Bevy application that:
 ### Command-Line Arguments
 
 ```bash
-tactical-server \
+adventuresim-tactical-server \
   --port 6000 \
   --mission-id "mission-123" \
   --scene-key "town_a" \
   --asset-path "assets/TownA.glb" \
   --spacetimedb-url "http://localhost:3000" \
-  --spacetimedb-module "strategic-stdb-module" \
+  --spacetimedb-module "adventuresim-stdb-module" \
   --hmac-secret "shared-secret"
 ```
 
@@ -130,13 +130,13 @@ spacetime start
 ### 3. Publish the Module
 
 ```bash
-cd crates/strategic-server/strategic-stdb-module
-spacetime publish strategic-stdb-module
+cd crates/adventuresim-stdb-module
+spacetime publish adventuresim-stdb-module
 ```
 
 ### 4. Open the UI
 
-Open `crates/strategic-server/strategic-stdb-module/static/map.html` in a browser
+Open `crates/adventuresim-stdb-module/static/map.html` in a browser
 
 ### 5. Demo Flow
 

@@ -1,14 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/adventure-simulator-net",
-    "crates/adventure-simulator-client",
-    "crates/adventure-simulator-core",
-    "crates/character-creator",
-    "crates/strategic-db",
-    "crates/strategic-db-client",
-    "crates/tactical-server",
-    "crates/tactical-spawner",
+    "crates/adventuresim-tactical-netcode",
+    "crates/adventuresim-tactical-client",
+    "crates/adventuresim-tactical-core",
+    "crates/adventuresim-character-creator",
+    "crates/adventuresim-stdb-module",
+    "crates/adventuresim-stdb-client",
+    "crates/adventuresim-tactical-server",
+    "crates/adventuresim-tactical-server-dispatcher",
 ]
 exclude = ["/wiki", "/utils"]
 
@@ -19,9 +19,9 @@ repository = "https://github.com/adventure-simulator-group/adventure-simulator"
 license = "GPL-3.0"
 
 [workspace.dependencies]
-adventure-simulator-net = { version = "0.1.0", default-features = false }
-adventure-simulator-core = { version = "0.1.0" }
-strategic-db-client = { version = " 0.1.0" }
+adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
+adventuresim-tactical-core = { version = "0.1.0" }
+adventuresim-stdb-client = { version = " 0.1.0" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
   "reflect_auto_register",
@@ -58,9 +58,9 @@ type_complexity = "allow"
 too_many_arguments = "allow"
 
 [patch.crates-io]
-adventure-simulator-net = { path = "crates/adventure-simulator-net" }
-adventure-simulator-core = { path = "crates/adventure-simulator-core" }
-strategic-db-client = { path = "crates/strategic-db-client" }
+adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" }
+adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
+adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 
 # https://github.com/cBournhonesque/lightyear/pull/1405
 # https://github.com/cBournhonesque/lightyear/pull/1420

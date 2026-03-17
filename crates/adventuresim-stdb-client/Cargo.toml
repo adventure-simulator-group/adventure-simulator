@@ -1,0 +1,7 @@
+[package]
+name = "adventuresim-stdb-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk.workspace = true

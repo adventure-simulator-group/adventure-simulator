@@ -10,9 +10,9 @@ tactical_port := "6000"
 public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
-spacetime_module := "strategic-db"
+spacetime_module := "adventuresim-stdb-module"
 
-strategic_dir := "crates/strategic-db"
+strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
 
 run_dir := "/tmp/adventure-simulator-1"
@@ -182,55 +182,55 @@ build-strategic:
 
 # Generate SpacetimeDB SDK client bindings
 generate-db-client:
-    @echo "Generating SpacetimeDB client bindings..."
-    @spacetime generate --lang rust --out-dir crates/strategic-db-client/src --project-path "{{strategic_dir}}"
-    @echo "Bindings generated in crates/strategic-db-client/src/"
+	@echo "Generating SpacetimeDB client bindings..."
+	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{strategic_dir}}"
+	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
 
 # Build the tactical server and spawner
 build-tactical: generate-db-client
-    @cargo build --package tactical-server --package tactical-spawner
+	@cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
 
 # Build the WASM client
 build-wasm:
-    @echo "Building WASM client..."
-    @command -v wasm-bindgen >/dev/null 2>&1 || { echo "Missing wasm-bindgen. Install with: cargo install wasm-bindgen-cli"; exit 1; }
-    @rustup target add wasm32-unknown-unknown 2>/dev/null || true
-    @cargo build --package adventure-simulator-client --target wasm32-unknown-unknown --release
-    @mkdir -p "{{strategic_static}}/wasm"
-    @wasm-bindgen \
-        --out-dir "{{strategic_static}}/wasm" \
-        --target web \
-        --no-typescript \
-        target/wasm32-unknown-unknown/release/adventure-simulator-client.wasm
-    @echo "WASM built to {{strategic_static}}/wasm/"
-    @ls -lh "{{strategic_static}}/wasm/"
+	@echo "Building WASM client..."
+	@command -v wasm-bindgen >/dev/null 2>&1 || { echo "Missing wasm-bindgen. Install with: cargo install wasm-bindgen-cli"; exit 1; }
+	@rustup target add wasm32-unknown-unknown 2>/dev/null || true
+	@cargo build --package adventuresim-tactical-client --target wasm32-unknown-unknown --release
+	@mkdir -p "{{strategic_static}}/wasm"
+	@wasm-bindgen \
+		--out-dir "{{strategic_static}}/wasm" \
+		--target web \
+		--no-typescript \
+		target/wasm32-unknown-unknown/release/adventuresim-tactical-client.wasm
+	@echo "WASM built to {{strategic_static}}/wasm/"
+	@ls -lh "{{strategic_static}}/wasm/"
 
 # Build everything
 build-all: build-strategic build-tactical build-wasm
 
 # Run the tactical spawner (watches for pending missions and starts servers)
 spawner: build-tactical
-    @cargo run --package tactical-spawner -- \
-        --spacetimedb-url {{spacetime_url}} \
-        --spacetimedb-module {{spacetime_module}} \
-        --tactical-server-bin "$(pwd)/target/debug/tactical-server" \
-        --base-port {{tactical_port}}
+	@cargo run --package adventuresim-tactical-server-dispatcher -- \
+		--spacetimedb-url {{spacetime_url}} \
+		--spacetimedb-module {{spacetime_module}} \
+		--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+		--base-port {{tactical_port}}
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills":
-    @cargo run --package tactical-server -- \
-        --addr "0.0.0.0:{{tactical_port}}" \
-        --mission-id {{mission_id}} \
-        --scene-key {{scene_key}} \
-        --spacetimedb-url {{spacetime_url}} \
-        --spacetimedb-module {{spacetime_module}} \
-        --no-timeout
+	@cargo run --package adventuresim-tactical-server -- \
+		--addr "0.0.0.0:{{tactical_port}}" \
+		--mission-id {{mission_id}} \
+		--scene-key {{scene_key}} \
+		--spacetimedb-url {{spacetime_url}} \
+		--spacetimedb-module {{spacetime_module}} \
+		--no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
 client id="0":
-    @cargo run --package adventure-simulator-client -- \
-        --id "{{id}}" \
-        --server-addr "127.0.0.1:{{tactical_port}}"
+	@cargo run --package adventuresim-tactical-client -- \
+		--id "{{id}}" \
+		--server-addr "127.0.0.1:{{tactical_port}}"
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":

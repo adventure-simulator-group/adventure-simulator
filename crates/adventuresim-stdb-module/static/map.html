@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventure Simulator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        #strategic-view {
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { color: #ffd700; text-align: center; margin-bottom: 20px; }
+
+        .panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .panel h2 { color: #888; font-size: 1rem; margin-bottom: 15px; }
+
+        input, button {
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #2a2a4a;
+            color: #fff;
+            font-size: 1rem;
+        }
+        button { cursor: pointer; }
+        button:hover { background: #3a3a6a; }
+
+        .form-row { display: flex; gap: 10px; margin-bottom: 10px; }
+        .form-row input { flex: 1; }
+
+        .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+        .stat { background: rgba(0,0,0,0.2); padding: 15px 20px; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: #ffd700; }
+        .stat-label { font-size: 0.8rem; color: #888; }
+
+        .locations { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .location {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid #444;
+            border-radius: 12px;
+            padding: 25px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .location:hover { border-color: #ffd700; transform: translateY(-3px); }
+
+        .inventory { display: flex; flex-wrap: wrap; gap: 8px; }
+        .item { background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
+
+        #status { color: #888; text-align: center; padding: 10px; }
+        #status.error { color: #f44; }
+        #status.success { color: #4f4; }
+
+        /* Tactical View */
+        #tactical-view {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #000;
+        }
+        #tactical-view.active { display: block; }
+        #game-canvas { width: 100%; height: 100%; }
+
+        #game-overlay {
+            position: absolute;
+            top: 20px; left: 20px;
+            z-index: 10;
+        }
+        #leave-btn {
+            background: rgba(0,0,0,0.7);
+            border: 1px solid #666;
+            padding: 10px 20px;
+        }
+        #game-status {
+            position: absolute;
+            top: 20px; right: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <!-- Strategic View (map/menus) -->
+    <div id="strategic-view">
+        <h1>Adventure Simulator</h1>
+
+        <div class="panel">
+            <h2>Character</h2>
+            <div class="form-row">
+                <input type="text" id="charName" placeholder="Character name" value="Hero">
+                <button onclick="createCharacter()">Create</button>
+            </div>
+        </div>
+
+        <div class="panel" id="character-panel" style="display:none;">
+            <h2>Stats</h2>
+            <div class="stats">
+                <div class="stat"><div class="stat-value" id="stat-xp">0</div><div class="stat-label">XP</div></div>
+                <div class="stat"><div class="stat-value" id="stat-level">1</div><div class="stat-label">Level</div></div>
+            </div>
+        </div>
+
+        <div class="panel" id="inventory-panel" style="display:none;">
+            <h2>Inventory</h2>
+            <div class="inventory" id="inventory"><em>Empty</em></div>
+        </div>
+
+        <div class="panel" id="locations-panel" style="display:none;">
+            <h2>Select Destination</h2>
+            <div class="locations">
+                <div class="location" onclick="enterMission('town_a')">
+                    <h3>Town A</h3>
+                    <p>A peaceful village</p>
+                </div>
+                <div class="location" onclick="enterMission('town_b')">
+                    <h3>Town B</h3>
+                    <p>A fortified town</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="status">Ready</div>
+    </div>
+
+    <!-- Tactical View (game canvas) -->
+    <div id="tactical-view">
+        <canvas id="game-canvas"></canvas>
+        <div id="game-overlay">
+            <button id="leave-btn" onclick="leaveMission()">← Leave Mission</button>
+        </div>
+        <div id="game-status">
+            <div>Scene: <span id="game-scene">-</span></div>
+            <div>Status: <span id="game-connection">Connecting...</span></div>
+        </div>
+    </div>
+
+    <script type="module">
+        const API = '';  // Same origin - proxy handles /v1/* requests
+        const MODULE = 'adventuresim-stdb-module';
+        let characterId = null;
+        let currentMission = null;
+
+        function setStatus(msg, type = '') {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = type;
+        }
+
+        async function callReducer(reducer, args) {
+            const res = await fetch(`${API}/v1/database/${MODULE}/call/${reducer}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(args)
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || res.statusText);
+            }
+            return res.json().catch(() => ({}));
+        }
+
+        async function query(sql) {
+            const res = await fetch(`${API}/v1/database/${MODULE}/sql`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: sql
+            });
+            if (!res.ok) throw new Error(res.statusText);
+            const data = await res.json();
+            // SpacetimeDB returns [{schema, rows}] - rows are arrays, not objects
+            // Convert to objects using schema field names
+            if (data[0] && data[0].schema && data[0].rows) {
+                const fields = data[0].schema.elements.map(e => e.name.some);
+                return {
+                    rows: data[0].rows.map(row => {
+                        const obj = {};
+                        fields.forEach((name, i) => obj[name] = row[i]);
+                        return obj;
+                    })
+                };
+            }
+            return { rows: [] };
+        }
+
+        window.createCharacter = async function() {
+            const name = document.getElementById('charName').value.trim();
+            if (!name) return;
+
+            characterId = name.toLowerCase().replace(/\s+/g, '-');
+            try {
+                await callReducer('create_character', [name]);
+                setStatus('Character created!', 'success');
+                document.getElementById('character-panel').style.display = 'block';
+                document.getElementById('inventory-panel').style.display = 'block';
+                document.getElementById('locations-panel').style.display = 'block';
+                refreshCharacter();
+            } catch (e) {
+                setStatus('Error: ' + e.message, 'error');
+            }
+        };
+
+        async function refreshCharacter() {
+            if (!characterId) return;
+
+            try {
+                // Get character stats
+                const chars = await query(`SELECT * FROM character WHERE id = '${characterId}'`);
+                if (chars.rows.length > 0) {
+                    document.getElementById('stat-xp').textContent = chars.rows[0].xp;
+                    document.getElementById('stat-level').textContent = chars.rows[0].level;
+                }
+
+                // Get inventory
+                const items = await query(`SELECT * FROM inventory_item WHERE character_id = '${characterId}'`);
+                const inv = document.getElementById('inventory');
+                if (items.rows.length > 0) {
+                    inv.innerHTML = items.rows.map(i => `<div class="item">${i.item_id} x${i.qty}</div>`).join('');
+                } else {
+                    inv.innerHTML = '<em>Empty</em>';
+                }
+            } catch (e) {
+                console.log('Refresh error:', e);
+            }
+        }
+
+        // Status enum: [0,[]] = Pending, [1,[]] = Ready, [2,[]] = Ended
+        const STATUS_PENDING = 0;
+        const STATUS_READY = 1;
+        const STATUS_ENDED = 2;
+
+        window.enterMission = async function(sceneKey) {
+            if (!characterId) return;
+            try {
+                // Check for existing active mission and clean it up first
+                const result = await query(`SELECT * FROM tactical_server WHERE character_id = '${characterId}'`);
+                const activeMission = result.rows.find(s => s.status && s.status[0] !== STATUS_ENDED);
+                if (activeMission) {
+                    setStatus('Cleaning up previous mission...', '');
+                    await callReducer('leave_mission', [activeMission.mission_id]);
+                    await new Promise(r => setTimeout(r, 500)); // Brief delay
+                }
+
+                setStatus('Starting mission...', '');
+                await callReducer('create_mission_and_enter', [characterId, sceneKey]);
+                setStatus('Mission started! Server spawning...', 'success');
+                pollForServer(sceneKey);
+            } catch (e) {
+                setStatus('Error: ' + e.message, 'error');
+            }
+        };
+
+        async function pollForServer(sceneKey) {
+            for (let i = 0; i < 30; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const result = await query(`SELECT * FROM tactical_server WHERE character_id = '${characterId}'`);
+                    if (result.rows && result.rows.length > 0) {
+                        // Find most recent non-ended server
+                        const server = result.rows.find(s => s.status && s.status[0] === STATUS_READY);
+                        if (server) {
+                            currentMission = server;
+                            enterTacticalView(server);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Poll error:', e);
+                }
+            }
+            setStatus('Server spawn timeout', 'error');
+        }
+
+        function enterTacticalView(server) {
+            document.getElementById('strategic-view').style.display = 'none';
+            document.getElementById('tactical-view').classList.add('active');
+            document.getElementById('game-scene').textContent = server.scene_key;
+            document.getElementById('game-connection').textContent = server.addr;
+            loadGame(server);
+        }
+
+        async function loadGame(server) {
+            try {
+                const module = await import('./wasm/adventuresim-tactical-client.js');
+                await module.default();
+                await module.wasm_run([
+                    "adventuresim-tactical-client",
+                    "--server-addr", server.addr,
+                    "--id", "0"
+                ]);
+                document.getElementById('game-connection').textContent = 'Connected!';
+            } catch (e) {
+                document.getElementById('game-connection').textContent = 'WASM not built. Run: just build-wasm';
+                console.error('Failed to load game:', e);
+            }
+        }
+
+        window.leaveMission = async function() {
+            if (currentMission) {
+                await callReducer('leave_mission', [currentMission.mission_id]);
+            }
+            currentMission = null;
+            document.getElementById('tactical-view').classList.remove('active');
+            document.getElementById('strategic-view').style.display = 'block';
+            refreshCharacter();
+            setStatus('Left mission', '');
+        };
+
+        // Periodically refresh character data
+        setInterval(refreshCharacter, 5000);
+    </script>
+</body>
+</html>
