@@ -9,7 +9,6 @@ pub struct ColorAttachment {
     pub ops: AttachmentOps<wgpu::Color>,
 }
 
-
 impl ColorAttachment {
     pub fn new(
         texture: Texture2D,
@@ -61,6 +60,3 @@ impl ColorAttachment {
         }
     }
 }
-
-unsafe impl Send for ColorAttachment {}
-unsafe impl Sync for ColorAttachment {}

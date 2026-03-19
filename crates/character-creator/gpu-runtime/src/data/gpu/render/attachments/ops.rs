@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
     strum::EnumIter,
     strum::AsRefStr,
     strum::EnumString,
-
 )]
 pub enum LoadOp {
     Load,
@@ -40,7 +39,6 @@ pub enum LoadOp {
     strum::EnumIter,
     strum::AsRefStr,
     strum::EnumString,
-
 )]
 pub enum StoreOp {
     #[default]

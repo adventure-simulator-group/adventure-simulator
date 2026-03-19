@@ -1,0 +1,3553 @@
+{
+  "metadata": {
+    "data": {
+      "dashboards": {
+        "Default": {
+          "root": {
+            "Container": {
+              "selected_widget": {
+                "node_id": "6455c30d-d31e-4e36-9b98-7a8c8ec77596",
+                "port_id": "ebeaf91f-e1d4-523d-893f-e09d52d667c8"
+              }
+            }
+          }
+        }
+      },
+      "categories": []
+    }
+  },
+  "nodes": {
+    "9ce43139-5efc-484f-be36-d042b62db4dd": {
+      "identifier": "9ce43139-5efc-484f-be36-d042b62db4dd",
+      "title": "ComputeShader",
+      "position": [
+        -477.4788314698863,
+        119.6101657907891
+      ],
+      "width": 191.6875,
+      "height": 100.0,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "struct Uniforms {\n    size: f32\n};\n\n@group(0) @binding(0) var output_tex: texture_storage_3d<r32float, write>;\n@group(0) @binding(1) var<uniform> uniforms: Uniforms;\n\nfn sdSphere(o: vec3<f32>, radius: f32) -> f32 {\n    return length(o) - radius;\n}\n\nfn map(p: vec3<f32>) -> f32 {\n    return sdSphere(p, uniforms.size);\n}\n\n\n@compute @workgroup_size(8, 8, 4)\nfn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n    let dims = textureDimensions(output_tex);\n    if (global_id.x >= dims.x || global_id.y >= dims.y || global_id.z >= dims.z) {\n        return;\n    }\n    \n    let uvw = vec3<f32>(global_id) / vec3<f32>(dims);\n    var o = uvw * 2.0 - 1.0;\n    \n    let distance = map(o);\n    let color = vec4<f32>(distance, 1.0, 1.0, 1.0);\n    \n    textureStore(output_tex, vec3<i32>(global_id.xyz), color);\n}\n",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "886b6c23-c406-5e23-931a-27a2c8029855": {
+          "name": "Shader",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::compute::pipeline::compute_shader::ComputeShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Left",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "044ae2c4-0dd4-470e-9b87-769296ad08bc": {
+      "identifier": "044ae2c4-0dd4-470e-9b87-769296ad08bc",
+      "title": "ComputePipeline",
+      "position": [
+        678.3029933306814,
+        188.11071455635803
+      ],
+      "width": 198.0,
+      "height": 89.0,
+      "inputs": {
+        "886b6c23-c406-5e23-931a-27a2c8029855": {
+          "name": "Shader",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::compute::pipeline::compute_shader::ComputeShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "c92c60b1-d0b1-5a46-8cb9-a2be4e308856": {
+          "name": "Pipeline",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::compute::pipeline::ComputePipeline"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "c8a8e0a5-03e5-486b-aa24-facd8ce61123": {
+      "identifier": "c8a8e0a5-03e5-486b-aa24-facd8ce61123",
+      "title": "ComputePass",
+      "position": [
+        1092.4801591149117,
+        205.4498440846203
+      ],
+      "width": 314.828125,
+      "height": 346.0,
+      "inputs": {
+        "c92c60b1-d0b1-5a46-8cb9-a2be4e308856": {
+          "name": "Pipeline",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::compute::pipeline::ComputePipeline"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "e9893415-d9aa-50de-8bda-16418dd6551d": {
+          "name": "Parameters",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "9666bfb1-1952-5f11-aa2e-a0178b8e128b": {
+          "name": "Groups X",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 64.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "14591eeb-01f4-5192-a3cf-80ebcb78b407": {
+          "name": "Groups Y",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 64.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "f751cce3-1d3c-54c1-aef2-349760f5386c": {
+          "name": "Groups Z",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 128.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "e9893415-d9aa-50de-8bda-16418dd6551d": {
+          "name": "Parameters",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "945d0ff0-adad-495c-96e1-11d9f6b10a1d": {
+      "identifier": "945d0ff0-adad-495c-96e1-11d9f6b10a1d",
+      "title": "Object.Insert",
+      "position": [
+        146.5142126839484,
+        1056.0497423336328
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "distance_",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "4727ee27-5b18-4e9b-8abf-8866f7658a7b": {
+      "identifier": "4727ee27-5b18-4e9b-8abf-8866f7658a7b",
+      "title": "Object.Get",
+      "position": [
+        1459.4167138078574,
+        200.00771444173432
+      ],
+      "width": 281.40625,
+      "height": 164.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "distance_",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "Any"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "a7ab7d2a-cfb1-4eff-bd19-10be1430ff84": {
+      "identifier": "a7ab7d2a-cfb1-4eff-bd19-10be1430ff84",
+      "title": "Vec3",
+      "position": [
+        -702.0279669993614,
+        1090.5822232033572
+      ],
+      "width": 278.9375,
+      "height": 282.0,
+      "inputs": {
+        "5290e6e4-ab45-589c-8173-04104d3cc606": {
+          "name": "X",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 512.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "64ee55b8-6ceb-5641-81d6-536069b26af9": {
+          "name": "Y",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 512.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "b6cf5382-5c78-5309-b329-0c7ddfd158bb": {
+          "name": "Z",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 512.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "623c9e26-2e1d-57f3-af24-bc49316e73c9": {
+          "name": "Vec3",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec3::Vec3"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "df3f564b-cd6d-4454-873f-f2a29c791303": {
+      "identifier": "df3f564b-cd6d-4454-873f-f2a29c791303",
+      "title": "VertexShader",
+      "position": [
+        3261.6947919154404,
+        -119.19339666084475
+      ],
+      "width": 174.265625,
+      "height": 89.0,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "\n// Standard full-screen quad vertex shader\nstruct VertexOutput {\n    @builtin(position) position: vec4<f32>,\n    @location(0) uv: vec2<f32>,\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n    var out: VertexOutput;\n    let x = f32(i32(vertex_index & 1u)) * 2.0 - 1.0;\n    let y = f32(i32(vertex_index >> 1u)) * 2.0 - 1.0;\n    out.position = vec4<f32>(x, y, 0.0, 1.0);\n    out.uv = vec2<f32>(x * 0.5 + 0.5, 0.5 - y * 0.5);\n    return out;\n}\n",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "886b6c23-c406-5e23-931a-27a2c8029855": {
+          "name": "Shader",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::vertex_shader::VertexShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "ce3e8734-186c-46e8-a583-0927a5714a37": {
+      "identifier": "ce3e8734-186c-46e8-a583-0927a5714a37",
+      "title": "FragmentShader",
+      "position": [
+        2893.256174942214,
+        22.12266131436502
+      ],
+      "width": 906.965933597896,
+      "height": 796.2846709600466,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "struct VertexOutput {\n    @builtin(position) position: vec4<f32>,\n    @location(0) uv: vec2<f32>,\n};\n\nstruct Uniforms {\n    time: f32,\n    resolution: vec2<f32>\n};\n\nconst COLORS: array<vec3<f32>, 4> = array<vec3<f32>, 4>(\n    vec3<f32>(1.0, 0.0, 0.0), // red\n    vec3<f32>(0.0, 1.0, 0.0), // green\n    vec3<f32>(0.0, 0.0, 1.0), // blue\n    vec3<f32>(1.0, 1.0, 1.0)  // white\n);\n\n@group(0) @binding(0) var my_sampler: sampler;\n@group(0) @binding(1) var<uniform> uniforms: Uniforms;\n@group(0) @binding(2) var distance_: texture_3d<f32>;\n@group(0) @binding(3) var bone_index: texture_3d<u32>;\n\nfn map(p: vec3<f32>) -> f32 {\n    return textureSampleLevel(distance_, my_sampler, p * 0.25, 0.0).x;\n}\n\nfn calcNormal(p: vec3<f32>) -> vec3<f32> {\n    let texel = 1.0 / vec3<f32>(textureDimensions(distance_));\n    let e = texel.x;\n\n    let ex = vec3<f32>(e, 0.0, 0.0);\n    let ey = vec3<f32>(0.0, e, 0.0);\n    let ez = vec3<f32>(0.0, 0.0, e);\n\n    let n = vec3<f32>(\n        map(p + ex) - map(p - ex),\n        map(p + ey) - map(p - ey),\n        map(p + ez) - map(p - ez),\n    );\n\n    return normalize(n);\n}\n\nstruct Raymarch {\n    hit: bool,\n    point: vec3<f32>,\n    normal: vec3<f32>,\n    distance: f32,\n};\n\nfn raymarch(origin: vec3<f32>, direction: vec3<f32>) -> Raymarch {\n    const MAX_STEPS = 40;\n    const SURF_DIST = 0.01;\n\n    var t = 0.0;\n    for (var i = 0; i < MAX_STEPS; i = i + 1) {\n        var p = origin + direction * t;\n        let d = map(p);\n        let n = calcNormal(p);\n        let cosTheta = abs(dot(direction, n));\n        var step = d * (1.0 + 1.0 * (1.0 - cosTheta));\n        if (d < SURF_DIST) {\n            /*\n            var a = t - step;\n            var b = t;\n\t\t\tfor(var i = 0; i < 0; i++) {\n\t\t\t\tt = (a + b) * 0.5;\n\t\t\t\tlet d = map(origin + direction * t);\n\t\t\t\tif(d <= 0.) {\n\t\t\t\t    b = t;\n                } else {\n                    a = t;\n                }\n\t\t\t}\n\t\t\tlet p = origin + direction * t;\n\t\t\t*/\n            return Raymarch(true, p, n, t);\n        }\n        t += step;\n    }\n\n    return Raymarch(false, vec3(0.0), vec3(0.0), t);\n}\n\nfn raytrace(origin: vec3<f32>, direction: vec3<f32>, bounces: i32) -> vec3<f32> {\n    let light_dir = normalize(vec3(1.0, -1.0, -1.0));\n    const sphere_color = vec3(1.0, 0.9, 0.8);\n\n    var color = vec3(0.0);\n    var ro = origin;\n    var rd = direction;\n    var t = 0.0;\n    for (var i = 0; i < 3; i++) {\n        var r0 = raymarch(ro, rd);    \n        if (r0.hit) {\n            t += r0.distance;\n            // Direct lighting at first hit\n            let luminance = max(dot(light_dir, r0.normal), 0.0) * 0.5;\n            color += sphere_color * luminance / t * 2.0;\n\n            // Reflection ray\n            rd = normalize(reflect(rd, r0.normal));\n            ro = r0.point + rd * 0.1;\n        } else {\n            break;\n        }\n    }\n    return color;\n}\n\n@fragment\nfn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {\n    let p = (in.uv.xy * 2.0 - 1.0) * (uniforms.resolution.x / uniforms.resolution.y);\n    let rd = normalize(vec3(p, 1.0)) * vec3(1.0, 1.0, 1.0);\n    let ro = vec3<f32>(2.0, 2.0, 1.0);\n   \n    var color = vec3(0.0, 0.0, 0.0);\n    let result = raymarch(ro, rd);\n    if result.hit {\n        let index: vec4<u32> = textureLoad(bone_index, vec3<u32>(result.point * vec3<f32>(textureDimensions(bone_index).xyz) * 0.25), 0);\n        color = COLORS[index.x];\n        color = color * (0.25 + 0.75 * dot(result.normal, normalize(vec3(1.0, -1.0, -1.0))));\n    }\n    \n    return vec4<f32>(color, 1.0);\n}\n",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "886b6c23-c406-5e23-931a-27a2c8029855": {
+          "name": "Shader",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::fragment_shader::FragmentShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Left",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "23c361d5-b5d7-4fa8-b558-1bd1c23d9774": {
+      "identifier": "23c361d5-b5d7-4fa8-b558-1bd1c23d9774",
+      "title": "Vec2",
+      "position": [
+        2684.6306697807668,
+        1418.084811892063
+      ],
+      "width": 278.84375,
+      "height": 207.328125,
+      "inputs": {
+        "5290e6e4-ab45-589c-8173-04104d3cc606": {
+          "name": "X",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 512.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "64ee55b8-6ceb-5641-81d6-536069b26af9": {
+          "name": "Y",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 512.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "bd4b2d88-aa26-5b2d-bf09-eecc016e8821": {
+          "name": "Vec2",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec2::Vec2"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": "Resolution",
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "5d3a8d0b-4186-462d-afca-7d081f560668": {
+      "identifier": "5d3a8d0b-4186-462d-afca-7d081f560668",
+      "title": "Vector.Get",
+      "position": [
+        4618.643804606308,
+        757.338285236599
+      ],
+      "width": 281.40625,
+      "height": 164.65625,
+      "inputs": {
+        "e0ab5a75-97ca-5452-a51e-71a45c0ed9ec": {
+          "name": "Vector",
+          "metadata": {
+            "data": {
+              "type": "Vector",
+              "value": [],
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "f211b059-533a-54d1-84d8-59b814bba86b": {
+          "name": "Index",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "Any"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "e0b65b5c-abe2-477d-9617-94e72a85d2ba": {
+      "identifier": "e0b65b5c-abe2-477d-9617-94e72a85d2ba",
+      "title": "RenderAttachments",
+      "position": [
+        3612.733604011128,
+        1463.7888337743843
+      ],
+      "width": 229.6875,
+      "height": 121.0,
+      "inputs": {
+        "069627a8-e148-5727-b5c9-7c1f676252fb": {
+          "name": "Colors",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::color::ColorAttachment"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "3bb0f7ff-dcb4-5ac7-a06c-c0d569d862ea": {
+          "name": "DepthStencil",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::depth_stencil::DepthStencilAttachment"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "52e17810-5b55-55a3-85f6-ad6a6b7753fe": {
+          "name": "Attachments",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::RenderAttachments"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "df36d852-86c2-4c46-8d42-ef25ed4b0ec7": {
+      "identifier": "df36d852-86c2-4c46-8d42-ef25ed4b0ec7",
+      "title": "Object.Insert",
+      "position": [
+        1939.3524672170784,
+        327.5645239690281
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "distance_",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "8116a280-c28d-4aac-90ec-1876de871c9f": {
+      "identifier": "8116a280-c28d-4aac-90ec-1876de871c9f",
+      "title": "Object.Insert",
+      "position": [
+        2358.706386812285,
+        796.3920376530523
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "my_sampler",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "28d09049-4f8c-4b81-a571-3786f3261571": {
+      "identifier": "28d09049-4f8c-4b81-a571-3786f3261571",
+      "title": "Object.Insert",
+      "position": [
+        466.1771111006254,
+        1285.38441209031
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "bone_index",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "b35caca7-a1c0-48b6-b5f3-a56f67bdadb6": {
+      "identifier": "b35caca7-a1c0-48b6-b5f3-a56f67bdadb6",
+      "title": "RenderAttachments.GetColors",
+      "position": [
+        4282.466422647401,
+        760.3058637593581
+      ],
+      "width": 277.984375,
+      "height": 89.0,
+      "inputs": {
+        "52e17810-5b55-55a3-85f6-ad6a6b7753fe": {
+          "name": "Attachments",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::RenderAttachments"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "069627a8-e148-5727-b5c9-7c1f676252fb": {
+          "name": "Colors",
+          "metadata": {
+            "data": {
+              "type": "Vector",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "189762f5-0767-4d45-a447-631b6e84eaae": {
+      "identifier": "189762f5-0767-4d45-a447-631b6e84eaae",
+      "title": "Texture3D",
+      "position": [
+        -120.77274892674995,
+        855.2599694768036
+      ],
+      "width": 215.65625,
+      "height": 164.65625,
+      "inputs": {
+        "d40daf3e-658f-5a4e-9dc6-e632576e1a72": {
+          "name": "Size",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec3::Vec3"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "9b736229-c41d-5bd3-9292-0de358dcfbbc": {
+          "name": "Format",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::format::TextureFormat"
+              },
+              "value": "R32Float",
+              "is_optional": false,
+              "widget": "TextureFormat",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_3d::Texture3D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "b1161df8-09a9-4229-87cb-80c850c2cd9e": {
+      "identifier": "b1161df8-09a9-4229-87cb-80c850c2cd9e",
+      "title": "Texture2D",
+      "position": [
+        3060.056069598812,
+        1461.4199870025825
+      ],
+      "width": 168.34375,
+      "height": 121.0,
+      "inputs": {
+        "d40daf3e-658f-5a4e-9dc6-e632576e1a72": {
+          "name": "Size",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec2::Vec2"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "9b736229-c41d-5bd3-9292-0de358dcfbbc": {
+          "name": "Format",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::format::TextureFormat"
+              },
+              "value": "Rgba8Unorm",
+              "is_optional": false,
+              "widget": "TextureFormat",
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_2d::Texture2D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "0c5a0fac-cfd6-4b5e-9d64-b4b0be6b7dfc": {
+      "identifier": "0c5a0fac-cfd6-4b5e-9d64-b4b0be6b7dfc",
+      "title": "ColorAttachment",
+      "position": [
+        3308.342635570237,
+        1468.7766259943278
+      ],
+      "width": 211.796875,
+      "height": 185.0,
+      "inputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_2d::Texture2D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "b837b487-6266-5f18-93da-1b826bbebca7": {
+          "name": "LoadOp",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::ops::LoadOp"
+              },
+              "value": "Clear",
+              "is_optional": false,
+              "widget": "LoadOp",
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "c2164afd-be2a-53a9-a315-c733ae964130": {
+          "name": "ClearColor",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec4::Vec4"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "07193273-1510-53ae-a302-edb5170e8a0f": {
+          "name": "StoreOp",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::ops::StoreOp"
+              },
+              "value": "Store",
+              "is_optional": false,
+              "widget": "StoreOp",
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "9b423608-2bd5-5810-a674-430f58564368": {
+          "name": "Attachment",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::color::ColorAttachment"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "6455c30d-d31e-4e36-9b98-7a8c8ec77596": {
+      "identifier": "6455c30d-d31e-4e36-9b98-7a8c8ec77596",
+      "title": "ColorAttachment.GetTexture",
+      "position": [
+        5049.553436761521,
+        781.0846251996993
+      ],
+      "width": 2104.383151824001,
+      "height": 1387.6499103944343,
+      "inputs": {
+        "9b423608-2bd5-5810-a674-430f58564368": {
+          "name": "Attachment",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::color::ColorAttachment"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_2d::Texture2D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Right",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "f65136a0-e1b3-468e-bad2-b6f016089fc2": {
+      "identifier": "f65136a0-e1b3-468e-bad2-b6f016089fc2",
+      "title": "Texture3D.Display",
+      "position": [
+        2034.9757993500048,
+        -568.7562750131201
+      ],
+      "width": 707.1370184477266,
+      "height": 736.2091335876412,
+      "inputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_3d::Texture3D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "33a1f3ed-7c62-5712-a959-67370b9b15cb": {
+          "name": "View",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_3d::Texture3D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Right",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "15a14195-6bd1-45f9-b91d-1d80b5de3a33": {
+      "identifier": "15a14195-6bd1-45f9-b91d-1d80b5de3a33",
+      "title": "Code",
+      "position": [
+        -2424.0496561381383,
+        -1922.1625518988803
+      ],
+      "width": 1039.0149387934111,
+      "height": 1036.9553961375532,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "struct Map {\n    distance: f32,\n    bone: u32\n}\n\nfn MapMin(a: Map, b: Map) -> Map {\n    if a.distance < b.distance {\n        return a;\n    } else {\n        return b;\n    }\n}\n\n// Shapes\n\nfn sdBox(p: vec3<f32>, b: vec3<f32>) -> f32 {\n  let q = abs(p) - b;\n  return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);\n}\n\nfn sdCappedCone(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, ra: f32, rb: f32) -> f32 {\n    let rba  = rb-ra;\n    let baba = dot(b-a,b-a);\n    let papa = dot(p-a,p-a);\n    let paba = dot(p-a,b-a)/baba;\n    let x = sqrt( papa - paba*paba*baba );\n    var cax = max(0.0, x - select(rb, ra, paba < 0.5));\n    let cay = abs(paba-0.5)-0.5;\n    let k = rba*rba + baba;\n    let f = clamp( (rba*(x-ra)+paba*baba)/k, 0.0, 1.0 );\n    let cbx = x-ra - f*rba;\n    let cby = paba - f;\n    let s = select(1.0, -1.0, cbx < 0.0 && cay < 0.0);\n    return s * sqrt( min(cax*cax + cay*cay*baba,\n                     cbx*cbx + cby*cby*baba) );\n}\n\nfn sdCapsule(\n    p: vec3<f32>,\n    a: vec3<f32>,\n    b: vec3<f32>,\n    r0: f32,\n    r1: f32\n) -> f32 {\n    let d = b - a;\n    let h = length(d);\n    let dn = d / h;\n    let t = clamp(dot(p - a, dn), 0.0, h);\n    return distance(a + t * dn, p) - mix(r0, r1, t / h);\n}\n\nfn sdCapsuleF(\n    p: vec3<f32>,\n    a: vec3<f32>,\n    b: vec3<f32>,\n    r0: f32,\n    r1: f32,\n    f: f32\n) -> f32 {\n    let d = b - a;\n    let h = length(d);\n    let dn = d / h;\n    let t = dot(p - a, dn);\n    let th = t / h;\n    let rr = mix(r0, r1, th)\n           * max(0.0, 1.0 + f - f * 4.0 * abs(th - 0.5) * abs(th - 0.5));\n    return distance(a + clamp(t, 0.0, h) * dn, p) - rr;\n}\n\nfn sdSphere(p: vec3<f32>, s: f32) -> f32 {\n    return length(p) - s;\n}\n\nfn sdCylinder(p: vec3<f32>, h: vec2<f32>) -> f32 {\n    let d = abs(vec2<f32>(length(p.xz), p.y)) - h;\n    return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0)));\n}\n\nfn sdRoundBox(p: vec3<f32>, b: vec3<f32>, r: f32) -> f32\n{\n  let q = abs(p) - b + r;\n  return length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0) - r;\n}\n\nfn sdRoundCone(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, r1: f32, r2: f32) -> f32\n{\n    let ba = b - a;\n    let l2 = dot(ba,ba);\n    let rr = r1 - r2;\n    let a2 = l2 - rr*rr;\n    let il2 = 1.0/l2;\n    \n    let pa = p - a;\n    let y = dot(pa,ba);\n    let z = y - l2;\n    let x2 = dot( pa*l2 - ba*y, pa*l2 - ba*y );\n    let y2 = y*y*l2;\n    let z2 = z*z*l2;\n\n    // single square root!\n    let k = sign(rr)*rr*rr*x2;\n    if( sign(z)*a2*z2>k ) {\n        return  sqrt(x2 + z2) * il2 - r2;\n    }\n    if( sign(y)*a2*y2<k ) {\n        return  sqrt(x2 + y2) * il2 - r1;\n    }\n    return (sqrt(x2*a2*il2)+y*rr)*il2 - r1;\n}\n\nfn sdABRoundBox(pos: vec3<f32>, a: vec3<f32>, b: vec3<f32>, a_size: vec2<f32>, b_size: vec2<f32>, a_radius: f32, b_radius: f32, x: f32) -> f32 {\n    let center = (a + b) * 0.5;\n    let diff = b - a;\n    let extension = abs(diff) * 0.5;\n    let x_offset = center.x;\n    let y_offset = mix(a.y, b.y, x);\n    let z_offset = mix(a.z, b.z, x);\n    let offset = vec3(x_offset, y_offset, z_offset);\n    let size_x = extension.x;\n    let size_y = mix(a_size.x, b_size.x, x);\n    let size_z = mix(a_size.y, b_size.y, x);\n    let size = vec3(size_x, size_y, size_z);\n    let radius = mix(a_radius, b_radius, x);\n    return sdRoundBox(pos - offset, size, radius);\n}\n\n\n// Helpers\n\nfn pointInLine(pos: vec3<f32>, a: vec3<f32>, b: vec3<f32>) -> f32 {\n    let ab = b - a;\n    let ap = pos - a;\n    let t = dot(ap, ab) / dot(ab, ab);\n    return t;\n}\n\nfn smin(a: f32, b: f32, k: f32) -> f32 {\n    let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);\n    return mix(b, a, h) - k * h * (1.0 - h);\n}\n\nfn opRep(p: vec3<f32>, c: vec3<f32>) -> vec3<f32> {\n    return (p % c) - 0.5 * c;\n}\n\nfn rotationZ(angle: f32) -> mat3x3<f32> {\n    let c = cos(angle);\n    let s = sin(angle);\n\n    return mat3x3<f32>(\n        vec3( c, -s, 0.0),\n        vec3( s,  c, 0.0),\n        vec3(0.0, 0.0, 1.0)\n    );\n}",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Left",
+          "name": "Shapes",
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "1a56aaf1-23c5-4d1a-9b10-f7fd7c6cdf73": {
+      "identifier": "1a56aaf1-23c5-4d1a-9b10-f7fd7c6cdf73",
+      "title": "Code",
+      "position": [
+        -2350.4241750804395,
+        -515.5813313304552
+      ],
+      "width": 1012.2045169919472,
+      "height": 868.1886017810275,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "\n// Map\n\nconst UNKNOWN_INDEX: u32 = 0;\nconst ARM_INDEX: u32 = 3;\nconst LEG_INDEX: u32 = 2;\nconst TORSO_INDEX: u32 = 1;\n\nfn foot(p: vec3<f32>, size: vec3<f32>) -> Map {\n    // separate it in three parts: hindfoot, midfoot and forefoot\n    let pos = vec3(-p.z, p.y, p.x);\n    let len = size.x / 2.0;\n    let height = size.y / 2.0;\n    let width = size.z / 2.0;\n    let start_size = vec2(height, width);\n    let end_size = vec2(height * 0.5, width);\n    let a = vec3(0., start_size.x, 0.0);\n    let b = vec3(len, end_size.x, 0.0);\n    let pil = pointInLine(pos, a, b);\n    let distance = sdABRoundBox(pos, a, b, start_size, end_size, start_size.x, end_size.x, pil);\n    return Map(distance, LEG_INDEX);\n}\n\nfn leg(pos: vec3<f32>, size: vec2<f32>) -> Map {\n    let start_radius = size.x;\n    let end_radius = size.x;\n    let distance = sdRoundCone(pos - vec3(0.0, start_radius, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, size.y, 0.0), start_radius, end_radius);\n    return Map(distance, LEG_INDEX);\n}\n\nfn lower_limb(pos: vec3<f32>, leg_size: vec2<f32>, foot_size: vec3<f32>) -> Map {\n    var m = foot(pos, foot_size);\n    return MapMin(m, leg(pos, leg_size));\n}\n\nfn lower_limbs(pos: vec3<f32>, leg_size: vec2<f32>, foot_size: vec3<f32>, body_width: f32) -> Map {\n    let distance = body_width / 2.0 - leg_size.x;\n    return lower_limb(vec3(abs(pos.x) - distance, pos.yz), leg_size, foot_size);\n}\n\nfn torso(pos: vec3<f32>, size: vec3<f32>) -> Map {\n    let distance = sdRoundBox(pos, size / 2.0, size.z * 0.25);\n    return Map(distance, TORSO_INDEX);\n}\n\nfn arm(pos: vec3<f32>, size: vec2<f32>) -> Map {\n    let start_radius = size.x;\n    let end_radius = size.x;\n    let distance = sdRoundCone(pos - vec3(0.0, start_radius, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, size.y, 0.0), start_radius, end_radius);\n    return Map(distance, ARM_INDEX);\n}\n\nfn hand(p: vec3<f32>, size: vec3<f32>) -> Map {\n    let distance = sdRoundBox(p, size, size.z * 0.5);\n    return Map(distance, ARM_INDEX);\n}\n\nconst PI: f32 = acos(-1.0);\n\nfn upper_limb(p: vec3<f32>, arm_size: vec2<f32>, hand_size: vec3<f32>) -> Map {\n    let shoulder = vec3(0.0, arm_size.y, 0.0);\n\n    let rot = rotationZ(-PI / 8.0);\n    let pos = transpose(rot) * (p - shoulder) + shoulder;\n\n    var m = hand(pos, hand_size);\n    m = MapMin(m, arm(pos, arm_size));\n    return m;\n}\n\nfn upper_limbs(pos: vec3<f32>, arm_size: vec2<f32>, hand_size: vec3<f32>, body_width: f32) -> Map {\n    let limbs_distance = body_width / 2.0 + arm_size.x;\n    let m = upper_limb(vec3(abs(pos.x) - limbs_distance, pos.yz), arm_size, hand_size);\n    return m;\n}\n\nfn neck(pos: vec3<f32>, size: vec2<f32>) -> Map {\n    let distance = sdRoundCone(pos, vec3(0.0), vec3(0.0, size.y, 0.0), size.x, size.x);\n    return Map(distance, UNKNOWN_INDEX);\n}\n\nfn head(pos: vec3<f32>, size: vec2<f32>) -> Map {\n    let distance = sdRoundCone(pos, vec3(0.0), vec3(0.0, size.y, 0.0), size.x, size.x);\n    return Map(distance, UNKNOWN_INDEX);\n}\n\nfn character(pos: vec3<f32>, height: f32) -> Map {\n    let relative = height * 0.1;\n    let leg_radius = 0.25 * relative;\n    let leg_length = 3.0 * relative;\n    let leg = vec2(leg_radius, leg_length);\n\n    let foot_length = 1.5 * relative;\n    let foot_height = 0.5 * relative;\n    let foot_width = 0.5 * relative;\n    let foot = vec3(foot_length, foot_height, foot_width);\n\n    let torso_width = 1.5 * relative;\n    let torso_height = 3.0 * relative;\n    let torso_depth = leg_radius * 2.0;\n    let torso_size = vec3(torso_width, torso_height, torso_depth);\n    \n    let arm_radius = 0.25 * relative;\n    let arm_length = 2.5 * relative;\n    let arm = vec2(arm_radius, arm_length);\n    \n    let hand_length = 0.3 * relative;\n    let hand_height = 0.3 * relative;\n    let hand_width = 0.3 * relative;\n    let hand = vec3(hand_length, hand_height, hand_width);\n    \n    let neck_radius = 0.25 * relative;\n    let neck_length = 0.25 * relative;\n    let neck_size = vec2(neck_radius, neck_length);\n    \n    let head_radius = 0.5 * relative;\n    let head_length = 0.3 * relative;\n    let head_size = vec2(head_radius, head_length);\n    \n    var m = lower_limbs(pos, leg, foot, torso_width);\n    m = MapMin(m, torso(pos - vec3(0.0, leg_length + leg_radius + torso_height * 0.5, 0.0), torso_size));\n    m = MapMin(m, upper_limbs(pos - vec3(0.0, leg_length + torso_height - arm.y - arm.x, 0.0), arm, hand, torso_width));\n    m = MapMin(m, neck(pos - vec3(0.0, leg_length + torso_height + neck_size.x, 0.0), neck_size));\n    m = MapMin(m, head(pos - vec3(0.0, leg_length + torso_height + neck_size.x + neck_size.y + head_size.x, 0.0), head_size));\n    return m;\n}\n\nfn map(p: vec3<f32>) -> Map {\n    return character(p, 1.0);\n}\n",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Left",
+          "name": "Object",
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "ecffb5b1-8683-481d-84b1-33570248399e": {
+      "identifier": "ecffb5b1-8683-481d-84b1-33570248399e",
+      "title": "Code",
+      "position": [
+        -1935.0027132759992,
+        508.68316275531595
+      ],
+      "width": 941.5685052733194,
+      "height": 851.6723952970754,
+      "inputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "struct Uniforms {\n    size: f32\n};\n\n@group(0) @binding(0) var<uniform> uniforms: Uniforms;\n@group(0) @binding(1) var distance_: texture_storage_3d<r32float, write>;\n@group(0) @binding(2) var bone_index: texture_storage_3d<rgba8uint, write>;\n@group(0) @binding(3) var bone_weight: texture_storage_3d<rgba32float, write>;\n\n@compute @workgroup_size(8, 8, 4)\nfn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n    let dims = textureDimensions(distance_);\n    if (global_id.x >= dims.x || global_id.y >= dims.y || global_id.z >= dims.z) {\n        return;\n    }\n    \n    let uvw = vec3<f32>(global_id) / vec3<f32>(dims);\n    var o = (uvw * 2.0 - 1.0) * vec3(1.0, 1.0, 1.0) - vec3(0.0, -0.4, 0.0);\n    \n    let m = map(o);\n    let distance = vec4<f32>(m.distance, 1.0, 1.0, 1.0);\n    let bone = vec4<u32>(m.bone);\n    \n    let point = vec3<i32>(i32(global_id.x), i32(dims.y) - i32(global_id.y), i32(global_id.z));\n    textureStore(distance_, point, distance);\n    textureStore(bone_index, point, bone);\n    textureStore(bone_weight, point, vec4(1.0));\n}\n",
+              "is_optional": false,
+              "widget": "CodeEditorWidget",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "aa42d72a-d757-5cdc-badb-f575617e194b": {
+          "name": "Code",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Left",
+          "name": "Entrypoint",
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "ecc1bdde-ef50-4ac2-865a-2d85cbbfd0e6": {
+      "identifier": "ecc1bdde-ef50-4ac2-865a-2d85cbbfd0e6",
+      "title": "String.Append",
+      "position": [
+        -1161.139056944412,
+        -13.997455982507915
+      ],
+      "width": 180.8125,
+      "height": 189.0,
+      "inputs": {
+        "9759785f-95f6-554a-ba7a-c3e586ec5609": {
+          "name": "A",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "8a0ba01a-b2c2-5f79-a36c-8262f7f0d083": {
+          "name": "B",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "2a2abc92-f098-4f69-8421-75980ba81ffd": {
+          "name": "C",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": null,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "6ab9edc7-d534-5125-83f3-def896891e14": {
+          "name": "Result",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": true,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "4a0cdbe9-30d1-429d-a410-4cbbf7b624bc": {
+      "identifier": "4a0cdbe9-30d1-429d-a410-4cbbf7b624bc",
+      "title": "Object.Insert",
+      "position": [
+        3040.1445587225107,
+        1213.6548246276277
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "resolution",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "656f0059-e666-49d5-a8e8-a767c628d111": {
+      "identifier": "656f0059-e666-49d5-a8e8-a767c628d111",
+      "title": "Texture3D",
+      "position": [
+        -88.4868967939647,
+        1351.0663233471
+      ],
+      "width": 207.203125,
+      "height": 163.0,
+      "inputs": {
+        "d40daf3e-658f-5a4e-9dc6-e632576e1a72": {
+          "name": "Size",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec3::Vec3"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "9b736229-c41d-5bd3-9292-0de358dcfbbc": {
+          "name": "Format",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::format::TextureFormat"
+              },
+              "value": "Rgba8Uint",
+              "is_optional": false,
+              "widget": "TextureFormat",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_3d::Texture3D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "beeee992-d309-4bc8-be23-8a450aefe2e9": {
+      "identifier": "beeee992-d309-4bc8-be23-8a450aefe2e9",
+      "title": "Texture3D",
+      "position": [
+        -67.83131712802016,
+        1623.6771081092777
+      ],
+      "width": 207.203125,
+      "height": 163.0,
+      "inputs": {
+        "d40daf3e-658f-5a4e-9dc6-e632576e1a72": {
+          "name": "Size",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::vector::vec3::Vec3"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "9b736229-c41d-5bd3-9292-0de358dcfbbc": {
+          "name": "Format",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::format::TextureFormat"
+              },
+              "value": "Rgba32Float",
+              "is_optional": false,
+              "widget": "TextureFormat",
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "ebeaf91f-e1d4-523d-893f-e09d52d667c8": {
+          "name": "Texture",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::texture::texture_3d::Texture3D"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "7ed2349f-3b5e-428e-8b29-e16347d0cde1": {
+      "identifier": "7ed2349f-3b5e-428e-8b29-e16347d0cde1",
+      "title": "Object.Insert",
+      "position": [
+        807.2876015348379,
+        1542.830715252966
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "bone_weight",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "9ea7179e-056c-418a-a840-b89847f22ac0": {
+      "identifier": "9ea7179e-056c-418a-a840-b89847f22ac0",
+      "title": "Object.Get",
+      "position": [
+        1460.4543105375417,
+        601.1863310012407
+      ],
+      "width": 281.40625,
+      "height": 164.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "bone_index",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "Any"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "ff508d89-759b-4e02-af56-0f93450f3d98": {
+      "identifier": "ff508d89-759b-4e02-af56-0f93450f3d98",
+      "title": "Object.Insert",
+      "position": [
+        1964.0270862151908,
+        639.2601276551987
+      ],
+      "width": 287.21875,
+      "height": 196.65625,
+      "inputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": {},
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "47ec7446-ea22-5772-974b-12355b02541f": {
+          "name": "Key",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "bone_index",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "078136dc-d680-5f92-b01b-5361430f566d": {
+          "name": "Value",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "2ab79f38-2d8b-52d5-a91e-9e076c30dc4a": {
+          "name": "Object",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "e760a60a-a871-48bd-b88b-11c57b0fac7d": {
+      "identifier": "e760a60a-a871-48bd-b88b-11c57b0fac7d",
+      "title": "RenderPipeline",
+      "position": [
+        3886.4747686602736,
+        -122.28840091289813
+      ],
+      "width": 0.0,
+      "height": 0.0,
+      "inputs": {
+        "42725027-5539-5202-bdbe-2131be621651": {
+          "name": "Vertex",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::vertex_shader::VertexShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "67fb31cd-15e6-5692-9fcc-4a2a7f329be1": {
+          "name": "Fragment",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::fragment_shader::FragmentShader"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "5e102ad0-9438-5970-b762-03a82a5f48fa": {
+          "name": "Topology",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::topology::PrimitiveTopology"
+              },
+              "value": "TriangleStrip",
+              "is_optional": false,
+              "widget": "Topology",
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "c92c60b1-d0b1-5a46-8cb9-a2be4e308856": {
+          "name": "Pipeline",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::RenderPipeline"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "0d702f37-643e-422b-ae4c-0c46f5e4e46b": {
+      "identifier": "0d702f37-643e-422b-ae4c-0c46f5e4e46b",
+      "title": "RenderPass",
+      "position": [
+        3953.570231391665,
+        765.8879888242323
+      ],
+      "width": 0.0,
+      "height": 0.0,
+      "inputs": {
+        "c92c60b1-d0b1-5a46-8cb9-a2be4e308856": {
+          "name": "Pipeline",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::pipeline::RenderPipeline"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "52e17810-5b55-55a3-85f6-ad6a6b7753fe": {
+          "name": "Attachments",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::RenderAttachments"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "e9893415-d9aa-50de-8bda-16418dd6551d": {
+          "name": "Parameters",
+          "metadata": {
+            "data": {
+              "type": "Object",
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "2a8f7197-9e7c-5183-99da-a27e7b56e992": {
+          "name": "Vertex Start",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "868af552-435a-5f71-af91-4ee3c7e42676": {
+          "name": "Vertex Count",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 4.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "c7e2f17a-ad34-52c2-846f-7f8eafd3cbaf": {
+          "name": "Instance Start",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 0.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "c8ecec15-6d24-581a-8c2f-f6cec5e2b93f": {
+          "name": "Instance Count",
+          "metadata": {
+            "data": {
+              "type": "Number",
+              "value": 1.0,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "52e17810-5b55-55a3-85f6-ad6a6b7753fe": {
+          "name": "Attachments",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::render::attachments::RenderAttachments"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    },
+    "c4da6f6f-c46f-4f20-9c20-f2363411fbc0": {
+      "identifier": "c4da6f6f-c46f-4f20-9c20-f2363411fbc0",
+      "title": "Sampler",
+      "position": [
+        1640.232984476876,
+        1320.8480461392512
+      ],
+      "width": 0.0,
+      "height": 0.0,
+      "inputs": {
+        "1d7ddfa1-ba0e-5f03-985e-5ad27c89084d": {
+          "name": "Address Mode U",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "ClampToEdge",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "70e816b0-57d2-5d6d-99be-38b2da0987fc": {
+          "name": "Address Mode V",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "ClampToEdge",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "80658691-eb95-5a73-99c4-1fa2bc09f000": {
+          "name": "Address Mode W",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "ClampToEdge",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Widget",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "5d6a7326-7201-5600-9981-ece72ee97db6": {
+          "name": "Mag Filter",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "Linear",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        },
+        "8365fe97-fbcf-580d-92c5-377f468928a0": {
+          "name": "Min Filter",
+          "metadata": {
+            "data": {
+              "type": "String",
+              "value": "Linear",
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "f8497b35-6e52-572f-9c45-bd1a25f75f48": {
+          "name": "Sampler",
+          "metadata": {
+            "data": {
+              "type": {
+                "Any": "prism_runtime::data::gpu::sampler::Sampler"
+              },
+              "value": null,
+              "is_optional": false,
+              "widget": null,
+              "mode": "Connection",
+              "label": null,
+              "config": null,
+              "hide_dot": false,
+              "hide_label": false,
+              "hide_selector": false
+            }
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "layout": "Split",
+          "name": null,
+          "dynamic_inputs": false,
+          "dynamic_outputs": false,
+          "synchronized_ports": false,
+          "priority_overrides": false,
+          "volatile": false,
+          "is_fallible": false,
+          "contexts": []
+        }
+      }
+    }
+  },
+  "edges": [
+    {
+      "from": {
+        "node": {
+          "Index": 0
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 1
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 1
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 2
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 2
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 4
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 4
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 11
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 3
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 13
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 14
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 9
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 8
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 16
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 16
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 17
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 17
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 10
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 15
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 3
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 5
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 15
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 9
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 18
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 4
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 19
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 20
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 23
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 21
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 23
+        },
+        "port": {
+          "Index": 1
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 22
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 23
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 23
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 0
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 8
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 24
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 5
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 25
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 25
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 13
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 5
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 26
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 13
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 27
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 27
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 2
+        },
+        "port": {
+          "Index": 1
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 26
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 27
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 28
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 29
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 2
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 28
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 11
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 29
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 29
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 12
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 12
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 24
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 6
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 30
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 7
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 30
+        },
+        "port": {
+          "Index": 1
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 30
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 31
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 31
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 14
+        },
+        "port": {
+          "Index": 0
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 10
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 31
+        },
+        "port": {
+          "Index": 1
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 24
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 31
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    },
+    {
+      "from": {
+        "node": {
+          "Index": 32
+        },
+        "port": {
+          "Index": 0
+        }
+      },
+      "to": {
+        "node": {
+          "Index": 12
+        },
+        "port": {
+          "Index": 2
+        }
+      }
+    }
+  ]
+}

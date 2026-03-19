@@ -4,6 +4,8 @@ use crate::Field;
 
 pub type Distance = f32;
 pub type DistanceField = Field<Distance>;
+pub type BoneIndexField = Field<[u8; 4]>;
+pub type BoneWeightField = Field<[f32; 4]>;
 
 impl DistanceField {
     pub fn new_distance_field(width: usize, height: usize, depth: usize, voxel_size: f32) -> Self {

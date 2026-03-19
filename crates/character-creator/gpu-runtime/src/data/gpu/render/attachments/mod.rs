@@ -12,56 +12,22 @@ pub struct RenderAttachments {
     pub depth_stencil: Option<DepthStencilAttachment>,
 }
 
-
 impl RenderAttachments {
     pub fn new(
-        colors: Option<gpu_runtime_base::Value>,
+        colors: Vec<ColorAttachment>,
         depth_stencil: Option<DepthStencilAttachment>,
     ) -> RenderAttachments {
-        let mut color_attachments = Vec::new();
-
-        if let Some(val) = colors {
-            // Check for single ColorAttachment first
-            if let Some((att, _)) = val.as_any() {
-                if let Some(c) = att.downcast_ref::<ColorAttachment>() {
-                    color_attachments.push(c.clone());
-                }
-                // If not ColorAttachment, check if it's a Vector
-                else if let Some(vec) = val.as_vector() {
-                    for vec_val in vec {
-                        if let Some((v_att, _)) = vec_val.as_any() {
-                            if let Some(c) = v_att.downcast_ref::<ColorAttachment>() {
-                                color_attachments.push(c.clone());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         RenderAttachments {
-            colors: color_attachments,
+            colors,
             depth_stencil,
         }
     }
 
-    pub fn get_colors(&self) -> gpu_runtime_base::Result<Vec<Option<gpu_runtime_base::Value>>> {
-        Ok(vec![Some(gpu_runtime_base::Value::Vector(
-            self.colors
-                .iter()
-                .map(|c| gpu_runtime_base::Value::new_any(c.clone()))
-                .collect(),
-        ))])
+    pub fn get_colors(&self) -> Vec<ColorAttachment> {
+        self.colors.clone()
     }
 
-    pub fn get_depth_stencil(&self) -> gpu_runtime_base::Result<Vec<Option<gpu_runtime_base::Value>>> {
-        Ok(vec![if let Some(ds) = &self.depth_stencil {
-            Some(gpu_runtime_base::Value::new_any(ds.clone()))
-        } else {
-            None
-        }])
+    pub fn get_depth_stencil(&self) -> Option<DepthStencilAttachment> {
+        self.depth_stencil.clone()
     }
 }
-
-unsafe impl Send for RenderAttachments {}
-unsafe impl Sync for RenderAttachments {}

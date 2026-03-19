@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::data::TextureFormat;
-use gpu_runtime_base::Result;
+use crate::data::gpu::texture::TextureFormat;
+use anyhow::Result;
 
-use crate::{data::Vec3, globals::WgpuContext};
+use crate::{data::vector::Vec3, globals::WgpuContext};
 
 #[derive(Clone, Debug)]
 pub struct Texture3D {
@@ -21,9 +21,6 @@ impl Default for Texture3D {
         }
     }
 }
-
-unsafe impl Send for Texture3D {}
-unsafe impl Sync for Texture3D {}
 
 impl Texture3D {
     pub fn new(context: &WgpuContext, size: Vec3, format: TextureFormat) -> Result<Texture3D> {
@@ -67,3 +64,6 @@ impl Texture3D {
         Ok(texture_value)
     }
 }
+
+unsafe impl Send for Texture3D {}
+unsafe impl Sync for Texture3D {}

@@ -1,7 +1,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::light::CascadeShadowConfigBuilder;
-use bevy::mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues};
+use bevy::mesh::{skinning::SkinnedMesh, Indices};
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
 
@@ -77,6 +77,7 @@ impl Scene {
         commands.spawn((
             Mesh3d(meshes.add(Plane3d::default().mesh().size(500000.0, 500000.0))),
             MeshMaterial3d(materials.add(Color::srgb(0.3, 0.5, 0.3))),
+            crate::plugin::components::Floor,
         ));
 
         // Light
@@ -131,7 +132,6 @@ impl Scene {
         let mesh = Self::build_unit_cylinder_mesh(BONE_RADIUS, BONE_SEGMENT_RESOLUTION);
         let mesh_handle = meshes.add(mesh);
 
-        let mut spawned_count = 0;
         for (child_index, joint_entity) in skinned.joints.iter().enumerate() {
             let Ok(parent) = parents.get(*joint_entity) else {
                 continue;
@@ -140,7 +140,6 @@ impl Scene {
             let Some(&_parent_index) = joint_indices.get(&parent_entity) else {
                 continue;
             };
-            spawned_count += 1;
 
             // Generate a color based on child_index
             let r = ((child_index * 13) % 256) as f32 / 255.0;

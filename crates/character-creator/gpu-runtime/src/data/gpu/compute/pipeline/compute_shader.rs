@@ -1,7 +1,6 @@
+use crate::data::{gpu::shader::parse_naga, shader};
 use crate::globals::WgpuContext;
-use anyhow::anyhow;
-use gpu_runtime_base::Result;
-use naga::front::wgsl;
+use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default)]
@@ -11,35 +10,47 @@ pub struct ComputeShader {
     pub error: Arc<Mutex<Option<String>>>,
 }
 
-unsafe impl Send for ComputeShader {}
-unsafe impl Sync for ComputeShader {}
-
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
-
 
 impl ComputeShader {
     pub fn new(context: &WgpuContext, code: String) -> Result<ComputeShader> {
         // 1. Naga Parse & Deep Validation
-        let naga_module = match wgsl::parse_str(&code) {
-            Ok(m) => m,
-            Err(e) => {
-                let message = e.emit_to_string(&code);
-                return Err(anyhow!("Compute Shader Parse Error: {}", message));
-            }
-        };
+        let is_glsl = shader::detect_from_code(&code) == "glsl";
+        let naga_res = parse_naga(&code, wgpu::naga::ShaderStage::Compute)
+            .map_err(|e| anyhow::anyhow!("Compute Shader Parse Error: {}", e))?;
 
-        let mut validator = naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
+        let mut validator = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::all(),
         );
 
-        if let Err(e) = validator.validate(&naga_module) {
+        let info = if let Ok(info) = validator.validate(&naga_res) {
+            info
+        } else {
+            let e = validator.validate(&naga_res).unwrap_err();
             let message = e.emit_to_string(&code);
-            return Err(anyhow!("Compute Shader Validation Error: {}", message));
-        }
+            return Err(anyhow::anyhow!(
+                "Compute Shader Validation Error: {}",
+                message
+            ));
+        };
 
-        // 2. WGPU Validation & Creation
+        // 2. Convert to WGSL for WGPU compatibility (if it was GLSL)
+        let wgsl_code = if is_glsl {
+            match wgpu::naga::back::wgsl::write_string(
+                &naga_res,
+                &info,
+                wgpu::naga::back::wgsl::WriterFlags::empty(),
+            ) {
+                Ok(s) => s,
+                Err(e) => return Err(anyhow!("Failed to convert GLSL to WGSL: {}", e)),
+            }
+        } else {
+            code.clone()
+        };
+
+        // 3. WGPU Validation & Creation
         context
             .device
             .push_error_scope(wgpu::ErrorFilter::Validation);
@@ -48,7 +59,7 @@ impl ComputeShader {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("ComputeShader"),
-                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(&code)),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(&wgsl_code)),
             });
         let module = Some(Arc::new(sm));
 

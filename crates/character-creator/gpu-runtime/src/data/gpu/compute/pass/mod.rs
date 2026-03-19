@@ -1,23 +1,19 @@
-use crate::data::vector::{Vec2, Vec3, Vec4};
-use crate::data::{ComputePipeline, Sampler, Texture2D, Texture3D};
+use crate::data::{ComputePipeline, PassParameter, PassParameters};
 use crate::globals::WgpuContext;
-use anyhow::anyhow;
-use gpu_runtime_base::{Result, Value};
-use indexmap::IndexMap;
+use anyhow::{Result, anyhow};
 use wgpu::util::DeviceExt;
 
 pub struct ComputePass;
-
 
 impl ComputePass {
     pub fn new(
         context: &WgpuContext,
         pipeline_def: ComputePipeline,
-        parameters: IndexMap<String, Value>,
+        parameters: PassParameters,
         workgroups_x: u32,
         workgroups_y: u32,
         workgroups_z: u32,
-    ) -> Result<IndexMap<String, Value>> {
+    ) -> Result<()> {
         // --- GET PIPELINE FROM INPUT ---
         let pipeline_val = pipeline_def
             .pipeline
@@ -36,121 +32,161 @@ impl ComputePass {
 
         let pipeline = pipeline_val;
 
-        let bind_group_layout = pipeline_def
-            .bind_group_layout
-            .as_ref()
-            .ok_or_else(|| anyhow!("ComputePass: ComputePipeline missing BindGroupLayout"))?;
+        let bind_group_layouts = &pipeline_def.bind_group_layouts;
         let reflection = pipeline_def
             .reflection
             .as_ref()
             .ok_or_else(|| anyhow!("ComputePass: ComputePipeline missing ReflectionData"))?;
 
-        // Ensure state exists - handled by macro now using #[state(default)]
+        let mut bind_groups = Vec::new();
 
-        // 1. Uniforms
-        let buffer = if reflection.uniform_buffer_size > 0 {
-            let mut buffer_data = vec![0u8; reflection.uniform_buffer_size as usize];
+        for bg_reflection in &reflection.bind_groups {
+            let layout = bind_group_layouts
+                .get(bg_reflection.index as usize)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "ComputePass: Bind group layout index {} missing in pipeline",
+                        bg_reflection.index
+                    )
+                })?;
 
-            for member in &reflection.uniform_members {
-                if let Some(val) = parameters.get(&member.name) {
-                    if let Some(n) = val.as_number() {
-                        let bytes = (*n as f32).to_le_bytes();
-                        if (member.offset as usize + 4) <= buffer_data.len() {
-                            buffer_data[member.offset as usize..member.offset as usize + 4]
-                                .copy_from_slice(&bytes);
-                        }
-                    } else if let Some((arc, _)) = val.as_any() {
-                        if let Some(v) = arc.downcast_ref::<Vec2>() {
-                            let bytes_x = v.x.to_le_bytes();
-                            let bytes_y = v.y.to_le_bytes();
-                            if (member.offset as usize + 8) <= buffer_data.len() {
-                                let start = member.offset as usize;
-                                buffer_data[start..start + 4].copy_from_slice(&bytes_x);
-                                buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
+            let mut bind_group_entries = Vec::new();
+
+            // 1. Uniforms
+            let mut uniform_buffer = None;
+            if bg_reflection.uniform_buffer_size > 0 {
+                let mut buffer_data = vec![0u8; bg_reflection.uniform_buffer_size as usize];
+
+                for member in &bg_reflection.uniform_members {
+                    if let Some(val) = parameters.get(&member.name) {
+                        match val {
+                            PassParameter::Number(n) => {
+                                let bytes = (*n as f32).to_le_bytes();
+                                if (member.offset as usize + 4) <= buffer_data.len() {
+                                    buffer_data[member.offset as usize..member.offset as usize + 4]
+                                        .copy_from_slice(&bytes);
+                                }
                             }
-                        } else if let Some(v) = arc.downcast_ref::<Vec3>() {
-                            let bytes_x = v.x.to_le_bytes();
-                            let bytes_y = v.y.to_le_bytes();
-                            let bytes_z = v.z.to_le_bytes();
-                            if (member.offset as usize + 12) <= buffer_data.len() {
-                                let start = member.offset as usize;
-                                buffer_data[start..start + 4].copy_from_slice(&bytes_x);
-                                buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
-                                buffer_data[start + 8..start + 12].copy_from_slice(&bytes_z);
+                            PassParameter::Vec2(v) => {
+                                let bytes_x = v.x.to_le_bytes();
+                                let bytes_y = v.y.to_le_bytes();
+                                if (member.offset as usize + 8) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    buffer_data[start..start + 4].copy_from_slice(&bytes_x);
+                                    buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
+                                }
                             }
-                        } else if let Some(v) = arc.downcast_ref::<Vec4>() {
-                            let bytes_x = v.x.to_le_bytes();
-                            let bytes_y = v.y.to_le_bytes();
-                            let bytes_z = v.z.to_le_bytes();
-                            let bytes_w = v.w.to_le_bytes();
-                            if (member.offset as usize + 16) <= buffer_data.len() {
-                                let start = member.offset as usize;
-                                buffer_data[start..start + 4].copy_from_slice(&bytes_x);
-                                buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
-                                buffer_data[start + 8..start + 12].copy_from_slice(&bytes_z);
-                                buffer_data[start + 12..start + 16].copy_from_slice(&bytes_w);
+                            PassParameter::Vec3(v) => {
+                                let bytes_x = v.x.to_le_bytes();
+                                let bytes_y = v.y.to_le_bytes();
+                                let bytes_z = v.z.to_le_bytes();
+                                if (member.offset as usize + 12) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    buffer_data[start..start + 4].copy_from_slice(&bytes_x);
+                                    buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
+                                    buffer_data[start + 8..start + 12].copy_from_slice(&bytes_z);
+                                }
                             }
+                            PassParameter::Vec4(v) => {
+                                let bytes_x = v.x.to_le_bytes();
+                                let bytes_y = v.y.to_le_bytes();
+                                let bytes_z = v.z.to_le_bytes();
+                                let bytes_w = v.w.to_le_bytes();
+                                if (member.offset as usize + 16) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    buffer_data[start..start + 4].copy_from_slice(&bytes_x);
+                                    buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
+                                    buffer_data[start + 8..start + 12].copy_from_slice(&bytes_z);
+                                    buffer_data[start + 12..start + 16].copy_from_slice(&bytes_w);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
+
+                let buffer = context
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!(
+                            "ComputePass Group {} Uniforms",
+                            bg_reflection.index
+                        )),
+                        contents: &buffer_data,
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    });
+                uniform_buffer = Some(buffer);
             }
 
-            let buffer = context
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ComputePass Uniforms"),
-                    contents: &buffer_data,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-
-            Some(buffer)
-        } else {
-            None
-        };
-
-        // 2. Bind Group
-        let mut bind_group_entries = Vec::new();
-        if let Some(buffer) = &buffer {
-            if let Some(uniform_binding_idx) = reflection.uniform_binding {
-                bind_group_entries.push(wgpu::BindGroupEntry {
-                    binding: uniform_binding_idx,
-                    resource: buffer.as_entire_binding(),
-                });
+            if let Some(buffer) = &uniform_buffer {
+                if let Some(uniform_binding_idx) = bg_reflection.uniform_binding {
+                    bind_group_entries.push(wgpu::BindGroupEntry {
+                        binding: uniform_binding_idx,
+                        resource: buffer.as_entire_binding(),
+                    });
+                }
             }
-        }
-        for binding_info in &reflection.texture_bindings {
-            let name = &binding_info.name;
-            let binding = binding_info.binding;
-            let val = parameters.get(name).ok_or_else(|| {
-                anyhow!(
-                    "ComputePass: Parameter '{}' (texture binding {}) not found",
-                    name,
-                    binding
-                )
-            })?;
 
-            if let Some((arc, _)) = val.as_any() {
-                let (view, actual_format, dim) = if let Some(tex) = arc.downcast_ref::<Texture2D>()
-                {
-                    (
+            // 2. Buffers (Storage / Uniform from Buffer)
+            for buffer_binding in &bg_reflection.buffer_bindings {
+                let name = &buffer_binding.name;
+                let binding = buffer_binding.binding;
+                let val = parameters.get(name).ok_or_else(|| {
+                    anyhow!(
+                        "ComputePass: Parameter '{}' (buffer binding {}) not found",
+                        name,
+                        binding
+                    )
+                })?;
+
+                if let PassParameter::Buffer(gpu_buf) = val {
+                    if let Some(wgpu_buf) = &gpu_buf.buffer {
+                        bind_group_entries.push(wgpu::BindGroupEntry {
+                            binding,
+                            resource: wgpu_buf.as_entire_binding(),
+                        });
+                    } else {
+                        return Err(anyhow!(
+                            "ComputePass: Buffer '{}' has no WGPU resource",
+                            name
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!("ComputePass: Parameter '{}' is not a Buffer", name));
+                }
+            }
+
+            // 3. Textures
+            for binding_info in &bg_reflection.texture_bindings {
+                let name = &binding_info.name;
+                let binding = binding_info.binding;
+                let val = parameters.get(name).ok_or_else(|| {
+                    anyhow!(
+                        "ComputePass: Parameter '{}' (texture binding {}) not found",
+                        name,
+                        binding
+                    )
+                })?;
+
+                let (view, actual_format, dim) = match val {
+                    PassParameter::Texture2D(tex) => (
                         tex.view.as_ref(),
                         tex.texture.as_ref().map(|t| t.format()),
                         wgpu::TextureViewDimension::D2,
-                    )
-                } else if let Some(tex) = arc.downcast_ref::<Texture3D>() {
-                    (
+                    ),
+                    PassParameter::Texture3D(tex) => (
                         tex.view.as_ref(),
                         tex.texture.as_ref().map(|t| t.format()),
                         wgpu::TextureViewDimension::D3,
-                    )
-                } else {
-                    return Err(anyhow!(
-                        "ComputePass: Parameter '{}' is not a Texture2D or Texture3D",
-                        name
-                    ));
+                    ),
+                    _ => {
+                        return Err(anyhow!(
+                            "ComputePass: Parameter '{}' is not a Texture2D or Texture3D",
+                            name
+                        ));
+                    }
                 };
 
-                // Synchronous Validation
                 if let Some(expected_format) = binding_info.format {
                     if let Some(actual_fmt) = actual_format {
                         if actual_fmt != expected_format {
@@ -181,25 +217,19 @@ impl ComputePass {
                 } else {
                     return Err(anyhow!("ComputePass: Texture '{}' has no view", name));
                 }
-            } else {
-                return Err(anyhow!(
-                    "ComputePass: Parameter '{}' is not a texture",
-                    name
-                ));
             }
-        }
 
-        for (name, binding) in &reflection.sampler_bindings {
-            let val = parameters.get(name).ok_or_else(|| {
-                anyhow!(
-                    "ComputePass: Parameter '{}' (sampler binding {}) not found",
-                    name,
-                    binding
-                )
-            })?;
+            // 4. Samplers
+            for (name, binding) in &bg_reflection.sampler_bindings {
+                let val = parameters.get(name).ok_or_else(|| {
+                    anyhow!(
+                        "ComputePass: Parameter '{}' (sampler binding {}) not found",
+                        name,
+                        binding
+                    )
+                })?;
 
-            if let Some((arc, _)) = val.as_any() {
-                if let Some(s) = arc.downcast_ref::<Sampler>() {
+                if let PassParameter::Sampler(s) = val {
                     if let Some(wgpu_sampler) = &s.sampler {
                         bind_group_entries.push(wgpu::BindGroupEntry {
                             binding: *binding,
@@ -217,21 +247,20 @@ impl ComputePass {
                         name
                     ));
                 }
-            } else {
-                return Err(anyhow!(
-                    "ComputePass: Parameter '{}' is not a sampler",
-                    name
-                ));
             }
-        }
 
-        let bind_group = context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ComputePass Bind Group"),
-                layout: &bind_group_layout,
-                entries: &bind_group_entries,
-            });
+            let bind_group = context
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!(
+                        "ComputePass Group {} Bind Group",
+                        bg_reflection.index
+                    )),
+                    layout,
+                    entries: &bind_group_entries,
+                });
+            bind_groups.push(bind_group);
+        }
 
         // Frame: Compute Pass
         let mut encoder = context
@@ -245,11 +274,13 @@ impl ComputePass {
                 timestamp_writes: None,
             });
             compute_pass.set_pipeline(pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
+            for (i, bg) in bind_groups.iter().enumerate() {
+                compute_pass.set_bind_group(i as u32, bg, &[]);
+            }
             compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, workgroups_z);
         }
         context.queue.submit(std::iter::once(encoder.finish()));
 
-        Ok(parameters)
+        Ok(())
     }
 }

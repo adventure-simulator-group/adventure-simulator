@@ -1,3 +1,16 @@
+struct Map {
+    distance: f32,
+    bone: u32
+}
+
+fn MapMin(a: Map, b: Map) -> Map {
+    if a.distance < b.distance {
+        return a;
+    } else {
+        return b;
+    }
+}
+
 // Shapes
 
 fn sdBox(p: vec3<f32>, b: vec3<f32>) -> f32 {
@@ -127,5 +140,16 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
 }
 
 fn opRep(p: vec3<f32>, c: vec3<f32>) -> vec3<f32> {
-    return (p % c) - 0.5 * c;
+    return p - c * floor(p / c + 0.5);
+}
+
+fn rotationZ(angle: f32) -> mat3x3<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+
+    return mat3x3<f32>(
+        vec3( c, -s, 0.0),
+        vec3( s,  c, 0.0),
+        vec3(0.0, 0.0, 1.0)
+    );
 }

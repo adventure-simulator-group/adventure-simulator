@@ -9,7 +9,6 @@ pub struct Vec4 {
     pub w: f32,
 }
 
-
 impl Vec4 {
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Vec4 {
         Self { x, y, z, w }
@@ -34,5 +33,11 @@ impl From<Vec4> for wgpu::Color {
             b: val.z as f64,
             a: val.w as f64,
         }
+    }
+}
+
+impl std::fmt::Display for Vec4 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {}, {})", self.x, self.y, self.z, self.w)
     }
 }

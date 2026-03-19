@@ -1,5 +1,4 @@
-use anyhow::anyhow;
-use gpu_runtime_base::Result;
+use anyhow::{Result, anyhow};
 use std::sync::Arc;
 use wgpu::{Adapter, Device, Instance, Queue};
 pub mod blitter;
@@ -11,6 +10,7 @@ pub struct WgpuContext {
     pub adapter: Arc<Adapter>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
+    #[cfg(target_arch = "wasm32")]
     pub canvas: Option<web_sys::OffscreenCanvas>,
     pub surface: Option<Arc<wgpu::Surface<'static>>>,
     pub blitter: Option<Arc<Blitter>>,
@@ -36,13 +36,18 @@ impl WgpuContext {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
-        let (canvas, surface, instance): (
-            Option<web_sys::OffscreenCanvas>,
-            Option<Arc<wgpu::Surface<'static>>>,
-            Instance,
-        ) = {
+        let (surface, instance): (Option<Arc<wgpu::Surface<'static>>>, Instance) = {
             // For native headless, we don't have a surface or canvas (unless we create a window, but we want headless)
-            (None, None, Instance::default())
+            #[cfg(windows)]
+            let instance = Instance::new(&wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::DX12,
+                ..Default::default()
+            });
+
+            #[cfg(not(windows))]
+            let instance = Instance::default();
+
+            (None, instance)
         };
 
         let compatible_surface = surface
@@ -89,24 +94,27 @@ impl WgpuContext {
             .await
             .map_err(|_| anyhow!("Failed to create device"))?;
 
-        // Surface configuration and blit pipeline only if we have a surface/canvas
-        let blitter = if let (Some(canvas), Some(surface)) = (&canvas, &surface) {
+        #[cfg(target_arch = "wasm32")]
+        if let (Some(canvas), Some(surface)) = (&canvas, &surface) {
             let width = canvas.width();
             let height = canvas.height();
             let config = surface.get_default_config(&adapter, width, height).unwrap();
             surface.configure(&device, &config);
+        }
 
-            let blitter = Blitter::new(&device, config.format);
-            Some(Arc::new(blitter))
-        } else {
-            None
-        };
+        // Blit pipeline (used by Texture3D widget)
+        // We use Rgba8UnormSrgb because DisplayTexture3DWidget creates its temporary 2D texture in this format
+        let blitter = Some(Arc::new(Blitter::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )));
 
         Ok(WgpuContext {
             instance: Arc::new(instance),
             adapter: Arc::new(adapter),
             device: Arc::new(device),
             queue: Arc::new(queue),
+            #[cfg(target_arch = "wasm32")]
             canvas,
             surface,
             blitter,

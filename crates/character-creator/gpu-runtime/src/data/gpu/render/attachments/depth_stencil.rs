@@ -10,7 +10,6 @@ pub struct DepthStencilAttachment {
     pub stencil_ops: Option<AttachmentOps<u32>>,
 }
 
-
 impl DepthStencilAttachment {
     pub fn new(
         texture: Texture2D,
@@ -56,6 +55,3 @@ impl DepthStencilAttachment {
         }
     }
 }
-
-unsafe impl Send for DepthStencilAttachment {}
-unsafe impl Sync for DepthStencilAttachment {}

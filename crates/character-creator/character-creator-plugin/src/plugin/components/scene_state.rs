@@ -16,3 +16,6 @@ pub struct InMarchingCubesScene;
 
 #[derive(Component)]
 pub struct InSphereTracingScene;
+
+#[derive(Component)]
+pub struct Floor;

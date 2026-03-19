@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
     Default,
     Serialize,
     Deserialize,
-
     strum::EnumIter,
     strum::AsRefStr,
     strum::EnumString,

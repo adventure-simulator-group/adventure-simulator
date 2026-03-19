@@ -35,6 +35,7 @@ impl Plugin for CharacterCreatorPlugin {
             .add_systems(Update, components::OrbitalCamera::gamepad_control)
             .add_systems(Update, components::OrbitalCamera::keyboard_control)
             .add_systems(Update, switch_scene)
+            .add_systems(Update, toggle_floor_visibility)
             .add_systems(Update, (tag_scene_entities, update_visibility).chain());
 
         if components::Scene::DISPLAY_BONE_CYLINDERS {
@@ -134,6 +135,20 @@ fn update_visibility(
                 Visibility::Inherited
             } else {
                 Visibility::Hidden
+            };
+        }
+    }
+}
+
+fn toggle_floor_visibility(
+    input: Res<ButtonInput<KeyCode>>,
+    mut floor_query: Query<&mut Visibility, With<components::Floor>>,
+) {
+    if input.just_pressed(KeyCode::Digit8) {
+        for mut visibility in floor_query.iter_mut() {
+            *visibility = match *visibility {
+                Visibility::Inherited | Visibility::Visible => Visibility::Hidden,
+                Visibility::Hidden => Visibility::Inherited,
             };
         }
     }

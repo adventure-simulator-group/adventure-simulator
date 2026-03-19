@@ -10,6 +10,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+authors = ["Danilo Guanabara <danilo@sensorial.systems>"]
 
 [workspace.dependencies]
 distance-field = { path = "crates/character-creator/distance-field" }
@@ -25,13 +26,16 @@ indexmap = { version = "2.12.1", features = ["serde"] }
 serde_json = "1.0"
 web-sys = "0.3"
 bytemuck = "1.16"
-gpu-runtime-base = { path = "crates/character-creator/gpu-runtime-base" }
 gpu-runtime = { path = "crates/character-creator/gpu-runtime" }
 strum = { version = "0.27.2", features = ["derive"] }
 wgpu = { version = "25.0", default-features = false, features = [
     "webgl",
     "webgpu",
     "wgsl",
+    "vulkan",
+    "dx12",
+    "metal",
+    "glsl",
 ] }
 wasm-bindgen-futures = "0.4"
 
@@ -66,6 +70,14 @@ rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 shrinkwraprs = "0.3.0"
+
+async-lock = "3.4.0"
+base64 = "0.22.1"
+image = "0.25"
+percent-encoding = "2.3"
+pollster = "0.4"
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+
 
 [workspace.lints.rust]
 dead_code = "allow"

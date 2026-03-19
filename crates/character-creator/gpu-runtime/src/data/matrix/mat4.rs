@@ -13,7 +13,6 @@ impl Default for Mat4 {
     }
 }
 
-
 impl Mat4 {
     pub fn new(a: Vec4, b: Vec4, c: Vec4, d: Vec4) -> Self {
         Self {

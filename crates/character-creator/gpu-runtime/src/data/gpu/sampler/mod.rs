@@ -6,7 +6,7 @@ pub use filter_mode::*;
 
 use crate::globals::WgpuContext;
 
-use gpu_runtime_base::Result;
+use anyhow::Result;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -19,9 +19,6 @@ impl Default for Sampler {
         Self { sampler: None }
     }
 }
-
-unsafe impl Send for Sampler {}
-unsafe impl Sync for Sampler {}
 
 impl Sampler {
     pub fn new(
@@ -56,3 +53,6 @@ impl Sampler {
         Ok(sampler_value)
     }
 }
+
+unsafe impl Send for Sampler {}
+unsafe impl Sync for Sampler {}

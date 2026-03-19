@@ -13,7 +13,6 @@ impl Default for Mat2 {
     }
 }
 
-
 impl Mat2 {
     pub fn new(a: Vec2, b: Vec2) -> Self {
         Self {
@@ -33,5 +32,15 @@ impl Mat2 {
         } else {
             0.0
         }
+    }
+}
+
+impl std::fmt::Display for Mat2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(({}, {}), ({}, {}))",
+            self.columns[0][0], self.columns[0][1], self.columns[1][0], self.columns[1][1]
+        )
     }
 }

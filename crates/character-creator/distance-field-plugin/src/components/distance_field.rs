@@ -1,11 +1,19 @@
 use crate::components::*;
 use crate::prelude::*;
 
-pub use ::distance_field::DistanceField;
+pub use ::distance_field::{DistanceField, BoneIndexField, BoneWeightField};
 
 #[derive(Component, Shrinkwrap)]
 #[shrinkwrap(mutable)]
 pub struct DistanceFieldComponent(pub DistanceField);
+
+#[derive(Component, Shrinkwrap)]
+#[shrinkwrap(mutable)]
+pub struct BoneIndexFieldComponent(pub BoneIndexField);
+
+#[derive(Component, Shrinkwrap)]
+#[shrinkwrap(mutable)]
+pub struct BoneWeightFieldComponent(pub BoneWeightField);
 
 #[derive(Component)]
 pub struct StaticSdf;
