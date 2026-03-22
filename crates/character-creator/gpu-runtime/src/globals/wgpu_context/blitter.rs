@@ -309,3 +309,8 @@ impl Blitter {
         rpass.draw(0..4, 0..1);
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for Blitter {}
+#[cfg(target_arch = "wasm32")]
+unsafe impl Sync for Blitter {}

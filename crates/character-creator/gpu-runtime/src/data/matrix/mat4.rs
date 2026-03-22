@@ -55,4 +55,54 @@ impl Mat4 {
             ],
         }
     }
+
+    pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) -> Self {
+        let f = 1.0 / (fovy_rad / 2.0).tan();
+        Self {
+            columns: [
+                [f / aspect, 0.0, 0.0, 0.0],
+                [0.0, f, 0.0, 0.0],
+                [0.0, 0.0, far / (near - far), -1.0],
+                [0.0, 0.0, (far * near) / (near - far), 0.0],
+            ],
+        }
+    }
+
+    pub fn orthographic(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near: f32,
+        far: f32,
+    ) -> Self {
+        Self {
+            columns: [
+                [2.0 / (right - left), 0.0, 0.0, 0.0],
+                [0.0, 2.0 / (top - bottom), 0.0, 0.0],
+                [0.0, 0.0, 1.0 / (near - far), 0.0],
+                [
+                    -(right + left) / (right - left),
+                    -(top + bottom) / (top - bottom),
+                    near / (near - far),
+                    1.0,
+                ],
+            ],
+        }
+    }
+
+    pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
+        let f = target.sub(eye).normalize();
+        let s = f.cross(up).normalize();
+        let u = s.cross(f);
+
+        Self {
+            columns: [
+                [s.x, u.x, -f.x, 0.0],
+                [s.y, u.y, -f.y, 0.0],
+                [s.z, u.z, -f.z, 0.0],
+                [-s.dot(eye), -u.dot(eye), f.dot(eye), 1.0],
+            ],
+        }
+    }
 }

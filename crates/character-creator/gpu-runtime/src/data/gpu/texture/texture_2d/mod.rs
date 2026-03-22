@@ -64,6 +64,23 @@ impl Texture2D {
             ));
         }
 
+        let is_depth = matches!(
+            wgpu_format,
+            wgpu::TextureFormat::Depth32Float
+                | wgpu::TextureFormat::Depth24Plus
+                | wgpu::TextureFormat::Depth24PlusStencil8
+                | wgpu::TextureFormat::Depth32FloatStencil8
+        );
+
+        let mut usage = wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::RENDER_ATTACHMENT;
+
+        if !is_depth {
+            usage |= wgpu::TextureUsages::STORAGE_BINDING;
+        }
+
         let texture_desc = wgpu::TextureDescriptor {
             label: Some("Texture2D"),
             size: wgpu::Extent3d {
@@ -75,11 +92,7 @@ impl Texture2D {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu_format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::STORAGE_BINDING,
+            usage,
             view_formats: &[],
         };
 

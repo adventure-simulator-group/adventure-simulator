@@ -14,6 +14,35 @@ impl ComputePass {
         workgroups_y: u32,
         workgroups_z: u32,
     ) -> Result<()> {
+        let mut encoder = context
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("ComputePass Encoder"),
+            });
+
+        Self::record(
+            context,
+            &pipeline_def,
+            &parameters,
+            &mut encoder,
+            workgroups_x,
+            workgroups_y,
+            workgroups_z,
+        )?;
+
+        context.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    pub fn record(
+        context: &WgpuContext,
+        pipeline_def: &ComputePipeline,
+        parameters: &PassParameters,
+        encoder: &mut wgpu::CommandEncoder,
+        workgroups_x: u32,
+        workgroups_y: u32,
+        workgroups_z: u32,
+    ) -> Result<()> {
         // --- GET PIPELINE FROM INPUT ---
         let pipeline_val = pipeline_def
             .pipeline
@@ -263,11 +292,6 @@ impl ComputePass {
         }
 
         // Frame: Compute Pass
-        let mut encoder = context
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("ComputePass Encoder"),
-            });
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("ComputePass"),
@@ -279,8 +303,8 @@ impl ComputePass {
             }
             compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, workgroups_z);
         }
-        context.queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }
+
 }

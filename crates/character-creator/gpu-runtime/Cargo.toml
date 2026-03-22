@@ -6,7 +6,7 @@ edition.workspace = true
 
 [dependencies]
 base64.workspace = true
-wgpu.workspace = true
+# wgpu is moved to target-specific dependencies to enable fragile-send-sync-wasm on WASM
 async-lock.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
@@ -15,12 +15,18 @@ serde.workspace = true
 strum.workspace = true
 image.workspace = true
 percent-encoding.workspace = true
+async-trait.workspace = true
+futures-channel.workspace = true
+naga.workspace = true
+regex.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu.workspace = true
 pollster.workspace = true
 reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { workspace = true, features = ["fragile-send-sync-non-atomic-wasm"] }
 wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = [
     "Window",

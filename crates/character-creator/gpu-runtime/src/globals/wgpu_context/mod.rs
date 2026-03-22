@@ -122,3 +122,8 @@ impl WgpuContext {
         })
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for WgpuContext {}
+#[cfg(target_arch = "wasm32")]
+unsafe impl Sync for WgpuContext {}

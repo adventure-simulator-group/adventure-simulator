@@ -92,3 +92,8 @@ impl ComputeShader {
         Ok(definition)
     }
 }
+impl PartialEq for ComputeShader {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
+}

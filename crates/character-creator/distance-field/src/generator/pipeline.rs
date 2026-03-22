@@ -25,6 +25,9 @@ pub fn generate(context: &WgpuContext) -> Result<(Texture3D, Texture3D, Texture3
         vertex_shader,
         fragment_shader,
         PrimitiveTopology::TriangleStrip.into(),
+        CullMode::None.into(),
+        FrontFace::Ccw.into(),
+        vec![],
     )?;
     let texture2d = Texture2D::new(
         context,
@@ -60,6 +63,8 @@ pub fn generate(context: &WgpuContext) -> Result<(Texture3D, Texture3D, Texture3
         render_pipeline,
         render_attachments,
         parameters,
+        vec![],
+        None,
         0,
         4,
         0,

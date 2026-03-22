@@ -63,6 +63,11 @@ avian3d = { version = "0.4", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 async-compat = "0.2.3"
+async-trait = "0.1.89"
+futures-channel = "0.3"
+naga = { version = "25.0", features = ["wgsl-in", "glsl-in", "wgsl-out"] }
+regex = "1.10"
+
 cfg-if = "1.0"
 clap = { version = "4.5.4", features = ["derive"] }
 tracing = "0.1.40"

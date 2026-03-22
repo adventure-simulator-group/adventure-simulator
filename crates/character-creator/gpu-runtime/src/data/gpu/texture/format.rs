@@ -20,6 +20,7 @@ pub enum TextureFormat {
     R32Float,
     Rgba32Float,
     Rgba8Uint,
+    Depth32Float,
 }
 
 impl From<TextureFormat> for wgpu::TextureFormat {
@@ -29,6 +30,7 @@ impl From<TextureFormat> for wgpu::TextureFormat {
             TextureFormat::R32Float => wgpu::TextureFormat::R32Float,
             TextureFormat::Rgba32Float => wgpu::TextureFormat::Rgba32Float,
             TextureFormat::Rgba8Uint => wgpu::TextureFormat::Rgba8Uint,
+            TextureFormat::Depth32Float => wgpu::TextureFormat::Depth32Float,
         }
     }
 }

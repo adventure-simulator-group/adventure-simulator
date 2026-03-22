@@ -11,6 +11,8 @@ impl RenderPass {
         pipeline_def: RenderPipeline,
         attachments: RenderAttachments,
         parameters: PassParameters,
+        vertex_buffers: Vec<crate::data::gpu::buffer::Buffer>,
+        index_buffer: Option<crate::data::gpu::buffer::Buffer>,
         vertex_start: u32,
         vertex_count: u32,
         instance_start: u32,
@@ -18,22 +20,6 @@ impl RenderPass {
     ) -> Result<RenderAttachments> {
         if attachments.colors.is_empty() && attachments.depth_stencil.is_none() {
             return Ok(attachments);
-        }
-
-        // --- GET PIPELINE FROM INPUT ---
-        let pipeline_val = pipeline_def
-            .pipeline
-            .as_ref()
-            .ok_or_else(|| anyhow!("RenderPass: RenderPipeline missing actual WGPU pipeline."))?;
-
-        // Check for validation errors in the pipeline
-        if let Ok(guard) = pipeline_def.validation_error.lock() {
-            if let Some(err) = guard.as_ref() {
-                return Err(anyhow!(
-                    "RenderPass: Cannot use invalid RenderPipeline: {}",
-                    err
-                ));
-            }
         }
 
         // Verify Format Compatibility
@@ -53,19 +39,30 @@ impl RenderPass {
             .as_ref()
             .and_then(|d| d.texture.texture.as_ref().map(|t| t.format()));
 
-        if pipeline_def.baked_color_formats != current_color_formats
-            || pipeline_def.baked_depth_format != current_depth_format
-        {
-            return Err(anyhow!(
-                "RenderPass: Pipeline format mismatch. Pipeline was baked for {:?}/{:?}, but RenderPass has {:?}/{:?}.",
-                pipeline_def.baked_color_formats,
-                pipeline_def.baked_depth_format,
-                current_color_formats,
-                current_depth_format
-            ));
-        }
+        let reflection = pipeline_def
+            .reflection
+            .as_ref()
+            .ok_or_else(|| anyhow!("RenderPass: RenderPipeline missing ReflectionData"))?;
 
-        let pipeline = pipeline_val;
+        // --- GET COMPATIBLE PIPELINE ---
+        let pipeline_arc = pipeline_def.get_or_create_pipeline(
+            &context.device,
+            &current_color_formats,
+            current_depth_format,
+            &reflection.fragment_entry_point,
+            &reflection.vertex_entry_point,
+        )?;
+        let pipeline = &pipeline_arc;
+
+        // Check for validation errors in the pipeline
+        if let Ok(guard) = pipeline_def.validation_error.lock() {
+            if let Some(err) = guard.as_ref() {
+                return Err(anyhow!(
+                    "RenderPass: Cannot use invalid RenderPipeline: {}",
+                    err
+                ));
+            }
+        }
 
         let bind_group_layouts = &pipeline_def.bind_group_layouts;
         let reflection = pipeline_def
@@ -393,10 +390,33 @@ impl RenderPass {
             for (i, bg) in bind_groups.iter().enumerate() {
                 render_pass.set_bind_group(i as u32, bg, &[]);
             }
-            render_pass.draw(
-                vertex_start as u32..(vertex_start + vertex_count) as u32,
-                instance_start as u32..(instance_start + instance_count) as u32,
-            );
+            
+            for (i, vbuf) in vertex_buffers.iter().enumerate() {
+                if let Some(buf) = &vbuf.buffer {
+                    render_pass.set_vertex_buffer(i as u32, buf.slice(..));
+                }
+            }
+
+            if let Some(ibuf) = &index_buffer {
+                if let Some(buf) = &ibuf.buffer {
+                    render_pass.set_index_buffer(buf.slice(..), wgpu::IndexFormat::Uint32);
+                    render_pass.draw_indexed(
+                        vertex_start as u32..(vertex_start + vertex_count) as u32,
+                        0,
+                        instance_start as u32..(instance_start + instance_count) as u32,
+                    );
+                } else {
+                    render_pass.draw(
+                        vertex_start as u32..(vertex_start + vertex_count) as u32,
+                        instance_start as u32..(instance_start + instance_count) as u32,
+                    );
+                }
+            } else {
+                render_pass.draw(
+                    vertex_start as u32..(vertex_start + vertex_count) as u32,
+                    instance_start as u32..(instance_start + instance_count) as u32,
+                );
+            }
         }
         context.queue.submit(std::iter::once(encoder.finish()));
 
