@@ -7,11 +7,14 @@ pub struct ReduceDefinition {
 
 impl ReduceDefinition {
     pub fn new(context: &WgpuContext, code: String) -> Result<Self> {
+        let ty = crate::data::gpu::compute::signature::parse_binary_op_signature(&code, "reduce")?;
+        let ty_str = ty.as_str();
+        
         let full_code = format!(
-            r#"@group(0) @binding(0) var<storage, read> input: array<f32>;
-@group(0) @binding(1) var<storage, read_write> output: array<f32>;
+            r#"@group(0) @binding(0) var<storage, read> input: array<{}>;
+@group(0) @binding(1) var<storage, read_write> output: array<{}>;
 
-var<workgroup> shared_data: array<f32, 64>;
+var<workgroup> shared_data: array<{}, 64>;
 
 {}
 
@@ -51,7 +54,7 @@ fn main(
     }}
 }}
 "#,
-            code
+            ty_str, ty_str, ty_str, code
         );
         let shader = ComputeShader::new(context, full_code)?;
         Ok(Self { shader })
