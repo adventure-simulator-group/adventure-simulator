@@ -6,14 +6,25 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Character {
-    pub id: u64,
-    pub name: String,
-    pub xp: u32,
-    pub level: u32,
-    pub in_server: String,
+#[derive(Copy, Eq, Hash)]
+pub enum EquipDst {
+    LeftArm,
+
+    RightArm,
+
+    ArmorLeftArm,
+
+    ArmorRightArm,
+
+    ArmorLeftLeg,
+
+    ArmorRightLeg,
+
+    ArmorHead,
+
+    ArmorTorso,
 }
 
-impl __sdk::InModule for Character {
+impl __sdk::InModule for EquipDst {
     type Module = super::RemoteModule;
 }

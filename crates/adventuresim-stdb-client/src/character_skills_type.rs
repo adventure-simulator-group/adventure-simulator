@@ -6,14 +6,13 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Character {
-    pub id: u64,
-    pub name: String,
-    pub xp: u32,
-    pub level: u32,
-    pub in_server: String,
+pub struct CharacterSkills {
+    pub character_id: u64,
+    pub melee: f32,
+    pub dodge: f32,
+    pub block: f32,
 }
 
-impl __sdk::InModule for Character {
+impl __sdk::InModule for CharacterSkills {
     type Module = super::RemoteModule;
 }
