@@ -112,8 +112,8 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
     });
     let _character_stats = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
-        melee: 1.0,
-        dodge: 1.0,
+        melee: 3.0,
+        dodge: 2.0,
         block: 1.0,
     });
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {

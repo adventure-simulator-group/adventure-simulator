@@ -1,5 +1,3 @@
-#![feature(ptr_as_ref_unchecked)]
-
 //! Tactical Server - Minimal Lightyear game server
 //!
 //! Simple flow:
@@ -13,6 +11,7 @@ mod terrain;
 
 use std::net::SocketAddr;
 
+use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     lightyear::prelude::{
@@ -23,7 +22,6 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
-use adventuresim_stdb_client::*;
 
 use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
 
@@ -112,14 +110,32 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
+        .add_systems(PostUpdate, check_loaded_players_system)
         .add_observer(on_new_client_connected_hook)
         .add_observer(on_server_started_hook)
         .run();
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct LoadingPlayer {
     id: u64,
+    loaded_id: bool,
+    loaded_skills: bool,
+    loaded_limbs: bool,
+}
+
+impl LoadingPlayer {
+    fn is_loaded(&self) -> bool {
+        matches!(
+            self,
+            Self {
+                id: _,
+                loaded_id: true,
+                loaded_skills: true,
+                loaded_limbs: true,
+            }
+        )
+    }
 }
 
 #[derive(Resource)]
@@ -155,6 +171,14 @@ fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
     );
 
     conn.on_insert(RemoteTables::character, on_stdb_insert_character);
+    conn.on_insert(
+        RemoteTables::character_skills,
+        on_stdb_insert_character_skills,
+    );
+    conn.on_insert(
+        RemoteTables::character_limbs,
+        on_stdb_insert_character_limbs,
+    );
 }
 
 fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
@@ -175,31 +199,95 @@ fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
 fn on_stdb_insert_character(
     InRef(character): InRef<Character>,
     mut commands: Commands,
-    q_loading_characters: Query<(Entity, &LoadingPlayer)>,
+    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
 ) {
     info!("Synced a new character from spacetimedb...");
 
-    let Some((entity, _)) = q_loading_characters
-        .iter()
+    let Some((entity, mut loading)) = q_loading
+        .iter_mut()
         .find(|(_, loading)| loading.id == character.id)
     else {
         error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
         return;
     };
 
-    commands.entity(entity).remove::<LoadingPlayer>().insert((
+    commands.entity(entity).insert((
         Player {
             name: character.name.clone(),
         },
         PlayerId(character.id),
-        CharacterController::default(),
-        Collider::cylinder(0.4, 1.2),
-        CollisionMargin(0.01),
-        Transform::from_xyz(0.0, 50.0, 0.0),
-        Replicate::to_clients(NetworkTarget::All),
     ));
 
-    info!("Player {entity:?} is loaded: {character:?}",);
+    loading.loaded_id = true;
+    info!("Player {entity:?} is asigned to character: {character:?}",);
+}
+
+fn on_stdb_insert_character_skills(
+    InRef(skills): InRef<CharacterSkills>,
+    mut commands: Commands,
+    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
+) {
+    let Some((entity, mut loading)) = q_loading
+        .iter_mut()
+        .find(|(_, loading)| loading.id == skills.character_id)
+    else {
+        return;
+    };
+
+    commands.entity(entity).insert(Skills {
+        melee: skills.melee,
+        dodge: skills.dodge,
+        block: skills.block,
+    });
+
+    loading.loaded_skills = true;
+    info!("Player {entity:?} got skills: {skills:?}",);
+}
+
+fn on_stdb_insert_character_limbs(
+    InRef(limbs): InRef<CharacterLimbs>,
+    mut commands: Commands,
+    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
+) {
+    let Some((entity, mut loading)) = q_loading
+        .iter_mut()
+        .find(|(_, loading)| loading.id == limbs.character_id)
+    else {
+        return;
+    };
+
+    commands.entity(entity).insert(Limbs {
+        left_arm: limbs.left_arm,
+        right_arm: limbs.right_arm,
+        left_leg: limbs.left_leg,
+        right_leg: limbs.right_leg,
+        torso: limbs.torso,
+        head: limbs.head,
+    });
+
+    loading.loaded_limbs = true;
+    info!("Player {entity:?} got limbs: {limbs:?}",);
+}
+
+fn check_loaded_players_system(
+    mut cmd: Commands,
+    q_player: Query<(Entity, &LoadingPlayer), Changed<LoadingPlayer>>,
+) {
+    for (entity, loading) in &q_player {
+        if !loading.is_loaded() {
+            continue;
+        }
+
+        cmd.entity(entity).remove::<LoadingPlayer>().insert((
+            CharacterController::default(),
+            Collider::cylinder(0.4, 1.2),
+            CollisionMargin(0.01),
+            Transform::from_xyz(0.0, 50.0, 0.0),
+            Replicate::to_clients(NetworkTarget::All),
+        ));
+
+        info!("Player {entity:?} is fully loaded");
+    }
 }
 
 fn check_mission_timeout(
@@ -326,9 +414,15 @@ fn on_new_client_connected_hook(
     conn.reducers().enter_mission(id, args.mission_id.clone())?;
 
     conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
+    conn.subscribe(format!(
+        "SELECT * FROM character_skills WHERE character_id = {id}"
+    ));
+    conn.subscribe(format!(
+        "SELECT * FROM character_limbs WHERE character_id = {id}"
+    ));
     let entity = commands
         .spawn((
-            LoadingPlayer { id },
+            LoadingPlayer { id, ..default() },
             ControlledBy {
                 owner: event.entity,
                 lifetime: default(),

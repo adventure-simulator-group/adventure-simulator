@@ -9,9 +9,9 @@ use lightyear::{
 };
 
 #[derive(Default)]
-pub struct AdventureSimulatorNetcodePlugin;
+pub struct AdventureSimulatorReplicationPlugin;
 
-impl Plugin for AdventureSimulatorNetcodePlugin {
+impl Plugin for AdventureSimulatorReplicationPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InputPlugin::<Player>::new(InputConfig::<Player> {
             rebroadcast_inputs: false,
@@ -29,6 +29,8 @@ impl Plugin for AdventureSimulatorNetcodePlugin {
 
         app.register_component::<Player>();
         app.register_component::<PlayerId>();
+        app.register_component::<Limbs>();
+        app.register_component::<Skills>();
         app.register_component::<Transform>()
             .add_interpolation_with(TransformLinearInterpolation::lerp);
         app.register_component::<CharacterLook>();

@@ -8,7 +8,7 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
-#[require(PlayerId)]
+#[require(PlayerId, Limbs, Skills)]
 #[component(immutable)]
 pub struct Player {
     pub name: String,
@@ -36,5 +36,48 @@ impl PlayerId {
         let value = 0.90 + ((x >> 16) & 0xFF) as f32 / 255.0 * 0.08;
 
         Color::hsv(hue, saturation, value)
+    }
+}
+
+/// Limb health status.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+pub struct Limbs {
+    pub left_arm: f32,
+    pub right_arm: f32,
+    pub left_leg: f32,
+    pub right_leg: f32,
+    pub torso: f32,
+    pub head: f32,
+}
+
+impl Default for Limbs {
+    fn default() -> Self {
+        Self {
+            left_arm: 1.0,
+            right_arm: 1.0,
+            left_leg: 1.0,
+            right_leg: 1.0,
+            torso: 1.0,
+            head: 1.0,
+        }
+    }
+}
+
+/// Physical and mental skills of a [`Player`].
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[component(immutable)]
+pub struct Skills {
+    pub melee: f32,
+    pub dodge: f32,
+    pub block: f32,
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        Self {
+            melee: 1.0,
+            dodge: 1.0,
+            block: 1.0,
+        }
     }
 }
