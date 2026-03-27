@@ -4,16 +4,20 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::character_equip_type::CharacterEquip;
+use super::character_limbs_type::CharacterLimbs;
+use super::character_skills_type::CharacterSkills;
+use super::character_type::Character;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct TacticalServer {
-    pub identity: __sdk::Identity,
-    pub mission_id: String,
-    pub scene_key: String,
-    pub addr: String,
-    pub cert_digest: String,
+pub struct ConnectedPlayer {
+    pub character: Character,
+    pub equip: CharacterEquip,
+    pub skills: CharacterSkills,
+    pub limbs: CharacterLimbs,
 }
 
-impl __sdk::InModule for TacticalServer {
+impl __sdk::InModule for ConnectedPlayer {
     type Module = super::RemoteModule;
 }

@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{add_inventory_item, inventory_item};
@@ -13,7 +13,8 @@ pub struct Character {
     pub xp: u32,
     pub level: u32,
     #[index(btree)]
-    pub in_server: String,
+    pub server: Identity,
+    pub in_server: bool,
 }
 
 /// [`Character`] skills
@@ -74,6 +75,13 @@ pub enum EquipDst {
     ArmorTorso,
 }
 
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct FullCharacter {
+    pub character: Character,
+    pub equip: CharacterEquip,
+    pub skills: CharacterSkills,
+}
+
 /// Create a new character with generated name and add initial items to it
 #[reducer]
 pub fn create_character(ctx: &ReducerContext, id: u64) -> Result<(), String> {
@@ -108,7 +116,8 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         name,
         xp: 0,
         level: 1,
-        in_server: String::new(),
+        server: Identity::ZERO,
+        in_server: false,
     });
     let _character_stats = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,

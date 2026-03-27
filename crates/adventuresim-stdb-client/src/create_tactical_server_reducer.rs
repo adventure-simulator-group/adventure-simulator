@@ -9,6 +9,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct CreateTacticalServerArgs {
     pub mission_id: String,
     pub scene_key: String,
+    pub addr: String,
+    pub cert_digest: String,
 }
 
 impl From<CreateTacticalServerArgs> for super::Reducer {
@@ -16,6 +18,8 @@ impl From<CreateTacticalServerArgs> for super::Reducer {
         Self::CreateTacticalServer {
             mission_id: args.mission_id,
             scene_key: args.scene_key,
+            addr: args.addr,
+            cert_digest: args.cert_digest,
         }
     }
 }
@@ -36,7 +40,13 @@ pub trait create_tactical_server {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_create_tactical_server`] callbacks.
-    fn create_tactical_server(&self, mission_id: String, scene_key: String) -> __sdk::Result<()>;
+    fn create_tactical_server(
+        &self,
+        mission_id: String,
+        scene_key: String,
+        addr: String,
+        cert_digest: String,
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `create_tactical_server`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +56,9 @@ pub trait create_tactical_server {
     /// to cancel the callback.
     fn on_create_tactical_server(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String, &String)
+            + Send
+            + 'static,
     ) -> CreateTacticalServerCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_tactical_server`],
     /// causing it not to run in the future.
@@ -54,18 +66,28 @@ pub trait create_tactical_server {
 }
 
 impl create_tactical_server for super::RemoteReducers {
-    fn create_tactical_server(&self, mission_id: String, scene_key: String) -> __sdk::Result<()> {
+    fn create_tactical_server(
+        &self,
+        mission_id: String,
+        scene_key: String,
+        addr: String,
+        cert_digest: String,
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "create_tactical_server",
             CreateTacticalServerArgs {
                 mission_id,
                 scene_key,
+                addr,
+                cert_digest,
             },
         )
     }
     fn on_create_tactical_server(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String, &String)
+            + Send
+            + 'static,
     ) -> CreateTacticalServerCallbackId {
         CreateTacticalServerCallbackId(self.imp.on_reducer(
             "create_tactical_server",
@@ -78,6 +100,8 @@ impl create_tactical_server for super::RemoteReducers {
                                 super::Reducer::CreateTacticalServer {
                                     mission_id,
                                     scene_key,
+                                    addr,
+                                    cert_digest,
                                 },
                             ..
                         },
@@ -86,7 +110,7 @@ impl create_tactical_server for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, mission_id, scene_key)
+                callback(ctx, mission_id, scene_key, addr, cert_digest)
             }),
         ))
     }

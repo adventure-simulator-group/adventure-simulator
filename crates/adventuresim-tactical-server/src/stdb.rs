@@ -1,12 +1,12 @@
 use std::{mem::MaybeUninit, sync::Arc};
 
+use adventuresim_stdb_client::*;
 use bevy::{
     ecs::{system::RunSystemOnce, world::unsafe_world_cell::UnsafeWorldCell},
     platform::cell::SyncUnsafeCell,
     prelude::*,
 };
-use spacetimedb_sdk::{DbContext, Table};
-use adventuresim_stdb_client::*;
+use spacetimedb_sdk::{DbContext, Identity, Table};
 
 use crate::Args;
 
@@ -31,6 +31,11 @@ impl SpacetimeDb {
     /// Access spacetime db reducers.
     pub fn reducers(&self) -> &RemoteReducers {
         &self.conn.reducers
+    }
+
+    /// Get the server's SpacetimeDB identity.
+    pub fn identity(&self) -> Identity {
+        self.conn.identity()
     }
 
     /// Subscribe for spacetime db database changes.
@@ -139,8 +144,8 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     let conn = DbConnection::builder()
         .with_uri(&args.spacetimedb_url)
         .with_module_name(&args.spacetimedb_module)
-        .on_connect(|_, identity, _| {
-            info!("SpacetimeDB connected: {identity}");
+        .on_connect(move |_, i, _| {
+            info!("SpacetimeDB connected: {i}");
         })
         .on_connect_error(|_, err| {
             // TODO: probably shouldn't insert resource if there is an error ?

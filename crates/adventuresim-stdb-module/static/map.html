@@ -241,51 +241,46 @@
             }
         }
 
-        // Status enum: [0,[]] = Pending, [1,[]] = Ready, [2,[]] = Ended
-        const STATUS_PENDING = 0;
-        const STATUS_READY = 1;
-        const STATUS_ENDED = 2;
-
         window.enterMission = async function(sceneKey) {
             if (!characterId) return;
             try {
-                // Check for existing active mission and clean it up first
-                const result = await query(`SELECT * FROM tactical_server WHERE character_id = '${characterId}'`);
-                const activeMission = result.rows.find(s => s.status && s.status[0] !== STATUS_ENDED);
-                if (activeMission) {
-                    setStatus('Cleaning up previous mission...', '');
-                    await callReducer('leave_mission', [activeMission.mission_id]);
-                    await new Promise(r => setTimeout(r, 500)); // Brief delay
+                // Generate unique mission_id
+                const missionId = `${sceneKey}-${Date.now()}`;
+
+                // 1) File a request for a tactical server
+                setStatus('Requesting tactical server...', '');
+                await callReducer('request_tactical_server', [missionId, sceneKey]);
+                setStatus('Server requested, waiting for spawn...', 'success');
+
+                // 2) Poll for the server to appear
+                const server = await pollForServer(missionId);
+                if (!server) {
+                    setStatus('Server spawn timeout', 'error');
+                    return;
                 }
 
-                setStatus('Starting mission...', '');
-                await callReducer('create_mission_and_enter', [characterId, sceneKey]);
-                setStatus('Mission started! Server spawning...', 'success');
-                pollForServer(sceneKey);
+                // 3) Connect character to the new server
+                setStatus('Connecting to server...', '');
+                currentMission = { mission_id: missionId, scene_key: sceneKey, addr: server.addr };
+                enterTacticalView(server);
             } catch (e) {
                 setStatus('Error: ' + e.message, 'error');
             }
         };
 
-        async function pollForServer(sceneKey) {
+        async function pollForServer(missionId) {
             for (let i = 0; i < 30; i++) {
                 await new Promise(r => setTimeout(r, 1000));
                 try {
-                    const result = await query(`SELECT * FROM tactical_server WHERE character_id = '${characterId}'`);
+                    const result = await query(`SELECT * FROM tactical_server WHERE mission_id = '${missionId}'`);
                     if (result.rows && result.rows.length > 0) {
-                        // Find most recent non-ended server
-                        const server = result.rows.find(s => s.status && s.status[0] === STATUS_READY);
-                        if (server) {
-                            currentMission = server;
-                            enterTacticalView(server);
-                            return;
-                        }
+                        return result.rows[0];
                     }
                 } catch (e) {
                     console.log('Poll error:', e);
                 }
             }
-            setStatus('Server spawn timeout', 'error');
+            return null;
         }
 
         function enterTacticalView(server) {
@@ -313,9 +308,6 @@
         }
 
         window.leaveMission = async function() {
-            if (currentMission) {
-                await callReducer('leave_mission', [currentMission.mission_id]);
-            }
             currentMission = null;
             document.getElementById('tactical-view').classList.remove('active');
             document.getElementById('strategic-view').style.display = 'block';

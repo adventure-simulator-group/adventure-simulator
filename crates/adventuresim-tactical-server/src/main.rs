@@ -2,9 +2,9 @@
 //!
 //! Simple flow:
 //! 1. Started by spawner with mission_id arg
-//! 2. Calls tactical_server_ready reducer with connection info
+//! 2. Calls create_tactical_server_for_request reducer to register itself
 //! 3. Runs game for clients
-//! 4. Calls commit_mission reducer on timeout/exit
+//! 4. Calls end_tactical_server reducer on timeout/exit
 
 mod stdb;
 mod terrain;
@@ -38,6 +38,10 @@ struct Args {
     /// Address to listen on
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
+
+    /// Whether or not the server should be created for the associated request.
+    #[arg(long)]
+    requested: bool,
 
     /// Unique mission instance ID
     #[arg(long)]
@@ -110,33 +114,14 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
-        .add_systems(PostUpdate, check_loaded_players_system)
         .add_observer(on_new_client_connected_hook)
+        .add_observer(on_new_client_disconnected_hook)
         .add_observer(on_server_started_hook)
         .run();
 }
 
 #[derive(Component, Default)]
-struct LoadingPlayer {
-    id: u64,
-    loaded_id: bool,
-    loaded_skills: bool,
-    loaded_limbs: bool,
-}
-
-impl LoadingPlayer {
-    fn is_loaded(&self) -> bool {
-        matches!(
-            self,
-            Self {
-                id: _,
-                loaded_id: true,
-                loaded_skills: true,
-                loaded_limbs: true,
-            }
-        )
-    }
-}
+struct LoadingPlayer;
 
 #[derive(Resource)]
 struct MissionState {
@@ -165,135 +150,63 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
 }
 
 fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
+    conn.subscribe("SELECT * FROM connected_players");
     conn.on_insert(
-        RemoteTables::tactical_server,
-        on_stdb_insert_tactical_server,
-    );
-
-    conn.on_insert(RemoteTables::character, on_stdb_insert_character);
-    conn.on_insert(
-        RemoteTables::character_skills,
-        on_stdb_insert_character_skills,
-    );
-    conn.on_insert(
-        RemoteTables::character_limbs,
-        on_stdb_insert_character_limbs,
+        RemoteTables::connected_players,
+        on_stdb_insert_connected_players,
     );
 }
 
-fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
-    info!("Synced a new tactical server from spacetimedb...");
-
-    match server.status {
-        TacticalStatus::Ready => {
-            info!("=== Tactical Server Ready ===");
-            info!("(server) Mission: {}", server.mission_id);
-            info!("(server) Scene  : {}", server.scene_key);
-        }
-        status => {
-            error!("Tactical server wasn't marked as ready: {status:?}");
-        }
-    }
-}
-
-fn on_stdb_insert_character(
-    InRef(character): InRef<Character>,
-    mut commands: Commands,
-    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
+fn on_stdb_insert_connected_players(
+    InRef(player): InRef<ConnectedPlayer>,
+    mut cmd: Commands,
+    mut q_loading: Query<(Entity, &RemoteId), With<LoadingPlayer>>,
 ) {
-    info!("Synced a new character from spacetimedb...");
-
-    let Some((entity, mut loading)) = q_loading
+    let Some((entity, _)) = q_loading
         .iter_mut()
-        .find(|(_, loading)| loading.id == character.id)
+        .find(|(_, id)| id.0.to_bits() == player.character.id)
     else {
-        error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
+        warn!(
+            "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
+            player.character.name, player.character.id
+        );
         return;
     };
 
-    commands.entity(entity).insert((
+    let skills = Skills {
+        melee: player.skills.melee,
+        dodge: player.skills.dodge,
+        block: player.skills.block,
+    };
+    let limbs = Limbs {
+        left_arm: player.limbs.left_arm,
+        right_arm: player.limbs.right_arm,
+        left_leg: player.limbs.left_leg,
+        right_leg: player.limbs.right_leg,
+        torso: player.limbs.torso,
+        head: player.limbs.head,
+    };
+
+    cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Player {
-            name: character.name.clone(),
+            name: player.character.name.clone(),
         },
-        PlayerId(character.id),
+        PlayerId(player.character.id),
+        skills,
+        limbs,
+        CharacterController::default(),
+        Collider::cylinder(0.4, 1.2),
+        CollisionMargin(0.01),
+        Transform::from_xyz(0.0, 50.0, 0.0),
+        Replicate::to_clients(NetworkTarget::All),
     ));
 
-    loading.loaded_id = true;
-    info!("Player {entity:?} is asigned to character: {character:?}",);
-}
-
-fn on_stdb_insert_character_skills(
-    InRef(skills): InRef<CharacterSkills>,
-    mut commands: Commands,
-    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
-) {
-    let Some((entity, mut loading)) = q_loading
-        .iter_mut()
-        .find(|(_, loading)| loading.id == skills.character_id)
-    else {
-        return;
-    };
-
-    commands.entity(entity).insert(Skills {
-        melee: skills.melee,
-        dodge: skills.dodge,
-        block: skills.block,
-    });
-
-    loading.loaded_skills = true;
-    info!("Player {entity:?} got skills: {skills:?}",);
-}
-
-fn on_stdb_insert_character_limbs(
-    InRef(limbs): InRef<CharacterLimbs>,
-    mut commands: Commands,
-    mut q_loading: Query<(Entity, &mut LoadingPlayer)>,
-) {
-    let Some((entity, mut loading)) = q_loading
-        .iter_mut()
-        .find(|(_, loading)| loading.id == limbs.character_id)
-    else {
-        return;
-    };
-
-    commands.entity(entity).insert(Limbs {
-        left_arm: limbs.left_arm,
-        right_arm: limbs.right_arm,
-        left_leg: limbs.left_leg,
-        right_leg: limbs.right_leg,
-        torso: limbs.torso,
-        head: limbs.head,
-    });
-
-    loading.loaded_limbs = true;
-    info!("Player {entity:?} got limbs: {limbs:?}",);
-}
-
-fn check_loaded_players_system(
-    mut cmd: Commands,
-    q_player: Query<(Entity, &LoadingPlayer), Changed<LoadingPlayer>>,
-) {
-    for (entity, loading) in &q_player {
-        if !loading.is_loaded() {
-            continue;
-        }
-
-        cmd.entity(entity).remove::<LoadingPlayer>().insert((
-            CharacterController::default(),
-            Collider::cylinder(0.4, 1.2),
-            CollisionMargin(0.01),
-            Transform::from_xyz(0.0, 50.0, 0.0),
-            Replicate::to_clients(NetworkTarget::All),
-        ));
-
-        info!("Player {entity:?} is fully loaded");
-    }
+    info!("Player {entity:?} is fully loaded");
 }
 
 fn check_mission_timeout(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
-    args: Res<Args>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
@@ -315,10 +228,9 @@ fn check_mission_timeout(
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.reducers()
-        .commit_mission(args.mission_id.clone(), success, xp_gained)?;
+    conn.reducers().end_tactical_server(success, xp_gained)?;
 
-    info!("Mission committed successfully");
+    info!("Mission ended successfully");
     info!("Shutting down");
     exit.write(AppExit::Success);
     Ok(())
@@ -327,7 +239,7 @@ fn check_mission_timeout(
 fn on_server_started_hook(
     _event: On<Add, server::Started>,
     args: Res<Args>,
-    mut conn: ResMut<SpacetimeDb>,
+    conn: Res<SpacetimeDb>,
     mut commands: Commands,
 ) -> Result {
     info!("Creating a game scene for {}", args.scene_key);
@@ -382,58 +294,55 @@ fn on_server_started_hook(
 
     info!("Notifying spacetimedb that the server is ready...");
 
-    conn.reducers()
-        .create_tactical_server(args.mission_id.clone(), args.scene_key.clone())?;
-    conn.reducers().tactical_server_ready(
-        args.mission_id.clone(),
-        args.addr.to_string(),
-        default(),
-    )?;
-
-    // FIXME: maybe don't do raw sql please ?
-    let _handle = conn.subscribe(format!(
-        "SELECT * FROM tactical_server WHERE mission_id = '{}'",
-        args.mission_id
-    ));
+    if args.requested {
+        conn.reducers().create_tactical_server_for_request(
+            args.mission_id.clone(),
+            args.addr.to_string(),
+            default(),
+        )?;
+    } else {
+        conn.reducers().create_tactical_server(
+            args.mission_id.clone(),
+            args.scene_key.clone(),
+            args.addr.to_string(),
+            default(),
+        )?;
+    }
 
     Ok(())
 }
 
 fn on_new_client_connected_hook(
     event: On<Add, Connected>,
+    mut cmd: Commands,
     query: Query<&RemoteId, With<ClientOf>>,
-    args: Res<Args>,
-    mut commands: Commands,
-    mut conn: ResMut<SpacetimeDb>,
+    conn: ResMut<SpacetimeDb>,
 ) -> Result {
     let client_id = query.get(event.entity)?;
     let client_id = client_id.0;
     let id = client_id.to_bits();
 
     conn.reducers().create_character(id)?;
-    conn.reducers().enter_mission(id, args.mission_id.clone())?;
+    conn.reducers().enter_mission(id, conn.identity())?;
 
-    conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
-    conn.subscribe(format!(
-        "SELECT * FROM character_skills WHERE character_id = {id}"
-    ));
-    conn.subscribe(format!(
-        "SELECT * FROM character_limbs WHERE character_id = {id}"
-    ));
-    let entity = commands
-        .spawn((
-            LoadingPlayer { id, ..default() },
-            ControlledBy {
-                owner: event.entity,
-                lifetime: default(),
-            },
-        ))
-        .id();
+    cmd.entity(event.entity).insert(LoadingPlayer);
+    info!("Character {id} connected and entered mission, awaiting loading",);
 
-    info!(
-        "Created a new loading player entity {:?} for client {:?}",
-        entity, client_id
-    );
+    Ok(())
+}
+
+fn on_new_client_disconnected_hook(
+    event: On<Remove, Connected>,
+    query: Query<&RemoteId, With<ClientOf>>,
+    conn: Res<SpacetimeDb>,
+) -> Result {
+    let client_id = query.get(event.entity)?;
+    let client_id = client_id.0;
+    let id = client_id.to_bits();
+
+    conn.reducers().leave_mission(id)?;
+
+    info!("Character {id} left the mission");
 
     Ok(())
 }

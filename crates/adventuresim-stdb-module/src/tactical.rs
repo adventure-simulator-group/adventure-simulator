@@ -1,34 +1,77 @@
-use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{
+    reducer, table, view, Identity, ReducerContext, SpacetimeType, Table, ViewContext,
+};
 
-use crate::{change_inventory_item, character::character};
+use crate::{
+    change_inventory_item, character::character, character__view, character_equip__view,
+    character_limbs__view, character_skills__view, Character, CharacterEquip, CharacterLimbs,
+    CharacterSkills,
+};
 
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TacticalStatus {
-    Pending,
-    Ready,
-    Ended,
+/// Request to start a new [`TacticalServer`]
+#[derive(Clone, Debug)]
+#[table(name = tactical_server_request, public)]
+pub struct TacticalServerRequest {
+    #[primary_key]
+    #[unique]
+    pub mission_id: String,
+    pub scene_key: String,
 }
 
 /// Active tactical server instance
-/// Written by tactical-server when it starts, read by browser client
 #[derive(Clone, Debug)]
 #[table(name = tactical_server, public)]
 pub struct TacticalServer {
     #[primary_key]
+    pub identity: Identity,
+    #[index(btree)]
+    #[unique]
     pub mission_id: String,
     pub scene_key: String,
-    pub status: TacticalStatus,
-    /// Connection info (written by tactical-server)
     pub addr: String,
     pub cert_digest: String,
 }
 
-/// Put character in an existing tactical server by its mission id.
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct ConnectedPlayer {
+    pub character: Character,
+    pub equip: CharacterEquip,
+    pub skills: CharacterSkills,
+    pub limbs: CharacterLimbs,
+}
+
+/// View of [`ConnectedPlayer`] for this [`TacticalServer`].
+#[view(name = connected_players, public)]
+fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
+    ctx.db
+        .character()
+        .server()
+        .filter(ctx.sender)
+        .filter_map(|character| {
+            let limbs = ctx.db.character_limbs().character_id().find(character.id)?;
+            let skills = ctx
+                .db
+                .character_skills()
+                .character_id()
+                .find(character.id)?;
+            let equip = ctx.db.character_equip().character_id().find(character.id)?;
+
+            Some(ConnectedPlayer {
+                character,
+                equip,
+                skills,
+                limbs,
+            })
+        })
+        .collect()
+}
+
+/// Put a character in an existing [`TacticalServer`].
 #[reducer]
 pub fn enter_mission(
     ctx: &ReducerContext,
     character_id: u64,
-    mission_id: String,
+    server: Identity,
 ) -> Result<(), String> {
     // Check character exists
     let mut character = ctx
@@ -36,123 +79,165 @@ pub fn enter_mission(
         .character()
         .id()
         .find(&character_id)
-        .ok_or_else(|| "Character not found".to_string())?;
+        .ok_or_else(|| format!("Character {character_id} not found"))?;
 
     // Check not already in a mission
-    if !character.in_server.is_empty() {
+    if character.in_server {
         if ctx
             .db
             .tactical_server()
-            .mission_id()
-            .find(&character.in_server)
-            .is_some_and(|t| t.status != TacticalStatus::Ended)
+            .identity()
+            .find(character.server)
+            .is_some()
         {
-            return Err("Already in a mission".into());
+            log::warn!("Character {character_id} is already in a mission, ejecting..");
         }
     }
 
     let server = ctx
         .db
         .tactical_server()
-        .mission_id()
-        .find(&mission_id)
-        .ok_or_else(|| "Server not found".to_string())?;
+        .identity()
+        .find(&server)
+        .ok_or_else(|| format!("Server {server} not found"))?;
 
-    character.in_server = server.mission_id;
+    character.server = server.identity;
+    character.in_server = true;
     ctx.db.character().id().update(character);
 
     Ok(())
 }
 
-/// Start a new server for a mission and then put a character into it.
+/// Take out character from an existing [`TacticalServer`].
 #[reducer]
-pub fn create_mission_and_enter(
-    ctx: &ReducerContext,
-    character_id: u64,
-    scene_key: String,
-) -> Result<(), String> {
-    let mission_id = format!("{scene_key}-{}", ctx.timestamp.to_micros_since_unix_epoch());
+pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(&character_id)
+        .ok_or_else(|| format!("Character {character_id} not found"))?;
 
-    create_tactical_server(ctx, mission_id.clone(), scene_key)?;
-    enter_mission(ctx, character_id, mission_id)?;
+    character.in_server = false;
+    character.server = Identity::ZERO;
+    ctx.db.character().id().update(character);
 
     Ok(())
 }
 
-/// Start a new tactical server, if not already started.
+/// Request a new [`TacticalServer`] with generated *mission_id* from
+/// the *scene_key* and the current timestamp.
 #[reducer]
-pub fn create_tactical_server(
+pub fn request_tactical_server_for_scene(
+    ctx: &ReducerContext,
+    scene_key: String,
+) -> Result<(), String> {
+    let mission_id = format!("{scene_key}-{}", ctx.timestamp.to_micros_since_unix_epoch());
+    request_tactical_server(ctx, mission_id, scene_key)
+}
+
+/// Request a new [`TacticalServer`], unless there is already
+/// a server with the same *mission_id*.
+#[reducer]
+pub fn request_tactical_server(
     ctx: &ReducerContext,
     mission_id: String,
     scene_key: String,
 ) -> Result<(), String> {
-    if ctx
-        .db
-        .tactical_server()
-        .mission_id()
-        .find(&mission_id)
-        .is_some()
-    {
-        return Ok(());
+    if let Some(server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
+        return Err(format!(
+            "Server for mission '{mission_id}' already exist: {}",
+            server.identity
+        ));
     }
 
-    // Validate scene
-    if scene_key != "hills" && scene_key != "desert" {
-        return Err(format!("Invalid scene: {}", scene_key));
-    }
-
-    log::info!("Tactical server {mission_id} created (pending)");
-    ctx.db.tactical_server().insert(TacticalServer {
-        mission_id,
-        scene_key,
-        status: TacticalStatus::Pending,
-        addr: String::new(),
-        cert_digest: String::new(),
-    });
+    log::info!("Tactical server for '{mission_id}' requested");
+    ctx.db
+        .tactical_server_request()
+        .insert(TacticalServerRequest {
+            mission_id,
+            scene_key,
+        });
 
     Ok(())
 }
 
-/// Called by tactical-server when it starts - provides connection info
+/// Creates a new [`TacticalServer`], fulfilling the associated [`TacticalServerRequest`].
+///
+/// It will fail if there is no request for the mission.
+///
+/// Should be called by a server instance, since its identity will be
+/// the identity of the [`TacticalServer`] in DB.
 #[reducer]
-pub fn tactical_server_ready(
+pub fn create_tactical_server_for_request(
     ctx: &ReducerContext,
     mission_id: String,
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
-    let Some(mut server) = ctx.db.tactical_server().mission_id().find(&mission_id) else {
-        return Err("Mission not found".into());
+    let Some(request) = ctx
+        .db
+        .tactical_server_request()
+        .mission_id()
+        .find(&mission_id)
+    else {
+        return Err(format!(
+            "Tactical server request for mission '{mission_id}' not found"
+        ));
     };
+    ctx.db
+        .tactical_server_request()
+        .mission_id()
+        .delete(&mission_id);
 
-    server.status = TacticalStatus::Ready;
-    server.addr = addr.clone();
-    server.cert_digest = cert_digest;
-    ctx.db.tactical_server().mission_id().update(server);
-
-    log::info!("Mission {} ready on {}", mission_id, addr);
+    create_tactical_server(
+        ctx,
+        request.mission_id,
+        request.scene_key,
+        addr,
+        cert_digest,
+    );
     Ok(())
 }
 
-/// Called by tactical-server when mission ends - applies rewards
+/// Creates a new [`TacticalServer`].
+///
+/// Should be called by a server instance, since its identity will be
+/// the identity of the [`TacticalServer`] in DB.
 #[reducer]
-pub fn commit_mission(
+pub fn create_tactical_server(
     ctx: &ReducerContext,
     mission_id: String,
+    scene_key: String,
+    addr: String,
+    cert_digest: String,
+) {
+    log::info!("Tactical server for mission '{mission_id}' is ready on {addr}");
+    let server = TacticalServer {
+        identity: ctx.sender,
+        mission_id,
+        scene_key,
+        addr,
+        cert_digest,
+    };
+    ctx.db.tactical_server().insert(server);
+}
+
+/// End a [`TacticallServer`] associated with the caller.
+#[reducer]
+pub fn end_tactical_server(
+    ctx: &ReducerContext,
     success: bool,
     xp_gained: i32,
 ) -> Result<(), String> {
-    let Some(mut server) = ctx.db.tactical_server().mission_id().find(&mission_id) else {
-        return Err("Mission not found".into());
+    let Some(server) = ctx.db.tactical_server().identity().find(ctx.sender) else {
+        return Err(format!("Tactical server {} not found", ctx.sender));
     };
 
-    if server.status == TacticalStatus::Ended {
-        return Ok(()); // Idempotent
-    }
-
     // Apply rewards
-    for mut character in ctx.db.character().in_server().filter(&server.mission_id) {
-        character.in_server.clear();
+    for mut character in ctx.db.character().server().filter(ctx.sender) {
+        leave_mission(ctx, character.id)?;
+
         if xp_gained > 0 {
             character.xp = character.xp.saturating_add_signed(xp_gained);
             character.level = 1 + character.xp / 100;
@@ -165,14 +250,11 @@ pub fn commit_mission(
         ctx.db.character().id().update(character);
     }
 
-    server.status = TacticalStatus::Ended;
-    ctx.db.tactical_server().mission_id().update(server);
+    ctx.db.tactical_server().identity().delete(ctx.sender);
 
     log::info!(
-        "Mission {} ended: success={}, xp={}",
-        mission_id,
-        success,
-        xp_gained
+        "Tactical server for mission '{}' ended: success={success}, xp={xp_gained}",
+        server.mission_id
     );
     Ok(())
 }

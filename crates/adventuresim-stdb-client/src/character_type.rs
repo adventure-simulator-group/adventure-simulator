@@ -11,7 +11,8 @@ pub struct Character {
     pub name: String,
     pub xp: u32,
     pub level: u32,
-    pub in_server: String,
+    pub server: __sdk::Identity,
+    pub in_server: bool,
 }
 
 impl __sdk::InModule for Character {

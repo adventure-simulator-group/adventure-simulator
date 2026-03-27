@@ -3,7 +3,6 @@
 
 #![allow(unused, clippy::all)]
 use super::tactical_server_type::TacticalServer;
-use super::tactical_status_type::TacticalStatus;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `tactical_server`.
@@ -82,6 +81,7 @@ impl<'ctx> __sdk::Table for TacticalServerTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<TacticalServer>("tactical_server");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
     _table.add_unique_constraint::<String>("mission_id", |row| &row.mission_id);
 }
 pub struct TacticalServerUpdateCallbackId(__sdk::CallbackId);
@@ -110,6 +110,38 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+/// Access to the `identity` unique index on the table `tactical_server`,
+/// which allows point queries on the field of the same name
+/// via the [`TacticalServerIdentityUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.tactical_server().identity().find(...)`.
+pub struct TacticalServerIdentityUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<TacticalServer, __sdk::Identity>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+impl<'ctx> TacticalServerTableHandle<'ctx> {
+    /// Get a handle on the `identity` unique index on the table `tactical_server`.
+    pub fn identity(&self) -> TacticalServerIdentityUnique<'ctx> {
+        TacticalServerIdentityUnique {
+            imp: self
+                .imp
+                .get_unique_constraint::<__sdk::Identity>("identity"),
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'ctx> TacticalServerIdentityUnique<'ctx> {
+    /// Find the subscribed row whose `identity` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &__sdk::Identity) -> Option<TacticalServer> {
+        self.imp.find(col_val)
+    }
 }
 
 /// Access to the `mission_id` unique index on the table `tactical_server`,
