@@ -9,10 +9,10 @@
 mod stdb;
 mod terrain;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::NonZeroU32};
 
 use adventuresim_stdb_client::*;
-use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
 use adventuresim_tactical_netcode::{
     lightyear::prelude::{
         server::{self, ClientOf},
@@ -200,6 +200,104 @@ fn on_stdb_insert_connected_players(
         Transform::from_xyz(0.0, 50.0, 0.0),
         Replicate::to_clients(NetworkTarget::All),
     ));
+
+    for item in &player.items {
+        let Some(quantity) = NonZeroU32::new(item.quantity) else {
+            warn!(
+                "Got item '{}' with zero quantity for Player#{}; skipped",
+                item.item.id, player.character.id
+            );
+            continue;
+        };
+
+        let mut cmd = cmd.spawn((
+            ItemOf(entity),
+            ItemQuantity(quantity),
+            ItemProperties {
+                weight: item.item.weight,
+            },
+            ControlledBy {
+                owner: entity,
+                lifetime: Lifetime::SessionBased,
+            },
+            Replicate::to_clients(NetworkTarget::All),
+        ));
+
+        match item.item.kind {
+            ItemKind::Simple => {}
+            ItemKind::Weapon => {
+                cmd.insert(WeaponItem {
+                    accuracy: item.item.accuracy,
+                });
+            }
+            ItemKind::Armor => {
+                if let Some(slot) = match item.item.slot {
+                    ItemSlot::LeftArm => Some(ArmorSlot::Arms(Some(ArmorSide::Left))),
+                    ItemSlot::RightArm => Some(ArmorSlot::Arms(Some(ArmorSide::Right))),
+                    ItemSlot::AnyArm => Some(ArmorSlot::Arms(None)),
+                    ItemSlot::LeftLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Left))),
+                    ItemSlot::RightLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Right))),
+                    ItemSlot::AnyLeg => Some(ArmorSlot::Legs(None)),
+                    ItemSlot::Head => Some(ArmorSlot::Head),
+                    ItemSlot::Torso => Some(ArmorSlot::Torso),
+                    slot => {
+                        warn!(
+                            "Got armor item '{}' with an invalid slot {slot:?} for Player#{}",
+                            item.item.id, player.character.id
+                        );
+                        None
+                    }
+                } {
+                    cmd.insert(ArmorItem {
+                        dodge: item.item.dodge,
+                        coverage: item.item.coverage,
+                        slot,
+                    });
+                }
+            }
+            ItemKind::Shield => {
+                cmd.insert(ShieldItem {
+                    block: item.item.block,
+                });
+            }
+        }
+
+        match item.equipped {
+            Some(ItemSlot::LeftHolding) => {
+                cmd.insert(EquipSlot::HoldingLeft);
+            }
+            Some(ItemSlot::RightHolding) => {
+                cmd.insert(EquipSlot::HoldingRight);
+            }
+            Some(ItemSlot::LeftArm) => {
+                cmd.insert(EquipSlot::ArmorLeftArm);
+            }
+            Some(ItemSlot::RightArm) => {
+                cmd.insert(EquipSlot::ArmorRightArm);
+            }
+            Some(ItemSlot::LeftLeg) => {
+                cmd.insert(EquipSlot::ArmorLeftLeg);
+            }
+            Some(ItemSlot::RightLeg) => {
+                cmd.insert(EquipSlot::ArmorRightLeg);
+            }
+            Some(ItemSlot::Torso) => {
+                cmd.insert(EquipSlot::ArmorTorso);
+            }
+            Some(ItemSlot::Head) => {
+                cmd.insert(EquipSlot::ArmorHead);
+            }
+            slot @ Some(
+                ItemSlot::None | ItemSlot::AnyHolding | ItemSlot::AnyArm | ItemSlot::AnyLeg,
+            ) => {
+                warn!(
+                    "Got equipped item '{}' with an invalid equip slot {slot:?} for Player#{}",
+                    item.item.id, player.character.id
+                );
+            }
+            _ => {}
+        }
+    }
 
     info!("Player {entity:?} is fully loaded");
 }

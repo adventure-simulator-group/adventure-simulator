@@ -16,6 +16,7 @@ serde.workspace = true
 bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
+strum = { version = "0.28", features = ["derive"] }
 
 [lints]
 workspace = true

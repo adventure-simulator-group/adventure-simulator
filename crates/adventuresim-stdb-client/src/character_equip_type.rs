@@ -8,8 +8,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct CharacterEquip {
     pub character_id: u64,
-    pub left_arm_item_id: Option<u64>,
-    pub right_arm_item_id: Option<u64>,
+    pub left_hand_item_id: Option<u64>,
+    pub right_hand_item_id: Option<u64>,
     pub left_arm_armor_id: Option<u64>,
     pub right_arm_armor_id: Option<u64>,
     pub left_leg_armor_id: Option<u64>,

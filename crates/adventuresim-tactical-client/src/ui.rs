@@ -1,6 +1,6 @@
 use adventuresim_tactical_core::{
-    player::{Limbs, Player, PlayerId, Skills},
-    prelude::CharacterController,
+    player::{Player, PlayerId},
+    prelude::*,
 };
 use adventuresim_tactical_netcode::lightyear::{connection::client::ClientState, prelude::*};
 use bevy::{

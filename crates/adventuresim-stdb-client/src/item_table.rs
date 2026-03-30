@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::item_kind_type::ItemKind;
+use super::item_slot_type::ItemSlot;
 use super::item_type::Item;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

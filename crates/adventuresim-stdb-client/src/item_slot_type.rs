@@ -6,10 +6,33 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct WeaponItem {
-    pub accuracy: f32,
+#[derive(Copy, Eq, Hash)]
+pub enum ItemSlot {
+    None,
+
+    LeftHolding,
+
+    RightHolding,
+
+    LeftArm,
+
+    RightArm,
+
+    LeftLeg,
+
+    RightLeg,
+
+    Torso,
+
+    Head,
+
+    AnyHolding,
+
+    AnyArm,
+
+    AnyLeg,
 }
 
-impl __sdk::InModule for WeaponItem {
+impl __sdk::InModule for ItemSlot {
     type Module = super::RemoteModule;
 }

@@ -1,4 +1,5 @@
 use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
+use strum::{EnumCount, VariantArray};
 
 /// [`Item`] that is in the inventory
 #[derive(Clone, Debug)]
@@ -18,38 +19,33 @@ pub struct InventoryItem {
     pub quantity: u32,
 }
 
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
-pub struct ArmorItem {
-    dodge: f32,
-    coverage: f32,
-    slot: ArmorSlot,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
-pub enum ArmorSlot {
-    Arms,
-    Legs,
-    Head,
-    Torso,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
-pub struct WeaponItem {
-    accuracy: f32,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
-pub struct ShieldItem {
-    block: f32,
-}
-
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
 pub enum ItemKind {
     #[default]
     Simple,
-    Weapon(WeaponItem),
-    Armor(ArmorItem),
-    Shield(ShieldItem),
+    Weapon,
+    Armor,
+    Shield,
+}
+
+#[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
+pub enum ItemSlot {
+    #[default]
+    None,
+    // Holding for whats in character hands
+    LeftHolding,
+    RightHolding,
+    // Armor
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Torso,
+    Head,
+    // Any slots for equip targets
+    AnyHolding,
+    AnyArm,
+    AnyLeg,
 }
 
 /// Item stats
@@ -59,7 +55,12 @@ pub struct Item {
     #[primary_key]
     pub id: String,
     pub weight: f32,
+    pub slot: ItemSlot,
     pub kind: ItemKind,
+    pub accuracy: f32,
+    pub block: f32,
+    pub dodge: f32,
+    pub coverage: f32,
 }
 
 #[reducer(init)]
@@ -75,11 +76,11 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     define_weapon(ctx, "knife", 0.5, 2.0);
     define_weapon(ctx, "zweihander", 6.0, 0.6);
 
-    define_armor(ctx, "leather_armguard", 0.5, ArmorSlot::Arms, 1.0, 0.2);
-    define_armor(ctx, "leather_helmet", 0.5, ArmorSlot::Head, 1.0, 0.3);
-    define_armor(ctx, "leather_vest", 0.5, ArmorSlot::Torso, 1.0, 0.3);
-    define_armor(ctx, "leather_cuisse", 0.5, ArmorSlot::Legs, 1.0, 0.4);
-    define_armor(ctx, "steel_sallet", 2.0, ArmorSlot::Head, 0.6, 0.7);
+    define_armor(ctx, "leather_armguard", 0.5, ItemSlot::AnyArm, 1.0, 0.2);
+    define_armor(ctx, "leather_helmet", 0.5, ItemSlot::Head, 1.0, 0.3);
+    define_armor(ctx, "leather_vest", 0.5, ItemSlot::Torso, 1.0, 0.3);
+    define_armor(ctx, "leather_cuisse", 0.5, ItemSlot::AnyLeg, 1.0, 0.4);
+    define_armor(ctx, "steel_sallet", 2.0, ItemSlot::Head, 0.6, 0.7);
 
     Ok(())
 }
@@ -90,6 +91,7 @@ pub fn define_item(ctx: &ReducerContext, item_id: &str, weight: f32) {
         id: item_id.to_string(),
         weight,
         kind: ItemKind::Simple,
+        ..Item::default()
     });
 }
 
@@ -98,7 +100,9 @@ pub fn define_weapon(ctx: &ReducerContext, item_id: &str, weight: f32, accuracy:
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
-        kind: ItemKind::Weapon(WeaponItem { accuracy }),
+        accuracy,
+        kind: ItemKind::Weapon,
+        ..Item::default()
     });
 }
 
@@ -107,7 +111,9 @@ pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f3
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
-        kind: ItemKind::Shield(ShieldItem { block }),
+        block,
+        kind: ItemKind::Shield,
+        ..Item::default()
     });
 }
 
@@ -116,18 +122,18 @@ pub fn define_armor(
     ctx: &ReducerContext,
     item_id: &str,
     weight: f32,
-    slot: ArmorSlot,
+    slot: ItemSlot,
     dodge: f32,
     coverage: f32,
 ) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
-        kind: ItemKind::Armor(ArmorItem {
-            slot,
-            dodge,
-            coverage,
-        }),
+        slot,
+        dodge,
+        coverage,
+        kind: ItemKind::Armor,
+        ..Item::default()
     });
 }
 

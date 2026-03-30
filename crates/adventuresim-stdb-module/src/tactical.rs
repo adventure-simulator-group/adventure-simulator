@@ -4,8 +4,8 @@ use spacetimedb::{
 
 use crate::{
     change_inventory_item, character::character, character__view, character_equip__view,
-    character_limbs__view, character_skills__view, Character, CharacterEquip, CharacterLimbs,
-    CharacterSkills,
+    character_limbs__view, character_skills__view, inventory_item__view, item__view, Character,
+    CharacterLimbs, CharacterSkills, Item, ItemSlot,
 };
 
 /// Request to start a new [`TacticalServer`]
@@ -35,14 +35,21 @@ pub struct TacticalServer {
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct ConnectedPlayer {
     pub character: Character,
-    pub equip: CharacterEquip,
+    pub items: Vec<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
     pub limbs: CharacterLimbs,
 }
 
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct ConnectedPlayerItem {
+    pub quantity: u32,
+    pub item: Item,
+    pub equipped: Option<ItemSlot>,
+}
+
 /// View of [`ConnectedPlayer`] for this [`TacticalServer`].
 #[view(name = connected_players, public)]
-fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
+pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
     ctx.db
         .character()
         .server()
@@ -54,16 +61,38 @@ fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 .character_skills()
                 .character_id()
                 .find(character.id)?;
-            let equip = ctx.db.character_equip().character_id().find(character.id)?;
+            let items = connected_player_items(ctx, character.id).collect();
 
             Some(ConnectedPlayer {
                 character,
-                equip,
+                items,
                 skills,
                 limbs,
             })
         })
         .collect()
+}
+
+fn connected_player_items(
+    ctx: &ViewContext,
+    character_id: u64,
+) -> impl Iterator<Item = ConnectedPlayerItem> + use<'_> {
+    let equip = ctx.db.character_equip().character_id().find(character_id);
+
+    ctx.db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter_map(move |inventory_item| {
+            let item = ctx.db.item().id().find(inventory_item.item_id)?;
+            let equipped = equip.as_ref().and_then(|e| e.is_equiped(inventory_item.id));
+
+            Some(ConnectedPlayerItem {
+                quantity: inventory_item.quantity,
+                item,
+                equipped,
+            })
+        })
 }
 
 /// Put a character in an existing [`TacticalServer`].
@@ -196,8 +225,7 @@ pub fn create_tactical_server_for_request(
         request.scene_key,
         addr,
         cert_digest,
-    );
-    Ok(())
+    )
 }
 
 /// Creates a new [`TacticalServer`].
@@ -211,7 +239,12 @@ pub fn create_tactical_server(
     scene_key: String,
     addr: String,
     cert_digest: String,
-) {
+) -> Result<(), String> {
+    if let Some(previous) = ctx.db.tactical_server().mission_id().find(&mission_id) {
+        log::info!("Ending previous server for mission '{mission_id}'..");
+        end_tactical_server_by_instance(ctx, previous, false, 0)?;
+    }
+
     log::info!("Tactical server for mission '{mission_id}' is ready on {addr}");
     let server = TacticalServer {
         identity: ctx.sender,
@@ -221,6 +254,7 @@ pub fn create_tactical_server(
         cert_digest,
     };
     ctx.db.tactical_server().insert(server);
+    Ok(())
 }
 
 /// End a [`TacticallServer`] associated with the caller.
@@ -234,8 +268,19 @@ pub fn end_tactical_server(
         return Err(format!("Tactical server {} not found", ctx.sender));
     };
 
+    end_tactical_server_by_instance(ctx, server, success, xp_gained)
+}
+
+/// End a [`TacticallServer`].
+#[reducer]
+fn end_tactical_server_by_instance(
+    ctx: &ReducerContext,
+    server: TacticalServer,
+    success: bool,
+    xp_gained: i32,
+) -> Result<(), String> {
     // Apply rewards
-    for mut character in ctx.db.character().server().filter(ctx.sender) {
+    for mut character in ctx.db.character().server().filter(server.identity) {
         leave_mission(ctx, character.id)?;
 
         if xp_gained > 0 {
@@ -250,7 +295,7 @@ pub fn end_tactical_server(
         ctx.db.character().id().update(character);
     }
 
-    ctx.db.tactical_server().identity().delete(ctx.sender);
+    ctx.db.tactical_server().identity().delete(server.identity);
 
     log::info!(
         "Tactical server for mission '{}' ended: success={success}, xp={xp_gained}",

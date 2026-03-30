@@ -4,12 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::item_slot_type::ItemSlot;
+use super::item_type::Item;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct ShieldItem {
-    pub block: f32,
+pub struct ConnectedPlayerItem {
+    pub quantity: u32,
+    pub item: Item,
+    pub equipped: Option<ItemSlot>,
 }
 
-impl __sdk::InModule for ShieldItem {
+impl __sdk::InModule for ConnectedPlayerItem {
     type Module = super::RemoteModule;
 }

@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::armor_slot_type::ArmorSlot;
+use super::item_slot_type::ItemSlot;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DefineArmorArgs {
     pub item_id: String,
     pub weight: f32,
-    pub slot: ArmorSlot,
+    pub slot: ItemSlot,
     pub dodge: f32,
     pub coverage: f32,
 }
@@ -48,7 +48,7 @@ pub trait define_armor {
         &self,
         item_id: String,
         weight: f32,
-        slot: ArmorSlot,
+        slot: ItemSlot,
         dodge: f32,
         coverage: f32,
     ) -> __sdk::Result<()>;
@@ -61,7 +61,7 @@ pub trait define_armor {
     /// to cancel the callback.
     fn on_define_armor(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ArmorSlot, &f32, &f32)
+        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ItemSlot, &f32, &f32)
             + Send
             + 'static,
     ) -> DefineArmorCallbackId;
@@ -75,7 +75,7 @@ impl define_armor for super::RemoteReducers {
         &self,
         item_id: String,
         weight: f32,
-        slot: ArmorSlot,
+        slot: ItemSlot,
         dodge: f32,
         coverage: f32,
     ) -> __sdk::Result<()> {
@@ -92,7 +92,7 @@ impl define_armor for super::RemoteReducers {
     }
     fn on_define_armor(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ArmorSlot, &f32, &f32)
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ItemSlot, &f32, &f32)
             + Send
             + 'static,
     ) -> DefineArmorCallbackId {

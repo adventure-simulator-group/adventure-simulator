@@ -35,6 +35,15 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_interpolation_with(TransformLinearInterpolation::lerp);
         app.register_component::<CharacterLook>();
 
+        app.register_component::<WeaponItem>();
+        app.register_component::<ShieldItem>();
+        app.register_component::<ArmorItem>();
+        app.register_component::<ItemQuantity>();
+        app.register_component::<ItemProperties>();
+        app.register_component::<EquipSlot>();
+        app.register_component::<ItemOf>()
+            .add_component_map_entities();
+
         app.register_component::<SceneId>();
         app.register_component::<SceneTerrain>();
     }

@@ -107,6 +107,7 @@ dependencies = [
  "petname",
  "rand 0.8.5",
  "spacetimedb",
+ "strum 0.28.0",
 ]
 
 [[package]]
@@ -131,6 +132,7 @@ dependencies = [
  "bevy_ahoy",
  "bevy_enhanced_input",
  "serde",
+ "strum 0.28.0",
 ]
 
 [[package]]
@@ -7864,7 +7866,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "strum",
+ "strum 0.25.0",
  "thiserror 1.0.69",
 ]
 
@@ -8098,7 +8100,16 @@ version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.25.3",
+]
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -8111,6 +8122,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+ "syn",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
  "syn",
 ]
 

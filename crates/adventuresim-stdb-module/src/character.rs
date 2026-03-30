@@ -1,7 +1,8 @@
-use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use strum::VariantArray;
 
-use crate::{add_inventory_item, inventory_item};
+use crate::{add_inventory_item, inventory_item, ItemSlot};
 
 /// General character info
 #[derive(Clone, Debug)]
@@ -52,8 +53,8 @@ pub struct CharacterEquip {
     #[unique]
     pub character_id: u64,
     // weapon or shield
-    pub left_arm_item_id: Option<u64>,
-    pub right_arm_item_id: Option<u64>,
+    pub left_hand_item_id: Option<u64>,
+    pub right_hand_item_id: Option<u64>,
     // armor
     pub left_arm_armor_id: Option<u64>,
     pub right_arm_armor_id: Option<u64>,
@@ -63,23 +64,27 @@ pub struct CharacterEquip {
     pub torso_armor_id: Option<u64>,
 }
 
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
-pub enum EquipDst {
-    LeftArm,
-    RightArm,
-    ArmorLeftArm,
-    ArmorRightArm,
-    ArmorLeftLeg,
-    ArmorRightLeg,
-    ArmorHead,
-    ArmorTorso,
-}
+impl CharacterEquip {
+    pub fn is_equiped(&self, inventory_item_id: u64) -> Option<ItemSlot> {
+        ItemSlot::VARIANTS
+            .iter()
+            .find(|slot| self.get(**slot) == Some(inventory_item_id))
+            .copied()
+    }
 
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct FullCharacter {
-    pub character: Character,
-    pub equip: CharacterEquip,
-    pub skills: CharacterSkills,
+    pub fn get(&self, slot: ItemSlot) -> Option<u64> {
+        match slot {
+            ItemSlot::LeftHolding => self.left_hand_item_id,
+            ItemSlot::RightHolding => self.right_hand_item_id,
+            ItemSlot::LeftArm => self.left_arm_armor_id,
+            ItemSlot::RightArm => self.right_arm_armor_id,
+            ItemSlot::LeftLeg => self.left_leg_armor_id,
+            ItemSlot::RightLeg => self.right_leg_armor_id,
+            ItemSlot::Head => self.head_armor_id,
+            ItemSlot::Torso => self.torso_armor_id,
+            _ => None,
+        }
+    }
 }
 
 /// Create a new character with generated name and add initial items to it
@@ -136,8 +141,8 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
     });
     let _character_equip = ctx.db.character_equip().insert(CharacterEquip {
         character_id: id,
-        left_arm_item_id: None,
-        right_arm_item_id: None,
+        left_hand_item_id: None,
+        right_hand_item_id: None,
         left_arm_armor_id: None,
         right_arm_armor_id: None,
         left_leg_armor_id: None,
@@ -151,24 +156,14 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
     add_inventory_item(ctx, character.id, "bandage", 3);
 
     // Starter equip
-    add_and_equip_item(ctx, character.id, "buckler", EquipDst::LeftArm)?;
-    add_and_equip_item(ctx, character.id, "short_sword", EquipDst::RightArm)?;
-    add_and_equip_item(
-        ctx,
-        character.id,
-        "leather_armguard",
-        EquipDst::ArmorLeftArm,
-    )?;
-    add_and_equip_item(
-        ctx,
-        character.id,
-        "leather_armguard",
-        EquipDst::ArmorRightArm,
-    )?;
-    add_and_equip_item(ctx, character.id, "leather_helmet", EquipDst::ArmorHead)?;
-    add_and_equip_item(ctx, character.id, "leather_vest", EquipDst::ArmorTorso)?;
-    add_and_equip_item(ctx, character.id, "leather_cuisse", EquipDst::ArmorLeftLeg)?;
-    add_and_equip_item(ctx, character.id, "leather_cuisse", EquipDst::ArmorRightLeg)?;
+    add_and_equip_item(ctx, character.id, "buckler", ItemSlot::LeftHolding)?;
+    add_and_equip_item(ctx, character.id, "short_sword", ItemSlot::RightHolding)?;
+    add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::LeftArm)?;
+    add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::RightArm)?;
+    add_and_equip_item(ctx, character.id, "leather_helmet", ItemSlot::Head)?;
+    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Torso)?;
+    add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::LeftLeg)?;
+    add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::RightLeg)?;
 
     Ok(())
 }
@@ -178,7 +173,7 @@ pub fn equip_item(
     ctx: &ReducerContext,
     character_id: u64,
     inventory_item_id: u64,
-    destination: EquipDst,
+    destination: ItemSlot,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -201,14 +196,35 @@ pub fn equip_item(
         .ok_or_else(|| "Can't find character".to_string())?;
 
     match destination {
-        EquipDst::LeftArm => equip.left_arm_item_id = Some(inventory_item_id),
-        EquipDst::RightArm => equip.right_arm_item_id = Some(inventory_item_id),
-        EquipDst::ArmorLeftArm => equip.left_arm_armor_id = Some(inventory_item_id),
-        EquipDst::ArmorRightArm => equip.right_arm_armor_id = Some(inventory_item_id),
-        EquipDst::ArmorLeftLeg => equip.left_leg_armor_id = Some(inventory_item_id),
-        EquipDst::ArmorRightLeg => equip.right_leg_armor_id = Some(inventory_item_id),
-        EquipDst::ArmorHead => equip.head_armor_id = Some(inventory_item_id),
-        EquipDst::ArmorTorso => equip.torso_armor_id = Some(inventory_item_id),
+        ItemSlot::AnyHolding if equip.left_hand_item_id.is_none() => {
+            equip.left_hand_item_id = Some(inventory_item_id)
+        }
+        ItemSlot::AnyHolding if equip.right_hand_item_id.is_none() => {
+            equip.right_hand_item_id = Some(inventory_item_id)
+        }
+        ItemSlot::RightHolding | ItemSlot::AnyHolding => {
+            equip.right_hand_item_id = Some(inventory_item_id)
+        }
+        ItemSlot::LeftHolding => equip.left_hand_item_id = Some(inventory_item_id),
+        ItemSlot::AnyArm if equip.left_arm_armor_id.is_none() => {
+            equip.left_arm_armor_id = Some(inventory_item_id)
+        }
+        ItemSlot::AnyArm if equip.right_arm_armor_id.is_none() => {
+            equip.right_arm_armor_id = Some(inventory_item_id)
+        }
+        ItemSlot::RightArm | ItemSlot::AnyArm => equip.right_arm_armor_id = Some(inventory_item_id),
+        ItemSlot::LeftArm => equip.left_arm_armor_id = Some(inventory_item_id),
+        ItemSlot::AnyLeg if equip.left_leg_armor_id.is_none() => {
+            equip.left_leg_armor_id = Some(inventory_item_id)
+        }
+        ItemSlot::AnyLeg if equip.right_leg_armor_id.is_none() => {
+            equip.right_leg_armor_id = Some(inventory_item_id)
+        }
+        ItemSlot::RightLeg | ItemSlot::AnyLeg => equip.right_leg_armor_id = Some(inventory_item_id),
+        ItemSlot::LeftLeg => equip.left_leg_armor_id = Some(inventory_item_id),
+        ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
+        ItemSlot::Torso => equip.torso_armor_id = Some(inventory_item_id),
+        ItemSlot::None => {}
     }
 
     ctx.db.character_equip().character_id().update(equip);
@@ -220,7 +236,7 @@ pub fn add_and_equip_item(
     ctx: &ReducerContext,
     character_id: u64,
     item_id: &str,
-    destination: EquipDst,
+    destination: ItemSlot,
 ) -> Result<(), String> {
     let id = add_inventory_item(ctx, character_id, item_id, 1)
         .ok_or_else(|| "Can't add item to inventory".to_string())?;

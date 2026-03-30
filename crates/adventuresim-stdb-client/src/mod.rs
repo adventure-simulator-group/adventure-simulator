@@ -7,8 +7,6 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod add_and_equip_item_reducer;
-pub mod armor_item_type;
-pub mod armor_slot_type;
 pub mod change_inventory_item_reducer;
 pub mod character_equip_table;
 pub mod character_equip_type;
@@ -18,6 +16,7 @@ pub mod character_skills_table;
 pub mod character_skills_type;
 pub mod character_table;
 pub mod character_type;
+pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
 pub mod create_character_reducer;
@@ -28,31 +27,28 @@ pub mod define_armor_reducer;
 pub mod define_item_reducer;
 pub mod define_shield_reducer;
 pub mod define_weapon_reducer;
+pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
 pub mod enter_mission_reducer;
-pub mod equip_dst_type;
 pub mod equip_item_reducer;
 pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod item_kind_type;
+pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
 pub mod leave_mission_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
-pub mod shield_item_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
-pub mod weapon_item_type;
 
 pub use add_and_equip_item_reducer::{
     add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
 };
-pub use armor_item_type::ArmorItem;
-pub use armor_slot_type::ArmorSlot;
 pub use change_inventory_item_reducer::{
     change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
 };
@@ -64,6 +60,7 @@ pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
 pub use character_table::*;
 pub use character_type::Character;
+pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
 pub use create_character_reducer::{
@@ -87,13 +84,16 @@ pub use define_shield_reducer::{
 pub use define_weapon_reducer::{
     define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
 };
+pub use end_tactical_server_by_instance_reducer::{
+    end_tactical_server_by_instance, set_flags_for_end_tactical_server_by_instance,
+    EndTacticalServerByInstanceCallbackId,
+};
 pub use end_tactical_server_reducer::{
     end_tactical_server, set_flags_for_end_tactical_server, EndTacticalServerCallbackId,
 };
 pub use enter_mission_reducer::{
     enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
 };
-pub use equip_dst_type::EquipDst;
 pub use equip_item_reducer::{equip_item, set_flags_for_equip_item, EquipItemCallbackId};
 pub use insert_new_character_reducer::{
     insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
@@ -101,6 +101,7 @@ pub use insert_new_character_reducer::{
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use item_kind_type::ItemKind;
+pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
 pub use leave_mission_reducer::{
@@ -113,12 +114,10 @@ pub use request_tactical_server_for_scene_reducer::{
 pub use request_tactical_server_reducer::{
     request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
 };
-pub use shield_item_type::ShieldItem;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
-pub use weapon_item_type::WeaponItem;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -131,7 +130,7 @@ pub enum Reducer {
     AddAndEquipItem {
         character_id: u64,
         item_id: String,
-        destination: EquipDst,
+        destination: ItemSlot,
     },
     ChangeInventoryItem {
         character_id: u64,
@@ -158,7 +157,7 @@ pub enum Reducer {
     DefineArmor {
         item_id: String,
         weight: f32,
-        slot: ArmorSlot,
+        slot: ItemSlot,
         dodge: f32,
         coverage: f32,
     },
@@ -180,6 +179,11 @@ pub enum Reducer {
         success: bool,
         xp_gained: i32,
     },
+    EndTacticalServerByInstance {
+        server: TacticalServer,
+        success: bool,
+        xp_gained: i32,
+    },
     EnterMission {
         character_id: u64,
         server: __sdk::Identity,
@@ -187,7 +191,7 @@ pub enum Reducer {
     EquipItem {
         character_id: u64,
         inventory_item_id: u64,
-        destination: EquipDst,
+        destination: ItemSlot,
     },
     InsertNewCharacter {
         name: String,
@@ -223,6 +227,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DefineShield { .. } => "define_shield",
             Reducer::DefineWeapon { .. } => "define_weapon",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
+            Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
@@ -289,6 +294,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 end_tactical_server_reducer::EndTacticalServerArgs,
             >("end_tactical_server", &value.args)?
             .into()),
+            "end_tactical_server_by_instance" => {
+                Ok(__sdk::parse_reducer_args::<
+                    end_tactical_server_by_instance_reducer::EndTacticalServerByInstanceArgs,
+                >("end_tactical_server_by_instance", &value.args)?
+                .into())
+            }
             "enter_mission" => Ok(__sdk::parse_reducer_args::<
                 enter_mission_reducer::EnterMissionArgs,
             >("enter_mission", &value.args)?

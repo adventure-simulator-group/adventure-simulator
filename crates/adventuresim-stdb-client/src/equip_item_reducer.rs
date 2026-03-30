@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::equip_dst_type::EquipDst;
+use super::item_slot_type::ItemSlot;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct EquipItemArgs {
     pub character_id: u64,
     pub inventory_item_id: u64,
-    pub destination: EquipDst,
+    pub destination: ItemSlot,
 }
 
 impl From<EquipItemArgs> for super::Reducer {
@@ -44,7 +44,7 @@ pub trait equip_item {
         &self,
         character_id: u64,
         inventory_item_id: u64,
-        destination: EquipDst,
+        destination: ItemSlot,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `equip_item`.
     ///
@@ -55,7 +55,7 @@ pub trait equip_item {
     /// to cancel the callback.
     fn on_equip_item(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &EquipDst) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &ItemSlot) + Send + 'static,
     ) -> EquipItemCallbackId;
     /// Cancel a callback previously registered by [`Self::on_equip_item`],
     /// causing it not to run in the future.
@@ -67,7 +67,7 @@ impl equip_item for super::RemoteReducers {
         &self,
         character_id: u64,
         inventory_item_id: u64,
-        destination: EquipDst,
+        destination: ItemSlot,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "equip_item",
@@ -80,7 +80,7 @@ impl equip_item for super::RemoteReducers {
     }
     fn on_equip_item(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &EquipDst) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &ItemSlot) + Send + 'static,
     ) -> EquipItemCallbackId {
         EquipItemCallbackId(self.imp.on_reducer(
             "equip_item",

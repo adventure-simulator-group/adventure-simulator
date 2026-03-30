@@ -6,6 +6,7 @@
 //! It defines how the tactical world works in minimal environemnt,
 //! which can be extended by networking and visuals in other crates.
 
+pub mod inventory;
 pub mod physics;
 pub mod player;
 pub mod scene;
@@ -13,6 +14,10 @@ pub mod scene;
 pub use avian3d;
 
 pub mod prelude {
+    pub use crate::inventory::{
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
+        ItemQuantity, ShieldItem, WeaponItem,
+    };
     pub use crate::player::{ControlledPlayer, Limbs, Player, PlayerId, Skills};
     pub use crate::scene::{SceneId, SceneTerrain};
     pub use crate::AdventureSimulatorCorePlugins;
@@ -27,6 +32,6 @@ pub mod prelude {
 bevy::app::plugin_group! {
     #[derive(Debug)]
     pub struct AdventureSimulatorCorePlugins {
-        crate::physics:::AdventureSimulatorPhysicsPlugin,
+        physics:::AdventureSimulatorPhysicsPlugin,
     }
 }
