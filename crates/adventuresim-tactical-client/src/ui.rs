@@ -1,4 +1,5 @@
 use adventuresim_tactical_core::{
+    inventory::{ArmorItem, ItemProperties, ItemQuantity, ShieldItem, WeaponItem},
     player::{Player, PlayerId},
     prelude::*,
 };
@@ -24,6 +25,7 @@ impl Plugin for UiPlugin {
                     update_connection_ui,
                     update_skills_ui,
                     update_limbs_ui,
+                    update_items_ui,
                 ),
             )
             .add_observer(on_new_player_added_hook);
@@ -71,6 +73,12 @@ struct TorsoSpan;
 
 #[derive(Component)]
 struct HeadSpan;
+
+#[derive(Component)]
+struct EquippedItemsList;
+
+#[derive(Component)]
+struct InventoryItemsList;
 
 #[derive(Component)]
 struct PlayersList;
@@ -172,6 +180,30 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                             ),
                         ]
                     ),
+                    (
+                        Name::new("equipped-items"),
+                        Node::default(),
+                        children![
+                            Text::new("Equipped"),
+                            (
+                                EquippedItemsList,
+                                Name::new("equipped-list"),
+                                Node::default()
+                            )
+                        ]
+                    ),
+                    (
+                        Name::new("inventory-items"),
+                        Node::default(),
+                        children![
+                            Text::new("Inventory"),
+                            (
+                                InventoryItemsList,
+                                Name::new("inventory-list"),
+                                Node::default()
+                            )
+                        ]
+                    ),
                 ]
             ),
             (
@@ -267,6 +299,83 @@ fn update_limbs_ui(
     spans.p3().0 = format!("{:.0}%", limbs.right_arm * 100.0);
     spans.p4().0 = format!("{:.0}%", limbs.left_leg * 100.0);
     spans.p5().0 = format!("{:.0}%", limbs.right_leg * 100.0);
+}
+
+fn item_display_name(
+    props: &ItemProperties,
+    quantity: &ItemQuantity,
+    slot: Option<&EquipSlot>,
+    weapon: Option<&WeaponItem>,
+    armor: Option<&ArmorItem>,
+    shield: Option<&ShieldItem>,
+) -> String {
+    let qty = if quantity.get() > 1 {
+        format!(" x{}", quantity.get())
+    } else {
+        String::new()
+    };
+    let slot = if let Some(slot) = slot {
+        format!("{slot}: ")
+    } else {
+        String::new()
+    };
+    let name = if props.id.is_empty() {
+        "unknown"
+    } else {
+        props.id.as_str()
+    };
+
+    if let Some(weapon) = weapon {
+        format!("{slot}{name}{qty}\naccuracy: {:.1}", weapon.accuracy)
+    } else if let Some(armor) = armor {
+        format!(
+            "{slot}{name}{qty}\ncoverage: {:.1} | dodge: {:.1}",
+            armor.coverage, armor.dodge
+        )
+    } else if let Some(shield) = shield {
+        format!("{slot}{name}{qty}\nblock: {:.1}", shield.block)
+    } else {
+        format!("{slot}{name}{qty}")
+    }
+}
+
+fn update_items_ui(
+    mut cmd: Commands,
+    player: Single<&InventoryItems, (With<CharacterController>, Changed<InventoryItems>)>,
+    equipped_list: Single<Entity, With<EquippedItemsList>>,
+    inventory_list: Single<Entity, With<InventoryItemsList>>,
+    q_items: Query<
+        (
+            Entity,
+            &ItemProperties,
+            &ItemQuantity,
+            Option<&EquipSlot>,
+            Option<&WeaponItem>,
+            Option<&ArmorItem>,
+            Option<&ShieldItem>,
+        ),
+        With<ItemOf>,
+    >,
+) {
+    let items = player.into_inner();
+    let equipped_list_entity = equipped_list.into_inner();
+    cmd.entity(equipped_list_entity).despawn_children();
+    let inventory_list_entity = inventory_list.into_inner();
+    cmd.entity(inventory_list_entity).despawn_children();
+
+    for (_item, props, quantity, slot, weapon, armor, shield) in q_items.iter_many(items.iter()) {
+        let list = if slot.is_some() {
+            equipped_list_entity
+        } else {
+            inventory_list_entity
+        };
+        cmd.spawn((
+            Text::new(item_display_name(
+                props, quantity, slot, weapon, armor, shield,
+            )),
+            ChildOf(list),
+        ));
+    }
 }
 
 fn update_connection_ui(

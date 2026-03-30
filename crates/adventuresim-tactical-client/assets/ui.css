@@ -83,12 +83,28 @@ text,span {
       padding-bottom: 2px;
     }
   }
+  &>#equipped-items>#equipped-list,
+  &>#inventory-items>#inventory-list {
+    flex-wrap: wrap;
+    width: 100%;
+
+    &>* {
+      width: 100%;
+      padding-bottom: 2px;
+    }
+  }
 
   &>#skills>:nth-child(1) {
     color: var(--primary);
   }
   &>#limbs>:nth-child(1) {
     color: var(--success);
+  }
+  &>#equipped-items>:nth-child(1) {
+    color: rgb(200, 200, 50);
+  }
+  &>#inventory-items>:nth-child(1) {
+    color: rgb(130, 130, 120);
   }
 }
 

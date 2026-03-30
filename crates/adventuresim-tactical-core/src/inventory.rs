@@ -2,12 +2,19 @@ use std::num::NonZeroU32;
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use strum::{EnumCount, VariantArray};
+use strum::{Display, EnumCount, VariantArray};
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
 pub struct ItemQuantity(pub NonZeroU32);
 
+impl Default for ItemQuantity {
+    fn default() -> Self {
+        Self(NonZeroU32::new(1).unwrap())
+    }
+}
+
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone)]
+#[require(ItemProperties, ItemQuantity)]
 #[relationship(relationship_target = InventoryItems)]
 pub struct ItemOf(pub Entity);
 
@@ -46,8 +53,9 @@ pub struct ShieldItem {
     pub block: f32,
 }
 
-#[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct ItemProperties {
+    pub id: String,
     pub weight: f32,
 }
 
@@ -62,6 +70,7 @@ pub struct ItemProperties {
     PartialEq,
     EnumCount,
     VariantArray,
+    Display,
 )]
 pub enum EquipSlot {
     HoldingLeft,

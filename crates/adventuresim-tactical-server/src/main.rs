@@ -215,6 +215,7 @@ fn on_stdb_insert_connected_players(
             ItemQuantity(quantity),
             ItemProperties {
                 weight: item.item.weight,
+                id: item.item.id.clone(),
             },
             ControlledBy {
                 owner: entity,
