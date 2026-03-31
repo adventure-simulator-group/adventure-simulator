@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/adventuresim-core",
     "crates/adventuresim-stdb-module",
     "crates/adventuresim-stdb-client",
     "crates/adventuresim-tactical-core",
@@ -22,6 +23,7 @@ license = "GPL-3.0"
 adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
+adventuresim-core = { version = "0.1.0" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
   "reflect_auto_register",
@@ -61,6 +63,7 @@ too_many_arguments = "allow"
 adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" }
 adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
 adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
+adventuresim-core = { path = "crates/adventuresim-core" }
 
 # https://github.com/cBournhonesque/lightyear/pull/1405
 # https://github.com/cBournhonesque/lightyear/pull/1420
