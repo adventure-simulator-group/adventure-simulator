@@ -2,8 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::character_attributes_type::CharacterAttributes;
 use super::character_limbs_type::CharacterLimbs;
 use super::character_skills_type::CharacterSkills;
+use super::character_stats_type::CharacterStats;
 use super::character_type::Character;
 use super::connected_player_item_type::ConnectedPlayerItem;
 use super::connected_player_type::ConnectedPlayer;

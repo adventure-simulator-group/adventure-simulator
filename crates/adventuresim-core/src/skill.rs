@@ -1,7 +1,7 @@
 use crate::{
     attribute::{Attribute, PlayerAttributes},
-    prelude::PlayerEquipment,
-    PlayerEssentials,
+    equipment::PlayerEquipment,
+    essential::PlayerEssentials,
 };
 
 const MAX_CHECK: f32 = 5.0;
@@ -74,6 +74,8 @@ pub enum SkillKind {
 }
 
 /// Trait for accessing player skill data.
+#[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
+#[ambassador::delegatable_trait]
 pub trait PlayerSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32;
 

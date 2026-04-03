@@ -31,6 +31,8 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         app.register_component::<PlayerId>();
         app.register_component::<Limbs>();
         app.register_component::<Skills>();
+        app.register_component::<Stats>();
+        app.register_component::<Attributes>();
         app.register_component::<Transform>()
             .add_interpolation_with(TransformLinearInterpolation::lerp);
         app.register_component::<CharacterLook>();

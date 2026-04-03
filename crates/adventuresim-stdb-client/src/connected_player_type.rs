@@ -4,8 +4,10 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::character_attributes_type::CharacterAttributes;
 use super::character_limbs_type::CharacterLimbs;
 use super::character_skills_type::CharacterSkills;
+use super::character_stats_type::CharacterStats;
 use super::character_type::Character;
 use super::connected_player_item_type::ConnectedPlayerItem;
 
@@ -15,6 +17,8 @@ pub struct ConnectedPlayer {
     pub character: Character,
     pub items: Vec<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
+    pub stats: CharacterStats,
+    pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
 }
 

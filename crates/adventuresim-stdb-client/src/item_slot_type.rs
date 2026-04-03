@@ -22,7 +22,9 @@ pub enum ItemSlot {
 
     RightLeg,
 
-    Torso,
+    Chest,
+
+    Stomach,
 
     Head,
 

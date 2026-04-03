@@ -174,17 +174,34 @@ fn on_stdb_insert_connected_players(
     };
 
     let skills = Skills {
-        melee: player.skills.melee,
-        dodge: player.skills.dodge,
-        block: player.skills.block,
+        melee_hours: player.skills.melee_hours,
+        dodge_hours: player.skills.dodge_hours,
+        block_hours: player.skills.block_hours,
     };
     let limbs = Limbs {
         left_arm: player.limbs.left_arm,
         right_arm: player.limbs.right_arm,
         left_leg: player.limbs.left_leg,
         right_leg: player.limbs.right_leg,
-        torso: player.limbs.torso,
+        chest: player.limbs.chest,
+        stomach: player.limbs.stomach,
         head: player.limbs.head,
+    };
+    let attributes = Attributes {
+        endurance: player.attrs.endurance,
+        immunity: player.attrs.immunity,
+        gut: player.attrs.gut,
+        strength: player.attrs.strength,
+        precision: player.attrs.precision,
+        agility: player.attrs.agility,
+        intelligence: player.attrs.intelligence,
+        instinct: player.attrs.instinct,
+        eyesight: player.attrs.eyesight,
+        hearing: player.attrs.hearing,
+    };
+    let stats = Stats {
+        calories_used: player.stats.calories_used,
+        focus: player.stats.focus,
     };
 
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
@@ -194,6 +211,8 @@ fn on_stdb_insert_connected_players(
         PlayerId(player.character.id),
         skills,
         limbs,
+        attributes,
+        stats,
         CharacterController::default(),
         Collider::cylinder(0.4, 1.2),
         CollisionMargin(0.01),
@@ -240,7 +259,8 @@ fn on_stdb_insert_connected_players(
                     ItemSlot::RightLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Right))),
                     ItemSlot::AnyLeg => Some(ArmorSlot::Legs(None)),
                     ItemSlot::Head => Some(ArmorSlot::Head),
-                    ItemSlot::Torso => Some(ArmorSlot::Torso),
+                    ItemSlot::Chest => Some(ArmorSlot::Chest),
+                    ItemSlot::Stomach => Some(ArmorSlot::Stomach),
                     slot => {
                         warn!(
                             "Got armor item '{}' with an invalid slot {slot:?} for Player#{}",
@@ -282,8 +302,11 @@ fn on_stdb_insert_connected_players(
             Some(ItemSlot::RightLeg) => {
                 cmd.insert(EquipSlot::ArmorRightLeg);
             }
-            Some(ItemSlot::Torso) => {
-                cmd.insert(EquipSlot::ArmorTorso);
+            Some(ItemSlot::Chest) => {
+                cmd.insert(EquipSlot::ArmorChest);
+            }
+            Some(ItemSlot::Stomach) => {
+                cmd.insert(EquipSlot::ArmorStomach);
             }
             Some(ItemSlot::Head) => {
                 cmd.insert(EquipSlot::ArmorHead);

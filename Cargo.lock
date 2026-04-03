@@ -96,7 +96,9 @@ dependencies = [
 name = "adventuresim-core"
 version = "0.1.0"
 dependencies = [
+ "ambassador",
  "bitflags 2.11.0",
+ "blanket",
  "enum-assoc",
 ]
 
@@ -135,10 +137,12 @@ dependencies = [
 name = "adventuresim-tactical-core"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-core",
  "avian3d",
  "bevy",
  "bevy_ahoy",
  "bevy_enhanced_input",
+ "bitflags 2.11.0",
  "serde",
  "strum 0.28.0",
 ]
@@ -349,6 +353,18 @@ checksum = "db8fee663d06c4e303404ef5f40488a53e062f89ba8bfed81f42325aafad1527"
 dependencies = [
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "ambassador"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8184c5d23ba3829fb1e93388d776c3469cd9f4162af65250490b4f22d3ecf614"
+dependencies = [
+ "itertools 0.10.5",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -2361,6 +2377,17 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures",
+]
+
+[[package]]
+name = "blanket"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56791e4bd64c99fc361e01008f45c984baa93f12a0957d1b3c51dd2c6baab453"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

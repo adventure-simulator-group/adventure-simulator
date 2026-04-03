@@ -8,9 +8,9 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct CharacterSkills {
     pub character_id: u64,
-    pub melee: f32,
-    pub dodge: f32,
-    pub block: f32,
+    pub melee_hours: f32,
+    pub dodge_hours: f32,
+    pub block_hours: f32,
 }
 
 impl __sdk::InModule for CharacterSkills {

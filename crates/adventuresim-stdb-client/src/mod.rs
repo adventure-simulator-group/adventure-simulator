@@ -8,12 +8,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod add_and_equip_item_reducer;
 pub mod change_inventory_item_reducer;
+pub mod character_attributes_table;
+pub mod character_attributes_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
 pub mod character_limbs_table;
 pub mod character_limbs_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
+pub mod character_stats_table;
+pub mod character_stats_type;
 pub mod character_table;
 pub mod character_type;
 pub mod connected_player_item_type;
@@ -52,12 +56,16 @@ pub use add_and_equip_item_reducer::{
 pub use change_inventory_item_reducer::{
     change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
 };
+pub use character_attributes_table::*;
+pub use character_attributes_type::CharacterAttributes;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
 pub use character_limbs_table::*;
 pub use character_limbs_type::CharacterLimbs;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
+pub use character_stats_table::*;
+pub use character_stats_type::CharacterStats;
 pub use character_table::*;
 pub use character_type::Character;
 pub use connected_player_item_type::ConnectedPlayerItem;
@@ -344,9 +352,11 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     character: __sdk::TableUpdate<Character>,
+    character_attributes: __sdk::TableUpdate<CharacterAttributes>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
+    character_stats: __sdk::TableUpdate<CharacterStats>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     item: __sdk::TableUpdate<Item>,
@@ -363,6 +373,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character" => db_update
                     .character
                     .append(character_table::parse_table_update(table_update)?),
+                "character_attributes" => db_update.character_attributes.append(
+                    character_attributes_table::parse_table_update(table_update)?,
+                ),
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
@@ -372,6 +385,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
+                "character_stats" => db_update
+                    .character_stats
+                    .append(character_stats_table::parse_table_update(table_update)?),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
@@ -416,12 +432,18 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
+        diff.character_attributes = cache.apply_diff_to_table::<CharacterAttributes>(
+            "character_attributes",
+            &self.character_attributes,
+        );
         diff.character_equip =
             cache.apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip);
         diff.character_limbs =
             cache.apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs);
         diff.character_skills = cache
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
+        diff.character_stats =
+            cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -449,9 +471,11 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     character: __sdk::TableAppliedDiff<'r, Character>,
+    character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
+    character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -471,6 +495,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
         callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
+        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
+            "character_attributes",
+            &self.character_attributes,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
@@ -484,6 +513,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
             "character_skills",
             &self.character_skills,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStats>(
+            "character_stats",
+            &self.character_stats,
             event,
         );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
@@ -1227,9 +1261,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         character_table::register_table(client_cache);
+        character_attributes_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
+        character_stats_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         item_table::register_table(client_cache);

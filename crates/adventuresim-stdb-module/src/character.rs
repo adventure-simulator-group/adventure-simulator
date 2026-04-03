@@ -18,6 +18,36 @@ pub struct Character {
     pub in_server: bool,
 }
 
+/// [`Character`] attributes
+#[derive(Clone, Debug)]
+#[table(name = character_attributes, public)]
+pub struct CharacterAttributes {
+    #[index(direct)]
+    #[unique]
+    pub character_id: u64,
+    pub endurance: f32,
+    pub immunity: f32,
+    pub gut: f32,
+    pub strength: f32,
+    pub precision: f32,
+    pub agility: f32,
+    pub intelligence: f32,
+    pub instinct: f32,
+    pub eyesight: f32,
+    pub hearing: f32,
+}
+
+/// [`Character`] stats
+#[derive(Clone, Debug)]
+#[table(name = character_stats, public)]
+pub struct CharacterStats {
+    #[index(direct)]
+    #[unique]
+    pub character_id: u64,
+    pub calories_used: f32,
+    pub focus: f32,
+}
+
 /// [`Character`] skills
 #[derive(Clone, Debug)]
 #[table(name = character_skills, public)]
@@ -25,9 +55,9 @@ pub struct CharacterSkills {
     #[index(direct)]
     #[unique]
     pub character_id: u64,
-    pub melee: f32,
-    pub dodge: f32,
-    pub block: f32,
+    pub melee_hours: f32,
+    pub dodge_hours: f32,
+    pub block_hours: f32,
 }
 
 /// [`Character`] limbs
@@ -42,7 +72,8 @@ pub struct CharacterLimbs {
     pub left_leg: f32,
     pub right_leg: f32,
     pub head: f32,
-    pub torso: f32,
+    pub chest: f32,
+    pub stomach: f32,
 }
 
 /// [`Character`] equipment
@@ -61,7 +92,8 @@ pub struct CharacterEquip {
     pub left_leg_armor_id: Option<u64>,
     pub right_leg_armor_id: Option<u64>,
     pub head_armor_id: Option<u64>,
-    pub torso_armor_id: Option<u64>,
+    pub chest_armor_id: Option<u64>,
+    pub stomach_armor_id: Option<u64>,
 }
 
 impl CharacterEquip {
@@ -81,7 +113,8 @@ impl CharacterEquip {
             ItemSlot::LeftLeg => self.left_leg_armor_id,
             ItemSlot::RightLeg => self.right_leg_armor_id,
             ItemSlot::Head => self.head_armor_id,
-            ItemSlot::Torso => self.torso_armor_id,
+            ItemSlot::Chest => self.chest_armor_id,
+            ItemSlot::Stomach => self.stomach_armor_id,
             _ => None,
         }
     }
@@ -124,11 +157,16 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         server: Identity::ZERO,
         in_server: false,
     });
-    let _character_stats = ctx.db.character_skills().insert(CharacterSkills {
+    let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,
-        melee: 3.0,
-        dodge: 2.0,
-        block: 1.0,
+        calories_used: 0.0,
+        focus: 1.0,
+    });
+    let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
+        character_id: id,
+        melee_hours: 2000.0,
+        dodge_hours: 1000.0,
+        block_hours: 1000.0,
     });
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
         character_id: id,
@@ -137,7 +175,8 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         left_leg: 1.0,
         right_leg: 1.0,
         head: 1.0,
-        torso: 1.0,
+        chest: 1.0,
+        stomach: 1.0,
     });
     let _character_equip = ctx.db.character_equip().insert(CharacterEquip {
         character_id: id,
@@ -148,7 +187,21 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         left_leg_armor_id: None,
         right_leg_armor_id: None,
         head_armor_id: None,
-        torso_armor_id: None,
+        chest_armor_id: None,
+        stomach_armor_id: None,
+    });
+    let _character_attrs = ctx.db.character_attributes().insert(CharacterAttributes {
+        character_id: id,
+        endurance: 2.0,
+        immunity: 2.0,
+        gut: 2.0,
+        strength: 2.0,
+        precision: 2.0,
+        agility: 2.0,
+        intelligence: 2.0,
+        instinct: 2.0,
+        eyesight: 2.0,
+        hearing: 2.0,
     });
 
     // Starter items
@@ -161,7 +214,8 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
     add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::LeftArm)?;
     add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::RightArm)?;
     add_and_equip_item(ctx, character.id, "leather_helmet", ItemSlot::Head)?;
-    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Torso)?;
+    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Chest)?;
+    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Stomach)?;
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::LeftLeg)?;
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::RightLeg)?;
 
@@ -223,7 +277,8 @@ pub fn equip_item(
         ItemSlot::RightLeg | ItemSlot::AnyLeg => equip.right_leg_armor_id = Some(inventory_item_id),
         ItemSlot::LeftLeg => equip.left_leg_armor_id = Some(inventory_item_id),
         ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
-        ItemSlot::Torso => equip.torso_armor_id = Some(inventory_item_id),
+        ItemSlot::Chest => equip.chest_armor_id = Some(inventory_item_id),
+        ItemSlot::Stomach => equip.stomach_armor_id = Some(inventory_item_id),
         ItemSlot::None => {}
     }
 

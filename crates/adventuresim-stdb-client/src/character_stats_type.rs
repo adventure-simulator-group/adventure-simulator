@@ -6,19 +6,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct CharacterEquip {
+pub struct CharacterStats {
     pub character_id: u64,
-    pub left_hand_item_id: Option<u64>,
-    pub right_hand_item_id: Option<u64>,
-    pub left_arm_armor_id: Option<u64>,
-    pub right_arm_armor_id: Option<u64>,
-    pub left_leg_armor_id: Option<u64>,
-    pub right_leg_armor_id: Option<u64>,
-    pub head_armor_id: Option<u64>,
-    pub chest_armor_id: Option<u64>,
-    pub stomach_armor_id: Option<u64>,
+    pub calories_used: f32,
+    pub focus: f32,
 }
 
-impl __sdk::InModule for CharacterEquip {
+impl __sdk::InModule for CharacterStats {
     type Module = super::RemoteModule;
 }

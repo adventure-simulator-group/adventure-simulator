@@ -12,6 +12,8 @@ bitflags::bitflags! {
     }
 }
 
+#[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
+#[ambassador::delegatable_trait]
 pub trait PlayerBody {
     fn body_part_health(&self, part: BodyPart) -> f32;
 

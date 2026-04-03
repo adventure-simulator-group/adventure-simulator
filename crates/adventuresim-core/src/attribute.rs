@@ -28,6 +28,8 @@ pub enum Attribute {
 }
 
 /// Trait for accessing player attribute values.
+#[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
+#[ambassador::delegatable_trait]
 pub trait PlayerAttributes {
     fn attr(&self, attr: Attribute) -> f32;
 }

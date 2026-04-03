@@ -18,9 +18,13 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, WeaponItem,
     };
-    pub use crate::player::{ControlledPlayer, Limbs, Player, PlayerId, Skills};
+    pub use crate::player::{
+        Attributes, ControlledPlayer, Limbs, Player, PlayerId, Skills, Stats, TacticalPlayerView,
+        TacticalPlayerViewer,
+    };
     pub use crate::scene::{SceneId, SceneTerrain};
     pub use crate::AdventureSimulatorCorePlugins;
+    pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
         camera::{CharacterControllerCamera, CharacterControllerCameraOf},

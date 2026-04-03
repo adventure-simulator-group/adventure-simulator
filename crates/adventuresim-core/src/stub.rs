@@ -51,7 +51,7 @@ impl PlayerEquipment for StubEquipment {
         1.0
     }
 
-    fn armor_dodge(&self) -> f32 {
+    fn armor_dodge(&self, _part: BodyPart) -> f32 {
         1.0
     }
 

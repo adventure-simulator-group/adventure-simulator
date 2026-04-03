@@ -1,5 +1,5 @@
 use adventuresim_tactical_core::{
-    inventory::{ArmorItem, ItemProperties, ItemQuantity, ShieldItem, WeaponItem},
+    inventory::{ItemQuery, ItemQueryItem},
     player::{Player, PlayerId},
     prelude::*,
 };
@@ -69,7 +69,10 @@ struct LeftLegSpan;
 struct RightLegSpan;
 
 #[derive(Component)]
-struct TorsoSpan;
+struct ChestSpan;
+
+#[derive(Component)]
+struct StomachSpan;
 
 #[derive(Component)]
 struct HeadSpan;
@@ -128,17 +131,17 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                             Text::new("Skills"),
                             (
                                 Name::new("melee"),
-                                Text::new("Melee: "),
+                                Text::new("Melee hours:\n"),
                                 children![(MeleeSpan, TextSpan::default())]
                             ),
                             (
                                 Name::new("dodge"),
-                                Text::new("Dodge: "),
+                                Text::new("Dodge hours:\n"),
                                 children![(DodgeSpan, TextSpan::default())]
                             ),
                             (
                                 Name::new("block"),
-                                Text::new("Block: "),
+                                Text::new("Block hours:\n"),
                                 children![(BlockSpan, TextSpan::default())]
                             ),
                         ]
@@ -154,9 +157,14 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(HeadSpan, TextSpan::default())]
                             ),
                             (
-                                Name::new("torso"),
-                                Text::new("Torso: "),
-                                children![(TorsoSpan, TextSpan::default())]
+                                Name::new("chest"),
+                                Text::new("Chest: "),
+                                children![(ChestSpan, TextSpan::default())]
+                            ),
+                            (
+                                Name::new("stomach"),
+                                Text::new("Stomach: "),
+                                children![(StomachSpan, TextSpan::default())]
                             ),
                             (
                                 Name::new("left-arm"),
@@ -275,16 +283,17 @@ fn update_skills_ui(
 ) {
     let (skills, _player_id) = player.into_inner();
 
-    spans.p0().0 = format!("{:.2}", skills.melee);
-    spans.p1().0 = format!("{:.2}", skills.dodge);
-    spans.p2().0 = format!("{:.2}", skills.block);
+    spans.p0().0 = format!("{:.2}", skills.melee_hours);
+    spans.p1().0 = format!("{:.2}", skills.dodge_hours);
+    spans.p2().0 = format!("{:.2}", skills.block_hours);
 }
 
 fn update_limbs_ui(
     player: Single<(&Limbs, &PlayerId), (With<CharacterController>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
-        Single<&mut TextSpan, With<TorsoSpan>>,
+        Single<&mut TextSpan, With<ChestSpan>>,
+        Single<&mut TextSpan, With<StomachSpan>>,
         Single<&mut TextSpan, With<LeftArmSpan>>,
         Single<&mut TextSpan, With<RightArmSpan>>,
         Single<&mut TextSpan, With<LeftLegSpan>>,
@@ -294,45 +303,39 @@ fn update_limbs_ui(
     let (limbs, _player_id) = player.into_inner();
 
     spans.p0().0 = format!("{:.0}%", limbs.head * 100.0);
-    spans.p1().0 = format!("{:.0}%", limbs.torso * 100.0);
-    spans.p2().0 = format!("{:.0}%", limbs.left_arm * 100.0);
-    spans.p3().0 = format!("{:.0}%", limbs.right_arm * 100.0);
-    spans.p4().0 = format!("{:.0}%", limbs.left_leg * 100.0);
-    spans.p5().0 = format!("{:.0}%", limbs.right_leg * 100.0);
+    spans.p1().0 = format!("{:.0}%", limbs.chest * 100.0);
+    spans.p2().0 = format!("{:.0}%", limbs.stomach * 100.0);
+    spans.p3().0 = format!("{:.0}%", limbs.left_arm * 100.0);
+    spans.p4().0 = format!("{:.0}%", limbs.right_arm * 100.0);
+    spans.p5().0 = format!("{:.0}%", limbs.left_leg * 100.0);
+    spans.p6().0 = format!("{:.0}%", limbs.right_leg * 100.0);
 }
 
-fn item_display_name(
-    props: &ItemProperties,
-    quantity: &ItemQuantity,
-    slot: Option<&EquipSlot>,
-    weapon: Option<&WeaponItem>,
-    armor: Option<&ArmorItem>,
-    shield: Option<&ShieldItem>,
-) -> String {
-    let qty = if quantity.get() > 1 {
-        format!(" x{}", quantity.get())
+fn item_display_name(item: &ItemQueryItem) -> String {
+    let qty = if item.quantity.get() > 1 {
+        format!(" x{}", item.quantity.get())
     } else {
         String::new()
     };
-    let slot = if let Some(slot) = slot {
+    let slot = if let Some(slot) = item.slot {
         format!("{slot}: ")
     } else {
         String::new()
     };
-    let name = if props.id.is_empty() {
+    let name = if item.properties.id.is_empty() {
         "unknown"
     } else {
-        props.id.as_str()
+        item.properties.id.as_str()
     };
 
-    if let Some(weapon) = weapon {
+    if let Some(weapon) = item.weapon {
         format!("{slot}{name}{qty}\naccuracy: {:.1}", weapon.accuracy)
-    } else if let Some(armor) = armor {
+    } else if let Some(armor) = item.armor {
         format!(
             "{slot}{name}{qty}\ncoverage: {:.1} | dodge: {:.1}",
             armor.coverage, armor.dodge
         )
-    } else if let Some(shield) = shield {
+    } else if let Some(shield) = item.shield {
         format!("{slot}{name}{qty}\nblock: {:.1}", shield.block)
     } else {
         format!("{slot}{name}{qty}")
@@ -344,18 +347,7 @@ fn update_items_ui(
     player: Single<&InventoryItems, (With<CharacterController>, Changed<InventoryItems>)>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
-    q_items: Query<
-        (
-            Entity,
-            &ItemProperties,
-            &ItemQuantity,
-            Option<&EquipSlot>,
-            Option<&WeaponItem>,
-            Option<&ArmorItem>,
-            Option<&ShieldItem>,
-        ),
-        With<ItemOf>,
-    >,
+    q_items: Query<ItemQuery, With<ItemOf>>,
 ) {
     let items = player.into_inner();
     let equipped_list_entity = equipped_list.into_inner();
@@ -363,18 +355,13 @@ fn update_items_ui(
     let inventory_list_entity = inventory_list.into_inner();
     cmd.entity(inventory_list_entity).despawn_children();
 
-    for (_item, props, quantity, slot, weapon, armor, shield) in q_items.iter_many(items.iter()) {
-        let list = if slot.is_some() {
+    for item in q_items.iter_many(items.iter()) {
+        let list = if item.slot.is_some() {
             equipped_list_entity
         } else {
             inventory_list_entity
         };
-        cmd.spawn((
-            Text::new(item_display_name(
-                props, quantity, slot, weapon, armor, shield,
-            )),
-            ChildOf(list),
-        ));
+        cmd.spawn((Text::new(item_display_name(&item)), ChildOf(list)));
     }
 }
 

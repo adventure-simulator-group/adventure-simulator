@@ -3,9 +3,10 @@ use spacetimedb::{
 };
 
 use crate::{
-    change_inventory_item, character::character, character__view, character_equip__view,
-    character_limbs__view, character_skills__view, inventory_item__view, item__view, Character,
-    CharacterLimbs, CharacterSkills, Item, ItemSlot,
+    change_inventory_item, character::character, character__view, character_attributes__view,
+    character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
+    inventory_item__view, item__view, Character, CharacterAttributes, CharacterLimbs,
+    CharacterSkills, CharacterStats, Item, ItemSlot,
 };
 
 /// Request to start a new [`TacticalServer`]
@@ -37,6 +38,8 @@ pub struct ConnectedPlayer {
     pub character: Character,
     pub items: Vec<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
+    pub stats: CharacterStats,
+    pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
 }
 
@@ -56,11 +59,17 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
         .filter(ctx.sender)
         .filter_map(|character| {
             let limbs = ctx.db.character_limbs().character_id().find(character.id)?;
+            let attrs = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(character.id)?;
             let skills = ctx
                 .db
                 .character_skills()
                 .character_id()
                 .find(character.id)?;
+            let stats = ctx.db.character_stats().character_id().find(character.id)?;
             let items = connected_player_items(ctx, character.id).collect();
 
             Some(ConnectedPlayer {
@@ -68,6 +77,8 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 items,
                 skills,
                 limbs,
+                attrs,
+                stats,
             })
         })
         .collect()

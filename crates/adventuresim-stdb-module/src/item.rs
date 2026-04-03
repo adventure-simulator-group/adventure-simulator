@@ -40,7 +40,8 @@ pub enum ItemSlot {
     RightArm,
     LeftLeg,
     RightLeg,
-    Torso,
+    Chest,
+    Stomach,
     Head,
     // Any slots for equip targets
     AnyHolding,
@@ -78,7 +79,8 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 
     define_armor(ctx, "leather_armguard", 0.5, ItemSlot::AnyArm, 1.0, 0.2);
     define_armor(ctx, "leather_helmet", 0.5, ItemSlot::Head, 1.0, 0.3);
-    define_armor(ctx, "leather_vest", 0.5, ItemSlot::Torso, 1.0, 0.3);
+    define_armor(ctx, "leather_vest", 0.5, ItemSlot::Chest, 1.0, 0.3);
+    define_armor(ctx, "leather_belt", 0.5, ItemSlot::Stomach, 1.0, 0.2);
     define_armor(ctx, "leather_cuisse", 0.5, ItemSlot::AnyLeg, 1.0, 0.4);
     define_armor(ctx, "steel_sallet", 2.0, ItemSlot::Head, 0.6, 0.7);
 

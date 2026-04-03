@@ -13,7 +13,8 @@ pub struct CharacterLimbs {
     pub left_leg: f32,
     pub right_leg: f32,
     pub head: f32,
-    pub torso: f32,
+    pub chest: f32,
+    pub stomach: f32,
 }
 
 impl __sdk::InModule for CharacterLimbs {
