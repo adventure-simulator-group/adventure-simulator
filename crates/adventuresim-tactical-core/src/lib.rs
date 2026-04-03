@@ -6,6 +6,7 @@
 //! It defines how the tactical world works in minimal environemnt,
 //! which can be extended by networking and visuals in other crates.
 
+pub mod combat;
 pub mod inventory;
 pub mod physics;
 pub mod player;
@@ -14,6 +15,7 @@ pub mod scene;
 pub use avian3d;
 
 pub mod prelude {
+    pub use crate::combat::Attack;
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, WeaponItem,

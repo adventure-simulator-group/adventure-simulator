@@ -6,6 +6,7 @@
 //! 3. Runs game for clients
 //! 4. Calls end_tactical_server reducer on timeout/exit
 
+mod combat;
 mod stdb;
 mod terrain;
 
@@ -98,7 +99,7 @@ fn main() {
             bevy::app::TerminalCtrlCHandlerPlugin,
         ))
         .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
-        .add_plugins((stdb::SpacetimeDbPlugin,))
+        .add_plugins((stdb::SpacetimeDbPlugin, combat::CombatPlugin))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)

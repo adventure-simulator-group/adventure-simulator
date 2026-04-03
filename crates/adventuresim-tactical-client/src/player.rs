@@ -1,7 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 
-use crate::Args;
+use crate::{Args, Attack};
 
 pub struct PlayerPlugin;
 
@@ -54,6 +54,10 @@ fn on_new_player_added_hook(
                         Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
                         Axial::right_stick().with((Scale::splat(4.0), DeadZone::default())),
                     ))
+                ),
+                (
+                    Action::<Attack>::new(),
+                    bindings![MouseButton::Left],
                 ),
             ]),
         ));

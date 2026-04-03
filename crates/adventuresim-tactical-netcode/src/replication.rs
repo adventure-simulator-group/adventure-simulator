@@ -20,6 +20,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         }));
         app.register_input_action::<input::Movement>();
         app.register_input_action::<input::Jump>();
+        app.register_input_action::<Attack>();
 
         #[cfg(feature = "server")]
         app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin {
