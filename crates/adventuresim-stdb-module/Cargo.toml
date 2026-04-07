@@ -11,3 +11,4 @@ log = "0.4"
 spacetimedb.workspace = true
 petname = { version = "2.0.2", default-features = false, features = ["default-words"] }
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
+strum = { version = "0.28", features = ["derive"] }

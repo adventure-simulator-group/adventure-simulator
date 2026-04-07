@@ -9,9 +9,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct Character {
     pub id: u64,
     pub name: String,
-    pub xp: i32,
-    pub level: i32,
-    pub in_server: String,
+    pub xp: u32,
+    pub level: u32,
+    pub server: __sdk::Identity,
+    pub in_server: bool,
 }
 
 impl __sdk::InModule for Character {

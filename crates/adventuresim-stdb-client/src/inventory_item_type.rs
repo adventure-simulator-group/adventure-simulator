@@ -10,7 +10,7 @@ pub struct InventoryItem {
     pub id: u64,
     pub character_id: u64,
     pub item_id: String,
-    pub qty: i32,
+    pub quantity: u32,
 }
 
 impl __sdk::InModule for InventoryItem {

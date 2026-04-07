@@ -6,54 +6,126 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod add_and_equip_item_reducer;
+pub mod change_inventory_item_reducer;
+pub mod character_attributes_table;
+pub mod character_attributes_type;
+pub mod character_equip_table;
+pub mod character_equip_type;
+pub mod character_limbs_table;
+pub mod character_limbs_type;
+pub mod character_skills_table;
+pub mod character_skills_type;
+pub mod character_stats_table;
+pub mod character_stats_type;
 pub mod character_table;
 pub mod character_type;
-pub mod commit_mission_reducer;
+pub mod connected_player_item_type;
+pub mod connected_player_type;
+pub mod connected_players_table;
 pub mod create_character_reducer;
-pub mod create_mission_and_enter_reducer;
 pub mod create_named_character_reducer;
+pub mod create_tactical_server_for_request_reducer;
 pub mod create_tactical_server_reducer;
+pub mod define_armor_reducer;
+pub mod define_item_reducer;
+pub mod define_shield_reducer;
+pub mod define_weapon_reducer;
+pub mod end_tactical_server_by_instance_reducer;
+pub mod end_tactical_server_reducer;
 pub mod enter_mission_reducer;
+pub mod equip_item_reducer;
 pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
-pub mod tactical_server_ready_reducer;
+pub mod item_kind_type;
+pub mod item_slot_type;
+pub mod item_table;
+pub mod item_type;
+pub mod leave_mission_reducer;
+pub mod request_tactical_server_for_scene_reducer;
+pub mod request_tactical_server_reducer;
+pub mod tactical_server_request_table;
+pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
-pub mod tactical_status_type;
 
+pub use add_and_equip_item_reducer::{
+    add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
+};
+pub use change_inventory_item_reducer::{
+    change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
+};
+pub use character_attributes_table::*;
+pub use character_attributes_type::CharacterAttributes;
+pub use character_equip_table::*;
+pub use character_equip_type::CharacterEquip;
+pub use character_limbs_table::*;
+pub use character_limbs_type::CharacterLimbs;
+pub use character_skills_table::*;
+pub use character_skills_type::CharacterSkills;
+pub use character_stats_table::*;
+pub use character_stats_type::CharacterStats;
 pub use character_table::*;
 pub use character_type::Character;
-pub use commit_mission_reducer::{
-    commit_mission, set_flags_for_commit_mission, CommitMissionCallbackId,
-};
+pub use connected_player_item_type::ConnectedPlayerItem;
+pub use connected_player_type::ConnectedPlayer;
+pub use connected_players_table::*;
 pub use create_character_reducer::{
     create_character, set_flags_for_create_character, CreateCharacterCallbackId,
-};
-pub use create_mission_and_enter_reducer::{
-    create_mission_and_enter, set_flags_for_create_mission_and_enter,
-    CreateMissionAndEnterCallbackId,
 };
 pub use create_named_character_reducer::{
     create_named_character, set_flags_for_create_named_character, CreateNamedCharacterCallbackId,
 };
+pub use create_tactical_server_for_request_reducer::{
+    create_tactical_server_for_request, set_flags_for_create_tactical_server_for_request,
+    CreateTacticalServerForRequestCallbackId,
+};
 pub use create_tactical_server_reducer::{
     create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
+};
+pub use define_armor_reducer::{define_armor, set_flags_for_define_armor, DefineArmorCallbackId};
+pub use define_item_reducer::{define_item, set_flags_for_define_item, DefineItemCallbackId};
+pub use define_shield_reducer::{
+    define_shield, set_flags_for_define_shield, DefineShieldCallbackId,
+};
+pub use define_weapon_reducer::{
+    define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
+};
+pub use end_tactical_server_by_instance_reducer::{
+    end_tactical_server_by_instance, set_flags_for_end_tactical_server_by_instance,
+    EndTacticalServerByInstanceCallbackId,
+};
+pub use end_tactical_server_reducer::{
+    end_tactical_server, set_flags_for_end_tactical_server, EndTacticalServerCallbackId,
 };
 pub use enter_mission_reducer::{
     enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
 };
+pub use equip_item_reducer::{equip_item, set_flags_for_equip_item, EquipItemCallbackId};
 pub use insert_new_character_reducer::{
     insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
 };
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
-pub use tactical_server_ready_reducer::{
-    set_flags_for_tactical_server_ready, tactical_server_ready, TacticalServerReadyCallbackId,
+pub use item_kind_type::ItemKind;
+pub use item_slot_type::ItemSlot;
+pub use item_table::*;
+pub use item_type::Item;
+pub use leave_mission_reducer::{
+    leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
 };
+pub use request_tactical_server_for_scene_reducer::{
+    request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
+    RequestTacticalServerForSceneCallbackId,
+};
+pub use request_tactical_server_reducer::{
+    request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
+};
+pub use tactical_server_request_table::*;
+pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
-pub use tactical_status_type::TacticalStatus;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -63,17 +135,18 @@ pub use tactical_status_type::TacticalStatus;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    CommitMission {
-        mission_id: String,
-        success: bool,
-        xp_gained: i32,
+    AddAndEquipItem {
+        character_id: u64,
+        item_id: String,
+        destination: ItemSlot,
+    },
+    ChangeInventoryItem {
+        character_id: u64,
+        item_id: String,
+        by_quantity: i32,
     },
     CreateCharacter {
         id: u64,
-    },
-    CreateMissionAndEnter {
-        character_id: u64,
-        scene_key: String,
     },
     CreateNamedCharacter {
         name: String,
@@ -81,19 +154,66 @@ pub enum Reducer {
     CreateTacticalServer {
         mission_id: String,
         scene_key: String,
+        addr: String,
+        cert_digest: String,
+    },
+    CreateTacticalServerForRequest {
+        mission_id: String,
+        addr: String,
+        cert_digest: String,
+    },
+    DefineArmor {
+        item_id: String,
+        weight: f32,
+        slot: ItemSlot,
+        dodge: f32,
+        coverage: f32,
+    },
+    DefineItem {
+        item_id: String,
+        weight: f32,
+    },
+    DefineShield {
+        item_id: String,
+        weight: f32,
+        block: f32,
+    },
+    DefineWeapon {
+        item_id: String,
+        weight: f32,
+        accuracy: f32,
+    },
+    EndTacticalServer {
+        success: bool,
+        xp_gained: i32,
+    },
+    EndTacticalServerByInstance {
+        server: TacticalServer,
+        success: bool,
+        xp_gained: i32,
     },
     EnterMission {
         character_id: u64,
-        mission_id: String,
+        server: __sdk::Identity,
+    },
+    EquipItem {
+        character_id: u64,
+        inventory_item_id: u64,
+        destination: ItemSlot,
     },
     InsertNewCharacter {
         name: String,
         id: u64,
     },
-    TacticalServerReady {
+    LeaveMission {
+        character_id: u64,
+    },
+    RequestTacticalServer {
         mission_id: String,
-        addr: String,
-        cert_digest: String,
+        scene_key: String,
+    },
+    RequestTacticalServerForScene {
+        scene_key: String,
     },
 }
 
@@ -104,14 +224,24 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::CommitMission { .. } => "commit_mission",
+            Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
+            Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CreateCharacter { .. } => "create_character",
-            Reducer::CreateMissionAndEnter { .. } => "create_mission_and_enter",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateTacticalServer { .. } => "create_tactical_server",
+            Reducer::CreateTacticalServerForRequest { .. } => "create_tactical_server_for_request",
+            Reducer::DefineArmor { .. } => "define_armor",
+            Reducer::DefineItem { .. } => "define_item",
+            Reducer::DefineShield { .. } => "define_shield",
+            Reducer::DefineWeapon { .. } => "define_weapon",
+            Reducer::EndTacticalServer { .. } => "end_tactical_server",
+            Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnterMission { .. } => "enter_mission",
+            Reducer::EquipItem { .. } => "equip_item",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
-            Reducer::TacticalServerReady { .. } => "tactical_server_ready",
+            Reducer::LeaveMission { .. } => "leave_mission",
+            Reducer::RequestTacticalServer { .. } => "request_tactical_server",
+            Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             _ => unreachable!(),
         }
     }
@@ -120,20 +250,18 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
-            "commit_mission" => Ok(__sdk::parse_reducer_args::<
-                commit_mission_reducer::CommitMissionArgs,
-            >("commit_mission", &value.args)?
+            "add_and_equip_item" => Ok(__sdk::parse_reducer_args::<
+                add_and_equip_item_reducer::AddAndEquipItemArgs,
+            >("add_and_equip_item", &value.args)?
+            .into()),
+            "change_inventory_item" => Ok(__sdk::parse_reducer_args::<
+                change_inventory_item_reducer::ChangeInventoryItemArgs,
+            >("change_inventory_item", &value.args)?
             .into()),
             "create_character" => Ok(__sdk::parse_reducer_args::<
                 create_character_reducer::CreateCharacterArgs,
             >("create_character", &value.args)?
             .into()),
-            "create_mission_and_enter" => {
-                Ok(__sdk::parse_reducer_args::<
-                    create_mission_and_enter_reducer::CreateMissionAndEnterArgs,
-                >("create_mission_and_enter", &value.args)?
-                .into())
-            }
             "create_named_character" => Ok(__sdk::parse_reducer_args::<
                 create_named_character_reducer::CreateNamedCharacterArgs,
             >("create_named_character", &value.args)?
@@ -142,18 +270,73 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 create_tactical_server_reducer::CreateTacticalServerArgs,
             >("create_tactical_server", &value.args)?
             .into()),
+            "create_tactical_server_for_request" => {
+                Ok(__sdk::parse_reducer_args::<
+                    create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs,
+                >("create_tactical_server_for_request", &value.args)?
+                .into())
+            }
+            "define_armor" => Ok(
+                __sdk::parse_reducer_args::<define_armor_reducer::DefineArmorArgs>(
+                    "define_armor",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "define_item" => Ok(
+                __sdk::parse_reducer_args::<define_item_reducer::DefineItemArgs>(
+                    "define_item",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "define_shield" => Ok(__sdk::parse_reducer_args::<
+                define_shield_reducer::DefineShieldArgs,
+            >("define_shield", &value.args)?
+            .into()),
+            "define_weapon" => Ok(__sdk::parse_reducer_args::<
+                define_weapon_reducer::DefineWeaponArgs,
+            >("define_weapon", &value.args)?
+            .into()),
+            "end_tactical_server" => Ok(__sdk::parse_reducer_args::<
+                end_tactical_server_reducer::EndTacticalServerArgs,
+            >("end_tactical_server", &value.args)?
+            .into()),
+            "end_tactical_server_by_instance" => {
+                Ok(__sdk::parse_reducer_args::<
+                    end_tactical_server_by_instance_reducer::EndTacticalServerByInstanceArgs,
+                >("end_tactical_server_by_instance", &value.args)?
+                .into())
+            }
             "enter_mission" => Ok(__sdk::parse_reducer_args::<
                 enter_mission_reducer::EnterMissionArgs,
             >("enter_mission", &value.args)?
             .into()),
+            "equip_item" => Ok(
+                __sdk::parse_reducer_args::<equip_item_reducer::EquipItemArgs>(
+                    "equip_item",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "insert_new_character" => Ok(__sdk::parse_reducer_args::<
                 insert_new_character_reducer::InsertNewCharacterArgs,
             >("insert_new_character", &value.args)?
             .into()),
-            "tactical_server_ready" => Ok(__sdk::parse_reducer_args::<
-                tactical_server_ready_reducer::TacticalServerReadyArgs,
-            >("tactical_server_ready", &value.args)?
+            "leave_mission" => Ok(__sdk::parse_reducer_args::<
+                leave_mission_reducer::LeaveMissionArgs,
+            >("leave_mission", &value.args)?
             .into()),
+            "request_tactical_server" => Ok(__sdk::parse_reducer_args::<
+                request_tactical_server_reducer::RequestTacticalServerArgs,
+            >("request_tactical_server", &value.args)?
+            .into()),
+            "request_tactical_server_for_scene" => {
+                Ok(__sdk::parse_reducer_args::<
+                    request_tactical_server_for_scene_reducer::RequestTacticalServerForSceneArgs,
+                >("request_tactical_server_for_scene", &value.args)?
+                .into())
+            }
             unknown => {
                 Err(
                     __sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo")
@@ -169,8 +352,16 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     character: __sdk::TableUpdate<Character>,
+    character_attributes: __sdk::TableUpdate<CharacterAttributes>,
+    character_equip: __sdk::TableUpdate<CharacterEquip>,
+    character_limbs: __sdk::TableUpdate<CharacterLimbs>,
+    character_skills: __sdk::TableUpdate<CharacterSkills>,
+    character_stats: __sdk::TableUpdate<CharacterStats>,
+    connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
+    item: __sdk::TableUpdate<Item>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
+    tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -182,12 +373,36 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character" => db_update
                     .character
                     .append(character_table::parse_table_update(table_update)?),
+                "character_attributes" => db_update.character_attributes.append(
+                    character_attributes_table::parse_table_update(table_update)?,
+                ),
+                "character_equip" => db_update
+                    .character_equip
+                    .append(character_equip_table::parse_table_update(table_update)?),
+                "character_limbs" => db_update
+                    .character_limbs
+                    .append(character_limbs_table::parse_table_update(table_update)?),
+                "character_skills" => db_update
+                    .character_skills
+                    .append(character_skills_table::parse_table_update(table_update)?),
+                "character_stats" => db_update
+                    .character_stats
+                    .append(character_stats_table::parse_table_update(table_update)?),
+                "connected_players" => db_update
+                    .connected_players
+                    .append(connected_players_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
+                "item" => db_update
+                    .item
+                    .append(item_table::parse_table_update(table_update)?),
                 "tactical_server" => db_update
                     .tactical_server
                     .append(tactical_server_table::parse_table_update(table_update)?),
+                "tactical_server_request" => db_update.tactical_server_request.append(
+                    tactical_server_request_table::parse_table_update(table_update)?,
+                ),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
@@ -217,12 +432,35 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
+        diff.character_attributes = cache.apply_diff_to_table::<CharacterAttributes>(
+            "character_attributes",
+            &self.character_attributes,
+        );
+        diff.character_equip =
+            cache.apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip);
+        diff.character_limbs =
+            cache.apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs);
+        diff.character_skills = cache
+            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
+        diff.character_stats =
+            cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
+        diff.item = cache
+            .apply_diff_to_table::<Item>("item", &self.item)
+            .with_updates_by_pk(|row| &row.id);
         diff.tactical_server = cache
             .apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server)
+            .with_updates_by_pk(|row| &row.identity);
+        diff.tactical_server_request = cache
+            .apply_diff_to_table::<TacticalServerRequest>(
+                "tactical_server_request",
+                &self.tactical_server_request,
+            )
             .with_updates_by_pk(|row| &row.mission_id);
+        diff.connected_players = cache
+            .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
         diff
     }
@@ -233,8 +471,16 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     character: __sdk::TableAppliedDiff<'r, Character>,
+    character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
+    character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
+    character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
+    character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
+    character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
+    connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
+    item: __sdk::TableAppliedDiff<'r, Item>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
+    tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -249,14 +495,50 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
         callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
+        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
+            "character_attributes",
+            &self.character_attributes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterEquip>(
+            "character_equip",
+            &self.character_equip,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
+            "character_limbs",
+            &self.character_limbs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
+            "character_skills",
+            &self.character_skills,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStats>(
+            "character_stats",
+            &self.character_stats,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
+            "connected_players",
+            &self.connected_players,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<Item>("item", &self.item, event);
         callbacks.invoke_table_row_callbacks::<TacticalServer>(
             "tactical_server",
             &self.tactical_server,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<TacticalServerRequest>(
+            "tactical_server_request",
+            &self.tactical_server_request,
             event,
         );
     }
@@ -979,7 +1261,15 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         character_table::register_table(client_cache);
+        character_attributes_table::register_table(client_cache);
+        character_equip_table::register_table(client_cache);
+        character_limbs_table::register_table(client_cache);
+        character_skills_table::register_table(client_cache);
+        character_stats_table::register_table(client_cache);
+        connected_players_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
+        item_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
+        tactical_server_request_table::register_table(client_cache);
     }
 }

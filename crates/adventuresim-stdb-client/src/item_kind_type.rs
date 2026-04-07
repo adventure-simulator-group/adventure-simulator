@@ -7,14 +7,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum TacticalStatus {
-    Pending,
+pub enum ItemKind {
+    Simple,
 
-    Ready,
+    Weapon,
 
-    Ended,
+    Armor,
+
+    Shield,
 }
 
-impl __sdk::InModule for TacticalStatus {
+impl __sdk::InModule for ItemKind {
     type Module = super::RemoteModule;
 }

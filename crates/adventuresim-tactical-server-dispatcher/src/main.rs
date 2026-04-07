@@ -1,16 +1,17 @@
 //! Tactical Spawner - Watches SpacetimeDB and spawns tactical-server processes
 //!
-//! Subscribes to the tactical_server table and spawns a server process
-//! whenever a new "pending" mission appears.
+//! Subscribes to the tactical_server_request table and spawns a server process
+//! whenever a new request appears. The spawned server will then call
+//! create_tactical_server_for_request to register itself.
 
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-use clap::Parser;
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
-use adventuresim_stdb_client::{DbConnection, TacticalServerTableAccess, TacticalStatus};
+use adventuresim_stdb_client::{DbConnection, TacticalServerRequestTableAccess};
+use clap::Parser;
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -71,19 +72,20 @@ fn main() {
         .build()
         .expect("Failed to connect to SpacetimeDB");
 
-    // Subscribe to tactical_server table
+    // Subscribe to tactical_server_request table
     conn.subscription_builder()
         .on_applied(|ctx| {
-            info!("Subscription applied, checking existing pending missions...");
-            for server in ctx.db.tactical_server().iter() {
-                if server.status == TacticalStatus::Pending {
-                    info!("Found existing pending mission: {}", server.mission_id);
-                }
+            info!("Subscription applied, checking existing pending requests...");
+            for request in ctx.db.tactical_server_request().iter() {
+                info!(
+                    "Found pending request: {} for scene {}",
+                    request.mission_id, request.scene_key
+                );
             }
         })
-        .subscribe(["SELECT * FROM tactical_server"]);
+        .subscribe(["SELECT * FROM tactical_server_request"]);
 
-    // Set up callback for new pending missions
+    // Set up callback for new tactical server requests
     let spawned_clone = spawned.clone();
     let next_port_clone = next_port.clone();
     let bin = args.tactical_server_bin.clone();
@@ -91,52 +93,51 @@ fn main() {
     let stdb_module = args.spacetimedb_module.clone();
     let host = args.host.clone();
 
-    conn.db.tactical_server().on_insert(move |_ctx, server| {
-        if server.status != TacticalStatus::Pending {
-            return;
-        }
-
-        let mut spawned = spawned_clone.lock().unwrap();
-        if spawned.contains(&server.mission_id) {
-            return;
-        }
-
-        let port = {
-            let mut p = next_port_clone.lock().unwrap();
-            let port = *p;
-            *p += 1;
-            port
-        };
-
-        info!(
-            "Spawning tactical-server for mission {} (scene: {}) on port {}",
-            server.mission_id, server.scene_key, port
-        );
-
-        match Command::new(&bin)
-            .args([
-                "--mission-id",
-                &server.mission_id,
-                "--scene-key",
-                &server.scene_key,
-                "--addr",
-                &SocketAddr::new(host, port).to_string(),
-                "--spacetimedb-url",
-                &stdb_url,
-                "--spacetimedb-module",
-                &stdb_module,
-            ])
-            .spawn()
-        {
-            Ok(child) => {
-                info!("Spawned tactical-server (pid {})", child.id());
-                spawned.insert(server.mission_id.clone());
+    conn.db
+        .tactical_server_request()
+        .on_insert(move |_ctx, request| {
+            let mut spawned = spawned_clone.lock().unwrap();
+            if spawned.contains(&request.mission_id) {
+                return;
             }
-            Err(e) => {
-                error!("Failed to spawn tactical-server: {}", e);
+
+            let port = {
+                let mut p = next_port_clone.lock().unwrap();
+                let port = *p;
+                *p += 1;
+                port
+            };
+
+            info!(
+                "Spawning tactical-server for mission {} (scene: {}) on port {}",
+                request.mission_id, request.scene_key, port
+            );
+
+            match Command::new(&bin)
+                .args([
+                    "--requested",
+                    "--mission-id",
+                    &request.mission_id,
+                    "--scene-key",
+                    &request.scene_key,
+                    "--addr",
+                    &SocketAddr::new(host, port).to_string(),
+                    "--spacetimedb-url",
+                    &stdb_url,
+                    "--spacetimedb-module",
+                    &stdb_module,
+                ])
+                .spawn()
+            {
+                Ok(child) => {
+                    info!("Spawned tactical-server (pid {})", child.id());
+                    spawned.insert(request.mission_id.clone());
+                }
+                Err(e) => {
+                    error!("Failed to spawn tactical-server: {}", e);
+                }
             }
-        }
-    });
+        });
 
     info!("Listening for pending missions...");
 

@@ -1,19 +1,19 @@
-#![feature(ptr_as_ref_unchecked)]
-
 //! Tactical Server - Minimal Lightyear game server
 //!
 //! Simple flow:
 //! 1. Started by spawner with mission_id arg
-//! 2. Calls tactical_server_ready reducer with connection info
+//! 2. Calls create_tactical_server_for_request reducer to register itself
 //! 3. Runs game for clients
-//! 4. Calls commit_mission reducer on timeout/exit
+//! 4. Calls end_tactical_server reducer on timeout/exit
 
+mod combat;
 mod stdb;
 mod terrain;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::NonZeroU32};
 
-use adventuresim_tactical_core::prelude::*;
+use adventuresim_stdb_client::*;
+use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
 use adventuresim_tactical_netcode::{
     lightyear::prelude::{
         server::{self, ClientOf},
@@ -23,7 +23,6 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
-use adventuresim_stdb_client::*;
 
 use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
 
@@ -40,6 +39,10 @@ struct Args {
     /// Address to listen on
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
+
+    /// Whether or not the server should be created for the associated request.
+    #[arg(long)]
+    requested: bool,
 
     /// Unique mission instance ID
     #[arg(long)]
@@ -96,7 +99,7 @@ fn main() {
             bevy::app::TerminalCtrlCHandlerPlugin,
         ))
         .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
-        .add_plugins((stdb::SpacetimeDbPlugin,))
+        .add_plugins((stdb::SpacetimeDbPlugin, combat::CombatPlugin))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -113,14 +116,13 @@ fn main() {
             ),
         )
         .add_observer(on_new_client_connected_hook)
+        .add_observer(on_new_client_disconnected_hook)
         .add_observer(on_server_started_hook)
         .run();
 }
 
-#[derive(Component)]
-struct LoadingPlayer {
-    id: u64,
-}
+#[derive(Component, Default)]
+struct LoadingPlayer;
 
 #[derive(Resource)]
 struct MissionState {
@@ -149,49 +151,69 @@ fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
 }
 
 fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
+    conn.subscribe("SELECT * FROM connected_players");
     conn.on_insert(
-        RemoteTables::tactical_server,
-        on_stdb_insert_tactical_server,
+        RemoteTables::connected_players,
+        on_stdb_insert_connected_players,
     );
-
-    conn.on_insert(RemoteTables::character, on_stdb_insert_character);
 }
 
-fn on_stdb_insert_tactical_server(InRef(server): InRef<TacticalServer>) {
-    info!("Synced a new tactical server from spacetimedb...");
-
-    match server.status {
-        TacticalStatus::Ready => {
-            info!("=== Tactical Server Ready ===");
-            info!("(server) Mission: {}", server.mission_id);
-            info!("(server) Scene  : {}", server.scene_key);
-        }
-        status => {
-            error!("Tactical server wasn't marked as ready: {status:?}");
-        }
-    }
-}
-
-fn on_stdb_insert_character(
-    InRef(character): InRef<Character>,
-    mut commands: Commands,
-    q_loading_characters: Query<(Entity, &LoadingPlayer)>,
+fn on_stdb_insert_connected_players(
+    InRef(player): InRef<ConnectedPlayer>,
+    mut cmd: Commands,
+    mut q_loading: Query<(Entity, &RemoteId), With<LoadingPlayer>>,
 ) {
-    info!("Synced a new character from spacetimedb...");
-
-    let Some((entity, _)) = q_loading_characters
-        .iter()
-        .find(|(_, loading)| loading.id == character.id)
+    let Some((entity, _)) = q_loading
+        .iter_mut()
+        .find(|(_, id)| id.0.to_bits() == player.character.id)
     else {
-        error!("SpacetimeDB insterted a new character, but there is no LoadingCharacter for it");
+        warn!(
+            "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
+            player.character.name, player.character.id
+        );
         return;
     };
 
-    commands.entity(entity).remove::<LoadingPlayer>().insert((
+    let skills = Skills {
+        melee_hours: player.skills.melee_hours,
+        dodge_hours: player.skills.dodge_hours,
+        block_hours: player.skills.block_hours,
+    };
+    let limbs = Limbs {
+        left_arm: player.limbs.left_arm,
+        right_arm: player.limbs.right_arm,
+        left_leg: player.limbs.left_leg,
+        right_leg: player.limbs.right_leg,
+        chest: player.limbs.chest,
+        stomach: player.limbs.stomach,
+        head: player.limbs.head,
+    };
+    let attributes = Attributes {
+        endurance: player.attrs.endurance,
+        immunity: player.attrs.immunity,
+        gut: player.attrs.gut,
+        strength: player.attrs.strength,
+        precision: player.attrs.precision,
+        agility: player.attrs.agility,
+        intelligence: player.attrs.intelligence,
+        instinct: player.attrs.instinct,
+        eyesight: player.attrs.eyesight,
+        hearing: player.attrs.hearing,
+    };
+    let stats = Stats {
+        calories_used: player.stats.calories_used,
+        focus: player.stats.focus,
+    };
+
+    cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Player {
-            name: character.name.clone(),
+            name: player.character.name.clone(),
         },
-        PlayerId(character.id),
+        PlayerId(player.character.id),
+        skills,
+        limbs,
+        attributes,
+        stats,
         CharacterController::default(),
         Collider::cylinder(0.4, 1.2),
         CollisionMargin(0.01),
@@ -199,13 +221,115 @@ fn on_stdb_insert_character(
         Replicate::to_clients(NetworkTarget::All),
     ));
 
-    info!("Player {entity:?} is loaded: {character:?}",);
+    for item in &player.items {
+        let Some(quantity) = NonZeroU32::new(item.quantity) else {
+            warn!(
+                "Got item '{}' with zero quantity for Player#{}; skipped",
+                item.item.id, player.character.id
+            );
+            continue;
+        };
+
+        let mut cmd = cmd.spawn((
+            ItemOf(entity),
+            ItemQuantity(quantity),
+            ItemProperties {
+                weight: item.item.weight,
+                id: item.item.id.clone(),
+            },
+            ControlledBy {
+                owner: entity,
+                lifetime: Lifetime::SessionBased,
+            },
+            Replicate::to_clients(NetworkTarget::All),
+        ));
+
+        match item.item.kind {
+            ItemKind::Simple => {}
+            ItemKind::Weapon => {
+                cmd.insert(WeaponItem {
+                    accuracy: item.item.accuracy,
+                });
+            }
+            ItemKind::Armor => {
+                if let Some(slot) = match item.item.slot {
+                    ItemSlot::LeftArm => Some(ArmorSlot::Arms(Some(ArmorSide::Left))),
+                    ItemSlot::RightArm => Some(ArmorSlot::Arms(Some(ArmorSide::Right))),
+                    ItemSlot::AnyArm => Some(ArmorSlot::Arms(None)),
+                    ItemSlot::LeftLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Left))),
+                    ItemSlot::RightLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Right))),
+                    ItemSlot::AnyLeg => Some(ArmorSlot::Legs(None)),
+                    ItemSlot::Head => Some(ArmorSlot::Head),
+                    ItemSlot::Chest => Some(ArmorSlot::Chest),
+                    ItemSlot::Stomach => Some(ArmorSlot::Stomach),
+                    slot => {
+                        warn!(
+                            "Got armor item '{}' with an invalid slot {slot:?} for Player#{}",
+                            item.item.id, player.character.id
+                        );
+                        None
+                    }
+                } {
+                    cmd.insert(ArmorItem {
+                        dodge: item.item.dodge,
+                        coverage: item.item.coverage,
+                        slot,
+                    });
+                }
+            }
+            ItemKind::Shield => {
+                cmd.insert(ShieldItem {
+                    block: item.item.block,
+                });
+            }
+        }
+
+        match item.equipped {
+            Some(ItemSlot::LeftHolding) => {
+                cmd.insert(EquipSlot::HoldingLeft);
+            }
+            Some(ItemSlot::RightHolding) => {
+                cmd.insert(EquipSlot::HoldingRight);
+            }
+            Some(ItemSlot::LeftArm) => {
+                cmd.insert(EquipSlot::ArmorLeftArm);
+            }
+            Some(ItemSlot::RightArm) => {
+                cmd.insert(EquipSlot::ArmorRightArm);
+            }
+            Some(ItemSlot::LeftLeg) => {
+                cmd.insert(EquipSlot::ArmorLeftLeg);
+            }
+            Some(ItemSlot::RightLeg) => {
+                cmd.insert(EquipSlot::ArmorRightLeg);
+            }
+            Some(ItemSlot::Chest) => {
+                cmd.insert(EquipSlot::ArmorChest);
+            }
+            Some(ItemSlot::Stomach) => {
+                cmd.insert(EquipSlot::ArmorStomach);
+            }
+            Some(ItemSlot::Head) => {
+                cmd.insert(EquipSlot::ArmorHead);
+            }
+            slot @ Some(
+                ItemSlot::None | ItemSlot::AnyHolding | ItemSlot::AnyArm | ItemSlot::AnyLeg,
+            ) => {
+                warn!(
+                    "Got equipped item '{}' with an invalid equip slot {slot:?} for Player#{}",
+                    item.item.id, player.character.id
+                );
+            }
+            _ => {}
+        }
+    }
+
+    info!("Player {entity:?} is fully loaded");
 }
 
 fn check_mission_timeout(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
-    args: Res<Args>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
@@ -227,10 +351,9 @@ fn check_mission_timeout(
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.reducers()
-        .commit_mission(args.mission_id.clone(), success, xp_gained)?;
+    conn.reducers().end_tactical_server(success, xp_gained)?;
 
-    info!("Mission committed successfully");
+    info!("Mission ended successfully");
     info!("Shutting down");
     exit.write(AppExit::Success);
     Ok(())
@@ -239,7 +362,7 @@ fn check_mission_timeout(
 fn on_server_started_hook(
     _event: On<Add, server::Started>,
     args: Res<Args>,
-    mut conn: ResMut<SpacetimeDb>,
+    conn: Res<SpacetimeDb>,
     mut commands: Commands,
 ) -> Result {
     info!("Creating a game scene for {}", args.scene_key);
@@ -294,52 +417,55 @@ fn on_server_started_hook(
 
     info!("Notifying spacetimedb that the server is ready...");
 
-    conn.reducers()
-        .create_tactical_server(args.mission_id.clone(), args.scene_key.clone())?;
-    conn.reducers().tactical_server_ready(
-        args.mission_id.clone(),
-        args.addr.to_string(),
-        default(),
-    )?;
-
-    // FIXME: maybe don't do raw sql please ?
-    let _handle = conn.subscribe(format!(
-        "SELECT * FROM tactical_server WHERE mission_id = '{}'",
-        args.mission_id
-    ));
+    if args.requested {
+        conn.reducers().create_tactical_server_for_request(
+            args.mission_id.clone(),
+            args.addr.to_string(),
+            default(),
+        )?;
+    } else {
+        conn.reducers().create_tactical_server(
+            args.mission_id.clone(),
+            args.scene_key.clone(),
+            args.addr.to_string(),
+            default(),
+        )?;
+    }
 
     Ok(())
 }
 
 fn on_new_client_connected_hook(
     event: On<Add, Connected>,
+    mut cmd: Commands,
     query: Query<&RemoteId, With<ClientOf>>,
-    args: Res<Args>,
-    mut commands: Commands,
-    mut conn: ResMut<SpacetimeDb>,
+    conn: ResMut<SpacetimeDb>,
 ) -> Result {
     let client_id = query.get(event.entity)?;
     let client_id = client_id.0;
     let id = client_id.to_bits();
 
     conn.reducers().create_character(id)?;
-    conn.reducers().enter_mission(id, args.mission_id.clone())?;
+    conn.reducers().enter_mission(id, conn.identity())?;
 
-    conn.subscribe(format!("SELECT * FROM character WHERE id = {id}"));
-    let entity = commands
-        .spawn((
-            LoadingPlayer { id },
-            ControlledBy {
-                owner: event.entity,
-                lifetime: default(),
-            },
-        ))
-        .id();
+    cmd.entity(event.entity).insert(LoadingPlayer);
+    info!("Character {id} connected and entered mission, awaiting loading",);
 
-    info!(
-        "Created a new loading player entity {:?} for client {:?}",
-        entity, client_id
-    );
+    Ok(())
+}
+
+fn on_new_client_disconnected_hook(
+    event: On<Remove, Connected>,
+    query: Query<&RemoteId, With<ClientOf>>,
+    conn: Res<SpacetimeDb>,
+) -> Result {
+    let client_id = query.get(event.entity)?;
+    let client_id = client_id.0;
+    let id = client_id.to_bits();
+
+    conn.reducers().leave_mission(id)?;
+
+    info!("Character {id} left the mission");
 
     Ok(())
 }

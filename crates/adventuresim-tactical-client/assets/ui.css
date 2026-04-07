@@ -12,9 +12,9 @@
   }
 }
 
-.success { color: rgb(129, 199, 132); }
-.primary { color: rgb(144, 202, 249); }
-.error   { color: rgb(229, 115, 115); }
+.success { color: var(--success); }
+.primary { color: var(--primary); }
+.error   { color: var(--error); }
 
 :root {
   width: 100%;
@@ -22,6 +22,9 @@
   font-size: 16px;
   color: #fffa;
   font-family: "SN Pro";
+  --success: rgb(129, 199, 132);
+  --primary: rgb(144, 202, 249);
+  --error: rgb(229, 115, 115);
 
   &>* {
     margin: 20px;
@@ -53,6 +56,55 @@ text,span {
 
   &>*>span {
     color: #eee6;
+  }
+}
+
+#player {
+  top: 50px;
+  position: absolute;
+  flex-direction: column;
+  width: 330px;
+
+  gap: 15px;
+  background: #0009;
+  padding: 15px;
+  border-radius: 15px;
+
+  &>* {
+    flex-wrap: wrap;
+
+    &>:nth-child(1) {
+      width: 100%;
+      font-size: 18px;
+      padding-bottom: 8px;
+    }
+    &>* {
+      width: 50%;
+      padding-bottom: 2px;
+    }
+  }
+  &>#equipped-items>#equipped-list,
+  &>#inventory-items>#inventory-list {
+    flex-wrap: wrap;
+    width: 100%;
+
+    &>* {
+      width: 100%;
+      padding-bottom: 2px;
+    }
+  }
+
+  &>#skills>:nth-child(1) {
+    color: var(--primary);
+  }
+  &>#limbs>:nth-child(1) {
+    color: var(--success);
+  }
+  &>#equipped-items>:nth-child(1) {
+    color: rgb(200, 200, 50);
+  }
+  &>#inventory-items>:nth-child(1) {
+    color: rgb(130, 130, 120);
   }
 }
 

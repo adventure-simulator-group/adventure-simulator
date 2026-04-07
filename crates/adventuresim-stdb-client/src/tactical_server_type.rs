@@ -4,14 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::tactical_status_type::TacticalStatus;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TacticalServer {
+    pub identity: __sdk::Identity,
     pub mission_id: String,
     pub scene_key: String,
-    pub status: TacticalStatus,
     pub addr: String,
     pub cert_digest: String,
 }
