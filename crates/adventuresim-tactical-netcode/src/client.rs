@@ -53,19 +53,19 @@ fn connect_added_clients(
 }
 
 fn announce_join(
+    mut commands: Commands,
     client: Single<&AdventureSimulatorClient>,
-    mut join_requests: MessageWriter<JoinRequest>,
 ) {
-    join_requests.write(JoinRequest {
+    commands.client_trigger(JoinRequest {
         player_id: client.player_id,
     });
 }
 
 fn send_player_input(
+    mut commands: Commands,
     players: Query<(&Actions<Player>, &CharacterLook), With<ControlledPlayer>>,
     movements: Query<&Action<input::Movement>>,
     jumps: Query<&Action<input::Jump>>,
-    mut inputs: MessageWriter<PlayerInputMessage>,
 ) {
     for (actions, look) in &players {
         let movement = movements
@@ -79,7 +79,7 @@ fn send_player_input(
             .map(|jump| **jump)
             .unwrap_or(false);
 
-        inputs.write(PlayerInputMessage {
+        commands.client_trigger(PlayerInputMessage {
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump,
@@ -88,16 +88,16 @@ fn send_player_input(
 }
 
 fn send_attack(
+    mut commands: Commands,
     players: Query<&Actions<Player>, With<ControlledPlayer>>,
     attacks: Query<&ActionEvents, With<Action<Attack>>>,
-    mut commands: MessageWriter<AttackCommand>,
 ) {
     for actions in &players {
         let Some(events) = attacks.iter_many(actions).next() else {
             continue;
         };
         if events.contains(ActionEvents::START) {
-            commands.write(AttackCommand);
+            commands.client_trigger(AttackCommand);
         }
     }
 }
