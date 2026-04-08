@@ -28,8 +28,12 @@ adventuresim-core = { version = "0.1.0" }
 bevy = { version = "0.18.0", default-features = false, features = [
   "reflect_auto_register",
   "bevy_log",
+  "serialize",
 ] }
-lightyear = { version = "0.26.4", default-features = false }
+aeronet = { version = "0.20.0" }
+aeronet_replicon = { version = "0.20.0", default-features = false }
+aeronet_websocket = { version = "0.20.0", default-features = false }
+bevy_replicon = { version = "0.39.4", default-features = false, features = ["client", "server"] }
 avian3d = { version = "0.6.0-rc.1", default-features = false, features = [
     "3d",
     "f32",
@@ -65,9 +69,6 @@ adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
 adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
 
-# https://github.com/cBournhonesque/lightyear/pull/1405
-# https://github.com/cBournhonesque/lightyear/pull/1420
-lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "avian-0.6.0-rc.1" }
 # https://github.com/janhohenheim/bevy_ahoy/pull/66
 # https://github.com/janhohenheim/bevy_ahoy/pull/67
 # https://github.com/janhohenheim/bevy_ahoy/pull/76

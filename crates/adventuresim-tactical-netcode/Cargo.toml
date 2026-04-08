@@ -8,32 +8,18 @@ license.workspace = true
 
 [features]
 default = []
-server = ["lightyear/server"]
-client = ["lightyear/client"]
+server = ["aeronet_replicon/server", "aeronet_websocket/server"]
+client = ["aeronet_replicon/client", "aeronet_websocket/client"]
 
 [dependencies]
 adventuresim-tactical-core.workspace = true
-lightyear = { "workspace" = true, features = [
-  "replication",
-  "interpolation",
-  "netcode",
-  "udp",
-  "input_bei",
-  "avian3d",
-] }
+aeronet.workspace = true
+aeronet_replicon.workspace = true
+aeronet_websocket.workspace = true
+bevy_replicon.workspace = true
 bevy_enhanced_input.workspace = true
 bevy.workspace = true
 serde.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
-
-[target."cfg(target_family = \"wasm\")".dependencies]
-console_error_panic_hook.workspace = true
-rand.workspace = true
-getrandom.workspace = true
-getrandom_02.workspace = true
 
 [lints]
 workspace = true

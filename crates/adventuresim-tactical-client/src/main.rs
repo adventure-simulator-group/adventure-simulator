@@ -13,6 +13,7 @@ use adventuresim_tactical_netcode::prelude::*;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
+use bevy::input_focus::InputDispatchPlugin;
 use bevy::light::light_consts::lux;
 use bevy::light::AtmosphereEnvironmentMapLight;
 use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
@@ -20,13 +21,13 @@ use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
+    ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
 };
 use clap::Parser;
 #[cfg(target_family = "wasm")]
 use console_error_panic_hook;
-use std::net::SocketAddr;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -39,9 +40,9 @@ struct Args {
     /// Client ID
     #[arg(long)]
     id: u64,
-    /// Server addr
+    /// Server URL or host:port
     #[arg(long)]
-    server_addr: SocketAddr,
+    server_addr: String,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -77,6 +78,8 @@ fn run(args: Args) {
                 ..default()
             }),
             FrameTimeDiagnosticsPlugin::default(),
+            EnhancedInputPlugin,
+            InputDispatchPlugin,
         ))
         .add_plugins((
             AdventureSimulatorCorePlugins
@@ -86,14 +89,21 @@ fn run(args: Args) {
                 }),
             AdventureSimulatorNetPlugins,
         ))
+        .add_input_context::<Player>()
         .add_plugins((ui::UiPlugin, player::PlayerPlugin))
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
         .add_systems(Startup, (setup_scene, setup_client))
         .add_systems(
             Update,
             (
-                capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
-                release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
+                capture_cursor.run_if(
+                    input_just_pressed(MouseButton::Left)
+                        .and(any_with_component::<CharacterController>),
+                ),
+                release_cursor.run_if(
+                    input_just_pressed(KeyCode::Escape)
+                        .and(any_with_component::<CharacterController>),
+                ),
             ),
         )
         .add_observer(on_game_scene_added_hook)
@@ -103,8 +113,8 @@ fn run(args: Args) {
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
-        id: args.id,
-        server_addr: args.server_addr.clone(),
+        player_id: args.id,
+        server_url: args.server_addr.clone(),
         ..default()
     });
 }
