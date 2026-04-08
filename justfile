@@ -8,19 +8,15 @@ spacetime_port := "3000"
 ui_port := "8000"
 tactical_port := "6000"
 public_bind := "0.0.0.0"
-
 spacetime_url := "http://localhost:" + spacetime_port
 spacetime_module := "adventuresim-stdb-module"
-
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
-
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
 http_log := run_dir + "/http.log"
 stdb_pid := run_dir + "/spacetime.pid"
 stdb_log := run_dir + "/spacetime.log"
-
 cert_dir := "utils"
 cert_pem := cert_dir + "/cert.pem"
 cert_key := cert_dir + "/key.pem"
@@ -36,8 +32,8 @@ preflight:
 
 # Start SpacetimeDB, publish module, and serve the strategic UI
 dev: preflight spacetime-start publish serve-ui
-    @echo "Strategic UI: http://localhost:{{ui_port}}/map.html"
-    @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
+    @echo "Strategic UI: http://localhost:{{ ui_port }}/map.html"
+    @echo "SpacetimeDB: http://localhost:{{ spacetime_port }}"
     @echo "Optional tactical server: just tactical"
     @echo "Build WASM client: just build-wasm"
 
@@ -46,101 +42,111 @@ dev-open: dev open-ui
 
 # Full dev with WASM game built
 dev-full: preflight build-wasm spacetime-start publish serve-ui
-    @echo "Strategic UI: http://localhost:{{ui_port}}/map.html"
-    @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
+    @echo "Strategic UI: http://localhost:{{ ui_port }}/map.html"
+    @echo "SpacetimeDB: http://localhost:{{ spacetime_port }}"
     @echo "WASM game: ready (click 'Enter World' after starting a mission)"
 
 # Start SpacetimeDB if it is not already listening
 spacetime-start:
-    @mkdir -p "{{run_dir}}"
-    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
-        echo "SpacetimeDB already running on http://localhost:{{spacetime_port}}"; \
+    @mkdir -p "{{ run_dir }}"
+    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{ spacetime_port }})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+        echo "SpacetimeDB already running on http://localhost:{{ spacetime_port }}"; \
     else \
-        rm -f "{{stdb_pid}}"; \
-        spacetime start --listen-addr 127.0.0.1:{{spacetime_port}} >"{{stdb_log}}" 2>&1 & \
-        echo $! > "{{stdb_pid}}"; \
+        rm -f "{{ stdb_pid }}"; \
+        spacetime start --listen-addr 127.0.0.1:{{ spacetime_port }} >"{{ stdb_log }}" 2>&1 & \
+        echo $! > "{{ stdb_pid }}"; \
         sleep 2; \
-        if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
-            echo "SpacetimeDB failed to start. See {{stdb_log}}"; \
+        if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{ spacetime_port }})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+            echo "SpacetimeDB failed to start. See {{ stdb_log }}"; \
             exit 1; \
         fi; \
     fi
 
 # Start SpacetimeDB bound to all interfaces (for VPS/public use)
 spacetime-start-public:
-    @mkdir -p "{{run_dir}}"
-    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
-        echo "SpacetimeDB already running on http://localhost:{{spacetime_port}}"; \
+    @mkdir -p "{{ run_dir }}"
+    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{ spacetime_port }})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+        echo "SpacetimeDB already running on http://localhost:{{ spacetime_port }}"; \
     else \
-        rm -f "{{stdb_pid}}"; \
-        spacetime start --listen-addr {{public_bind}}:{{spacetime_port}} >"{{stdb_log}}" 2>&1 & \
-        echo $! > "{{stdb_pid}}"; \
+        rm -f "{{ stdb_pid }}"; \
+        spacetime start --listen-addr {{ public_bind }}:{{ spacetime_port }} >"{{ stdb_log }}" 2>&1 & \
+        echo $! > "{{ stdb_pid }}"; \
         sleep 2; \
-        if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
-            echo "SpacetimeDB failed to start. See {{stdb_log}}"; \
+        if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{ spacetime_port }})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+            echo "SpacetimeDB failed to start. See {{ stdb_log }}"; \
             exit 1; \
         fi; \
     fi
 
 # Stop SpacetimeDB
 spacetime-stop:
-    @if [ -f "{{stdb_pid}}" ] && kill -0 "$(cat "{{stdb_pid}}")" 2>/dev/null; then \
-        kill "$(cat "{{stdb_pid}}")"; \
-        rm -f "{{stdb_pid}}"; \
+    @if [ -f "{{ stdb_pid }}" ] && kill -0 "$(cat "{{ stdb_pid }}")" 2>/dev/null; then \
+        kill "$(cat "{{ stdb_pid }}")"; \
+        rm -f "{{ stdb_pid }}"; \
         echo "SpacetimeDB stopped"; \
     else \
-        rm -f "{{stdb_pid}}"; \
+        rm -f "{{ stdb_pid }}"; \
         echo "SpacetimeDB not running"; \
     fi
 
 # Publish the strategic module (optional target can be provided: just publish target=localhost)
 publish server=spacetime_url:
-    @cd "{{strategic_dir}}" && spacetime publish --server {{server}} {{spacetime_module}}
+    @cd "{{ strategic_dir }}" && spacetime publish --server {{ server }} {{ spacetime_module }}
 
 # Publish and clear the module database
 publish-reset server=spacetime_url:
-    @cd "{{strategic_dir}}" && spacetime publish --delete-data=always --server {{server}} {{spacetime_module}}
+    @cd "{{ strategic_dir }}" && spacetime publish --delete-data=always --server {{ server }} {{ spacetime_module }}
 
 # Serve the strategic UI locally (with proxy to SpacetimeDB)
 serve-ui:
-    @mkdir -p "{{run_dir}}"
-    @if [ -f "{{http_pid}}" ] && kill -0 "$(cat "{{http_pid}}")" 2>/dev/null; then \
-        echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
+    @mkdir -p "{{ run_dir }}"
+    @if [ -f "{{ http_pid }}" ] && kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+        echo "UI server already running (pid $(cat "{{ http_pid }}"))"; \
     else \
-        rm -f "{{http_pid}}"; \
-        SPACETIMEDB_URL={{spacetime_url}} python3 "{{strategic_static}}/serve.py" {{ui_port}} >"{{http_log}}" 2>&1 & \
-        echo $! > "{{http_pid}}"; \
+        rm -f "{{ http_pid }}"; \
+        SPACETIMEDB_URL={{ spacetime_url }} python3 "{{ strategic_static }}/serve.py" {{ ui_port }} >"{{ http_log }}" 2>&1 & \
+        echo $! > "{{ http_pid }}"; \
         sleep 1; \
-        echo "UI server running on http://localhost:{{ui_port}}/map.html"; \
+        if ! kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+            echo "UI server failed to start. See {{ http_log }}"; \
+            rm -f "{{ http_pid }}"; \
+            exit 1; \
+        fi; \
+        echo "UI server running on http://localhost:{{ ui_port }}/map.html"; \
     fi
 
 # Serve the strategic UI on all interfaces (for VPS/public use)
 serve-ui-public:
-    @mkdir -p "{{run_dir}}"
-    @if [ -f "{{http_pid}}" ] && kill -0 "$(cat "{{http_pid}}")" 2>/dev/null; then \
-        echo "UI server already running (pid $(cat "{{http_pid}}"))"; \
+    @mkdir -p "{{ run_dir }}"
+    @if [ -f "{{ http_pid }}" ] && kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+        echo "UI server already running (pid $(cat "{{ http_pid }}"))"; \
     else \
-        rm -f "{{http_pid}}"; \
-        SPACETIMEDB_URL={{spacetime_url}} python3 "{{strategic_static}}/serve.py" {{ui_port}} >"{{http_log}}" 2>&1 & \
-        echo $! > "{{http_pid}}"; \
+        rm -f "{{ http_pid }}"; \
+        SPACETIMEDB_URL={{ spacetime_url }} python3 "{{ strategic_static }}/serve.py" {{ ui_port }} >"{{ http_log }}" 2>&1 & \
+        echo $! > "{{ http_pid }}"; \
         sleep 1; \
-        echo "UI server running on http://{{public_bind}}:{{ui_port}}/map.html"; \
+        if ! kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+            echo "UI server failed to start. See {{ http_log }}"; \
+            rm -f "{{ http_pid }}"; \
+            exit 1; \
+        fi; \
+        echo "UI server running on http://{{ public_bind }}:{{ ui_port }}/map.html"; \
     fi
 
 # Stop the strategic UI server
 stop-ui:
-    @if [ -f "{{http_pid}}" ] && kill -0 "$(cat "{{http_pid}}")" 2>/dev/null; then \
-        kill "$(cat "{{http_pid}}")"; \
-        rm -f "{{http_pid}}"; \
+    @if [ -f "{{ http_pid }}" ] && kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+        kill "$(cat "{{ http_pid }}")"; \
+        rm -f "{{ http_pid }}"; \
         echo "UI server stopped"; \
     else \
-        rm -f "{{http_pid}}"; \
+        rm -f "{{ http_pid }}"; \
         echo "UI server not running"; \
     fi
 
 # Open the strategic UI in a browser
 open-ui:
-    @url="http://localhost:{{ui_port}}/map.html"; \
+    @url="http://localhost:{{ ui_port }}/map.html"; \
     if command -v xdg-open >/dev/null 2>&1; then \
         xdg-open "$$url" >/dev/null 2>&1; \
     elif command -v open >/dev/null 2>&1; then \
@@ -158,88 +164,93 @@ stop: spacetime-stop stop-ui
 
 # Run the stack on a VPS (public bind). Requires firewall/DNS setup.
 vps-serve domain="localhost": preflight spacetime-start-public publish serve-ui-public
-    @echo "Public UI: http://{{domain}}:{{ui_port}}/map.html"
-    @echo "SpacetimeDB: http://{{domain}}:{{spacetime_port}}"
-    @echo "Open firewall ports {{ui_port}} and {{spacetime_port}}, and point DNS for {{domain}} to this VPS."
+    @echo "Public UI: http://{{ domain }}:{{ ui_port }}/map.html"
+    @echo "SpacetimeDB: http://{{ domain }}:{{ spacetime_port }}"
+    @echo "Open firewall ports {{ ui_port }} and {{ spacetime_port }}, and point DNS for {{ domain }} to this VPS."
     @echo "If you serve the UI over HTTPS, proxy SpacetimeDB over HTTPS too (or use ?spacetimedb=http://<host>:<port>)."
 
 # Show status of local services
 status:
-    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
-        echo "SpacetimeDB: running (http://localhost:{{spacetime_port}})"; \
+    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{ spacetime_port }})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+        echo "SpacetimeDB: running (http://localhost:{{ spacetime_port }})"; \
     else \
         echo "SpacetimeDB: not running"; \
     fi
-    @if [ -f "{{http_pid}}" ] && kill -0 "$(cat "{{http_pid}}")" 2>/dev/null; then \
-        echo "UI server: running (http://localhost:{{ui_port}}/)"; \
+    @if [ -f "{{ http_pid }}" ] && kill -0 "$(cat "{{ http_pid }}")" 2>/dev/null; then \
+        echo "UI server: running (http://localhost:{{ ui_port }}/)"; \
     else \
         echo "UI server: not running"; \
     fi
 
 # Build the strategic SpacetimeDB module
 build-strategic:
-    @cd "{{strategic_dir}}" && spacetime build
+    @cd "{{ strategic_dir }}" && spacetime build
 
 # Generate SpacetimeDB SDK client bindings
 generate-db-client:
-	@echo "Generating SpacetimeDB client bindings..."
-	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{strategic_dir}}"
-	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
+    @echo "Generating SpacetimeDB client bindings..."
+    @spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{ strategic_dir }}"
+    @echo "Bindings generated in crates/adventuresim-stdb-client/src/"
 
 # Build the tactical server and spawner
 build-tactical: generate-db-client
-	@cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
+    @cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
 
 # Build the WASM client
 build-wasm:
-	@echo "Building WASM client..."
-	@command -v wasm-bindgen >/dev/null 2>&1 || { echo "Missing wasm-bindgen. Install with: cargo install wasm-bindgen-cli"; exit 1; }
-	@rustup target add wasm32-unknown-unknown 2>/dev/null || true
-	@cargo build --package adventuresim-tactical-client --target wasm32-unknown-unknown --release
-	@mkdir -p "{{strategic_static}}/wasm"
-	@wasm-bindgen \
-		--out-dir "{{strategic_static}}/wasm" \
-		--target web \
-		--no-typescript \
-		target/wasm32-unknown-unknown/release/adventuresim-tactical-client.wasm
-	@echo "WASM built to {{strategic_static}}/wasm/"
-	@ls -lh "{{strategic_static}}/wasm/"
+    @bash scripts/build_wasm.sh
 
 # Build everything
 build-all: build-strategic build-tactical build-wasm
 
 # Run the tactical spawner (watches for pending missions and starts servers)
 spawner: build-tactical
-	@cargo run --package adventuresim-tactical-server-dispatcher -- \
-		--spacetimedb-url {{spacetime_url}} \
-		--spacetimedb-module {{spacetime_module}} \
-		--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
-		--base-port {{tactical_port}}
+    @./target/debug/adventuresim-tactical-server-dispatcher \
+    	--spacetimedb-url {{ spacetime_url }} \
+    	--spacetimedb-module {{ spacetime_module }} \
+    	--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+    	--base-port {{ tactical_port }}
+
+# Browser-first local dev: build WASM client, start strategic stack, then run the tactical spawner
+web-dev: build-wasm dev
+    @if [ ! -x "./target/debug/adventuresim-tactical-server" ] || [ ! -x "./target/debug/adventuresim-tactical-server-dispatcher" ]; then \
+    	echo "Building tactical server binaries..."; \
+    	just build-tactical; \
+    fi
+    @echo "Browser tactical client: ready"
+    @echo "Strategic UI: http://localhost:{{ ui_port }}/map.html"
+    @echo "Starting tactical spawner..."
+    @./target/debug/adventuresim-tactical-server-dispatcher \
+    	--spacetimedb-url {{ spacetime_url }} \
+    	--spacetimedb-module {{ spacetime_module }} \
+    	--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+    	--base-port {{ tactical_port }}
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills":
-	@cargo run --package adventuresim-tactical-server -- \
-		--addr "0.0.0.0:{{tactical_port}}" \
-		--mission-id {{mission_id}} \
-		--scene-key {{scene_key}} \
-		--spacetimedb-url {{spacetime_url}} \
-		--spacetimedb-module {{spacetime_module}} \
-		--no-timeout
+    @cargo run --package adventuresim-tactical-server -- \
+    	--addr "0.0.0.0:{{ tactical_port }}" \
+    	--mission-id {{ mission_id }} \
+    	--scene-key {{ scene_key }} \
+    	--spacetimedb-url {{ spacetime_url }} \
+    	--spacetimedb-module {{ spacetime_module }} \
+    	--no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
 client id="0":
-	@cargo run --package adventuresim-tactical-client -- \
-		--id "{{id}}" \
-		--server-addr "127.0.0.1:{{tactical_port}}"
+    @cargo run --package adventuresim-tactical-client -- \
+    	--id "{{ id }}" \
+    	--server-addr "127.0.0.1:{{ tactical_port }}"
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":
     @command -v openssl >/dev/null 2>&1 || { echo "Missing openssl. Install it before running."; exit 1; }
-    @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
-    @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
+    @bash "{{ cert_dir }}/generate_certificates.sh" "{{ sans }}"
+    @echo "Wrote {{ cert_pem }}, {{ cert_key }}, and {{ cert_dir }}/digest.txt"
 
 # Windows development recipe
 # Local dev with native Windows exes (GPU accelerated, no WSLg, no UDP issues)
+
 # Cross-compiles server + client to Windows, stages to E:\adventure-sim-dev, runs both
 win-dev:
     #!/usr/bin/env bash
@@ -249,11 +260,20 @@ win-dev:
     STAGE_DIR="/mnt/e/adventure-sim-dev"
     SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
     CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-client.exe"
+    SERVER_LOG="$STAGE_DIR/tactical-server.log"
+    WINDOWS_HOST_IP="$(awk '/^nameserver / {print $2; exit}' /etc/resolv.conf)"
+    BROWSER_URL_WINDOWS="http://127.0.0.1:8000/tactical.html?server=127.0.0.1:{{ tactical_port }}&id=2&autostart=1"
+    BROWSER_URL_WSL="http://127.0.0.1:8000/tactical.html?server=${WINDOWS_HOST_IP}:{{ tactical_port }}&id=2&autostart=1"
 
     # Kill any leftover instances
     cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
     cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1" || true
     sleep 0.5
+
+    echo "Building browser client..."
+    bash scripts/build_wasm.sh
+    echo "Ensuring browser asset server is running..."
+    just serve-ui
 
     echo "Building server (Windows)..."
     cargo build -p adventuresim-tactical-server --target $WIN_TARGET --profile win-dev 2>&1
@@ -280,22 +300,40 @@ win-dev:
 
     echo "Starting server..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-server.exe \
+        --addr 0.0.0.0:{{ tactical_port }} \
         --mission-id test-mission \
         --scene-key hills \
         --no-timeout \
-        --spacetimedb-url http://localhost:{{spacetime_port}} \
-        --spacetimedb-module {{spacetime_module}} &
+        --spacetimedb-url http://localhost:{{ spacetime_port }} \
+        --spacetimedb-module {{ spacetime_module }} >"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
-    sleep 3
+    for _ in $(seq 1 30); do
+        if powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{ tactical_port }} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+            break
+        fi
+        sleep 1
+    done
+    if ! powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{ tactical_port }} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+        echo "Tactical server failed to open 127.0.0.1:{{ tactical_port }}"
+        echo "Last server log lines:"
+        tail -n 80 "$SERVER_LOG" || true
+        exit 1
+    fi
 
     echo "Starting client 0..."
-    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 0 --server-addr 127.0.0.1:{{tactical_port}} &
+    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 0 --server-addr 127.0.0.1:{{ tactical_port }} &
     CLIENT0_PID=$!
     sleep 1
 
     echo "Starting client 1..."
-    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
+    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{ tactical_port }} &
     CLIENT1_PID=$!
+
+    echo ""
+    echo "Optional browser client:"
+    echo "  Windows browser: $BROWSER_URL_WINDOWS"
+    echo "  WSL/Linux browser: $BROWSER_URL_WSL"
+    echo "Use a different 'id' query param if you want more browser clients."
 
     wait
 

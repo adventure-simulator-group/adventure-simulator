@@ -3,7 +3,9 @@ use avian3d::{
     PhysicsPlugins,
 };
 use bevy::prelude::*;
-use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
+use bevy_ahoy::{
+    camera::AhoyCameraPlugin, input::AhoyInputPlugin, AhoyFixedUpdateUtilsPlugin, AhoyPlugins,
+};
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
@@ -28,7 +30,11 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                 AhoyPlugins::default(),
             ));
         } else {
-            app.add_plugins((AhoyCameraPlugin,));
+            app.add_plugins((
+                AhoyCameraPlugin,
+                AhoyInputPlugin,
+                AhoyFixedUpdateUtilsPlugin,
+            ));
         }
     }
 }

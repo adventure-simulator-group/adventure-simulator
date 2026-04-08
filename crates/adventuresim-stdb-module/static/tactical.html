@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventure Simulator Tactical</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #050608;
+            color: #f2f2f2;
+            font-family: system-ui, sans-serif;
+        }
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #overlay {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: min(420px, calc(100vw - 32px));
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            backdrop-filter: blur(8px);
+        }
+        #controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        input, button {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: inherit;
+            font: inherit;
+        }
+        input {
+            flex: 1 1 180px;
+            min-width: 0;
+        }
+        button {
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.14);
+        }
+        #status {
+            font-size: 0.95rem;
+            color: #b7d3ff;
+            white-space: pre-wrap;
+        }
+        #hint {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+    <div id="overlay">
+        <strong>Browser Tactical Client</strong>
+        <div id="controls">
+            <input id="server" type="text" value="127.0.0.1:6000" spellcheck="false">
+            <input id="player-id" type="number" value="2" min="0" step="1">
+            <button id="connect" type="button">Connect</button>
+        </div>
+        <div id="status">Ready.</div>
+        <div id="hint">Default is a third client for `just win-dev`: `127.0.0.1:6000`, player id `2`.</div>
+    </div>
+
+    <script type="module">
+        const params = new URLSearchParams(window.location.search);
+        const serverInput = document.getElementById('server');
+        const playerIdInput = document.getElementById('player-id');
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connect');
+
+        let started = false;
+
+        const defaultServer = '127.0.0.1:6000';
+        serverInput.value = defaultServer;
+
+        if (params.get('server')) {
+            serverInput.value = params.get('server');
+        }
+        if (params.get('id')) {
+            playerIdInput.value = params.get('id');
+        }
+
+        function setStatus(message) {
+            statusEl.textContent = message;
+        }
+
+        async function startClient() {
+            if (started) {
+                return;
+            }
+            started = true;
+
+            const server = serverInput.value.trim() || defaultServer;
+            const playerId = playerIdInput.value.trim() || '2';
+            setStatus(`Connecting to ${server} as player ${playerId}...`);
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('server', server);
+            url.searchParams.set('id', playerId);
+            history.replaceState(null, '', url);
+
+            try {
+                const module = await import('./wasm/adventuresim-tactical-client.js');
+                await module.default();
+                await module.wasm_run([
+                    'adventuresim-tactical-client',
+                    '--server-addr', server,
+                    '--id', playerId,
+                ]);
+                setStatus(`Running.\nServer: ${server}\nPlayer: ${playerId}`);
+            } catch (error) {
+                started = false;
+                console.error(error);
+                setStatus(`Failed to start client.\n${error}`);
+            }
+        }
+
+        connectBtn.addEventListener('click', startClient);
+
+        if (params.has('autostart') || params.has('server') || params.has('id')) {
+            startClient();
+        }
+    </script>
+</body>
+</html>

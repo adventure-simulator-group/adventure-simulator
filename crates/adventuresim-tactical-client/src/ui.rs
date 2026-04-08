@@ -22,8 +22,10 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FlairPlugin)
-            .add_systems(Startup, setup_ui)
+        #[cfg(not(target_family = "wasm"))]
+        app.add_plugins(FlairPlugin);
+
+        app.add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
                 (
@@ -100,10 +102,16 @@ struct PlayerSpanOf(pub Entity);
 #[relationship_target(relationship = PlayerSpanOf, linked_spawn)]
 struct PlayerSpan(Vec<Entity>);
 
-fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_ui(mut commands: Commands, _asset_server: Option<Res<AssetServer>>) {
     commands.spawn((
         Node::default(),
-        NodeStyleSheet::new(asset_server.load("ui.css")),
+        #[cfg(not(target_family = "wasm"))]
+        NodeStyleSheet::new(
+            _asset_server
+                .as_deref()
+                .expect("AssetServer should exist on native")
+                .load("ui.css"),
+        ),
         children![
             (Name::new("crosshair"), Node::default()),
             (
@@ -254,7 +262,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn update_stats_ui(
-    diagnostics: Res<DiagnosticsStore>,
+    diagnostics: Option<Res<DiagnosticsStore>>,
     player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
@@ -272,7 +280,8 @@ fn update_stats_ui(
     }
 
     if let Some(fps) = diagnostics
-        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .as_deref()
+        .and_then(|diagnostics| diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS))
         .and_then(|fps| fps.smoothed())
     {
         spans.p1().0 = format!("{fps:.2}",);
@@ -377,8 +386,8 @@ fn update_connection_ui(
         Option<&PeerAddr>,
         Option<&LocalAddr>,
     )>,
-    client_state: Res<State<ClientState>>,
-    client_stats: Res<ClientStats>,
+    client_state: Option<Res<State<ClientState>>>,
+    client_stats: Option<Res<ClientStats>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<ServerInfoSpan>>,
         Single<&mut TextSpan, With<ClientInfoSpan>>,
@@ -393,19 +402,24 @@ fn update_connection_ui(
     spans.p1().0 = local
         .map(|addr| addr.0.to_string())
         .unwrap_or_else(|| "browser session".to_string());
-    let (status_text, status_class) = match client_state.get() {
-        ClientState::Connected => (
-            format!(
-                "\nConnected\nRTT {:.0}ms | Loss {:.1}% | Rx {:.0}bps | Tx {:.0}bps",
-                client_stats.rtt * 1000.0,
-                client_stats.packet_loss * 100.0,
-                client_stats.received_bps,
-                client_stats.sent_bps,
-            ),
-            "success",
-        ),
-        ClientState::Connecting => ("\nConnecting...".to_string(), "primary"),
-        ClientState::Disconnected => ("\nDisconnected".to_string(), "error"),
+
+    let (status_text, status_class) = match client_state.as_deref().map(State::get) {
+        Some(ClientState::Connected) => {
+            let stats = client_stats.as_deref().copied().unwrap_or_default();
+            (
+                format!(
+                    "\nConnected\nRTT {:.0}ms | Loss {:.1}% | Rx {:.0}bps | Tx {:.0}bps",
+                    stats.rtt * 1000.0,
+                    stats.packet_loss * 100.0,
+                    stats.received_bps,
+                    stats.sent_bps,
+                ),
+                "success",
+            )
+        }
+        Some(ClientState::Connecting) => ("\nConnecting...".to_string(), "primary"),
+        Some(ClientState::Disconnected) => ("\nDisconnected".to_string(), "error"),
+        None => ("\nInitializing...".to_string(), "primary"),
     };
 
     spans.p2().0 .0 = status_text;

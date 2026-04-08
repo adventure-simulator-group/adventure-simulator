@@ -10,14 +10,11 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
-use bevy::camera::Exposure;
-use bevy::core_pipeline::tonemapping::Tonemapping;
+#[cfg(target_family = "wasm")]
+use bevy::ecs::error::{BevyError, ErrorContext};
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input_focus::InputDispatchPlugin;
 use bevy::light::light_consts::lux;
-use bevy::light::AtmosphereEnvironmentMapLight;
-use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
-use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
@@ -30,6 +27,14 @@ use clap::Parser;
 use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
+#[cfg(not(target_family = "wasm"))]
+use {
+    bevy::camera::Exposure,
+    bevy::core_pipeline::tonemapping::Tonemapping,
+    bevy::light::AtmosphereEnvironmentMapLight,
+    bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion},
+    bevy::post_process::bloom::Bloom,
+};
 
 mod player;
 mod ui;
@@ -63,8 +68,12 @@ pub fn wasm_run(args: Vec<String>) {
 }
 
 fn run(args: Args) {
-    App::new()
-        .add_plugins((
+    let mut app = App::new();
+
+    #[cfg(target_family = "wasm")]
+    app.set_error_handler(log_bevy_error);
+
+    app.add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Adventure Simulator - Tactical".into(),
@@ -111,6 +120,11 @@ fn run(args: Args) {
         .run();
 }
 
+#[cfg(target_family = "wasm")]
+fn log_bevy_error(error: BevyError, ctx: ErrorContext) {
+    error!("Bevy {} error: {ctx:?}: {error}", ctx.kind());
+}
+
 fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
@@ -119,6 +133,28 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
     });
 }
 
+#[cfg(target_family = "wasm")]
+fn setup_scene(mut commands: Commands) {
+    commands.spawn((
+        Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
+        DirectionalLight {
+            shadows_enabled: false,
+            illuminance: lux::DIRECT_SUNLIGHT,
+            ..default()
+        },
+    ));
+
+    commands.spawn((
+        Camera3d::default(),
+        Projection::Perspective(PerspectiveProjection {
+            fov: 80.0_f32.to_radians(),
+            ..default()
+        }),
+        Msaa::Off,
+    ));
+}
+
+#[cfg(not(target_family = "wasm"))]
 fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<ScatteringMedium>>) {
     // Spawn a directional light
     commands.spawn((
@@ -151,8 +187,8 @@ fn on_game_scene_added_hook(
     event: On<Add, SceneId>,
     mut commands: Commands,
     query: Query<(&SceneId, &SceneTerrain)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+    materials: Option<ResMut<Assets<StandardMaterial>>>,
 ) -> Result {
     let (id, terrain) = query.get(event.entity)?;
     info!(
@@ -167,6 +203,11 @@ fn on_game_scene_added_hook(
             warn!("Unknown scene: {id}");
             Color::BLACK
         }
+    };
+
+    let (Some(mut meshes), Some(mut materials)) = (meshes, materials) else {
+        warn!("Skipping scene mesh spawn because render assets are unavailable");
+        return Ok(());
     };
 
     // Terrain mesh

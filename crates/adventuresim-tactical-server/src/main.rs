@@ -4,7 +4,10 @@ mod combat;
 mod stdb;
 mod terrain;
 
-use std::{net::SocketAddr, num::NonZeroU32};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    num::NonZeroU32,
+};
 
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::{inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*};
@@ -86,7 +89,7 @@ fn main() {
             bevy::app::PanicHandlerPlugin,
             bevy::app::TaskPoolPlugin::default(),
             bevy::log::LogPlugin {
-                filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+                filter: "adventuresim_tactical_server=info,adventuresim_tactical_netcode=info,aeronet_websocket=debug,tokio_tungstenite=debug,bevy_app=warn,bevy_ecs=warn".to_string(),
                 ..default()
             },
             bevy::time::TimePlugin,
@@ -156,6 +159,12 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
     info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
     commands.spawn(AdventureSimulatorServer { addr: args.addr });
+
+    if matches!(args.addr.ip(), IpAddr::V4(ip) if ip == Ipv4Addr::LOCALHOST) {
+        let ipv6_loopback = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), args.addr.port());
+        info!("Also opening IPv6 loopback listener on {ipv6_loopback}");
+        commands.spawn(AdventureSimulatorServer { addr: ipv6_loopback });
+    }
 
     if !args.no_timeout {
         info!("Will timeout in {} seconds", args.timeout);

@@ -22,7 +22,7 @@ pub mod prelude {
     pub use crate::AdventureSimulatorNetPlugins;
 }
 
-const FIXED_TIMESTEP_HZ: f64 = 64.0;
+const FIXED_TIMESTEP_HZ: f64 = 30.0;
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:6000";
 
 bevy::app::plugin_group! {
