@@ -117,7 +117,6 @@ fn main() {
             (
                 check_mission_timeout,
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
-                (on_join_request, on_player_input).run_if(in_state(ServerState::Running)),
             ),
         )
         .add_systems(
@@ -125,6 +124,8 @@ fn main() {
             apply_networked_player_input.run_if(in_state(ServerState::Running)),
         )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
+        .add_observer(on_join_request)
+        .add_observer(on_player_input)
         .add_observer(on_client_disconnected)
         .run();
 }
@@ -421,52 +422,48 @@ fn on_server_started(
 }
 
 fn on_join_request(
-    mut join_requests: MessageReader<FromClient<JoinRequest>>,
+    join: On<FromClient<JoinRequest>>,
     mut commands: Commands,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
     conn: Res<SpacetimeDb>,
 ) -> Result {
-    for join in join_requests.read() {
-        let Some(client) = join.client_id.entity() else {
-            continue;
-        };
+    let Some(client) = join.client_id.entity() else {
+        return Ok(());
+    };
 
-        if loading_players.contains(client) || players.contains(client) {
-            continue;
-        }
-
-        conn.reducers().create_character(join.player_id)?;
-        conn.reducers().enter_mission(join.player_id, conn.identity())?;
-
-        commands.entity(client).insert(LoadingPlayer {
-            requested_player_id: join.player_id,
-        });
-
-        info!(
-            "Character {} connected and entered mission, awaiting loading",
-            join.player_id
-        );
+    if loading_players.contains(client) || players.contains(client) {
+        return Ok(());
     }
+
+    conn.reducers().create_character(join.player_id)?;
+    conn.reducers().enter_mission(join.player_id, conn.identity())?;
+
+    commands.entity(client).insert(LoadingPlayer {
+        requested_player_id: join.player_id,
+    });
+
+    info!(
+        "Character {} connected and entered mission, awaiting loading",
+        join.player_id
+    );
 
     Ok(())
 }
 
 fn on_player_input(
-    mut input_messages: MessageReader<FromClient<PlayerInputMessage>>,
+    input: On<FromClient<PlayerInputMessage>>,
     mut players: Query<&mut NetworkPlayerState, With<Player>>,
 ) {
-    for input in input_messages.read() {
-        let Some(entity) = input.client_id.entity() else {
-            continue;
-        };
+    let Some(entity) = input.client_id.entity() else {
+        return;
+    };
 
-        let Ok(mut state) = players.get_mut(entity) else {
-            continue;
-        };
+    let Ok(mut state) = players.get_mut(entity) else {
+        return;
+    };
 
-        state.input = **input;
-    }
+    state.input = **input;
 }
 
 fn on_client_disconnected(

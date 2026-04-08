@@ -34,8 +34,8 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ItemOf>()
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
-            .add_client_message::<JoinRequest>(Channel::Ordered)
-            .add_client_message::<PlayerInputMessage>(Channel::Unreliable)
-            .add_client_message::<AttackCommand>(Channel::Ordered);
+            .add_client_event::<JoinRequest>(Channel::Ordered)
+            .add_client_event::<PlayerInputMessage>(Channel::Unreliable)
+            .add_client_event::<AttackCommand>(Channel::Ordered);
     }
 }
