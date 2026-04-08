@@ -72,3 +72,7 @@ lightyear = { git = "https://github.com/barsoosayque/lightyear", branch = "avian
 # https://github.com/janhohenheim/bevy_ahoy/pull/67
 # https://github.com/janhohenheim/bevy_ahoy/pull/76
 bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }
+
+[profile.win-dev]
+inherits = "dev"
+strip = "debuginfo"

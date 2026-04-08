@@ -344,18 +344,18 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<&InventoryItems, (With<CharacterController>, Changed<InventoryItems>)>,
+    player: Single<Entity, With<CharacterController>>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
     q_items: Query<ItemQuery, With<ItemOf>>,
 ) {
-    let items = player.into_inner();
+    let player_entity = player.into_inner();
     let equipped_list_entity = equipped_list.into_inner();
     cmd.entity(equipped_list_entity).despawn_children();
     let inventory_list_entity = inventory_list.into_inner();
     cmd.entity(inventory_list_entity).despawn_children();
 
-    for item in q_items.iter_many(items.iter()) {
+    for item in q_items.iter().filter(|i| i.item_of.is_some_and(|of| of.0 == player_entity)) {
         let list = if item.slot.is_some() {
             equipped_list_entity
         } else {

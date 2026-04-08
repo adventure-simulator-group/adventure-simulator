@@ -121,8 +121,11 @@ fn main() {
         .run();
 }
 
-#[derive(Component, Default)]
-struct LoadingPlayer;
+#[derive(Component)]
+struct LoadingPlayer {
+    connection: Entity,
+    client_id: PeerId,
+}
 
 #[derive(Resource)]
 struct MissionState {
@@ -161,11 +164,11 @@ fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
 fn on_stdb_insert_connected_players(
     InRef(player): InRef<ConnectedPlayer>,
     mut cmd: Commands,
-    mut q_loading: Query<(Entity, &RemoteId), With<LoadingPlayer>>,
+    mut q_loading: Query<(Entity, &LoadingPlayer)>,
 ) {
-    let Some((entity, _)) = q_loading
+    let Some((entity, loading)) = q_loading
         .iter_mut()
-        .find(|(_, id)| id.0.to_bits() == player.character.id)
+        .find(|(_, l)| l.client_id.to_bits() == player.character.id)
     else {
         warn!(
             "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
@@ -173,6 +176,9 @@ fn on_stdb_insert_connected_players(
         );
         return;
     };
+
+    let connection = loading.connection;
+    let client_id = loading.client_id;
 
     let skills = Skills {
         melee_hours: player.skills.melee_hours,
@@ -219,6 +225,11 @@ fn on_stdb_insert_connected_players(
         CollisionMargin(0.01),
         Transform::from_xyz(0.0, 50.0, 0.0),
         Replicate::to_clients(NetworkTarget::All),
+        InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
+        ControlledBy {
+            owner: connection,
+            lifetime: Lifetime::SessionBased,
+        },
     ));
 
     for item in &player.items {
@@ -238,7 +249,7 @@ fn on_stdb_insert_connected_players(
                 id: item.item.id.clone(),
             },
             ControlledBy {
-                owner: entity,
+                owner: connection,
                 lifetime: Lifetime::SessionBased,
             },
             Replicate::to_clients(NetworkTarget::All),
@@ -441,15 +452,18 @@ fn on_new_client_connected_hook(
     query: Query<&RemoteId, With<ClientOf>>,
     conn: ResMut<SpacetimeDb>,
 ) -> Result {
-    let client_id = query.get(event.entity)?;
-    let client_id = client_id.0;
+    let remote_id = query.get(event.entity)?;
+    let client_id = remote_id.0;
     let id = client_id.to_bits();
 
     conn.reducers().create_character(id)?;
     conn.reducers().enter_mission(id, conn.identity())?;
 
-    cmd.entity(event.entity).insert(LoadingPlayer);
-    info!("Character {id} connected and entered mission, awaiting loading",);
+    cmd.spawn(LoadingPlayer {
+        connection: event.entity,
+        client_id,
+    });
+    info!("Character {id} connected and entered mission, awaiting loading");
 
     Ok(())
 }
