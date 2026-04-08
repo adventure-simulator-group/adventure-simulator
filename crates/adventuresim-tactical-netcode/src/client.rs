@@ -20,9 +20,6 @@ impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         let tick_duration = Duration::from_secs_f64(FIXED_TICK_DURATION);
         app.add_plugins(ClientPlugins { tick_duration });
-
-        // On client, players should have interpolated components for better visuals.
-        app.register_required_components::<Player, Interpolated>();
     }
 }
 
