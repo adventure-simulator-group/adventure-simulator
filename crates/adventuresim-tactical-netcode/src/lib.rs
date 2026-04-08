@@ -3,39 +3,27 @@ compile_error!("The `server` feature cannot be enabled when compiling for wasm32
 
 #[cfg(feature = "client")]
 pub mod client;
-mod look;
-pub mod protocol;
+pub mod message;
 pub mod replication;
 #[cfg(feature = "server")]
 pub mod server;
 
-pub use lightyear;
+pub use aeronet;
+pub use aeronet_replicon;
+pub use aeronet_websocket;
+pub use bevy_replicon;
 
 pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::AdventureSimulatorClient;
-    pub use crate::lightyear;
-    pub use crate::protocol::ProtocolSettings;
+    pub use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;
     pub use crate::AdventureSimulatorNetPlugins;
 }
 
 const FIXED_TIMESTEP_HZ: f64 = 64.0;
-const FIXED_TICK_DURATION: f64 = 1.0 / FIXED_TIMESTEP_HZ;
-/// 0 means that the OS will assign any available port
-#[cfg(feature = "client")]
-const DEFAULT_CLIENT_PORT: u16 = 0;
-#[cfg(feature = "client")]
-const DEFAULT_CLIENT_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
-    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-    DEFAULT_CLIENT_PORT,
-);
-const DEFAULT_SERVER_PORT: u16 = 5888;
-const DEFAULT_SERVER_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
-    std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-    DEFAULT_SERVER_PORT,
-);
+pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:6000";
 
 bevy::app::plugin_group! {
     #[derive(Debug)]
@@ -45,6 +33,5 @@ bevy::app::plugin_group! {
         #[custom(cfg(feature = "client"))]
         crate::client:::AdventureSimulatorClientPlugin,
         crate::replication:::AdventureSimulatorReplicationPlugin,
-        crate::look:::AdventureSimulatorCharacterLookPlugin,
     }
 }

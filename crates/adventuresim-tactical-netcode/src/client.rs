@@ -1,133 +1,125 @@
-use std::net::SocketAddr;
-use std::time::Duration;
-
-use crate::prelude::ProtocolSettings;
-use crate::protocol::SEND_INTERVAL;
-use crate::{DEFAULT_CLIENT_ADDR, DEFAULT_SERVER_ADDR, FIXED_TICK_DURATION};
-use adventuresim_tactical_core::player::Player;
-use bevy::ecs::lifecycle::HookContext;
-use bevy::ecs::world::DeferredWorld;
+use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
+use crate::DEFAULT_SERVER_URL;
+use adventuresim_tactical_core::prelude::*;
+use aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin};
+use aeronet_websocket::client::{ClientConfig, WebSocketClient, WebSocketClientPlugin};
 use bevy::prelude::*;
-use lightyear::netcode::client_plugin::NetcodeConfig;
-use lightyear::netcode::NetcodeClient;
-use lightyear::prelude::client::*;
-use lightyear::prelude::*;
+use bevy_replicon::prelude::*;
 
 #[derive(Default)]
 pub struct AdventureSimulatorClientPlugin;
 
 impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
-        let tick_duration = Duration::from_secs_f64(FIXED_TICK_DURATION);
-        app.add_plugins(ClientPlugins { tick_duration });
+        app.add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
+            .add_systems(
+                Update,
+                connect_added_clients.run_if(not(in_state(ClientState::Connecting))),
+            )
+            .add_systems(OnEnter(ClientState::Connected), announce_join)
+            .add_systems(
+                FixedUpdate,
+                (send_player_input, send_attack).run_if(in_state(ClientState::Connected)),
+            );
     }
 }
 
 #[derive(Component, Clone, Debug)]
-#[component(immutable, on_add = Self::on_add)]
-#[require(Name = Name::from("Client"), Client)]
+#[require(Name = Name::from("Client"))]
 pub struct AdventureSimulatorClient {
-    pub id: u64,
-    pub server_addr: SocketAddr,
-    pub addr: SocketAddr,
-    pub protocol_settings: ProtocolSettings,
+    pub player_id: u64,
+    pub server_url: String,
 }
 
 impl Default for AdventureSimulatorClient {
     fn default() -> Self {
         Self {
-            id: 0,
-            server_addr: DEFAULT_SERVER_ADDR,
-            addr: DEFAULT_CLIENT_ADDR,
-            protocol_settings: Default::default(),
+            player_id: 0,
+            server_url: DEFAULT_SERVER_URL.to_string(),
         }
     }
 }
 
-impl AdventureSimulatorClient {
-    fn on_add(mut world: DeferredWorld, context: HookContext) {
-        let entity = context.entity;
-        world.commands().queue(move |world: &mut World| -> Result {
-            let mut entity_mut = world.entity_mut(entity);
-            let AdventureSimulatorClient {
-                id: client_id,
-                server_addr,
-                addr,
-                protocol_settings,
-            } = entity_mut.take::<Self>().unwrap();
+fn connect_added_clients(
+    mut commands: Commands,
+    clients: Query<(Entity, &AdventureSimulatorClient), Added<AdventureSimulatorClient>>,
+) {
+    for (entity, client) in &clients {
+        commands.entity(entity).insert(AeronetRepliconClient);
+        commands
+            .entity(entity)
+            .queue(WebSocketClient::connect(websocket_config(&client.server_url), normalize_server_url(&client.server_url)));
+    }
+}
 
-            // use dummy zeroed key explicitly here.
-            let auth = Authentication::Manual {
-                server_addr: server_addr,
-                client_id: client_id,
-                private_key: protocol_settings.private_key.0,
-                protocol_id: protocol_settings.id,
-            };
-            let netcode_config = NetcodeConfig {
-                // Make sure that the server times out clients when their connection is closed
-                client_timeout_secs: 3,
-                token_expire_secs: -1,
-                ..default()
-            };
-            entity_mut.insert((
-                InputTimelineConfig::default()
-                    .with_sync_config(SyncConfig {
-                        jitter_margin: SEND_INTERVAL,
-                        ..default()
-                    })
-                    .with_input_delay(InputDelayConfig::no_prediction()),
-                NetcodeClient::new(auth, netcode_config)?,
-                LocalAddr(addr),
-                UdpIo::default(),
-                PeerAddr(server_addr),
-                ReplicationReceiver::default(),
-                ReplicationSender::new(SEND_INTERVAL, SendUpdatesMode::SinceLastAck, false),
-            ));
+fn announce_join(
+    client: Single<&AdventureSimulatorClient>,
+    mut join_requests: MessageWriter<JoinRequest>,
+) {
+    join_requests.write(JoinRequest {
+        player_id: client.player_id,
+    });
+}
 
-            world.trigger(Connect { entity });
-            Ok(())
+fn send_player_input(
+    players: Query<(&Actions<Player>, &CharacterLook), With<ControlledPlayer>>,
+    movements: Query<&Action<input::Movement>>,
+    jumps: Query<&Action<input::Jump>>,
+    mut inputs: MessageWriter<PlayerInputMessage>,
+) {
+    for (actions, look) in &players {
+        let movement = movements
+            .iter_many(actions)
+            .next()
+            .map(|movement| **movement)
+            .unwrap_or_default();
+        let jump = jumps
+            .iter_many(actions)
+            .next()
+            .map(|jump| **jump)
+            .unwrap_or(false);
+
+        inputs.write(PlayerInputMessage {
+            movement,
+            look: Vec2::new(look.yaw, look.pitch),
+            jump,
         });
     }
 }
 
-// /// Read certificate digest from alternate sources, for WASM builds.
-// // #[cfg(target_family = "wasm")]
-// #[allow(unreachable_patterns)]
-// pub fn modify_digest_on_wasm(client_settings: &mut ClientSettings) -> Option<String> {
-//     if let Some(new_digest) = get_digest_on_wasm() {
-//         match &client_settings.transport {
-//             ClientTransports::WebTransport { certificate_digest } => {
-//                 client_settings.transport = ClientTransports::WebTransport {
-//                     certificate_digest: new_digest.clone(),
-//                 };
-//                 Some(new_digest)
-//             }
-//             // This could be unreachable if only WebTransport feature is enabled.
-//             // hence we suppress this warning with the allow directive above.
-//             _ => None,
-//         }
-//     } else {
-//         None
-//     }
-// }
+fn send_attack(
+    players: Query<&Actions<Player>, With<ControlledPlayer>>,
+    attacks: Query<&ActionEvents, With<Action<Attack>>>,
+    mut commands: MessageWriter<AttackCommand>,
+) {
+    for actions in &players {
+        let Some(events) = attacks.iter_many(actions).next() else {
+            continue;
+        };
+        if events.contains(ActionEvents::START) {
+            commands.write(AttackCommand);
+        }
+    }
+}
 
-// // #[cfg(target_family = "wasm")]
-// pub fn get_digest_on_wasm() -> Option<String> {
-//     let window = web_sys::window().expect("expected window");
+#[cfg(target_family = "wasm")]
+fn websocket_config(_server_url: &str) -> ClientConfig {
+    ClientConfig::default()
+}
 
-//     if let Ok(obj) = window.location().hash() {
-//         info!("Using cert digest from window.location().hash()");
-//         let cd = obj.replace("#", "");
-//         if cd.len() > 10 {
-//             // lazy sanity check.
-//             return Some(cd);
-//         }
-//     }
+#[cfg(not(target_family = "wasm"))]
+fn websocket_config(server_url: &str) -> ClientConfig {
+    if normalize_server_url(server_url).starts_with("wss://") {
+        ClientConfig::default()
+    } else {
+        ClientConfig::builder().with_no_encryption()
+    }
+}
 
-//     if let Some(obj) = window.get("CERT_DIGEST") {
-//         info!("Using cert digest from window.CERT_DIGEST");
-//         return Some(obj.as_string().expect("CERT_DIGEST should be a string"));
-//     }
-
-//     None
-// }
+pub fn normalize_server_url(server_url: &str) -> String {
+    if server_url.contains("://") {
+        server_url.to_string()
+    } else {
+        format!("ws://{server_url}")
+    }
+}
