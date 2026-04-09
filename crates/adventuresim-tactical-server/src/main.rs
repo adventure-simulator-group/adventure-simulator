@@ -14,20 +14,17 @@ use adventuresim_tactical_netcode::{
     prelude::*,
 };
 use bevy::prelude::*;
+use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
 use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
+use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
 
 /// Level map size.
 const TERRAIN_SIZE: usize = 100;
-
-const PLAYER_EYE_HEIGHT: f32 = 1.2;
-const PLAYER_MOVE_SPEED: f32 = 7.0;
-const PLAYER_JUMP_SPEED: f32 = 6.5;
-const PLAYER_GRAVITY: f32 = 18.0;
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
@@ -99,7 +96,7 @@ fn main() {
             AdventureSimulatorCorePlugins
                 .build()
                 .set(AdventureSimulatorPhysicsPlugin {
-                    enable_simulation: false,
+                    enable_simulation: true,
                 }),
             AdventureSimulatorNetPlugins,
         ))
@@ -120,7 +117,7 @@ fn main() {
             ),
         )
         .add_systems(
-            FixedUpdate,
+            FixedPreUpdate,
             apply_networked_player_input.run_if(in_state(ServerState::Running)),
         )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
@@ -138,7 +135,7 @@ struct LoadingPlayer {
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct NetworkPlayerState {
     pub input: PlayerInputMessage,
-    pub vertical_velocity: f32,
+    pub previous_jump: bool,
 }
 
 #[derive(Resource)]
@@ -176,6 +173,7 @@ fn on_stdb_insert_connected_players(
     q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
 ) {
+    let player_collider = player_collider();
     let Some((entity, _loading)) = q_loading
         .iter()
         .find(|(_, loading)| loading.requested_player_id == player.character.id)
@@ -222,7 +220,7 @@ fn on_stdb_insert_connected_players(
         .next()
         .and_then(|terrain| terrain.height_at(Vec2::ZERO))
         .unwrap_or_default()
-        + PLAYER_EYE_HEIGHT;
+        + player_spawn_offset(&player_collider);
 
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Replicated,
@@ -234,7 +232,9 @@ fn on_stdb_insert_connected_players(
         limbs,
         attributes,
         stats,
+        CharacterController::default(),
         CharacterLook::default(),
+        player_collider,
         Transform::from_xyz(0.0, spawn_height, 0.0),
         NetworkPlayerState::default(),
     ));
@@ -393,11 +393,14 @@ fn on_server_started(
     };
     generator.period = gen_period;
     let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
+    let terrain_collider = terrain.collider();
 
     commands.spawn((
         Replicated,
         SceneId(args.scene_key.clone()),
         terrain,
+        RigidBody::Static,
+        terrain_collider,
         Transform::default(),
     ));
 
@@ -453,7 +456,7 @@ fn on_join_request(
 
 fn on_player_input(
     input: On<FromClient<PlayerInputMessage>>,
-    mut players: Query<&mut NetworkPlayerState, With<Player>>,
+    mut players: Query<&mut NetworkPlayerState>,
 ) {
     let Some(entity) = input.client_id.entity() else {
         return;
@@ -501,43 +504,33 @@ fn on_client_disconnected(
 }
 
 fn apply_networked_player_input(
-    time: Res<Time<Fixed>>,
-    scene: Query<&SceneTerrain>,
-    mut players: Query<(&mut Transform, &mut CharacterLook, &mut NetworkPlayerState), With<Player>>,
+    mut players: Query<
+        (
+            &mut AccumulatedInput,
+            &mut CharacterLook,
+            &mut NetworkPlayerState,
+        ),
+        With<Player>,
+    >,
 ) {
-    let delta = time.delta_secs();
-    let Some(terrain) = scene.iter().next() else {
-        return;
-    };
-
-    for (mut transform, mut look, mut state) in &mut players {
+    for (mut accumulated_input, mut look, mut state) in &mut players {
         look.yaw = state.input.look.x;
         look.pitch = state.input.look.y.clamp(-1.5, 1.5);
-        transform.rotation = Quat::from_rotation_y(look.yaw + std::f32::consts::PI);
 
-        let yaw_rotation = Quat::from_rotation_y(look.yaw);
-        let forward = yaw_rotation * Vec3::NEG_Z;
-        let right = yaw_rotation * Vec3::X;
-        let movement = state.input.movement.clamp_length_max(1.0);
-        let horizontal_velocity = (right * movement.x + forward * movement.y) * PLAYER_MOVE_SPEED;
-        transform.translation += horizontal_velocity * delta;
+        accumulated_input.last_movement = Some(state.input.movement.clamp_length_max(1.0));
 
-        let ground = terrain
-            .height_at(Vec2::new(transform.translation.x, transform.translation.z))
-            .unwrap_or_default()
-            + PLAYER_EYE_HEIGHT;
-        let on_ground = transform.translation.y <= ground + 0.05;
-
-        if on_ground && state.input.jump {
-            state.vertical_velocity = PLAYER_JUMP_SPEED;
+        if state.input.jump && !state.previous_jump {
+            accumulated_input.jumped = Some(Stopwatch::new());
         }
 
-        state.vertical_velocity -= PLAYER_GRAVITY * delta;
-        transform.translation.y += state.vertical_velocity * delta;
-
-        if transform.translation.y < ground {
-            transform.translation.y = ground;
-            state.vertical_velocity = 0.0;
-        }
+        state.previous_jump = state.input.jump;
     }
+}
+
+fn player_collider() -> Collider {
+    Collider::cylinder(0.4, 1.2)
+}
+
+fn player_spawn_offset(collider: &Collider) -> f32 {
+    -collider.aabb(default(), Rotation::default()).min.y
 }
