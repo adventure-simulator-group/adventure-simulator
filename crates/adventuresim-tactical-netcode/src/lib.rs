@@ -23,6 +23,10 @@ pub mod prelude {
 }
 
 const FIXED_TIMESTEP_HZ: f64 = 64.0;
+pub const DEFAULT_SERVER_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+    6000,
+);
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:6000";
 
 bevy::app::plugin_group! {

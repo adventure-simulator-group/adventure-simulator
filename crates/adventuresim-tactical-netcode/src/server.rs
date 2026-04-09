@@ -4,6 +4,8 @@ use aeronet_replicon::server::{AeronetRepliconServer, AeronetRepliconServerPlugi
 use aeronet_websocket::server::{ServerConfig, WebSocketServer, WebSocketServerPlugin};
 use bevy::prelude::*;
 
+use crate::DEFAULT_SERVER_ADDR;
+
 #[derive(Default)]
 pub struct AdventureSimulatorServerPlugin;
 
@@ -22,9 +24,7 @@ pub struct AdventureSimulatorServer {
 
 impl Default for AdventureSimulatorServer {
     fn default() -> Self {
-        Self {
-            addr: SocketAddr::from(([127, 0, 0, 1], 6000)),
-        }
+        Self { addr: DEFAULT_SERVER_ADDR }
     }
 }
 
