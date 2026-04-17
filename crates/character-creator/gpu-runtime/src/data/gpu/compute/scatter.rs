@@ -1,4 +1,7 @@
 use crate::prelude::*;
+use crate::data::gpu::resource::{ResourceType, GpuResource};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScatterSignature {
@@ -6,18 +9,38 @@ pub struct ScatterSignature {
     pub input_element_type: ResourceBaseType,
     pub output_element_type: ResourceBaseType,
     pub index_type: Option<String>,
+    pub index_param_name: Option<String>,
     pub param_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ScatterDefinition {
     pub code: String,
+    pub cache: Arc<RwLock<HashMap<(ResourceType, ResourceType), Arc<(ComputePipeline, u64, u64)>>>>,
+}
+
+impl Default for ScatterDefinition {
+    fn default() -> Self {
+        Self {
+            code: String::new(),
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl PartialEq for ScatterDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
 }
 
 impl ScatterDefinition {
     pub fn new(_context: &WgpuContext, code: String) -> Result<Self> {
         let _ = Self::parse_signature(&code)?;
-        Ok(Self { code })
+        Ok(Self {
+            code,
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 
     pub fn parse_signature(code: &str) -> Result<ScatterSignature> {
@@ -49,6 +72,7 @@ impl ScatterDefinition {
         }
 
         let mut index_type = None;
+        let mut index_param_name = None;
         let mut param_names = vec![];
         let mut input_element_type = ResourceBaseType::F32;
         let mut output_element_type = ResourceBaseType::F32;
@@ -62,12 +86,15 @@ impl ScatterDefinition {
 
             param_names.push(name.to_string());
 
-            if name == "index" {
-                if ty_str != "u32" && ty_str != "vec2<u32>" && ty_str != "vec3<u32>" {
-                    return Err(anyhow::anyhow!("Index must be u32, vec2<u32>, or vec3<u32>"));
+            let is_index_type = ty_str == "u32" || ty_str == "vec2<u32>" || ty_str == "vec3<u32>";
+            let is_resource = ty_str.contains("Resource") || ty_str.contains("ptr<") || ty_str.contains("texture_");
+
+            if is_index_type && !is_resource {
+                if name == "index" || index_param_name.is_none() {
+                    index_type = Some(ty_str.to_string());
+                    index_param_name = Some(name.to_string());
                 }
-                index_type = Some(ty_str.to_string());
-            } else if ty_str.contains("Resource") || ty_str.contains("ptr<") || ty_str.contains("texture_") {
+            } else if is_resource {
                 output_element_type = crate::data::gpu::compute::signature::parse_base_type(ty_str);
             } else {
                 has_value_param = true;
@@ -84,6 +111,7 @@ impl ScatterDefinition {
             input_element_type,
             output_element_type,
             index_type,
+            index_param_name,
             param_names,
         })
     }
@@ -149,13 +177,21 @@ impl ScatterDefinition {
                 full_code.push_str("    let _global_index = global_id.xy;\n");
                 full_code.push_str("    let tex_dim = textureDimensions(input);\n");
                 full_code.push_str("    if (_global_index.x >= tex_dim.x || _global_index.y >= tex_dim.y) { return; }\n");
-                full_code.push_str("    let in_val = textureLoad(input, _global_index, 0);\n");
+                if sig.input_element_type.is_scalar() {
+                    full_code.push_str("    let in_val = textureLoad(input, _global_index, 0).x;\n");
+                } else {
+                    full_code.push_str("    let in_val = textureLoad(input, _global_index, 0);\n");
+                }
             },
             ResourceType::Texture3D => {
                 full_code.push_str("    let _global_index = global_id;\n");
                 full_code.push_str("    let tex_dim = textureDimensions(input);\n");
                 full_code.push_str("    if (_global_index.x >= tex_dim.x || _global_index.y >= tex_dim.y || _global_index.z >= tex_dim.z) { return; }\n");
-                full_code.push_str("    let in_val = textureLoad(input, _global_index, 0);\n");
+                if sig.input_element_type.is_scalar() {
+                    full_code.push_str("    let in_val = textureLoad(input, _global_index, 0).x;\n");
+                } else {
+                    full_code.push_str("    let in_val = textureLoad(input, _global_index, 0);\n");
+                }
             }
         }
 
@@ -177,7 +213,7 @@ impl ScatterDefinition {
 
         let mut call_args = vec![];
         for name in &sig.param_names {
-            if name == "index" {
+            if Some(name) == sig.index_param_name.as_ref() {
                 call_args.push("index".to_string());
             } else if !sig.scatter_args.iter().find(|a| a.starts_with(&format!("{}:", name))).unwrap().contains("Resource") {
                 // If it is NOT the resource parameter (which got stripped), it must be the input value
@@ -216,5 +252,97 @@ impl ScatterDefinition {
         let pipeline = ComputePipeline::new(context, shader)?;
 
         Ok((pipeline, input_size, output_size))
+    }
+
+    pub fn get_or_create_pipeline(
+        &self,
+        context: &WgpuContext,
+        input_res: ResourceType,
+        output_res: ResourceType,
+    ) -> Result<Arc<(ComputePipeline, u64, u64)>> {
+        {
+            let cache = self.cache.read().unwrap();
+            if let Some(p) = cache.get(&(input_res, output_res)) {
+                return Ok(p.clone());
+            }
+        }
+
+        let pipeline_info = self.build_pipeline(context, input_res, output_res)?;
+        let arc_info = Arc::new(pipeline_info);
+
+        let mut cache = self.cache.write().unwrap();
+        cache.insert((input_res, output_res), arc_info.clone());
+        Ok(arc_info)
+    }
+}
+
+pub struct Scatter;
+
+impl Scatter {
+    pub fn execute(
+        context: &WgpuContext,
+        definition: &ScatterDefinition,
+        input: &GpuResource,
+        output: &GpuResource,
+    ) -> Result<()> {
+        let pipeline_info = definition.get_or_create_pipeline(
+            context,
+            input.resource_type(),
+            output.resource_type(),
+        )?;
+        let (pipeline, input_size, _output_size) = pipeline_info.as_ref();
+
+        let mut parameters = crate::data::gpu::parameters::PassParameters::new();
+        // Input resource determines grid size
+        let input_num_elements = match input {
+            GpuResource::Buffer(b) => {
+                parameters.insert("input", b.clone());
+                b.size / input_size.max(&1)
+            }
+            GpuResource::Texture2D(t) => {
+                parameters.insert("input", t.clone());
+                (t.size.0 * t.size.1) as u64
+            }
+            GpuResource::Texture3D(t) => {
+                parameters.insert("input", t.clone());
+                (t.size.0 * t.size.1 * t.size.2) as u64
+            }
+        };
+
+        // Scatter output info
+        match output {
+            GpuResource::Buffer(b) => {
+                parameters.insert("output", b.clone());
+            }
+            GpuResource::Texture2D(t) => {
+                parameters.insert("output", t.clone());
+            }
+            GpuResource::Texture3D(t) => {
+                parameters.insert("output", t.clone());
+            }
+        }
+
+        let (wg_x, wg_y, wg_z) = match input {
+            GpuResource::Buffer(_) => {
+                ((input_num_elements as u32 + 63) / 64, 1, 1)
+            }
+            GpuResource::Texture2D(t) => {
+                ((t.size.0 + 15) / 16, (t.size.1 + 15) / 16, 1)
+            }
+            GpuResource::Texture3D(t) => {
+                ((t.size.0 + 3) / 4, (t.size.1 + 3) / 4, (t.size.2 + 3) / 4)
+            }
+        };
+
+        crate::data::gpu::compute::ComputePass::new(
+            context,
+            pipeline.clone(),
+            parameters,
+            wg_x,
+            wg_y,
+            wg_z,
+        )?;
+
+        Ok(())
     }
 }

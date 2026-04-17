@@ -1,14 +1,11 @@
-pub mod indirect;
-pub use indirect::*;
-
 use crate::data::{PassParameter, PassParameters, RenderAttachments, RenderPipeline};
 use crate::globals::WgpuContext;
 use anyhow::{Result, anyhow};
 use wgpu::util::DeviceExt;
 
-pub struct RenderPass;
+pub struct IndirectRenderPass;
 
-impl RenderPass {
+impl IndirectRenderPass {
     pub fn new(
         context: &WgpuContext,
         pipeline_def: RenderPipeline,
@@ -16,10 +13,8 @@ impl RenderPass {
         parameters: PassParameters,
         vertex_buffers: Vec<crate::data::gpu::buffer::Buffer>,
         index_buffer: Option<crate::data::gpu::buffer::Buffer>,
-        vertex_start: u32,
-        vertex_count: u32,
-        instance_start: u32,
-        instance_count: u32,
+        indirect_buffer: crate::data::gpu::buffer::Buffer,
+        indirect_offset: u64,
     ) -> Result<RenderAttachments> {
         if attachments.colors.is_empty() && attachments.depth_stencil.is_none() {
             return Ok(attachments);
@@ -45,7 +40,7 @@ impl RenderPass {
         let reflection = pipeline_def
             .reflection
             .as_ref()
-            .ok_or_else(|| anyhow!("RenderPass: RenderPipeline missing ReflectionData"))?;
+            .ok_or_else(|| anyhow!("IndirectRenderPass: RenderPipeline missing ReflectionData"))?;
 
         // --- GET COMPATIBLE PIPELINE ---
         let pipeline_arc = pipeline_def.get_or_create_pipeline(
@@ -61,7 +56,7 @@ impl RenderPass {
         if let Ok(guard) = pipeline_def.validation_error.lock() {
             if let Some(err) = guard.as_ref() {
                 return Err(anyhow!(
-                    "RenderPass: Cannot use invalid RenderPipeline: {}",
+                    "IndirectRenderPass: Cannot use invalid RenderPipeline: {}",
                     err
                 ));
             }
@@ -71,7 +66,7 @@ impl RenderPass {
         let reflection = pipeline_def
             .reflection
             .as_ref()
-            .ok_or_else(|| anyhow!("RenderPass: RenderPipeline missing ReflectionData"))?;
+            .ok_or_else(|| anyhow!("IndirectRenderPass: RenderPipeline missing ReflectionData"))?;
 
         let mut bind_groups = Vec::new();
 
@@ -80,7 +75,7 @@ impl RenderPass {
                 .get(bg_reflection.index as usize)
                 .ok_or_else(|| {
                     anyhow!(
-                        "RenderPass: Bind group layout index {} missing in pipeline",
+                        "IndirectRenderPass: Bind group layout index {} missing in pipeline",
                         bg_reflection.index
                     )
                 })?;
@@ -97,6 +92,13 @@ impl RenderPass {
                         match val {
                             PassParameter::Number(n) => {
                                 let bytes = (*n as f32).to_le_bytes();
+                                if (member.offset as usize + 4) <= buffer_data.len() {
+                                    buffer_data[member.offset as usize..member.offset as usize + 4]
+                                        .copy_from_slice(&bytes);
+                                }
+                            }
+                            PassParameter::Unsigned(u) => {
+                                let bytes = u.to_le_bytes();
                                 if (member.offset as usize + 4) <= buffer_data.len() {
                                     buffer_data[member.offset as usize..member.offset as usize + 4]
                                         .copy_from_slice(&bytes);
@@ -197,7 +199,7 @@ impl RenderPass {
                     .device
                     .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some(&format!(
-                            "RenderPass Group {} Uniforms",
+                            "IndirectRenderPass Group {} Uniforms",
                             bg_reflection.index
                         )),
                         contents: &buffer_data,
@@ -221,19 +223,23 @@ impl RenderPass {
                 let binding = buffer_binding.binding;
                 let val = parameters.get(name).ok_or_else(|| {
                     anyhow!(
-                        "RenderPass: Parameter '{}' (buffer binding {}) not found",
+                        "IndirectRenderPass: Parameter '{}' (buffer binding {}) not found",
                         name,
                         binding
                     )
                 })?;
 
                 if let PassParameter::Buffer(gpu_buf) = val {
+                    let wgpu_buf = &gpu_buf.buffer;
                     bind_group_entries.push(wgpu::BindGroupEntry {
                         binding,
-                        resource: gpu_buf.buffer.as_entire_binding(),
+                        resource: wgpu_buf.as_entire_binding(),
                     });
                 } else {
-                    return Err(anyhow!("RenderPass: Parameter '{}' is not a Buffer", name));
+                    return Err(anyhow!(
+                        "IndirectRenderPass: Parameter '{}' is not a Buffer",
+                        name
+                    ));
                 }
             }
 
@@ -243,7 +249,7 @@ impl RenderPass {
                 let binding = binding_info.binding;
                 let val = parameters.get(name).ok_or_else(|| {
                     anyhow!(
-                        "RenderPass: Parameter '{}' (texture binding {}) not found",
+                        "IndirectRenderPass: Parameter '{}' (texture binding {}) not found",
                         name,
                         binding
                     )
@@ -262,7 +268,7 @@ impl RenderPass {
                     ),
                     _ => {
                         return Err(anyhow!(
-                            "RenderPass: Parameter '{}' is not a Texture2D or Texture3D",
+                            "IndirectRenderPass: Parameter '{}' is not a Texture2D or Texture3D",
                             name
                         ));
                     }
@@ -272,7 +278,7 @@ impl RenderPass {
                     if let Some(actual_fmt) = actual_format {
                         if actual_fmt != expected_format {
                             return Err(anyhow!(
-                                "RenderPass: Texture '{}' format mismatch. Expected {:?}, got {:?}",
+                                "IndirectRenderPass: Texture '{}' format mismatch. Expected {:?}, got {:?}",
                                 name,
                                 expected_format,
                                 actual_fmt
@@ -283,7 +289,7 @@ impl RenderPass {
 
                 if dim != binding_info.dimension {
                     return Err(anyhow!(
-                        "RenderPass: Texture '{}' dimension mismatch. Expected {:?}, got {:?}",
+                        "IndirectRenderPass: Texture '{}' dimension mismatch. Expected {:?}, got {:?}",
                         name,
                         binding_info.dimension,
                         dim
@@ -296,7 +302,10 @@ impl RenderPass {
                         resource: wgpu::BindingResource::TextureView(view),
                     });
                 } else {
-                    return Err(anyhow!("RenderPass: Parameter '{}' is missing view", name));
+                    return Err(anyhow!(
+                        "IndirectRenderPass: Parameter '{}' is missing view",
+                        name
+                    ));
                 }
             }
 
@@ -304,7 +313,7 @@ impl RenderPass {
             for (name, binding) in &bg_reflection.sampler_bindings {
                 let val = parameters.get(name).ok_or_else(|| {
                     anyhow!(
-                        "RenderPass: Parameter '{}' (sampler binding {}) not found",
+                        "IndirectRenderPass: Parameter '{}' (sampler binding {}) not found",
                         name,
                         binding
                     )
@@ -318,12 +327,15 @@ impl RenderPass {
                         });
                     } else {
                         return Err(anyhow!(
-                            "RenderPass: Sampler '{}' has no WGPU resource",
+                            "IndirectRenderPass: Sampler '{}' has no WGPU resource",
                             name
                         ));
                     }
                 } else {
-                    return Err(anyhow!("RenderPass: Parameter '{}' is not a Sampler", name));
+                    return Err(anyhow!(
+                        "IndirectRenderPass: Parameter '{}' is not a Sampler",
+                        name
+                    ));
                 }
             }
 
@@ -331,7 +343,7 @@ impl RenderPass {
                 .device
                 .create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some(&format!(
-                        "RenderPass Group {} Bind Group",
+                        "IndirectRenderPass Group {} Bind Group",
                         bg_reflection.index
                     )),
                     layout,
@@ -372,11 +384,11 @@ impl RenderPass {
         let mut encoder = context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("RenderPass Encoder"),
+                label: Some("IndirectRenderPass Encoder"),
             });
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("RenderPass"),
+                label: Some("IndirectRenderPass"),
                 color_attachments: &color_attachments,
                 depth_stencil_attachment,
                 timestamp_writes: None,
@@ -392,19 +404,14 @@ impl RenderPass {
                 render_pass.set_vertex_buffer(i as u32, buf.slice(..));
             }
 
+            let indirect_wgpu_buffer = &indirect_buffer.buffer;
+
             if let Some(ibuf) = &index_buffer {
                 let buf = &ibuf.buffer;
                 render_pass.set_index_buffer(buf.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(
-                    vertex_start as u32..(vertex_start + vertex_count) as u32,
-                    0,
-                    instance_start as u32..(instance_start + instance_count) as u32,
-                );
+                render_pass.draw_indexed_indirect(indirect_wgpu_buffer, indirect_offset);
             } else {
-                render_pass.draw(
-                    vertex_start as u32..(vertex_start + vertex_count) as u32,
-                    instance_start as u32..(instance_start + instance_count) as u32,
-                );
+                render_pass.draw_indirect(indirect_wgpu_buffer, indirect_offset);
             }
         }
         context.queue.submit(std::iter::once(encoder.finish()));

@@ -198,6 +198,21 @@ impl ComputePipeline {
                                     },
                                     count: None,
                                 });
+                            } else {
+                                // Support non-struct uniforms (primitive scalars or vectors)
+                                group_reflection.uniform_buffer_size = ty.inner.size(naga_res.to_ctx());
+                                group_reflection.uniform_binding = Some(binding);
+                                
+                                layout_entries.push(wgpu::BindGroupLayoutEntry {
+                                    binding: binding,
+                                    visibility: wgpu::ShaderStages::COMPUTE,
+                                    ty: wgpu::BindingType::Buffer {
+                                        ty: wgpu::BufferBindingType::Uniform,
+                                        has_dynamic_offset: false,
+                                        min_binding_size: None,
+                                    },
+                                    count: None,
+                                });
                             }
                         }
                         wgpu::naga::AddressSpace::Storage { access } => {

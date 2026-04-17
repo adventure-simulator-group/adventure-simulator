@@ -87,8 +87,7 @@ pub fn create_bind_groups(
                             }
                         }
                         PassParameter::Mat3(v) => {
-                            if (member.offset as usize + member.size as usize)
-                                <= buffer_data.len()
+                            if (member.offset as usize + member.size as usize) <= buffer_data.len()
                             {
                                 let start = member.offset as usize;
                                 let col_stride = member.size / 3;
@@ -137,8 +136,7 @@ pub fn create_bind_groups(
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&format!(
                         "{} Group {} Uniforms",
-                        pass_name,
-                        bg_reflection.index
+                        pass_name, bg_reflection.index
                     )),
                     contents: &buffer_data,
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -169,20 +167,17 @@ pub fn create_bind_groups(
             })?;
 
             if let PassParameter::Buffer(gpu_buf) = val {
-                if let Some(wgpu_buf) = &gpu_buf.buffer {
-                    bind_group_entries.push(wgpu::BindGroupEntry {
-                        binding,
-                        resource: wgpu_buf.as_entire_binding(),
-                    });
-                } else {
-                    return Err(anyhow!(
-                        "{}: Buffer '{}' has no WGPU resource",
-                        pass_name,
-                        name
-                    ));
-                }
+                let wgpu_buf = &gpu_buf.buffer;
+                bind_group_entries.push(wgpu::BindGroupEntry {
+                    binding,
+                    resource: wgpu_buf.as_entire_binding(),
+                });
             } else {
-                return Err(anyhow!("{}: Parameter '{}' is not a Buffer", pass_name, name));
+                return Err(anyhow!(
+                    "{}: Parameter '{}' is not a Buffer",
+                    pass_name,
+                    name
+                ));
             }
         }
 
@@ -249,7 +244,11 @@ pub fn create_bind_groups(
                     resource: wgpu::BindingResource::TextureView(view),
                 });
             } else {
-                return Err(anyhow!("{}: Parameter '{}' is missing view", pass_name, name));
+                return Err(anyhow!(
+                    "{}: Parameter '{}' is missing view",
+                    pass_name,
+                    name
+                ));
             }
         }
 
@@ -278,7 +277,11 @@ pub fn create_bind_groups(
                     ));
                 }
             } else {
-                return Err(anyhow!("{}: Parameter '{}' is not a Sampler", pass_name, name));
+                return Err(anyhow!(
+                    "{}: Parameter '{}' is not a Sampler",
+                    pass_name,
+                    name
+                ));
             }
         }
 
@@ -287,8 +290,7 @@ pub fn create_bind_groups(
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some(&format!(
                     "{} Group {} Bind Group",
-                    pass_name,
-                    bg_reflection.index
+                    pass_name, bg_reflection.index
                 )),
                 layout,
                 entries: &bind_group_entries,

@@ -96,6 +96,13 @@ impl ComputePass {
                                         .copy_from_slice(&bytes);
                                 }
                             }
+                            PassParameter::Unsigned(u) => {
+                                let bytes = u.to_le_bytes();
+                                if (member.offset as usize + 4) <= buffer_data.len() {
+                                    buffer_data[member.offset as usize..member.offset as usize + 4]
+                                        .copy_from_slice(&bytes);
+                                }
+                            }
                             PassParameter::Vec2(v) => {
                                 let bytes_x = v.x.to_le_bytes();
                                 let bytes_y = v.y.to_le_bytes();
@@ -127,6 +134,59 @@ impl ComputePass {
                                     buffer_data[start + 4..start + 8].copy_from_slice(&bytes_y);
                                     buffer_data[start + 8..start + 12].copy_from_slice(&bytes_z);
                                     buffer_data[start + 12..start + 16].copy_from_slice(&bytes_w);
+                                }
+                            }
+                            PassParameter::Mat2(v) => {
+                                if (member.offset as usize + 16) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    for i in 0..2 {
+                                        for j in 0..2 {
+                                            let offset = start + (i * 2 + j) * 4;
+                                            buffer_data[offset..offset + 4]
+                                                .copy_from_slice(&v.columns[i][j].to_le_bytes());
+                                        }
+                                    }
+                                }
+                            }
+                            PassParameter::Mat3(v) => {
+                                if (member.offset as usize + member.size as usize)
+                                    <= buffer_data.len()
+                                {
+                                    let start = member.offset as usize;
+                                    let col_stride = member.size / 3;
+                                    for i in 0..3 {
+                                        for j in 0..3 {
+                                            let offset =
+                                                start + i as usize * col_stride as usize + j * 4;
+                                            buffer_data[offset..offset + 4]
+                                                .copy_from_slice(&v.columns[i][j].to_le_bytes());
+                                        }
+                                    }
+                                }
+                            }
+                            PassParameter::Mat4(v) => {
+                                if (member.offset as usize + 64) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    for i in 0..4 {
+                                        for j in 0..4 {
+                                            let offset = start + (i * 4 + j) * 4;
+                                            buffer_data[offset..offset + 4]
+                                                .copy_from_slice(&v.columns[i][j].to_le_bytes());
+                                        }
+                                    }
+                                }
+                            }
+                            PassParameter::Transform(v) => {
+                                let mat = v.to_mat4();
+                                if (member.offset as usize + 64) <= buffer_data.len() {
+                                    let start = member.offset as usize;
+                                    for i in 0..4 {
+                                        for j in 0..4 {
+                                            let offset = start + (i * 4 + j) * 4;
+                                            buffer_data[offset..offset + 4]
+                                                .copy_from_slice(&mat.columns[i][j].to_le_bytes());
+                                        }
+                                    }
                                 }
                             }
                             _ => {}
@@ -169,17 +229,10 @@ impl ComputePass {
                 })?;
 
                 if let PassParameter::Buffer(gpu_buf) = val {
-                    if let Some(wgpu_buf) = &gpu_buf.buffer {
-                        bind_group_entries.push(wgpu::BindGroupEntry {
-                            binding,
-                            resource: wgpu_buf.as_entire_binding(),
-                        });
-                    } else {
-                        return Err(anyhow!(
-                            "ComputePass: Buffer '{}' has no WGPU resource",
-                            name
-                        ));
-                    }
+                    bind_group_entries.push(wgpu::BindGroupEntry {
+                        binding,
+                        resource: gpu_buf.buffer.as_entire_binding(),
+                    });
                 } else {
                     return Err(anyhow!("ComputePass: Parameter '{}' is not a Buffer", name));
                 }
@@ -306,5 +359,4 @@ impl ComputePass {
 
         Ok(())
     }
-
 }

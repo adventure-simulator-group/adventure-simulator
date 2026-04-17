@@ -11,6 +11,9 @@ distance-field.workspace = true
 anyhow = "1.0"
 marching-cubes = { workspace = true, features = ["bevy"] }
 pollster = "0.4"
+gpu-runtime = { workspace = true }
+bytemuck = { version = "1.15", features = ["derive"] }
+bevy_mesh = { workspace = true }
 
 [lints]
 workspace = true

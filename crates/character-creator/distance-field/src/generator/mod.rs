@@ -7,12 +7,8 @@ mod pipeline;
 pub struct Generator;
 
 impl Generator {
-    pub async fn generate() -> Result<(DistanceField, BoneIndexField, BoneWeightField)> {
-        let wgpu_context = WgpuContext::new()
-            .await
-            .expect("Failed to create WgpuContext");
-
-        let (sdf_tex, idx_tex, weight_tex, _image) = pipeline::generate(&wgpu_context)?;
+    pub async fn generate(resolution: u32) -> Result<(DistanceField, BoneIndexField, BoneWeightField)> {
+        let (context, sdf_tex, idx_tex, weight_tex) = Self::generate_textures(resolution).await?;
 
         let width = sdf_tex.size.0 as usize;
         let height = sdf_tex.size.1 as usize;
@@ -20,20 +16,20 @@ impl Generator {
         let voxel_size = 2.0 / (width as f32);
 
         let mut encoder =
-            wgpu_context
+            context
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Readback Encoder"),
                 });
 
         let (sdf_buffers, sdf_row_bytes) =
-            Self::create_readback_buffers(&wgpu_context, &sdf_tex, &mut encoder, 4);
+            Self::create_readback_buffers(&context, &sdf_tex, &mut encoder, 4);
         let (idx_buffers, idx_row_bytes) =
-            Self::create_readback_buffers(&wgpu_context, &idx_tex, &mut encoder, 4);
+            Self::create_readback_buffers(&context, &idx_tex, &mut encoder, 4);
         let (weight_buffers, weight_row_bytes) =
-            Self::create_readback_buffers(&wgpu_context, &weight_tex, &mut encoder, 16);
+            Self::create_readback_buffers(&context, &weight_tex, &mut encoder, 16);
 
-        wgpu_context.queue.submit(Some(encoder.finish()));
+        context.queue.submit(Some(encoder.finish()));
 
         let mut rx_sdfs = Vec::new();
         for buf in &sdf_buffers {
@@ -48,7 +44,7 @@ impl Generator {
             rx_weights.push(Self::map_buffer(buf));
         }
 
-        wgpu_context
+        context
             .device
             .poll(wgpu::PollType::Wait)
             .expect("Failed to poll device");
@@ -155,6 +151,17 @@ impl Generator {
         Ok((sdf_field, idx_field, weight_field))
     }
 
+    pub async fn generate_textures(resolution: u32) -> Result<(WgpuContext, Texture3D, Texture3D, Texture3D)> {
+        let wgpu_context = WgpuContext::new()
+            .await
+            .expect("Failed to create WgpuContext");
+
+        let size = Vec3::new(resolution as f32, resolution as f32, resolution as f32);
+        let (sdf_tex, idx_tex, weight_tex, _image) = pipeline::generate(&wgpu_context, size)?;
+
+        Ok((wgpu_context, sdf_tex, idx_tex, weight_tex))
+    }
+
     fn create_readback_buffers(
         wgpu_context: &WgpuContext,
         texture: &Texture3D,
@@ -242,7 +249,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate() {
-        let df_result = Generator::generate().await;
+        let resolution = 64;
+        let df_result = Generator::generate(resolution).await;
         match df_result {
             Ok((df, _, _)) => {
                 let (w, h, d) = df.dimensions();

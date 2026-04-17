@@ -21,6 +21,7 @@ sphere-tracing-plugin = { path = "crates/character-creator/sphere-tracing-plugin
 character-creator-plugin = { path = "crates/character-creator/character-creator-plugin" }
 
 anyhow = "1.0"
+tokio = { version = "1", features = ["full"] }
 enum-as-inner = "0.6.1"
 indexmap = { version = "2.12.1", features = ["serde"] }
 serde_json = "1.0"

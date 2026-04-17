@@ -57,6 +57,7 @@ impl ColorAttachment {
             texture: self.texture.texture.clone(),
             view: self.texture.view.clone(),
             size: self.texture.size,
+            format: self.texture.format,
         }
     }
 }

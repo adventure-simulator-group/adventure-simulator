@@ -1,16 +1,45 @@
-use bevy::prelude::*;
+use bevy::prelude::{
+    info, error, default, App, Assets, Color, Commands, Component, Entity, Handle, Mesh, Mesh3d, MeshMaterial3d, Plugin, PointLight, Query, Res, ResMut, Resource, StandardMaterial, Startup, Update, Without, Quat, EulerRot, ChildOf, With, Changed, Local,
+    Mat4 as BevyMat4, Vec3 as BevyVec3, Transform as BevyTransform,
+};
+use bevy_mesh::{Indices, VertexAttributeValues};
 use bevy::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use distance_field::generator::Generator;
 use distance_field_plugin::{
     components::{DistanceFieldComponent, BoneIndexFieldComponent, BoneWeightFieldComponent, SdfShapeComponent, StaticSdf},
-    SdfBox, SdfShape,
+    SdfShape,
 };
-use marching_cubes::MarchingCubes;
+use gpu_runtime::prelude::*;
+use gpu_runtime::data::gpu::compute::marching_cubes::{MarchingCubesDefinition, MarchingCubes as GpuMarchingCubes};
 
 const GRID_SIZE: usize = 36;
 const ISO_LEVEL: f32 = 0.0;
+const MAX_VERTICES: u32 = 1000000;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinnedVertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+    pub indices: [u32; 4],
+    pub weights: [f32; 4],
+}
+
+#[derive(Resource)]
+pub struct GpuMarchingCubesResources {
+    pub context: WgpuContext,
+    pub mc_definition: MarchingCubesDefinition,
+    pub skin_map_def: MapDefinition,
+    pub sdf_tex: Texture3D,
+    pub idx_tex: Texture3D,
+    pub weight_tex: Texture3D,
+    pub sampler: Sampler,
+    pub output_vertices: Buffer,
+    pub output_indirect: Buffer,
+    pub output_skinned: Buffer,
+}
 
 #[derive(Resource)]
 pub struct MarchingCubesUIState {
@@ -20,9 +49,9 @@ pub struct MarchingCubesUIState {
     min_voxel_size: f32,
     max_voxel_size: f32,
     pub selected_joint: u32,
-    pub joint_translation: Vec3,
-    pub joint_rotation: Vec3,
-    pub joint_scale: Vec3,
+    pub joint_translation: BevyVec3,
+    pub joint_rotation: BevyVec3,
+    pub joint_scale: BevyVec3,
 }
 
 impl Default for MarchingCubesUIState {
@@ -39,9 +68,9 @@ impl Default for MarchingCubesUIState {
             min_voxel_size: 0.05,
             max_voxel_size: 0.5,
             selected_joint: 1, // Torso by default
-            joint_translation: Vec3::ZERO,
-            joint_rotation: Vec3::ZERO,
-            joint_scale: Vec3::ONE,
+            joint_translation: BevyVec3::ZERO,
+            joint_rotation: BevyVec3::ZERO,
+            joint_scale: BevyVec3::ONE,
         }
     }
 }
@@ -54,7 +83,7 @@ pub struct SkeletonRoot;
 
 #[derive(Component, Default, Clone)]
 pub struct VirtualBindSkeleton {
-    pub local_transforms: Vec<Transform>,
+    pub local_transforms: Vec<BevyTransform>,
     pub parents: Vec<Option<usize>>,
 }
 
@@ -66,7 +95,7 @@ impl Plugin for MarchingCubesPlugin {
             .init_resource::<MarchingCubesUIState>()
             .add_systems(Startup, Self::setup)
             .add_systems(Update, (
-                Self::update_marching_cubes_mesh, 
+                Self::update_marching_cubes_mesh_gpu, 
                 Self::apply_gltf_skinned_mesh_to_sdf,
                 Self::recalculate_virtual_bind_skeleton,
             ));
@@ -77,9 +106,9 @@ impl MarchingCubesPlugin {
     fn setup(
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
-        inverse_bindposes: ResMut<Assets<SkinnedMeshInverseBindposes>>,
+        _inverse_bindposes: ResMut<Assets<SkinnedMeshInverseBindposes>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        ui_state: Res<MarchingCubesUIState>,
+        _ui_state: Res<MarchingCubesUIState>,
     ) {
         // Create Mesh Handle
         let mesh = Mesh::new(
@@ -95,84 +124,105 @@ impl MarchingCubesPlugin {
             ..default()
         });
 
-        // Start async generation
-        let generated = pollster::block_on(Generator::generate());
+        // Start async generation on GPU
+        let generated = pollster::block_on(Generator::generate_textures(GRID_SIZE as u32));
 
-        // Use Generated SDF or Fallback
-        let (df_comp, b_idx_comp, b_weight_comp) = match generated {
-            Ok((df, idx, weight)) => {
-                info!("SDF Generation Successful: {:?}", df.dimensions());
-                (
-                    DistanceFieldComponent(df),
-                    BoneIndexFieldComponent(idx),
-                    BoneWeightFieldComponent(weight),
-                )
-            }
-            Err(e) => {
-                error!("SDF Generation Failed: {:?}", e);
-                // Fallback
-                (
-                    DistanceFieldComponent::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12),
+        match generated {
+            Ok((context, sdf_tex, idx_tex, weight_tex)) => {
+                info!("GPU SDF Generation Successful: {:?}", sdf_tex.size);
+
+                let mc_definition = MarchingCubesDefinition::new(&context).expect("Failed to create MC definition");
+                
+                let skin_map_wgsl = r#"
+                    struct Vertex {
+                        position: vec4<f32>,
+                        normal: vec4<f32>,
+                    }
+
+                    struct SkinnedVertex {
+                        position: vec4<f32>,
+                        normal: vec4<f32>,
+                        indices: vec4<u32>,
+                        weights: vec4<f32>,
+                    }
+
+                    @group(0) @binding(3) var bone_indices: texture_3d<u32>;
+                    @group(0) @binding(4) var bone_weights: texture_3d<f32>;
+                    @group(0) @binding(5) var samp: sampler;
+
+                    fn map(v: Vertex, voxel_size: f32, grid_size: f32) -> SkinnedVertex {
+                        let grid_pos = v.position.xyz;
+                        
+                        // Nearest neighbor for indices
+                        let idx_coord = vec3<u32>(grid_pos + 0.5);
+                        let indices = textureLoad(bone_indices, idx_coord, 0);
+                        
+                        // Linear interpolation for weights
+                        let tex_dim = vec3<f32>(textureDimensions(bone_weights));
+                        let norm_coord = (grid_pos + 0.5) / tex_dim;
+                        let weights = textureSampleLevel(bone_weights, samp, norm_coord, 0.0);
+                        
+                        // Center the mesh around (0,0,0) in local space
+                        let local_pos = (grid_pos - (grid_size / 2.0)) * voxel_size;
+                        
+                        return SkinnedVertex(
+                            vec4<f32>(local_pos, 1.0),
+                            v.normal,
+                            indices,
+                            weights
+                        );
+                    }
+                "#;
+
+                let skin_map_def = MapDefinition::new(skin_map_wgsl.to_string()).expect("Failed to create Skin Map definition");
+                let sampler = Sampler::new(&context, None, None, None, None, None).expect("Failed to create sampler");
+
+                let output_vertices = Buffer::new(
+                    &context,
+                    (MAX_VERTICES as usize * 32) as u64, // Vertex is 32 bytes (vec4 pos, vec4 norm)
+                    BufferDefinition::storage().with_label("mc_output_vertices")
+                ).expect("Failed to create output_vertices buffer");
+
+                let output_indirect = Buffer::new(
+                    &context,
+                    16, // Indirect draw is 4 * u32
+                    BufferDefinition::storage().with_label("mc_output_indirect").with_copy_src()
+                ).expect("Failed to create output_indirect buffer");
+
+                let output_skinned = Buffer::new(
+                    &context,
+                    (MAX_VERTICES as usize * 64) as u64, // SkinnedVertex is 64 bytes
+                    BufferDefinition::storage().with_label("mc_output_skinned")
+                ).expect("Failed to create output_skinned buffer");
+
+                commands.insert_resource(GpuMarchingCubesResources {
+                    context: context.clone(),
+                    mc_definition,
+                    skin_map_def,
+                    sdf_tex,
+                    idx_tex,
+                    weight_tex,
+                    sampler,
+                    output_vertices,
+                    output_indirect,
+                    output_skinned,
+                });
+
+                // Spawn Volume
+                commands.spawn((
+                    DistanceFieldComponent::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 2.0 / (GRID_SIZE as f32)),
                     BoneIndexFieldComponent(distance_field::BoneIndexField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12, [0, 0, 0, 0])),
                     BoneWeightFieldComponent(distance_field::BoneWeightField::new(GRID_SIZE, GRID_SIZE, GRID_SIZE, 0.12, [0.0, 0.0, 0.0, 0.0])),
-                )
+                    StaticSdf,
+                    Mesh3d(mesh_handle.clone()),
+                    MeshMaterial3d(material_handle.clone()),
+                    BevyTransform::from_xyz(0.0, 2.0, 0.0),
+                ));
             }
-        };
-
-        // The actual SkinnedMesh will be assigned once `Michelle.glb` loads via `apply_gltf_skinned_mesh_to_sdf`.
-
-        // Spawn Volume
-        let _volume_entity = commands
-            .spawn((
-                df_comp,
-                b_idx_comp,
-                b_weight_comp,
-                StaticSdf,
-                Mesh3d(mesh_handle.clone()),
-                MeshMaterial3d(material_handle.clone()),
-                Transform::from_xyz(0.0, 2.0, 0.0), // Raised up
-            ))
-            .id();
-
-        // Spawn a SECOND independent SDF volume to verify multi-SDF support
-        let volume_entity_2 = commands
-            .spawn((
-                DistanceFieldComponent::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15),
-                BoneIndexFieldComponent(distance_field::BoneIndexField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15, [0, 0, 0, 0])),
-                BoneWeightFieldComponent(distance_field::BoneWeightField::new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2, 0.15, [0.0, 0.0, 0.0, 0.0])),
-                Mesh3d(mesh_handle.clone()),
-                Transform::from_xyz(5.0, 3.0, 0.0), // Raised up and offset
-            ))
-            .id();
-
-        // We need to create a new mesh asset for the second volume
-        let mesh_2 = Mesh::new(
-            bevy::render::render_resource::PrimitiveTopology::TriangleList,
-            bevy::asset::RenderAssetUsages::default(),
-        );
-        let mesh_handle_2 = meshes.add(mesh_2);
-
-        // Re-spawn volume 2 with correct mesh handle
-        commands.entity(volume_entity_2).insert((
-            Mesh3d(mesh_handle_2),
-            MeshMaterial3d(material_handle.clone()),
-        ));
-
-        // Add shapes to second volume
-        commands.entity(volume_entity_2).with_children(|parent| {
-            parent.spawn((
-                SdfShapeComponent::from(SdfBox {
-                    size: Vec3::splat(0.6),
-                }),
-                Transform::IDENTITY,
-            ));
-            parent.spawn((
-                SdfShapeComponent::from(SdfBox {
-                    size: Vec3::new(0.2, 1.0, 0.2),
-                }), // Make it smaller to fit
-                Transform::from_xyz(0.5, 0.0, 0.5),
-            ));
-        });
+            Err(e) => {
+                error!("GPU SDF Generation Failed: {:?}", e);
+            }
+        }
 
         commands.spawn((
             PointLight {
@@ -181,7 +231,7 @@ impl MarchingCubesPlugin {
                 shadows_enabled: true,
                 ..default()
             },
-            Transform::from_xyz(8.0, 12.0, 8.0),
+            BevyTransform::from_xyz(8.0, 12.0, 8.0),
         ));
     }
 
@@ -304,25 +354,82 @@ impl MarchingCubesPlugin {
         }
     }
 
-    fn update_marching_cubes_mesh(
+    fn update_marching_cubes_mesh_gpu(
         mut meshes: ResMut<Assets<Mesh>>,
+        gpu_resources: Option<Res<GpuMarchingCubesResources>>,
         query: Query<(
             &DistanceFieldComponent,
-            &BoneIndexFieldComponent,
-            &BoneWeightFieldComponent,
-            &Mesh3d
+            &Mesh3d,
+            &BevyTransform
         ), Changed<DistanceFieldComponent>>,
     ) {
-        for (distance_field, bone_index_field, bone_weight_field, mesh3d) in query.iter() {
+        let Some(res) = gpu_resources else { return; };
+        
+        for (distance_field, mesh3d, transform) in query.iter() {
             if let Some(existing) = meshes.get_mut(&mesh3d.0) {
-                let mesh_builder = MarchingCubes::generate_mesh(
-                    &distance_field.0,
-                    &bone_index_field.0,
-                    &bone_weight_field.0,
-                    ISO_LEVEL,
-                    distance_field.voxel_size,
-                );
-                *existing = mesh_builder.build();
+                let grid = distance_field.0.dimensions();
+                let threshold = ISO_LEVEL;
+                
+                // 1. Prepare resources
+                let sdf_res = GpuResource::Texture3D(res.sdf_tex.clone());
+                let output_vertices = GpuResource::Buffer(res.output_vertices.clone());
+                let output_indirect = GpuResource::Buffer(res.output_indirect.clone());
+                let output_skinned = GpuResource::Buffer(res.output_skinned.clone());
+
+                // 2. Execute Marching Cubes
+                GpuMarchingCubes::execute(
+                    &res.context,
+                    &res.mc_definition,
+                    &sdf_res,
+                    &output_vertices,
+                    &output_indirect,
+                    (grid.0 as u32, grid.1 as u32, grid.2 as u32),
+                    threshold,
+                    MAX_VERTICES,
+                ).expect("Failed to execute GpuMarchingCubes");
+
+                let mut map_params = PassParameters::new();
+                map_params.insert("bone_indices", res.idx_tex.clone());
+                map_params.insert("bone_weights", res.weight_tex.clone());
+                map_params.insert("samp", res.sampler.clone());
+                map_params.insert("voxel_size", distance_field.voxel_size);
+                map_params.insert("grid_size", grid.0 as f32);
+
+                Map::execute_with_parameters(
+                    &res.context,
+                    &res.skin_map_def,
+                    Some(&output_vertices),
+                    &output_skinned,
+                    Some(map_params),
+                ).expect("Failed to execute skin map");
+
+                // 4. Readback
+                let skinned_verts = pollster::block_on(output_skinned.read::<SkinnedVertex>(&res.context)).expect("Failed to readback skinned vertices");
+                let indirect_data = pollster::block_on(output_indirect.read::<u32>(&res.context)).expect("Failed to readback indirect data");
+                let vertex_count = indirect_data[0] as usize;
+
+                // 5. Update Bevy Mesh
+                let mut positions = Vec::with_capacity(vertex_count);
+                let mut normals = Vec::with_capacity(vertex_count);
+                let mut indices_attr = Vec::with_capacity(vertex_count);
+                let mut weights_attr = Vec::with_capacity(vertex_count);
+
+                for i in 0..vertex_count {
+                    let v = skinned_verts[i];
+                    positions.push([v.position[0], v.position[1], v.position[2]]);
+                    normals.push([v.normal[0], v.normal[1], v.normal[2]]);
+                    indices_attr.push([v.indices[0] as u16, v.indices[1] as u16, v.indices[2] as u16, v.indices[3] as u16]);
+                    weights_attr.push([v.weights[0], v.weights[1], v.weights[2], v.weights[3]]);
+                }
+
+                existing.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                existing.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+                existing.insert_attribute(Mesh::ATTRIBUTE_JOINT_INDEX, VertexAttributeValues::Uint16x4(indices_attr));
+                existing.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, weights_attr);
+                
+                // Indices (simple triangle list)
+                let indices: Vec<u32> = (0..vertex_count as u32).collect();
+                existing.insert_indices(Indices::U32(indices));
             }
         }
     }
@@ -332,20 +439,20 @@ impl MarchingCubesPlugin {
         gltf_meshes: Query<&SkinnedMesh, Without<BoneWeightFieldComponent>>,
         sdf_meshes: Query<Entity, With<BoneWeightFieldComponent>>,
         mut bindposes: ResMut<Assets<SkinnedMeshInverseBindposes>>,
-        parents: Query<&bevy::ecs::hierarchy::ChildOf>,
+        parents: Query<&ChildOf>,
         mut done: Local<bool>,
     ) {
         if *done { return; }
 
         if let Some(gltf_skinned_mesh) = gltf_meshes.iter().next() {
             let Some(orig_ibp) = bindposes.get(&gltf_skinned_mesh.inverse_bindposes) else { return; };
-            let orig_ibp_vec: Vec<Mat4> = orig_ibp.iter().copied().collect();
+            let orig_ibp_vec: Vec<BevyMat4> = orig_ibp.iter().copied().collect();
             
             // Clone the inverse bind poses so our SDF has its own set of matrices to mutate
             let new_ibp_handle = bindposes.add(SkinnedMeshInverseBindposes::from(orig_ibp_vec.clone()));
 
             let mut vs = VirtualBindSkeleton {
-                local_transforms: vec![Transform::IDENTITY; gltf_skinned_mesh.joints.len()],
+                local_transforms: vec![BevyTransform::IDENTITY; gltf_skinned_mesh.joints.len()],
                 parents: vec![None; gltf_skinned_mesh.joints.len()],
             };
 
@@ -363,9 +470,9 @@ impl MarchingCubesPlugin {
                 let global = orig_ibp_vec[i].inverse();
                 if let Some(p_idx) = vs.parents[i] {
                     let parent_global_inv = orig_ibp_vec[p_idx]; // InverseBindPose IS the parent global inverse!
-                    vs.local_transforms[i] = Transform::from_matrix(parent_global_inv * global);
+                    vs.local_transforms[i] = BevyTransform::from_matrix(parent_global_inv * global);
                 } else {
-                    vs.local_transforms[i] = Transform::from_matrix(global);
+                    vs.local_transforms[i] = BevyTransform::from_matrix(global);
                 }
             }
 
@@ -389,8 +496,8 @@ impl MarchingCubesPlugin {
     ) {
         for (vs, sk) in virtual_skeletons.iter_mut() {
             if let Some(ibp) = inverse_bindposes.get_mut(&sk.inverse_bindposes) {
-                let mut globals = vec![Mat4::IDENTITY; vs.local_transforms.len()];
-                let mut new_ibps = vec![Mat4::IDENTITY; vs.local_transforms.len()];
+                let mut globals = vec![BevyMat4::IDENTITY; vs.local_transforms.len()];
+                let mut new_ibps = vec![BevyMat4::IDENTITY; vs.local_transforms.len()];
 
                 for i in 0..vs.local_transforms.len() {
                     let local = vs.local_transforms[i].to_matrix();
