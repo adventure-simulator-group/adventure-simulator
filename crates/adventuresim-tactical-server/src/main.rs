@@ -404,6 +404,31 @@ fn on_server_started(
         Transform::default(),
     ));
 
+    let scene_width = args.scene_width as f32;
+    let scene_depth = args.scene_depth as f32;
+    commands.spawn((
+        RigidBody::Static,
+        Transform::default(),
+        children![
+            (
+                Collider::half_space(Vec3::X),
+                Transform::from_xyz(-scene_width * 0.5, 0.0, 0.0),
+            ),
+            (
+                Collider::half_space(Vec3::NEG_X),
+                Transform::from_xyz(scene_width * 0.5, 0.0, 0.0),
+            ),
+            (
+                Collider::half_space(Vec3::Z),
+                Transform::from_xyz(0.0, 0.0, -scene_depth * 0.5),
+            ),
+            (
+                Collider::half_space(Vec3::NEG_Z),
+                Transform::from_xyz(0.0, 0.0, scene_depth * 0.5),
+            )
+        ],
+    ));
+
     info!("Notifying spacetimedb that the server is ready...");
 
     if args.requested {
