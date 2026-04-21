@@ -17,7 +17,7 @@ pub use avian3d;
 pub mod prelude {
     pub use crate::combat::Attack;
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, ItemOf, ItemProperties,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, WeaponItem,
     };
     pub use crate::player::{

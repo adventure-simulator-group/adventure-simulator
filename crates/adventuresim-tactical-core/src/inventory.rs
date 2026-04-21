@@ -19,7 +19,12 @@ impl Default for ItemQuantity {
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
 #[require(ItemProperties, ItemQuantity)]
+#[relationship(relationship_target = InventoryItems)]
 pub struct ItemOf(#[entities] pub Entity);
+
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Default)]
+#[relationship_target(relationship = ItemOf)]
+pub struct InventoryItems(Vec<Entity>);
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct ArmorItem {
@@ -121,13 +126,15 @@ pub struct ItemQuery {
 
 #[derive(SystemParam)]
 pub struct InventoryViewer<'w, 's> {
-    q_item: Query<'w, 's, ItemQuery, With<ItemOf>>,
+    q_inventory: Query<'w, 's, &'static InventoryItems>,
+    q_item: Query<'w, 's, ItemQuery>,
 }
 
 impl InventoryViewer<'_, '_> {
     pub fn get(&self, entity: Entity) -> InventoryView<'_, '_, '_> {
         InventoryView {
             entity,
+            q_inventory: &self.q_inventory,
             q_item: &self.q_item,
         }
     }
@@ -135,15 +142,19 @@ impl InventoryViewer<'_, '_> {
 
 pub struct InventoryView<'v, 'w, 's> {
     entity: Entity,
-    q_item: &'v Query<'w, 's, ItemQuery, With<ItemOf>>,
+    q_inventory: &'v Query<'w, 's, &'static InventoryItems>,
+    q_item: &'v Query<'w, 's, ItemQuery>,
 }
 
 impl InventoryView<'_, '_, '_> {
     fn iter(&self) -> impl Iterator<Item = ItemQueryItem<'_, '_>> + use<'_> {
-        let owner = self.entity;
-        self.q_item
-            .iter()
-            .filter(move |item| item.item_of.is_some_and(|of| of.0 == owner))
+        let items = self
+            .q_inventory
+            .get(self.entity)
+            .into_iter()
+            .flat_map(|inv| inv.iter());
+
+        self.q_item.iter_many(items)
     }
 
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
