@@ -12,7 +12,7 @@ pub struct AdventureSimulatorServerPlugin;
 impl Plugin for AdventureSimulatorServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((WebSocketServerPlugin, AeronetRepliconServerPlugin))
-            .add_systems(Update, open_added_servers);
+            .add_observer(on_server_added);
     }
 }
 
@@ -28,16 +28,19 @@ impl Default for AdventureSimulatorServer {
     }
 }
 
-fn open_added_servers(
+fn on_server_added(
+    event: On<Add, AdventureSimulatorServer>,
     mut commands: Commands,
-    servers: Query<(Entity, &AdventureSimulatorServer), Added<AdventureSimulatorServer>>,
-) {
-    for (entity, server) in &servers {
-        commands.entity(entity).insert(AeronetRepliconServer);
-        commands
-            .entity(entity)
-            .queue(WebSocketServer::open(websocket_config(server.addr)));
-    }
+    servers: Query<&AdventureSimulatorServer>,
+) -> Result {
+    let server = servers.get(event.entity)?;
+
+    commands.entity(event.entity).insert(AeronetRepliconServer);
+    commands
+        .entity(event.entity)
+        .queue(WebSocketServer::open(websocket_config(server.addr)));
+
+    Ok(())
 }
 
 fn websocket_config(addr: SocketAddr) -> ServerConfig {
