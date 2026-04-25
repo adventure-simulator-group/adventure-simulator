@@ -12,10 +12,7 @@ pub struct AdventureSimulatorClientPlugin;
 impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
-            .add_systems(
-                Update,
-                connect_added_clients.run_if(not(in_state(ClientState::Connecting))),
-            )
+            .add_observer(on_client_added)
             .add_systems(OnEnter(ClientState::Connected), announce_join)
             .add_systems(
                 FixedUpdate,
@@ -40,16 +37,20 @@ impl Default for AdventureSimulatorClient {
     }
 }
 
-fn connect_added_clients(
+fn on_client_added(
+    event: On<Add, AdventureSimulatorClient>,
     mut commands: Commands,
-    clients: Query<(Entity, &AdventureSimulatorClient), Added<AdventureSimulatorClient>>,
-) {
-    for (entity, client) in &clients {
-        commands.entity(entity).insert(AeronetRepliconClient);
-        commands
-            .entity(entity)
-            .queue(WebSocketClient::connect(websocket_config(&client.server_url), normalize_server_url(&client.server_url)));
-    }
+    clients: Query<&AdventureSimulatorClient>,
+) -> Result {
+    let client = clients.get(event.entity)?;
+
+    commands.entity(event.entity).insert(AeronetRepliconClient);
+    commands.entity(event.entity).queue(WebSocketClient::connect(
+        websocket_config(&client.server_url),
+        normalize_server_url(&client.server_url),
+    ));
+
+    Ok(())
 }
 
 fn announce_join(
