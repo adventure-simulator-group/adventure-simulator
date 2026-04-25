@@ -227,18 +227,14 @@ fn on_stdb_insert_connected_players(
     };
 
     let player_collider = player_collider();
+    let spawn_position = Vec2::new(rand::random_range(-5.0..5.0), rand::random_range(-5.0..5.0));
     let spawn_height = q_scene
         .iter()
         .next()
-        .and_then(|terrain| terrain.height_at(Vec2::ZERO))
+        .and_then(|terrain| terrain.height_at(spawn_position))
         .unwrap_or_default()
         + player_spawn_offset(&player_collider);
 
-    let spawn_position = Vec3::new(
-        rand::random_range(-5.0..5.0),
-        spawn_height,
-        rand::random_range(-5.0..5.0),
-    );
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Replicated,
         Player {
@@ -251,14 +247,14 @@ fn on_stdb_insert_connected_players(
         stats,
         CharacterController::default(),
         CharacterLook::default(),
-        player_collider,
-        CollisionMargin(0.01),
-        Transform::from_translation(spawn_position),
-        children![(
-            Hitbox,
-            Collider::cylinder(0.3, 0.6),
-            Transform::from_xyz(0.0, 1.0, 0.0),
-        )],
+        Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
+        children![
+            (
+                CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
+                Collider::cylinder(0.3, 0.6),
+            ),
+            (player_collider, CollisionMargin(0.01),)
+        ],
         NetworkPlayerState::default(),
     ));
 

@@ -1,20 +1,20 @@
 use avian3d::prelude::Collider;
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::InputAction;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, InputAction, Default)]
 #[action_output(f32)]
 pub struct Attack;
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Serialize, Deserialize)]
 pub struct AttackState {
     pub pre_hit_timer: Timer,
 }
 
 impl AttackState {
     pub fn new(pre_hit_delay: f32) -> Self {
-        let mut pre_hit_timer = Timer::from_seconds(pre_hit_delay, TimerMode::Once);
-        pre_hit_timer.pause();
+        let pre_hit_timer = Timer::from_seconds(pre_hit_delay, TimerMode::Once);
         Self { pre_hit_timer }
     }
 

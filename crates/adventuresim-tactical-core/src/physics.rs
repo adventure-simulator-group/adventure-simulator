@@ -1,3 +1,4 @@
+use avian3d::collision::collider::LayerMask;
 use avian3d::{
     prelude::{PhysicsInterpolationPlugin, PhysicsTransformPlugin},
     PhysicsPlugins,
@@ -5,8 +6,8 @@ use avian3d::{
 use bevy::prelude::*;
 use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
 
-#[derive(Component, Default)]
-pub struct Hitbox;
+pub const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
+pub const HITREG_LAYER: LayerMask = LayerMask(1 << 2);
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,

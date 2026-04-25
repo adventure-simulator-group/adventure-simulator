@@ -20,7 +20,7 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, WeaponItem,
     };
-    pub use crate::physics::Hitbox;
+    pub use crate::physics::{HITBOX_LAYER, HITREG_LAYER};
     pub use crate::player::{
         Attributes, ControlledPlayer, Limbs, Player, PlayerId, Skills, Stats, TacticalPlayerView,
         TacticalPlayerViewer,

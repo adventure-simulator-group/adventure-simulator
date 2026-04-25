@@ -14,17 +14,12 @@ impl Plugin for CombatPlugin {
 
 fn on_attack_action_triggered(
     event: On<FromClient<AttackCommand>>,
-    viewer: TacticalPlayerViewer,
     mut cmd: Commands,
     attack_config: Res<AttackConfig>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         return;
     };
-    if let Some(player_info) = viewer.get(entity) {
-        let skill_check = player_info.skill_check(Skill::Melee);
-        info!("Melee skill check for {entity:?}: {skill_check}");
-    }
 
     cmd.entity(entity)
         .insert(AttackState::new(attack_config.pre_hit_delay));
@@ -45,8 +40,9 @@ fn attack_state_update_system(
 
         let origin = transform.translation + config.hitreg_translation;
 
-        let mut filter = SpatialQueryFilter::default();
-        filter.excluded_entities.insert(entity);
+        let filter = SpatialQueryFilter::default()
+            .with_mask(HITBOX_LAYER)
+            .with_excluded_entities([entity]);
 
         let cast_config = ShapeCastConfig::DEFAULT;
 
