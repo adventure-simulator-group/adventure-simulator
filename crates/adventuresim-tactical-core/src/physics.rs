@@ -5,6 +5,9 @@ use avian3d::{
 use bevy::prelude::*;
 use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
 
+#[derive(Component, Default)]
+pub struct Hitbox;
+
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
 }

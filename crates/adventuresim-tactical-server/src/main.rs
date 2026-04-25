@@ -60,6 +60,10 @@ struct Args {
     #[arg(long, default_value_t = TERRAIN_SIZE)]
     scene_depth: usize,
 
+    /// Amount of bots to spawn.
+    #[arg(long, default_value_t = 0)]
+    bots: usize,
+
     /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
@@ -163,15 +167,20 @@ fn on_stdb_insert_connected_players(
     mut cmd: Commands,
     mut q_loading: Query<(Entity, &RemoteId), With<LoadingPlayer>>,
 ) {
-    let Some((entity, _)) = q_loading
-        .iter_mut()
-        .find(|(_, id)| id.0.to_bits() == player.character.id)
-    else {
-        warn!(
-            "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
-            player.character.name, player.character.id
-        );
-        return;
+    let entity = if player.character.temporary {
+        cmd.spawn_empty().id()
+    } else {
+        let Some((entity, _)) = q_loading
+            .iter_mut()
+            .find(|(_, id)| id.0.to_bits() == player.character.id)
+        else {
+            warn!(
+                "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
+                player.character.name, player.character.id
+            );
+            return;
+        };
+        entity
     };
 
     let skills = Skills {
@@ -205,6 +214,11 @@ fn on_stdb_insert_connected_players(
         focus: player.stats.focus,
     };
 
+    let spawn_position = Vec3::new(
+        rand::random_range(-5.0..5.0),
+        50.0,
+        rand::random_range(-5.0..5.0),
+    );
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Player {
             name: player.character.name.clone(),
@@ -217,8 +231,13 @@ fn on_stdb_insert_connected_players(
         CharacterController::default(),
         Collider::cylinder(0.4, 1.2),
         CollisionMargin(0.01),
-        Transform::from_xyz(0.0, 50.0, 0.0),
+        Transform::from_translation(spawn_position),
         Replicate::to_clients(NetworkTarget::All),
+        children![(
+            Hitbox,
+            Collider::cylinder(0.3, 0.6),
+            Transform::from_xyz(0.0, 1.0, 0.0),
+        )],
     ));
 
     for item in &player.items {
@@ -241,7 +260,7 @@ fn on_stdb_insert_connected_players(
                 owner: entity,
                 lifetime: Lifetime::SessionBased,
             },
-            Replicate::to_clients(NetworkTarget::All),
+            ReplicateLike { root: entity },
         ));
 
         match item.item.kind {
@@ -324,7 +343,10 @@ fn on_stdb_insert_connected_players(
         }
     }
 
-    info!("Player {entity:?} is fully loaded");
+    info!(
+        temorary = player.character.temporary,
+        "Player {entity:?} is fully loaded"
+    );
 }
 
 fn check_mission_timeout(
@@ -415,7 +437,7 @@ fn on_server_started_hook(
         ],
     ));
 
-    info!("Notifying spacetimedb that the server is ready...");
+    info!("Creating tactical server in stdb...");
 
     if args.requested {
         conn.reducers().create_tactical_server_for_request(
@@ -430,6 +452,14 @@ fn on_server_started_hook(
             args.addr.to_string(),
             default(),
         )?;
+    }
+
+    if args.bots > 0 {
+        info!("Requesting {} bots...", args.bots);
+        for _ in 0..args.bots {
+            conn.reducers()
+                .create_temporary_character(conn.identity())?;
+        }
     }
 
     Ok(())

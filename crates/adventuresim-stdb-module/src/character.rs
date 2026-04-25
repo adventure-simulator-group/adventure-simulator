@@ -2,7 +2,7 @@ use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
-use crate::{add_inventory_item, inventory_item, ItemSlot};
+use crate::{add_inventory_item, enter_mission, inventory_item, ItemSlot};
 
 /// General character info
 #[derive(Clone, Debug)]
@@ -16,6 +16,7 @@ pub struct Character {
     #[index(btree)]
     pub server: Identity,
     pub in_server: bool,
+    pub temporary: bool,
 }
 
 /// [`Character`] attributes
@@ -120,18 +121,33 @@ impl CharacterEquip {
     }
 }
 
+/// Create a new random temporary character for the server.
+#[reducer]
+pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Result<(), String> {
+    use petname::Generator;
+
+    let name = petname::Petnames::default()
+        .generate(&mut ctx.rng(), 1, " ")
+        .ok_or_else(|| format!("Can't generate a name for a temporary character"))?;
+    let name = format!("bot-{name}");
+
+    let mut id = ctx.random();
+    id |= 0b1000_1000_1000_1000;
+
+    insert_new_character(ctx, name, id, true)?;
+    enter_mission(ctx, id, server)
+}
+
 /// Create a new character with generated name and add initial items to it
 #[reducer]
 pub fn create_character(ctx: &ReducerContext, id: u64) -> Result<(), String> {
     use petname::Generator;
-    use rand::SeedableRng;
 
-    let mut rng = rand::rngs::SmallRng::seed_from_u64(id);
     let name = petname::Petnames::default()
-        .generate(&mut rng, 2, " ")
+        .generate(&mut ctx.rng(), 2, " ")
         .ok_or_else(|| format!("Can't generate a name for a character with id {id}"))?;
 
-    insert_new_character(ctx, name, id)
+    insert_new_character(ctx, name, id, false)
 }
 
 /// Create a new character with name and add initial items to it
@@ -142,11 +158,16 @@ pub fn create_named_character(ctx: &ReducerContext, name: String) -> Result<(), 
     ctx.timestamp.hash(&mut hasher);
     let id = hasher.finish();
 
-    insert_new_character(ctx, name, id)
+    insert_new_character(ctx, name, id, false)
 }
 
 #[reducer]
-fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(), String> {
+fn insert_new_character(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    temporary: bool,
+) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
 
     let character = ctx.db.character().insert(Character {
@@ -156,6 +177,7 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         level: 1,
         server: Identity::ZERO,
         in_server: false,
+        temporary,
     });
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,

@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 noiz.workspace = true
+rand.workspace = true
 
 # Bevy + Lightyear
 bevy = { workspace = true, features = ["multi_threaded"] }

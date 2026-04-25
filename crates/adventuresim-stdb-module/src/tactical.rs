@@ -158,9 +158,15 @@ pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), Stri
         .find(&character_id)
         .ok_or_else(|| format!("Character {character_id} not found"))?;
 
-    character.in_server = false;
-    character.server = Identity::ZERO;
-    ctx.db.character().id().update(character);
+    if character.temporary {
+        log::info!("Leaving mission for character #{character_id}: removing temporary character..");
+        ctx.db.character().delete(character);
+    } else {
+        log::info!("Leaving mission for character #{character_id}: resetting server info..");
+        character.in_server = false;
+        character.server = Identity::ZERO;
+        ctx.db.character().id().update(character);
+    }
 
     Ok(())
 }
@@ -251,8 +257,14 @@ pub fn create_tactical_server(
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
+    if let Some(_previous) = ctx.db.tactical_server().identity().find(ctx.sender) {
+        return Err(format!(
+            "{} already hosting a tactical server !",
+            ctx.sender
+        ));
+    }
     if let Some(previous) = ctx.db.tactical_server().mission_id().find(&mission_id) {
-        log::info!("Ending previous server for mission '{mission_id}'..");
+        log::info!("Ending previous server for mission '{mission_id}'...");
         end_tactical_server_by_instance(ctx, previous, false, 0)?;
     }
 
@@ -276,7 +288,10 @@ pub fn end_tactical_server(
     xp_gained: i32,
 ) -> Result<(), String> {
     let Some(server) = ctx.db.tactical_server().identity().find(ctx.sender) else {
-        return Err(format!("Tactical server {} not found", ctx.sender));
+        return Err(format!(
+            "Can't end tactical server: sender's server with identity {} not found",
+            ctx.sender
+        ));
     };
 
     end_tactical_server_by_instance(ctx, server, success, xp_gained)
@@ -290,10 +305,21 @@ fn end_tactical_server_by_instance(
     success: bool,
     xp_gained: i32,
 ) -> Result<(), String> {
+    if ctx
+        .db
+        .tactical_server()
+        .identity()
+        .find(&server.identity)
+        .is_none()
+    {
+        return Err(format!(
+            "Can't end tactical server: server with identity {} not found",
+            server.identity
+        ));
+    }
+
     // Apply rewards
     for mut character in ctx.db.character().server().filter(server.identity) {
-        leave_mission(ctx, character.id)?;
-
         if xp_gained > 0 {
             character.xp = character.xp.saturating_add_signed(xp_gained);
             character.level = 1 + character.xp / 100;
@@ -303,7 +329,10 @@ fn end_tactical_server_by_instance(
             change_inventory_item(ctx, character.id, "gold_coin", 10);
             change_inventory_item(ctx, character.id, "health_potion", 2);
         }
+
+        let id = character.id;
         ctx.db.character().id().update(character);
+        leave_mission(ctx, id)?;
     }
 
     ctx.db.tactical_server().identity().delete(server.identity);

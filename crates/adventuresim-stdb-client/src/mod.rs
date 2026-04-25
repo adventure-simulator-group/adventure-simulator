@@ -27,6 +27,7 @@ pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_tactical_server_for_request_reducer;
 pub mod create_tactical_server_reducer;
+pub mod create_temporary_character_reducer;
 pub mod define_armor_reducer;
 pub mod define_item_reducer;
 pub mod define_shield_reducer;
@@ -83,6 +84,10 @@ pub use create_tactical_server_for_request_reducer::{
 };
 pub use create_tactical_server_reducer::{
     create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
+};
+pub use create_temporary_character_reducer::{
+    create_temporary_character, set_flags_for_create_temporary_character,
+    CreateTemporaryCharacterCallbackId,
 };
 pub use define_armor_reducer::{define_armor, set_flags_for_define_armor, DefineArmorCallbackId};
 pub use define_item_reducer::{define_item, set_flags_for_define_item, DefineItemCallbackId};
@@ -162,6 +167,9 @@ pub enum Reducer {
         addr: String,
         cert_digest: String,
     },
+    CreateTemporaryCharacter {
+        server: __sdk::Identity,
+    },
     DefineArmor {
         item_id: String,
         weight: f32,
@@ -204,6 +212,7 @@ pub enum Reducer {
     InsertNewCharacter {
         name: String,
         id: u64,
+        temporary: bool,
     },
     LeaveMission {
         character_id: u64,
@@ -230,6 +239,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateTacticalServer { .. } => "create_tactical_server",
             Reducer::CreateTacticalServerForRequest { .. } => "create_tactical_server_for_request",
+            Reducer::CreateTemporaryCharacter { .. } => "create_temporary_character",
             Reducer::DefineArmor { .. } => "define_armor",
             Reducer::DefineItem { .. } => "define_item",
             Reducer::DefineShield { .. } => "define_shield",
@@ -274,6 +284,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 Ok(__sdk::parse_reducer_args::<
                     create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs,
                 >("create_tactical_server_for_request", &value.args)?
+                .into())
+            }
+            "create_temporary_character" => {
+                Ok(__sdk::parse_reducer_args::<
+                    create_temporary_character_reducer::CreateTemporaryCharacterArgs,
+                >("create_temporary_character", &value.args)?
                 .into())
             }
             "define_armor" => Ok(

@@ -217,13 +217,14 @@ spawner: build-tactical
 		--base-port {{tactical_port}}
 
 # Run a single tactical server (for testing)
-tactical mission_id="test-mission" scene_key="hills":
+tactical mission_id="test-mission" scene_key="hills" bots="1":
 	@cargo run --package adventuresim-tactical-server -- \
 		--addr "0.0.0.0:{{tactical_port}}" \
 		--mission-id {{mission_id}} \
 		--scene-key {{scene_key}} \
 		--spacetimedb-url {{spacetime_url}} \
 		--spacetimedb-module {{spacetime_module}} \
+		--bots {{bots}} \
 		--no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
