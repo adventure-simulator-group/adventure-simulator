@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use adventuresim_core::{body::BodyPart, prelude::PlayerEquipment};
 use bevy::{
-    ecs::{query::QueryData, system::SystemParam},
+    ecs::{entity::MapEntities, query::QueryData, system::SystemParam},
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
@@ -17,10 +17,10 @@ impl Default for ItemQuantity {
     }
 }
 
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
 #[require(ItemProperties, ItemQuantity)]
 #[relationship(relationship_target = InventoryItems)]
-pub struct ItemOf(pub Entity);
+pub struct ItemOf(#[entities] pub Entity);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Default)]
 #[relationship_target(relationship = ItemOf)]

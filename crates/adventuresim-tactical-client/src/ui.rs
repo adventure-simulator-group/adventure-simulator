@@ -3,9 +3,15 @@ use adventuresim_tactical_core::{
     player::{Player, PlayerId},
     prelude::*,
 };
-use adventuresim_tactical_netcode::lightyear::{connection::client::ClientState, prelude::*};
+use adventuresim_tactical_netcode::{
+    aeronet::io::connection::{LocalAddr, PeerAddr},
+    bevy_replicon::prelude::{ClientState, ClientStats},
+    client::normalize_server_url,
+    prelude::*,
+};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    ecs::schedule::common_conditions::any_with_component,
     prelude::*,
 };
 use bevy_flair::prelude::*;
@@ -21,11 +27,11 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    update_stats_ui,
+                    update_stats_ui.run_if(any_with_component::<CharacterController>),
                     update_connection_ui,
-                    update_skills_ui,
-                    update_limbs_ui,
-                    update_items_ui,
+                    update_skills_ui.run_if(any_with_component::<CharacterController>),
+                    update_limbs_ui.run_if(any_with_component::<CharacterController>),
+                    update_items_ui.run_if(any_with_component::<CharacterController>),
                 ),
             )
             .add_observer(on_new_player_added_hook);
@@ -344,16 +350,19 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<&InventoryItems, (With<CharacterController>, Changed<InventoryItems>)>,
+    player: Single<Option<&InventoryItems>, With<CharacterController>>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
-    q_items: Query<ItemQuery, With<ItemOf>>,
+    q_items: Query<ItemQuery>,
 ) {
-    let items = player.into_inner();
     let equipped_list_entity = equipped_list.into_inner();
     cmd.entity(equipped_list_entity).despawn_children();
     let inventory_list_entity = inventory_list.into_inner();
     cmd.entity(inventory_list_entity).despawn_children();
+
+    let Some(items) = player.into_inner() else {
+        return;
+    };
 
     for item in q_items.iter_many(items.iter()) {
         let list = if item.slot.is_some() {
@@ -366,28 +375,40 @@ fn update_items_ui(
 }
 
 fn update_connection_ui(
-    player: Single<(&PeerAddr, &LocalAddr, &Client, Option<&Disconnected>), Changed<Client>>,
+    player: Single<(
+        &AdventureSimulatorClient,
+        Option<&PeerAddr>,
+        Option<&LocalAddr>,
+    )>,
+    client_state: Res<State<ClientState>>,
+    client_stats: Res<ClientStats>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<ServerInfoSpan>>,
         Single<&mut TextSpan, With<ClientInfoSpan>>,
         Single<(&mut TextSpan, &mut ClassList), With<ClientStatusSpan>>,
     )>,
 ) {
-    let (peer, local, client, disconnected) = player.into_inner();
+    let (client, peer, local) = player.into_inner();
 
-    spans.p0().0 = peer.0.to_string();
-    spans.p1().0 = local.0.to_string();
-    let (status_text, status_class) = match (client.state, disconnected) {
-        (ClientState::Connected, _) => ("\nConnected".to_string(), "success"),
-        (ClientState::Connecting, _) => ("\nConnecting...".to_string(), "primary"),
-        (ClientState::Disconnecting, _) => ("\nDisconnecting..".to_string(), "primary"),
-        (
-            ClientState::Disconnected,
-            Some(Disconnected {
-                reason: Some(reason),
-            }),
-        ) => (format!("\nDisconnected:\n{reason}"), "error"),
-        (ClientState::Disconnected, _) => ("\nDisconnected (no reason)".to_string(), "error"),
+    spans.p0().0 = peer
+        .map(|addr| addr.0.to_string())
+        .unwrap_or_else(|| normalize_server_url(&client.server_url));
+    spans.p1().0 = local
+        .map(|addr| addr.0.to_string())
+        .unwrap_or_else(|| "browser session".to_string());
+    let (status_text, status_class) = match client_state.get() {
+        ClientState::Connected => (
+            format!(
+                "\nConnected\nRTT {:.0}ms | Loss {:.1}% | Rx {:.0}bps | Tx {:.0}bps",
+                client_stats.rtt * 1000.0,
+                client_stats.packet_loss * 100.0,
+                client_stats.received_bps,
+                client_stats.sent_bps,
+            ),
+            "success",
+        ),
+        ClientState::Connecting => ("\nConnecting...".to_string(), "primary"),
+        ClientState::Disconnected => ("\nDisconnected".to_string(), "error"),
     };
 
     spans.p2().0 .0 = status_text;

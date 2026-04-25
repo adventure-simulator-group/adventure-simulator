@@ -1,10 +1,4 @@
-//! Tactical Server - Minimal Lightyear game server
-//!
-//! Simple flow:
-//! 1. Started by spawner with mission_id arg
-//! 2. Calls create_tactical_server_for_request reducer to register itself
-//! 3. Runs game for clients
-//! 4. Calls end_tactical_server reducer on timeout/exit
+//! Tactical Server - Replicon + Aeronet websocket game server
 
 mod combat;
 mod stdb;
@@ -13,21 +7,21 @@ mod terrain;
 use std::{net::SocketAddr, num::NonZeroU32};
 
 use adventuresim_stdb_client::*;
-use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
+use adventuresim_tactical_core::{inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*};
 use adventuresim_tactical_netcode::{
-    lightyear::prelude::{
-        server::{self, ClientOf},
-        *,
-    },
+    aeronet::io::connection::{DisconnectReason, Disconnected, LocalAddr},
+    bevy_replicon::prelude::*,
     prelude::*,
 };
 use bevy::prelude::*;
+use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
 use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
+use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
-const MISSION_TIMEOUT_SECS: f32 = 300.0; // 5 minutes
+const MISSION_TIMEOUT_SECS: f32 = 300.0;
 
 /// Level map size.
 const TERRAIN_SIZE: usize = 100;
@@ -98,7 +92,14 @@ fn main() {
             #[cfg(any(all(unix, not(target_os = "horizon")), windows))]
             bevy::app::TerminalCtrlCHandlerPlugin,
         ))
-        .add_plugins((AdventureSimulatorCorePlugins, AdventureSimulatorNetPlugins))
+        .add_plugins((
+            AdventureSimulatorCorePlugins
+                .build()
+                .set(AdventureSimulatorPhysicsPlugin {
+                    enable_simulation: true,
+                }),
+            AdventureSimulatorNetPlugins,
+        ))
         .add_plugins((stdb::SpacetimeDbPlugin, combat::CombatPlugin))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
@@ -115,14 +116,27 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
-        .add_observer(on_new_client_connected_hook)
-        .add_observer(on_new_client_disconnected_hook)
-        .add_observer(on_server_started_hook)
+        .add_systems(
+            FixedPreUpdate,
+            apply_networked_player_input.run_if(in_state(ServerState::Running)),
+        )
+        .add_systems(OnEnter(ServerState::Running), on_server_started)
+        .add_observer(on_join_request)
+        .add_observer(on_player_input)
+        .add_observer(on_client_disconnected)
         .run();
 }
 
-#[derive(Component, Default)]
-struct LoadingPlayer;
+#[derive(Component, Debug, Clone, Copy)]
+struct LoadingPlayer {
+    requested_player_id: u64,
+}
+
+#[derive(Component, Debug, Default, Clone, Copy)]
+pub struct NetworkPlayerState {
+    pub input: PlayerInputMessage,
+    pub previous_jump: bool,
+}
 
 #[derive(Resource)]
 struct MissionState {
@@ -131,23 +145,18 @@ struct MissionState {
     committed: bool,
 }
 
-fn setup_server(mut commands: Commands, args: Res<Args>) -> Result {
+fn setup_server(mut commands: Commands, args: Res<Args>) {
     info!(
         "Starting tactical server for mission '{}'...",
         args.mission_id
     );
     info!("Scene: {}, Address: {}", args.scene_key, args.addr);
 
-    commands.spawn(AdventureSimulatorServer {
-        addr: args.addr,
-        protocol_settings: ProtocolSettings::default(),
-    });
+    commands.spawn(AdventureSimulatorServer { addr: args.addr });
 
     if !args.no_timeout {
         info!("Will timeout in {} seconds", args.timeout);
     }
-
-    Ok(())
 }
 
 fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
@@ -161,11 +170,13 @@ fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
 fn on_stdb_insert_connected_players(
     InRef(player): InRef<ConnectedPlayer>,
     mut cmd: Commands,
-    mut q_loading: Query<(Entity, &RemoteId), With<LoadingPlayer>>,
+    q_loading: Query<(Entity, &LoadingPlayer)>,
+    q_scene: Query<&SceneTerrain>,
 ) {
-    let Some((entity, _)) = q_loading
-        .iter_mut()
-        .find(|(_, id)| id.0.to_bits() == player.character.id)
+    let player_collider = player_collider();
+    let Some((entity, _loading)) = q_loading
+        .iter()
+        .find(|(_, loading)| loading.requested_player_id == player.character.id)
     else {
         warn!(
             "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
@@ -204,8 +215,15 @@ fn on_stdb_insert_connected_players(
         calories_used: player.stats.calories_used,
         focus: player.stats.focus,
     };
+    let spawn_height = q_scene
+        .iter()
+        .next()
+        .and_then(|terrain| terrain.height_at(Vec2::ZERO))
+        .unwrap_or_default()
+        + player_spawn_offset(&player_collider);
 
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
+        Replicated,
         Player {
             name: player.character.name.clone(),
         },
@@ -215,10 +233,10 @@ fn on_stdb_insert_connected_players(
         attributes,
         stats,
         CharacterController::default(),
-        Collider::cylinder(0.4, 1.2),
-        CollisionMargin(0.01),
-        Transform::from_xyz(0.0, 50.0, 0.0),
-        Replicate::to_clients(NetworkTarget::All),
+        CharacterLook::default(),
+        player_collider,
+        Transform::from_xyz(0.0, spawn_height, 0.0),
+        NetworkPlayerState::default(),
     ));
 
     for item in &player.items {
@@ -230,24 +248,20 @@ fn on_stdb_insert_connected_players(
             continue;
         };
 
-        let mut cmd = cmd.spawn((
+        let mut item_cmd = cmd.spawn((
+            Replicated,
             ItemOf(entity),
             ItemQuantity(quantity),
             ItemProperties {
                 weight: item.item.weight,
                 id: item.item.id.clone(),
             },
-            ControlledBy {
-                owner: entity,
-                lifetime: Lifetime::SessionBased,
-            },
-            Replicate::to_clients(NetworkTarget::All),
         ));
 
         match item.item.kind {
             ItemKind::Simple => {}
             ItemKind::Weapon => {
-                cmd.insert(WeaponItem {
+                item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,
                 });
             }
@@ -270,7 +284,7 @@ fn on_stdb_insert_connected_players(
                         None
                     }
                 } {
-                    cmd.insert(ArmorItem {
+                    item_cmd.insert(ArmorItem {
                         dodge: item.item.dodge,
                         coverage: item.item.coverage,
                         slot,
@@ -278,7 +292,7 @@ fn on_stdb_insert_connected_players(
                 }
             }
             ItemKind::Shield => {
-                cmd.insert(ShieldItem {
+                item_cmd.insert(ShieldItem {
                     block: item.item.block,
                 });
             }
@@ -286,31 +300,31 @@ fn on_stdb_insert_connected_players(
 
         match item.equipped {
             Some(ItemSlot::LeftHolding) => {
-                cmd.insert(EquipSlot::HoldingLeft);
+                item_cmd.insert(EquipSlot::HoldingLeft);
             }
             Some(ItemSlot::RightHolding) => {
-                cmd.insert(EquipSlot::HoldingRight);
+                item_cmd.insert(EquipSlot::HoldingRight);
             }
             Some(ItemSlot::LeftArm) => {
-                cmd.insert(EquipSlot::ArmorLeftArm);
+                item_cmd.insert(EquipSlot::ArmorLeftArm);
             }
             Some(ItemSlot::RightArm) => {
-                cmd.insert(EquipSlot::ArmorRightArm);
+                item_cmd.insert(EquipSlot::ArmorRightArm);
             }
             Some(ItemSlot::LeftLeg) => {
-                cmd.insert(EquipSlot::ArmorLeftLeg);
+                item_cmd.insert(EquipSlot::ArmorLeftLeg);
             }
             Some(ItemSlot::RightLeg) => {
-                cmd.insert(EquipSlot::ArmorRightLeg);
+                item_cmd.insert(EquipSlot::ArmorRightLeg);
             }
             Some(ItemSlot::Chest) => {
-                cmd.insert(EquipSlot::ArmorChest);
+                item_cmd.insert(EquipSlot::ArmorChest);
             }
             Some(ItemSlot::Stomach) => {
-                cmd.insert(EquipSlot::ArmorStomach);
+                item_cmd.insert(EquipSlot::ArmorStomach);
             }
             Some(ItemSlot::Head) => {
-                cmd.insert(EquipSlot::ArmorHead);
+                item_cmd.insert(EquipSlot::ArmorHead);
             }
             slot @ Some(
                 ItemSlot::None | ItemSlot::AnyHolding | ItemSlot::AnyArm | ItemSlot::AnyLeg,
@@ -359,13 +373,15 @@ fn check_mission_timeout(
     Ok(())
 }
 
-fn on_server_started_hook(
-    _event: On<Add, server::Started>,
+fn on_server_started(
     args: Res<Args>,
     conn: Res<SpacetimeDb>,
     mut commands: Commands,
+    server_addr: Single<&LocalAddr, With<AdventureSimulatorServer>>,
 ) -> Result {
+    info!("Server opened on {:?}", **server_addr);
     info!("Creating a game scene for {}", args.scene_key);
+
     let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
     let (scene_height, gen_period) = match args.scene_key.as_str() {
         "hills" => (30, 200.0),
@@ -379,17 +395,15 @@ fn on_server_started_hook(
     let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
     let terrain_collider = terrain.collider();
 
-    // Spawn physical scene
     commands.spawn((
+        Replicated,
         SceneId(args.scene_key.clone()),
         terrain,
         RigidBody::Static,
         terrain_collider,
-        Transform::from_xyz(0.0, 0.0, 0.0),
-        Replicate::to_clients(NetworkTarget::All),
+        Transform::default(),
     ));
 
-    // Spawn invisible walls at map ends
     let scene_width = args.scene_width as f32;
     let scene_depth = args.scene_depth as f32;
     commands.spawn((
@@ -435,37 +449,113 @@ fn on_server_started_hook(
     Ok(())
 }
 
-fn on_new_client_connected_hook(
-    event: On<Add, Connected>,
-    mut cmd: Commands,
-    query: Query<&RemoteId, With<ClientOf>>,
-    conn: ResMut<SpacetimeDb>,
+fn on_join_request(
+    join: On<FromClient<JoinRequest>>,
+    mut commands: Commands,
+    loading_players: Query<(), With<LoadingPlayer>>,
+    players: Query<(), With<Player>>,
+    conn: Res<SpacetimeDb>,
 ) -> Result {
-    let client_id = query.get(event.entity)?;
-    let client_id = client_id.0;
-    let id = client_id.to_bits();
+    let Some(client) = join.client_id.entity() else {
+        return Ok(());
+    };
 
-    conn.reducers().create_character(id)?;
-    conn.reducers().enter_mission(id, conn.identity())?;
+    if loading_players.contains(client) || players.contains(client) {
+        return Ok(());
+    }
 
-    cmd.entity(event.entity).insert(LoadingPlayer);
-    info!("Character {id} connected and entered mission, awaiting loading",);
+    conn.reducers().create_character(join.player_id)?;
+    conn.reducers().enter_mission(join.player_id, conn.identity())?;
+
+    commands.entity(client).insert(LoadingPlayer {
+        requested_player_id: join.player_id,
+    });
+
+    info!(
+        "Character {} connected and entered mission, awaiting loading",
+        join.player_id
+    );
 
     Ok(())
 }
 
-fn on_new_client_disconnected_hook(
-    event: On<Remove, Connected>,
-    query: Query<&RemoteId, With<ClientOf>>,
+fn on_player_input(
+    input: On<FromClient<PlayerInputMessage>>,
+    mut players: Query<&mut NetworkPlayerState>,
+) {
+    let Some(entity) = input.client_id.entity() else {
+        return;
+    };
+
+    let Ok(mut state) = players.get_mut(entity) else {
+        return;
+    };
+
+    state.input = **input;
+}
+
+fn on_client_disconnected(
+    disconnected: On<Disconnected>,
+    query: Query<(Option<&PlayerId>, Option<&LoadingPlayer>)>,
     conn: Res<SpacetimeDb>,
 ) -> Result {
-    let client_id = query.get(event.entity)?;
-    let client_id = client_id.0;
-    let id = client_id.to_bits();
+    let entity = disconnected.event_target();
+    let Ok((player_id, loading)) = query.get(entity) else {
+        return Ok(());
+    };
 
-    conn.reducers().leave_mission(id)?;
+    let Some(character_id) = player_id
+        .map(|player_id| player_id.0)
+        .or_else(|| loading.map(|loading| loading.requested_player_id))
+    else {
+        return Ok(());
+    };
 
-    info!("Character {id} left the mission");
+    conn.reducers().leave_mission(character_id)?;
+
+    match &disconnected.reason {
+        DisconnectReason::ByUser(reason) => {
+            info!("Character {character_id} disconnected by server request: {reason}");
+        }
+        DisconnectReason::ByPeer(reason) => {
+            info!("Character {character_id} disconnected by peer: {reason}");
+        }
+        DisconnectReason::ByError(error) => {
+            warn!("Character {character_id} disconnected due to error: {error:#}");
+        }
+    }
 
     Ok(())
+}
+
+fn apply_networked_player_input(
+    mut players: Query<
+        (
+            &mut AccumulatedInput,
+            &mut CharacterLook,
+            &mut NetworkPlayerState,
+        ),
+        With<Player>,
+    >,
+) {
+    for (mut accumulated_input, mut look, mut state) in &mut players {
+        look.yaw = state.input.look.x;
+        look.pitch = state.input.look.y.clamp(-1.5, 1.5);
+
+        accumulated_input.last_movement = Some(state.input.movement.clamp_length_max(1.0));
+
+        if state.input.jump && !state.previous_jump {
+            accumulated_input.jumped = Some(Stopwatch::new());
+        }
+
+        state.previous_jump = state.input.jump;
+    }
+}
+
+fn player_collider() -> Collider {
+    Collider::cylinder(0.4, 1.2)
+}
+
+fn player_spawn_offset(collider: &Collider) -> f32 {
+    -collider.aabb(default(), Rotation::default()).min.y
 }
