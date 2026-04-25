@@ -1,4 +1,5 @@
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_netcode::{bevy_replicon::prelude::FromClient, prelude::AttackCommand};
 use bevy::prelude::*;
 
 pub struct CombatPlugin;
@@ -12,19 +13,20 @@ impl Plugin for CombatPlugin {
 }
 
 fn on_attack_action_triggered(
-    event: On<Start<Attack>>,
-    mut commands: Commands,
+    event: On<FromClient<AttackCommand>>,
     viewer: TacticalPlayerViewer,
+    mut cmd: Commands,
     attack_config: Res<AttackConfig>,
 ) {
-    let entity = event.context;
+    let Some(entity) = event.client_id.entity() else {
+        return;
+    };
     if let Some(player_info) = viewer.get(entity) {
         let skill_check = player_info.skill_check(Skill::Melee);
         info!("Melee skill check for {entity:?}: {skill_check}");
     }
 
-    commands
-        .entity(entity)
+    cmd.entity(entity)
         .insert(AttackState::new(attack_config.pre_hit_delay));
 }
 

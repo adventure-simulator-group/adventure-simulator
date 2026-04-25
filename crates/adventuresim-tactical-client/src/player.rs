@@ -1,7 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 
-use crate::{Args, Attack};
+use crate::Args;
 
 pub struct PlayerPlugin;
 

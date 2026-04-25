@@ -239,6 +239,67 @@ certs sans="127.0.0.1,localhost":
     @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
     @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
 
+# Windows development recipe
+# Local dev with native Windows exes (GPU accelerated, no WSLg, no UDP issues)
+# Cross-compiles server + client to Windows, stages to E:\adventure-sim-dev, runs both
+win-dev:
+    #!/usr/bin/env bash
+    set -e
+
+    WIN_TARGET="x86_64-pc-windows-gnu"
+    STAGE_DIR="/mnt/e/adventure-sim-dev"
+    SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
+    CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-client.exe"
+
+    # Kill any leftover instances
+    cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
+    cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1" || true
+    sleep 0.5
+
+    echo "Building server (Windows)..."
+    cargo build -p adventuresim-tactical-server --target $WIN_TARGET --profile win-dev 2>&1
+    echo "Building client (Windows)..."
+    cargo build -p adventuresim-tactical-client --target $WIN_TARGET --profile win-dev 2>&1
+
+    echo "Staging to E:\\adventure-sim-dev..."
+    mkdir -p "$STAGE_DIR"
+    cp "$SERVER_EXE" "$STAGE_DIR/adventuresim-tactical-server.exe"
+    cp "$CLIENT_EXE" "$STAGE_DIR/adventuresim-tactical-client.exe"
+    rsync -a --delete assets/ "$STAGE_DIR/assets/"
+    # Merge per-crate asset directories (Bevy does this automatically in cargo run)
+    for d in crates/*/assets/; do
+        [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
+    done
+
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
+        wait $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
+    }
+    trap cleanup EXIT INT TERM
+
+    echo "Starting server..."
+    cd "$STAGE_DIR" && ./adventuresim-tactical-server.exe \
+        --mission-id test-mission \
+        --scene-key hills \
+        --no-timeout \
+        --spacetimedb-url http://localhost:{{spacetime_port}} \
+        --spacetimedb-module {{spacetime_module}} &
+    SERVER_PID=$!
+    sleep 3
+
+    echo "Starting client 0..."
+    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 0 --server-addr 127.0.0.1:{{tactical_port}} &
+    CLIENT0_PID=$!
+    sleep 1
+
+    echo "Starting client 1..."
+    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
+    CLIENT1_PID=$!
+
+    wait
+
 # Workspace utilities
 check:
     @cargo check --workspace
