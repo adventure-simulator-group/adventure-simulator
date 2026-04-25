@@ -18,8 +18,8 @@ fn on_new_player_added_hook(
     camera: Single<Entity, With<Camera3d>>,
     query: Query<(&Player, &PlayerId)>,
     args: Res<Args>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+    materials: Option<ResMut<Assets<StandardMaterial>>>,
 ) -> Result {
     let (Player { name }, id) = query.get(event.entity)?;
     info!(entity = ?event.entity, id = id.0, "Added new player {name}");
@@ -66,6 +66,11 @@ fn on_new_player_added_hook(
             .entity(camera.into_inner())
             .insert(CharacterControllerCameraOf::new(event.entity));
     } else {
+        let (Some(mut meshes), Some(mut materials)) = (meshes, materials) else {
+            warn!("Skipping remote player mesh spawn because render assets are unavailable");
+            return Ok(());
+        };
+
         commands.entity(event.entity).insert((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
             MeshMaterial3d(materials.add(StandardMaterial {

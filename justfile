@@ -7,6 +7,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 spacetime_port := "3000"
 ui_port := "8000"
 tactical_port := "6000"
+tactical_web_port := "6001"
 public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
@@ -192,18 +193,7 @@ build-tactical: generate-db-client
 
 # Build the WASM client
 build-wasm:
-	@echo "Building WASM client..."
-	@command -v wasm-bindgen >/dev/null 2>&1 || { echo "Missing wasm-bindgen. Install with: cargo install wasm-bindgen-cli"; exit 1; }
-	@rustup target add wasm32-unknown-unknown 2>/dev/null || true
-	@cargo build --package adventuresim-tactical-client --target wasm32-unknown-unknown --release
-	@mkdir -p "{{strategic_static}}/wasm"
-	@wasm-bindgen \
-		--out-dir "{{strategic_static}}/wasm" \
-		--target web \
-		--no-typescript \
-		target/wasm32-unknown-unknown/release/adventuresim-tactical-client.wasm
-	@echo "WASM built to {{strategic_static}}/wasm/"
-	@ls -lh "{{strategic_static}}/wasm/"
+	@bash scripts/build_wasm.sh
 
 # Build everything
 build-all: build-strategic build-tactical build-wasm
@@ -296,6 +286,85 @@ win-dev:
     echo "Starting client 1..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
     CLIENT1_PID=$!
+
+    wait
+
+# Browser dev with a Windows tactical server.
+# Tactical server runs natively on Windows; WASM + static UI stay in WSL.
+win-web: preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WIN_TARGET="x86_64-pc-windows-gnu"
+    STAGE_DIR="/mnt/e/adventure-sim-dev"
+    SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
+    SERVER_LOG="$STAGE_DIR/tactical-server.log"
+    WINDOWS_HOST_IP="$(awk '/^nameserver / {print $2; exit}' /etc/resolv.conf)"
+    BROWSER_URL_WINDOWS="http://127.0.0.1:{{ui_port}}/tactical.html?server=127.0.0.1:{{tactical_web_port}}&id=2&autostart=1"
+    BROWSER_URL_WSL="http://127.0.0.1:{{ui_port}}/tactical.html?server=${WINDOWS_HOST_IP}:{{tactical_web_port}}&id=2&autostart=1"
+
+    cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
+    sleep 0.5
+
+    echo "Building browser client..."
+    bash scripts/build_wasm.sh
+
+    echo "Ensuring strategic stack is running..."
+    just spacetime-start
+    just publish
+    just serve-ui
+
+    echo "Building Windows tactical server..."
+    cargo build -p adventuresim-tactical-server --target "$WIN_TARGET" --profile win-dev 2>&1
+
+    echo "Staging tactical server to E:\\adventure-sim-dev..."
+    mkdir -p "$STAGE_DIR"
+    cp "$SERVER_EXE" "$STAGE_DIR/adventuresim-tactical-server.exe"
+    rsync -a --delete assets/ "$STAGE_DIR/assets/"
+    for d in crates/*/assets/; do
+        [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
+    done
+
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM
+
+    echo "Starting Windows tactical server on browser-safe port {{tactical_web_port}}..."
+    pushd "$STAGE_DIR" > /dev/null
+    ./adventuresim-tactical-server.exe \
+        --addr 0.0.0.0:{{tactical_web_port}} \
+        --mission-id test-mission \
+        --scene-key hills \
+        --no-timeout \
+        --spacetimedb-url http://localhost:{{spacetime_port}} \
+        --spacetimedb-module {{spacetime_module}} > "$SERVER_LOG" 2>&1 &
+    SERVER_PID=$!
+    popd > /dev/null
+
+    echo "Waiting for tactical server..."
+    for _ in $(seq 1 30); do
+        if powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{tactical_web_port}} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+            break
+        fi
+        sleep 1
+    done
+
+    if ! powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{tactical_web_port}} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+        echo "Tactical server failed to open 127.0.0.1:{{tactical_web_port}}"
+        echo "Last server log lines:"
+        tail -n 80 "$SERVER_LOG" || true
+        exit 1
+    fi
+
+    echo ""
+    echo "Browser tactical client:"
+    echo "  Windows browser: $BROWSER_URL_WINDOWS"
+    echo "  WSL/Linux browser: $BROWSER_URL_WSL"
+    echo "Use a different 'id' query param for additional browser clients."
 
     wait
 

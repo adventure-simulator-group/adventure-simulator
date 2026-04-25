@@ -17,6 +17,26 @@ clap.workspace = true
 bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
+bevy = { workspace = true, features = [
+    "bevy_asset",
+    "bevy_core_pipeline",
+    "debug",
+    "bevy_input_focus",
+    "bevy_picking",
+    "bevy_pbr",
+    "bevy_post_process",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_window",
+    "bevy_winit",
+    "png",
+    "tonemapping_luts",
+    "webgl2",
+    "zstd_rust",
+] }
 console_error_panic_hook.workspace = true
 wasm-bindgen.workspace = true
 

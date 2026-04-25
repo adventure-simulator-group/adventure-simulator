@@ -34,3 +34,12 @@ wiki/.obsidian/
 # Mdbook
 book
 /index.html
+
+# Generated browser build output
+crates/adventuresim-stdb-module/static/wasm/
+crates/adventuresim-stdb-module/static/assets/
+crates/adventuresim-stdb-module/static/SNPro-VariableFont_wght.ttf
+crates/adventuresim-stdb-module/static/TownA.glb
+crates/adventuresim-stdb-module/static/TownB.glb
+crates/adventuresim-stdb-module/static/crosshair.png
+crates/adventuresim-stdb-module/static/ui.css

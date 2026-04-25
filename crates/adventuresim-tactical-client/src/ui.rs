@@ -22,8 +22,10 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FlairPlugin)
-            .add_systems(Startup, setup_ui)
+        #[cfg(not(target_family = "wasm"))]
+        app.add_plugins(FlairPlugin);
+
+        app.add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
                 (
@@ -100,10 +102,16 @@ struct PlayerSpanOf(pub Entity);
 #[relationship_target(relationship = PlayerSpanOf, linked_spawn)]
 struct PlayerSpan(Vec<Entity>);
 
-fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_ui(mut commands: Commands, _asset_server: Option<Res<AssetServer>>) {
     commands.spawn((
         Node::default(),
-        NodeStyleSheet::new(asset_server.load("ui.css")),
+        #[cfg(not(target_family = "wasm"))]
+        NodeStyleSheet::new(
+            _asset_server
+                .as_deref()
+                .expect("AssetServer should exist on native")
+                .load("ui.css"),
+        ),
         children![
             (Name::new("crosshair"), Node::default()),
             (
@@ -254,7 +262,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn update_stats_ui(
-    diagnostics: Res<DiagnosticsStore>,
+    diagnostics: Option<Res<DiagnosticsStore>>,
     player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
@@ -272,7 +280,8 @@ fn update_stats_ui(
     }
 
     if let Some(fps) = diagnostics
-        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .as_deref()
+        .and_then(|diagnostics| diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS))
         .and_then(|fps| fps.smoothed())
     {
         spans.p1().0 = format!("{fps:.2}",);
@@ -350,21 +359,21 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<Option<&InventoryItems>, With<CharacterController>>,
+    player: Single<Entity, With<CharacterController>>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
-    q_items: Query<ItemQuery>,
+    q_items: Query<ItemQuery, With<ItemOf>>,
 ) {
+    let player_entity = player.into_inner();
     let equipped_list_entity = equipped_list.into_inner();
     cmd.entity(equipped_list_entity).despawn_children();
     let inventory_list_entity = inventory_list.into_inner();
     cmd.entity(inventory_list_entity).despawn_children();
 
-    let Some(items) = player.into_inner() else {
-        return;
-    };
-
-    for item in q_items.iter_many(items.iter()) {
+    for item in &q_items {
+        if item.item_of.map(|item_of| item_of.0) != Some(player_entity) {
+            continue;
+        }
         let list = if item.slot.is_some() {
             equipped_list_entity
         } else {
