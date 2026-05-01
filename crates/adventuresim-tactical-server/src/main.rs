@@ -85,19 +85,10 @@ fn main() {
     let args = Args::parse();
 
     App::new()
-        .add_plugins((
-            bevy::app::PanicHandlerPlugin,
-            bevy::app::TaskPoolPlugin::default(),
-            bevy::log::LogPlugin {
-                filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-                ..default()
-            },
-            bevy::time::TimePlugin,
-            bevy::transform::TransformPlugin,
-            bevy::app::ScheduleRunnerPlugin::default(),
-            #[cfg(any(all(unix, not(target_os = "horizon")), windows))]
-            bevy::app::TerminalCtrlCHandlerPlugin,
-        ))
+        .add_plugins((DefaultPlugins.set(bevy::log::LogPlugin {
+            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+            ..default()
+        }),))
         .add_plugins((
             AdventureSimulatorCorePlugins
                 .build()
@@ -122,10 +113,6 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
-        .add_systems(
-            FixedPreUpdate,
-            apply_networked_player_input.run_if(in_state(ServerState::Running)),
-        )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
         .add_observer(on_join_request)
         .add_observer(on_player_input)
@@ -136,12 +123,6 @@ fn main() {
 #[derive(Component, Debug, Clone, Copy)]
 struct LoadingPlayer {
     requested_player_id: u64,
-}
-
-#[derive(Component, Debug, Default, Clone, Copy)]
-pub struct NetworkPlayerState {
-    pub input: PlayerInputMessage,
-    pub previous_jump: bool,
 }
 
 #[derive(Resource)]
@@ -248,14 +229,13 @@ fn on_stdb_insert_connected_players(
         CharacterController::default(),
         CharacterLook::default(),
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
-        children![
-            (
-                CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
-                Collider::cylinder(0.3, 0.6),
-            ),
-            (player_collider, CollisionMargin(0.01),)
-        ],
-        NetworkPlayerState::default(),
+        (player_collider, CollisionMargin(0.01)),
+        children![(
+            Replicated,
+            CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
+            Collider::cylinder(0.3, 0.6),
+            Sensor,
+        ),],
     ));
 
     for item in &player.items {
@@ -512,17 +492,24 @@ fn on_join_request(
 
 fn on_player_input(
     input: On<FromClient<PlayerInputMessage>>,
-    mut players: Query<&mut NetworkPlayerState>,
+    mut players: Query<(&mut AccumulatedInput, &mut CharacterLook), With<Player>>,
 ) {
     let Some(entity) = input.client_id.entity() else {
         return;
     };
 
-    let Ok(mut state) = players.get_mut(entity) else {
+    let Ok((mut accumulated_input, mut look)) = players.get_mut(entity) else {
         return;
     };
 
-    state.input = **input;
+    look.yaw = input.look.x;
+    look.pitch = input.look.y.clamp(-1.5, 1.5);
+
+    accumulated_input.last_movement = Some(input.movement.clamp_length_max(1.0));
+
+    if input.jump {
+        accumulated_input.jumped = Some(Stopwatch::new());
+    }
 }
 
 fn on_client_disconnected(
@@ -557,30 +544,6 @@ fn on_client_disconnected(
     }
 
     Ok(())
-}
-
-fn apply_networked_player_input(
-    mut players: Query<
-        (
-            &mut AccumulatedInput,
-            &mut CharacterLook,
-            &mut NetworkPlayerState,
-        ),
-        With<Player>,
-    >,
-) {
-    for (mut accumulated_input, mut look, mut state) in &mut players {
-        look.yaw = state.input.look.x;
-        look.pitch = state.input.look.y.clamp(-1.5, 1.5);
-
-        accumulated_input.last_movement = Some(state.input.movement.clamp_length_max(1.0));
-
-        if state.input.jump && !state.previous_jump {
-            accumulated_input.jumped = Some(Stopwatch::new());
-        }
-
-        state.previous_jump = state.input.jump;
-    }
 }
 
 fn player_collider() -> Collider {

@@ -3,6 +3,9 @@ use bevy::prelude::*;
 
 use crate::Args;
 
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ClientPlayer;
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -35,6 +38,7 @@ fn on_new_player_added_hook(
             // requires a bunch of physics components. The actual physic simulation
             // is done on the server, so it shouldn't do much harm.
             CharacterController::default(),
+            ClientPlayer,
             actions!(Player[
                 (
                     Action::<input::Movement>::new(),

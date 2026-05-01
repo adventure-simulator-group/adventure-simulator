@@ -34,10 +34,11 @@ aeronet = { version = "0.20.0" }
 aeronet_replicon = { version = "0.20.0", default-features = false }
 aeronet_websocket = { version = "0.20.0", default-features = false }
 bevy_replicon = { version = "0.39.4", default-features = false, features = ["client", "server"] }
-avian3d = { version = "0.6.0-rc.1", default-features = false, features = [
+avian3d = { version = "0.6.0", default-features = false, features = [
     "3d",
     "f32",
-    "default-collider"
+    "parry-f32",
+    "parallel",
 ] }
 bevy_ahoy = { version = "0.1.0-rc.1", default-features = false, features = ["serialize"] }
 bevy_enhanced_input = { version = "0.23", default-features = false }
@@ -70,9 +71,9 @@ adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
 
 # https://github.com/janhohenheim/bevy_ahoy/pull/66
-# https://github.com/janhohenheim/bevy_ahoy/pull/67
-# https://github.com/janhohenheim/bevy_ahoy/pull/76
 bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }
+# https://github.com/avianphysics/avian/pull/977
+avian3d = { git = "https://github.com/barsoosayque/avian", branch = "adventuresim" }
 
 [profile.win-dev]
 inherits = "dev"

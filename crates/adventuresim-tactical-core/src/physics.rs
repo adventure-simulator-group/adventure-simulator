@@ -1,8 +1,5 @@
 use avian3d::collision::collider::LayerMask;
-use avian3d::{
-    prelude::{PhysicsInterpolationPlugin, PhysicsTransformPlugin},
-    PhysicsPlugins,
-};
+use avian3d::PhysicsPlugins;
 use bevy::prelude::*;
 use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
 
@@ -24,13 +21,7 @@ impl Default for AdventureSimulatorPhysicsPlugin {
 impl Plugin for AdventureSimulatorPhysicsPlugin {
     fn build(&self, app: &mut App) {
         if self.enable_simulation {
-            app.add_plugins((
-                PhysicsPlugins::default()
-                    .build()
-                    .disable::<PhysicsTransformPlugin>()
-                    .disable::<PhysicsInterpolationPlugin>(),
-                AhoyPlugins::default(),
-            ));
+            app.add_plugins((PhysicsPlugins::default(), AhoyPlugins::default()));
         } else {
             app.add_plugins((AhoyCameraPlugin,));
         }

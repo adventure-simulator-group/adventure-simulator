@@ -16,7 +16,7 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
-use crate::Args;
+use crate::{player::ClientPlayer, Args};
 
 pub struct UiPlugin;
 
@@ -27,11 +27,11 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    update_stats_ui.run_if(any_with_component::<CharacterController>),
+                    update_stats_ui.run_if(any_with_component::<ClientPlayer>),
                     update_connection_ui,
-                    update_skills_ui.run_if(any_with_component::<CharacterController>),
-                    update_limbs_ui.run_if(any_with_component::<CharacterController>),
-                    update_items_ui.run_if(any_with_component::<CharacterController>),
+                    update_skills_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_items_ui.run_if(any_with_component::<ClientPlayer>),
                 ),
             )
             .add_observer(on_new_player_added_hook);
@@ -255,7 +255,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
-    player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
+    player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
         Single<&mut TextSpan, With<FpsSpan>>,
@@ -280,7 +280,7 @@ fn update_stats_ui(
 }
 
 fn update_skills_ui(
-    player: Single<(&Skills, &PlayerId), (With<CharacterController>, Changed<Skills>)>,
+    player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<MeleeSpan>>,
         Single<&mut TextSpan, With<DodgeSpan>>,
@@ -295,7 +295,7 @@ fn update_skills_ui(
 }
 
 fn update_limbs_ui(
-    player: Single<(&Limbs, &PlayerId), (With<CharacterController>, Changed<Limbs>)>,
+    player: Single<(&Limbs, &PlayerId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
         Single<&mut TextSpan, With<ChestSpan>>,
@@ -350,7 +350,7 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<Option<&InventoryItems>, With<CharacterController>>,
+    player: Single<Option<&InventoryItems>, With<ClientPlayer>>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
     q_items: Query<ItemQuery>,
