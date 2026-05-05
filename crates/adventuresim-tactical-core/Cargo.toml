@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 meshgen = ["bevy/bevy_mesh"]
+avian_debug = ["avian3d/debug-plugin"]
 
 [dependencies]
 adventuresim-core.workspace = true

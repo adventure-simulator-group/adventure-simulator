@@ -1,5 +1,5 @@
 use avian3d::collision::collider::LayerMask;
-use avian3d::PhysicsPlugins;
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
 
@@ -25,5 +25,27 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
         } else {
             app.add_plugins((AhoyCameraPlugin,));
         }
+
+        #[cfg(feature = "avian_debug")]
+        app.add_plugins(PhysicsDebugPlugin)
+            .insert_gizmo_config(
+                PhysicsGizmos::default(),
+                GizmoConfig {
+                    depth_bias: -1.0,
+                    ..default()
+                },
+            )
+            .init_resource::<PhysicsLengthUnit>()
+            .insert_resource(PhysicsDebugRenderConfig {
+                enable_axes: true,
+                enable_colliders: true,
+                enable_aabb: false,
+                enable_bvh: false,
+                enable_contacts: false,
+                enable_joints: false,
+                enable_raycasts: false,
+                enable_shapecasts: false,
+                enable_islands: false,
+            });
     }
 }

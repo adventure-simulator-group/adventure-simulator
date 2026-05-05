@@ -22,7 +22,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
 }
 
 #[derive(Component, Clone, Debug)]
-#[require(Name = Name::from("Client"))]
+#[require(Name::from("Client"), AeronetRepliconClient)]
 pub struct AdventureSimulatorClient {
     pub player_id: u64,
     pub server_url: String,
@@ -44,19 +44,17 @@ fn on_client_added(
 ) -> Result {
     let client = clients.get(event.entity)?;
 
-    commands.entity(event.entity).insert(AeronetRepliconClient);
-    commands.entity(event.entity).queue(WebSocketClient::connect(
-        websocket_config(&client.server_url),
-        normalize_server_url(&client.server_url),
-    ));
+    commands
+        .entity(event.entity)
+        .queue(WebSocketClient::connect(
+            websocket_config(&client.server_url),
+            normalize_server_url(&client.server_url),
+        ));
 
     Ok(())
 }
 
-fn announce_join(
-    mut commands: Commands,
-    client: Single<&AdventureSimulatorClient>,
-) {
+fn announce_join(mut commands: Commands, client: Single<&AdventureSimulatorClient>) {
     commands.client_trigger(JoinRequest {
         player_id: client.player_id,
     });
@@ -72,8 +70,7 @@ fn send_player_input(
         let movement = movements
             .iter_many(actions)
             .next()
-            .map(|movement| **movement)
-            .unwrap_or_default();
+            .map(|movement| **movement);
         let jump = jumps
             .iter_many(actions)
             .next()

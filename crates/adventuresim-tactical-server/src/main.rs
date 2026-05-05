@@ -226,10 +226,13 @@ fn on_stdb_insert_connected_players(
         limbs,
         attributes,
         stats,
-        CharacterController::default(),
-        CharacterLook::default(),
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
-        (player_collider, CollisionMargin(0.01)),
+        (
+            player_collider,
+            CollisionMargin(0.01),
+            CharacterController::default(),
+            CharacterLook::default(),
+        ),
         children![(
             Replicated,
             CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
@@ -505,7 +508,7 @@ fn on_player_input(
     look.yaw = input.look.x;
     look.pitch = input.look.y.clamp(-1.5, 1.5);
 
-    accumulated_input.last_movement = Some(input.movement.clamp_length_max(1.0));
+    accumulated_input.last_movement = input.movement.map(|m| m.clamp_length_max(1.0));
 
     if input.jump {
         accumulated_input.jumped = Some(Stopwatch::new());

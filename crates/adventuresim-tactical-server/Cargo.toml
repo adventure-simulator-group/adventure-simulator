@@ -7,6 +7,10 @@ edition.workspace = true
 name = "adventuresim-tactical-server"
 path = "src/main.rs"
 
+[features]
+default = []
+debug = ["bevy/debug"]
+
 [dependencies]
 noiz.workspace = true
 rand.workspace = true

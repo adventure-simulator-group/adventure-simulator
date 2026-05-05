@@ -8,7 +8,7 @@ pub struct JoinRequest {
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
 pub struct PlayerInputMessage {
-    pub movement: Vec2,
+    pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: bool,
 }

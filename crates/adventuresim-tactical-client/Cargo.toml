@@ -6,6 +6,10 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = []
+debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
+
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true

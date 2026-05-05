@@ -218,7 +218,7 @@ spawner: build-tactical
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills" bots="3":
-	@cargo run --package adventuresim-tactical-server -- \
+	@cargo run --package adventuresim-tactical-server --features "debug" -- \
 		--addr "0.0.0.0:{{tactical_port}}" \
 		--mission-id {{mission_id}} \
 		--scene-key {{scene_key}} \
@@ -229,7 +229,7 @@ tactical mission_id="test-mission" scene_key="hills" bots="3":
 
 # Run a native tactical client (for testing `just tactical`)
 client id="0":
-	@cargo run --package adventuresim-tactical-client -- \
+	@cargo run --package adventuresim-tactical-client --features "debug" -- \
 		--id "{{id}}" \
 		--server-addr "127.0.0.1:{{tactical_port}}"
 
