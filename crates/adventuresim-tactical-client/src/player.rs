@@ -72,14 +72,14 @@ fn on_new_player_added_hook(
     } else {
         commands.entity(event.entity).insert((children![
             (
-                Mesh3d(meshes.add(Capsule3d::new(0.4, 1.8))),
+                Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: id.color(),
                     metallic: 0.0,
                     perceptual_roughness: 1.0,
                     ..default()
                 })),
-                Transform::from_xyz(0.0, 0.2, 0.0)
+                Transform::from_xyz(0.0, 0.1, 0.0)
             ),
             (
                 Mesh3d(meshes.add(Cuboid::new(0.6, 0.3, 0.4))),
@@ -89,7 +89,7 @@ fn on_new_player_added_hook(
                     perceptual_roughness: 1.0,
                     ..default()
                 })),
-                Transform::from_xyz(0.0, 1.0, 0.2)
+                Transform::from_xyz(0.0, 0.6, 0.3)
             )
         ],));
     }

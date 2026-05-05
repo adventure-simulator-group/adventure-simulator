@@ -550,7 +550,7 @@ fn on_client_disconnected(
 }
 
 fn player_collider() -> Collider {
-    Collider::cylinder(0.4, 1.2)
+    Collider::cylinder(0.4, 1.5)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {
