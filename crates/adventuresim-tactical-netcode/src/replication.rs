@@ -42,7 +42,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         // Replicating physic components since those don't change and
         // it's useful for debugging. Can be gated behind a feature flag, but
         // that's error prone because of how client/server is built independently.
-        app.replicate::<Collider>();
-        // .replicate::<RigidBody>();
+        app.replicate_once_filtered::<Collider, Or<(With<Player>, With<Sensor>)>>()
+            .replicate_once_filtered::<RigidBody, With<Player>>();
     }
 }
