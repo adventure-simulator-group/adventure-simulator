@@ -228,8 +228,8 @@ tactical mission_id="test-mission" scene_key="hills" bots="3":
 		--no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
-client id="0":
-	@cargo run --package adventuresim-tactical-client --features "debug" -- \
+client id="0" features="":
+	@cargo run --package adventuresim-tactical-client --features "debug,{{features}}" -- \
 		--id "{{id}}" \
 		--server-addr "127.0.0.1:{{tactical_port}}"
 

@@ -74,6 +74,7 @@
             python3
             wasm-bindgen-cli_0_2_106
             binaryen
+            tracy
           ]) ++ [spacetimedb.packages.${system}.spacetime];
 
         mkLinuxLdLibraryPathExport = libs: ''
