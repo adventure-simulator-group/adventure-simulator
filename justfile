@@ -6,6 +6,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 spacetime_port := "3000"
 ui_port := "8000"
+web_port := "8080"
 tactical_port := "6000"
 tactical_web_port := "6001"
 public_bind := "0.0.0.0"
@@ -15,6 +16,7 @@ spacetime_module := "adventuresim-stdb-module"
 
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
+strategic_web_dir := "crates/strategic-web"
 
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
@@ -50,6 +52,51 @@ dev-full: preflight build-wasm spacetime-start publish serve-ui
     @echo "Strategic UI: http://localhost:{{ui_port}}/map.html"
     @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
     @echo "WASM game: ready (click 'Enter World' after starting a mission)"
+
+# Start fresh SpacetimeDB, seed data, and run strategic-web server
+web: preflight spacetime-start publish-reset seed-world
+    @echo ""
+    @echo "Starting strategic-web server..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
+# Same as web, then open the browser
+web-open: preflight spacetime-start publish-reset seed-world open-web
+    @echo ""
+    @echo "Starting strategic-web server..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
+# Seed the world with initial settlements and quests
+seed-world server=spacetime_url:
+    @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
+
+# Open the strategic-web UI in a browser
+open-web:
+    @url="http://localhost:{{web_port}}"; \
+    if command -v xdg-open >/dev/null 2>&1; then \
+        xdg-open "$$url" >/dev/null 2>&1 &; \
+    elif command -v open >/dev/null 2>&1; then \
+        open "$$url" >/dev/null 2>&1 &; \
+    elif command -v firefox >/dev/null 2>&1; then \
+        firefox "$$url" >/dev/null 2>&1 &; \
+    elif command -v google-chrome >/dev/null 2>&1; then \
+        google-chrome "$$url" >/dev/null 2>&1 &; \
+    else \
+        echo "Open $$url"; \
+    fi
 
 # Start SpacetimeDB if it is not already listening
 spacetime-start:
