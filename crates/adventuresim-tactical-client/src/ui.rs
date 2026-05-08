@@ -350,7 +350,7 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<Option<&InventoryItems>, With<ClientPlayer>>,
+    player: Single<Option<&InventoryItems>, (With<ClientPlayer>, Changed<InventoryItems>)>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
     q_items: Query<ItemQuery>,
@@ -396,6 +396,7 @@ fn update_connection_ui(
     spans.p1().0 = local
         .map(|addr| addr.0.to_string())
         .unwrap_or_else(|| "browser session".to_string());
+
     let (status_text, status_class) = match client_state.get() {
         ClientState::Connected => (
             format!(
@@ -411,8 +412,12 @@ fn update_connection_ui(
         ClientState::Disconnected => ("\nDisconnected".to_string(), "error"),
     };
 
-    spans.p2().0 .0 = status_text;
-    *spans.p2().1 = ClassList::new(status_class);
+    if spans.p2().0 .0 != status_text {
+        spans.p2().0 .0 = status_text;
+    }
+    if !spans.p2().1.contains(status_class) {
+        *spans.p2().1 = ClassList::new(status_class);
+    }
 }
 
 fn on_new_player_added_hook(
