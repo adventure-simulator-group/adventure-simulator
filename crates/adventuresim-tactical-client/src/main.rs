@@ -31,6 +31,8 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "debug")]
+mod debug;
 mod player;
 mod ui;
 
@@ -63,52 +65,55 @@ pub fn wasm_run(args: Vec<String>) {
 }
 
 fn run(args: Args) {
-    App::new()
-        .add_plugins((
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Adventure Simulator - Tactical".into(),
-                    canvas: Some("#game-canvas".into()),
-                    fit_canvas_to_parent: true,
-                    prevent_default_event_handling: true,
-                    present_mode: PresentMode::AutoVsync,
-                    decorations: false,
-                    ..default()
-                }),
+    let mut app = App::new();
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Adventure Simulator - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: PresentMode::AutoVsync,
+                decorations: false,
                 ..default()
             }),
-            FrameTimeDiagnosticsPlugin::default(),
-            EnhancedInputPlugin,
-            InputDispatchPlugin,
-        ))
-        .add_plugins((
-            AdventureSimulatorCorePlugins
-                .build()
-                .set(AdventureSimulatorPhysicsPlugin {
-                    enable_simulation: false,
-                }),
-            AdventureSimulatorNetPlugins,
-        ))
-        .add_input_context::<Player>()
-        .add_plugins((ui::UiPlugin, player::PlayerPlugin))
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-        .add_systems(Startup, (setup_scene, setup_client))
-        .add_systems(
-            Update,
-            (
-                capture_cursor.run_if(
-                    input_just_pressed(MouseButton::Left)
-                        .and(any_with_component::<CharacterController>),
-                ),
-                release_cursor.run_if(
-                    input_just_pressed(KeyCode::Escape)
-                        .and(any_with_component::<CharacterController>),
-                ),
+            ..default()
+        }),
+        FrameTimeDiagnosticsPlugin::default(),
+        EnhancedInputPlugin,
+        InputDispatchPlugin,
+    ))
+    .add_plugins((
+        AdventureSimulatorCorePlugins
+            .build()
+            .set(AdventureSimulatorPhysicsPlugin {
+                enable_simulation: false,
+            }),
+        AdventureSimulatorNetPlugins,
+    ))
+    .add_input_context::<Player>()
+    .add_plugins((ui::UiPlugin, player::PlayerPlugin))
+    .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+    .add_systems(Startup, (setup_scene, setup_client))
+    .add_systems(
+        Update,
+        (
+            capture_cursor.run_if(
+                input_just_pressed(MouseButton::Left)
+                    .and(any_with_component::<CharacterController>),
             ),
-        )
-        .add_observer(on_game_scene_added_hook)
-        .insert_resource(args)
-        .run();
+            release_cursor.run_if(
+                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
+            ),
+        ),
+    )
+    .add_observer(on_game_scene_added_hook)
+    .insert_resource(args);
+
+    #[cfg(feature = "debug")]
+    app.add_plugins(debug::DebugPlugin);
+
+    app.run();
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
