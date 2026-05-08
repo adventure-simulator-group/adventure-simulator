@@ -116,6 +116,27 @@ Intuitive skills can be attempted without training, the check is an average betw
 ```rs
 # TODO: pain_penalty, morale_penalty
 
+struct LimbWeights {
+  left_arm: f32,
+  right_arm: f32,
+  left_leg: f32,
+  right_leg: f32
+}
+
+impl LimbWeights {
+  fn with_side(self, side) {
+    match side {
+      Side::Left => self,
+      Side::Right => Self {
+        left_arm: self.right_arm,
+        right_arm: self.left_arm,
+        left_leg: self.left_leg,
+        right_leg: self.right_leg
+      }
+    }
+  }
+}
+
 
 const CALORIES_PER_ENDURANCE = 1000
 const FATIGUE_EXPONENT = 5
@@ -124,17 +145,34 @@ fn fatigue_penalty(player):
 	1 - fatigue^FATIGUE_EXPONENT
 
 const MAX_CHECK = 5
-fn skill_check(player, skill, focus_level):
-	hours = player.hours_trained(skill)
+fn skill_check(character, skill, focus_level, limb_weights: LimbWeights):
+	hours = character.hours_trained(skill)
 	training = MAX_CHECK * (hours / (hours + skill.half()))
-	(reflex, focus) = match skill.type():
-		mental => (instinct, intelligence)
-		physical => (agility, precision)
-	attribute = reflex + focus * focus_level
+	(reflex_attribute, focus_attribute) = match skill.type():
+		mental => (Attribute::Instinct, Attribute::Intelligence)
+		physical => (Attribute::Agility, Attribute::Precision)
+		
+	let (reflex, focus) = if skill.type() == physical:
+		(
+			// this iterates through the 4 limb weights and
+			// multiplies each attribute by the corresponding weight
+			// then sums them up.
+			// the weights should always total 1.0
+			character.limbs.get_weighted_attribute(reflex_attribute, limb_weights)
+			character.limbs.get_weighted_attribute(focus_attribute, limb_weights)
+		)
+	else {
+		(
+			character.mental[reflex_attribute],
+			character.mental[focus_attribute],
+		)
+	}
+		
+	attribute_check = reflex + focus * focus_level
 	mut check = if skill.is_intuitive():
-		(training + attribute)/2
+		(training + attribute_check)/2
 	else:
-		min(training, attribute)
+		min(training, attribute_check)
 	if skill.type() == physical:
 		# armor penalty ranges from 0-0.4, with full-plate being 0.4
 		if skill.is_upper_body():
@@ -210,6 +248,14 @@ You have to aim at a target for awhile to get your precision bonus, whereas agil
 4. Huntsmen
 5. Elf rangers
 
+### Dodge (intuitive, 20000 hours)
+
+0. Zombies
+1. Drunk or very old people, orcs
+2. Peasant levy, goblins
+3. Professional soldier
+4. Knight
+5. Elven warrior
 ### Block (intuitive, 12000 hours)
 The larger your shield is, the less you rely on your block skill to use it effectively. A pavise requires almost none (though considerable strength), a buckler or weapon require high skill to use effectively. Precision doesn't give you a bonus to your defense when blocking, but does increase the amount of poise damage that actually does occur on a successful block (automatically turning it into a parry).
 
