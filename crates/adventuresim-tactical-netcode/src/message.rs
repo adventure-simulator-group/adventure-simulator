@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+use adventuresim_tactical_core::prelude::Collider;
+use bevy::{ecs::entity::MapEntities, prelude::*};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
@@ -7,11 +8,19 @@ pub struct JoinRequest {
 }
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
-pub struct PlayerInputMessage {
+pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
-pub struct AttackCommand;
+pub struct AttackRequest;
+
+#[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]
+pub struct SuccessfulAttackResponse {
+    pub attacker: Entity,
+    pub hit: Vec<Entity>,
+    pub hitreg: Collider,
+    pub hitreg_transform: Transform,
+}

@@ -34,8 +34,8 @@ pub struct AttackConfig {
 impl Default for AttackConfig {
     fn default() -> Self {
         Self {
-            hitreg_shape: Collider::capsule(0.5, 0.3),
-            hitreg_translation: Vec3::Z,
+            hitreg_shape: Collider::cuboid(0.5, 0.5, 1.5),
+            hitreg_translation: Vec3::NEG_Z,
             pre_hit_delay: 0.3,
         }
     }

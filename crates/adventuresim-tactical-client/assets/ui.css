@@ -37,6 +37,18 @@ text,span {
   text-shadow: #0007 1px 1px;
 }
 
+#attack-timer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200px;
+  margin-left: -100px;
+  font-size: 20px;
+  text-align: center;
+  color: #fffa;
+  text-shadow: #000 2px 2px;
+}
+
 #crosshair {
   background-image: url("crosshair.png");
   width: 72px;

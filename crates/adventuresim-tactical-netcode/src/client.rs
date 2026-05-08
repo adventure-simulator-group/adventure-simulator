@@ -1,4 +1,4 @@
-use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
+use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest};
 use crate::DEFAULT_SERVER_URL;
 use adventuresim_tactical_core::prelude::*;
 use aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin};
@@ -77,7 +77,7 @@ fn send_player_input(
             .map(|jump| **jump)
             .unwrap_or(false);
 
-        commands.client_trigger(PlayerInputMessage {
+        commands.client_trigger(PlayerInputRequest {
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump,
@@ -95,7 +95,7 @@ fn send_attack(
             continue;
         };
         if events.contains(ActionEvents::START) {
-            commands.client_trigger(AttackCommand);
+            commands.client_trigger(AttackRequest);
         }
     }
 }

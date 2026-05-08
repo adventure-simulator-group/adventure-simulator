@@ -7,7 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = []
+default = ["debug"]
 debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
 

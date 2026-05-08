@@ -32,6 +32,7 @@ impl Plugin for UiPlugin {
                     update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                 ),
             )
             .add_observer(on_new_player_added_hook);
@@ -84,6 +85,9 @@ struct StomachSpan;
 struct HeadSpan;
 
 #[derive(Component)]
+struct AttackTimerSpan;
+
+#[derive(Component)]
 struct EquippedItemsList;
 
 #[derive(Component)]
@@ -106,6 +110,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![
             (Name::new("crosshair"), Node::default()),
+            (Name::new("attack-timer"), AttackTimerSpan, Text::default(),),
             (
                 Name::new("controls"),
                 Text::new("WASD to move | Space to jump | Mouse to look around"),
@@ -417,6 +422,20 @@ fn update_connection_ui(
     }
     if !spans.p2().1.contains(status_class) {
         *spans.p2().1 = ClassList::new(status_class);
+    }
+}
+
+fn update_attack_timer_ui(
+    player: Single<Option<Ref<AttackState>>, With<ClientPlayer>>,
+    mut span: Single<&mut Text, With<AttackTimerSpan>>,
+) {
+    let state = player.into_inner();
+
+    if let Some(state) = state.as_ref() && state.is_attacking()  {
+        let remaining = state.pre_hit_timer.remaining().as_secs_f32();
+        span.0 = format!("{:.1}s", remaining);
+    } else if !span.0.is_empty() {
+        span.0.clear();
     }
 }
 

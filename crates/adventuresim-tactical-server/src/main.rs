@@ -216,7 +216,15 @@ fn on_stdb_insert_connected_players(
         .unwrap_or_default()
         + player_spawn_offset(&player_collider);
 
+    let tag = if player.character.temporary {
+        "Bot"
+    } else {
+        "Player"
+    };
+    let name = format!("{tag}#{} {}", player.character.id, player.character.name);
+
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
+        Name::new(name),
         Replicated,
         Player {
             name: player.character.name.clone(),
@@ -228,15 +236,16 @@ fn on_stdb_insert_connected_players(
         stats,
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
         (
-            player_collider,
+            player_collider.clone(),
             CollisionMargin(0.01),
             CharacterController::default(),
             CharacterLook::default(),
         ),
+        // TODO: limb group hitboxes
         children![(
             Replicated,
             CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
-            Collider::cylinder(0.3, 0.6),
+            player_collider,
             Sensor,
         ),],
     ));
@@ -494,7 +503,7 @@ fn on_join_request(
 }
 
 fn on_player_input(
-    input: On<FromClient<PlayerInputMessage>>,
+    input: On<FromClient<PlayerInputRequest>>,
     mut players: Query<(&mut AccumulatedInput, &mut CharacterLook), With<Player>>,
 ) {
     let Some(entity) = input.client_id.entity() else {
