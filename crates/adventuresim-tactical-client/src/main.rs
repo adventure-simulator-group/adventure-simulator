@@ -185,30 +185,6 @@ fn on_game_scene_added_hook(
         })),
     ));
 
-    // Some obstacles/props for visual interest
-    let mut spawn_prop = |pos: Vec2, terrain: &SceneTerrain, color: Color| {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                metallic: 0.5,
-                perceptual_roughness: 0.5,
-                ..default()
-            })),
-            Transform::from_translation(Vec3::new(
-                pos.x,
-                terrain.height_at(pos).unwrap_or_default() + 1.0,
-                pos.y,
-            )),
-        ));
-    };
-    spawn_prop(Vec2::new(5.0, 5.0), terrain, Color::srgb(0.4, 0.4, 0.8));
-    spawn_prop(Vec2::new(-5.0, 5.0), terrain, Color::srgb(0.8, 0.4, 0.4));
-    spawn_prop(Vec2::new(5.0, -5.0), terrain, Color::srgb(0.4, 0.8, 0.4));
-    spawn_prop(Vec2::new(-5.0, -5.0), terrain, Color::srgb(0.8, 0.8, 0.4));
-    spawn_prop(Vec2::new(10.0, 0.0), terrain, Color::srgb(0.6, 0.3, 0.6));
-    spawn_prop(Vec2::new(-10.0, 0.0), terrain, Color::srgb(0.3, 0.6, 0.6));
-
     Ok(())
 }
 
