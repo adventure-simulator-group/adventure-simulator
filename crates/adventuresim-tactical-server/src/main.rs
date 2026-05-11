@@ -34,6 +34,10 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
 
+    /// Address advertised to browser clients. Defaults to --addr.
+    #[arg(long)]
+    public_addr: Option<String>,
+
     /// Whether or not the server should be created for the associated request.
     #[arg(long)]
     requested: bool,
@@ -59,7 +63,7 @@ struct Args {
     spacetimedb_url: String,
 
     /// SpacetimeDB module name
-    #[arg(long, default_value = "strategic-stdb-module")]
+    #[arg(long, default_value = "adventuresim-stdb-module")]
     spacetimedb_module: String,
 
     /// Mission timeout in seconds (how long the server stays up waiting for players)
@@ -434,14 +438,18 @@ fn on_server_started(
     if args.requested {
         conn.reducers().create_tactical_server_for_request(
             args.mission_id.clone(),
-            args.addr.to_string(),
+            args.public_addr
+                .clone()
+                .unwrap_or_else(|| args.addr.to_string()),
             default(),
         )?;
     } else {
         conn.reducers().create_tactical_server(
             args.mission_id.clone(),
             args.scene_key.clone(),
-            args.addr.to_string(),
+            args.public_addr
+                .clone()
+                .unwrap_or_else(|| args.addr.to_string()),
             default(),
         )?;
     }

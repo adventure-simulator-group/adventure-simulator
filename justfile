@@ -21,6 +21,8 @@ strategic_web_dir := "crates/strategic-web"
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
 http_log := run_dir + "/http.log"
+spawner_pid := run_dir + "/spawner.pid"
+spawner_log := run_dir + "/spawner.log"
 stdb_pid := run_dir + "/spacetime.pid"
 stdb_log := run_dir + "/spacetime.log"
 
@@ -53,11 +55,14 @@ dev-full: preflight build-wasm spacetime-start publish serve-ui
     @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
     @echo "WASM game: ready (click 'Enter World' after starting a mission)"
 
-# Start fresh SpacetimeDB, seed data, and run strategic-web server
-web: preflight spacetime-start publish-reset seed-world
+# Start the full single-host browser stack.
+# For a VPS, pass public_host=<domain-or-public-ip> and open ports 8080 plus 6001+.
+web public_host="127.0.0.1": preflight build-wasm spacetime-start publish-reset seed-world build-tactical
+    @just spawner-start public_host="{{public_host}}"
     @echo ""
     @echo "Starting strategic-web server..."
     @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical servers bind on {{public_bind}}:{{tactical_web_port}}+ and advertise {{public_host}}:{{tactical_web_port}}+"
     @echo ""
     @SPACETIMEDB_HOST={{spacetime_url}} \
      SPACETIMEDB_DATABASE={{spacetime_module}} \
@@ -67,14 +72,20 @@ web: preflight spacetime-start publish-reset seed-world
      cargo run -p strategic-web
 
 # Same as web, then open the browser
-web-open: preflight spacetime-start publish-reset seed-world open-web
+web-open public_host="127.0.0.1": preflight open-web
+    @just web public_host="{{public_host}}"
+
+# Run the single-host browser stack on a VPS.
+vps-web public_host: preflight build-wasm spacetime-start-public publish-reset seed-world build-tactical
+    @just spawner-start public_host="{{public_host}}"
     @echo ""
     @echo "Starting strategic-web server..."
-    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Open: http://{{public_host}}:{{web_port}}"
+    @echo "Tactical servers bind on {{public_bind}}:{{tactical_web_port}}+ and advertise {{public_host}}:{{tactical_web_port}}+"
     @echo ""
     @SPACETIMEDB_HOST={{spacetime_url}} \
      SPACETIMEDB_DATABASE={{spacetime_module}} \
-     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     BIND_ADDRESS={{public_bind}}:{{web_port}} \
      STATIC_DIR={{strategic_web_dir}}/static \
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
@@ -202,7 +213,7 @@ open-ui:
     fi
 
 # Stop all running services started by this justfile
-stop: spacetime-stop stop-ui
+stop: spawner-stop spacetime-stop stop-ui
 
 # Run the stack on a VPS (public bind). Requires firewall/DNS setup.
 vps-serve domain="localhost": preflight spacetime-start-public publish serve-ui-public
@@ -222,6 +233,11 @@ status:
         echo "UI server: running (http://localhost:{{ui_port}}/)"; \
     else \
         echo "UI server: not running"; \
+    fi
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner: running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        echo "Tactical spawner: not running"; \
     fi
 
 # Build the strategic SpacetimeDB module
@@ -245,18 +261,55 @@ build-wasm:
 # Build everything
 build-all: build-strategic build-tactical build-wasm
 
-# Run the tactical spawner (watches for pending missions and starts servers)
-spawner: build-tactical
+# Start the tactical spawner in the foreground.
+spawner public_host="127.0.0.1" bind_host=public_bind base_port=tactical_web_port: build-tactical
 	@cargo run --package adventuresim-tactical-server-dispatcher -- \
 		--spacetimedb-url {{spacetime_url}} \
 		--spacetimedb-module {{spacetime_module}} \
 		--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
-		--base-port {{tactical_port}}
+		--base-port {{base_port}} \
+		--bind-host {{bind_host}} \
+		--public-host "{{public_host}}"
+
+# Start the tactical spawner in the background.
+spawner-start public_host="127.0.0.1" bind_host=public_bind base_port=tactical_web_port:
+    @mkdir -p "{{run_dir}}"
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner already running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        cargo run --package adventuresim-tactical-server-dispatcher -- \
+            --spacetimedb-url {{spacetime_url}} \
+            --spacetimedb-module {{spacetime_module}} \
+            --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+            --base-port {{base_port}} \
+            --bind-host {{bind_host}} \
+            --public-host "{{public_host}}" >"{{spawner_log}}" 2>&1 & \
+        echo $! > "{{spawner_pid}}"; \
+        sleep 1; \
+        if ! kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+            echo "Tactical spawner failed to start. See {{spawner_log}}"; \
+            exit 1; \
+        fi; \
+        echo "Tactical spawner running; log: {{spawner_log}}"; \
+    fi
+
+# Stop the tactical spawner.
+spawner-stop:
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        kill "$(cat "{{spawner_pid}}")"; \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner stopped"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner not running"; \
+    fi
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills":
 	@cargo run --package adventuresim-tactical-server -- \
 		--addr "0.0.0.0:{{tactical_port}}" \
+		--public-addr "127.0.0.1:{{tactical_port}}" \
 		--mission-id {{mission_id}} \
 		--scene-key {{scene_key}} \
 		--spacetimedb-url {{spacetime_url}} \

@@ -30,13 +30,19 @@ struct Args {
     #[arg(long, default_value = "adventuresim-tactical-server")]
     tactical_server_bin: String,
 
-    /// Base port for tactical servers (incremented for each new server)
-    #[arg(long, default_value = "6000")]
+    /// Base port for tactical servers (incremented for each new server).
+    ///
+    /// Browsers commonly block port 6000, so the default starts at 6001.
+    #[arg(long, default_value = "6001")]
     base_port: u16,
 
-    /// Public host for clients to connect to
+    /// Host/IP the spawned tactical servers bind to.
     #[arg(long, default_value = "0.0.0.0")]
-    host: IpAddr,
+    bind_host: IpAddr,
+
+    /// Public host clients use to connect. Use a DNS name or public IP on a VPS.
+    #[arg(long, default_value = "127.0.0.1")]
+    public_host: String,
 }
 
 fn main() {
@@ -91,7 +97,8 @@ fn main() {
     let bin = args.tactical_server_bin.clone();
     let stdb_url = args.spacetimedb_url.clone();
     let stdb_module = args.spacetimedb_module.clone();
-    let host = args.host.clone();
+    let bind_host = args.bind_host;
+    let public_host = args.public_host.clone();
 
     conn.db
         .tactical_server_request()
@@ -113,6 +120,9 @@ fn main() {
                 request.mission_id, request.scene_key, port
             );
 
+            let bind_addr = SocketAddr::new(bind_host, port).to_string();
+            let public_addr = format!("{public_host}:{port}");
+
             match Command::new(&bin)
                 .args([
                     "--requested",
@@ -121,7 +131,9 @@ fn main() {
                     "--scene-key",
                     &request.scene_key,
                     "--addr",
-                    &SocketAddr::new(host, port).to_string(),
+                    &bind_addr,
+                    "--public-addr",
+                    &public_addr,
                     "--spacetimedb-url",
                     &stdb_url,
                     "--spacetimedb-module",
