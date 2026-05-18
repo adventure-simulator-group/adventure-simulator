@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use serde_json::Value;
+use std::time::Duration;
 
 use super::types::{AlgebraicType, QueryResponse};
 
@@ -30,11 +31,38 @@ fn is_option_sum(variants: &[Value]) -> bool {
     names.iter().any(|n| n == "some") && names.iter().any(|n| n == "none")
 }
 
+fn product_elements(algebraic_type: &AlgebraicType) -> Option<&Vec<Value>> {
+    let AlgebraicType::Value(ty) = algebraic_type;
+    ty.get("Product")?.get("elements")?.as_array()
+}
+
+fn is_identity_product(elements: &[Value]) -> bool {
+    elements.len() == 1
+        && elements[0]
+            .get("name")
+            .and_then(|name| name.get("some"))
+            .and_then(Value::as_str)
+            == Some("__identity__")
+}
+
 /// Convert SpacetimeDB encoded values to normal JSON using schema type info.
 /// Handles:
 /// - Option<T>: [0, value] => value, [1, []] => null
 /// - Unit enums: [tag, []] => "VariantName"
+/// - Identity: ["0x..."] => "0x..."
 fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Value {
+    if let Some(elements) = product_elements(algebraic_type) {
+        if is_identity_product(elements) {
+            if let Some(identity) = value
+                .as_array()
+                .and_then(|items| items.first())
+                .and_then(Value::as_str)
+            {
+                return Value::String(identity.to_string());
+            }
+        }
+    }
+
     let Some(variants) = sum_variants(algebraic_type) else {
         return value.clone();
     };
@@ -109,7 +137,11 @@ impl SpacetimeClient {
     /// Create a new SpacetimeDB client
     pub fn new(base_url: impl Into<String>, database: impl Into<String>) -> Self {
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .timeout(Duration::from_secs(10))
+                .connect_timeout(Duration::from_secs(3))
+                .build()
+                .expect("failed to build SpacetimeDB HTTP client"),
             base_url: base_url.into(),
             database: database.into(),
             token: None,

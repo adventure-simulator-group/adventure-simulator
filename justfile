@@ -58,7 +58,7 @@ dev-full: preflight build-wasm spacetime-start publish serve-ui
 # Start the full single-host browser stack.
 # For a VPS, pass public_host=<domain-or-public-ip> and open ports 8080 plus 6001+.
 web public_host="127.0.0.1": preflight build-wasm spacetime-start publish-reset seed-world build-tactical
-    @just spawner-start public_host="{{public_host}}"
+    @just spawner-start "{{public_host}}"
     @echo ""
     @echo "Starting strategic-web server..."
     @echo "Open: http://localhost:{{web_port}}"
@@ -73,11 +73,11 @@ web public_host="127.0.0.1": preflight build-wasm spacetime-start publish-reset 
 
 # Same as web, then open the browser
 web-open public_host="127.0.0.1": preflight open-web
-    @just web public_host="{{public_host}}"
+    @just web "{{public_host}}"
 
 # Run the single-host browser stack on a VPS.
 vps-web public_host: preflight build-wasm spacetime-start-public publish-reset seed-world build-tactical
-    @just spawner-start public_host="{{public_host}}"
+    @just spawner-start "{{public_host}}"
     @echo ""
     @echo "Starting strategic-web server..."
     @echo "Open: http://{{public_host}}:{{web_port}}"
@@ -278,13 +278,13 @@ spawner-start public_host="127.0.0.1" bind_host=public_bind base_port=tactical_w
         echo "Tactical spawner already running (pid $(cat "{{spawner_pid}}"))"; \
     else \
         rm -f "{{spawner_pid}}"; \
-        cargo run --package adventuresim-tactical-server-dispatcher -- \
+        RUST_LOG=info setsid "$(pwd)/target/debug/adventuresim-tactical-server-dispatcher" \
             --spacetimedb-url {{spacetime_url}} \
             --spacetimedb-module {{spacetime_module}} \
             --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
             --base-port {{base_port}} \
             --bind-host {{bind_host}} \
-            --public-host "{{public_host}}" >"{{spawner_log}}" 2>&1 & \
+            --public-host "{{public_host}}" >"{{spawner_log}}" 2>&1 < /dev/null & \
         echo $! > "{{spawner_pid}}"; \
         sleep 1; \
         if ! kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \

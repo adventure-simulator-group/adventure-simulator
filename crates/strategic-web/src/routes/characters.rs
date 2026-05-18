@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, State},
-    response::{Html, Redirect, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Router,
 };
@@ -62,11 +62,17 @@ async fn create_character(
 ) -> Response {
     let id = chrono_id();
 
-    let _ = state.db.call("create_character", &[json!(id)]).await;
-    let _ = state
+    if let Err(error) = state
         .db
-        .call("update_character", &[json!(id), json!(form.name)])
-        .await;
+        .call(
+            "create_named_character_with_id",
+            &[json!(id), json!(form.name)],
+        )
+        .await
+    {
+        tracing::error!("Failed to create character {id}: {error}");
+        return Redirect::to("/characters/new").into_response();
+    }
 
     // Auto-select the newly created character
     set_character_cookie(&id.to_string(), "/")

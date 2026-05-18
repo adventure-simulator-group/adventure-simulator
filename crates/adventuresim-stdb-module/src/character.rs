@@ -148,6 +148,16 @@ pub fn create_named_character(ctx: &ReducerContext, name: String) -> Result<(), 
     insert_new_character(ctx, name, id)
 }
 
+/// Create a named character with a caller-supplied ID.
+#[reducer]
+pub fn create_named_character_with_id(
+    ctx: &ReducerContext,
+    id: u64,
+    name: String,
+) -> Result<(), String> {
+    insert_new_character(ctx, name, id)
+}
+
 #[reducer]
 fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
@@ -158,7 +168,7 @@ fn insert_new_character(ctx: &ReducerContext, name: String, id: u64) -> Result<(
         xp: 0,
         level: 1,
         gold: 100,
-        current_settlement_id: None,
+        current_settlement_id: Some("riverdale".into()),
         party_id: None,
         server: Identity::ZERO,
         in_server: false,

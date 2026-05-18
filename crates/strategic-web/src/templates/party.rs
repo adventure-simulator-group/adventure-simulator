@@ -202,6 +202,10 @@ pub fn party_detail_page(
                             a href=(format!("/settlements/{}/noticeboard", settlement_id)) class="btn btn-primary btn-small mt-1" {
                                 "Find Quest"
                             }
+                        } @else {
+                            a href="/settlements" class="btn btn-primary btn-small mt-1" {
+                                "Choose Destination"
+                            }
                         }
                     }
                 }))
