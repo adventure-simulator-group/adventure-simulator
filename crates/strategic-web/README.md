@@ -64,10 +64,6 @@ Environment variables:
 | `SPACETIMEDB_HOST` | `http://localhost:3000` | SpacetimeDB HTTP API URL |
 | `SPACETIMEDB_DATABASE` | `adventuresim-stdb-module` | SpacetimeDB database name |
 | `SPACETIMEDB_TOKEN` | (none) | Optional auth token |
-| `EDGEGAP_API_URL` | `https://api.edgegap.com` | Edgegap API base URL |
-| `EDGEGAP_API_TOKEN` | (none) | Edgegap API token (enables direct deployment mode) |
-| `EDGEGAP_APPLICATION_NAME` | `tactical-server` | Edgegap application name |
-| `EDGEGAP_VERSION_NAME` | `latest` | Edgegap application version |
 
 ## Routes
 

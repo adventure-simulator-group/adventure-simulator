@@ -23,7 +23,6 @@ pub mod character_stats_table;
 pub mod character_stats_type;
 pub mod character_table;
 pub mod character_type;
-pub mod clear_deployment_session_reducer;
 pub mod complete_quest_reducer;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
@@ -38,8 +37,6 @@ pub mod define_armor_reducer;
 pub mod define_item_reducer;
 pub mod define_shield_reducer;
 pub mod define_weapon_reducer;
-pub mod deployment_session_table;
-pub mod deployment_session_type;
 pub mod disband_party_reducer;
 pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
@@ -55,7 +52,6 @@ pub mod item_type;
 pub mod join_party_reducer;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
-pub mod mission_failed_reducer;
 pub mod party_member_table;
 pub mod party_member_type;
 pub mod party_table;
@@ -63,7 +59,6 @@ pub mod party_type;
 pub mod quest_status_type;
 pub mod quest_table;
 pub mod quest_type;
-pub mod register_deployment_session_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod seed_world_reducer;
@@ -75,7 +70,6 @@ pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
-pub mod update_deployment_session_status_reducer;
 
 pub use abandon_quest_reducer::{
     abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
@@ -102,10 +96,6 @@ pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
 pub use character_table::*;
 pub use character_type::Character;
-pub use clear_deployment_session_reducer::{
-    clear_deployment_session, set_flags_for_clear_deployment_session,
-    ClearDeploymentSessionCallbackId,
-};
 pub use complete_quest_reducer::{
     complete_quest, set_flags_for_complete_quest, CompleteQuestCallbackId,
 };
@@ -138,8 +128,6 @@ pub use define_shield_reducer::{
 pub use define_weapon_reducer::{
     define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
 };
-pub use deployment_session_table::*;
-pub use deployment_session_type::DeploymentSession;
 pub use disband_party_reducer::{
     disband_party, set_flags_for_disband_party, DisbandPartyCallbackId,
 };
@@ -168,9 +156,6 @@ pub use leave_mission_reducer::{
     leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
 };
 pub use leave_party_reducer::{leave_party, set_flags_for_leave_party, LeavePartyCallbackId};
-pub use mission_failed_reducer::{
-    mission_failed, set_flags_for_mission_failed, MissionFailedCallbackId,
-};
 pub use party_member_table::*;
 pub use party_member_type::PartyMember;
 pub use party_table::*;
@@ -178,10 +163,6 @@ pub use party_type::Party;
 pub use quest_status_type::QuestStatus;
 pub use quest_table::*;
 pub use quest_type::Quest;
-pub use register_deployment_session_reducer::{
-    register_deployment_session, set_flags_for_register_deployment_session,
-    RegisterDeploymentSessionCallbackId,
-};
 pub use request_tactical_server_for_scene_reducer::{
     request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
     RequestTacticalServerForSceneCallbackId,
@@ -201,10 +182,6 @@ pub use travel_to_settlement_reducer::{
 };
 pub use update_character_reducer::{
     set_flags_for_update_character, update_character, UpdateCharacterCallbackId,
-};
-pub use update_deployment_session_status_reducer::{
-    set_flags_for_update_deployment_session_status, update_deployment_session_status,
-    UpdateDeploymentSessionStatusCallbackId,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -235,9 +212,6 @@ pub enum Reducer {
         character_id: u64,
         item_id: String,
         by_quantity: i32,
-    },
-    ClearDeploymentSession {
-        mission_id: String,
     },
     CompleteQuest {
         quest_id: String,
@@ -324,15 +298,6 @@ pub enum Reducer {
     LeaveParty {
         character_id: u64,
     },
-    MissionFailed {
-        mission_id: String,
-        reason: String,
-    },
-    RegisterDeploymentSession {
-        mission_id: String,
-        request_id: String,
-        party_id: String,
-    },
     RequestTacticalServer {
         mission_id: String,
         scene_key: String,
@@ -349,11 +314,6 @@ pub enum Reducer {
         id: u64,
         name: String,
     },
-    UpdateDeploymentSessionStatus {
-        mission_id: String,
-        status: String,
-        last_error: Option<String>,
-    },
 }
 
 impl __sdk::InModule for Reducer {
@@ -368,7 +328,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
-            Reducer::ClearDeploymentSession { .. } => "clear_deployment_session",
             Reducer::CompleteQuest { .. } => "complete_quest",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
@@ -389,14 +348,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::JoinParty { .. } => "join_party",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
-            Reducer::MissionFailed { .. } => "mission_failed",
-            Reducer::RegisterDeploymentSession { .. } => "register_deployment_session",
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::SeedWorld => "seed_world",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::UpdateCharacter { .. } => "update_character",
-            Reducer::UpdateDeploymentSessionStatus { .. } => "update_deployment_session_status",
             _ => unreachable!(),
         }
     }
@@ -428,12 +384,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 change_inventory_item_reducer::ChangeInventoryItemArgs,
             >("change_inventory_item", &value.args)?
             .into()),
-            "clear_deployment_session" => {
-                Ok(__sdk::parse_reducer_args::<
-                    clear_deployment_session_reducer::ClearDeploymentSessionArgs,
-                >("clear_deployment_session", &value.args)?
-                .into())
-            }
             "complete_quest" => Ok(__sdk::parse_reducer_args::<
                 complete_quest_reducer::CompleteQuestArgs,
             >("complete_quest", &value.args)?
@@ -538,16 +488,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
-            "mission_failed" => Ok(__sdk::parse_reducer_args::<
-                mission_failed_reducer::MissionFailedArgs,
-            >("mission_failed", &value.args)?
-            .into()),
-            "register_deployment_session" => {
-                Ok(__sdk::parse_reducer_args::<
-                    register_deployment_session_reducer::RegisterDeploymentSessionArgs,
-                >("register_deployment_session", &value.args)?
-                .into())
-            }
             "request_tactical_server" => Ok(__sdk::parse_reducer_args::<
                 request_tactical_server_reducer::RequestTacticalServerArgs,
             >("request_tactical_server", &value.args)?
@@ -573,12 +513,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 update_character_reducer::UpdateCharacterArgs,
             >("update_character", &value.args)?
             .into()),
-            "update_deployment_session_status" => {
-                Ok(__sdk::parse_reducer_args::<
-                    update_deployment_session_status_reducer::UpdateDeploymentSessionStatusArgs,
-                >("update_deployment_session_status", &value.args)?
-                .into())
-            }
             unknown => {
                 Err(
                     __sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo")
@@ -600,7 +534,6 @@ pub struct DbUpdate {
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
-    deployment_session: __sdk::TableUpdate<DeploymentSession>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     item: __sdk::TableUpdate<Item>,
     party: __sdk::TableUpdate<Party>,
@@ -638,9 +571,6 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
-                "deployment_session" => db_update
-                    .deployment_session
-                    .append(deployment_session_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -706,12 +636,6 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
         diff.character_stats =
             cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
-        diff.deployment_session = cache
-            .apply_diff_to_table::<DeploymentSession>(
-                "deployment_session",
-                &self.deployment_session,
-            )
-            .with_updates_by_pk(|row| &row.mission_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -757,7 +681,6 @@ pub struct AppliedDiff<'r> {
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
-    deployment_session: __sdk::TableAppliedDiff<'r, DeploymentSession>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     party: __sdk::TableAppliedDiff<'r, Party>,
@@ -808,11 +731,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DeploymentSession>(
-            "deployment_session",
-            &self.deployment_session,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
@@ -1565,7 +1483,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
-        deployment_session_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         item_table::register_table(client_cache);
         party_table::register_table(client_cache);

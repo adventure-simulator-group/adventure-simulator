@@ -1,9 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
 
-use crate::{
-    character::character,
-    tactical::{tactical_server, tactical_server_request},
-};
+use crate::{character::character, tactical::tactical_server_request};
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -64,17 +61,6 @@ pub struct PartyMember {
     #[index(btree)]
     pub character_id: u64,
     pub role: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-#[table(name = deployment_session, public)]
-pub struct DeploymentSession {
-    #[primary_key]
-    pub mission_id: String,
-    pub request_id: String,
-    pub party_id: String,
-    pub status: String,
-    pub last_error: Option<String>,
 }
 
 #[reducer]
@@ -369,90 +355,11 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 }
 
 #[reducer]
-pub fn register_deployment_session(
-    ctx: &ReducerContext,
-    mission_id: String,
-    request_id: String,
-    party_id: String,
-) -> Result<(), String> {
-    let requested = ctx
-        .db
-        .tactical_server_request()
-        .mission_id()
-        .find(&mission_id)
-        .is_some();
-    let ready = ctx
-        .db
-        .tactical_server()
-        .mission_id()
-        .find(&mission_id)
-        .is_some();
-    if !requested && !ready {
-        return Err("Mission not found".into());
-    }
-
-    ctx.db.deployment_session().insert(DeploymentSession {
-        mission_id,
-        request_id,
-        party_id,
-        status: "DEPLOYING".into(),
-        last_error: None,
-    });
-    Ok(())
-}
-
-#[reducer]
-pub fn update_deployment_session_status(
-    ctx: &ReducerContext,
-    mission_id: String,
-    status: String,
-    last_error: Option<String>,
-) -> Result<(), String> {
-    let Some(mut session) = ctx.db.deployment_session().mission_id().find(&mission_id) else {
-        return Err("Deployment session not found".into());
-    };
-
-    session.status = status;
-    session.last_error = last_error;
-    ctx.db.deployment_session().mission_id().update(session);
-    Ok(())
-}
-
-#[reducer]
-pub fn clear_deployment_session(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
-    ctx.db.deployment_session().mission_id().delete(&mission_id);
-    Ok(())
-}
-
-#[reducer]
-pub fn mission_failed(
-    ctx: &ReducerContext,
-    mission_id: String,
-    reason: String,
-) -> Result<(), String> {
-    ctx.db
-        .tactical_server_request()
-        .mission_id()
-        .delete(&mission_id);
-    if let Some(server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
-        ctx.db.tactical_server().identity().delete(server.identity);
-    }
-
-    if let Some(mut session) = ctx.db.deployment_session().mission_id().find(&mission_id) {
-        session.status = "FAILED".into();
-        session.last_error = Some(reason);
-        ctx.db.deployment_session().mission_id().update(session);
-    }
-    Ok(())
-}
-
-#[reducer]
 pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
     ctx.db
         .tactical_server_request()
         .mission_id()
         .delete(&mission_id);
-    ctx.db.deployment_session().mission_id().delete(&mission_id);
     Ok(())
 }
 

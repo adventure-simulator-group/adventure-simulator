@@ -135,19 +135,6 @@ impl TacticalServer {
             party_id,
         }
     }
-
-    pub fn failed(mission_id: String, character_id: u64, party_id: Option<String>) -> Self {
-        Self {
-            identity: None,
-            mission_id,
-            scene_key: String::new(),
-            status: "Failed".to_string(),
-            addr: String::new(),
-            cert_digest: String::new(),
-            character_id: Some(character_id),
-            party_id,
-        }
-    }
 }
 
 fn ready_status() -> String {
@@ -158,13 +145,4 @@ fn ready_status() -> String {
 pub struct TacticalServerRequest {
     pub mission_id: String,
     pub scene_key: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeploymentSession {
-    pub mission_id: String,
-    pub request_id: String,
-    pub party_id: String,
-    pub status: String,
-    pub last_error: Option<String>,
 }
