@@ -43,7 +43,9 @@ $$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfra
 5. Modify defense by flanking penalty
 	1. a is the angle that the attacker is facing and b is the angle that the defender is facing
 	2. In layman's terms, you have zero defense if someone attacks from behind, full defense if they attack from in front, but the modifier starts at 1 below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
- 	3. $D_{\text{final}} =D_{\text{base}} \cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a), \cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)$
+ 	3.
+	
+$$D_{\text{final}} =D_{\text{base}} \cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a), \cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)$$
 
 6. Attack value is accuracy - defense
 7. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
@@ -117,9 +119,9 @@ This does not significantly accumulate in the course of combat, but is more a fu
 
 ## Penetrating
 Each piece of armor has a "resistance" and "padding", both are in terms of joules. When attack connects, the imparted_joules is subtracted by the resistance to determine how much energy penetrates the armor, if any. Weapons also have a "penetration" coefficient. The actual resistance used for the attack is:
-$$
-finalResistance = resistance-flexibility\cdot{resistance}\cdot{penetration}
-$$
+
+$$finalResistance = resistance-flexibility\cdot{resistance}\cdot{penetration}$$
+
 Penetration coefficient examples:
 - Clubs: 0.1
 - Maces: 0.5
@@ -147,9 +149,9 @@ Calibration:
 > Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](../shared/Stats.md) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
 ## Durability
 Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
-$$
-DurabilityDamage = 1 - resilience * (ImpartedJoules - threshold)
-$$
+
+$$DurabilityDamage = 1 - resilience * (ImpartedJoules - threshold)$$
+
 Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low durability). Solid, ductile materials which deform plastically have very low resilience (like metal plate). And most flexible materials have fairly high resilience, since they are able to absorb a lot of the force as they bend.
 
 ### Examples 
