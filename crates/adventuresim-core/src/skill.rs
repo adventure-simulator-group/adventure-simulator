@@ -36,8 +36,8 @@ pub enum Skill {
     /// Physical. Intuitive. Shield defense, poise damage on block. (12000h)
     #[assoc(max_hours = 12000.0, kind = SkillKind::Physical, is_trained = false)]
     Block,
-    // TODO: add to wiki
-    #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
+    /// Physical. Intuitive. Avoiding hits. (20000h)
+    #[assoc(max_hours = 20000.0, kind = SkillKind::Physical, is_trained = false)]
     Dodge,
     /// Physical. Intuitive. Movement noise (agility), detection radius (precision). (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
