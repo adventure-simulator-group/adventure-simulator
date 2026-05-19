@@ -125,7 +125,7 @@ This does not significantly accumulate in the course of combat, but is more a fu
 Each piece of armor has a "resistance" and "padding", both are in terms of joules. When attack connects, the imparted_joules is subtracted by the resistance to determine how much energy penetrates the armor, if any. Weapons also have a "penetration" coefficient. The actual resistance used for the attack is:
 
 $$
-resistance_{\text{final}} = resistance_{\text{base}} - flexibility \cdot resistance_{\text{base}} \cdot penetration
+\mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} - \mathrm{flexibility} \cdot \mathrm{resistance_{\text{base}}} \cdot \mathrm{penetration}
 $$
 
 Penetration coefficient examples:
@@ -157,7 +157,7 @@ Calibration:
 Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
 
 $$
-DurabilityDamage = 1 - resilience * (ImpartedJoules - threshold)
+\mathrm{DurabilityDamage} = 1 - \mathrm{resilience} \cdot \mathrm{(ImpartedJoules - threshold)}
 $$
 
 Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low durability). Solid, ductile materials which deform plastically have very low resilience (like metal plate). And most flexible materials have fairly high resilience, since they are able to absorb a lot of the force as they bend.
