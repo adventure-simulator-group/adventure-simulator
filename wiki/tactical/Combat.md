@@ -26,7 +26,7 @@ Broadly speaking, the flow goes like this:
    block = defender.skill_check(block, Some(LimbWeights { la: 1.0, .. }.flip(side))
    shield = defender.shield_bonus()
    ```
-   4. `shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
+	`shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
 
 $$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)$$
 
@@ -43,23 +43,8 @@ $$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfra
 5. Modify defense by flanking penalty
 	1. a is the angle that the attacker is facing and b is the angle that the defender is facing
 	2. In layman's terms, you have zero defense if someone attacks from behind, full defense if they attack from in front, but the modifier starts at 1 below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
-$$
-D_{\text{final}} =
-D_{\text{base}} \cdot
-\operatorname{clamp}\left(
-\frac{
-\frac{3\pi}{4}
--
-\left|
-\operatorname{atan2}(\sin(b-a), \cos(b-a))
-\right|
-}{
-\frac{\pi}{2}
-},
-0,
-1
-\right)
-$$
+ 	3. $D_{\text{final}} =D_{\text{base}} \cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a), \cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)$
+
 6. Attack value is accuracy - defense
 7. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
 8. If attack is between 0 and 1, multiply attack force by attack
