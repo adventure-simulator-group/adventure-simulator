@@ -19,7 +19,6 @@ bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
 strum = { version = "0.28", features = ["derive"] }
-bitflags = "2.11.0"
 
 [lints]
 workspace = true

@@ -1,8 +1,8 @@
-use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
+use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
-use crate::{add_inventory_item, enter_mission, inventory_item, ItemSlot};
+use crate::{ItemSlot, add_inventory_item, enter_mission, inventory_item};
 
 /// General character info
 #[derive(Clone, Debug)]
@@ -29,13 +29,19 @@ pub struct CharacterAttributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub strength: f32,
     pub precision: f32,
-    pub agility: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
     pub hearing: f32,
+    pub left_arm_strength: f32,
+    pub right_arm_strength: f32,
+    pub left_leg_strength: f32,
+    pub right_leg_strength: f32,
+    pub left_arm_agility: f32,
+    pub right_arm_agility: f32,
+    pub left_leg_agility: f32,
+    pub right_leg_agility: f32,
 }
 
 /// [`Character`] stats
@@ -59,6 +65,14 @@ pub struct CharacterSkills {
     pub melee_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
+    pub ranged_hours: f32,
+    pub will_hours: f32,
+    pub charisma_hours: f32,
+    pub medicine_hours: f32,
+    pub faith_hours: f32,
+    pub stealth_hours: f32,
+    pub balance_hours: f32,
+    pub surgeon_hours: f32,
 }
 
 /// [`Character`] limbs
@@ -68,13 +82,13 @@ pub struct CharacterLimbs {
     #[index(direct)]
     #[unique]
     pub character_id: u64,
-    pub left_arm: f32,
-    pub right_arm: f32,
-    pub left_leg: f32,
-    pub right_leg: f32,
-    pub head: f32,
-    pub chest: f32,
-    pub stomach: f32,
+    pub left_arm_health: f32,
+    pub right_arm_health: f32,
+    pub left_leg_health: f32,
+    pub right_leg_health: f32,
+    pub head_health: f32,
+    pub chest_health: f32,
+    pub stomach_health: f32,
 }
 
 /// [`Character`] equipment
@@ -189,16 +203,24 @@ fn insert_new_character(
         melee_hours: 2000.0,
         dodge_hours: 1000.0,
         block_hours: 1000.0,
+        ranged_hours: 1000.0,
+        will_hours: 1000.0,
+        charisma_hours: 1000.0,
+        medicine_hours: 1000.0,
+        faith_hours: 1000.0,
+        stealth_hours: 1000.0,
+        balance_hours: 1000.0,
+        surgeon_hours: 1000.0,
     });
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
         character_id: id,
-        left_arm: 1.0,
-        right_arm: 1.0,
-        left_leg: 1.0,
-        right_leg: 1.0,
-        head: 1.0,
-        chest: 1.0,
-        stomach: 1.0,
+        left_arm_health: 1.0,
+        right_arm_health: 1.0,
+        left_leg_health: 1.0,
+        right_leg_health: 1.0,
+        head_health: 1.0,
+        chest_health: 1.0,
+        stomach_health: 1.0,
     });
     let _character_equip = ctx.db.character_equip().insert(CharacterEquip {
         character_id: id,
@@ -217,13 +239,19 @@ fn insert_new_character(
         endurance: 2.0,
         immunity: 2.0,
         gut: 2.0,
-        strength: 2.0,
         precision: 2.0,
-        agility: 2.0,
         intelligence: 2.0,
         instinct: 2.0,
         eyesight: 2.0,
         hearing: 2.0,
+        left_arm_strength: 3.0,
+        right_arm_strength: 3.0,
+        left_leg_strength: 3.0,
+        right_leg_strength: 3.0,
+        left_arm_agility: 3.0,
+        right_arm_agility: 3.0,
+        left_leg_agility: 3.0,
+        right_leg_agility: 3.0,
     });
 
     // Starter items

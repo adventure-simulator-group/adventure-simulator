@@ -28,7 +28,8 @@ fn toggle_debug_render(
 }
 
 fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
-    info!("Recieved attack response: {:?}", event.event());
+    let resp = event.event();
+    info!("Recieved attack response: total_damage={:.1}", resp.total_damage);
     commands.spawn((
         DebugAttackCollider {
             collider: event.hitreg.clone(),

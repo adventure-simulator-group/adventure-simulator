@@ -174,8 +174,11 @@ pub enum Reducer {
         item_id: String,
         weight: f32,
         slot: ItemSlot,
-        dodge: f32,
         coverage: f32,
+        resistance: f32,
+        padding: f32,
+        flexibility: f32,
+        range_of_motion: f32,
     },
     DefineItem {
         item_id: String,
@@ -190,6 +193,7 @@ pub enum Reducer {
         item_id: String,
         weight: f32,
         accuracy: f32,
+        penetration: f32,
     },
     EndTacticalServer {
         success: bool,

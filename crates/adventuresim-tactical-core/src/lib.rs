@@ -15,6 +15,7 @@ pub mod scene;
 pub use avian3d;
 
 pub mod prelude {
+    pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::combat::{Attack, AttackConfig, AttackState};
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
@@ -26,12 +27,12 @@ pub mod prelude {
         TacticalPlayerViewer,
     };
     pub use crate::scene::{SceneId, SceneTerrain};
-    pub use crate::AdventureSimulatorCorePlugins;
     pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
+        CharacterController, CharacterControllerState, CharacterLook,
         camera::{CharacterControllerCamera, CharacterControllerCameraOf},
-        input, CharacterController, CharacterControllerState, CharacterLook,
+        input,
     };
     pub use bevy_enhanced_input::{self, prelude::*};
 }

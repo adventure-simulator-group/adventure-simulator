@@ -180,27 +180,41 @@ fn on_stdb_insert_connected_players(
         melee_hours: player.skills.melee_hours,
         dodge_hours: player.skills.dodge_hours,
         block_hours: player.skills.block_hours,
+        ranged_hours: player.skills.ranged_hours,
+        will_hours: player.skills.will_hours,
+        charisma_hours: player.skills.charisma_hours,
+        medicine_hours: player.skills.medicine_hours,
+        faith_hours: player.skills.faith_hours,
+        stealth_hours: player.skills.stealth_hours,
+        balance_hours: player.skills.balance_hours,
+        surgeon_hours: player.skills.surgeon_hours,
     };
     let limbs = Limbs {
-        left_arm: player.limbs.left_arm,
-        right_arm: player.limbs.right_arm,
-        left_leg: player.limbs.left_leg,
-        right_leg: player.limbs.right_leg,
-        chest: player.limbs.chest,
-        stomach: player.limbs.stomach,
-        head: player.limbs.head,
+        left_arm: player.limbs.left_arm_health,
+        right_arm: player.limbs.right_arm_health,
+        left_leg: player.limbs.left_leg_health,
+        right_leg: player.limbs.right_leg_health,
+        chest: player.limbs.chest_health,
+        stomach: player.limbs.stomach_health,
+        head: player.limbs.head_health,
     };
     let attributes = Attributes {
         endurance: player.attrs.endurance,
         immunity: player.attrs.immunity,
         gut: player.attrs.gut,
-        strength: player.attrs.strength,
         precision: player.attrs.precision,
-        agility: player.attrs.agility,
         intelligence: player.attrs.intelligence,
         instinct: player.attrs.instinct,
         eyesight: player.attrs.eyesight,
         hearing: player.attrs.hearing,
+        left_arm_strength: player.attrs.left_arm_strength,
+        right_arm_strength: player.attrs.right_arm_strength,
+        left_leg_strength: player.attrs.left_leg_strength,
+        right_leg_strength: player.attrs.right_leg_strength,
+        left_arm_agility: player.attrs.left_arm_agility,
+        right_arm_agility: player.attrs.right_arm_agility,
+        left_leg_agility: player.attrs.left_leg_agility,
+        right_leg_agility: player.attrs.right_leg_agility,
     };
     let stats = Stats {
         calories_used: player.stats.calories_used,
@@ -274,6 +288,7 @@ fn on_stdb_insert_connected_players(
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,
+                    penetration: item.item.penetration,
                 });
             }
             ItemKind::Armor => {
@@ -296,9 +311,12 @@ fn on_stdb_insert_connected_players(
                     }
                 } {
                     item_cmd.insert(ArmorItem {
-                        dodge: item.item.dodge,
+                        range_of_motion: item.item.range_of_motion,
                         coverage: item.item.coverage,
                         slot,
+                        resistance: item.item.resistance,
+                        padding: item.item.padding,
+                        flexibility: item.item.flexibility,
                     });
                 }
             }

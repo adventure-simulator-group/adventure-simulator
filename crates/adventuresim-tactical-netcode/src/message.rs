@@ -23,4 +23,5 @@ pub struct SuccessfulAttackResponse {
     pub hit: Vec<Entity>,
     pub hitreg: Collider,
     pub hitreg_transform: Transform,
+    pub total_damage: f32,
 }

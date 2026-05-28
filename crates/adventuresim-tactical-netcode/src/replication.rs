@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy_replicon::prelude::*;
 
-use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest, SuccessfulAttackResponse};
 use crate::FIXED_TIMESTEP_HZ;
+use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest, SuccessfulAttackResponse};
 
 #[derive(Default)]
 pub struct AdventureSimulatorReplicationPlugin;

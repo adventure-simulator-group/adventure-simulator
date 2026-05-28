@@ -1,6 +1,9 @@
 use std::num::NonZeroU32;
 
-use adventuresim_core::{body::BodyPart, prelude::PlayerEquipment};
+use adventuresim_core::{
+    body::{BodyPart, BodySide},
+    prelude::PlayerEquipment,
+};
 use bevy::{
     ecs::{entity::MapEntities, query::QueryData, system::SystemParam},
     prelude::*,
@@ -28,9 +31,12 @@ pub struct InventoryItems(Vec<Entity>);
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct ArmorItem {
-    pub dodge: f32,
+    pub range_of_motion: f32,
     pub coverage: f32,
     pub slot: ArmorSlot,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
 }
 
 #[derive(Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -51,6 +57,7 @@ pub enum ArmorSide {
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct WeaponItem {
     pub accuracy: f32,
+    pub penetration: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -99,7 +106,7 @@ impl EquipSlot {
     }
 
     pub fn from_armor_body_part(part: BodyPart) -> Self {
-        bitflags::bitflags_match!(part, {
+        match part {
             BodyPart::LeftArm => Self::ArmorLeftArm,
             BodyPart::RightArm => Self::ArmorRightArm,
             BodyPart::LeftLeg => Self::ArmorLeftLeg,
@@ -107,8 +114,7 @@ impl EquipSlot {
             BodyPart::Chest => Self::ArmorChest,
             BodyPart::Stomach => Self::ArmorStomach,
             BodyPart::Head => Self::ArmorHead,
-            _ => unimplemented!()
-        })
+        }
     }
 }
 
@@ -205,10 +211,20 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
-    fn armor_dodge(&self, part: BodyPart) -> f32 {
+    fn weapon_holding_side(&self) -> Option<BodySide> {
+        self.equipped_weapon()
+            .and_then(|item| item.slot)
+            .and_then(|slot| match slot {
+                EquipSlot::HoldingLeft => Some(BodySide::Left),
+                EquipSlot::HoldingRight => Some(BodySide::Right),
+                _ => None,
+            })
+    }
+
+    fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
         self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
             .and_then(|item| item.armor)
-            .map(|armor| armor.dodge)
+            .map(|armor| armor.range_of_motion)
             .unwrap_or_default()
     }
 
@@ -220,6 +236,40 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_shield()
             .and_then(|item| item.shield)
             .map(|shield| shield.block)
+            .unwrap_or_default()
+    }
+
+    fn weapon_weight(&self) -> f32 {
+        self.equipped_weapon()
+            .map(|item| item.properties.weight)
+            .unwrap_or_default()
+    }
+
+    fn weapon_penetration(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.penetration)
+            .unwrap_or(1.0)
+    }
+
+    fn armor_resistance(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.resistance)
+            .unwrap_or_default()
+    }
+
+    fn armor_padding(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.padding)
+            .unwrap_or_default()
+    }
+
+    fn armor_flexibility(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.flexibility)
             .unwrap_or_default()
     }
 }

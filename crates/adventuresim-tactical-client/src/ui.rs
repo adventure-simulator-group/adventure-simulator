@@ -16,7 +16,7 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
-use crate::{player::ClientPlayer, Args};
+use crate::{Args, player::ClientPlayer};
 
 pub struct UiPlugin;
 
@@ -55,13 +55,7 @@ struct ClientInfoSpan;
 struct ClientStatusSpan;
 
 #[derive(Component)]
-struct MeleeSpan;
-
-#[derive(Component)]
-struct DodgeSpan;
-
-#[derive(Component)]
-struct BlockSpan;
+struct SkillSpan(Skill);
 
 #[derive(Component)]
 struct LeftArmSpan;
@@ -143,17 +137,57 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                             (
                                 Name::new("melee"),
                                 Text::new("Melee hours:\n"),
-                                children![(MeleeSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Melee), TextSpan::default())]
                             ),
                             (
                                 Name::new("dodge"),
                                 Text::new("Dodge hours:\n"),
-                                children![(DodgeSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Dodge), TextSpan::default())]
                             ),
                             (
                                 Name::new("block"),
                                 Text::new("Block hours:\n"),
-                                children![(BlockSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Block), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("ranged"),
+                                Text::new("Ranged hours:\n"),
+                                children![(SkillSpan(Skill::Ranged), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("will"),
+                                Text::new("Will hours:\n"),
+                                children![(SkillSpan(Skill::Will), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("charisma"),
+                                Text::new("Charisma hours:\n"),
+                                children![(SkillSpan(Skill::Charisma), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("medicine"),
+                                Text::new("Medicine hours:\n"),
+                                children![(SkillSpan(Skill::Medicine), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("faith"),
+                                Text::new("Faith hours:\n"),
+                                children![(SkillSpan(Skill::Faith), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("stealth"),
+                                Text::new("Stealth hours:\n"),
+                                children![(SkillSpan(Skill::Stealth), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("balance"),
+                                Text::new("Balance hours:\n"),
+                                children![(SkillSpan(Skill::Balance), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("surgeon"),
+                                Text::new("Surgeon hours:\n"),
+                                children![(SkillSpan(Skill::Surgeon), TextSpan::default())]
                             ),
                         ]
                     ),
@@ -286,17 +320,25 @@ fn update_stats_ui(
 
 fn update_skills_ui(
     player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
-    mut spans: ParamSet<(
-        Single<&mut TextSpan, With<MeleeSpan>>,
-        Single<&mut TextSpan, With<DodgeSpan>>,
-        Single<&mut TextSpan, With<BlockSpan>>,
-    )>,
+    mut spans: Query<(&mut TextSpan, &SkillSpan)>,
 ) {
     let (skills, _player_id) = player.into_inner();
 
-    spans.p0().0 = format!("{:.2}", skills.melee_hours);
-    spans.p1().0 = format!("{:.2}", skills.dodge_hours);
-    spans.p2().0 = format!("{:.2}", skills.block_hours);
+    for (mut text, skill_span) in &mut spans {
+        text.0 = match skill_span.0 {
+            Skill::Melee => format!("{:.2}", skills.melee_hours),
+            Skill::Dodge => format!("{:.2}", skills.dodge_hours),
+            Skill::Block => format!("{:.2}", skills.block_hours),
+            Skill::Ranged => format!("{:.2}", skills.ranged_hours),
+            Skill::Will => format!("{:.2}", skills.will_hours),
+            Skill::Charisma => format!("{:.2}", skills.charisma_hours),
+            Skill::Medicine => format!("{:.2}", skills.medicine_hours),
+            Skill::Faith => format!("{:.2}", skills.faith_hours),
+            Skill::Stealth => format!("{:.2}", skills.stealth_hours),
+            Skill::Balance => format!("{:.2}", skills.balance_hours),
+            Skill::Surgeon => format!("{:.2}", skills.surgeon_hours),
+        };
+    }
 }
 
 fn update_limbs_ui(
@@ -343,8 +385,8 @@ fn item_display_name(item: &ItemQueryItem) -> String {
         format!("{slot}{name}{qty}\naccuracy: {:.1}", weapon.accuracy)
     } else if let Some(armor) = item.armor {
         format!(
-            "{slot}{name}{qty}\ncoverage: {:.1} | dodge: {:.1}",
-            armor.coverage, armor.dodge
+            "{slot}{name}{qty}\ncoverage: {:.1} | padding: {:.1}\nrange_of_motion: {:.1} | flexibility: {:.1}",
+            armor.coverage, armor.padding, armor.range_of_motion, armor.flexibility
         )
     } else if let Some(shield) = item.shield {
         format!("{slot}{name}{qty}\nblock: {:.1}", shield.block)
@@ -417,8 +459,8 @@ fn update_connection_ui(
         ClientState::Disconnected => ("\nDisconnected".to_string(), "error"),
     };
 
-    if spans.p2().0 .0 != status_text {
-        spans.p2().0 .0 = status_text;
+    if spans.p2().0.0 != status_text {
+        spans.p2().0.0 = status_text;
     }
     if !spans.p2().1.contains(status_class) {
         *spans.p2().1 = ClassList::new(status_class);
@@ -431,7 +473,9 @@ fn update_attack_timer_ui(
 ) {
     let state = player.into_inner();
 
-    if let Some(state) = state.as_ref() && state.is_attacking()  {
+    if let Some(state) = state.as_ref()
+        && state.is_attacking()
+    {
         let remaining = state.pre_hit_timer.remaining().as_secs_f32();
         span.0 = format!("{:.1}s", remaining);
     } else if !span.0.is_empty() {

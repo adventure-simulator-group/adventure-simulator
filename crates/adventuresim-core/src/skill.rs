@@ -1,7 +1,9 @@
 use crate::{
-    attribute::{Attribute, PlayerAttributes},
+    attribute::PlayerAttributes,
+    body::{BodyPart, LimbWeights, PlayerBody},
     equipment::PlayerEquipment,
     essential::PlayerEssentials,
+    prelude::{LimbAttribute, SimpleAttribute},
 };
 
 const MAX_CHECK: f32 = 5.0;
@@ -62,6 +64,13 @@ impl Skill {
     pub const fn is_physical(&self) -> bool {
         matches!(self.kind(), SkillKind::Physical)
     }
+
+    pub const fn is_upper_body(&self) -> bool {
+        matches!(
+            self,
+            Skill::Melee | Skill::Ranged | Skill::Block | Skill::Stealth | Skill::Surgeon
+        )
+    }
 }
 
 /// Skill category.
@@ -83,38 +92,41 @@ pub trait PlayerSkills {
         &self,
         skill: Skill,
         attr: &impl PlayerAttributes,
+        body: &impl PlayerBody,
         essentials: &impl PlayerEssentials,
         equipment: &impl PlayerEquipment,
+        weights: LimbWeights,
     ) -> f32 {
         let hours_trained = self.skill_hours_trained(skill);
         let training = MAX_CHECK * (hours_trained / (hours_trained + skill.max_hours() * 0.5));
+
         let (reflex, focus) = match skill.kind() {
             SkillKind::Mental => (
-                attr.attr(Attribute::Instinct),
-                attr.attr(Attribute::Intelligence),
+                attr.attr_by_parts(SimpleAttribute::Instinct, body),
+                attr.attr_by_parts(SimpleAttribute::Intelligence, body),
             ),
             SkillKind::Physical => (
-                attr.attr(Attribute::Agility),
-                attr.attr(Attribute::Precision),
+                attr.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights),
+                attr.limb_attr_by_weight_by_parts(LimbAttribute::Precision, body, weights),
             ),
         };
-        let attribute = reflex + focus * essentials.focus_level();
+        let attribute_check = reflex + focus * essentials.focus_level();
 
         let mut check = if skill.is_intuitive() {
-            (training + attribute) * 0.5
+            (training + attribute_check) * 0.5
         } else {
-            training.min(attribute)
+            training.min(attribute_check)
         };
         if skill.is_physical() {
-            //         # armor penalty ranges from 0-0.4, with full-plate being 0.4
-            //         if skill.is_upper_body():
-            //             check *= 1 - player.upper_body_armor_penalty()
-            //         else:
-            //             check *= 1 - player.lower_body_armor_penalty()
-            //         check *= player.encumbrance_penalty()
-            check *= equipment.encumbrance_penalty();
+            let armor_penalty = if skill.is_upper_body() {
+                equipment.armor_penalty(BodyPart::UPPER_BODY)
+            } else {
+                equipment.armor_penalty(BodyPart::LOWER_BODY)
+            };
+            check *= armor_penalty;
+            check *= equipment.encumbrance_penalty_by_parts(attr, body);
+            check *= essentials.fatigue_penalty_by_parts(attr, body);
         }
-        // TODO: modify by fatigue penalty here ?
 
         check
     }
