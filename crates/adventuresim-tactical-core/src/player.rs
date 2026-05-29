@@ -119,7 +119,7 @@ impl PlayerBody for Limbs {
 }
 
 /// Physical and mental skills of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Skills {
     pub melee_hours: f32,
@@ -133,24 +133,6 @@ pub struct Skills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
-}
-
-impl Default for Skills {
-    fn default() -> Self {
-        Self {
-            melee_hours: 1.0,
-            dodge_hours: 1.0,
-            block_hours: 1.0,
-            ranged_hours: 1.0,
-            will_hours: 1.0,
-            charisma_hours: 1.0,
-            medicine_hours: 1.0,
-            faith_hours: 1.0,
-            stealth_hours: 1.0,
-            balance_hours: 1.0,
-            surgeon_hours: 1.0,
-        }
-    }
 }
 
 impl PlayerSkills for Skills {
@@ -172,7 +154,7 @@ impl PlayerSkills for Skills {
 }
 
 /// Genetic attributes of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Attributes {
     pub endurance: f32,
@@ -193,29 +175,6 @@ pub struct Attributes {
     pub right_leg_agility: f32,
 }
 
-impl Default for Attributes {
-    fn default() -> Self {
-        Self {
-            endurance: 2.0,
-            immunity: 2.0,
-            gut: 2.0,
-            precision: 2.0,
-            intelligence: 2.0,
-            instinct: 2.0,
-            eyesight: 2.0,
-            hearing: 2.0,
-            left_arm_strength: 3.0,
-            right_arm_strength: 3.0,
-            left_leg_strength: 3.0,
-            right_leg_strength: 3.0,
-            left_arm_agility: 3.0,
-            right_arm_agility: 3.0,
-            left_leg_agility: 3.0,
-            right_leg_agility: 3.0,
-        }
-    }
-}
-
 impl PlayerAttributes for Attributes {
     fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
         match (attr, limb) {
@@ -223,10 +182,6 @@ impl PlayerAttributes for Attributes {
             (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
             (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
             (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
-            (LimbAttribute::Precision, BodyPart::LeftArm) => 3.0, // FIXME
-            (LimbAttribute::Precision, BodyPart::RightArm) => 3.0, // FIXME
-            (LimbAttribute::Precision, BodyPart::LeftLeg) => 3.0, // FIXME
-            (LimbAttribute::Precision, BodyPart::RightLeg) => 3.0, // FIXME
             (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
             (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
             (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,

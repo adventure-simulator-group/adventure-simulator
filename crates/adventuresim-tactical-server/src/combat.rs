@@ -20,10 +20,14 @@ fn on_attack_action_triggered(
     event: On<FromClient<AttackRequest>>,
     mut cmd: Commands,
     attack_config: Res<AttackConfig>,
+    q_attacker: Query<Has<AttackState>>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         return;
     };
+    if q_attacker.get(entity).unwrap_or_default() {
+        return;
+    }
 
     cmd.entity(entity)
         .insert(AttackState::new(attack_config.pre_hit_delay));
@@ -33,13 +37,19 @@ fn attack_state_update_system(
     mut cmd: Commands,
     time: Res<Time>,
     config: Res<AttackConfig>,
-    mut q_attack: Query<(Entity, &Transform, &CharacterLook, &mut AttackState)>,
+    mut q_attack: Query<(
+        Entity,
+        &RigidBodyColliders,
+        &Transform,
+        &CharacterLook,
+        &mut AttackState,
+    )>,
     q_player: Query<&Player>,
     q_collider: Query<&ColliderOf>,
     spatial_query: SpatialQuery,
     viewer: TacticalPlayerViewer,
 ) {
-    for (entity, transform, look, mut state) in &mut q_attack {
+    for (entity, colliders, transform, look, mut state) in &mut q_attack {
         state.pre_hit_timer.tick(time.delta());
         if !state.pre_hit_timer.is_finished() {
             continue;
@@ -57,7 +67,7 @@ fn attack_state_update_system(
 
         let filter = SpatialQueryFilter::default()
             .with_mask(HITBOX_LAYER)
-            .with_excluded_entities([entity]);
+            .with_excluded_entities(colliders);
 
         let hit = spatial_query.shape_intersections(
             &config.hitreg_shape,

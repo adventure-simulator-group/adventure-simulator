@@ -27,8 +27,6 @@ impl From<LimbAttribute> for Attribute {
 pub enum LimbAttribute {
     /// Muscle mass, damage and climbing ability.
     Strength,
-    /// Fine motor control, accuracy.
-    Precision,
     /// Reflex speed, dodging and stealth.
     Agility,
 }

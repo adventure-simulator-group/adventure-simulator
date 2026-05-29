@@ -107,7 +107,7 @@ pub trait PlayerSkills {
             ),
             SkillKind::Physical => (
                 attr.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights),
-                attr.limb_attr_by_weight_by_parts(LimbAttribute::Precision, body, weights),
+                attr.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights),
             ),
         };
         let attribute_check = reflex + focus * essentials.focus_level();
