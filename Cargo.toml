@@ -2,13 +2,10 @@
 resolver = "3"
 members = [
     "crates/adventuresim-core",
-    "crates/adventuresim-stdb-module",
-    "crates/adventuresim-stdb-client",
     "crates/adventuresim-tactical-core",
     "crates/adventuresim-tactical-netcode",
     "crates/adventuresim-tactical-client",
     "crates/adventuresim-tactical-server",
-    "crates/adventuresim-tactical-server-dispatcher", 
     "crates/adventuresim-character-creator",
     "crates/strategic-web",
 ]
@@ -23,7 +20,6 @@ license = "GPL-3.0"
 [workspace.dependencies]
 adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
-adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
@@ -57,8 +53,6 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
 wasm-bindgen = "=0.2.108"
-spacetimedb = "=1.11.3"
-spacetimedb-sdk = "=1.11.3"
 
 [workspace.lints.clippy]
 type_complexity = "allow"
@@ -67,7 +61,6 @@ too_many_arguments = "allow"
 [patch.crates-io]
 adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" }
 adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
-adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
 
 # https://github.com/janhohenheim/bevy_ahoy/pull/66

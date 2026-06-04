@@ -7,15 +7,19 @@ pub mod parties;
 pub mod quests;
 pub mod settlements;
 
-use axum::{extract::Path, response::Response, routing::get, Router};
+use std::sync::Arc;
 
+use axum::{extract::Path, response::Response, routing::get, Router};
+use sqlx::SqlitePool;
+
+use crate::config::Config;
 use crate::session::set_theme_cookie;
-use crate::spacetimedb::SpacetimeClient;
 
 /// Application state shared across routes
 #[derive(Clone)]
 pub struct AppState {
-    pub db: SpacetimeClient,
+    pub db: SqlitePool,
+    pub config: Arc<Config>,
 }
 
 /// Build the complete router

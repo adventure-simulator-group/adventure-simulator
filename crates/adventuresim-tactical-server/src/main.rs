@@ -1,13 +1,14 @@
 //! Tactical Server - Replicon + Aeronet websocket game server
 
 mod combat;
-mod stdb;
+mod strategic;
 mod terrain;
 
 use std::{net::SocketAddr, num::NonZeroU32};
 
-use adventuresim_stdb_client::*;
-use adventuresim_tactical_core::{inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*};
+use adventuresim_tactical_core::{
+    inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*,
+};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{DisconnectReason, Disconnected, LocalAddr},
     bevy_replicon::prelude::*,
@@ -17,7 +18,8 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
-use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
+use crate::strategic::{ConnectedPlayer, ItemKind, ItemSlot, StrategicApi};
+use crate::terrain::TerrainGenerator;
 use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
@@ -38,10 +40,6 @@ struct Args {
     #[arg(long)]
     public_addr: Option<String>,
 
-    /// Whether or not the server should be created for the associated request.
-    #[arg(long)]
-    requested: bool,
-
     /// Unique mission instance ID
     #[arg(long)]
     mission_id: String,
@@ -58,13 +56,9 @@ struct Args {
     #[arg(long, default_value_t = TERRAIN_SIZE)]
     scene_depth: usize,
 
-    /// SpacetimeDB URI (e.g., http://localhost:3000)
-    #[arg(long, default_value = "http://localhost:3000")]
-    spacetimedb_url: String,
-
-    /// SpacetimeDB module name
-    #[arg(long, default_value = "adventuresim-stdb-module")]
-    spacetimedb_module: String,
+    /// Strategic-web base URL for internal callbacks.
+    #[arg(long, default_value = "http://127.0.0.1:8080")]
+    strategic_url: String,
 
     /// Mission timeout in seconds (how long the server stays up waiting for players)
     #[arg(long, default_value_t = MISSION_TIMEOUT_SECS)]
@@ -81,6 +75,8 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    let strategic_api = StrategicApi::new(args.strategic_url.clone(), args.mission_id.clone())
+        .expect("failed to initialize strategic API client");
 
     App::new()
         .add_plugins((
@@ -104,7 +100,7 @@ fn main() {
                 }),
             AdventureSimulatorNetPlugins,
         ))
-        .add_plugins((stdb::SpacetimeDbPlugin, combat::CombatPlugin))
+        .add_plugins(combat::CombatPlugin)
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -112,14 +108,10 @@ fn main() {
             enemies_killed: 0,
             committed: false,
         })
+        .insert_resource(strategic_api)
         .insert_resource(args)
-        .add_systems(
-            Update,
-            (
-                check_mission_timeout,
-                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
-            ),
-        )
+        .add_systems(Startup, setup_server)
+        .add_systems(Update, check_mission_timeout)
         .add_systems(
             FixedPreUpdate,
             apply_networked_player_input.run_if(in_state(ServerState::Running)),
@@ -129,11 +121,6 @@ fn main() {
         .add_observer(on_player_input)
         .add_observer(on_client_disconnected)
         .run();
-}
-
-#[derive(Component, Debug, Clone, Copy)]
-struct LoadingPlayer {
-    requested_player_id: u64,
 }
 
 #[derive(Component, Debug, Default, Clone, Copy)]
@@ -163,62 +150,13 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
     }
 }
 
-fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
-    conn.subscribe("SELECT * FROM connected_players");
-    conn.on_insert(
-        RemoteTables::connected_players,
-        on_stdb_insert_connected_players,
-    );
-}
-
-fn on_stdb_insert_connected_players(
-    InRef(player): InRef<ConnectedPlayer>,
+fn spawn_connected_player(
+    player: ConnectedPlayer,
+    entity: Entity,
     mut cmd: Commands,
-    q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
 ) {
     let player_collider = player_collider();
-    let Some((entity, _loading)) = q_loading
-        .iter()
-        .find(|(_, loading)| loading.requested_player_id == player.character.id)
-    else {
-        warn!(
-            "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
-            player.character.name, player.character.id
-        );
-        return;
-    };
-
-    let skills = Skills {
-        melee_hours: player.skills.melee_hours,
-        dodge_hours: player.skills.dodge_hours,
-        block_hours: player.skills.block_hours,
-    };
-    let limbs = Limbs {
-        left_arm: player.limbs.left_arm,
-        right_arm: player.limbs.right_arm,
-        left_leg: player.limbs.left_leg,
-        right_leg: player.limbs.right_leg,
-        chest: player.limbs.chest,
-        stomach: player.limbs.stomach,
-        head: player.limbs.head,
-    };
-    let attributes = Attributes {
-        endurance: player.attrs.endurance,
-        immunity: player.attrs.immunity,
-        gut: player.attrs.gut,
-        strength: player.attrs.strength,
-        precision: player.attrs.precision,
-        agility: player.attrs.agility,
-        intelligence: player.attrs.intelligence,
-        instinct: player.attrs.instinct,
-        eyesight: player.attrs.eyesight,
-        hearing: player.attrs.hearing,
-    };
-    let stats = Stats {
-        calories_used: player.stats.calories_used,
-        focus: player.stats.focus,
-    };
     let spawn_height = q_scene
         .iter()
         .next()
@@ -226,16 +164,16 @@ fn on_stdb_insert_connected_players(
         .unwrap_or_default()
         + player_spawn_offset(&player_collider);
 
-    cmd.entity(entity).remove::<LoadingPlayer>().insert((
+    cmd.entity(entity).insert((
         Replicated,
         Player {
             name: player.character.name.clone(),
         },
         PlayerId(player.character.id),
-        skills,
-        limbs,
-        attributes,
-        stats,
+        player.skills,
+        player.limbs,
+        player.attrs,
+        player.stats,
         CharacterController::default(),
         CharacterLook::default(),
         player_collider,
@@ -347,10 +285,10 @@ fn on_stdb_insert_connected_players(
 
 fn check_mission_timeout(
     time: Res<Time>,
-    conn: Res<SpacetimeDb>,
+    api: Res<StrategicApi>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
-) -> Result {
+) {
     let is_timeout = match state.timeout {
         Some(ref mut timer) => {
             timer.tick(time.delta());
@@ -360,26 +298,28 @@ fn check_mission_timeout(
     };
 
     if !is_timeout || state.committed {
-        return Ok(());
+        return;
     }
 
     info!("Mission timeout, committing results...");
-    state.committed = true;
 
     let success = state.enemies_killed > 0;
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.reducers().end_tactical_server(success, xp_gained)?;
+    if let Err(error) = api.commit_result(success, xp_gained) {
+        warn!("Failed to commit mission result: {error}");
+        return;
+    }
 
+    state.committed = true;
     info!("Mission ended successfully");
     info!("Shutting down");
     exit.write(AppExit::Success);
-    Ok(())
 }
 
 fn on_server_started(
     args: Res<Args>,
-    conn: Res<SpacetimeDb>,
+    api: Res<StrategicApi>,
     mut commands: Commands,
     server_addr: Single<&LocalAddr, With<AdventureSimulatorServer>>,
 ) -> Result {
@@ -433,25 +373,14 @@ fn on_server_started(
         ],
     ));
 
-    info!("Notifying spacetimedb that the server is ready...");
-
-    if args.requested {
-        conn.reducers().create_tactical_server_for_request(
-            args.mission_id.clone(),
-            args.public_addr
-                .clone()
-                .unwrap_or_else(|| args.addr.to_string()),
-            default(),
-        )?;
-    } else {
-        conn.reducers().create_tactical_server(
-            args.mission_id.clone(),
-            args.scene_key.clone(),
-            args.public_addr
-                .clone()
-                .unwrap_or_else(|| args.addr.to_string()),
-            default(),
-        )?;
+    info!("Notifying strategic-web that the server is ready...");
+    if let Err(error) = api.mark_ready(
+        args.public_addr
+            .clone()
+            .unwrap_or_else(|| args.addr.to_string()),
+        default(),
+    ) {
+        warn!("Failed to mark mission ready: {error}");
     }
 
     Ok(())
@@ -459,30 +388,30 @@ fn on_server_started(
 
 fn on_join_request(
     join: On<FromClient<JoinRequest>>,
-    mut commands: Commands,
-    loading_players: Query<(), With<LoadingPlayer>>,
+    commands: Commands,
     players: Query<(), With<Player>>,
-    conn: Res<SpacetimeDb>,
+    q_scene: Query<&SceneTerrain>,
+    api: Res<StrategicApi>,
 ) -> Result {
     let Some(client) = join.client_id.entity() else {
         return Ok(());
     };
 
-    if loading_players.contains(client) || players.contains(client) {
+    if players.contains(client) {
         return Ok(());
     }
 
-    conn.reducers().create_character(join.player_id)?;
-    conn.reducers().enter_mission(join.player_id, conn.identity())?;
+    let player = match api.load_player(join.player_id) {
+        Ok(player) => player,
+        Err(error) => {
+            warn!("Failed to load character {}: {error}", join.player_id);
+            return Ok(());
+        }
+    };
 
-    commands.entity(client).insert(LoadingPlayer {
-        requested_player_id: join.player_id,
-    });
+    spawn_connected_player(player, client, commands, q_scene);
 
-    info!(
-        "Character {} connected and entered mission, awaiting loading",
-        join.player_id
-    );
+    info!("Character {} connected and entered mission", join.player_id);
 
     Ok(())
 }
@@ -504,22 +433,18 @@ fn on_player_input(
 
 fn on_client_disconnected(
     disconnected: On<Disconnected>,
-    query: Query<(Option<&PlayerId>, Option<&LoadingPlayer>)>,
-    conn: Res<SpacetimeDb>,
-) -> Result {
+    query: Query<&PlayerId>,
+    api: Res<StrategicApi>,
+) {
     let entity = disconnected.event_target();
-    let Ok((player_id, loading)) = query.get(entity) else {
-        return Ok(());
+    let Ok(player_id) = query.get(entity) else {
+        return;
     };
 
-    let Some(character_id) = player_id
-        .map(|player_id| player_id.0)
-        .or_else(|| loading.map(|loading| loading.requested_player_id))
-    else {
-        return Ok(());
-    };
-
-    conn.reducers().leave_mission(character_id)?;
+    let character_id = player_id.0;
+    if let Err(error) = api.leave_player(character_id) {
+        warn!("Failed to notify strategic-web that character {character_id} left: {error}");
+    }
 
     match &disconnected.reason {
         DisconnectReason::ByUser(reason) => {
@@ -532,8 +457,6 @@ fn on_client_disconnected(
             warn!("Character {character_id} disconnected due to error: {error:#}");
         }
     }
-
-    Ok(())
 }
 
 fn apply_networked_player_input(

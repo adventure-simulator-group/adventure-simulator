@@ -3,7 +3,7 @@
 use maud::{html, Markup};
 
 use super::{base_layout_with_session, panel, sidebar_section, status_badge};
-use crate::spacetimedb::TacticalServer;
+use crate::models::TacticalServer;
 
 /// Mission status page with Datastar polling
 pub fn mission_status_page(

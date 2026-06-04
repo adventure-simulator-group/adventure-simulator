@@ -1,160 +1,86 @@
 # Strategic Web
 
-SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
+SSR web UI and strategic backend for Adventure Simulator.
 
 ## Architecture
 
 ```
-┌─────────────────┐     HTTP     ┌──────────────────┐
-│  Browser        │◄────────────►│  strategic-web   │
-│  (Datastar.js)  │   HTML/frags │  (Axum + Maud)   │
-└─────────────────┘              └────────┬─────────┘
-                                         │ HTTP
-                                         ▼
-                                ┌──────────────────┐
-                                │  SpacetimeDB     │
-                                │  (adventuresim-stdb-module)  │
-                                └──────────────────┘
+Browser
+  | HTML forms/pages
+  v
+strategic-web (Axum + Maud)
+  | SQLx
+  v
+SQLite
+
+strategic-web --spawns--> adventuresim-tactical-server
+tactical-server --HTTP callbacks--> strategic-web /internal/...
+Browser tactical client --direct websocket--> tactical-server
 ```
 
-## Features
+The browser tactical flow is direct-connect. Mission status links to:
 
-- **SSR (Server-Side Rendering)**: All HTML is rendered on the server using Maud templates
-- **HATEOAS**: Hypermedia-driven navigation with Datastar for partial page updates
-- **SpacetimeDB Integration**: Uses the HTTP API to query and call reducers
-- **Parchment Theme**: Medieval illuminated manuscript-inspired design
+```text
+/tactical/tactical.html?server=ADDR&id=CHARACTER_ID&autostart=1
+```
+
+There is no strategic-web WebSocket proxy.
 
 ## Running Locally
 
-### Prerequisites
-
-1. SpacetimeDB running locally with `adventuresim-stdb-module` module published
-2. Rust toolchain
-
-### Start SpacetimeDB
-
 ```bash
-# In another terminal
-spacetime start
-
-# Publish the adventuresim-stdb-module module
-spacetime publish adventuresim-stdb-module --project-path crates/adventuresim-stdb-module
-
-# Seed the world (optional)
-spacetime call adventuresim-stdb-module seed_world
-```
-
-### Run the Web Server
-
-```bash
+cargo build -p adventuresim-tactical-server
 cargo run -p strategic-web
 ```
 
-The server will start on `http://localhost:8080`.
+By default, the server listens on `0.0.0.0:8080`, opens `sqlite://adventuresim.db`,
+runs migrations, enables WAL and busy timeout, and seeds the default world.
 
 ## Configuration
 
-Environment variables:
-
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `BIND_ADDRESS` | `0.0.0.0:8080` | Server bind address |
-| `STATIC_DIR` | `static` | Path to strategic-web static files |
-| `TACTICAL_STATIC_DIR` | `crates/adventuresim-stdb-module/static` | Path to tactical web client static files |
-| `SPACETIMEDB_HOST` | `http://localhost:3000` | SpacetimeDB HTTP API URL |
-| `SPACETIMEDB_DATABASE` | `adventuresim-stdb-module` | SpacetimeDB database name |
-| `SPACETIMEDB_TOKEN` | (none) | Optional auth token |
+| --- | --- | --- |
+| `DATABASE_URL` | `sqlite://adventuresim.db` | SQLite database URL |
+| `BIND_ADDRESS` | `0.0.0.0:8080` | HTTP bind address |
+| `STATIC_DIR` | `crates/strategic-web/static` | Strategic static files |
+| `TACTICAL_STATIC_DIR` | `crates/strategic-web/static/tactical` | Browser tactical shell and WASM output |
+| `TACTICAL_SERVER_BIN` | `target/debug/adventuresim-tactical-server` | Tactical server executable |
+| `TACTICAL_BIND_HOST` | `127.0.0.1` | Host tactical servers bind to |
+| `TACTICAL_PUBLIC_HOST` | `127.0.0.1` | Host advertised to browser clients |
+| `STRATEGIC_INTERNAL_URL` | `http://127.0.0.1:8080` | Callback URL passed to tactical servers |
 
 ## Routes
 
-### Home
-- `GET /` - Dashboard with character/party overview
+- `GET /` - Dashboard
+- `GET /characters`, `GET /characters/new`, `POST /characters`, `GET/POST /characters/:id`
+- `GET /settlements`, `GET /settlements/:id`, settlement service pages, `POST /settlements/:id/travel`
+- `GET /parties`, `GET /parties/new`, `POST /parties`, party join/leave/disband routes
+- `GET /quests`, `GET /quests/:id`, quest accept/abandon routes
+- `POST /missions/enter` - create mission row and spawn tactical server
+- `GET /missions/:id/status` - mission status page or fragment
+- `POST /missions/:id/cancel` - cancel a pending/starting/ready mission
 
-### Characters
-- `GET /characters` - List characters
-- `GET /characters/new` - Create character form
-- `POST /characters` - Create character
-- `GET /characters/:id` - Character sheet
-- `POST /characters/:id` - Update character
+Internal tactical callbacks:
 
-### Settlements
-- `GET /settlements` - World map / settlement list
-- `GET /settlements/:id` - Settlement overview
-- `GET /settlements/:id/noticeboard` - Quest board
-- `GET /settlements/:id/tavern` - Party recruitment
-- `GET /settlements/:id/merchants` - Shop (placeholder)
-- `GET /settlements/:id/smith` - Smithy (placeholder)
-- `GET /settlements/:id/inn` - Rest (placeholder)
-- `POST /settlements/:id/travel` - Travel to settlement
+- `POST /internal/missions/:id/ready`
+- `GET /internal/missions/:id/players/:character_id/loadout`
+- `POST /internal/missions/:id/players/:character_id/enter`
+- `POST /internal/missions/:id/players/:character_id/leave`
+- `POST /internal/missions/:id/result`
 
-### Parties
-- `GET /parties` - List parties
-- `GET /parties/new` - Create party form
-- `POST /parties` - Create party
-- `GET /parties/:id` - Party details
-- `POST /parties/:id/join` - Join party
-- `POST /parties/:id/leave` - Leave party
-- `POST /parties/:id/disband` - Disband party
+## Source Layout
 
-### Quests
-- `GET /quests` - List all quests
-- `GET /quests/:id` - Quest details
-- `POST /quests/:id/accept` - Accept quest
-- `POST /quests/:id/abandon` - Abandon quest
-
-### Missions
-- `POST /missions/enter` - Enter a tactical mission (party leader only)
-- `GET /missions/:id/status` - Mission status page/fragment (authorized members only)
-- `POST /missions/:id/cancel` - Cancel mission (party leader or solo owner)
-
-## Docker
-
-Build and run with Docker:
-
-```bash
-# From workspace root
-docker build -f crates/strategic-web/Dockerfile -t strategic-web .
-docker run -p 8080:8080 -e SPACETIMEDB_HOST=http://host.docker.internal:3000 strategic-web
+```text
+src/
+  db.rs          SQLite pool, PRAGMAs, migrations
+  models.rs      SQLx rows and tactical callback DTOs
+  services.rs    Strategic rules formerly implemented as reducers
+  routes/        Axum route handlers
+  templates/     Maud templates
+static/
+  css/
+  borders/
+  textures/
+  tactical/
+migrations/
 ```
-
-## Development
-
-### Project Structure
-
-```
-strategic-web/
-├── src/
-│   ├── main.rs              # Axum server entry
-│   ├── config.rs            # Environment config
-│   ├── auth.rs              # Auth middleware (TODO)
-│   ├── spacetimedb/
-│   │   ├── client.rs        # HTTP client wrapper
-│   │   └── types.rs         # Response types
-│   ├── routes/
-│   │   ├── home.rs
-│   │   ├── characters.rs
-│   │   ├── settlements.rs
-│   │   ├── parties.rs
-│   │   └── quests.rs
-│   └── templates/
-│       ├── layout.rs        # Base HTML layout
-│       ├── components.rs    # Reusable components
-│       └── *.rs             # Page templates
-└── static/
-    ├── css/                 # Stylesheets
-    ├── borders/             # SVG ornaments
-    └── textures/            # Background textures
-```
-
-### Datastar Integration
-
-Forms use Datastar attributes for AJAX-style submissions:
-
-```html
-<form data-on-submit="@post('/characters')">
-  <input name="name" required />
-  <button type="submit">Create</button>
-</form>
-```
-
-Server returns HTML fragments that get merged into the page.

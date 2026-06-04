@@ -1,17 +1,20 @@
 //! Strategic Layer Web Server
 //!
 //! An SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
-//! Uses Axum + Maud + Datastar with SpacetimeDB as the backend.
+//! Uses Axum + Maud with SQLite as the backend.
 
 mod auth;
 mod config;
+mod db;
+mod models;
 mod routes;
+mod services;
 mod session;
-mod spacetimedb;
 mod templates;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use tower_http::services::ServeDir;
@@ -20,7 +23,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::Config;
 use routes::{build_router, AppState};
-use spacetimedb::SpacetimeClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,18 +39,16 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::parse();
 
     tracing::info!("Starting strategic-web server on {}", config.bind_address);
-    tracing::info!(
-        "Connecting to SpacetimeDB at {} (database: {})",
-        config.spacetimedb_host,
-        config.spacetimedb_database
-    );
+    tracing::info!("Opening SQLite database at {}", config.database_url);
 
-    // Create SpacetimeDB client
-    let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)
-        .with_token(config.spacetimedb_token.clone());
+    let db = db::connect(&config.database_url).await?;
+    services::seed_world(&db).await?;
 
     // Create app state
-    let state = AppState { db };
+    let state = AppState {
+        db,
+        config: Arc::new(config.clone()),
+    };
 
     // Build router
     let app = build_router(state);

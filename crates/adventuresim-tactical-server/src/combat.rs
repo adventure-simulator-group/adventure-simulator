@@ -1,8 +1,5 @@
 use adventuresim_tactical_core::prelude::*;
-use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::FromClient,
-    prelude::AttackCommand,
-};
+use adventuresim_tactical_netcode::{bevy_replicon::prelude::FromClient, prelude::AttackCommand};
 use bevy::prelude::*;
 
 pub struct CombatPlugin;

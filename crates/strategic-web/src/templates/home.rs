@@ -3,10 +3,10 @@
 use maud::{html, Markup};
 
 use super::{
-    base_layout_with_session, divider, empty_state, gold_display, list_item, panel,
-    population_description, sidebar_section, xp_display,
+    base_layout_with_session, divider, gold_display, list_item, panel, population_description,
+    sidebar_section, xp_display,
 };
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
+use crate::models::{Character, Party, Quest, Settlement};
 
 pub fn home_page(
     characters: &[Character],
@@ -191,11 +191,11 @@ pub fn home_page(
 
 /// Home page fragment (for Datastar updates)
 pub fn home_fragment(
-    characters: &[Character],
+    _characters: &[Character],
     current_character: Option<&Character>,
     current_settlement: Option<&Settlement>,
-    active_party: Option<&Party>,
-    active_quest: Option<&Quest>,
+    _active_party: Option<&Party>,
+    _active_quest: Option<&Quest>,
 ) -> Markup {
     html! {
         div #"main-content" {

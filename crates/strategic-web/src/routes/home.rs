@@ -3,8 +3,9 @@
 use axum::{extract::State, response::Html, routing::get, Router};
 
 use super::AppState;
+use crate::models::{Character, Party, Quest, Settlement};
+use crate::services;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
 use crate::templates::home::home_page;
 
 pub fn routes() -> Router<AppState> {
@@ -13,15 +14,14 @@ pub fn routes() -> Router<AppState> {
 
 async fn home(State(state): State<AppState>, session: Session) -> Html<String> {
     // Get all characters
-    let characters: Vec<Character> = state
-        .db
-        .query("SELECT * FROM character")
+    let characters: Vec<Character> = services::list_characters(&state.db)
         .await
         .unwrap_or_default();
 
     // Find current character from session
     let current_character = session
         .character_id_u64()
+        .and_then(|id| services::u64_to_i64(id).ok())
         .and_then(|id| characters.iter().find(|c| c.id == id));
 
     // Get related data if we have a current character
@@ -30,27 +30,18 @@ async fn home(State(state): State<AppState>, session: Session) -> Html<String> {
             // Get settlement
             let settlement: Option<Settlement> =
                 if let Some(settlement_id) = &character.current_settlement_id {
-                    let settlements: Vec<Settlement> = state
-                        .db
-                        .query(&format!(
-                            "SELECT * FROM settlement WHERE id = '{}'",
-                            settlement_id
-                        ))
+                    services::get_settlement(&state.db, settlement_id)
                         .await
-                        .unwrap_or_default();
-                    settlements.into_iter().next()
+                        .unwrap_or_default()
                 } else {
                     None
                 };
 
             // Get party
             let party: Option<Party> = if let Some(party_id) = &character.party_id {
-                let parties: Vec<Party> = state
-                    .db
-                    .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+                services::get_party(&state.db, party_id)
                     .await
-                    .unwrap_or_default();
-                parties.into_iter().next()
+                    .unwrap_or_default()
             } else {
                 None
             };
@@ -58,12 +49,9 @@ async fn home(State(state): State<AppState>, session: Session) -> Html<String> {
             // Get active quest if party has one
             let quest: Option<Quest> =
                 if let Some(quest_id) = party.as_ref().and_then(|p| p.active_quest_id.as_ref()) {
-                    let quests: Vec<Quest> = state
-                        .db
-                        .query(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
+                    services::get_quest(&state.db, quest_id)
                         .await
-                        .unwrap_or_default();
-                    quests.into_iter().next()
+                        .unwrap_or_default()
                 } else {
                     None
                 };

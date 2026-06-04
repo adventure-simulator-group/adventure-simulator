@@ -6,11 +6,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use serde_json::json;
 
 use super::AppState;
+use crate::models::{Party, Quest, Settlement};
+use crate::services;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
 use crate::templates::settlement::{
     inn_page, merchants_page, noticeboard_page, settlement_detail_page, settlements_list_page,
     smith_page, tavern_page,
@@ -29,9 +29,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 async fn list_settlements(State(state): State<AppState>, session: Session) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query("SELECT * FROM settlement")
+    let settlements: Vec<Settlement> = services::list_settlements(&state.db)
         .await
         .unwrap_or_default();
 
@@ -46,25 +44,15 @@ async fn show_settlement(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    // Get quests at this settlement, then filter by available status in Rust.
-    // SpacetimeDB enums may not compare reliably with SQL string literals.
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
+    let quests: Vec<Quest> = services::quests_at_settlement(&state.db, &id)
         .await
         .unwrap_or_default();
     let available_quests: Vec<Quest> = quests
@@ -73,19 +61,14 @@ async fn show_settlement(
         .collect();
 
     // Get parties at this settlement
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
+    let parties: Vec<Party> = services::parties_at_settlement(&state.db, &id)
         .await
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
         settlement_detail_page(
-            settlement,
+            &settlement,
             &available_quests,
             &parties,
             logged_in_as.as_deref(),
@@ -100,30 +83,22 @@ async fn noticeboard(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
+    let quests: Vec<Quest> = services::quests_at_settlement(&state.db, &id)
         .await
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
         noticeboard_page(
-            settlement,
+            &settlement,
             &quests,
             logged_in_as.as_deref(),
             session.theme(),
@@ -137,30 +112,22 @@ async fn tavern(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
+    let parties: Vec<Party> = services::parties_at_settlement(&state.db, &id)
         .await
         .unwrap_or_default();
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
     Html(
         tavern_page(
-            settlement,
+            &settlement,
             &parties,
             logged_in_as.as_deref(),
             session.theme(),
@@ -174,19 +141,16 @@ async fn merchants(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(merchants_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    Html(merchants_page(&settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn smith(
@@ -194,19 +158,16 @@ async fn smith(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(smith_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    Html(smith_page(&settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn inn(
@@ -214,19 +175,16 @@ async fn inn(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+    let settlement = match services::get_settlement(&state.db, &id)
         .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
+        .unwrap_or_default()
+    {
         Some(s) => s,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
     let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(inn_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    Html(inn_page(&settlement, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 async fn travel(
@@ -234,32 +192,21 @@ async fn travel(
     Path(id): Path<String>,
     session: Session,
 ) -> Redirect {
-    let Some(character_id) = session.character_id_u64() else {
+    let Some(character_id) = session
+        .character_id_u64()
+        .and_then(|id| services::u64_to_i64(id).ok())
+    else {
         return Redirect::to("/characters");
     };
 
-    let _ = state
-        .db
-        .call(
-            "travel_to_settlement",
-            &[json!(character_id), json!(id.clone())],
-        )
-        .await;
+    let _ = services::travel_to_settlement(&state.db, character_id, id.clone()).await;
 
     Redirect::to(&format!("/settlements/{}", id))
 }
 
 /// Helper to get character name for session display
 async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Option<String> {
-    let Some(id) = character_id else {
-        return None;
-    };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!("SELECT * FROM character WHERE id = {}", id))
-        .await
-        .unwrap_or_default();
-    characters.first().map(|c| c.name.clone())
+    services::get_character_name(&state.db, character_id).await
 }
 
 fn is_available_status(status: &str) -> bool {

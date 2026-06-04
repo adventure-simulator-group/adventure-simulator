@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-STATIC_DIR="crates/adventuresim-stdb-module/static"
+STATIC_DIR="crates/strategic-web/static/tactical"
 WASM_DIR="$STATIC_DIR/wasm"
 ASSET_DIR="$STATIC_DIR/assets"
 WASM_TARGET_DIR="target/wasm32-unknown-unknown/release"

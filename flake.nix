@@ -10,13 +10,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    spacetimedb = {
-      url = "github:clockworklabs/SpacetimeDB/v1.11.3";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        rust-overlay.follows = "rust-overlay";
-      };
-    };
   };
 
   outputs =
@@ -25,7 +18,6 @@
       nixpkgs,
       utils,
       rust-overlay,
-      spacetimedb,
     }:
     utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (
       system:
@@ -74,7 +66,7 @@
             python3
             wasm-bindgen-cli_0_2_106
             binaryen
-          ]) ++ [spacetimedb.packages.${system}.spacetime];
+          ]);
 
         mkLinuxLdLibraryPathExport = libs: ''
           FLAKE_LIBDIR="${pkgs.lib.makeLibraryPath libs}"
