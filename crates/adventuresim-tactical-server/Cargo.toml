@@ -15,9 +15,7 @@ bevy = { workspace = true, features = ["multi_threaded"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["server"] }
 adventuresim-tactical-core.workspace = true
 
-# SpacetimeDB client
-adventuresim-stdb-client.workspace = true 
-spacetimedb-sdk.workspace = true
-
 # CLI
 clap = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { workspace = true, features = ["derive"] }

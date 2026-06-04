@@ -36,5 +36,13 @@ book
 /index.html
 
 # Generated browser build output
-crates/adventuresim-stdb-module/static/wasm/
-crates/adventuresim-stdb-module/static/assets/
+crates/strategic-web/static/tactical/wasm/
+crates/strategic-web/static/tactical/assets/
+
+# Local SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -5,7 +5,7 @@ use maud::{html, Markup};
 use super::{
     base_layout_with_session, divider, empty_state, input_field, list_item, panel, sidebar_section,
 };
-use crate::spacetimedb::{Character, Party, PartyMember, Quest};
+use crate::models::{Character, Party, PartyMember, Quest};
 
 /// List all parties
 pub fn parties_list_page(

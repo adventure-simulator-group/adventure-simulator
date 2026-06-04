@@ -5,14 +5,14 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use super::AppState;
+use crate::models::ConnectedPlayer;
+use crate::services;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, TacticalServer, TacticalServerRequest};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
 pub fn routes() -> Router<AppState> {
@@ -20,6 +20,26 @@ pub fn routes() -> Router<AppState> {
         .route("/missions/enter", post(enter_mission))
         .route("/missions/{id}/status", get(mission_status))
         .route("/missions/{id}/cancel", post(cancel_mission))
+        .route(
+            "/internal/missions/{id}/ready",
+            post(internal_mission_ready),
+        )
+        .route(
+            "/internal/missions/{id}/players/{character_id}/loadout",
+            get(internal_player_loadout),
+        )
+        .route(
+            "/internal/missions/{id}/players/{character_id}/enter",
+            post(internal_player_enter),
+        )
+        .route(
+            "/internal/missions/{id}/players/{character_id}/leave",
+            post(internal_player_leave),
+        )
+        .route(
+            "/internal/missions/{id}/result",
+            post(internal_mission_result),
+        )
 }
 
 #[derive(Deserialize)]
@@ -29,54 +49,28 @@ struct StatusQuery {
 }
 
 async fn enter_mission(State(state): State<AppState>, session: Session) -> Redirect {
-    let Some(character_id) = session.character_id_u64() else {
+    let Some(character_id) = session
+        .character_id_u64()
+        .and_then(|id| services::u64_to_i64(id).ok())
+    else {
         return Redirect::to("/characters");
     };
 
-    let Some(character) = get_character(&state, character_id).await else {
-        return Redirect::to("/characters");
-    };
+    let launch =
+        match services::request_tactical_mission(&state.db, &state.config, character_id).await {
+            Ok(launch) => launch,
+            Err(error) => {
+                tracing::warn!("Failed to request mission for character {character_id}: {error}");
+                return Redirect::to("/parties");
+            }
+        };
 
-    let Some(party_id) = &character.party_id else {
-        return Redirect::to("/parties");
-    };
-
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-        .await
-        .unwrap_or_default();
-
-    let Some(party) = parties.first() else {
-        return Redirect::to("/parties");
-    };
-
-    if party.leader_id != character_id {
-        return Redirect::to(&format!("/parties/{}", party_id));
+    if let Err(error) = services::spawn_tactical_server(&state.db, &state.config, &launch).await {
+        tracing::error!("Failed to spawn tactical server for {}: {error}", launch.id);
+        let _ = services::mark_mission_failed(&state.db, &launch.id).await;
     }
 
-    let Some(quest_id) = &party.active_quest_id else {
-        return Redirect::to(&format!("/parties/{}", party_id));
-    };
-
-    let scene_key = quest_scene_key(&state, quest_id)
-        .await
-        .unwrap_or_else(|| "hills".to_string());
-    let mission_id = format!("party-{}-{}", party_id, chrono_id());
-
-    if let Err(error) = state
-        .db
-        .call(
-            "request_tactical_server",
-            &[json!(mission_id.clone()), json!(scene_key.clone())],
-        )
-        .await
-    {
-        tracing::error!("Failed to request mission: {:?}", error);
-        return Redirect::to(&format!("/parties/{}", party_id));
-    }
-
-    Redirect::to(&format!("/missions/{}/status", mission_id))
+    Redirect::to(&format!("/missions/{}/status", launch.id))
 }
 
 async fn mission_status(
@@ -85,19 +79,28 @@ async fn mission_status(
     Query(query): Query<StatusQuery>,
     session: Session,
 ) -> impl IntoResponse {
-    let Some(character_id) = session.character_id_u64() else {
+    let Some(character_id) = session
+        .character_id_u64()
+        .and_then(|id| services::u64_to_i64(id).ok())
+    else {
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(viewer) = get_character(&state, character_id).await else {
+    let Some(viewer) = services::get_character(&state.db, character_id)
+        .await
+        .unwrap_or_default()
+    else {
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+    let Some(server) = services::get_mission_for_viewer(&state.db, &mission_id)
+        .await
+        .unwrap_or_default()
+    else {
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
-    if !can_view_mission(&viewer, &server) {
+    if !services::can_view_mission(&viewer, &server) {
         return (StatusCode::FORBIDDEN, "Not authorized for this mission").into_response();
     }
 
@@ -116,19 +119,31 @@ async fn cancel_mission(
     Path(mission_id): Path<String>,
     session: Session,
 ) -> impl IntoResponse {
-    let Some(character_id) = session.character_id_u64() else {
+    let Some(character_id) = session
+        .character_id_u64()
+        .and_then(|id| services::u64_to_i64(id).ok())
+    else {
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(viewer) = get_character(&state, character_id).await else {
+    let Some(viewer) = services::get_character(&state.db, character_id)
+        .await
+        .unwrap_or_default()
+    else {
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+    let Some(server) = services::get_mission_for_viewer(&state.db, &mission_id)
+        .await
+        .unwrap_or_default()
+    else {
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
-    if !can_cancel_mission(&state, &viewer, &server).await {
+    if !services::can_cancel_mission(&state.db, &viewer, &server)
+        .await
+        .unwrap_or(false)
+    {
         return (
             StatusCode::FORBIDDEN,
             "Not authorized to cancel this mission",
@@ -136,10 +151,7 @@ async fn cancel_mission(
             .into_response();
     }
 
-    let _ = state
-        .db
-        .call("cancel_mission_request", &[json!(mission_id)])
-        .await;
+    let _ = services::cancel_mission(&state.db, &mission_id).await;
 
     if let Some(party_id) = server.party_id {
         Redirect::to(&format!("/parties/{}", party_id)).into_response()
@@ -148,111 +160,92 @@ async fn cancel_mission(
     }
 }
 
-async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
-    let quests: Vec<crate::spacetimedb::Quest> = state
-        .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
-        .await
-        .ok()?;
-    let quest = quests.first()?;
-    let settlements: Vec<crate::spacetimedb::Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = '{}'",
-            quest.settlement_id
-        ))
-        .await
-        .ok()?;
-    settlements.first().map(|s| s.scene_key.clone())
+#[derive(Deserialize)]
+struct MissionReadyPayload {
+    addr: String,
+    #[serde(default)]
+    cert_digest: String,
 }
 
-async fn get_mission_for_viewer(
-    state: &AppState,
-    mission_id: &str,
-    viewer: &Character,
-) -> Option<TacticalServer> {
-    if let Some(mut server) = get_ready_mission(state, mission_id).await {
-        server.character_id = Some(viewer.id);
-        server.party_id = viewer.party_id.clone();
-        return Some(server);
-    }
-
-    let requests: Vec<TacticalServerRequest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM tactical_server_request WHERE mission_id = '{}'",
-            mission_id
-        ))
-        .await
-        .ok()?;
-
-    requests.first().map(|request| {
-        TacticalServer::pending(
-            request.mission_id.clone(),
-            request.scene_key.clone(),
-            viewer.id,
-            viewer.party_id.clone(),
-        )
-    })
+#[derive(Deserialize)]
+struct MissionResultPayload {
+    success: bool,
+    #[serde(default)]
+    xp_gained: i64,
 }
 
-async fn get_ready_mission(state: &AppState, mission_id: &str) -> Option<TacticalServer> {
-    let servers: Vec<TacticalServer> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM tactical_server WHERE mission_id = '{}'",
-            mission_id
-        ))
+async fn internal_mission_ready(
+    State(state): State<AppState>,
+    Path(mission_id): Path<String>,
+    Json(payload): Json<MissionReadyPayload>,
+) -> impl IntoResponse {
+    match services::mark_mission_ready(&state.db, &mission_id, payload.addr, payload.cert_digest)
         .await
-        .ok()?;
-    servers.into_iter().next()
-}
-
-fn can_view_mission(viewer: &Character, server: &TacticalServer) -> bool {
-    if server.character_id == Some(viewer.id) {
-        return true;
-    }
-
-    match (&viewer.party_id, &server.party_id) {
-        (Some(viewer_party), Some(server_party)) => viewer_party == server_party,
-        _ => false,
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 
-async fn can_cancel_mission(state: &AppState, viewer: &Character, server: &TacticalServer) -> bool {
-    if let Some(party_id) = &server.party_id {
-        let parties: Vec<Party> = state
-            .db
-            .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-            .await
-            .unwrap_or_default();
+async fn internal_player_loadout(
+    State(state): State<AppState>,
+    Path((mission_id, character_id)): Path<(String, u64)>,
+) -> impl IntoResponse {
+    let character_id = match services::u64_to_i64(character_id) {
+        Ok(id) => id,
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    };
 
-        if let Some(party) = parties.first() {
-            return party.leader_id == viewer.id;
-        }
-
-        return server.character_id == Some(viewer.id);
+    match services::load_tactical_player_data(&state.db, &mission_id, character_id).await {
+        Ok(player) => Json::<ConnectedPlayer>(player).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
-
-    server.character_id == Some(viewer.id)
 }
 
-async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {}",
-            character_id
-        ))
-        .await
-        .ok()?;
-    characters.into_iter().next()
+async fn internal_player_enter(
+    State(state): State<AppState>,
+    Path((mission_id, character_id)): Path<(String, u64)>,
+) -> impl IntoResponse {
+    let character_id = match services::u64_to_i64(character_id) {
+        Ok(id) => id,
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    };
+
+    match services::enter_tactical_mission(&state.db, &mission_id, character_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
-fn chrono_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
+async fn internal_player_leave(
+    State(state): State<AppState>,
+    Path((mission_id, character_id)): Path<(String, u64)>,
+) -> impl IntoResponse {
+    let character_id = match services::u64_to_i64(character_id) {
+        Ok(id) => id,
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    };
+
+    match services::leave_tactical_mission(&state.db, &mission_id, character_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn internal_mission_result(
+    State(state): State<AppState>,
+    Path(mission_id): Path<String>,
+    Json(payload): Json<MissionResultPayload>,
+) -> impl IntoResponse {
+    match services::commit_mission_result(
+        &state.db,
+        &mission_id,
+        payload.success,
+        payload.xp_gained,
+    )
+    .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }

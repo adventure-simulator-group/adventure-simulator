@@ -45,18 +45,17 @@ fn on_client_added(
     let client = clients.get(event.entity)?;
 
     commands.entity(event.entity).insert(AeronetRepliconClient);
-    commands.entity(event.entity).queue(WebSocketClient::connect(
-        websocket_config(&client.server_url),
-        normalize_server_url(&client.server_url),
-    ));
+    commands
+        .entity(event.entity)
+        .queue(WebSocketClient::connect(
+            websocket_config(&client.server_url),
+            normalize_server_url(&client.server_url),
+        ));
 
     Ok(())
 }
 
-fn announce_join(
-    mut commands: Commands,
-    client: Single<&AdventureSimulatorClient>,
-) {
+fn announce_join(mut commands: Commands, client: Single<&AdventureSimulatorClient>) {
     commands.client_trigger(JoinRequest {
         player_id: client.player_id,
     });

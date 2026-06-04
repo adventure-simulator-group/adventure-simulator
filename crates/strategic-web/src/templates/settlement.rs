@@ -6,7 +6,7 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, population_description, service_menu, sidebar_section, status_badge, xp_display,
 };
-use crate::spacetimedb::{Party, Quest, Settlement};
+use crate::models::{Party, Quest, Settlement};
 
 /// List all settlements
 pub fn settlements_list_page(

@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-# Build the strategic-web binary
-RUN cargo build --release -p strategic-web
+# Build the web and tactical server binaries
+RUN cargo build --release -p strategic-web -p adventuresim-tactical-server
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -26,18 +26,22 @@ RUN apt-get update && apt-get install -y \
 
 # Copy binary
 COPY --from=builder /app/target/release/strategic-web /usr/local/bin/
+COPY --from=builder /app/target/release/adventuresim-tactical-server /usr/local/bin/
 
 # Copy static files
 COPY --from=builder /app/crates/strategic-web/static /static
-COPY --from=builder /app/crates/adventuresim-stdb-module/static /tactical-static
 
 # Set environment defaults
 ENV BIND_ADDRESS=0.0.0.0:8080
+ENV DATABASE_URL=sqlite:///data/adventuresim.db
 ENV STATIC_DIR=/static
-ENV TACTICAL_STATIC_DIR=/tactical-static
-ENV SPACETIMEDB_HOST=http://localhost:3000
-ENV SPACETIMEDB_DATABASE=adventuresim-stdb-module
+ENV TACTICAL_STATIC_DIR=/static/tactical
+ENV TACTICAL_SERVER_BIN=/usr/local/bin/adventuresim-tactical-server
+ENV TACTICAL_BIND_HOST=0.0.0.0
+ENV TACTICAL_PUBLIC_HOST=127.0.0.1
+ENV STRATEGIC_INTERNAL_URL=http://127.0.0.1:8080
 
 EXPOSE 8080
+VOLUME ["/data"]
 
 CMD ["strategic-web"]

@@ -3,15 +3,15 @@
 use maud::{html, Markup};
 
 use super::{
-    base_layout_with_session, divider, empty_state, gold_display, input_field, list_item,
-    loading_indicator, panel, sidebar_section, xp_display,
+    base_layout_with_session, divider, gold_display, input_field, list_item, loading_indicator,
+    panel, sidebar_section, xp_display,
 };
-use crate::spacetimedb::{Character, InventoryItem};
+use crate::models::{Character, InventoryItem};
 
 /// List all characters
 pub fn characters_list_page(
     characters: &[Character],
-    current_character_id: Option<u64>,
+    current_character_id: Option<i64>,
     theme: &str,
 ) -> Markup {
     let logged_in_as = current_character_id

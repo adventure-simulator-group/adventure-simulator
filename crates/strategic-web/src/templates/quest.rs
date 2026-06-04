@@ -6,7 +6,7 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, sidebar_section, status_badge, xp_display,
 };
-use crate::spacetimedb::Quest;
+use crate::models::Quest;
 
 /// List all quests
 pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &str) -> Markup {
