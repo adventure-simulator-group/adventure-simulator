@@ -36,10 +36,6 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
 
-    /// Address advertised to browser clients. Defaults to --addr.
-    #[arg(long)]
-    public_addr: Option<String>,
-
     /// Unique mission instance ID
     #[arg(long)]
     mission_id: String,
@@ -374,12 +370,7 @@ fn on_server_started(
     ));
 
     info!("Notifying strategic-web that the server is ready...");
-    if let Err(error) = api.mark_ready(
-        args.public_addr
-            .clone()
-            .unwrap_or_else(|| args.addr.to_string()),
-        default(),
-    ) {
+    if let Err(error) = api.mark_ready(args.addr.to_string(), default()) {
         warn!("Failed to mark mission ready: {error}");
     }
 

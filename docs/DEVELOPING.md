@@ -41,13 +41,11 @@ The tactical browser client connects directly to the spawned tactical server.
 
 ```bash
 just web              # Run strategic-web and spawn tactical servers from mission requests
-just vps-web HOST     # Bind web and tactical servers for public access
 just build-tactical   # Build adventuresim-tactical-server
 just build-wasm       # Build browser WASM client into strategic-web/static/tactical/wasm
 just tactical         # Run one standalone tactical server for manual testing
 just client           # Run native tactical client against just tactical
 just check            # cargo fmt --check and cargo check --workspace
-just clean-db         # Delete local SQLite files
 ```
 
 ## Ports
@@ -61,6 +59,6 @@ just clean-db         # Delete local SQLite files
 ## Troubleshooting
 
 - **Mission stuck preparing**: ensure `adventuresim-tactical-server` is built or set `TACTICAL_SERVER_BIN`.
-- **Browser cannot connect**: set `TACTICAL_PUBLIC_HOST` to the host the browser can reach.
+- **Browser cannot connect**: restart `just web` so the local tactical server address is regenerated.
 - **Internal callbacks fail**: set `STRATEGIC_INTERNAL_URL` to the URL tactical server processes can reach.
-- **Unexpected seed data**: run `just clean-db`, then restart `just web`.
+- **Unexpected seed data**: restart `just web`; it resets the local SQLite database before startup.

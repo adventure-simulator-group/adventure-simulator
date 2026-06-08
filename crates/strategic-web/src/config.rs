@@ -11,7 +11,7 @@ pub struct Config {
     pub database_url: String,
 
     /// Address to bind the web server to
-    #[arg(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
+    #[arg(long, env = "BIND_ADDRESS", default_value = "127.0.0.1:8080")]
     pub bind_address: String,
 
     /// Path to static files directory
@@ -37,14 +37,6 @@ pub struct Config {
         default_value = "target/debug/adventuresim-tactical-server"
     )]
     pub tactical_server_bin: String,
-
-    /// Host/IP tactical server processes bind to.
-    #[arg(long, env = "TACTICAL_BIND_HOST", default_value = "127.0.0.1")]
-    pub tactical_bind_host: String,
-
-    /// Host/IP browser clients use to connect to spawned tactical servers.
-    #[arg(long, env = "TACTICAL_PUBLIC_HOST", default_value = "127.0.0.1")]
-    pub tactical_public_host: String,
 
     /// Base URL tactical server processes use for internal callbacks.
     #[arg(

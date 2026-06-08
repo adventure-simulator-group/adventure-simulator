@@ -33,7 +33,7 @@ cargo build -p adventuresim-tactical-server
 cargo run -p strategic-web
 ```
 
-By default, the server listens on `0.0.0.0:8080`, opens `sqlite://adventuresim.db`,
+By default, the server listens on `127.0.0.1:8080`, opens `sqlite://adventuresim.db`,
 runs migrations, enables WAL and busy timeout, and seeds the default world.
 
 ## Configuration
@@ -41,12 +41,10 @@ runs migrations, enables WAL and busy timeout, and seeds the default world.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `DATABASE_URL` | `sqlite://adventuresim.db` | SQLite database URL |
-| `BIND_ADDRESS` | `0.0.0.0:8080` | HTTP bind address |
+| `BIND_ADDRESS` | `127.0.0.1:8080` | HTTP bind address |
 | `STATIC_DIR` | `crates/strategic-web/static` | Strategic static files |
 | `TACTICAL_STATIC_DIR` | `crates/strategic-web/static/tactical` | Browser tactical shell and WASM output |
 | `TACTICAL_SERVER_BIN` | `target/debug/adventuresim-tactical-server` | Tactical server executable |
-| `TACTICAL_BIND_HOST` | `127.0.0.1` | Host tactical servers bind to |
-| `TACTICAL_PUBLIC_HOST` | `127.0.0.1` | Host advertised to browser clients |
 | `STRATEGIC_INTERNAL_URL` | `http://127.0.0.1:8080` | Callback URL passed to tactical servers |
 
 ## Routes

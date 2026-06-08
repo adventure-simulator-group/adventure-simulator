@@ -48,7 +48,7 @@ There is no strategic-web websocket proxy.
 
 The tactical server performs low-frequency HTTP calls only:
 
-- ready: advertise address
+- ready: report listen address
 - loadout: fetch character, inventory, attributes, stats, skills, limbs
 - enter/leave: update strategic mission presence
 - result: commit final success and XP once

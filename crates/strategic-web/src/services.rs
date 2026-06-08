@@ -15,6 +15,8 @@ use crate::models::{
     TacticalServer,
 };
 
+const TACTICAL_LISTEN_IP: &str = "127.0.0.1";
+
 pub fn chrono_id() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -957,13 +959,11 @@ pub async fn travel_to_settlement(
 pub struct MissionLaunch {
     pub id: String,
     pub scene_key: String,
-    pub bind_addr: String,
-    pub public_addr: String,
+    pub listen_addr: String,
 }
 
 pub async fn request_tactical_mission(
     pool: &SqlitePool,
-    config: &Config,
     requester_character_id: i64,
 ) -> anyhow::Result<MissionLaunch> {
     let character = get_character(pool, requester_character_id)
@@ -989,9 +989,7 @@ pub async fn request_tactical_mission(
         .ok_or_else(|| anyhow!("Settlement not found"))?;
 
     let mission_id = format!("party-{}-{}", party_id, chrono_id());
-    let port = choose_tactical_port(&config.tactical_bind_host)?;
-    let bind_addr = format!("{}:{}", config.tactical_bind_host, port);
-    let public_addr = format!("{}:{}", config.tactical_public_host, port);
+    let listen_addr = choose_tactical_listen_addr()?;
 
     sqlx::query(
         r#"
@@ -1007,22 +1005,21 @@ pub async fn request_tactical_mission(
     .bind(&party_id)
     .bind(&quest_id)
     .bind(requester_character_id)
-    .bind(&public_addr)
+    .bind(&listen_addr)
     .execute(pool)
     .await?;
 
     Ok(MissionLaunch {
         id: mission_id,
         scene_key: settlement.scene_key,
-        bind_addr,
-        public_addr,
+        listen_addr,
     })
 }
 
-fn choose_tactical_port(bind_host: &str) -> anyhow::Result<u16> {
-    let listener = TcpListener::bind((bind_host, 0))
-        .with_context(|| format!("failed to reserve tactical port on {bind_host}"))?;
-    Ok(listener.local_addr()?.port())
+fn choose_tactical_listen_addr() -> anyhow::Result<String> {
+    let listener = TcpListener::bind((TACTICAL_LISTEN_IP, 0))
+        .with_context(|| format!("failed to reserve tactical port on {TACTICAL_LISTEN_IP}"))?;
+    Ok(listener.local_addr()?.to_string())
 }
 
 pub async fn spawn_tactical_server(
@@ -1037,9 +1034,7 @@ pub async fn spawn_tactical_server(
             "--scene-key",
             &launch.scene_key,
             "--addr",
-            &launch.bind_addr,
-            "--public-addr",
-            &launch.public_addr,
+            &launch.listen_addr,
             "--strategic-url",
             &config.strategic_internal_url,
         ])
@@ -1060,7 +1055,7 @@ pub async fn spawn_tactical_server(
         "#,
     )
     .bind(pid)
-    .bind(&launch.public_addr)
+    .bind(&launch.listen_addr)
     .bind(&launch.id)
     .execute(pool)
     .await?;

@@ -56,14 +56,13 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/characters");
     };
 
-    let launch =
-        match services::request_tactical_mission(&state.db, &state.config, character_id).await {
-            Ok(launch) => launch,
-            Err(error) => {
-                tracing::warn!("Failed to request mission for character {character_id}: {error}");
-                return Redirect::to("/parties");
-            }
-        };
+    let launch = match services::request_tactical_mission(&state.db, character_id).await {
+        Ok(launch) => launch,
+        Err(error) => {
+            tracing::warn!("Failed to request mission for character {character_id}: {error}");
+            return Redirect::to("/parties");
+        }
+    };
 
     if let Err(error) = services::spawn_tactical_server(&state.db, &state.config, &launch).await {
         tracing::error!("Failed to spawn tactical server for {}: {error}", launch.id);

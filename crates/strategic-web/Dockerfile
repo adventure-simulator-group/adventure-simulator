@@ -32,13 +32,11 @@ COPY --from=builder /app/target/release/adventuresim-tactical-server /usr/local/
 COPY --from=builder /app/crates/strategic-web/static /static
 
 # Set environment defaults
-ENV BIND_ADDRESS=0.0.0.0:8080
+ENV BIND_ADDRESS=127.0.0.1:8080
 ENV DATABASE_URL=sqlite:///data/adventuresim.db
 ENV STATIC_DIR=/static
 ENV TACTICAL_STATIC_DIR=/static/tactical
 ENV TACTICAL_SERVER_BIN=/usr/local/bin/adventuresim-tactical-server
-ENV TACTICAL_BIND_HOST=0.0.0.0
-ENV TACTICAL_PUBLIC_HOST=127.0.0.1
 ENV STRATEGIC_INTERNAL_URL=http://127.0.0.1:8080
 
 EXPOSE 8080
