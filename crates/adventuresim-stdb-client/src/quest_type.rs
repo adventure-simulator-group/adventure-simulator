@@ -4,20 +4,24 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::quest_status_type::QuestStatus;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Character {
-    pub id: u64,
-    pub name: String,
-    pub xp: u32,
-    pub level: u32,
-    pub gold: u32,
-    pub current_settlement_id: Option<String>,
-    pub party_id: Option<String>,
-    pub server: __sdk::Identity,
-    pub in_server: bool,
+pub struct Quest {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub difficulty: i32,
+    pub gold_reward: i32,
+    pub xp_reward: i32,
+    pub settlement_id: String,
+    pub status: QuestStatus,
+    pub accepted_by: Option<String>,
+    pub enemy_type: String,
+    pub enemy_count: i32,
 }
 
-impl __sdk::InModule for Character {
+impl __sdk::InModule for Quest {
     type Module = super::RemoteModule;
 }

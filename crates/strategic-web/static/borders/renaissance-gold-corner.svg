@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Renaissance Gold Corner Ornament - Extracted from 33812591_7832741.svg -->
+  <g id="renaissance-gold-corner">
+    <!-- Main gold flourish shape -->
+    <path style="fill:#EDCE6B;" d="M0,0 L60,0 Q55,15 45,25 Q35,35 20,40 Q10,45 0,50 Z"/>
+    <path style="fill:#EDCE6B;" d="M0,0 L0,60 Q15,55 25,45 Q35,35 40,20 Q45,10 50,0 Z"/>
+
+    <!-- Blue accent elements -->
+    <path style="fill:#5569AC;" d="M8,8 Q25,12 35,25 Q42,38 38,52 L30,45 Q32,35 25,28 Q18,22 8,20 Z"/>
+
+    <!-- Green leaf accents -->
+    <path style="fill:#538237;" d="M55,10 Q65,20 60,35 Q55,45 45,42 Q50,32 55,10 Z"/>
+    <path style="fill:#538237;" d="M10,55 Q20,65 35,60 Q45,55 42,45 Q32,50 10,55 Z"/>
+
+    <!-- Teal small details -->
+    <circle cx="20" cy="20" r="5" fill="#57828F"/>
+    <circle cx="40" cy="15" r="3" fill="#57828F"/>
+    <circle cx="15" cy="40" r="3" fill="#57828F"/>
+
+    <!-- Gold decorative dots -->
+    <circle cx="30" cy="30" r="4" fill="#EDCE6B"/>
+    <circle cx="50" cy="25" r="2" fill="#EDCE6B"/>
+    <circle cx="25" cy="50" r="2" fill="#EDCE6B"/>
+
+    <!-- Inner border lines -->
+    <path style="fill:none;stroke:#5569AC;stroke-width:3;" d="M0,65 L65,0"/>
+    <path style="fill:none;stroke:#EDCE6B;stroke-width:2;" d="M0,75 L75,0"/>
+
+    <!-- Corner bracket -->
+    <path style="fill:#538237;" d="M0,0 L8,0 L8,3 L3,3 L3,8 L0,8 Z"/>
+    <path style="fill:#EDCE6B;" d="M12,0 L20,0 L20,2 L12,2 Z"/>
+    <path style="fill:#EDCE6B;" d="M0,12 L2,12 L2,20 L0,20 Z"/>
+  </g>
+</svg>

@@ -6,6 +6,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 spacetime_port := "3000"
 ui_port := "8000"
+web_port := "8080"
 tactical_port := "6000"
 tactical_web_port := "6001"
 public_bind := "0.0.0.0"
@@ -15,10 +16,13 @@ spacetime_module := "adventuresim-stdb-module"
 
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
+strategic_web_dir := "crates/strategic-web"
 
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
 http_log := run_dir + "/http.log"
+spawner_pid := run_dir + "/spawner.pid"
+spawner_log := run_dir + "/spawner.log"
 stdb_pid := run_dir + "/spacetime.pid"
 stdb_log := run_dir + "/spacetime.log"
 
@@ -50,6 +54,25 @@ dev-full: preflight build-wasm spacetime-start publish serve-ui
     @echo "Strategic UI: http://localhost:{{ui_port}}/map.html"
     @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
     @echo "WASM game: ready (click 'Enter World' after starting a mission)"
+
+# Start the local browser stack.
+web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+    @just _spawner-start
+    @echo ""
+    @echo "Starting strategic-web server..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
+# Seed the world with initial settlements and quests
+_seed-world server=spacetime_url:
+    @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
 
 # Start SpacetimeDB if it is not already listening
 spacetime-start:
@@ -155,7 +178,7 @@ open-ui:
     fi
 
 # Stop all running services started by this justfile
-stop: spacetime-stop stop-ui
+stop: _spawner-stop spacetime-stop stop-ui
 
 # Run the stack on a VPS (public bind). Requires firewall/DNS setup.
 vps-serve domain="localhost": preflight spacetime-start-public publish serve-ui-public
@@ -175,6 +198,11 @@ status:
         echo "UI server: running (http://localhost:{{ui_port}}/)"; \
     else \
         echo "UI server: not running"; \
+    fi
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner: running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        echo "Tactical spawner: not running"; \
     fi
 
 # Build the strategic SpacetimeDB module
@@ -205,6 +233,39 @@ spawner: build-tactical
 		--spacetimedb-module {{spacetime_module}} \
 		--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
 		--base-port {{tactical_port}}
+
+# Start the tactical spawner in the background.
+_spawner-start host="127.0.0.1" base_port=tactical_web_port:
+    @mkdir -p "{{run_dir}}"
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner already running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        RUST_LOG=info setsid "$(pwd)/target/debug/adventuresim-tactical-server-dispatcher" \
+            --spacetimedb-url {{spacetime_url}} \
+            --spacetimedb-module {{spacetime_module}} \
+            --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+            --base-port {{base_port}} \
+            --host {{host}} >"{{spawner_log}}" 2>&1 < /dev/null & \
+        echo $! > "{{spawner_pid}}"; \
+        sleep 1; \
+        if ! kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+            echo "Tactical spawner failed to start. See {{spawner_log}}"; \
+            exit 1; \
+        fi; \
+        echo "Tactical spawner running; log: {{spawner_log}}"; \
+    fi
+
+# Stop the tactical spawner.
+_spawner-stop:
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        kill "$(cat "{{spawner_pid}}")"; \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner stopped"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner not running"; \
+    fi
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills":
