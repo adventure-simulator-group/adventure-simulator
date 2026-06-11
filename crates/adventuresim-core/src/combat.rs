@@ -8,19 +8,43 @@ const UPPER_MUSCLE_KG_PER_STRENGTH: f32 = 5.0;
 const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
 
-/// Outcome of a character attack.
+/// Precision of a character attack.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AttackOutcome {
+pub enum HitPrecision {
     Miss,
-    Graze,
+    Graze(f32, f32),
     Direct,
+}
+
+impl HitPrecision {
+    pub fn directness(&self) -> f32 {
+        match self {
+            HitPrecision::Miss => 0.0,
+            &HitPrecision::Graze(to_skin, to_core) => {
+                (to_skin / (to_skin + to_core)).clamp(0.0, 1.0)
+            }
+            HitPrecision::Direct => 1.0,
+        }
+    }
+}
+
+impl std::fmt::Display for HitPrecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HitPrecision {:.1}", self.directness())?;
+        match self {
+            HitPrecision::Miss => f.write_str(" (miss)"),
+            HitPrecision::Graze(to_skin, to_core) => {
+                write!(f, " (graze, to_skin: {to_skin:.1} | to_core: {to_core:.1})")
+            }
+            HitPrecision::Direct => f.write_str("(direct)"),
+        }
+    }
 }
 
 /// Result of resolving a melee attack.
 #[derive(Debug, Clone, Copy)]
 pub struct AttackResult {
-    pub outcome: AttackOutcome,
-    pub directness: f32,
+    pub precision: HitPrecision,
     pub cut_damage: f32,
     pub blunt_damage: f32,
 }
@@ -36,13 +60,14 @@ pub fn resolve_melee_attack_by_parts(
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
+    hit_precision: HitPrecision,
     defender_skills: &impl PlayerSkills,
     defender_attr: &impl PlayerAttributes,
     defender_body: &impl PlayerBody,
     defender_essentials: &impl PlayerEssentials,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
-    // 1. Accuracy
+    // 1. Accuracy (modulated by geometric hit precision)
     let accuracy = attacker_skills.skill_check_by_parts(
         Skill::Melee,
         attacker_attr,
@@ -50,7 +75,8 @@ pub fn resolve_melee_attack_by_parts(
         attacker_essentials,
         attacker_equip,
         LimbWeights::arm(attacker_side, attacker_body.primary_side()),
-    ) * attacker_equip.weapon_accuracy();
+    ) * attacker_equip.weapon_accuracy()
+        * hit_precision.directness();
 
     // 2. Block defense (MVP: no dodge/parry mode)
     let block_skill = defender_skills.skill_check_by_parts(
@@ -71,8 +97,7 @@ pub fn resolve_melee_attack_by_parts(
 
     if attack < 0.0 {
         return AttackResult {
-            outcome: AttackOutcome::Miss,
-            directness: 0.0,
+            precision: HitPrecision::Miss,
             cut_damage: 0.0,
             blunt_damage: 0.0,
         };
@@ -112,12 +137,7 @@ pub fn resolve_melee_attack_by_parts(
     };
 
     AttackResult {
-        outcome: if attack >= 1.0 {
-            AttackOutcome::Direct
-        } else {
-            AttackOutcome::Graze
-        },
-        directness,
+        precision: hit_precision,
         cut_damage,
         blunt_damage,
     }

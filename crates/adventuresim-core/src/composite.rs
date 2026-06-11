@@ -281,7 +281,12 @@ where
         )
     }
 
-    pub fn resolve_melee_attack(&self, side: BodySide, defender: &Self) -> AttackResult {
+    pub fn resolve_melee_attack(
+        &self,
+        side: BodySide,
+        defender: &Self,
+        hit_precision: HitPrecision,
+    ) -> AttackResult {
         resolve_melee_attack_by_parts(
             &self.skills,
             &self.attributes,
@@ -289,6 +294,7 @@ where
             &self.essentials,
             &self.equipment,
             side,
+            hit_precision,
             &defender.skills,
             &defender.attributes,
             &defender.body,

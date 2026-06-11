@@ -1,4 +1,9 @@
-use adventuresim_tactical_core::prelude::*;
+use std::f32;
+
+use adventuresim_tactical_core::{
+    avian3d::collision::collider::contact_query::{ClosestPoints, closest_points},
+    prelude::*,
+};
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
     message::SuccessfulAttackResponse,
@@ -46,6 +51,7 @@ fn attack_state_update_system(
     )>,
     q_player: Query<&Player>,
     q_collider: Query<&ColliderOf>,
+    q_hitbox: Query<(&Collider, &GlobalTransform)>,
     spatial_query: SpatialQuery,
     viewer: TacticalPlayerViewer,
 ) {
@@ -99,11 +105,53 @@ fn attack_state_update_system(
                 continue;
             };
 
+            let skin_size = 0.6;
+            let precision = q_hitbox
+                .get(hit_entity)
+                .ok()
+                .map(|(skin, global)| {
+                    let hitreg_pos = hitreg_transform.translation;
+                    let hitreg_rot = hitreg_transform.rotation;
+                    let hitbox_pos = global.translation();
+                    let hitbox_rot = global.rotation();
+
+                    let mut core = skin.clone();
+                    core.set_scale(Vec3::splat(1.0 - skin_size), 10);
+
+                    let penetration_points = closest_points(
+                        &config.hitreg_shape,
+                        hitreg_pos,
+                        hitreg_rot,
+                        &core,
+                        hitbox_pos,
+                        hitbox_rot,
+                        f32::MAX,
+                    );
+                    let penetration_point = match penetration_points {
+                        Ok(ClosestPoints::Intersecting) | Err(_) => return HitPrecision::Direct,
+                        Ok(ClosestPoints::OutsideMargin) => return HitPrecision::Miss,
+                        Ok(ClosestPoints::WithinMargin(hitreg_point, _hitbox_point)) => {
+                            hitreg_point
+                        }
+                    };
+
+                    let distance_to_skin = skin
+                        .distance_to_point(hitbox_pos, hitbox_rot, penetration_point, false)
+                        .abs();
+                    let distance_to_core = core
+                        .distance_to_point(hitbox_pos, hitbox_rot, penetration_point, false)
+                        .abs();
+
+                    HitPrecision::Graze(distance_to_skin, distance_to_core)
+                })
+                .unwrap_or(HitPrecision::Direct);
+
             let Some(attacker_side) = attacker_view.weapon_holding_side() else {
                 warn!("Attacker isn't holding any weapon!");
                 continue;
             };
-            let result = attacker_view.resolve_melee_attack(attacker_side, &defender_view);
+            let result =
+                attacker_view.resolve_melee_attack(attacker_side, &defender_view, precision);
 
             let cut = result.cut_damage;
             let blunt = result.blunt_damage;
@@ -123,8 +171,7 @@ fn attack_state_update_system(
             }
 
             info!(
-                "hit'{defender_entity:?}' for {damage} total damage ({cut:.1} cut + {blunt:.1} blunt) | outcome: {:?}",
-                result.outcome,
+                "hit'{defender_entity:?}' for {damage} total damage ({cut:.1} cut + {blunt:.1} blunt) (precision: {precision})",
             );
 
             total_damage += damage;
