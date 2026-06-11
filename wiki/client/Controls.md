@@ -76,7 +76,7 @@ This is somewhere between a real action game and an RPG wearing an action game's
 
 [^3]: This is trivial to [cheat](../Networking.md), but since combat is still (largely) based on stats and (entirely) mediated by the server, it's not a huge deal.
 
-* **Precision** is the value between 0 and 1 representing how close to the center of any of the target's hitboxes the player placed the aiming reticle. The exact formula for this number will have to come about through testing.
+* **Precision** is the value between 0 and 1 representing how much of the hitbox the attack has penetrated. Each hitbox is a skin of the body part, while its scaled version is a core; and the ratio between distance of the hitreg to skin to full distance between skin to core is hit precision. 
 * **Reflex** is the value between 0 and 1 representing how quickly the defender pressed the dodge/parry button after the attack began. Like with precision, we aren't sure exactly how to derive this, but a value of 1.0 would correspond to pro gamer reaction time (0.1s) and ~0.75 would correspond to old person reaction time (0.25s).
   * There is no need to "time" your input to correspond with when an attack will actually hit as is convention in most action games. As soon as an enemy begins its attack animation, you should press the button.
 
