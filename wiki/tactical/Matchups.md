@@ -18,7 +18,7 @@ These are **realistic targets**, not predictions of the current code. They are e
 
 Armor stats use the format `resistance/padding/flexibility`. `Coverage` is the 0-5 armor coverage term used when checking whether a precise attack bypasses armor. Weapon energy is an approximate direct-hit calibration in joules for a trained attacker. `Shield` is the shield bonus from the combat page.
 
-| Character          | Str | Agi | Attack | Dodge | Block | Mass kg | Weapon         | Reach m | Wpn term |   J | Pen | Armor material | Coverage | Armor dodge | Armor r/p/f | Shield |
+| Character          | Str | Agi | Attack | Dodge | Block | Mass kg | Weapon         | Reach m | Accuracy |   J | Pen | Armor material | Coverage |    Mobility | Armor r/p/f | Shield |
 | ------------------ | --: | --: | -----: | ----: | ----: | ------: | -------------- | ------: | -------: | --: | --: | -------------- | -------: | ----------: | ----------- | -----: |
 | Peasant levy       |   3 |   2 |      2 |     2 |     1 |      70 | Spear          |     2.0 |      0.8 |  45 | 2.0 | Padded cloth   |        2 |         0.9 | 60/40/0.3   |      0 |
 | Human soldier      |   3 |   3 |      3 |     2 |     2 |      84 | Halberd        |     2.2 |      0.6 | 100 | 2.0 | Steel plate    |        3 |         0.7 | 100/40/0.2  |      0 |
