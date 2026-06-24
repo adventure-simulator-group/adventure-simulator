@@ -110,7 +110,14 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             (Name::new("attack-timer"), AttackTimerSpan, Text::default(),),
             (
                 Name::new("controls"),
-                Text::new("WASD to move | Space to jump | Mouse to look around"),
+                Text::new(""),
+                children![
+                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
+                    #[cfg(feature = "debug")]
+                    TextSpan::new(
+                        "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
+                    )
+                ],
             ),
             (
                 Name::new("stats"),

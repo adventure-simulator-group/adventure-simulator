@@ -2,17 +2,35 @@ use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{color::palettes::tailwind, prelude::*};
 
-use crate::player::{HitPerformed, LimbHitbox};
+use crate::player::{ClientPlayer, HitPerformed, LimbHitbox};
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, toggle_debug_render)
+        app.init_resource::<DebugVisualsConfig>()
+            .register_required_components_with::<Collider, _>(|| DebugRender::none())
+            .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
             .add_observer(on_successful_attack)
-            .add_observer(on_hit_performed)
-            .add_observer(on_add_limb_hitbox);
+            .add_observer(on_hit_performed);
+    }
+}
+
+#[derive(Resource)]
+struct DebugVisualsConfig {
+    physics_colliders: bool,
+    hitboxes: bool,
+    raycast: bool,
+}
+
+impl Default for DebugVisualsConfig {
+    fn default() -> Self {
+        Self {
+            physics_colliders: false,
+            hitboxes: false,
+            raycast: true,
+        }
     }
 }
 
@@ -22,42 +40,65 @@ struct DebugRay {
     handle: Handle<GizmoAsset>,
 }
 
-fn toggle_debug_render(
+fn toggle_debug_visuals(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut config: ResMut<PhysicsDebugRenderConfig>,
+    mut config: ResMut<DebugVisualsConfig>,
+    q_colliders: Query<(Entity, Option<&LimbHitbox>), (With<Collider>, Without<ClientPlayer>)>,
+    mut cmd: Commands,
 ) {
+    if keyboard.just_pressed(KeyCode::F2) {
+        config.physics_colliders = !config.physics_colliders;
+        for (entity, hitbox) in &q_colliders {
+            if hitbox.is_none() {
+                cmd.entity(entity).insert(if config.physics_colliders {
+                    DebugRender::collider(tailwind::AMBER_200.into()).with_axes(Vec3::splat(0.33))
+                } else {
+                    DebugRender::none()
+                });
+            }
+        }
+    }
+
     if keyboard.just_pressed(KeyCode::F3) {
-        config.enable_colliders = !config.enable_colliders;
-        config.enable_axes = config.enable_colliders;
+        config.hitboxes = !config.hitboxes;
+        for (entity, hitbox) in &q_colliders {
+            if let Some(hitbox) = hitbox {
+                let color = limb_hitbox_color(hitbox.0);
+                cmd.entity(entity).insert(if config.hitboxes {
+                    DebugRender::collider(color)
+                } else {
+                    DebugRender::none()
+                });
+            }
+        }
+    }
+
+    if keyboard.just_pressed(KeyCode::F4) {
+        config.raycast = !config.raycast;
     }
 }
 
-fn on_add_limb_hitbox(
-    event: On<Add, LimbHitbox>,
-    mut cmd: Commands,
-    q_hitbox: Query<&LimbHitbox>,
-) -> Result {
-    let &LimbHitbox(body_part) = q_hitbox.get(event.entity)?;
-
-    let color = match body_part {
+fn limb_hitbox_color(body_part: BodyPart) -> Color {
+    match body_part {
         BodyPart::LeftArm | BodyPart::RightArm => tailwind::LIME_600,
         BodyPart::LeftLeg | BodyPart::RightLeg => tailwind::SKY_600,
         BodyPart::Head => tailwind::RED_300,
         BodyPart::Chest => tailwind::PINK_300,
         BodyPart::Stomach => tailwind::PURPLE_300,
-    };
-
-    cmd.entity(event.entity)
-        .insert(DebugRender::collider(color.into()));
-
-    Ok(())
+    }
+    .into()
 }
 
 fn on_hit_performed(
     event: On<HitPerformed>,
     mut cmd: Commands,
     mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
+    config: Res<DebugVisualsConfig>,
 ) {
+    if !config.raycast {
+        return;
+    }
+
     let hit = event.event();
     let end = hit.origin + *hit.direction * hit.length;
 
