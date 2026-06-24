@@ -100,6 +100,7 @@ dependencies = [
  "blanket",
  "enum-assoc",
  "enumflags2",
+ "serde",
 ]
 
 [[package]]

@@ -1,20 +1,25 @@
-use adventuresim_tactical_core::avian3d::prelude::*;
+use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
-use bevy::prelude::*;
+use bevy::{color::palettes::tailwind, prelude::*};
 
-#[derive(Component)]
-struct DebugAttackCollider {
-    collider: Collider,
-    timer: Timer,
-}
+use crate::player::{HitPerformed, LimbHitbox};
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (toggle_debug_render, draw_debug_attack_colliders))
-            .add_observer(on_successful_attack);
+        app.add_systems(Update, toggle_debug_render)
+            .add_systems(Update, draw_debug_rays)
+            .add_observer(on_successful_attack)
+            .add_observer(on_hit_performed)
+            .add_observer(on_add_limb_hitbox);
     }
+}
+
+#[derive(Component)]
+struct DebugRay {
+    timer: Timer,
+    handle: Handle<GizmoAsset>,
 }
 
 fn toggle_debug_render(
@@ -27,40 +32,84 @@ fn toggle_debug_render(
     }
 }
 
-fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
-    let resp = event.event();
-    info!("Recieved attack response: total_damage={:.1}", resp.total_damage);
-    commands.spawn((
-        DebugAttackCollider {
-            collider: event.hitreg.clone(),
-            timer: Timer::from_seconds(0.33, TimerMode::Once),
+fn on_add_limb_hitbox(
+    event: On<Add, LimbHitbox>,
+    mut cmd: Commands,
+    q_hitbox: Query<&LimbHitbox>,
+) -> Result {
+    let &LimbHitbox(body_part) = q_hitbox.get(event.entity)?;
+
+    let color = match body_part {
+        BodyPart::LeftArm | BodyPart::RightArm => tailwind::LIME_600,
+        BodyPart::LeftLeg | BodyPart::RightLeg => tailwind::SKY_600,
+        BodyPart::Head => tailwind::RED_300,
+        BodyPart::Chest => tailwind::PINK_300,
+        BodyPart::Stomach => tailwind::PURPLE_300,
+    };
+
+    cmd.entity(event.entity)
+        .insert(DebugRender::collider(color.into()));
+
+    Ok(())
+}
+
+fn on_hit_performed(
+    event: On<HitPerformed>,
+    mut cmd: Commands,
+    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
+) {
+    let hit = event.event();
+    let end = hit.origin + *hit.direction * hit.length;
+
+    let mut asset = GizmoAsset::default();
+    asset.line(hit.origin, end, tailwind::ROSE_600);
+    let handle = gizmo_assets.add(asset);
+
+    cmd.spawn((
+        DebugRay {
+            timer: Timer::from_seconds(2.0, TimerMode::Once),
+            handle: handle.clone(),
         },
-        event.hitreg_transform,
+        Gizmo {
+            handle,
+            line_config: GizmoLineConfig {
+                width: 8.0,
+                ..default()
+            },
+            depth_bias: 0.0,
+        },
     ));
 }
 
-fn draw_debug_attack_colliders(
-    mut commands: Commands,
+fn draw_debug_rays(
     time: Res<Time>,
-    mut query: Query<(Entity, &mut DebugAttackCollider, &Transform)>,
-    mut gizmos: Gizmos<PhysicsGizmos>,
+    mut cmd: Commands,
+    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
+    mut q_rays: Query<(Entity, &mut DebugRay)>,
 ) {
-    for (entity, mut state, transform) in &mut query {
-        state.timer.tick(time.delta());
+    for (entity, mut ray) in &mut q_rays {
+        ray.timer.tick(time.delta());
 
-        if state.timer.is_finished() {
-            commands.entity(entity).despawn();
+        if ray.timer.is_finished() {
+            cmd.entity(entity).despawn();
             continue;
         }
 
-        let fraction = EaseFunction::CubicOut.sample_unchecked(state.timer.fraction_remaining());
-        let color = Color::srgba(0.0, 1.0, 0.0, fraction);
-
-        gizmos.draw_collider(
-            &state.collider,
-            transform.translation,
-            transform.rotation,
-            color,
-        );
+        let alpha = EaseFunction::QuadraticOut.sample_unchecked(ray.timer.fraction_remaining());
+        if let Some(asset) = gizmo_assets.get_mut(&ray.handle) {
+            for color in &mut asset.list_colors {
+                color.set_alpha(alpha);
+            }
+        }
     }
+}
+
+fn on_successful_attack(event: On<SuccessfulAttackResponse>) {
+    info!(
+        "Hit on {:?} bodypart for {:.1} damage ({:.1} cut + {:.1} blunt)",
+        event.body_part,
+        event.total_damage(),
+        event.cut_damage,
+        event.blunt_damage
+    );
 }

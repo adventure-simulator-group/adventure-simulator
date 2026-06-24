@@ -8,48 +8,17 @@ const UPPER_MUSCLE_KG_PER_STRENGTH: f32 = 5.0;
 const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
 
-/// Precision of a character attack.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum HitPrecision {
-    Miss,
-    Graze(f32, f32),
-    Direct,
-}
-
-impl HitPrecision {
-    pub fn directness(&self) -> f32 {
-        match self {
-            HitPrecision::Miss => 0.0,
-            &HitPrecision::Graze(to_skin, to_core) => {
-                (to_skin / (to_skin + to_core)).clamp(0.0, 1.0)
-            }
-            HitPrecision::Direct => 1.0,
-        }
-    }
-}
-
-impl std::fmt::Display for HitPrecision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HitPrecision {:.1}", self.directness())?;
-        match self {
-            HitPrecision::Miss => f.write_str(" (miss)"),
-            HitPrecision::Graze(to_skin, to_core) => {
-                write!(f, " (graze, to_skin: {to_skin:.1} | to_core: {to_core:.1})")
-            }
-            HitPrecision::Direct => f.write_str("(direct)"),
-        }
-    }
-}
-
 /// Result of resolving a melee attack.
 #[derive(Debug, Clone, Copy)]
 pub struct AttackResult {
-    pub precision: HitPrecision,
     pub cut_damage: f32,
     pub blunt_damage: f32,
 }
 
 /// Resolve a melee attack between an attacker and a defender.
+///
+/// `hit_precision` is a value in [0.0, 1.0] where 0.0 is a complete miss
+/// and 1.0 is a perfect hit.
 ///
 /// Returns the outcome including damage values. Damage is not yet
 /// applied to any body part — the caller is responsible for that.
@@ -60,14 +29,15 @@ pub fn resolve_melee_attack_by_parts(
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
-    hit_precision: HitPrecision,
+    hit_precision: f32,
+    defender_body_part: BodyPart,
     defender_skills: &impl PlayerSkills,
     defender_attr: &impl PlayerAttributes,
     defender_body: &impl PlayerBody,
     defender_essentials: &impl PlayerEssentials,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
-    // 1. Accuracy (modulated by geometric hit precision)
+    // 1. Accuracy (modulated by hit precision)
     let accuracy = attacker_skills.skill_check_by_parts(
         Skill::Melee,
         attacker_attr,
@@ -76,7 +46,7 @@ pub fn resolve_melee_attack_by_parts(
         attacker_equip,
         LimbWeights::arm(attacker_side, attacker_body.primary_side()),
     ) * attacker_equip.weapon_accuracy()
-        * hit_precision.directness();
+        * hit_precision;
 
     // 2. Block defense (MVP: no dodge/parry mode)
     let block_skill = defender_skills.skill_check_by_parts(
@@ -97,7 +67,6 @@ pub fn resolve_melee_attack_by_parts(
 
     if attack < 0.0 {
         return AttackResult {
-            precision: HitPrecision::Miss,
             cut_damage: 0.0,
             blunt_damage: 0.0,
         };
@@ -118,10 +87,10 @@ pub fn resolve_melee_attack_by_parts(
     let joules = upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_mass_kg;
     let applied_joules = directness * joules;
 
-    // 5. Armor penetration (torso)
-    let resistance = defender_equip.armor_resistance(BodyPart::Chest);
-    let flexibility = defender_equip.armor_flexibility(BodyPart::Chest);
-    let padding = defender_equip.armor_padding(BodyPart::Chest);
+    // 5. Armor penetration (per body part)
+    let resistance = defender_equip.armor_resistance(defender_body_part);
+    let flexibility = defender_equip.armor_flexibility(defender_body_part);
+    let padding = defender_equip.armor_padding(defender_body_part);
     let penetration = attacker_equip.weapon_penetration();
 
     let final_resistance = resistance - flexibility * resistance * penetration;
@@ -137,7 +106,6 @@ pub fn resolve_melee_attack_by_parts(
     };
 
     AttackResult {
-        precision: hit_precision,
         cut_damage,
         blunt_damage,
     }

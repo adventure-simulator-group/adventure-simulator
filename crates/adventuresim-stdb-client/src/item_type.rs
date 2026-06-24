@@ -15,6 +15,7 @@ pub struct Item {
     pub slot: ItemSlot,
     pub kind: ItemKind,
     pub accuracy: f32,
+    pub reach: f32,
     pub block: f32,
     pub coverage: f32,
     pub penetration: f32,

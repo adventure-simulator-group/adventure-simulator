@@ -1,9 +1,4 @@
-use std::f32;
-
-use adventuresim_tactical_core::{
-    avian3d::collision::collider::contact_query::{ClosestPoints, closest_points},
-    prelude::*,
-};
+use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
     message::SuccessfulAttackResponse,
@@ -15,177 +10,66 @@ pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AttackConfig>()
-            .add_observer(on_attack_action_triggered)
-            .add_systems(Update, attack_state_update_system);
+        app.add_observer(on_attack_action_triggered);
     }
 }
 
 fn on_attack_action_triggered(
     event: On<FromClient<AttackRequest>>,
     mut cmd: Commands,
-    attack_config: Res<AttackConfig>,
-    q_attacker: Query<Has<AttackState>>,
-) {
-    let Some(entity) = event.client_id.entity() else {
-        return;
-    };
-    if q_attacker.get(entity).unwrap_or_default() {
-        return;
-    }
-
-    cmd.entity(entity)
-        .insert(AttackState::new(attack_config.pre_hit_delay));
-}
-
-fn attack_state_update_system(
-    mut cmd: Commands,
-    time: Res<Time>,
-    config: Res<AttackConfig>,
-    mut q_attack: Query<(
-        Entity,
-        &RigidBodyColliders,
-        &Transform,
-        &CharacterLook,
-        &mut AttackState,
-    )>,
-    q_player: Query<&Player>,
-    q_collider: Query<&ColliderOf>,
-    q_hitbox: Query<(&Collider, &GlobalTransform)>,
-    spatial_query: SpatialQuery,
     viewer: TacticalPlayerViewer,
 ) {
-    for (entity, colliders, transform, look, mut state) in &mut q_attack {
-        state.pre_hit_timer.tick(time.delta());
-        if !state.pre_hit_timer.is_finished() {
-            continue;
-        }
-        cmd.entity(entity).remove::<AttackState>();
-
-        let Some(attacker_view) = viewer.get(entity) else {
-            continue;
-        };
-
-        let look = look.to_quat();
-        let origin = transform.translation + Vec3::new(0.0, 0.85, 0.0);
-        let mut hitreg_transform = Transform::from_translation(origin + config.hitreg_translation);
-        hitreg_transform.rotate_around(origin, look);
-
-        let filter = SpatialQueryFilter::default()
-            .with_mask(HITBOX_LAYER)
-            .with_excluded_entities(colliders);
-
-        let hit = spatial_query.shape_intersections(
-            &config.hitreg_shape,
-            hitreg_transform.translation,
-            hitreg_transform.rotation,
-            &filter,
+    let Some(entity) = event.client_id.entity() else {
+        warn!(
+            "Got attack request from an unknown client: {:?}",
+            event.client_id
         );
+        return;
+    };
 
-        let mut total_damage = 0.0;
-        for &hit_entity in &hit {
-            let defender_entity = q_collider
-                .get(hit_entity)
-                .ok()
-                .map(|c| c.body)
-                .filter(|&e| q_player.contains(e))
-                .or_else(|| {
-                    if q_player.contains(hit_entity) {
-                        Some(hit_entity)
-                    } else {
-                        None
-                    }
-                });
+    let Ok(attacker_view) = viewer.get(entity).inspect_err(|err| {
+        error!("Can't get a view for attacker {entity:?}: {err}",);
+    }) else {
+        return;
+    };
+    let Ok(defender_view) = viewer.get(event.target).inspect_err(|err| {
+        error!("Can't get a view for defender {:?}: {err}", event.target);
+    }) else {
+        return;
+    };
 
-            let Some(defender_entity) = defender_entity else {
-                continue;
-            };
+    let Some(attacker_side) = attacker_view.weapon_holding_side() else {
+        warn!("Attacker isn't holding any weapon!");
+        return;
+    };
 
-            let Some(defender_view) = viewer.get(defender_entity) else {
-                continue;
-            };
+    let result = attacker_view.resolve_melee_attack(
+        attacker_side,
+        &defender_view,
+        event.hit_precision,
+        event.body_part,
+    );
 
-            let skin_size = 0.6;
-            let precision = q_hitbox
-                .get(hit_entity)
-                .ok()
-                .map(|(skin, global)| {
-                    let hitreg_pos = hitreg_transform.translation;
-                    let hitreg_rot = hitreg_transform.rotation;
-                    let hitbox_pos = global.translation();
-                    let hitbox_rot = global.rotation();
+    let cut = result.cut_damage;
+    let blunt = result.blunt_damage;
 
-                    let mut core = skin.clone();
-                    core.set_scale(Vec3::splat(1.0 - skin_size), 10);
+    // TODO: apply damage
 
-                    let penetration_points = closest_points(
-                        &config.hitreg_shape,
-                        hitreg_pos,
-                        hitreg_rot,
-                        &core,
-                        hitbox_pos,
-                        hitbox_rot,
-                        f32::MAX,
-                    );
-                    let penetration_point = match penetration_points {
-                        Ok(ClosestPoints::Intersecting) | Err(_) => return HitPrecision::Direct,
-                        Ok(ClosestPoints::OutsideMargin) => return HitPrecision::Miss,
-                        Ok(ClosestPoints::WithinMargin(hitreg_point, _hitbox_point)) => {
-                            hitreg_point
-                        }
-                    };
+    info!(
+        "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut:.1} cut + {blunt:.1} blunt)",
+        event.target,
+        event.body_part,
+        cut + blunt
+    );
 
-                    let distance_to_skin = skin
-                        .distance_to_point(hitbox_pos, hitbox_rot, penetration_point, false)
-                        .abs();
-                    let distance_to_core = core
-                        .distance_to_point(hitbox_pos, hitbox_rot, penetration_point, false)
-                        .abs();
-
-                    HitPrecision::Graze(distance_to_skin, distance_to_core)
-                })
-                .unwrap_or(HitPrecision::Direct);
-
-            let Some(attacker_side) = attacker_view.weapon_holding_side() else {
-                warn!("Attacker isn't holding any weapon!");
-                continue;
-            };
-            let result =
-                attacker_view.resolve_melee_attack(attacker_side, &defender_view, precision);
-
-            let cut = result.cut_damage;
-            let blunt = result.blunt_damage;
-            let damage = cut + blunt;
-
-            if damage > 0.0 {
-                let chest = defender_view.body_part_health(BodyPart::Chest);
-                cmd.entity(defender_entity).insert(Limbs {
-                    chest: (chest - damage).max(0.0),
-                    left_arm: defender_view.body_part_health(BodyPart::LeftArm),
-                    right_arm: defender_view.body_part_health(BodyPart::RightArm),
-                    left_leg: defender_view.body_part_health(BodyPart::LeftLeg),
-                    right_leg: defender_view.body_part_health(BodyPart::RightLeg),
-                    stomach: defender_view.body_part_health(BodyPart::Stomach),
-                    head: defender_view.body_part_health(BodyPart::Head),
-                });
-            }
-
-            info!(
-                "hit'{defender_entity:?}' for {damage} total damage ({cut:.1} cut + {blunt:.1} blunt) (precision: {precision})",
-            );
-
-            total_damage += damage;
-        }
-
-        cmd.server_trigger(ToClients {
-            mode: SendMode::CLIENTS_ONLY,
-            message: SuccessfulAttackResponse {
-                attacker: entity,
-                hit,
-                hitreg: config.hitreg_shape.clone(),
-                hitreg_transform,
-                total_damage,
-            },
-        });
-    }
+    cmd.server_trigger(ToClients {
+        mode: SendMode::CLIENTS_ONLY,
+        message: SuccessfulAttackResponse {
+            attacker: entity,
+            hit: vec![event.target],
+            body_part: event.body_part,
+            cut_damage: cut,
+            blunt_damage: blunt,
+        },
+    });
 }

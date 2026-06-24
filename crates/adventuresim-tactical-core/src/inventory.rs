@@ -58,6 +58,7 @@ pub enum ArmorSide {
 pub struct WeaponItem {
     pub accuracy: f32,
     pub penetration: f32,
+    pub reach: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -219,6 +220,13 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
                 EquipSlot::HoldingRight => Some(BodySide::Right),
                 _ => None,
             })
+    }
+
+    fn weapon_reach(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.reach)
+            .unwrap_or_default()
     }
 
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {

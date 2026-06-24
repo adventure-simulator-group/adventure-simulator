@@ -13,6 +13,7 @@ pub trait PlayerEquipment {
     fn weapon_accuracy(&self) -> f32;
     fn weapon_weight(&self) -> f32;
     fn weapon_penetration(&self) -> f32;
+    fn weapon_reach(&self) -> f32;
     fn weapon_holding_side(&self) -> Option<BodySide>;
     fn shield_block_bonus(&self) -> f32;
 

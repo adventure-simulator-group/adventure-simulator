@@ -222,16 +222,14 @@ pub struct TacticalPlayerViewer<'w, 's> {
 }
 
 impl TacticalPlayerViewer<'_, '_> {
-    pub fn get(&self, entity: Entity) -> Option<TacticalPlayerView<'_, '_, '_>> {
-        let (limbs, skills, stats, attributes) = self.q_player.get(entity).ok()?;
+    pub fn get(&self, entity: Entity) -> Result<TacticalPlayerView<'_, '_, '_>> {
+        let (limbs, skills, stats, attributes) = self.q_player.get(entity)?;
         let inventory = self.inventory.get(entity);
-        Some(
-            PlayerInfo::empty()
-                .with_attributes(attributes)
-                .with_body(limbs)
-                .with_essentials(stats)
-                .with_equipment(inventory)
-                .with_skills(skills),
-        )
+        Ok(PlayerInfo::empty()
+            .with_attributes(attributes)
+            .with_body(limbs)
+            .with_essentials(stats)
+            .with_equipment(inventory)
+            .with_skills(skills))
     }
 }

@@ -11,6 +11,7 @@ pub(super) struct DefineWeaponArgs {
     pub weight: f32,
     pub accuracy: f32,
     pub penetration: f32,
+    pub reach: f32,
 }
 
 impl From<DefineWeaponArgs> for super::Reducer {
@@ -20,6 +21,7 @@ impl From<DefineWeaponArgs> for super::Reducer {
             weight: args.weight,
             accuracy: args.accuracy,
             penetration: args.penetration,
+            reach: args.reach,
         }
     }
 }
@@ -46,6 +48,7 @@ pub trait define_weapon {
         weight: f32,
         accuracy: f32,
         penetration: f32,
+        reach: f32,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `define_weapon`.
     ///
@@ -56,7 +59,9 @@ pub trait define_weapon {
     /// to cancel the callback.
     fn on_define_weapon(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32)
+            + Send
+            + 'static,
     ) -> DefineWeaponCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_weapon`],
     /// causing it not to run in the future.
@@ -70,6 +75,7 @@ impl define_weapon for super::RemoteReducers {
         weight: f32,
         accuracy: f32,
         penetration: f32,
+        reach: f32,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "define_weapon",
@@ -78,12 +84,13 @@ impl define_weapon for super::RemoteReducers {
                 weight,
                 accuracy,
                 penetration,
+                reach,
             },
         )
     }
     fn on_define_weapon(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32)
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32)
             + Send
             + 'static,
     ) -> DefineWeaponCallbackId {
@@ -100,6 +107,7 @@ impl define_weapon for super::RemoteReducers {
                                     weight,
                                     accuracy,
                                     penetration,
+                                    reach,
                                 },
                             ..
                         },
@@ -108,7 +116,7 @@ impl define_weapon for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, item_id, weight, accuracy, penetration)
+                callback(ctx, item_id, weight, accuracy, penetration, reach)
             }),
         ))
     }

@@ -1,10 +1,6 @@
-use avian3d::collision::collider::LayerMask;
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_ahoy::{camera::AhoyCameraPlugin, AhoyPlugins};
-
-pub const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
-pub const HITREG_LAYER: LayerMask = LayerMask(1 << 2);
+use bevy_ahoy::{AhoyPlugins, camera::AhoyCameraPlugin};
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
@@ -21,9 +17,22 @@ impl Default for AdventureSimulatorPhysicsPlugin {
 impl Plugin for AdventureSimulatorPhysicsPlugin {
     fn build(&self, app: &mut App) {
         if self.enable_simulation {
-            app.add_plugins((PhysicsPlugins::default(), AhoyPlugins::default()));
+            app.add_plugins((
+                PhysicsPlugins::new(FixedPostUpdate),
+                AhoyPlugins::new(FixedPostUpdate),
+            ));
         } else {
-            app.add_plugins((AhoyCameraPlugin,));
+            app.add_plugins((
+                PhysicsSchedulePlugin::new(FixedPostUpdate),
+                BroadPhaseCorePlugin,
+                ColliderHierarchyPlugin,
+                ColliderTransformPlugin::new(FixedPostUpdate),
+                PhysicsTransformPlugin::new(FixedPostUpdate),
+                ColliderBackendPlugin::<Collider>::new(FixedPostUpdate),
+                ColliderTreePlugin::<Collider>::default(),
+                AhoyCameraPlugin,
+            ))
+            .register_required_components::<RigidBody, RigidBodyDisabled>();
         }
 
         #[cfg(feature = "avian_debug")]

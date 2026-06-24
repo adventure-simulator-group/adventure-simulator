@@ -1,6 +1,6 @@
 pub type BodyParts = enumflags2::BitFlags<BodyPart>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[enumflags2::bitflags]
 #[repr(u8)]
 pub enum BodyPart {

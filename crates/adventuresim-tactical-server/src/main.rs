@@ -255,13 +255,6 @@ fn on_stdb_insert_connected_players(
             CharacterController::default(),
             CharacterLook::default(),
         ),
-        // TODO: limb group hitboxes
-        children![(
-            Replicated,
-            CollisionLayers::new(HITBOX_LAYER, HITREG_LAYER),
-            player_collider,
-            Sensor,
-        ),],
     ));
 
     for item in &player.items {
@@ -289,6 +282,7 @@ fn on_stdb_insert_connected_players(
                 item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,
                     penetration: item.item.penetration,
+                    reach: item.item.reach,
                 });
             }
             ItemKind::Armor => {
@@ -577,7 +571,7 @@ fn on_client_disconnected(
 }
 
 fn player_collider() -> Collider {
-    Collider::cylinder(0.4, 1.5)
+    Collider::cylinder(0.4, 1.9)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {

@@ -34,13 +34,12 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ItemOf>()
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
-            .replicate::<AttackState>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
-            .add_client_event::<AttackRequest>(Channel::Ordered)
-            .add_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
+            .add_mapped_client_event::<AttackRequest>(Channel::Ordered)
+            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
 
-        // Replicating physic components since those don't change and
+        // Replicating physics components since those don't change and
         // it's useful for debugging. Can be gated behind a feature flag, but
         // that's error prone because of how client/server is built independently.
         app.replicate_once_filtered::<Collider, Or<(With<Player>, With<Sensor>)>>()

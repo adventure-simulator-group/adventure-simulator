@@ -16,7 +16,10 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
-use crate::{Args, player::ClientPlayer};
+use crate::{
+    Args,
+    player::{AttackState, ClientPlayer},
+};
 
 pub struct UiPlugin;
 

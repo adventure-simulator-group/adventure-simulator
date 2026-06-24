@@ -16,12 +16,11 @@ pub use avian3d;
 
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
-    pub use crate::combat::{Attack, AttackConfig, AttackState};
+    pub use crate::combat::Attack;
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, WeaponItem,
     };
-    pub use crate::physics::{HITBOX_LAYER, HITREG_LAYER};
     pub use crate::player::{
         Attributes, ControlledPlayer, Limbs, Player, PlayerId, Skills, Stats, TacticalPlayerView,
         TacticalPlayerViewer,

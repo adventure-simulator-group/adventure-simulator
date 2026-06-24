@@ -94,6 +94,10 @@ impl PlayerEquipment for StubEquipment {
     fn weapon_holding_side(&self) -> Option<BodySide> {
         None
     }
+
+    fn weapon_reach(&self) -> f32 {
+        1.0
+    }
 }
 
 #[derive(Default, Debug)]
