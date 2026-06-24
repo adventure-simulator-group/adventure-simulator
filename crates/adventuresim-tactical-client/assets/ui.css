@@ -37,16 +37,30 @@ text,span {
   text-shadow: #0007 1px 1px;
 }
 
-#attack-timer {
+#attack-info {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 200px;
-  margin-left: -100px;
-  font-size: 20px;
-  text-align: center;
-  color: #fffa;
-  text-shadow: #000 2px 2px;
+  width: 300px;
+  margin-left: -150px;
+  flex-direction: column;
+  gap: 20px;
+
+  &>* {
+    height: 30px;
+  }
+  & * {
+    font-size: 20px;
+    text-align: center;
+    text-shadow: #000 2px 2px;
+
+    &:not(.player-id) {
+      color: #fff9;
+    }
+    &.player-id {
+      color: var(--player-color);
+    }
+  }
 }
 
 #crosshair {

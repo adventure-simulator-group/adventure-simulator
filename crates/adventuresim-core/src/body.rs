@@ -28,6 +28,20 @@ impl BodyPart {
     }
 }
 
+impl std::fmt::Display for BodyPart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BodyPart::Head => f.write_str("Head"),
+            BodyPart::Chest => f.write_str("Chest"),
+            BodyPart::Stomach => f.write_str("Stomach"),
+            BodyPart::LeftArm => f.write_str("Left Arm"),
+            BodyPart::RightArm => f.write_str("Right Arm"),
+            BodyPart::LeftLeg => f.write_str("Left Leg"),
+            BodyPart::RightLeg => f.write_str("Right Leg"),
+        }
+    }
+}
+
 #[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
 #[ambassador::delegatable_trait]
 pub trait PlayerBody {

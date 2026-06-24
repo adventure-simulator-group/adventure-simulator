@@ -7,6 +7,7 @@ use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
     client::normalize_server_url,
+    message::SuccessfulAttackResponse,
     prelude::*,
 };
 use bevy::{
@@ -38,7 +39,9 @@ impl Plugin for UiPlugin {
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                 ),
             )
-            .add_observer(on_new_player_added_hook);
+            .add_observer(on_new_player_added_hook)
+            .add_observer(on_successful_attack_display)
+            .add_systems(Update, update_attack_result_ui);
     }
 }
 
@@ -85,6 +88,11 @@ struct HeadSpan;
 struct AttackTimerSpan;
 
 #[derive(Component)]
+struct AttackResultText {
+    timer: Timer,
+}
+
+#[derive(Component)]
 struct EquippedItemsList;
 
 #[derive(Component)]
@@ -107,7 +115,20 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![
             (Name::new("crosshair"), Node::default()),
-            (Name::new("attack-timer"), AttackTimerSpan, Text::default(),),
+            (
+                Name::new("attack-info"),
+                Node::default(),
+                children![
+                    (Name::new("attack-timer"), Text::default(), AttackTimerSpan),
+                    (
+                        Name::new("attack-result"),
+                        Text::default(),
+                        AttackResultText {
+                            timer: Timer::from_seconds(2.0, TimerMode::Once)
+                        }
+                    )
+                ]
+            ),
             (
                 Name::new("controls"),
                 Text::new(""),
@@ -490,6 +511,52 @@ fn update_attack_timer_ui(
         span.0 = format!("{:.1}s", remaining);
     } else if !span.0.is_empty() {
         span.0.clear();
+    }
+}
+
+fn on_successful_attack_display(
+    event: On<SuccessfulAttackResponse>,
+    mut cmd: Commands,
+    q_player: Query<(&Player, &PlayerId)>,
+    mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
+) {
+    let Some((player, id)) = event.hit.first().and_then(|e| q_player.get(*e).ok()) else {
+        return;
+    };
+
+    span.1.timer.reset();
+    span.1.timer.unpause();
+    span.2.clear();
+    cmd.entity(span.0)
+        .despawn_children()
+        .with_children(|children| {
+            children.spawn(TextSpan::new("Hit "));
+            children.spawn((
+                ClassList::new("player-id"),
+                TextSpan::new(player.name.clone()),
+                InlineStyle::new(&format!(
+                    "--player-color: {}",
+                    id.color().to_srgba().to_hex()
+                )),
+            ));
+            children.spawn(TextSpan::new(format!(
+                " for {:.1} damage\nin {}",
+                event.total_damage(),
+                event.body_part
+            )));
+        });
+}
+
+fn update_attack_result_ui(
+    time: Res<Time>,
+    mut cmd: Commands,
+    mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
+) {
+    span.1.timer.tick(time.delta());
+    if span.1.timer.just_finished() {
+        cmd.entity(span.0).despawn_children();
+        span.2.clear();
+        span.1.timer.pause();
     }
 }
 
