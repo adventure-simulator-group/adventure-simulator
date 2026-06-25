@@ -178,6 +178,21 @@ fn on_new_player_added_hook(
                     })),
                     Transform::from_translation(offset),
                 ));
+
+                if body_part == BodyPart::Head {
+                    parent.spawn((
+                        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(0.3, 0.10, 0.1)))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: color,
+                            metallic: 0.5,
+                            perceptual_roughness: 0.5,
+                            ..default()
+                        })),
+                        Transform::from_translation(
+                            offset + Vec3::new(0.0, 0.05, half_extents.x * 0.9),
+                        ),
+                    ));
+                }
             }
 
             for &(body_part, offset, half_extents) in BODY_PART_HITBOXES {

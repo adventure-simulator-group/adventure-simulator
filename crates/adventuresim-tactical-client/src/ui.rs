@@ -540,9 +540,10 @@ fn on_successful_attack_display(
                 )),
             ));
             children.spawn(TextSpan::new(format!(
-                " for {:.1} damage\nin {}",
+                "\n* Damage: {:.1} ({})\n* Flanking: {:.1}",
                 event.total_damage(),
-                event.body_part
+                event.body_part,
+                event.flanking
             )));
         });
 }

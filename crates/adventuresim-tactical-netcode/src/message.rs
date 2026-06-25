@@ -31,6 +31,7 @@ pub struct SuccessfulAttackResponse {
     pub body_part: BodyPart,
     pub cut_damage: f32,
     pub blunt_damage: f32,
+    pub flanking: f32,
 }
 
 impl SuccessfulAttackResponse {

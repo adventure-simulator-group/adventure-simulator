@@ -1,3 +1,5 @@
+use std::f32;
+
 use crate::{
     body::{BodyPart, BodySide, LimbWeights, PlayerBody},
     prelude::{LimbAttribute, PlayerAttributes, PlayerEquipment, PlayerEssentials},
@@ -15,6 +17,15 @@ pub struct AttackResult {
     pub blunt_damage: f32,
 }
 
+pub fn flanking_from_dir(attacker_dir: (f32, f32), defender_dir: (f32, f32)) -> f32 {
+    let dot = (attacker_dir.0 * defender_dir.0) + (attacker_dir.1 * defender_dir.1);
+
+    let lower = -f32::consts::FRAC_1_SQRT_2; // dot of 135°
+    let higher = f32::consts::FRAC_1_SQRT_2; // dot of 45°
+
+    1.0 + (dot.clamp(lower, higher) + lower) / (higher - lower)
+}
+
 /// Resolve a melee attack between an attacker and a defender.
 ///
 /// `hit_precision` is a value in [0.0, 1.0] where 0.0 is a complete miss
@@ -30,6 +41,7 @@ pub fn resolve_melee_attack_by_parts(
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
     hit_precision: f32,
+    flanking: f32,
     defender_body_part: BodyPart,
     defender_skills: &impl PlayerSkills,
     defender_attr: &impl PlayerAttributes,
@@ -60,7 +72,7 @@ pub fn resolve_melee_attack_by_parts(
     let shield_bonus = defender_equip.shield_block_bonus();
     let block_defense = 5.0 * (1.0 - (-(shield_bonus + block_skill) / 2.0).exp());
 
-    let defense = block_defense;
+    let defense = block_defense * flanking;
 
     // 3. Attack value
     let attack = accuracy - defense;

@@ -18,6 +18,7 @@ fn on_attack_action_triggered(
     event: On<FromClient<AttackRequest>>,
     mut cmd: Commands,
     viewer: TacticalPlayerViewer,
+    q_character: Query<&CharacterLook>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         warn!(
@@ -38,6 +39,18 @@ fn on_attack_action_triggered(
         return;
     };
 
+    let Ok([attacker_look, defender_look]) = q_character
+        .get_many([entity, event.target])
+        .inspect_err(|err| {
+            error!("Can't get character look for attacker/defender: {err}",);
+        })
+    else {
+        return;
+    };
+    let (a2, a1) = attacker_look.yaw.sin_cos();
+    let (d2, d1) = defender_look.yaw.sin_cos();
+    let flanking = flanking_from_dir((a1, a2), (d1, d2));
+
     let Some(attacker_side) = attacker_view.weapon_holding_side() else {
         warn!("Attacker isn't holding any weapon!");
         return;
@@ -47,6 +60,7 @@ fn on_attack_action_triggered(
         attacker_side,
         &defender_view,
         event.hit_precision,
+        flanking,
         event.body_part,
     );
 
@@ -70,6 +84,7 @@ fn on_attack_action_triggered(
             body_part: event.body_part,
             cut_damage: cut,
             blunt_damage: blunt,
+            flanking,
         },
     });
 }

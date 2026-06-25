@@ -286,6 +286,7 @@ where
         side: BodySide,
         defender: &Self,
         hit_precision: f32,
+        flanking: f32,
         body_part: BodyPart,
     ) -> AttackResult {
         resolve_melee_attack_by_parts(
@@ -296,6 +297,7 @@ where
             &self.equipment,
             side,
             hit_precision,
+            flanking,
             body_part,
             &defender.skills,
             &defender.attributes,
