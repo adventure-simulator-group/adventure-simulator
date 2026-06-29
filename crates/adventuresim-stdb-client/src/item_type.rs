@@ -23,6 +23,8 @@ pub struct Item {
     pub padding: f32,
     pub flexibility: f32,
     pub range_of_motion: f32,
+    pub precise: bool,
+    pub balance: f32,
 }
 
 impl __sdk::InModule for Item {

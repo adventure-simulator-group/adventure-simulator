@@ -22,6 +22,7 @@ impl BodyPart {
     pub const UPPER_BODY: BodyParts =
         enumflags2::make_bitflags!(BodyPart::{LeftArm | RightArm | Chest | Stomach | Head});
     pub const LOWER_BODY: BodyParts = enumflags2::make_bitflags!(BodyPart::{LeftLeg | RightLeg});
+    pub const FULL_BODY: BodyParts = enumflags2::make_bitflags!(BodyPart::{LeftArm | RightArm | Chest | Stomach | Head | LeftLeg | RightLeg});
 
     pub fn as_parts(&self) -> BodyParts {
         BodyParts::from_flag(*self)
@@ -127,6 +128,16 @@ impl LimbWeights {
             right_arm: 0.25,
             left_leg: 0.25,
             right_leg: 0.25,
+        }
+    }
+
+    pub const fn normalize(self) -> Self {
+        let total = self.left_arm + self.right_arm + self.left_leg + self.right_leg;
+        Self {
+            left_arm: self.left_arm / total,
+            right_arm: self.right_arm / total,
+            left_leg: self.left_leg / total,
+            right_leg: self.right_leg / total,
         }
     }
 

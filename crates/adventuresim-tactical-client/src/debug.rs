@@ -1,5 +1,4 @@
 use adventuresim_tactical_core::prelude::*;
-use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{color::palettes::tailwind, prelude::*};
 
 use crate::player::{ClientPlayer, HitPerformed, LimbHitbox};
@@ -12,7 +11,6 @@ impl Plugin for DebugPlugin {
             .register_required_components_with::<Collider, _>(|| DebugRender::none())
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
-            .add_observer(on_successful_attack)
             .add_observer(on_hit_performed);
     }
 }
@@ -143,14 +141,4 @@ fn draw_debug_rays(
             }
         }
     }
-}
-
-fn on_successful_attack(event: On<SuccessfulAttackResponse>) {
-    info!(
-        "Hit on {:?} bodypart for {:.1} damage ({:.1} cut + {:.1} blunt)",
-        event.body_part,
-        event.total_damage(),
-        event.cut_damage,
-        event.blunt_damage
-    );
 }

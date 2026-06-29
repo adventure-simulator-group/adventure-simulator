@@ -67,6 +67,8 @@ pub struct Item {
     pub padding: f32,
     pub flexibility: f32,
     pub range_of_motion: f32,
+    pub precise: bool,
+    pub balance: f32,
 }
 
 #[reducer(init)]
@@ -78,10 +80,10 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 
     define_shield(ctx, "buckler", 1.0, 1.0);
 
-    define_weapon(ctx, "short_sword", 1.5, 1.5, 1.0, 1.0);
-    define_weapon(ctx, "knife", 0.5, 2.0, 1.0, 1.0);
-    define_weapon(ctx, "zweihander", 6.0, 0.6, 1.0, 2.0);
-    define_weapon(ctx, "club", 2.0, 1.0, 0.5, 1.0);
+    define_weapon(ctx, "short_sword", 1.5, 1.5, 1.0, 1.0, 0.5, true);
+    define_weapon(ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, true);
+    define_weapon(ctx, "zweihander", 6.0, 0.6, 1.0, 2.0, 0.3, false);
+    define_weapon(ctx, "club", 2.0, 1.0, 0.5, 1.0, 0.3, false);
 
     define_armor(
         ctx,
@@ -171,6 +173,8 @@ pub fn define_weapon(
     accuracy: f32,
     penetration: f32,
     reach: f32,
+    balance: f32,
+    precise: bool,
 ) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -178,6 +182,8 @@ pub fn define_weapon(
         accuracy,
         penetration,
         reach,
+        balance,
+        precise,
         kind: ItemKind::Weapon,
         ..Item::default()
     });

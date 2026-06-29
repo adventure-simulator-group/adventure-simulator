@@ -124,7 +124,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Name::new("attack-result"),
                         Text::default(),
                         AttackResultText {
-                            timer: Timer::from_seconds(2.0, TimerMode::Once)
+                            timer: Timer::from_seconds(4.0, TimerMode::Once)
                         }
                     )
                 ]
@@ -530,7 +530,7 @@ fn on_successful_attack_display(
     cmd.entity(span.0)
         .despawn_children()
         .with_children(|children| {
-            children.spawn(TextSpan::new("Hit "));
+            children.spawn(TextSpan::new("Attacking "));
             children.spawn((
                 ClassList::new("player-id"),
                 TextSpan::new(player.name.clone()),
@@ -539,12 +539,29 @@ fn on_successful_attack_display(
                     id.color().to_srgba().to_hex()
                 )),
             ));
-            children.spawn(TextSpan::new(format!(
-                "\n* Damage: {:.1} ({})\n* Flanking: {:.1}",
-                event.total_damage(),
-                event.body_part,
-                event.flanking
-            )));
+            children.spawn(TextSpan::new(": "));
+            match event.result {
+                AttackResult::ToAttacker { balance_damage } => {
+                    children.spawn((ClassList::new("error"), TextSpan::new("fail")));
+                    children.spawn(TextSpan::new(format!(
+                        "\n\nGot {balance_damage:.1} balance damage\n\n[part: {}]",
+                        event.body_part
+                    )));
+                }
+                AttackResult::ToDefender {
+                    cut_damage,
+                    blunt_damage,
+                    balance_damage,
+                } => {
+                    children.spawn((ClassList::new("success"), TextSpan::new("success")));
+                    children.spawn(TextSpan::new(format!(
+                        "\n\nDealt..\n{:.1} damage ({cut_damage:.1}C + {blunt_damage:.1}B)\n{balance_damage:.1} balance damage\n\n[part: {} | flanking: {:.1}]",
+                        cut_damage + blunt_damage,
+                        event.body_part,
+                        event.flanking
+                    )));
+                }
+            }
         });
 }
 

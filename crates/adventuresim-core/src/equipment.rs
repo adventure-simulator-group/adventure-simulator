@@ -15,12 +15,15 @@ pub trait PlayerEquipment {
     fn weapon_penetration(&self) -> f32;
     fn weapon_reach(&self) -> f32;
     fn weapon_holding_side(&self) -> Option<BodySide>;
+    fn weapon_is_precise(&self) -> bool;
+    fn weapon_balance(&self) -> f32;
     fn shield_block_bonus(&self) -> f32;
 
     fn armor_resistance(&self, part: BodyPart) -> f32;
     fn armor_padding(&self, part: BodyPart) -> f32;
     fn armor_flexibility(&self, part: BodyPart) -> f32;
     fn armor_range_of_motion(&self, part: BodyPart) -> f32;
+    fn armor_coverage(&self, part: BodyPart) -> f32;
 
     fn inventory_weight(&self) -> f32;
 

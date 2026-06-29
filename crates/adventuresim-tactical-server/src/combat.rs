@@ -56,25 +56,38 @@ fn on_attack_action_triggered(
         return;
     };
 
+    let defender_response = DefenderResponse::Dodge { input_reflex: 1.0 };
+
     let result = attacker_view.resolve_melee_attack(
         attacker_side,
         &defender_view,
+        defender_response,
         event.hit_precision,
         flanking,
         event.body_part,
     );
 
-    let cut = result.cut_damage;
-    let blunt = result.blunt_damage;
-
     // TODO: apply damage
-
-    info!(
-        "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut:.1} cut + {blunt:.1} blunt)",
-        event.target,
-        event.body_part,
-        cut + blunt
-    );
+    match result {
+        AttackResult::ToAttacker { balance_damage } => {
+            info!(
+                "{entity:?} failed to hit {:?} on {:?} and receiver {balance_damage:.1} balance damage",
+                event.target, event.body_part,
+            );
+        }
+        AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+        } => {
+            info!(
+                "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut_damage:.1} cut + {blunt_damage:.1} blunt) and {balance_damage:.1} balance damage",
+                event.target,
+                event.body_part,
+                cut_damage + blunt_damage
+            );
+        }
+    }
 
     cmd.server_trigger(ToClients {
         mode: SendMode::CLIENTS_ONLY,
@@ -82,8 +95,7 @@ fn on_attack_action_triggered(
             attacker: entity,
             hit: vec![event.target],
             body_part: event.body_part,
-            cut_damage: cut,
-            blunt_damage: blunt,
+            result,
             flanking,
         },
     });

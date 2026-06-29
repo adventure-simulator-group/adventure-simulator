@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::BodyPart;
+use adventuresim_tactical_core::prelude::*;
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -29,13 +29,19 @@ pub struct SuccessfulAttackResponse {
     #[entities]
     pub hit: Vec<Entity>,
     pub body_part: BodyPart,
-    pub cut_damage: f32,
-    pub blunt_damage: f32,
+    pub result: AttackResult,
     pub flanking: f32,
 }
 
 impl SuccessfulAttackResponse {
     pub fn total_damage(&self) -> f32 {
-        self.cut_damage + self.blunt_damage
+        match self.result {
+            AttackResult::ToAttacker { .. } => 0.0,
+            AttackResult::ToDefender {
+                cut_damage,
+                blunt_damage,
+                ..
+            } => cut_damage + blunt_damage,
+        }
     }
 }

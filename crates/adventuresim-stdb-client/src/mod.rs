@@ -195,6 +195,8 @@ pub enum Reducer {
         accuracy: f32,
         penetration: f32,
         reach: f32,
+        balance: f32,
+        precise: bool,
     },
     EndTacticalServer {
         success: bool,

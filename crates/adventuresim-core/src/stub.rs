@@ -98,6 +98,18 @@ impl PlayerEquipment for StubEquipment {
     fn weapon_reach(&self) -> f32 {
         1.0
     }
+
+    fn weapon_is_precise(&self) -> bool {
+        false
+    }
+
+    fn weapon_balance(&self) -> f32 {
+        1.0
+    }
+
+    fn armor_coverage(&self, part: BodyPart) -> f32 {
+        1.0
+    }
 }
 
 #[derive(Default, Debug)]

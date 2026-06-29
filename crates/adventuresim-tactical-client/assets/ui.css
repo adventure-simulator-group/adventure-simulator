@@ -41,8 +41,8 @@ text,span {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 300px;
-  margin-left: -150px;
+  width: 500px;
+  margin-left: -250px;
   flex-direction: column;
   gap: 20px;
 
@@ -54,9 +54,6 @@ text,span {
     text-align: center;
     text-shadow: #000 2px 2px;
 
-    &:not(.player-id) {
-      color: #fff9;
-    }
     &.player-id {
       color: var(--player-color);
     }

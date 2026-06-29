@@ -283,6 +283,8 @@ fn on_stdb_insert_connected_players(
                     accuracy: item.item.accuracy,
                     penetration: item.item.penetration,
                     reach: item.item.reach,
+                    balance: item.item.balance,
+                    precise: item.item.precise,
                 });
             }
             ItemKind::Armor => {
