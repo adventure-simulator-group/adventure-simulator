@@ -1,7 +1,8 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::FromClient,
-    prelude::AttackCommand,
+    bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
+    message::SuccessfulAttackResponse,
+    prelude::AttackRequest,
 };
 use bevy::prelude::*;
 
@@ -13,12 +14,89 @@ impl Plugin for CombatPlugin {
     }
 }
 
-fn on_attack_action_triggered(event: On<FromClient<AttackCommand>>, viewer: TacticalPlayerViewer) {
+fn on_attack_action_triggered(
+    event: On<FromClient<AttackRequest>>,
+    mut cmd: Commands,
+    viewer: TacticalPlayerViewer,
+    q_character: Query<&CharacterLook>,
+) {
     let Some(entity) = event.client_id.entity() else {
+        warn!(
+            "Got attack request from an unknown client: {:?}",
+            event.client_id
+        );
         return;
     };
-    if let Some(player_info) = viewer.get(entity) {
-        let skill_check = player_info.skill_check(Skill::Melee);
-        info!("Melee skill check for {entity:?}: {skill_check}");
+
+    let Ok(attacker_view) = viewer.get(entity).inspect_err(|err| {
+        error!("Can't get a view for attacker {entity:?}: {err}",);
+    }) else {
+        return;
+    };
+    let Ok(defender_view) = viewer.get(event.target).inspect_err(|err| {
+        error!("Can't get a view for defender {:?}: {err}", event.target);
+    }) else {
+        return;
+    };
+
+    let Ok([attacker_look, defender_look]) = q_character
+        .get_many([entity, event.target])
+        .inspect_err(|err| {
+            error!("Can't get character look for attacker/defender: {err}",);
+        })
+    else {
+        return;
+    };
+    let (a2, a1) = attacker_look.yaw.sin_cos();
+    let (d2, d1) = defender_look.yaw.sin_cos();
+    let flanking = flanking_from_dir((a1, a2), (d1, d2));
+
+    let Some(attacker_side) = attacker_view.weapon_holding_side() else {
+        warn!("Attacker isn't holding any weapon!");
+        return;
+    };
+
+    let defender_response = DefenderResponse::Dodge { input_reflex: 1.0 };
+
+    let result = attacker_view.resolve_melee_attack(
+        attacker_side,
+        &defender_view,
+        defender_response,
+        event.hit_precision,
+        flanking,
+        event.body_part,
+    );
+
+    // TODO: apply damage
+    match result {
+        AttackResult::ToAttacker { balance_damage } => {
+            info!(
+                "{entity:?} failed to hit {:?} on {:?} and receiver {balance_damage:.1} balance damage",
+                event.target, event.body_part,
+            );
+        }
+        AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+        } => {
+            info!(
+                "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut_damage:.1} cut + {blunt_damage:.1} blunt) and {balance_damage:.1} balance damage",
+                event.target,
+                event.body_part,
+                cut_damage + blunt_damage
+            );
+        }
     }
+
+    cmd.server_trigger(ToClients {
+        mode: SendMode::CLIENTS_ONLY,
+        message: SuccessfulAttackResponse {
+            attacker: entity,
+            hit: vec![event.target],
+            body_part: event.body_part,
+            result,
+            flanking,
+        },
+    });
 }

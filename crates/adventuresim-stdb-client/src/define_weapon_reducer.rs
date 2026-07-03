@@ -10,6 +10,10 @@ pub(super) struct DefineWeaponArgs {
     pub item_id: String,
     pub weight: f32,
     pub accuracy: f32,
+    pub penetration: f32,
+    pub reach: f32,
+    pub balance: f32,
+    pub precise: bool,
 }
 
 impl From<DefineWeaponArgs> for super::Reducer {
@@ -18,6 +22,10 @@ impl From<DefineWeaponArgs> for super::Reducer {
             item_id: args.item_id,
             weight: args.weight,
             accuracy: args.accuracy,
+            penetration: args.penetration,
+            reach: args.reach,
+            balance: args.balance,
+            precise: args.precise,
         }
     }
 }
@@ -38,7 +46,16 @@ pub trait define_weapon {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_define_weapon`] callbacks.
-    fn define_weapon(&self, item_id: String, weight: f32, accuracy: f32) -> __sdk::Result<()>;
+    fn define_weapon(
+        &self,
+        item_id: String,
+        weight: f32,
+        accuracy: f32,
+        penetration: f32,
+        reach: f32,
+        balance: f32,
+        precise: bool,
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `define_weapon`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -48,7 +65,9 @@ pub trait define_weapon {
     /// to cancel the callback.
     fn on_define_weapon(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32, &f32, &bool)
+            + Send
+            + 'static,
     ) -> DefineWeaponCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_weapon`],
     /// causing it not to run in the future.
@@ -56,19 +75,34 @@ pub trait define_weapon {
 }
 
 impl define_weapon for super::RemoteReducers {
-    fn define_weapon(&self, item_id: String, weight: f32, accuracy: f32) -> __sdk::Result<()> {
+    fn define_weapon(
+        &self,
+        item_id: String,
+        weight: f32,
+        accuracy: f32,
+        penetration: f32,
+        reach: f32,
+        balance: f32,
+        precise: bool,
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "define_weapon",
             DefineWeaponArgs {
                 item_id,
                 weight,
                 accuracy,
+                penetration,
+                reach,
+                balance,
+                precise,
             },
         )
     }
     fn on_define_weapon(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32, &f32, &bool)
+            + Send
+            + 'static,
     ) -> DefineWeaponCallbackId {
         DefineWeaponCallbackId(self.imp.on_reducer(
             "define_weapon",
@@ -82,6 +116,10 @@ impl define_weapon for super::RemoteReducers {
                                     item_id,
                                     weight,
                                     accuracy,
+                                    penetration,
+                                    reach,
+                                    balance,
+                                    precise,
                                 },
                             ..
                         },
@@ -90,7 +128,16 @@ impl define_weapon for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, item_id, weight, accuracy)
+                callback(
+                    ctx,
+                    item_id,
+                    weight,
+                    accuracy,
+                    penetration,
+                    reach,
+                    balance,
+                    precise,
+                )
             }),
         ))
     }

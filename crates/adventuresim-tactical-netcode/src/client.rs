@@ -1,5 +1,5 @@
-use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
 use crate::DEFAULT_SERVER_URL;
+use crate::message::{JoinRequest, PlayerInputRequest};
 use adventuresim_tactical_core::prelude::*;
 use aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin};
 use aeronet_websocket::client::{ClientConfig, WebSocketClient, WebSocketClientPlugin};
@@ -16,13 +16,13 @@ impl Plugin for AdventureSimulatorClientPlugin {
             .add_systems(OnEnter(ClientState::Connected), announce_join)
             .add_systems(
                 FixedUpdate,
-                (send_player_input, send_attack).run_if(in_state(ClientState::Connected)),
+                (send_player_input,).run_if(in_state(ClientState::Connected)),
             );
     }
 }
 
 #[derive(Component, Clone, Debug)]
-#[require(Name = Name::from("Client"))]
+#[require(Name::from("Client"), AeronetRepliconClient)]
 pub struct AdventureSimulatorClient {
     pub player_id: u64,
     pub server_url: String,
@@ -44,19 +44,17 @@ fn on_client_added(
 ) -> Result {
     let client = clients.get(event.entity)?;
 
-    commands.entity(event.entity).insert(AeronetRepliconClient);
-    commands.entity(event.entity).queue(WebSocketClient::connect(
-        websocket_config(&client.server_url),
-        normalize_server_url(&client.server_url),
-    ));
+    commands
+        .entity(event.entity)
+        .queue(WebSocketClient::connect(
+            websocket_config(&client.server_url),
+            normalize_server_url(&client.server_url),
+        ));
 
     Ok(())
 }
 
-fn announce_join(
-    mut commands: Commands,
-    client: Single<&AdventureSimulatorClient>,
-) {
+fn announce_join(mut commands: Commands, client: Single<&AdventureSimulatorClient>) {
     commands.client_trigger(JoinRequest {
         player_id: client.player_id,
     });
@@ -72,34 +70,18 @@ fn send_player_input(
         let movement = movements
             .iter_many(actions)
             .next()
-            .map(|movement| **movement)
-            .unwrap_or_default();
+            .map(|movement| **movement);
         let jump = jumps
             .iter_many(actions)
             .next()
             .map(|jump| **jump)
             .unwrap_or(false);
 
-        commands.client_trigger(PlayerInputMessage {
+        commands.client_trigger(PlayerInputRequest {
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump,
         });
-    }
-}
-
-fn send_attack(
-    mut commands: Commands,
-    players: Query<&Actions<Player>, With<ControlledPlayer>>,
-    attacks: Query<&ActionEvents, With<Action<Attack>>>,
-) {
-    for actions in &players {
-        let Some(events) = attacks.iter_many(actions).next() else {
-            continue;
-        };
-        if events.contains(ActionEvents::START) {
-            commands.client_trigger(AttackCommand);
-        }
     }
 }
 

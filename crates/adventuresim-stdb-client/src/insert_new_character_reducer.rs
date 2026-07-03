@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct InsertNewCharacterArgs {
     pub name: String,
     pub id: u64,
+    pub temporary: bool,
 }
 
 impl From<InsertNewCharacterArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<InsertNewCharacterArgs> for super::Reducer {
         Self::InsertNewCharacter {
             name: args.name,
             id: args.id,
+            temporary: args.temporary,
         }
     }
 }
@@ -36,7 +38,7 @@ pub trait insert_new_character {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_new_character`] callbacks.
-    fn insert_new_character(&self, name: String, id: u64) -> __sdk::Result<()>;
+    fn insert_new_character(&self, name: String, id: u64, temporary: bool) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_new_character`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +48,7 @@ pub trait insert_new_character {
     /// to cancel the callback.
     fn on_insert_new_character(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &u64) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &u64, &bool) + Send + 'static,
     ) -> InsertNewCharacterCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_new_character`],
     /// causing it not to run in the future.
@@ -54,13 +56,19 @@ pub trait insert_new_character {
 }
 
 impl insert_new_character for super::RemoteReducers {
-    fn insert_new_character(&self, name: String, id: u64) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_new_character", InsertNewCharacterArgs { name, id })
+    fn insert_new_character(&self, name: String, id: u64, temporary: bool) -> __sdk::Result<()> {
+        self.imp.call_reducer(
+            "insert_new_character",
+            InsertNewCharacterArgs {
+                name,
+                id,
+                temporary,
+            },
+        )
     }
     fn on_insert_new_character(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &u64) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &u64, &bool) + Send + 'static,
     ) -> InsertNewCharacterCallbackId {
         InsertNewCharacterCallbackId(self.imp.on_reducer(
             "insert_new_character",
@@ -69,7 +77,12 @@ impl insert_new_character for super::RemoteReducers {
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertNewCharacter { name, id },
+                            reducer:
+                                super::Reducer::InsertNewCharacter {
+                                    name,
+                                    id,
+                                    temporary,
+                                },
                             ..
                         },
                     ..
@@ -77,7 +90,7 @@ impl insert_new_character for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, name, id)
+                callback(ctx, name, id, temporary)
             }),
         ))
     }

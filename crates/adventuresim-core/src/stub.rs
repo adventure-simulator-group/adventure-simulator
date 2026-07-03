@@ -12,7 +12,11 @@ use crate::prelude::*;
 pub struct StubAttributes;
 
 impl PlayerAttributes for StubAttributes {
-    fn attr(&self, _attr: Attribute) -> f32 {
+    fn raw_limb_attr(&self, _attr: LimbAttribute, _limb: BodyPart) -> f32 {
+        1.0
+    }
+
+    fn raw_single_body_part_attr(&self, _attr: SimpleAttribute) -> f32 {
         1.0
     }
 }
@@ -27,6 +31,10 @@ impl PlayerBody for StubBody {
 
     fn body_weight(&self) -> f32 {
         70.0
+    }
+
+    fn primary_side(&self) -> BodySide {
+        BodySide::Right
     }
 }
 
@@ -51,7 +59,27 @@ impl PlayerEquipment for StubEquipment {
         1.0
     }
 
-    fn armor_dodge(&self, _part: BodyPart) -> f32 {
+    fn weapon_weight(&self) -> f32 {
+        1.0
+    }
+
+    fn weapon_penetration(&self) -> f32 {
+        1.0
+    }
+
+    fn armor_range_of_motion(&self, _part: BodyPart) -> f32 {
+        1.0
+    }
+
+    fn armor_resistance(&self, _part: BodyPart) -> f32 {
+        1.0
+    }
+
+    fn armor_padding(&self, _part: BodyPart) -> f32 {
+        1.0
+    }
+
+    fn armor_flexibility(&self, _part: BodyPart) -> f32 {
         1.0
     }
 
@@ -60,6 +88,26 @@ impl PlayerEquipment for StubEquipment {
     }
 
     fn shield_block_bonus(&self) -> f32 {
+        1.0
+    }
+
+    fn weapon_holding_side(&self) -> Option<BodySide> {
+        None
+    }
+
+    fn weapon_reach(&self) -> f32 {
+        1.0
+    }
+
+    fn weapon_is_precise(&self) -> bool {
+        false
+    }
+
+    fn weapon_balance(&self) -> f32 {
+        1.0
+    }
+
+    fn armor_coverage(&self, part: BodyPart) -> f32 {
         1.0
     }
 }

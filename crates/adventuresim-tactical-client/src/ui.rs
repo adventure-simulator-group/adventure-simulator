@@ -7,6 +7,7 @@ use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
     client::normalize_server_url,
+    message::SuccessfulAttackResponse,
     prelude::*,
 };
 use bevy::{
@@ -16,7 +17,10 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
-use crate::Args;
+use crate::{
+    Args,
+    player::{AttackState, ClientPlayer},
+};
 
 pub struct UiPlugin;
 
@@ -27,14 +31,17 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    update_stats_ui.run_if(any_with_component::<CharacterController>),
+                    update_stats_ui.run_if(any_with_component::<ClientPlayer>),
                     update_connection_ui,
-                    update_skills_ui.run_if(any_with_component::<CharacterController>),
-                    update_limbs_ui.run_if(any_with_component::<CharacterController>),
-                    update_items_ui.run_if(any_with_component::<CharacterController>),
+                    update_skills_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_items_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                 ),
             )
-            .add_observer(on_new_player_added_hook);
+            .add_observer(on_new_player_added_hook)
+            .add_observer(on_successful_attack_display)
+            .add_systems(Update, update_attack_result_ui);
     }
 }
 
@@ -54,13 +61,7 @@ struct ClientInfoSpan;
 struct ClientStatusSpan;
 
 #[derive(Component)]
-struct MeleeSpan;
-
-#[derive(Component)]
-struct DodgeSpan;
-
-#[derive(Component)]
-struct BlockSpan;
+struct SkillSpan(Skill);
 
 #[derive(Component)]
 struct LeftArmSpan;
@@ -82,6 +83,14 @@ struct StomachSpan;
 
 #[derive(Component)]
 struct HeadSpan;
+
+#[derive(Component)]
+struct AttackTimerSpan;
+
+#[derive(Component)]
+struct AttackResultText {
+    timer: Timer,
+}
 
 #[derive(Component)]
 struct EquippedItemsList;
@@ -107,8 +116,29 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         children![
             (Name::new("crosshair"), Node::default()),
             (
+                Name::new("attack-info"),
+                Node::default(),
+                children![
+                    (Name::new("attack-timer"), Text::default(), AttackTimerSpan),
+                    (
+                        Name::new("attack-result"),
+                        Text::default(),
+                        AttackResultText {
+                            timer: Timer::from_seconds(4.0, TimerMode::Once)
+                        }
+                    )
+                ]
+            ),
+            (
                 Name::new("controls"),
-                Text::new("WASD to move | Space to jump | Mouse to look around"),
+                Text::new(""),
+                children![
+                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
+                    #[cfg(feature = "debug")]
+                    TextSpan::new(
+                        "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
+                    )
+                ],
             ),
             (
                 Name::new("stats"),
@@ -138,17 +168,57 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                             (
                                 Name::new("melee"),
                                 Text::new("Melee hours:\n"),
-                                children![(MeleeSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Melee), TextSpan::default())]
                             ),
                             (
                                 Name::new("dodge"),
                                 Text::new("Dodge hours:\n"),
-                                children![(DodgeSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Dodge), TextSpan::default())]
                             ),
                             (
                                 Name::new("block"),
                                 Text::new("Block hours:\n"),
-                                children![(BlockSpan, TextSpan::default())]
+                                children![(SkillSpan(Skill::Block), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("ranged"),
+                                Text::new("Ranged hours:\n"),
+                                children![(SkillSpan(Skill::Ranged), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("will"),
+                                Text::new("Will hours:\n"),
+                                children![(SkillSpan(Skill::Will), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("charisma"),
+                                Text::new("Charisma hours:\n"),
+                                children![(SkillSpan(Skill::Charisma), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("medicine"),
+                                Text::new("Medicine hours:\n"),
+                                children![(SkillSpan(Skill::Medicine), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("faith"),
+                                Text::new("Faith hours:\n"),
+                                children![(SkillSpan(Skill::Faith), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("stealth"),
+                                Text::new("Stealth hours:\n"),
+                                children![(SkillSpan(Skill::Stealth), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("balance"),
+                                Text::new("Balance hours:\n"),
+                                children![(SkillSpan(Skill::Balance), TextSpan::default())]
+                            ),
+                            (
+                                Name::new("surgeon"),
+                                Text::new("Surgeon hours:\n"),
+                                children![(SkillSpan(Skill::Surgeon), TextSpan::default())]
                             ),
                         ]
                     ),
@@ -255,7 +325,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
-    player: Single<(Ref<Transform>, &PlayerId), With<CharacterController>>,
+    player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
         Single<&mut TextSpan, With<FpsSpan>>,
@@ -280,22 +350,30 @@ fn update_stats_ui(
 }
 
 fn update_skills_ui(
-    player: Single<(&Skills, &PlayerId), (With<CharacterController>, Changed<Skills>)>,
-    mut spans: ParamSet<(
-        Single<&mut TextSpan, With<MeleeSpan>>,
-        Single<&mut TextSpan, With<DodgeSpan>>,
-        Single<&mut TextSpan, With<BlockSpan>>,
-    )>,
+    player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
+    mut spans: Query<(&mut TextSpan, &SkillSpan)>,
 ) {
     let (skills, _player_id) = player.into_inner();
 
-    spans.p0().0 = format!("{:.2}", skills.melee_hours);
-    spans.p1().0 = format!("{:.2}", skills.dodge_hours);
-    spans.p2().0 = format!("{:.2}", skills.block_hours);
+    for (mut text, skill_span) in &mut spans {
+        text.0 = match skill_span.0 {
+            Skill::Melee => format!("{:.2}", skills.melee_hours),
+            Skill::Dodge => format!("{:.2}", skills.dodge_hours),
+            Skill::Block => format!("{:.2}", skills.block_hours),
+            Skill::Ranged => format!("{:.2}", skills.ranged_hours),
+            Skill::Will => format!("{:.2}", skills.will_hours),
+            Skill::Charisma => format!("{:.2}", skills.charisma_hours),
+            Skill::Medicine => format!("{:.2}", skills.medicine_hours),
+            Skill::Faith => format!("{:.2}", skills.faith_hours),
+            Skill::Stealth => format!("{:.2}", skills.stealth_hours),
+            Skill::Balance => format!("{:.2}", skills.balance_hours),
+            Skill::Surgeon => format!("{:.2}", skills.surgeon_hours),
+        };
+    }
 }
 
 fn update_limbs_ui(
-    player: Single<(&Limbs, &PlayerId), (With<CharacterController>, Changed<Limbs>)>,
+    player: Single<(&Limbs, &PlayerId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
         Single<&mut TextSpan, With<ChestSpan>>,
@@ -338,8 +416,8 @@ fn item_display_name(item: &ItemQueryItem) -> String {
         format!("{slot}{name}{qty}\naccuracy: {:.1}", weapon.accuracy)
     } else if let Some(armor) = item.armor {
         format!(
-            "{slot}{name}{qty}\ncoverage: {:.1} | dodge: {:.1}",
-            armor.coverage, armor.dodge
+            "{slot}{name}{qty}\ncoverage: {:.1} | padding: {:.1}\nrange_of_motion: {:.1} | flexibility: {:.1}",
+            armor.coverage, armor.padding, armor.range_of_motion, armor.flexibility
         )
     } else if let Some(shield) = item.shield {
         format!("{slot}{name}{qty}\nblock: {:.1}", shield.block)
@@ -350,7 +428,7 @@ fn item_display_name(item: &ItemQueryItem) -> String {
 
 fn update_items_ui(
     mut cmd: Commands,
-    player: Single<Option<&InventoryItems>, With<CharacterController>>,
+    player: Single<Option<&InventoryItems>, (With<ClientPlayer>, Changed<InventoryItems>)>,
     equipped_list: Single<Entity, With<EquippedItemsList>>,
     inventory_list: Single<Entity, With<InventoryItemsList>>,
     q_items: Query<ItemQuery>,
@@ -396,6 +474,7 @@ fn update_connection_ui(
     spans.p1().0 = local
         .map(|addr| addr.0.to_string())
         .unwrap_or_else(|| "browser session".to_string());
+
     let (status_text, status_class) = match client_state.get() {
         ClientState::Connected => (
             format!(
@@ -411,8 +490,92 @@ fn update_connection_ui(
         ClientState::Disconnected => ("\nDisconnected".to_string(), "error"),
     };
 
-    spans.p2().0 .0 = status_text;
-    *spans.p2().1 = ClassList::new(status_class);
+    if spans.p2().0.0 != status_text {
+        spans.p2().0.0 = status_text;
+    }
+    if !spans.p2().1.contains(status_class) {
+        *spans.p2().1 = ClassList::new(status_class);
+    }
+}
+
+fn update_attack_timer_ui(
+    player: Single<Option<Ref<AttackState>>, With<ClientPlayer>>,
+    mut span: Single<&mut Text, With<AttackTimerSpan>>,
+) {
+    let state = player.into_inner();
+
+    if let Some(state) = state.as_ref()
+        && state.is_attacking()
+    {
+        let remaining = state.pre_hit_timer.remaining().as_secs_f32();
+        span.0 = format!("{:.1}s", remaining);
+    } else if !span.0.is_empty() {
+        span.0.clear();
+    }
+}
+
+fn on_successful_attack_display(
+    event: On<SuccessfulAttackResponse>,
+    mut cmd: Commands,
+    q_player: Query<(&Player, &PlayerId)>,
+    mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
+) {
+    let Some((player, id)) = event.hit.first().and_then(|e| q_player.get(*e).ok()) else {
+        return;
+    };
+
+    span.1.timer.reset();
+    span.1.timer.unpause();
+    span.2.clear();
+    cmd.entity(span.0)
+        .despawn_children()
+        .with_children(|children| {
+            children.spawn(TextSpan::new("Attacking "));
+            children.spawn((
+                ClassList::new("player-id"),
+                TextSpan::new(player.name.clone()),
+                InlineStyle::new(&format!(
+                    "--player-color: {}",
+                    id.color().to_srgba().to_hex()
+                )),
+            ));
+            children.spawn(TextSpan::new(": "));
+            match event.result {
+                AttackResult::ToAttacker { balance_damage } => {
+                    children.spawn((ClassList::new("error"), TextSpan::new("fail")));
+                    children.spawn(TextSpan::new(format!(
+                        "\n\nGot {balance_damage:.1} balance damage\n\n[part: {}]",
+                        event.body_part
+                    )));
+                }
+                AttackResult::ToDefender {
+                    cut_damage,
+                    blunt_damage,
+                    balance_damage,
+                } => {
+                    children.spawn((ClassList::new("success"), TextSpan::new("success")));
+                    children.spawn(TextSpan::new(format!(
+                        "\n\nDealt..\n{:.1} damage ({cut_damage:.1}C + {blunt_damage:.1}B)\n{balance_damage:.1} balance damage\n\n[part: {} | flanking: {:.1}]",
+                        cut_damage + blunt_damage,
+                        event.body_part,
+                        event.flanking
+                    )));
+                }
+            }
+        });
+}
+
+fn update_attack_result_ui(
+    time: Res<Time>,
+    mut cmd: Commands,
+    mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
+) {
+    span.1.timer.tick(time.delta());
+    if span.1.timer.just_finished() {
+        cmd.entity(span.0).despawn_children();
+        span.2.clear();
+        span.1.timer.pause();
+    }
 }
 
 fn on_new_player_added_hook(

@@ -96,7 +96,7 @@ impl Default for Limbs {
 
 impl PlayerBody for Limbs {
     fn body_part_health(&self, part: BodyPart) -> f32 {
-        bitflags::bitflags_match!(part, {
+        match part {
             BodyPart::LeftArm => self.left_arm,
             BodyPart::RightArm => self.right_arm,
             BodyPart::LeftLeg => self.left_leg,
@@ -104,32 +104,35 @@ impl PlayerBody for Limbs {
             BodyPart::Chest => self.chest,
             BodyPart::Stomach => self.stomach,
             BodyPart::Head => self.head,
-            _ => unimplemented!()
-        })
+        }
     }
 
     fn body_weight(&self) -> f32 {
+        // TODO: this should be stored in DB ?
         10.0
+    }
+
+    fn primary_side(&self) -> BodySide {
+        // TODO: this should be stored in DB ?
+        BodySide::Right
     }
 }
 
 /// Physical and mental skills of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Skills {
     pub melee_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-}
-
-impl Default for Skills {
-    fn default() -> Self {
-        Self {
-            melee_hours: 1.0,
-            dodge_hours: 1.0,
-            block_hours: 1.0,
-        }
-    }
+    pub ranged_hours: f32,
+    pub will_hours: f32,
+    pub charisma_hours: f32,
+    pub medicine_hours: f32,
+    pub faith_hours: f32,
+    pub stealth_hours: f32,
+    pub balance_hours: f32,
+    pub surgeon_hours: f32,
 }
 
 impl PlayerSkills for Skills {
@@ -138,64 +141,64 @@ impl PlayerSkills for Skills {
             Skill::Melee => self.melee_hours,
             Skill::Block => self.block_hours,
             Skill::Dodge => self.dodge_hours,
-            Skill::Ranged
-            | Skill::Will
-            | Skill::Charisma
-            | Skill::Medicine
-            | Skill::Faith
-            | Skill::Stealth
-            | Skill::Balance
-            | Skill::Surgeon => unimplemented!(),
+            Skill::Ranged => self.ranged_hours,
+            Skill::Will => self.will_hours,
+            Skill::Charisma => self.charisma_hours,
+            Skill::Medicine => self.medicine_hours,
+            Skill::Faith => self.faith_hours,
+            Skill::Stealth => self.stealth_hours,
+            Skill::Balance => self.balance_hours,
+            Skill::Surgeon => self.surgeon_hours,
         }
     }
 }
 
 /// Genetic attributes of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Attributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub strength: f32,
     pub precision: f32,
-    pub agility: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
     pub hearing: f32,
-}
-
-impl Default for Attributes {
-    fn default() -> Self {
-        Self {
-            endurance: 2.0,
-            immunity: 2.0,
-            gut: 2.0,
-            strength: 2.0,
-            precision: 2.0,
-            agility: 2.0,
-            intelligence: 2.0,
-            instinct: 2.0,
-            eyesight: 2.0,
-            hearing: 2.0,
-        }
-    }
+    pub left_arm_strength: f32,
+    pub right_arm_strength: f32,
+    pub left_leg_strength: f32,
+    pub right_leg_strength: f32,
+    pub left_arm_agility: f32,
+    pub right_arm_agility: f32,
+    pub left_leg_agility: f32,
+    pub right_leg_agility: f32,
 }
 
 impl PlayerAttributes for Attributes {
-    fn attr(&self, attr: Attribute) -> f32 {
+    fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
+        match (attr, limb) {
+            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
+            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
+            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
+            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
+            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
+            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
+            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
+            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
         match attr {
-            Attribute::Endurance => self.endurance,
-            Attribute::Immunity => self.immunity,
-            Attribute::Gut => self.gut,
-            Attribute::Strength => self.strength,
-            Attribute::Precision => self.precision,
-            Attribute::Agility => self.agility,
-            Attribute::Intelligence => self.intelligence,
-            Attribute::Instinct => self.instinct,
-            Attribute::Eyesight => self.eyesight,
-            Attribute::Hearing => self.hearing,
+            SimpleAttribute::Endurance => self.endurance,
+            SimpleAttribute::Immunity => self.immunity,
+            SimpleAttribute::Gut => self.gut,
+            SimpleAttribute::Intelligence => self.intelligence,
+            SimpleAttribute::Instinct => self.instinct,
+            SimpleAttribute::Eyesight => self.eyesight,
+            SimpleAttribute::Hearing => self.hearing,
         }
     }
 }
@@ -219,16 +222,14 @@ pub struct TacticalPlayerViewer<'w, 's> {
 }
 
 impl TacticalPlayerViewer<'_, '_> {
-    pub fn get(&self, entity: Entity) -> Option<TacticalPlayerView<'_, '_, '_>> {
-        let (limbs, skills, stats, attributes) = self.q_player.get(entity).ok()?;
+    pub fn get(&self, entity: Entity) -> Result<TacticalPlayerView<'_, '_, '_>> {
+        let (limbs, skills, stats, attributes) = self.q_player.get(entity)?;
         let inventory = self.inventory.get(entity);
-        Some(
-            PlayerInfo::empty()
-                .with_attributes(attributes)
-                .with_body(limbs)
-                .with_essentials(stats)
-                .with_equipment(inventory)
-                .with_skills(skills),
-        )
+        Ok(PlayerInfo::empty()
+            .with_attributes(attributes)
+            .with_body(limbs)
+            .with_essentials(stats)
+            .with_equipment(inventory)
+            .with_skills(skills))
     }
 }

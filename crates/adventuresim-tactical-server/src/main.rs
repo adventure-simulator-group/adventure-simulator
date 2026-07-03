@@ -7,7 +7,9 @@ mod terrain;
 use std::{net::SocketAddr, num::NonZeroU32};
 
 use adventuresim_stdb_client::*;
-use adventuresim_tactical_core::{inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*};
+use adventuresim_tactical_core::{
+    inventory::ItemProperties, physics::AdventureSimulatorPhysicsPlugin, prelude::*,
+};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{DisconnectReason, Disconnected, LocalAddr},
     bevy_replicon::prelude::*,
@@ -54,6 +56,10 @@ struct Args {
     #[arg(long, default_value_t = TERRAIN_SIZE)]
     scene_depth: usize,
 
+    /// Amount of bots to spawn.
+    #[arg(long, default_value_t = 0)]
+    bots: usize,
+
     /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
@@ -79,19 +85,10 @@ fn main() {
     let args = Args::parse();
 
     App::new()
-        .add_plugins((
-            bevy::app::PanicHandlerPlugin,
-            bevy::app::TaskPoolPlugin::default(),
-            bevy::log::LogPlugin {
-                filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-                ..default()
-            },
-            bevy::time::TimePlugin,
-            bevy::transform::TransformPlugin,
-            bevy::app::ScheduleRunnerPlugin::default(),
-            #[cfg(any(all(unix, not(target_os = "horizon")), windows))]
-            bevy::app::TerminalCtrlCHandlerPlugin,
-        ))
+        .add_plugins((DefaultPlugins.set(bevy::log::LogPlugin {
+            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+            ..default()
+        }),))
         .add_plugins((
             AdventureSimulatorCorePlugins
                 .build()
@@ -116,10 +113,6 @@ fn main() {
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
-        .add_systems(
-            FixedPreUpdate,
-            apply_networked_player_input.run_if(in_state(ServerState::Running)),
-        )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
         .add_observer(on_join_request)
         .add_observer(on_player_input)
@@ -130,12 +123,6 @@ fn main() {
 #[derive(Component, Debug, Clone, Copy)]
 struct LoadingPlayer {
     requested_player_id: u64,
-}
-
-#[derive(Component, Debug, Default, Clone, Copy)]
-pub struct NetworkPlayerState {
-    pub input: PlayerInputMessage,
-    pub previous_jump: bool,
 }
 
 #[derive(Resource)]
@@ -173,56 +160,85 @@ fn on_stdb_insert_connected_players(
     q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
 ) {
-    let player_collider = player_collider();
-    let Some((entity, _loading)) = q_loading
-        .iter()
-        .find(|(_, loading)| loading.requested_player_id == player.character.id)
-    else {
-        warn!(
-            "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
-            player.character.name, player.character.id
-        );
-        return;
+    let entity = if player.character.temporary {
+        cmd.spawn_empty().id()
+    } else {
+        let Some((entity, _)) = q_loading
+            .iter()
+            .find(|(_, id)| id.requested_player_id == player.character.id)
+        else {
+            warn!(
+                "Got new ConnectedPlayer from stdb, but there is no LoadingPlayer for it: {}#{}",
+                player.character.name, player.character.id
+            );
+            return;
+        };
+        entity
     };
 
     let skills = Skills {
         melee_hours: player.skills.melee_hours,
         dodge_hours: player.skills.dodge_hours,
         block_hours: player.skills.block_hours,
+        ranged_hours: player.skills.ranged_hours,
+        will_hours: player.skills.will_hours,
+        charisma_hours: player.skills.charisma_hours,
+        medicine_hours: player.skills.medicine_hours,
+        faith_hours: player.skills.faith_hours,
+        stealth_hours: player.skills.stealth_hours,
+        balance_hours: player.skills.balance_hours,
+        surgeon_hours: player.skills.surgeon_hours,
     };
     let limbs = Limbs {
-        left_arm: player.limbs.left_arm,
-        right_arm: player.limbs.right_arm,
-        left_leg: player.limbs.left_leg,
-        right_leg: player.limbs.right_leg,
-        chest: player.limbs.chest,
-        stomach: player.limbs.stomach,
-        head: player.limbs.head,
+        left_arm: player.limbs.left_arm_health,
+        right_arm: player.limbs.right_arm_health,
+        left_leg: player.limbs.left_leg_health,
+        right_leg: player.limbs.right_leg_health,
+        chest: player.limbs.chest_health,
+        stomach: player.limbs.stomach_health,
+        head: player.limbs.head_health,
     };
     let attributes = Attributes {
         endurance: player.attrs.endurance,
         immunity: player.attrs.immunity,
         gut: player.attrs.gut,
-        strength: player.attrs.strength,
         precision: player.attrs.precision,
-        agility: player.attrs.agility,
         intelligence: player.attrs.intelligence,
         instinct: player.attrs.instinct,
         eyesight: player.attrs.eyesight,
         hearing: player.attrs.hearing,
+        left_arm_strength: player.attrs.left_arm_strength,
+        right_arm_strength: player.attrs.right_arm_strength,
+        left_leg_strength: player.attrs.left_leg_strength,
+        right_leg_strength: player.attrs.right_leg_strength,
+        left_arm_agility: player.attrs.left_arm_agility,
+        right_arm_agility: player.attrs.right_arm_agility,
+        left_leg_agility: player.attrs.left_leg_agility,
+        right_leg_agility: player.attrs.right_leg_agility,
     };
     let stats = Stats {
         calories_used: player.stats.calories_used,
         focus: player.stats.focus,
     };
+
+    let player_collider = player_collider();
+    let spawn_position = Vec2::new(rand::random_range(-5.0..5.0), rand::random_range(-5.0..5.0));
     let spawn_height = q_scene
         .iter()
         .next()
-        .and_then(|terrain| terrain.height_at(Vec2::ZERO))
+        .and_then(|terrain| terrain.height_at(spawn_position))
         .unwrap_or_default()
         + player_spawn_offset(&player_collider);
 
+    let tag = if player.character.temporary {
+        "Bot"
+    } else {
+        "Player"
+    };
+    let name = format!("{tag}#{} {}", player.character.id, player.character.name);
+
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
+        Name::new(name),
         Replicated,
         Player {
             name: player.character.name.clone(),
@@ -232,11 +248,13 @@ fn on_stdb_insert_connected_players(
         limbs,
         attributes,
         stats,
-        CharacterController::default(),
-        CharacterLook::default(),
-        player_collider,
-        Transform::from_xyz(0.0, spawn_height, 0.0),
-        NetworkPlayerState::default(),
+        Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
+        (
+            player_collider.clone(),
+            CollisionMargin(0.01),
+            CharacterController::default(),
+            CharacterLook::default(),
+        ),
     ));
 
     for item in &player.items {
@@ -263,6 +281,10 @@ fn on_stdb_insert_connected_players(
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,
+                    penetration: item.item.penetration,
+                    reach: item.item.reach,
+                    balance: item.item.balance,
+                    precise: item.item.precise,
                 });
             }
             ItemKind::Armor => {
@@ -285,9 +307,12 @@ fn on_stdb_insert_connected_players(
                     }
                 } {
                     item_cmd.insert(ArmorItem {
-                        dodge: item.item.dodge,
+                        range_of_motion: item.item.range_of_motion,
                         coverage: item.item.coverage,
                         slot,
+                        resistance: item.item.resistance,
+                        padding: item.item.padding,
+                        flexibility: item.item.flexibility,
                     });
                 }
             }
@@ -338,7 +363,10 @@ fn on_stdb_insert_connected_players(
         }
     }
 
-    info!("Player {entity:?} is fully loaded");
+    info!(
+        temorary = player.character.temporary,
+        "Player {entity:?} is fully loaded"
+    );
 }
 
 fn check_mission_timeout(
@@ -429,7 +457,7 @@ fn on_server_started(
         ],
     ));
 
-    info!("Notifying spacetimedb that the server is ready...");
+    info!("Creating tactical server in stdb...");
 
     if args.requested {
         conn.reducers().create_tactical_server_for_request(
@@ -444,6 +472,14 @@ fn on_server_started(
             args.addr.to_string(),
             default(),
         )?;
+    }
+
+    if args.bots > 0 {
+        info!("Requesting {} bots...", args.bots);
+        for _ in 0..args.bots {
+            conn.reducers()
+                .create_temporary_character(conn.identity())?;
+        }
     }
 
     Ok(())
@@ -465,7 +501,8 @@ fn on_join_request(
     }
 
     conn.reducers().create_character(join.player_id)?;
-    conn.reducers().enter_mission(join.player_id, conn.identity())?;
+    conn.reducers()
+        .enter_mission(join.player_id, conn.identity())?;
 
     commands.entity(client).insert(LoadingPlayer {
         requested_player_id: join.player_id,
@@ -480,18 +517,25 @@ fn on_join_request(
 }
 
 fn on_player_input(
-    input: On<FromClient<PlayerInputMessage>>,
-    mut players: Query<&mut NetworkPlayerState>,
+    input: On<FromClient<PlayerInputRequest>>,
+    mut players: Query<(&mut AccumulatedInput, &mut CharacterLook), With<Player>>,
 ) {
     let Some(entity) = input.client_id.entity() else {
         return;
     };
 
-    let Ok(mut state) = players.get_mut(entity) else {
+    let Ok((mut accumulated_input, mut look)) = players.get_mut(entity) else {
         return;
     };
 
-    state.input = **input;
+    look.yaw = input.look.x;
+    look.pitch = input.look.y.clamp(-1.5, 1.5);
+
+    accumulated_input.last_movement = input.movement.map(|m| m.clamp_length_max(1.0));
+
+    if input.jump {
+        accumulated_input.jumped = Some(Stopwatch::new());
+    }
 }
 
 fn on_client_disconnected(
@@ -528,32 +572,8 @@ fn on_client_disconnected(
     Ok(())
 }
 
-fn apply_networked_player_input(
-    mut players: Query<
-        (
-            &mut AccumulatedInput,
-            &mut CharacterLook,
-            &mut NetworkPlayerState,
-        ),
-        With<Player>,
-    >,
-) {
-    for (mut accumulated_input, mut look, mut state) in &mut players {
-        look.yaw = state.input.look.x;
-        look.pitch = state.input.look.y.clamp(-1.5, 1.5);
-
-        accumulated_input.last_movement = Some(state.input.movement.clamp_length_max(1.0));
-
-        if state.input.jump && !state.previous_jump {
-            accumulated_input.jumped = Some(Stopwatch::new());
-        }
-
-        state.previous_jump = state.input.jump;
-    }
-}
-
 fn player_collider() -> Collider {
-    Collider::cylinder(0.4, 1.2)
+    Collider::cylinder(0.4, 1.9)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {

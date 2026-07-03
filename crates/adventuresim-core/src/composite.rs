@@ -1,4 +1,4 @@
-use crate::{attribute::*, body::*, equipment::*, essential::*, skill::*};
+use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill::*};
 
 /// A composite type that holds all aspects of a player's state.
 ///
@@ -54,7 +54,7 @@ use crate::{attribute::*, body::*, equipment::*, essential::*, skill::*};
 /// - If `At: PlayerAttributes`:  use [`PlayerAttributes::attr`] to get attribute values
 /// - If `Bd: PlayerBody`:  use [`PlayerBody::body_part_health`] and [`PlayerBody::body_weight`]
 /// - If `Es: PlayerEssentials`:  use [`PlayerEssentials::calories_used_today`] and [`PlayerEssentials::focus_level`]
-/// - If `Eq: PlayerEquipment`:  use [`PlayerEquipment::armor_dodge`] to get equipment penalties
+/// - If `Eq: PlayerEquipment`:  use [`PlayerEquipment::armor_dodgerm`] to get equipment penalties
 /// - If `Sl: PlayerSkills`:  use [`PlayerSkills::skill_hours_trained`] to get training hours
 ///
 /// ```
@@ -100,6 +100,7 @@ use crate::{attribute::*, body::*, equipment::*, essential::*, skill::*};
 ///     &player.attributes,
 ///     &player.essentials,
 ///     &player.equipment,
+///     &LimbWeights::all_equal(),
 /// );
 ///
 /// assert_eq!(check, check_explicit);
@@ -238,22 +239,73 @@ impl<At, Bd, Es, Eq> PlayerInfo<At, Bd, Es, Eq, ()> {
 impl<At, Bd, Es, Eq, Sl> PlayerInfo<At, Bd, Es, Eq, Sl>
 where
     At: PlayerAttributes,
+    Bd: PlayerBody,
     Es: PlayerEssentials,
 {
     pub fn fatigue(&self) -> f32 {
-        self.fatigue_by_parts(&self.attributes)
+        self.fatigue_by_parts(&self.attributes, &self.body)
     }
 }
 
 impl<At, Bd, Es, Eq, Sl> PlayerInfo<At, Bd, Es, Eq, Sl>
 where
     At: PlayerAttributes,
+    Bd: PlayerBody,
+{
+    pub fn limb_attr_by_weight(&self, attr: LimbAttribute, weights: LimbWeights) -> f32 {
+        self.attributes
+            .limb_attr_by_weight_by_parts(attr, &self.body, weights)
+    }
+
+    pub fn attr(&self, attr: impl Into<Attribute>) -> f32 {
+        self.attributes.attr_by_parts(attr, &self.body)
+    }
+}
+
+impl<At, Bd, Es, Eq, Sl> PlayerInfo<At, Bd, Es, Eq, Sl>
+where
+    At: PlayerAttributes,
+    Bd: PlayerBody,
     Es: PlayerEssentials,
     Eq: PlayerEquipment,
     Sl: PlayerSkills,
 {
-    pub fn skill_check(&self, skill: Skill) -> f32 {
-        self.skills
-            .skill_check_by_parts(skill, &self.attributes, &self.essentials, &self.equipment)
+    pub fn skill_check(&self, skill: Skill, weights: LimbWeights) -> f32 {
+        self.skills.skill_check_by_parts(
+            skill,
+            &self.attributes,
+            &self.body,
+            &self.essentials,
+            &self.equipment,
+            weights,
+        )
+    }
+
+    pub fn resolve_melee_attack(
+        &self,
+        side: BodySide,
+        defender: &Self,
+        defender_response: DefenderResponse,
+        hit_precision: f32,
+        flanking: f32,
+        body_part: BodyPart,
+    ) -> AttackResult {
+        resolve_melee_attack_by_parts(
+            &self.skills,
+            &self.attributes,
+            &self.body,
+            &self.essentials,
+            &self.equipment,
+            side,
+            hit_precision,
+            flanking,
+            body_part,
+            defender_response,
+            &defender.skills,
+            &defender.attributes,
+            &defender.body,
+            &defender.essentials,
+            &defender.equipment,
+        )
     }
 }

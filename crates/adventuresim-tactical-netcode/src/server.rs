@@ -17,14 +17,16 @@ impl Plugin for AdventureSimulatorServerPlugin {
 }
 
 #[derive(Component, Debug, Clone)]
-#[require(Name = Name::from("Server"))]
+#[require(Name::from("Server"), AeronetRepliconServer)]
 pub struct AdventureSimulatorServer {
     pub addr: SocketAddr,
 }
 
 impl Default for AdventureSimulatorServer {
     fn default() -> Self {
-        Self { addr: DEFAULT_SERVER_ADDR }
+        Self {
+            addr: DEFAULT_SERVER_ADDR,
+        }
     }
 }
 
@@ -35,7 +37,6 @@ fn on_server_added(
 ) -> Result {
     let server = servers.get(event.entity)?;
 
-    commands.entity(event.entity).insert(AeronetRepliconServer);
     commands
         .entity(event.entity)
         .queue(WebSocketServer::open(websocket_config(server.addr)));

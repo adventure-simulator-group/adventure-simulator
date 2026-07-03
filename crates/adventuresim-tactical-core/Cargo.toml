@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 meshgen = ["bevy/bevy_mesh"]
+avian_debug = ["avian3d/debug-plugin"]
 
 [dependencies]
 adventuresim-core.workspace = true
@@ -18,7 +19,6 @@ bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
 strum = { version = "0.28", features = ["derive"] }
-bitflags = "2.11.0"
 
 [lints]
 workspace = true

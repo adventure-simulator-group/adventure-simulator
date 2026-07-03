@@ -11,6 +11,14 @@ pub struct CharacterSkills {
     pub melee_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
+    pub ranged_hours: f32,
+    pub will_hours: f32,
+    pub charisma_hours: f32,
+    pub medicine_hours: f32,
+    pub faith_hours: f32,
+    pub stealth_hours: f32,
+    pub balance_hours: f32,
+    pub surgeon_hours: f32,
 }
 
 impl __sdk::InModule for CharacterSkills {

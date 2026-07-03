@@ -268,18 +268,19 @@ _spawner-stop:
     fi
 
 # Run a single tactical server (for testing)
-tactical mission_id="test-mission" scene_key="hills":
-	@cargo run --package adventuresim-tactical-server -- \
+tactical mission_id="test-mission" scene_key="hills" bots="3":
+	@cargo run --package adventuresim-tactical-server --features "debug" -- \
 		--addr "0.0.0.0:{{tactical_port}}" \
 		--mission-id {{mission_id}} \
 		--scene-key {{scene_key}} \
 		--spacetimedb-url {{spacetime_url}} \
 		--spacetimedb-module {{spacetime_module}} \
+		--bots {{bots}} \
 		--no-timeout
 
 # Run a native tactical client (for testing `just tactical`)
-client id="0":
-	@cargo run --package adventuresim-tactical-client -- \
+client id="0" features="":
+	@cargo run --package adventuresim-tactical-client --features "debug,{{features}}" -- \
 		--id "{{id}}" \
 		--server-addr "127.0.0.1:{{tactical_port}}"
 

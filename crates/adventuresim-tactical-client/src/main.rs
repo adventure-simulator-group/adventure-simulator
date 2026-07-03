@@ -14,8 +14,8 @@ use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input_focus::InputDispatchPlugin;
-use bevy::light::light_consts::lux;
 use bevy::light::AtmosphereEnvironmentMapLight;
+use bevy::light::light_consts::lux;
 use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
@@ -31,6 +31,8 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "debug")]
+mod debug;
 mod player;
 mod ui;
 
@@ -63,52 +65,55 @@ pub fn wasm_run(args: Vec<String>) {
 }
 
 fn run(args: Args) {
-    App::new()
-        .add_plugins((
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Adventure Simulator - Tactical".into(),
-                    canvas: Some("#game-canvas".into()),
-                    fit_canvas_to_parent: true,
-                    prevent_default_event_handling: true,
-                    present_mode: PresentMode::AutoVsync,
-                    decorations: false,
-                    ..default()
-                }),
+    let mut app = App::new();
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Adventure Simulator - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: PresentMode::AutoVsync,
+                decorations: false,
                 ..default()
             }),
-            FrameTimeDiagnosticsPlugin::default(),
-            EnhancedInputPlugin,
-            InputDispatchPlugin,
-        ))
-        .add_plugins((
-            AdventureSimulatorCorePlugins
-                .build()
-                .set(AdventureSimulatorPhysicsPlugin {
-                    enable_simulation: false,
-                }),
-            AdventureSimulatorNetPlugins,
-        ))
-        .add_input_context::<Player>()
-        .add_plugins((ui::UiPlugin, player::PlayerPlugin))
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-        .add_systems(Startup, (setup_scene, setup_client))
-        .add_systems(
-            Update,
-            (
-                capture_cursor.run_if(
-                    input_just_pressed(MouseButton::Left)
-                        .and(any_with_component::<CharacterController>),
-                ),
-                release_cursor.run_if(
-                    input_just_pressed(KeyCode::Escape)
-                        .and(any_with_component::<CharacterController>),
-                ),
+            ..default()
+        }),
+        FrameTimeDiagnosticsPlugin::default(),
+        EnhancedInputPlugin,
+        InputDispatchPlugin,
+    ))
+    .add_plugins((
+        AdventureSimulatorCorePlugins
+            .build()
+            .set(AdventureSimulatorPhysicsPlugin {
+                enable_simulation: false,
+            }),
+        AdventureSimulatorNetPlugins,
+    ))
+    .add_input_context::<Player>()
+    .add_plugins((ui::UiPlugin, player::PlayerPlugin))
+    .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+    .add_systems(Startup, (setup_scene, setup_client))
+    .add_systems(
+        Update,
+        (
+            capture_cursor.run_if(
+                input_just_pressed(MouseButton::Left)
+                    .and(any_with_component::<CharacterController>),
             ),
-        )
-        .add_observer(on_game_scene_added_hook)
-        .insert_resource(args)
-        .run();
+            release_cursor.run_if(
+                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
+            ),
+        ),
+    )
+    .add_observer(on_game_scene_added_hook)
+    .insert_resource(args);
+
+    #[cfg(feature = "debug")]
+    app.add_plugins(debug::DebugPlugin);
+
+    app.run();
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
@@ -179,30 +184,6 @@ fn on_game_scene_added_hook(
             ..default()
         })),
     ));
-
-    // Some obstacles/props for visual interest
-    let mut spawn_prop = |pos: Vec2, terrain: &SceneTerrain, color: Color| {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                metallic: 0.5,
-                perceptual_roughness: 0.5,
-                ..default()
-            })),
-            Transform::from_translation(Vec3::new(
-                pos.x,
-                terrain.height_at(pos).unwrap_or_default() + 1.0,
-                pos.y,
-            )),
-        ));
-    };
-    spawn_prop(Vec2::new(5.0, 5.0), terrain, Color::srgb(0.4, 0.4, 0.8));
-    spawn_prop(Vec2::new(-5.0, 5.0), terrain, Color::srgb(0.8, 0.4, 0.4));
-    spawn_prop(Vec2::new(5.0, -5.0), terrain, Color::srgb(0.4, 0.8, 0.4));
-    spawn_prop(Vec2::new(-5.0, -5.0), terrain, Color::srgb(0.8, 0.8, 0.4));
-    spawn_prop(Vec2::new(10.0, 0.0), terrain, Color::srgb(0.6, 0.3, 0.6));
-    spawn_prop(Vec2::new(-10.0, 0.0), terrain, Color::srgb(0.3, 0.6, 0.6));
 
     Ok(())
 }

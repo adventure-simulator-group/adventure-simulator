@@ -1,8 +1,14 @@
 use std::num::NonZeroU32;
 
-use adventuresim_core::{body::BodyPart, prelude::PlayerEquipment};
+use adventuresim_core::{
+    body::{BodyPart, BodySide},
+    prelude::PlayerEquipment,
+};
 use bevy::{
-    ecs::{entity::MapEntities, query::QueryData, system::SystemParam},
+    ecs::{
+        entity::MapEntities, lifecycle::HookContext, query::QueryData, system::SystemParam,
+        world::DeferredWorld,
+    },
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
@@ -24,13 +30,21 @@ pub struct ItemOf(#[entities] pub Entity);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Default)]
 #[relationship_target(relationship = ItemOf)]
-pub struct InventoryItems(Vec<Entity>);
+pub struct InventoryItems {
+    #[relationship]
+    items: Vec<Entity>,
+    holding_weapon: Option<Entity>,
+    holding_shield: Option<Entity>,
+}
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct ArmorItem {
-    pub dodge: f32,
+    pub range_of_motion: f32,
     pub coverage: f32,
     pub slot: ArmorSlot,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
 }
 
 #[derive(Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -51,6 +65,10 @@ pub enum ArmorSide {
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct WeaponItem {
     pub accuracy: f32,
+    pub penetration: f32,
+    pub reach: f32,
+    pub balance: f32,
+    pub precise: bool,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -77,6 +95,7 @@ pub struct ItemProperties {
     VariantArray,
     Display,
 )]
+#[component(on_insert = on_equip_slot_replaced, on_remove = on_equip_slot_removed)]
 pub enum EquipSlot {
     HoldingLeft,
     HoldingRight,
@@ -99,7 +118,7 @@ impl EquipSlot {
     }
 
     pub fn from_armor_body_part(part: BodyPart) -> Self {
-        bitflags::bitflags_match!(part, {
+        match part {
             BodyPart::LeftArm => Self::ArmorLeftArm,
             BodyPart::RightArm => Self::ArmorRightArm,
             BodyPart::LeftLeg => Self::ArmorLeftLeg,
@@ -107,8 +126,7 @@ impl EquipSlot {
             BodyPart::Chest => Self::ArmorChest,
             BodyPart::Stomach => Self::ArmorStomach,
             BodyPart::Head => Self::ArmorHead,
-            _ => unimplemented!()
-        })
+        }
     }
 }
 
@@ -158,29 +176,19 @@ impl InventoryView<'_, '_, '_> {
     }
 
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
-        self.iter().find(|item| {
-            matches!(
-                item,
-                ItemQueryItem {
-                    slot: Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight),
-                    weapon: Some(..),
-                    ..
-                }
-            )
-        })
+        self.q_inventory
+            .get(self.entity)
+            .ok()
+            .and_then(|inventory| inventory.holding_weapon)
+            .and_then(|weapon| self.q_item.get(weapon).ok())
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
-        self.iter().find(|item| {
-            matches!(
-                item,
-                ItemQueryItem {
-                    slot: Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight),
-                    shield: Some(..),
-                    ..
-                }
-            )
-        })
+        self.q_inventory
+            .get(self.entity)
+            .ok()
+            .and_then(|inventory| inventory.holding_shield)
+            .and_then(|weapon| self.q_item.get(weapon).ok())
     }
 
     fn equipped_armor_for(&self, slot: EquipSlot) -> Option<ItemQueryItem<'_, '_>> {
@@ -205,10 +213,41 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
-    fn armor_dodge(&self, part: BodyPart) -> f32 {
+    fn weapon_holding_side(&self) -> Option<BodySide> {
+        self.equipped_weapon()
+            .and_then(|item| item.slot)
+            .and_then(|slot| match slot {
+                EquipSlot::HoldingLeft => Some(BodySide::Left),
+                EquipSlot::HoldingRight => Some(BodySide::Right),
+                _ => None,
+            })
+    }
+
+    fn weapon_reach(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.reach)
+            .unwrap_or_default()
+    }
+
+    fn weapon_is_precise(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.precise)
+            .unwrap_or_default()
+    }
+
+    fn weapon_balance(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.balance)
+            .unwrap_or_default()
+    }
+
+    fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
         self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
             .and_then(|item| item.armor)
-            .map(|armor| armor.dodge)
+            .map(|armor| armor.range_of_motion)
             .unwrap_or_default()
     }
 
@@ -221,5 +260,90 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .and_then(|item| item.shield)
             .map(|shield| shield.block)
             .unwrap_or_default()
+    }
+
+    fn weapon_weight(&self) -> f32 {
+        self.equipped_weapon()
+            .map(|item| item.properties.weight)
+            .unwrap_or_default()
+    }
+
+    fn weapon_penetration(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.penetration)
+            .unwrap_or(1.0)
+    }
+
+    fn armor_resistance(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.resistance)
+            .unwrap_or_default()
+    }
+
+    fn armor_padding(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.padding)
+            .unwrap_or_default()
+    }
+
+    fn armor_flexibility(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.flexibility)
+            .unwrap_or_default()
+    }
+
+    fn armor_coverage(&self, part: BodyPart) -> f32 {
+        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
+            .and_then(|item| item.armor)
+            .map(|armor| armor.coverage)
+            .unwrap_or_default()
+    }
+}
+
+fn on_equip_slot_replaced(mut world: DeferredWorld, ctx: HookContext) {
+    match world.get::<EquipSlot>(ctx.entity) {
+        Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight)
+            if world.get::<WeaponItem>(ctx.entity).is_some() =>
+        {
+            let Some(root) = world.get::<ItemOf>(ctx.entity).map(|i| i.0) else {
+                return;
+            };
+            let Some(mut items) = world.get_mut::<InventoryItems>(root) else {
+                return;
+            };
+            items.holding_weapon = Some(ctx.entity);
+        }
+        Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight)
+            if world.get::<ShieldItem>(ctx.entity).is_some() =>
+        {
+            let Some(root) = world.get::<ItemOf>(ctx.entity).map(|i| i.0) else {
+                return;
+            };
+            let Some(mut items) = world.get_mut::<InventoryItems>(root) else {
+                return;
+            };
+            items.holding_shield = Some(ctx.entity);
+        }
+        _ => {}
+    }
+}
+
+fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
+    let Some(root) = world.get::<ItemOf>(ctx.entity).map(|i| i.0) else {
+        return;
+    };
+    let Some(mut items) = world.get_mut::<InventoryItems>(root) else {
+        return;
+    };
+
+    if items.holding_weapon == Some(ctx.entity) {
+        items.holding_weapon = None;
+    }
+    if items.holding_shield == Some(ctx.entity) {
+        items.holding_shield = None;
     }
 }

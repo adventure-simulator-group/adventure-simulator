@@ -1,5 +1,6 @@
 pub mod attribute;
 pub mod body;
+pub mod combat;
 pub mod composite;
 pub mod equipment;
 pub mod essential;
@@ -10,6 +11,7 @@ pub mod stub;
 pub mod prelude {
     pub use crate::attribute::*;
     pub use crate::body::*;
+    pub use crate::combat::*;
     pub use crate::composite::PlayerInfo;
     pub use crate::equipment::*;
     pub use crate::essential::*;

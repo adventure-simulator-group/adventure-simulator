@@ -16,17 +16,15 @@ pub use bevy_replicon;
 pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::AdventureSimulatorClient;
-    pub use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
+    pub use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest};
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;
     pub use crate::AdventureSimulatorNetPlugins;
 }
 
 const FIXED_TIMESTEP_HZ: f64 = 64.0;
-pub const DEFAULT_SERVER_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
-    std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-    6000,
-);
+pub const DEFAULT_SERVER_ADDR: std::net::SocketAddr =
+    std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 6000);
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:6000";
 
 bevy::app::plugin_group! {

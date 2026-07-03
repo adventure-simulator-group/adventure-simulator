@@ -11,13 +11,19 @@ pub struct CharacterAttributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub strength: f32,
     pub precision: f32,
-    pub agility: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
     pub hearing: f32,
+    pub left_arm_strength: f32,
+    pub right_arm_strength: f32,
+    pub left_leg_strength: f32,
+    pub right_leg_strength: f32,
+    pub left_arm_agility: f32,
+    pub right_arm_agility: f32,
+    pub left_leg_agility: f32,
+    pub right_leg_agility: f32,
 }
 
 impl __sdk::InModule for CharacterAttributes {

@@ -6,12 +6,21 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = ["debug"]
+debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
+tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
+
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
 clap.workspace = true
+tracing.workspace = true
+tracing-tracy = { version = "0.11", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 bevy = { workspace = true, default-features = true, features = ["file_watcher"] }

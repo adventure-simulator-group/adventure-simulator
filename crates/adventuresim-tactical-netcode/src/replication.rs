@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy_replicon::prelude::*;
 
-use crate::message::{AttackCommand, JoinRequest, PlayerInputMessage};
 use crate::FIXED_TIMESTEP_HZ;
+use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest, SuccessfulAttackResponse};
 
 #[derive(Default)]
 pub struct AdventureSimulatorReplicationPlugin;
@@ -35,7 +35,14 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
-            .add_client_event::<PlayerInputMessage>(Channel::Unreliable)
-            .add_client_event::<AttackCommand>(Channel::Ordered);
+            .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
+            .add_mapped_client_event::<AttackRequest>(Channel::Ordered)
+            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
+
+        // Replicating physics components since those don't change and
+        // it's useful for debugging. Can be gated behind a feature flag, but
+        // that's error prone because of how client/server is built independently.
+        app.replicate_once_filtered::<Collider, Or<(With<Player>, With<Sensor>)>>()
+            .replicate_once_filtered::<RigidBody, With<Player>>();
     }
 }

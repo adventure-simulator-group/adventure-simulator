@@ -37,6 +37,29 @@ text,span {
   text-shadow: #0007 1px 1px;
 }
 
+#attack-info {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 500px;
+  margin-left: -250px;
+  flex-direction: column;
+  gap: 20px;
+
+  &>* {
+    min-height: 30px;
+  }
+  & * {
+    font-size: 20px;
+    text-align: center;
+    text-shadow: #000 2px 2px;
+
+    &.player-id {
+      color: var(--player-color);
+    }
+  }
+}
+
 #crosshair {
   background-image: url("crosshair.png");
   width: 72px;

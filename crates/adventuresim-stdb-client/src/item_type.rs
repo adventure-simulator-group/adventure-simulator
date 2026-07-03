@@ -15,9 +15,16 @@ pub struct Item {
     pub slot: ItemSlot,
     pub kind: ItemKind,
     pub accuracy: f32,
+    pub reach: f32,
     pub block: f32,
-    pub dodge: f32,
     pub coverage: f32,
+    pub penetration: f32,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
+    pub range_of_motion: f32,
+    pub precise: bool,
+    pub balance: f32,
 }
 
 impl __sdk::InModule for Item {

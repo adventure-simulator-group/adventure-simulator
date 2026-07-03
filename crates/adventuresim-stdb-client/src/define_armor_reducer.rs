@@ -12,8 +12,11 @@ pub(super) struct DefineArmorArgs {
     pub item_id: String,
     pub weight: f32,
     pub slot: ItemSlot,
-    pub dodge: f32,
     pub coverage: f32,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
+    pub range_of_motion: f32,
 }
 
 impl From<DefineArmorArgs> for super::Reducer {
@@ -22,8 +25,11 @@ impl From<DefineArmorArgs> for super::Reducer {
             item_id: args.item_id,
             weight: args.weight,
             slot: args.slot,
-            dodge: args.dodge,
             coverage: args.coverage,
+            resistance: args.resistance,
+            padding: args.padding,
+            flexibility: args.flexibility,
+            range_of_motion: args.range_of_motion,
         }
     }
 }
@@ -49,8 +55,11 @@ pub trait define_armor {
         item_id: String,
         weight: f32,
         slot: ItemSlot,
-        dodge: f32,
         coverage: f32,
+        resistance: f32,
+        padding: f32,
+        flexibility: f32,
+        range_of_motion: f32,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `define_armor`.
     ///
@@ -61,8 +70,17 @@ pub trait define_armor {
     /// to cancel the callback.
     fn on_define_armor(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ItemSlot, &f32, &f32)
-            + Send
+        callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &ItemSlot,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+            ) + Send
             + 'static,
     ) -> DefineArmorCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_armor`],
@@ -76,8 +94,11 @@ impl define_armor for super::RemoteReducers {
         item_id: String,
         weight: f32,
         slot: ItemSlot,
-        dodge: f32,
         coverage: f32,
+        resistance: f32,
+        padding: f32,
+        flexibility: f32,
+        range_of_motion: f32,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "define_armor",
@@ -85,15 +106,27 @@ impl define_armor for super::RemoteReducers {
                 item_id,
                 weight,
                 slot,
-                dodge,
                 coverage,
+                resistance,
+                padding,
+                flexibility,
+                range_of_motion,
             },
         )
     }
     fn on_define_armor(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &ItemSlot, &f32, &f32)
-            + Send
+        mut callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &ItemSlot,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+            ) + Send
             + 'static,
     ) -> DefineArmorCallbackId {
         DefineArmorCallbackId(self.imp.on_reducer(
@@ -108,8 +141,11 @@ impl define_armor for super::RemoteReducers {
                                     item_id,
                                     weight,
                                     slot,
-                                    dodge,
                                     coverage,
+                                    resistance,
+                                    padding,
+                                    flexibility,
+                                    range_of_motion,
                                 },
                             ..
                         },
@@ -118,7 +154,17 @@ impl define_armor for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, item_id, weight, slot, dodge, coverage)
+                callback(
+                    ctx,
+                    item_id,
+                    weight,
+                    slot,
+                    coverage,
+                    resistance,
+                    padding,
+                    flexibility,
+                    range_of_motion,
+                )
             }),
         ))
     }

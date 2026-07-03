@@ -16,6 +16,7 @@ pub struct Character {
     pub party_id: Option<String>,
     pub server: __sdk::Identity,
     pub in_server: bool,
+    pub temporary: bool,
 }
 
 impl __sdk::InModule for Character {
