@@ -1,0 +1,280 @@
+/* Theme: Dark Arcanum
+   Inspired by ancient grimoires and arcane spellbooks.
+   Deep charcoal backgrounds, ethereal purple glow, silver text.
+   Fonts: Cinzel (display) + Crimson Text (body)
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+:root {
+  --font-display: 'Cinzel';
+  --font-body: 'Crimson Text';
+  --font-mono: 'Courier New', monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+
+  --bg-primary: #0d0f1a;
+  --bg-secondary: #151929;
+  --bg-tertiary: #1e2340;
+
+  --text-primary: #c8cad0;
+  --text-secondary: #9a9eb0;
+  --text-muted: #5e6278;
+
+  --accent: #7c3aed;
+  --accent-hover: #9b5bf5;
+  --accent-light: #c4b5fd;
+  --accent-dark: #5b21b6;
+
+  --border-color: #2d3258;
+  --border-light: #232848;
+  --border-accent: #7c3aed;
+
+  --panel-bg: #12152a;
+  --panel-border: #2d3258;
+  --header-bg: #0a0c16;
+  --sidebar-bg: #101322;
+
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  --gold-color: #fbbf24;
+  --xp-color: #60a5fa;
+  --star-filled: #fbbf24;
+  --star-empty: #2d3258;
+
+  --sidebar-width: 280px;
+  --right-sidebar-width: 300px;
+  --header-height: 56px;
+  --padding-sm: 0.5rem;
+  --padding: 1rem;
+  --padding-lg: 1.5rem;
+  --radius: 4px;
+  --radius-lg: 8px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 3px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  --transition-fast: 150ms ease;
+  --transition: 250ms ease;
+
+  --divider-ornament: "\2729";
+}
+
+/* ============================================
+   DARK GRADIENT BACKGROUND
+   ============================================ */
+body {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(124, 58, 237, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(91, 33, 182, 0.04) 0%, transparent 50%),
+    var(--bg-primary);
+}
+
+/* ============================================
+   GLOWING PANELS
+   ============================================ */
+.panel {
+  border: 1px solid var(--border-color);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 3%, var(--panel-bg)),
+    var(--panel-bg)
+  );
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(124, 58, 237, 0.05);
+}
+
+.panel:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  box-shadow:
+    var(--shadow-md),
+    0 0 16px rgba(124, 58, 237, 0.08);
+}
+
+.panel-header {
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
+  border-bottom-color: color-mix(in srgb, var(--accent) 15%, var(--border-color));
+}
+
+/* ============================================
+   GLOWING TOP BAR
+   ============================================ */
+.top-bar {
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 1px 12px rgba(124, 58, 237, 0.1);
+}
+
+.top-bar::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    transparent
+  );
+  opacity: 0.4;
+}
+
+.logo {
+  color: var(--accent-light);
+  text-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+}
+
+/* ============================================
+   NAVIGATION GLOW
+   ============================================ */
+.nav-tab:hover {
+  color: var(--accent-light);
+  text-shadow: 0 0 8px rgba(124, 58, 237, 0.2);
+}
+
+.nav-tab.active {
+  color: var(--accent-light);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.12);
+}
+
+/* ============================================
+   ARCANE DIVIDERS
+   ============================================ */
+.divider {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 40%, var(--border-color)),
+    transparent
+  );
+}
+
+.divider::after {
+  background: var(--panel-bg);
+  color: var(--accent-light);
+  text-shadow: 0 0 8px var(--accent);
+}
+
+/* ============================================
+   SIDEBAR GLOW ACCENTS
+   ============================================ */
+.sidebar-header {
+  color: var(--accent-light);
+  border-bottom-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.sidebar-header::before {
+  content: "\2726 ";
+  color: var(--accent);
+  text-shadow: 0 0 6px var(--accent);
+}
+
+/* ============================================
+   LIST GLOW HOVER
+   ============================================ */
+.list-item:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-left: 2px solid var(--accent);
+  padding-left: calc(0.75rem - 2px);
+}
+
+.service-menu-item:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent);
+}
+
+.service-menu-item.active {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* ============================================
+   ARCANE BUTTONS
+   ============================================ */
+.btn-primary {
+  background: linear-gradient(180deg, #9b5bf5, #7c3aed);
+  border-color: #5b21b6;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, #a78bfa, #8b5cf6);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.35);
+}
+
+.btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+}
+
+/* ============================================
+   INPUT FIELDS
+   ============================================ */
+input, select, textarea {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15), 0 0 12px rgba(124, 58, 237, 0.1);
+}
+
+/* ============================================
+   QUEST CARD GLOW
+   ============================================ */
+.quest-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.1);
+}
+
+/* ============================================
+   SETTLEMENT CARD
+   ============================================ */
+.settlement-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md), 0 0 16px rgba(124, 58, 237, 0.1);
+}
+
+/* ============================================
+   PROGRESS BAR GLOW
+   ============================================ */
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.3);
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* ============================================
+   BADGES
+   ============================================ */
+.badge {
+  text-shadow: 0 0 4px currentColor;
+}

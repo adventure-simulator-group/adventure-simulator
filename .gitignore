@@ -34,3 +34,7 @@ wiki/.obsidian/
 # Mdbook
 book
 /index.html
+
+# Generated browser build output
+crates/adventuresim-stdb-module/static/wasm/
+crates/adventuresim-stdb-module/static/assets/

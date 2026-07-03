@@ -13,6 +13,9 @@ pub struct Character {
     pub name: String,
     pub xp: u32,
     pub level: u32,
+    pub gold: u32,
+    pub current_settlement_id: Option<String>,
+    pub party_id: Option<String>,
     #[index(btree)]
     pub server: Identity,
     pub in_server: bool,
@@ -175,6 +178,16 @@ pub fn create_named_character(ctx: &ReducerContext, name: String) -> Result<(), 
     insert_new_character(ctx, name, id, false)
 }
 
+/// Create a named character with a caller-supplied ID.
+#[reducer]
+pub fn create_named_character_with_id(
+    ctx: &ReducerContext,
+    id: u64,
+    name: String,
+) -> Result<(), String> {
+    insert_new_character(ctx, name, id, false)
+}
+
 #[reducer]
 fn insert_new_character(
     ctx: &ReducerContext,
@@ -189,6 +202,9 @@ fn insert_new_character(
         name,
         xp: 0,
         level: 1,
+        gold: 100,
+        current_settlement_id: Some("riverdale".into()),
+        party_id: None,
         server: Identity::ZERO,
         in_server: false,
         temporary,

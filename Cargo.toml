@@ -10,6 +10,7 @@ members = [
     "crates/adventuresim-tactical-server",
     "crates/adventuresim-tactical-server-dispatcher", 
     "crates/adventuresim-character-creator",
+    "crates/strategic-web",
 ]
 exclude = ["/wiki", "/utils"]
 
@@ -57,9 +58,9 @@ rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
-wasm-bindgen = "=0.2.106"
-spacetimedb = "=1.11"
-spacetimedb-sdk = "=1.11"
+wasm-bindgen = "=0.2.108"
+spacetimedb = "=1.11.3"
+spacetimedb-sdk = "=1.11.3"
 
 [workspace.lints.clippy]
 type_complexity = "allow"

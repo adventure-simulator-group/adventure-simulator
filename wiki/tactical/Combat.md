@@ -8,6 +8,8 @@ When the player clicks the [Attack button](../client/Controls.md#direct-controls
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
 	1. The attacker's melee [skill check](../shared/Stats.md#Skills)
+		1. pass in LimbWeights configured for whatever limb(s) they are attacking with
+		2. If they are two handing, 0.75 for main and 0.25 for off-hand
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/Controls.md)
 2. calculate `dodge_defense`:
@@ -16,31 +18,44 @@ Broadly speaking, the flow goes like this:
 		2. Full-plate gives 0.6, full-body chainmail is 0.8, and unobstructed joints is 1.0.
 	2. Calculate [encumbrance_term](../shared/Encumbrance.md) from total weight versus leg-strength
 	3. Multiply a dodge [skill_check](../shared/Stats.md#Skills) by `armor_dodge_term` and `encumbrance_term`
+		1. LimbWeights should be something like 0.4 for each leg and 0.1 for each arm
 3. calculate `block_defense`:
    
    ```
-   block = defender.skill_check(block)
+   let side = // set to whatever side is holding shield
+   block = defender.skill_check(block, Some(LimbWeights { la: 1.0, .. }.flip(side))
    shield = defender.shield_bonus()
    ```
-   1. `shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
+	`shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
 
-$$\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)$$
+$$
+\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
+$$
 
 4. Calculate `defense` from [`input reflex`](../client/Controls.md):
 
    ```
    if defender is parrying:
-   		defense = block_defense * 1.5 * input_reflex
+   		defense = block_defense * 2 * input_reflex
    elif defender is dodging:
-   		defense = dodge_defense * input_reflex
+   		defense = dodge_defense * 1.5 * input_reflex
    else:
    		defense = block_defense
    ```
-5. Attack value is accuracy - defense
-6. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
-7. If attack is between 0 and 1, multiply attack force by attack
+5. Modify defense by flanking penalty
+	1. a is the angle that the attacker is facing and b is the angle that the defender is facing
+	2. In layman's terms, you have zero defense if someone attacks from behind, full defense if they attack from in front, but the modifier starts at 1 below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
+ 	3.
+	
+$$
+D_{\text{final}} =D_{\text{base}} \cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a), \cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)
+$$
+
+6. Attack value is accuracy - defense
+7. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
+8. If attack is between 0 and 1, multiply attack force by attack
 	1. 0.1 barely grazes the opponent, 1 is square-on, 0.5 is a glancing blow
-8. If attack is *above* 1 and the attacker's weapon is precise, attacker now attempts to bypass armor with surplus attack.
+9. If attack is *above* 1 and the attacker's weapon is precise, attacker now attempts to bypass armor with surplus attack.
 	1. An armor's "coverage" is subtracted from the surplus attack to obtain the "critical attack"
 	2. If critical attack is greater than 0, attack bypasses armor completely and its final damage is multiplied by this number
 	3. Though not necessarily relevant for the MVP, critical attacks are relevant even when targets are unarmored because this allows the damage multiplier to exceed 1.0, allowing for instantaneous stealth one-hit-kills.
@@ -108,9 +123,11 @@ This does not significantly accumulate in the course of combat, but is more a fu
 
 ## Penetrating
 Each piece of armor has a "resistance" and "padding", both are in terms of joules. When attack connects, the imparted_joules is subtracted by the resistance to determine how much energy penetrates the armor, if any. Weapons also have a "penetration" coefficient. The actual resistance used for the attack is:
+
 $$
-finalResistance = resistance-flexibility\cdot{resistance}\cdot{penetration}
+\mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} - \mathrm{flexibility} \cdot \mathrm{resistance_{\text{base}}} \cdot \mathrm{penetration}
 $$
+
 Penetration coefficient examples:
 - Clubs: 0.1
 - Maces: 0.5
@@ -138,9 +155,11 @@ Calibration:
 > Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](../shared/Stats.md) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
 ## Durability
 Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
+
 $$
-DurabilityDamage = 1 - resilience * (ImpartedJoules - threshold)
+\mathrm{DurabilityDamage} = 1 - \mathrm{resilience} \cdot \mathrm{(ImpartedJoules - threshold)}
 $$
+
 Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low durability). Solid, ductile materials which deform plastically have very low resilience (like metal plate). And most flexible materials have fairly high resilience, since they are able to absorb a lot of the force as they bend.
 
 ### Examples 

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 100" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="gold-v" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d4b86e"/>
+      <stop offset="50%" stop-color="#c4a44e"/>
+      <stop offset="100%" stop-color="#8a7030"/>
+    </linearGradient>
+    <linearGradient id="dark-v" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5a4d3a"/>
+      <stop offset="100%" stop-color="#3d3425"/>
+    </linearGradient>
+    <pattern id="scroll-pattern-v" x="0" y="0" width="20" height="50" patternUnits="userSpaceOnUse">
+      <!-- Base dark band -->
+      <rect x="0" y="0" width="20" height="50" fill="url(#dark-v)"/>
+
+      <!-- Gold inner band -->
+      <rect x="4" y="0" width="12" height="50" fill="url(#gold-v)" opacity="0.3"/>
+
+      <!-- Left gold line -->
+      <rect x="2" y="0" width="2" height="50" fill="url(#gold-v)"/>
+
+      <!-- Right gold line -->
+      <rect x="16" y="0" width="2" height="50" fill="url(#gold-v)"/>
+
+      <!-- Scrollwork wave (vertical) -->
+      <path d="M10 0 Q5 12.5 10 25 Q15 37.5 10 50"
+            stroke="url(#gold-v)" stroke-width="1.5" fill="none"/>
+
+      <!-- Small decorative dots -->
+      <circle cx="7" cy="12.5" r="1.5" fill="url(#gold-v)" opacity="0.8"/>
+      <circle cx="13" cy="37.5" r="1.5" fill="url(#gold-v)" opacity="0.8"/>
+
+      <!-- Tiny flourish marks -->
+      <path d="M10 6 L8 8 L10 10" stroke="url(#gold-v)" stroke-width="0.75" fill="none" opacity="0.6"/>
+      <path d="M10 40 L12 42 L10 44" stroke="url(#gold-v)" stroke-width="0.75" fill="none" opacity="0.6"/>
+    </pattern>
+  </defs>
+
+  <rect width="20" height="100" fill="url(#scroll-pattern-v)"/>
+</svg>

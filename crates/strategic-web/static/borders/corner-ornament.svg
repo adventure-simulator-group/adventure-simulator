@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none">
+  <defs>
+    <linearGradient id="gold-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4b86e"/>
+      <stop offset="50%" stop-color="#c4a44e"/>
+      <stop offset="100%" stop-color="#8a7030"/>
+    </linearGradient>
+    <linearGradient id="dark-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5a4d3a"/>
+      <stop offset="100%" stop-color="#3d3425"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer corner frame -->
+  <path d="M0 0 L80 0 L80 8 L8 8 L8 80 L0 80 Z" fill="url(#dark-gradient)"/>
+
+  <!-- Inner gold line -->
+  <path d="M4 4 L76 4 L76 6 L6 6 L6 76 L4 76 Z" fill="url(#gold-gradient)"/>
+
+  <!-- Corner flourish - main acanthus leaf shape -->
+  <g transform="translate(12, 12)">
+    <!-- Central spiral -->
+    <path d="M0 0 Q15 5 20 20 Q25 35 15 45 Q5 35 10 20 Q12 10 0 0"
+          fill="url(#gold-gradient)" opacity="0.9"/>
+
+    <!-- Leaf detail 1 -->
+    <path d="M5 2 Q20 0 30 15 Q25 20 15 15 Q8 12 5 2"
+          fill="url(#dark-gradient)"/>
+
+    <!-- Leaf detail 2 -->
+    <path d="M2 5 Q0 20 15 30 Q20 25 15 15 Q12 8 2 5"
+          fill="url(#dark-gradient)"/>
+
+    <!-- Small curl 1 -->
+    <ellipse cx="28" cy="8" rx="6" ry="4" fill="url(#gold-gradient)" opacity="0.7"/>
+
+    <!-- Small curl 2 -->
+    <ellipse cx="8" cy="28" rx="4" ry="6" fill="url(#gold-gradient)" opacity="0.7"/>
+
+    <!-- Center dot -->
+    <circle cx="12" cy="12" r="3" fill="url(#gold-gradient)"/>
+  </g>
+
+  <!-- Decorative dots along edges -->
+  <circle cx="24" cy="4" r="2" fill="url(#gold-gradient)"/>
+  <circle cx="40" cy="4" r="2" fill="url(#gold-gradient)"/>
+  <circle cx="56" cy="4" r="2" fill="url(#gold-gradient)"/>
+  <circle cx="4" cy="24" r="2" fill="url(#gold-gradient)"/>
+  <circle cx="4" cy="40" r="2" fill="url(#gold-gradient)"/>
+  <circle cx="4" cy="56" r="2" fill="url(#gold-gradient)"/>
+
+  <!-- Small flourish extensions -->
+  <path d="M70 4 Q72 8 76 6" stroke="url(#gold-gradient)" stroke-width="1.5" fill="none"/>
+  <path d="M4 70 Q8 72 6 76" stroke="url(#gold-gradient)" stroke-width="1.5" fill="none"/>
+</svg>

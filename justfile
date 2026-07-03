@@ -6,7 +6,9 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 spacetime_port := "3000"
 ui_port := "8000"
+web_port := "8080"
 tactical_port := "6000"
+tactical_web_port := "6001"
 public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
@@ -14,10 +16,13 @@ spacetime_module := "adventuresim-stdb-module"
 
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
+strategic_web_dir := "crates/strategic-web"
 
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
 http_log := run_dir + "/http.log"
+spawner_pid := run_dir + "/spawner.pid"
+spawner_log := run_dir + "/spawner.log"
 stdb_pid := run_dir + "/spacetime.pid"
 stdb_log := run_dir + "/spacetime.log"
 
@@ -49,6 +54,25 @@ dev-full: preflight build-wasm spacetime-start publish serve-ui
     @echo "Strategic UI: http://localhost:{{ui_port}}/map.html"
     @echo "SpacetimeDB: http://localhost:{{spacetime_port}}"
     @echo "WASM game: ready (click 'Enter World' after starting a mission)"
+
+# Start the local browser stack.
+web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+    @just _spawner-start
+    @echo ""
+    @echo "Starting strategic-web server..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
+# Seed the world with initial settlements and quests
+_seed-world server=spacetime_url:
+    @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
 
 # Start SpacetimeDB if it is not already listening
 spacetime-start:
@@ -154,7 +178,7 @@ open-ui:
     fi
 
 # Stop all running services started by this justfile
-stop: spacetime-stop stop-ui
+stop: _spawner-stop spacetime-stop stop-ui
 
 # Run the stack on a VPS (public bind). Requires firewall/DNS setup.
 vps-serve domain="localhost": preflight spacetime-start-public publish serve-ui-public
@@ -175,6 +199,11 @@ status:
     else \
         echo "UI server: not running"; \
     fi
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner: running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        echo "Tactical spawner: not running"; \
+    fi
 
 # Build the strategic SpacetimeDB module
 build-strategic:
@@ -192,18 +221,7 @@ build-tactical: generate-db-client
 
 # Build the WASM client
 build-wasm:
-	@echo "Building WASM client..."
-	@command -v wasm-bindgen >/dev/null 2>&1 || { echo "Missing wasm-bindgen. Install with: cargo install wasm-bindgen-cli"; exit 1; }
-	@rustup target add wasm32-unknown-unknown 2>/dev/null || true
-	@cargo build --package adventuresim-tactical-client --target wasm32-unknown-unknown --release
-	@mkdir -p "{{strategic_static}}/wasm"
-	@wasm-bindgen \
-		--out-dir "{{strategic_static}}/wasm" \
-		--target web \
-		--no-typescript \
-		target/wasm32-unknown-unknown/release/adventuresim-tactical-client.wasm
-	@echo "WASM built to {{strategic_static}}/wasm/"
-	@ls -lh "{{strategic_static}}/wasm/"
+	@bash scripts/build_wasm.sh
 
 # Build everything
 build-all: build-strategic build-tactical build-wasm
@@ -215,6 +233,39 @@ spawner: build-tactical
 		--spacetimedb-module {{spacetime_module}} \
 		--tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
 		--base-port {{tactical_port}}
+
+# Start the tactical spawner in the background.
+_spawner-start host="127.0.0.1" base_port=tactical_web_port:
+    @mkdir -p "{{run_dir}}"
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        echo "Tactical spawner already running (pid $(cat "{{spawner_pid}}"))"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        RUST_LOG=info setsid "$(pwd)/target/debug/adventuresim-tactical-server-dispatcher" \
+            --spacetimedb-url {{spacetime_url}} \
+            --spacetimedb-module {{spacetime_module}} \
+            --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
+            --base-port {{base_port}} \
+            --host {{host}} >"{{spawner_log}}" 2>&1 < /dev/null & \
+        echo $! > "{{spawner_pid}}"; \
+        sleep 1; \
+        if ! kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+            echo "Tactical spawner failed to start. See {{spawner_log}}"; \
+            exit 1; \
+        fi; \
+        echo "Tactical spawner running; log: {{spawner_log}}"; \
+    fi
+
+# Stop the tactical spawner.
+_spawner-stop:
+    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
+        kill "$(cat "{{spawner_pid}}")"; \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner stopped"; \
+    else \
+        rm -f "{{spawner_pid}}"; \
+        echo "Tactical spawner not running"; \
+    fi
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills" bots="3":
@@ -297,6 +348,85 @@ win-dev:
     echo "Starting client 1..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
     CLIENT1_PID=$!
+
+    wait
+
+# Browser dev with a Windows tactical server.
+# Tactical server runs natively on Windows; WASM + static UI stay in WSL.
+win-web: preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WIN_TARGET="x86_64-pc-windows-gnu"
+    STAGE_DIR="/mnt/e/adventure-sim-dev"
+    SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
+    SERVER_LOG="$STAGE_DIR/tactical-server.log"
+    WINDOWS_HOST_IP="$(awk '/^nameserver / {print $2; exit}' /etc/resolv.conf)"
+    BROWSER_URL_WINDOWS="http://127.0.0.1:{{ui_port}}/tactical.html?server=127.0.0.1:{{tactical_web_port}}&id=2&autostart=1"
+    BROWSER_URL_WSL="http://127.0.0.1:{{ui_port}}/tactical.html?server=${WINDOWS_HOST_IP}:{{tactical_web_port}}&id=2&autostart=1"
+
+    cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
+    sleep 0.5
+
+    echo "Building browser client..."
+    bash scripts/build_wasm.sh
+
+    echo "Ensuring strategic stack is running..."
+    just spacetime-start
+    just publish
+    just serve-ui
+
+    echo "Building Windows tactical server..."
+    cargo build -p adventuresim-tactical-server --target "$WIN_TARGET" --profile win-dev 2>&1
+
+    echo "Staging tactical server to E:\\adventure-sim-dev..."
+    mkdir -p "$STAGE_DIR"
+    cp "$SERVER_EXE" "$STAGE_DIR/adventuresim-tactical-server.exe"
+    rsync -a --delete assets/ "$STAGE_DIR/assets/"
+    for d in crates/*/assets/; do
+        [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
+    done
+
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM
+
+    echo "Starting Windows tactical server on browser-safe port {{tactical_web_port}}..."
+    pushd "$STAGE_DIR" > /dev/null
+    ./adventuresim-tactical-server.exe \
+        --addr 0.0.0.0:{{tactical_web_port}} \
+        --mission-id test-mission \
+        --scene-key hills \
+        --no-timeout \
+        --spacetimedb-url http://localhost:{{spacetime_port}} \
+        --spacetimedb-module {{spacetime_module}} > "$SERVER_LOG" 2>&1 &
+    SERVER_PID=$!
+    popd > /dev/null
+
+    echo "Waiting for tactical server..."
+    for _ in $(seq 1 30); do
+        if powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{tactical_web_port}} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+            break
+        fi
+        sleep 1
+    done
+
+    if ! powershell.exe -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port {{tactical_web_port}} -WarningAction SilentlyContinue).TcpTestSucceeded" | tr -d '\r' | grep -q True; then
+        echo "Tactical server failed to open 127.0.0.1:{{tactical_web_port}}"
+        echo "Last server log lines:"
+        tail -n 80 "$SERVER_LOG" || true
+        exit 1
+    fi
+
+    echo ""
+    echo "Browser tactical client:"
+    echo "  Windows browser: $BROWSER_URL_WINDOWS"
+    echo "  WSL/Linux browser: $BROWSER_URL_WSL"
+    echo "Use a different 'id' query param for additional browser clients."
 
     wait
 
