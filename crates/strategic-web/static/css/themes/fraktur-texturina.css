@@ -1,0 +1,5 @@
+/* Fraktur trial: textura-inspired, with a softer and more readable rhythm. */
+@import url('https://fonts.googleapis.com/css2?family=Texturina:opsz,wght@12..72,400..700&display=swap');
+@import url('./renaissance-gold.css');
+
+:root { --font-display: 'Texturina'; }

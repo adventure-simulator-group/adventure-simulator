@@ -3,7 +3,13 @@
 use maud::{html, Markup, DOCTYPE};
 
 const THEMES: &[(&str, &str)] = &[
+    ("fraktur-texturina", "Fraktur trial: Texturina (readable)"),
     ("renaissance-gold", "Renaissance Gold"),
+    ("fraktur-grenze", "Fraktur trial: Grenze Gotisch (most readable)"),
+    ("fraktur-new-rocker", "Fraktur trial: New Rocker (medium)"),
+    ("fraktur-cook", "Fraktur trial: UnifrakturCook (traditional)"),
+    ("fraktur-maguntia", "Fraktur trial: UnifrakturMaguntia (challenging)"),
+    ("fraktur-ewert", "Fraktur trial: Ewert (most ornate)"),
     ("dark-arcanum", "Dark Arcanum"),
     ("northern-frost", "Northern Frost"),
     ("verdant-chronicle", "Verdant Chronicle"),
@@ -14,7 +20,7 @@ fn validated_theme(theme: &str) -> &str {
     if THEMES.iter().any(|(id, _)| *id == theme) {
         theme
     } else {
-        "renaissance-gold"
+        "fraktur-texturina"
     }
 }
 

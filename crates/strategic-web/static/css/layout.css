@@ -269,6 +269,12 @@
 }
 
 .theme-dot[data-theme="renaissance-gold"] { background: #b8860b; }
+.theme-dot[data-theme="fraktur-grenze"] { background: #d2a83e; }
+.theme-dot[data-theme="fraktur-texturina"] { background: #bd8a2c; }
+.theme-dot[data-theme="fraktur-new-rocker"] { background: #9e651e; }
+.theme-dot[data-theme="fraktur-cook"] { background: #7a4518; }
+.theme-dot[data-theme="fraktur-maguntia"] { background: #542c17; }
+.theme-dot[data-theme="fraktur-ewert"] { background: #30180e; }
 .theme-dot[data-theme="dark-arcanum"] { background: #7c3aed; }
 .theme-dot[data-theme="northern-frost"] { background: #3a7bd5; }
 .theme-dot[data-theme="verdant-chronicle"] { background: #4a8c3f; }

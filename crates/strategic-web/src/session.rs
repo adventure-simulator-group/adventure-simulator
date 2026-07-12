@@ -10,7 +10,7 @@ use std::future::Future;
 
 pub const CHARACTER_COOKIE: &str = "character_id";
 pub const THEME_COOKIE: &str = "theme";
-pub const DEFAULT_THEME: &str = "renaissance-gold";
+pub const DEFAULT_THEME: &str = "fraktur-texturina";
 
 /// Current session extracted from cookies
 #[derive(Clone, Debug)]

@@ -1,0 +1,5 @@
+/* Fraktur trial: a relatively open, modern reading of German blackletter. */
+@import url('https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@400;500;600;700&display=swap');
+@import url('./renaissance-gold.css');
+
+:root { --font-display: 'Grenze Gotisch'; }
