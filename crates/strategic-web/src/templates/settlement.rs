@@ -391,17 +391,17 @@ fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
         (sidebar_section("Your skills", html! {
             @if let Some(skills) = skills {
                 div class="party-skills-list" {
-                    (party_skill_row("Will", skills.will_hours, 5_000.0))
-                    (party_skill_row("Charisma", skills.charisma_hours, 20_000.0))
-                    (party_skill_row("Medicine", skills.medicine_hours, 10_000.0))
-                    (party_skill_row("Faith", skills.faith_hours, 5_000.0))
-                    (party_skill_row("Melee", skills.melee_hours, 8_000.0))
-                    (party_skill_row("Ranged", skills.ranged_hours, 15_000.0))
-                    (party_skill_row("Dodge", skills.dodge_hours, 20_000.0))
-                    (party_skill_row("Block", skills.block_hours, 12_000.0))
-                    (party_skill_row("Stealth", skills.stealth_hours, 8_000.0))
-                    (party_skill_row("Balance", skills.balance_hours, 30_000.0))
-                    (party_skill_row("Surgeon", skills.surgeon_hours, 10_000.0))
+                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0))
+                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0))
+                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0))
+                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0))
+                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0))
+                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0))
+                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0))
+                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0))
+                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0))
+                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0))
+                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0))
                 }
             } @else {
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
@@ -410,9 +410,9 @@ fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
     }
 }
 
-fn party_skill_row(name: &str, hours: f32, half_hours: f32) -> Markup {
+fn party_skill_row(name: &str, icon: &str, hours: f32, half_hours: f32) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
-    html! { div class="party-skill-row" { span { (name) } strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.0}")) } } }
+    html! { div class="party-skill-row" { (stat_icon(name, "skills", icon)) strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.0}")) } } }
 }
 
 fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
@@ -420,50 +420,62 @@ fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
     html! {
         div class="character-attribute-overlay" aria-label="Character attributes" {
             (attribute_island("attribute-head", "Head", &[
-                ("Intelligence", attributes.intelligence),
-                ("Instinct", attributes.instinct),
-                ("Eyesight", attributes.eyesight),
-                ("Hearing", attributes.hearing),
+                ("Intelligence", "intelligence", attributes.intelligence),
+                ("Instinct", "instinct", attributes.instinct),
+                ("Eyesight", "eyesight", attributes.eyesight),
+                ("Hearing", "hearing", attributes.hearing),
             ]))
             (attribute_island("attribute-chest", "Chest", &[
-                ("Endurance", attributes.endurance),
+                ("Endurance", "endurance", attributes.endurance),
             ]))
             (attribute_island("attribute-stomach", "Stomach", &[
-                ("Immunity", attributes.immunity),
-                ("Gut", attributes.gut),
+                ("Immunity", "immunity", attributes.immunity),
+                ("Gut", "gut", attributes.gut),
             ]))
             (attribute_island("attribute-left-arm", "Left Arm", &[
-                ("Strength", attributes.left_arm_strength),
-                ("Agility", attributes.left_arm_agility),
+                ("Strength", "strength-arm", attributes.left_arm_strength),
+                ("Agility", "agility-arm", attributes.left_arm_agility),
             ]))
             (attribute_island("attribute-right-arm", "Right Arm", &[
-                ("Strength", attributes.right_arm_strength),
-                ("Agility", attributes.right_arm_agility),
+                ("Strength", "strength-arm", attributes.right_arm_strength),
+                ("Agility", "agility-arm", attributes.right_arm_agility),
             ]))
             (attribute_island("attribute-left-leg", "Left Leg", &[
-                ("Strength", attributes.left_leg_strength),
-                ("Agility", attributes.left_leg_agility),
+                ("Strength", "strength-leg", attributes.left_leg_strength),
+                ("Agility", "agility-leg", attributes.left_leg_agility),
             ]))
             (attribute_island("attribute-right-leg", "Right Leg", &[
-                ("Strength", attributes.right_leg_strength),
-                ("Agility", attributes.right_leg_agility),
+                ("Strength", "strength-leg", attributes.right_leg_strength),
+                ("Agility", "agility-leg", attributes.right_leg_agility),
             ]))
         }
     }
 }
 
-fn attribute_island(position: &str, title: &str, rows: &[(&str, f32)]) -> Markup {
+fn attribute_island(position: &str, title: &str, rows: &[(&str, &str, f32)]) -> Markup {
     html! {
         section class=(format!("attribute-callout {position}")) {
             h3 { (title) }
             hr;
-            @for (name, value) in rows {
+            @for (name, icon, value) in rows {
                 div class="attribute-island-row" {
-                    span { (name) }
+                    (stat_icon(name, "attributes", icon))
                     strong { (format!("{value:.0}")) }
                 }
             }
         }
+    }
+}
+
+fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
+    html! {
+        span
+            class="stat-icon"
+            style=(format!("--stat-icon: url('/static/icons/stats/{category}/{icon}.png')"))
+            role="img"
+            aria-label=(label)
+            title=(label)
+        {}
     }
 }
 
