@@ -26,7 +26,7 @@ pub fn characters_list_page(
                         "No characters yet"
                     }
                 } @else {
-                    div #"character-list" {
+                    div # "character-list" {
                         @for character in characters {
                             @let is_current = current_character_id == Some(character.id);
                             div class=(if is_current { "list-item-wrapper current" } else { "list-item-wrapper" }) {
@@ -119,7 +119,7 @@ pub fn character_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
         main class="center-content" {
             h2 class="page-title" { "Create Character" }
             (panel("Character Details", html! {
-                form #"character-form" action="/characters" method="post" {
+                form # "character-form" action="/characters" method="post" {
                     (input_field("name", "Character Name", "text", true, None))
                     div class="form-actions" {
                         button type="submit" class="btn btn-primary" { "Create Character" }
@@ -258,7 +258,7 @@ pub fn character_detail_page(
 /// Character list fragment for Datastar updates
 pub fn characters_list_fragment(characters: &[Character]) -> Markup {
     html! {
-        div #"character-list" {
+        div # "character-list" {
             @for character in characters {
                 (list_item(
                     &format!("/characters/{}", character.id),

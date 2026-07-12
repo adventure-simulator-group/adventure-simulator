@@ -22,7 +22,7 @@ pub fn parties_list_page(
                         "No parties found"
                     }
                 } @else {
-                    div #"party-list" {
+                    div # "party-list" {
                         @for party in parties {
                             (list_item(
                                 &format!("/parties/{}", party.id),
@@ -103,7 +103,7 @@ pub fn party_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
         main class="center-content" {
             h2 class="page-title" { "Create Party" }
             (panel("Party Details", html! {
-                form #"party-form" action="/parties" method="post" {
+                form # "party-form" action="/parties" method="post" {
                     (input_field("name", "Party Name", "text", true, None))
                     div class="form-actions" {
                         button type="submit" class="btn btn-primary" { "Create Party" }
@@ -247,7 +247,7 @@ pub fn party_detail_page(
 /// Party list fragment for Datastar updates
 pub fn parties_list_fragment(parties: &[Party]) -> Markup {
     html! {
-        div #"party-list" {
+        div # "party-list" {
             @for party in parties {
                 (list_item(
                     &format!("/parties/{}", party.id),
