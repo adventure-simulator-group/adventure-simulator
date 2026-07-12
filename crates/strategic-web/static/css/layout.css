@@ -286,7 +286,7 @@
   position: relative;
   z-index: 10;
   padding: 0;
-  overflow-x: visible;
+  overflow: visible;
 }
 
 .left-sidebar:has(.trade-inventory-list) .sidebar-section,
