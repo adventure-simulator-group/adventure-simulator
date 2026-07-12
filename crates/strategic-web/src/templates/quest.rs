@@ -16,7 +16,7 @@ pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &st
                 @if quests.is_empty() {
                     (empty_state("No quests available.", None, None))
                 } @else {
-                    div #"quest-list" {
+                    div # "quest-list" {
                         @for quest in quests {
                             (list_item(
                                 &format!("/quests/{}", quest.id),
@@ -189,7 +189,7 @@ pub fn quest_detail_page(
 /// Quest list fragment for Datastar updates
 pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
     html! {
-        div #"quest-list" {
+        div # "quest-list" {
             @for quest in quests {
                 (list_item(
                     &format!("/quests/{}", quest.id),

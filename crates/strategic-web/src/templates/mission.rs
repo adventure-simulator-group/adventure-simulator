@@ -38,7 +38,7 @@ pub fn mission_status_page(
         main class="center-content" {
             h2 class="page-title" { "Mission Status" }
 
-            div #"mission-status" {
+            div # "mission-status" {
                 @match status.as_str() {
                     "Ready" => { (ready_state(server)) }
                     "Failed" => { (failed_state()) }
@@ -186,7 +186,7 @@ pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
     let status = effective_status(&server.status);
 
     html! {
-        div #"mission-status" {
+        div # "mission-status" {
             @match status.as_str() {
                 "Ready" => { (ready_state(server)) }
                 "Failed" => { (failed_state()) }

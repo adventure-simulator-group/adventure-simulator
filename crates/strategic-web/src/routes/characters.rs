@@ -160,7 +160,7 @@ async fn show_inventory(State(state): State<AppState>, Path(id): Path<String>) -
 
     // Return a simple inventory fragment
     let html = maud::html! {
-        div #"inventory" {
+        div # "inventory" {
             h3 { "Inventory" }
             @if inventory.is_empty() {
                 p { "No items" }

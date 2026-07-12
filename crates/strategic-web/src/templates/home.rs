@@ -198,7 +198,7 @@ pub fn home_fragment(
     active_quest: Option<&Quest>,
 ) -> Markup {
     html! {
-        div #"main-content" {
+        div # "main-content" {
             @if let Some(character) = current_character {
                 @if let Some(settlement) = current_settlement {
                     h2 class="page-title" { (settlement.name) }
