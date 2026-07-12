@@ -502,14 +502,25 @@ fn party_portrait_overlay(
                     a href=(format!("/settlements/{}/party/{}", settlement_id, member.id))
                         class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
                         title=(&member.name) {
+                        (incapacitation_wheel_placeholder())
                         span class="party-portrait-initial" {
                             span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
+                            span class="party-portrait-name" { (&member.name) }
                         }
-                        span class="party-portrait-name" { (&member.name) }
                     }
                 }
             }
         }
+    }
+}
+
+/// Temporary presentation data until combat/incapacitation state is available to the strategic UI.
+fn incapacitation_wheel_placeholder() -> Markup {
+    html! {
+        span class="incapacitation-wheel"
+            role="img"
+            aria-label="Incapacitation placeholder: 12% imbalance, 10% exhaustion, 8% pain, 14% blood loss, 9% fear, 11% fatigue"
+            title="Placeholder incapacitation: imbalance 12%, exhaustion 10%, pain 8%, blood loss 14%, fear 9%, fatigue 11%" {}
     }
 }
 
