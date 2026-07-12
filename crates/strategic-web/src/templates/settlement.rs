@@ -60,6 +60,7 @@ pub fn noticeboard_page(
     quests: &[Quest],
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -92,6 +93,7 @@ pub fn noticeboard_page(
             }))
         }
         main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, active_character))
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
@@ -106,6 +108,7 @@ pub fn tavern_page(
     parties: &[Party],
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -128,6 +131,7 @@ pub fn tavern_page(
             }))
         }
         main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, active_character))
             (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
             (settlement_chat_area("Tavern", active_character))
         }
@@ -142,13 +146,14 @@ pub fn merchants_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     service_page(
         settlement, "merchants", "Market Square", "Market Steward",
         "Merchant stock and prices will appear here once the trade backend is available.",
-        active_character, inventory, logged_in_as, theme,
+        active_character, inventory, party_members, logged_in_as, theme,
     )
 }
 
@@ -157,13 +162,14 @@ pub fn smith_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     service_page(
         settlement, "smith", "The Smithy", "Master Smith",
         "Repair costs and crafting orders require inventory durability and smithing reducers.",
-        active_character, inventory, logged_in_as, theme,
+        active_character, inventory, party_members, logged_in_as, theme,
     )
 }
 
@@ -172,13 +178,14 @@ pub fn inn_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     service_page(
         settlement, "inn", "The Inn", "Innkeeper",
         "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
-        active_character, inventory, logged_in_as, theme,
+        active_character, inventory, party_members, logged_in_as, theme,
     )
 }
 
@@ -190,6 +197,7 @@ fn service_page(
     todo: &str,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -204,6 +212,7 @@ fn service_page(
             }))
         }
         main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, active_character))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
@@ -222,6 +231,29 @@ fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
                 } @else {
                     span class="visual-symbol" { (title.chars().next().unwrap_or('?')) }
                     span class="visual-label" { "Portrait placeholder" }
+                }
+            }
+        }
+    }
+}
+
+fn party_portrait_overlay(party_members: &[Character], active_character: Option<&Character>) -> Markup {
+    let members: Vec<&Character> = if party_members.is_empty() {
+        active_character.into_iter().collect()
+    } else {
+        party_members.iter().collect()
+    };
+
+    html! {
+        @if !members.is_empty() {
+            div class="party-portrait-overlay" aria-label="Active party" {
+                @for member in members {
+                    a href=(format!("/characters/{}", member.id)) class="party-portrait" title=(&member.name) {
+                        span class="party-portrait-initial" {
+                            span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
+                        }
+                        span class="party-portrait-name" { (&member.name) }
+                    }
                 }
             }
         }

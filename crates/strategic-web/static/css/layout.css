@@ -166,7 +166,7 @@
    ============================================ */
 .main-grid {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr var(--right-sidebar-width);
+  grid-template-columns: 20% minmax(0, 60%) 20%;
   height: calc(100vh - var(--header-height));
   overflow: hidden;
 }
@@ -267,7 +267,7 @@
    ============================================ */
 @media (max-width: 1200px) {
   .main-grid {
-    grid-template-columns: 220px minmax(0, 1fr) 220px;
+    grid-template-columns: 20% minmax(0, 60%) 20%;
   }
   .settlement-location {
     min-width: 0;

@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
+use crate::spacetimedb::{Character, InventoryItem, Party, PartyMember, Quest, Settlement};
 use crate::templates::settlement::{
     inn_page, merchants_page, noticeboard_page, settlements_list_page,
     smith_page, tavern_page,
@@ -73,6 +73,11 @@ async fn noticeboard(
         .unwrap_or_default();
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -84,6 +89,7 @@ async fn noticeboard(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -117,6 +123,11 @@ async fn tavern(
         .unwrap_or_default();
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -128,6 +139,7 @@ async fn tavern(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -152,6 +164,11 @@ async fn merchants(
     };
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -162,6 +179,7 @@ async fn merchants(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -186,6 +204,11 @@ async fn smith(
     };
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -196,6 +219,7 @@ async fn smith(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -220,6 +244,11 @@ async fn inn(
     };
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -230,6 +259,7 @@ async fn inn(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -289,5 +319,29 @@ async fn get_active_character(
         .await
         .unwrap_or_default();
     Some((character, inventory))
+}
+
+async fn get_active_party_members(state: &AppState, active_character: Option<&Character>) -> Vec<Character> {
+    let Some(party_id) = active_character.and_then(|character| character.party_id.as_ref()) else {
+        return Vec::new();
+    };
+    let memberships: Vec<PartyMember> = state
+        .db
+        .query(&format!("SELECT * FROM party_member WHERE party_id = '{}'", party_id))
+        .await
+        .unwrap_or_default();
+
+    let mut members = Vec::new();
+    for membership in memberships {
+        let characters: Vec<Character> = state
+            .db
+            .query(&format!("SELECT * FROM character WHERE id = {}", membership.character_id))
+            .await
+            .unwrap_or_default();
+        if let Some(character) = characters.into_iter().next() {
+            members.push(character);
+        }
+    }
+    members
 }
 
