@@ -88,7 +88,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css";
-                link rel="stylesheet" href="/static/css/components.css";
+                link rel="stylesheet" href="/static/css/components.css?v=trade-arrows";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}

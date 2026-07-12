@@ -423,13 +423,15 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
             div class="trade-list mt-1" {
                 @for offer in placeholder_offers {
-                    div class="trade-row" {
-                        div {
+                    div class="trade-row trade-row-merchant"
+                        title="TODO: buying requires merchant inventory, pricing, and trade reducers" {
+                        div class="trade-item-summary" {
                             strong { (offer) }
                             span { "Unavailable" }
                         }
-                        button type="button" class="btn btn-secondary btn-small" disabled
-                            title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "Buy" }
+                        button type="button" class="trade-transfer trade-transfer-right" disabled
+                            aria-label=(format!("Buy {}", offer))
+                            title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "▶" }
                     }
                 }
             }
@@ -454,13 +456,14 @@ fn inventory_rail(
                 div class="inventory-list" {
                     @for item in inventory {
                         div class=(if trade_action.is_some() { "inventory-item inventory-trade-row" } else { "inventory-item" }) {
+                            @if let Some((action, tooltip)) = trade_action {
+                                button type="button" class="trade-transfer trade-transfer-left" disabled
+                                    aria-label=(format!("{} {}", action, item.item_id))
+                                    title=(tooltip) { "◀" }
+                            }
                             div class="inventory-item-summary" {
                                 span class="item-name" { (&item.item_id) }
                                 span class="item-qty" { "×" (item.qty) }
-                            }
-                            @if let Some((action, tooltip)) = trade_action {
-                                button type="button" class="btn btn-secondary btn-small" disabled
-                                    title=(tooltip) { (action) }
                             }
                         }
                     }
