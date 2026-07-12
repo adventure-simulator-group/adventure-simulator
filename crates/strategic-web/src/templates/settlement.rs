@@ -47,7 +47,9 @@ pub fn settlements_list_page(
             }
         }
         aside class="right-sidebar" {
-            (party_rail(None, &[]))
+            (sidebar_section("Travel", html! {
+                p class="text-muted small-copy" { "Select a settlement to view its services." }
+            }))
         }
     };
 
@@ -59,7 +61,7 @@ pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
     active_character: Option<&Character>,
-    inventory: &[InventoryItem],
+    _inventory: &[InventoryItem],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
@@ -97,7 +99,7 @@ pub fn noticeboard_page(
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
-        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
+        aside class="right-sidebar" { (quest_detail_rail()) }
     };
     settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
 }
@@ -107,7 +109,7 @@ pub fn tavern_page(
     settlement: &Settlement,
     parties: &[Party],
     active_character: Option<&Character>,
-    inventory: &[InventoryItem],
+    _inventory: &[InventoryItem],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
@@ -135,7 +137,7 @@ pub fn tavern_page(
             (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
             (settlement_chat_area("Tavern", active_character))
         }
-        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
+        aside class="right-sidebar" { (tavern_detail_rail()) }
     };
     settlement_layout_with_session("Tavern", &settlement.name, &settlement.id, "tavern", content, logged_in_as, theme)
 }
@@ -216,7 +218,13 @@ fn service_page(
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
-        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
+        aside class="right-sidebar" {
+            @if service_id == "merchants" || service_id == "smith" {
+                (inventory_rail(active_character, inventory))
+            } @else {
+                (inn_detail_rail())
+            }
+        }
     };
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
 }
@@ -305,32 +313,59 @@ fn settlement_chat_area(location: &str, active_character: Option<&Character>) ->
     }
 }
 
-fn party_rail(active_character: Option<&Character>, inventory: &[InventoryItem]) -> Markup {
+fn inventory_rail(active_character: Option<&Character>, inventory: &[InventoryItem]) -> Markup {
+    let title = active_character
+        .map(|character| format!("{}'s inventory", character.name))
+        .unwrap_or_else(|| "Your inventory".to_string());
+
     html! {
-        (sidebar_section("Your party", html! {
-            @if let Some(character) = active_character {
-                div class="party-member-card" {
-                    div class="party-monogram" { (character.name.chars().next().unwrap_or('?')) }
-                    div { strong { (&character.name) } span { "Active adventurer" } }
-                }
-                a href=(format!("/characters/{}", character.id)) class="btn btn-secondary btn-small btn-block mt-1" { "View character sheet" }
-                div class="party-inventory" {
-                    span class="party-inventory-title" { "Inventory" }
-                    @if inventory.is_empty() {
-                        p class="text-muted small-copy" { "No items carried." }
-                    } @else {
-                        @for item in inventory.iter().take(5) {
-                            div class="inventory-item" {
-                                span class="item-name" { (&item.item_id) }
-                                span class="item-qty" { "×" (item.qty) }
-                            }
+        (sidebar_section(&title, html! {
+            @if inventory.is_empty() {
+                p class="text-muted small-copy" { "No items carried." }
+            } @else {
+                div class="inventory-list" {
+                    @for item in inventory {
+                        div class="inventory-item" {
+                            span class="item-name" { (&item.item_id) }
+                            span class="item-qty" { "×" (item.qty) }
                         }
                     }
                 }
-                p class="text-muted small-copy mt-1" { "TODO: party members, shared packs, condition, and equipment slots." }
-            } @else {
-                p class="text-muted small-copy" { "Select a character to view party-owned information." }
-                a href="/characters" class="btn btn-secondary btn-small btn-block mt-1" { "Choose character" }
+            }
+        }))
+    }
+}
+
+fn quest_detail_rail() -> Markup {
+    html! {
+        (sidebar_section("Quest details", html! {
+            div class="context-placeholder" {
+                p { "Select a quest to inspect its full details." }
+                p class="text-muted small-copy" { "TODO: quest selection and detail rendering are not connected yet." }
+            }
+        }))
+    }
+}
+
+fn tavern_detail_rail() -> Markup {
+    html! {
+        (sidebar_section("Recruitment", html! {
+            div class="context-placeholder" {
+                p { "Review party listings on the left, then join or create a party." }
+                p class="text-muted small-copy" { "TODO: party-role requirements and recruitment chat are not implemented yet." }
+            }
+        }))
+    }
+}
+
+fn inn_detail_rail() -> Markup {
+    html! {
+        (sidebar_section("Accommodation", html! {
+            div class="context-placeholder" {
+                strong { "Rest at the inn" }
+                p class="text-muted small-copy" { "TODO: room selection, recovery, and time advancement require strategic downtime support." }
+                button type="button" class="btn btn-secondary btn-small btn-block" disabled
+                    title="TODO: resting requires strategic downtime support" { "Unavailable" }
             }
         }))
     }
