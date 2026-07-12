@@ -142,7 +142,19 @@
 }
 
 .settlement-services .nav-tab {
-  padding-inline: 0.7rem;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  font-size: var(--font-size-base);
+}
+
+.service-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1;
 }
 
 .player-name {
@@ -281,8 +293,9 @@
     display: none;
   }
   .settlement-services .nav-tab {
-    padding: 0.35rem 0.45rem;
-    font-size: var(--font-size-xs);
+    width: 2.05rem;
+    height: 2.05rem;
+    padding: 0;
   }
 }
 

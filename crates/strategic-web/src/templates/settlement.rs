@@ -159,6 +159,70 @@ pub fn merchants_page(
     )
 }
 
+/// Weapons shop placeholder.
+pub fn weapons_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    service_page(
+        settlement, "weapons", "Weaponsmith", "Weaponsmith",
+        "Weapon stock, prices, and purchases require settlement inventories and trade reducers.",
+        active_character, inventory, party_members, logged_in_as, theme,
+    )
+}
+
+/// Armour shop placeholder.
+pub fn armor_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    service_page(
+        settlement, "armor", "Armourer", "Armourer",
+        "Armour stock, prices, and purchases require settlement inventories and trade reducers.",
+        active_character, inventory, party_members, logged_in_as, theme,
+    )
+}
+
+/// Clothing shop placeholder.
+pub fn clothing_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    service_page(
+        settlement, "clothing", "Tailor", "Tailor",
+        "Clothing stock, prices, and purchases require settlement inventories and trade reducers.",
+        active_character, inventory, party_members, logged_in_as, theme,
+    )
+}
+
+/// Provisioner placeholder.
+pub fn consumables_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    service_page(
+        settlement, "consumables", "Provisioner", "Provisioner",
+        "Provision stock, prices, and purchases require settlement inventories and trade reducers.",
+        active_character, inventory, party_members, logged_in_as, theme,
+    )
+}
+
 /// Smith interface placeholder.
 pub fn smith_page(
     settlement: &Settlement,
@@ -191,6 +255,22 @@ pub fn inn_page(
     )
 }
 
+/// Temple placeholder.
+pub fn religion_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    service_page(
+        settlement, "religion", "Temple", "Priest",
+        "Faith, donations, and divine services require the religion and reputation systems.",
+        active_character, inventory, party_members, logged_in_as, theme,
+    )
+}
+
 fn service_page(
     settlement: &Settlement,
     service_id: &str,
@@ -203,10 +283,18 @@ fn service_page(
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
+    let trade_offers: Option<(&str, &[&str])> = match service_id {
+        "merchants" => Some(("Merchant stock", &["Weapon offer", "Armour offer", "Provision offer"])),
+        "weapons" => Some(("Weapons", &["Weapon offer", "Shield offer", "Ammunition offer"])),
+        "armor" => Some(("Armour", &["Head protection", "Torso protection", "Limb protection"])),
+        "clothing" => Some(("Clothing", &["Travel attire", "Cold-weather clothing", "Fine clothing"])),
+        "consumables" => Some(("Provisions", &["Rations", "Water", "Supplies"])),
+        _ => None,
+    };
     let content = html! {
         aside class="left-sidebar" {
-            @if service_id == "merchants" {
-                (merchant_offers_rail())
+            @if let Some((stock_title, offers)) = trade_offers {
+                (merchant_offers_rail(stock_title, offers))
             } @else {
                 (sidebar_section("Settlement offerings", html! {
                     div class="service-placeholder-list" {
@@ -223,12 +311,20 @@ fn service_page(
             (settlement_chat_area(title, active_character))
         }
         aside class="right-sidebar" {
-            @if service_id == "merchants" || service_id == "smith" {
+            @if trade_offers.is_some() {
                 (inventory_rail(
                     active_character,
                     inventory,
-                    if service_id == "merchants" { Some("Sell") } else { None },
+                    Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
                 ))
+            } @else if service_id == "smith" {
+                (inventory_rail(
+                    active_character,
+                    inventory,
+                    Some(("Repair", "TODO: repairs require durability, pricing, and smithing reducers")),
+                ))
+            } @else if service_id == "religion" {
+                (religion_detail_rail())
             } @else {
                 (inn_detail_rail())
             }
@@ -321,10 +417,9 @@ fn settlement_chat_area(location: &str, active_character: Option<&Character>) ->
     }
 }
 
-fn merchant_offers_rail() -> Markup {
-    let placeholder_offers = ["Weapon offer", "Armour offer", "Provision offer"];
+fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
     html! {
-        (sidebar_section("Merchant stock", html! {
+        (sidebar_section(title, html! {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
             div class="trade-list mt-1" {
                 @for offer in placeholder_offers {
@@ -345,7 +440,7 @@ fn merchant_offers_rail() -> Markup {
 fn inventory_rail(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
-    trade_action: Option<&str>,
+    trade_action: Option<(&str, &str)>,
 ) -> Markup {
     let title = active_character
         .map(|character| format!("{}'s inventory", character.name))
@@ -363,9 +458,9 @@ fn inventory_rail(
                                 span class="item-name" { (&item.item_id) }
                                 span class="item-qty" { "×" (item.qty) }
                             }
-                            @if let Some(action) = trade_action {
+                            @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="btn btn-secondary btn-small" disabled
-                                    title="TODO: selling requires merchant pricing and trade reducers" { (action) }
+                                    title=(tooltip) { (action) }
                             }
                         }
                     }
@@ -392,6 +487,19 @@ fn tavern_detail_rail() -> Markup {
             div class="context-placeholder" {
                 p { "Review party listings on the left, then join or create a party." }
                 p class="text-muted small-copy" { "TODO: party-role requirements and recruitment chat are not implemented yet." }
+            }
+        }))
+    }
+}
+
+fn religion_detail_rail() -> Markup {
+    html! {
+        (sidebar_section("Devotion", html! {
+            div class="context-placeholder" {
+                strong { "Temple services" }
+                p class="text-muted small-copy" { "TODO: faith, donations, and divine services are not implemented yet." }
+                button type="button" class="btn btn-secondary btn-small" disabled
+                    title="TODO: donations require the religion and currency systems" { "Donate" }
             }
         }))
     }

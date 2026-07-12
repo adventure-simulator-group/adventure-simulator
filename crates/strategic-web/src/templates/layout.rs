@@ -167,11 +167,16 @@ fn settlement_top_bar(
     current_theme: &str,
 ) -> Markup {
     let services = [
-        ("noticeboard", "Notice Board"),
-        ("tavern", "Tavern"),
-        ("merchants", "Market"),
-        ("smith", "Smith"),
-        ("inn", "Inn"),
+        ("noticeboard", "Notice Board", "✦"),
+        ("tavern", "Tavern", "♜"),
+        ("merchants", "General Market", "▦"),
+        ("weapons", "Weapons", "⚔"),
+        ("armor", "Armour", "⛨"),
+        ("clothing", "Clothing", "♙"),
+        ("consumables", "Provisions", "♨"),
+        ("smith", "Smithy", "⚒"),
+        ("inn", "Inn", "☾"),
+        ("religion", "Temple", "✠"),
     ];
 
     html! {
@@ -186,7 +191,7 @@ fn settlement_top_bar(
             }
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services" {
-                @for (path, label) in services {
+                @for (path, label, icon) in services {
                     @let href = if path.is_empty() {
                         format!("/settlements/{}", settlement_id)
                     } else {
@@ -194,7 +199,9 @@ fn settlement_top_bar(
                     };
                     a href=(href)
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
-                    { (label) }
+                        aria-label=(label)
+                        title=(label)
+                    { span class="service-tab-icon" aria-hidden="true" { (icon) } }
                 }
             }
 
