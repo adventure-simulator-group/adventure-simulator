@@ -205,13 +205,17 @@ fn service_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Settlement offerings", html! {
-                div class="service-placeholder-list" {
-                    span { "Inventory / offers" }
-                    span class="badge badge-warning" { "TODO" }
-                }
-                p class="text-muted small-copy" { (todo) }
-            }))
+            @if service_id == "merchants" {
+                (merchant_offers_rail())
+            } @else {
+                (sidebar_section("Settlement offerings", html! {
+                    div class="service-placeholder-list" {
+                        span { "Inventory / offers" }
+                        span class="badge badge-warning" { "TODO" }
+                    }
+                    p class="text-muted small-copy" { (todo) }
+                }))
+            }
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character))
@@ -220,7 +224,11 @@ fn service_page(
         }
         aside class="right-sidebar" {
             @if service_id == "merchants" || service_id == "smith" {
-                (inventory_rail(active_character, inventory))
+                (inventory_rail(
+                    active_character,
+                    inventory,
+                    if service_id == "merchants" { Some("Sell") } else { None },
+                ))
             } @else {
                 (inn_detail_rail())
             }
@@ -313,7 +321,32 @@ fn settlement_chat_area(location: &str, active_character: Option<&Character>) ->
     }
 }
 
-fn inventory_rail(active_character: Option<&Character>, inventory: &[InventoryItem]) -> Markup {
+fn merchant_offers_rail() -> Markup {
+    let placeholder_offers = ["Weapon offer", "Armour offer", "Provision offer"];
+    html! {
+        (sidebar_section("Merchant stock", html! {
+            p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
+            div class="trade-list mt-1" {
+                @for offer in placeholder_offers {
+                    div class="trade-row" {
+                        div {
+                            strong { (offer) }
+                            span { "Unavailable" }
+                        }
+                        button type="button" class="btn btn-secondary btn-small" disabled
+                            title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "Buy" }
+                    }
+                }
+            }
+        }))
+    }
+}
+
+fn inventory_rail(
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    trade_action: Option<&str>,
+) -> Markup {
     let title = active_character
         .map(|character| format!("{}'s inventory", character.name))
         .unwrap_or_else(|| "Your inventory".to_string());
@@ -325,9 +358,15 @@ fn inventory_rail(active_character: Option<&Character>, inventory: &[InventoryIt
             } @else {
                 div class="inventory-list" {
                     @for item in inventory {
-                        div class="inventory-item" {
-                            span class="item-name" { (&item.item_id) }
-                            span class="item-qty" { "×" (item.qty) }
+                        div class=(if trade_action.is_some() { "inventory-item inventory-trade-row" } else { "inventory-item" }) {
+                            div class="inventory-item-summary" {
+                                span class="item-name" { (&item.item_id) }
+                                span class="item-qty" { "×" (item.qty) }
+                            }
+                            @if let Some(action) = trade_action {
+                                button type="button" class="btn btn-secondary btn-small" disabled
+                                    title="TODO: selling requires merchant pricing and trade reducers" { (action) }
+                            }
                         }
                     }
                 }
