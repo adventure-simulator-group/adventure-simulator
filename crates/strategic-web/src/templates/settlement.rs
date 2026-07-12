@@ -412,7 +412,7 @@ fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
 
 fn party_skill_row(name: &str, hours: f32, half_hours: f32) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
-    html! { div class="party-skill-row" { span { (name) } strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.0} / 5")) } } }
+    html! { div class="party-skill-row" { span { (name) } strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.0}")) } } }
 }
 
 fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
