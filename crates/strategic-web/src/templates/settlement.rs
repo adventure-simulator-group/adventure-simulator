@@ -419,12 +419,37 @@ fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
     let Some(attributes) = attributes else { return html! {}; };
     html! {
         div class="character-attribute-overlay" aria-label="Character attributes" {
-            div class="attribute-callout attribute-head" { "Mind " strong { (format!("{:.0}", attributes.intelligence)) } }
-            div class="attribute-callout attribute-chest" { "Endurance " strong { (format!("{:.0}", attributes.endurance)) } }
-            div class="attribute-callout attribute-left-arm" { "L arm " strong { (format!("{:.0}", attributes.left_arm_strength)) } }
-            div class="attribute-callout attribute-right-arm" { "R arm " strong { (format!("{:.0}", attributes.right_arm_strength)) } }
-            div class="attribute-callout attribute-left-leg" { "L leg " strong { (format!("{:.0}", attributes.left_leg_strength)) } }
-            div class="attribute-callout attribute-right-leg" { "R leg " strong { (format!("{:.0}", attributes.right_leg_strength)) } }
+            div class="attribute-callout attribute-head" {
+                "Int " strong { (format!("{:.0}", attributes.intelligence)) }
+                " · Inst " strong { (format!("{:.0}", attributes.instinct)) }
+                br;
+                "Sight " strong { (format!("{:.0}", attributes.eyesight)) }
+                " · Hear " strong { (format!("{:.0}", attributes.hearing)) }
+            }
+            div class="attribute-callout attribute-chest" {
+                "Endurance " strong { (format!("{:.0}", attributes.endurance)) }
+                " · Precision " strong { (format!("{:.0}", attributes.precision)) }
+            }
+            div class="attribute-callout attribute-stomach" {
+                "Immunity " strong { (format!("{:.0}", attributes.immunity)) }
+                " · Gut " strong { (format!("{:.0}", attributes.gut)) }
+            }
+            div class="attribute-callout attribute-left-arm" {
+                "L arm " strong { (format!("S {:.0}", attributes.left_arm_strength)) }
+                " · " strong { (format!("A {:.0}", attributes.left_arm_agility)) }
+            }
+            div class="attribute-callout attribute-right-arm" {
+                "R arm " strong { (format!("S {:.0}", attributes.right_arm_strength)) }
+                " · " strong { (format!("A {:.0}", attributes.right_arm_agility)) }
+            }
+            div class="attribute-callout attribute-left-leg" {
+                "L leg " strong { (format!("S {:.0}", attributes.left_leg_strength)) }
+                " · " strong { (format!("A {:.0}", attributes.left_leg_agility)) }
+            }
+            div class="attribute-callout attribute-right-leg" {
+                "R leg " strong { (format!("S {:.0}", attributes.right_leg_strength)) }
+                " · " strong { (format!("A {:.0}", attributes.right_leg_agility)) }
+            }
         }
     }
 }
