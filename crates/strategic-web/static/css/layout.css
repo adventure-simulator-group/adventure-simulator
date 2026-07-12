@@ -106,6 +106,9 @@
   color: var(--accent-dark);
   line-height: 1;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settlement-time {
@@ -245,13 +248,21 @@
    ============================================ */
 @media (max-width: 1200px) {
   .main-grid {
-    grid-template-columns: var(--sidebar-width) 1fr;
-  }
-  .right-sidebar {
-    display: none;
+    grid-template-columns: 220px minmax(0, 1fr) 220px;
   }
   .settlement-location {
-    min-width: 190px;
+    min-width: 0;
+    width: 150px;
+  }
+  .settlement-top-bar .top-bar-right {
+    min-width: 0;
+  }
+  .settlement-top-bar .player-name {
+    display: none;
+  }
+  .settlement-services .nav-tab {
+    padding: 0.35rem 0.45rem;
+    font-size: var(--font-size-xs);
   }
 }
 
@@ -297,6 +308,7 @@
   }
   .settlement-location {
     min-width: 0;
+    width: auto;
   }
   .settlement-services {
     order: 3;

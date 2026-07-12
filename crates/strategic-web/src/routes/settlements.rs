@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
+use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
 use crate::templates::settlement::{
     inn_page, merchants_page, noticeboard_page, settlement_detail_page, settlements_list_page,
     smith_page, tavern_page,
@@ -82,12 +82,19 @@ async fn show_settlement(
         .await
         .unwrap_or_default();
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
     Html(
         settlement_detail_page(
             settlement,
             &available_quests,
             &parties,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -120,11 +127,18 @@ async fn noticeboard(
         .await
         .unwrap_or_default();
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
     Html(
         noticeboard_page(
             settlement,
             &quests,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -157,11 +171,18 @@ async fn tavern(
         .await
         .unwrap_or_default();
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
     Html(
         tavern_page(
             settlement,
             &parties,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -185,8 +206,22 @@ async fn merchants(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(merchants_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        merchants_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn smith(
@@ -205,8 +240,22 @@ async fn smith(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(smith_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        smith_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn inn(
@@ -225,8 +274,22 @@ async fn inn(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(inn_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        inn_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn travel(
@@ -260,6 +323,27 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
         .await
         .unwrap_or_default();
     characters.first().map(|c| c.name.clone())
+}
+
+async fn get_active_character(
+    state: &AppState,
+    character_id: Option<u64>,
+) -> Option<(Character, Vec<InventoryItem>)> {
+    let character_id = character_id?;
+    let characters: Vec<Character> = state
+        .db
+        .query(&format!("SELECT * FROM character WHERE id = {character_id}"))
+        .await
+        .unwrap_or_default();
+    let character = characters.into_iter().next()?;
+    let inventory: Vec<InventoryItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM inventory_item WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    Some((character, inventory))
 }
 
 fn is_available_status(status: &str) -> bool {

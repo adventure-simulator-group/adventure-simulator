@@ -10,7 +10,7 @@ use super::{
     difficulty_stars, empty_state, gold_display, list_item, panel, population_description,
     settlement_layout_with_session, sidebar_section, status_badge, xp_display,
 };
-use crate::spacetimedb::{Party, Quest, Settlement};
+use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
 
 /// List all settlements.
 pub fn settlements_list_page(
@@ -47,7 +47,7 @@ pub fn settlements_list_page(
             }
         }
         aside class="right-sidebar" {
-            (party_rail(logged_in_as))
+            (party_rail(None, &[]))
         }
     };
 
@@ -59,6 +59,8 @@ pub fn settlement_detail_page(
     settlement: &Settlement,
     quests: &[Quest],
     parties: &[Party],
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -95,7 +97,7 @@ pub fn settlement_detail_page(
             }))
         }
         aside class="right-sidebar" {
-            (party_rail(logged_in_as))
+            (party_rail(active_character, inventory))
             (sidebar_section("Parties in town", html! {
                 @if parties.is_empty() {
                     p class="text-muted small-copy" { "No other parties are currently here." }
@@ -115,6 +117,8 @@ pub fn settlement_detail_page(
 pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -146,7 +150,7 @@ pub fn noticeboard_page(
                 }
             }
         }
-        aside class="right-sidebar" { (party_rail(logged_in_as)) }
+        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
     settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
 }
@@ -155,6 +159,8 @@ pub fn noticeboard_page(
 pub fn tavern_page(
     settlement: &Settlement,
     parties: &[Party],
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -182,39 +188,57 @@ pub fn tavern_page(
                 a href="/parties/new" class="btn btn-primary mt-1" { "Create party" }
             }))
         }
-        aside class="right-sidebar" { (party_rail(logged_in_as)) }
+        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
     settlement_layout_with_session("Tavern", &settlement.name, &settlement.id, "tavern", content, logged_in_as, theme)
 }
 
 /// Market interface. Inventory and prices are intentionally UI-only placeholders
 /// until settlement-owned inventory and trade reducers exist.
-pub fn merchants_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
+pub fn merchants_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
     service_page(
         settlement, "merchants", "Market Square", "Market Steward",
         "Browse settlement goods and compare them against your party's packs.",
         "Merchant stock and prices will appear here once the trade backend is available.",
-        logged_in_as, theme,
+        active_character, inventory, logged_in_as, theme,
     )
 }
 
 /// Smith interface placeholder.
-pub fn smith_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
+pub fn smith_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
     service_page(
         settlement, "smith", "The Smithy", "Master Smith",
         "Inspect equipment on the right, then commission repairs or replacements here.",
         "Repair costs and crafting orders require inventory durability and smithing reducers.",
-        logged_in_as, theme,
+        active_character, inventory, logged_in_as, theme,
     )
 }
 
 /// Inn interface placeholder.
-pub fn inn_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
+pub fn inn_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
     service_page(
         settlement, "inn", "The Inn", "Innkeeper",
         "Choose accommodation and manage downtime for your party.",
         "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
-        logged_in_as, theme,
+        active_character, inventory, logged_in_as, theme,
     )
 }
 
@@ -225,6 +249,8 @@ fn service_page(
     npc_name: &str,
     introduction: &str,
     todo: &str,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -247,7 +273,7 @@ fn service_page(
                 button class="btn btn-secondary mt-1" disabled title="TODO: requires strategic service reducer" { "Unavailable" }
             }))
         }
-        aside class="right-sidebar" { (party_rail(logged_in_as)) }
+        aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
 }
@@ -278,16 +304,29 @@ fn service_context(title: &str, copy: &str) -> Markup {
     }
 }
 
-fn party_rail(logged_in_as: Option<&str>) -> Markup {
+fn party_rail(active_character: Option<&Character>, inventory: &[InventoryItem]) -> Markup {
     html! {
         (sidebar_section("Your party", html! {
-            @if let Some(name) = logged_in_as {
+            @if let Some(character) = active_character {
                 div class="party-member-card" {
-                    div class="party-monogram" { (name.chars().next().unwrap_or('?')) }
-                    div { strong { (name) } span { "Active adventurer" } }
+                    div class="party-monogram" { (character.name.chars().next().unwrap_or('?')) }
+                    div { strong { (&character.name) } span { "Active adventurer · level " (character.level) } }
                 }
-                a href="/characters" class="btn btn-secondary btn-small btn-block mt-1" { "View character sheet" }
-                p class="text-muted small-copy mt-1" { "TODO: party members, inventory, condition, and equipment will appear here." }
+                a href=(format!("/characters/{}", character.id)) class="btn btn-secondary btn-small btn-block mt-1" { "View character sheet" }
+                div class="party-inventory" {
+                    span class="party-inventory-title" { "Inventory" }
+                    @if inventory.is_empty() {
+                        p class="text-muted small-copy" { "No items carried." }
+                    } @else {
+                        @for item in inventory.iter().take(5) {
+                            div class="inventory-item" {
+                                span class="item-name" { (&item.item_id) }
+                                span class="item-qty" { "×" (item.qty) }
+                            }
+                        }
+                    }
+                }
+                p class="text-muted small-copy mt-1" { "TODO: party members, shared packs, condition, and equipment slots." }
             } @else {
                 p class="text-muted small-copy" { "Select a character to view party-owned information." }
                 a href="/characters" class="btn btn-secondary btn-small btn-block mt-1" { "Choose character" }

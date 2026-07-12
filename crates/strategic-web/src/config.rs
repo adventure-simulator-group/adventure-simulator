@@ -31,7 +31,11 @@ pub struct Config {
     pub bind_address: String,
 
     /// Path to static files directory
-    #[arg(long, env = "STATIC_DIR", default_value = "static")]
+    #[arg(
+        long,
+        env = "STATIC_DIR",
+        default_value = "crates/strategic-web/static"
+    )]
     pub static_dir: String,
 
     /// Path to tactical client static files directory

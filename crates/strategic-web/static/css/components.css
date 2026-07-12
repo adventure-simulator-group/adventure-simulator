@@ -817,6 +817,22 @@
   font-weight: 700;
 }
 
+.party-inventory {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.party-inventory-title {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .party-monogram {
   background: color-mix(in srgb, var(--accent) 15%, var(--panel-bg));
 }
