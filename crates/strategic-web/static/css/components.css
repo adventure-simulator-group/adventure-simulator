@@ -760,7 +760,8 @@
 .settlement-main {
   display: flex;
   flex-direction: column;
-  max-width: 980px;
+  max-width: none;
+  padding: 0;
   overflow: hidden;
 }
 
@@ -920,9 +921,9 @@
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  margin: 0 0 0.75rem;
+  margin: 0;
   border: 1px solid var(--border-accent);
-  border-radius: var(--radius);
+  border-radius: 0;
   overflow: hidden;
   background: var(--panel-bg);
   box-shadow: var(--shadow-sm);

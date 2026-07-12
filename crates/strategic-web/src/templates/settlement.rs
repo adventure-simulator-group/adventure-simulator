@@ -92,7 +92,6 @@ pub fn noticeboard_page(
             }))
         }
         main class="center-content settlement-main" {
-            h2 class="page-title" { "Notice Board" }
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
@@ -112,7 +111,6 @@ pub fn tavern_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (service_host("Innkeeper", "Adventurers, rumours, and open tables."))
             (sidebar_section("Parties in the tavern", html! {
                 @if parties.is_empty() {
                     p class="text-muted small-copy" { "No parties currently recruiting." }
@@ -130,7 +128,6 @@ pub fn tavern_page(
             }))
         }
         main class="center-content settlement-main" {
-            h2 class="page-title" { "The Tavern" }
             (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
             (settlement_chat_area("Tavern", active_character))
         }
@@ -150,7 +147,6 @@ pub fn merchants_page(
 ) -> Markup {
     service_page(
         settlement, "merchants", "Market Square", "Market Steward",
-        "Browse settlement goods and compare them against your party's packs.",
         "Merchant stock and prices will appear here once the trade backend is available.",
         active_character, inventory, logged_in_as, theme,
     )
@@ -166,7 +162,6 @@ pub fn smith_page(
 ) -> Markup {
     service_page(
         settlement, "smith", "The Smithy", "Master Smith",
-        "Inspect equipment on the right, then commission repairs or replacements here.",
         "Repair costs and crafting orders require inventory durability and smithing reducers.",
         active_character, inventory, logged_in_as, theme,
     )
@@ -182,7 +177,6 @@ pub fn inn_page(
 ) -> Markup {
     service_page(
         settlement, "inn", "The Inn", "Innkeeper",
-        "Choose accommodation and manage downtime for your party.",
         "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
         active_character, inventory, logged_in_as, theme,
     )
@@ -193,7 +187,6 @@ fn service_page(
     service_id: &str,
     title: &str,
     npc_name: &str,
-    introduction: &str,
     todo: &str,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
@@ -202,7 +195,6 @@ fn service_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (service_host(npc_name, introduction))
             (sidebar_section("Settlement offerings", html! {
                 div class="service-placeholder-list" {
                     span { "Inventory / offers" }
@@ -212,24 +204,12 @@ fn service_page(
             }))
         }
         main class="center-content settlement-main" {
-            h2 class="page-title" { (title) }
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
-}
-
-fn service_host(npc_name: &str, description: &str) -> Markup {
-    html! {
-        (sidebar_section("Service host", html! {
-            div class="npc-card" {
-                div class="npc-monogram" { (npc_name.chars().next().unwrap_or('?')) }
-                div { strong { (npc_name) } p class="small-copy" { (description) } }
-            }
-        }))
-    }
 }
 
 fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
@@ -244,7 +224,6 @@ fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
                     span class="visual-label" { "Portrait placeholder" }
                 }
             }
-            figcaption { (title) " · " (placeholder) }
         }
     }
 }
