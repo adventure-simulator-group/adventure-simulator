@@ -10,7 +10,9 @@ use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section, status_badge,
 };
-use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterSkills, InventoryItem, Party, Quest, Settlement,
+};
 
 /// List all settlements.
 pub fn settlements_list_page(
@@ -111,7 +113,7 @@ pub fn noticeboard_page(
             }))
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character))
+            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
@@ -233,6 +235,45 @@ pub fn religion_page(
     )
 }
 
+/// A party portrait is a settlement-local tab. Selecting the active character
+/// reveals their skills; selecting another member opens a party trade view.
+pub fn party_member_page(
+    settlement: &Settlement,
+    selected: &Character,
+    selected_inventory: &[InventoryItem],
+    active_character: &Character,
+    active_inventory: &[InventoryItem],
+    party_members: &[Character],
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    theme: &str,
+) -> Markup {
+    let is_self = selected.id == active_character.id;
+    let content = html! {
+        aside class="left-sidebar" {
+            @if is_self {
+                (party_skills_rail(skills))
+            } @else {
+                (party_trade_inventory_rail(selected, selected_inventory))
+            }
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
+            (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
+            @if is_self { (attribute_overlay(attributes)) }
+            (settlement_chat_area(&selected.name, Some(active_character)))
+        }
+        aside class="right-sidebar" {
+            (inventory_rail(
+                Some(active_character),
+                active_inventory,
+                if is_self { None } else { Some(("Trade", "TODO: party trading requires inventory transfer reducers")) },
+            ))
+        }
+    };
+    settlement_layout_with_session("Party", &settlement.name, &settlement.id, "", content, Some(&active_character.name), theme)
+}
+
 fn service_page(
     settlement: &Settlement,
     service_id: &str,
@@ -286,7 +327,7 @@ fn service_page(
             }
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character))
+            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
@@ -315,6 +356,78 @@ fn service_page(
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
 }
 
+fn party_trade_inventory_rail(character: &Character, inventory: &[InventoryItem]) -> Markup {
+    let title = format!("{}'s inventory", character.name);
+    html! {
+        (sidebar_section(&title, html! {
+            @if inventory.is_empty() {
+                p class="text-muted small-copy" { "No items carried." }
+            } @else {
+                table class="trade-inventory-table" {
+                    (inventory_table_header())
+                    tbody {
+                        @for item in inventory {
+                            tr class="trade-inventory-row trade-row-merchant" {
+                                td class="inventory-item-name" {
+                                    (&item.item_id)
+                                    button type="button" class="trade-transfer trade-transfer-right" disabled
+                                        aria-label=(format!("Trade {}", item.item_id))
+                                        title="TODO: party trading requires inventory transfer reducers" { "▶" }
+                                }
+                                td class="inventory-count" { (item.qty) }
+                                td class="inventory-weight" { "—" }
+                                td class="inventory-gold" { "—" }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+    }
+}
+
+fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
+    html! {
+        (sidebar_section("Your skills", html! {
+            @if let Some(skills) = skills {
+                div class="party-skills-list" {
+                    (party_skill_row("Will", skills.will_hours))
+                    (party_skill_row("Charisma", skills.charisma_hours))
+                    (party_skill_row("Medicine", skills.medicine_hours))
+                    (party_skill_row("Faith", skills.faith_hours))
+                    (party_skill_row("Melee", skills.melee_hours))
+                    (party_skill_row("Ranged", skills.ranged_hours))
+                    (party_skill_row("Dodge", skills.dodge_hours))
+                    (party_skill_row("Block", skills.block_hours))
+                    (party_skill_row("Stealth", skills.stealth_hours))
+                    (party_skill_row("Balance", skills.balance_hours))
+                    (party_skill_row("Surgeon", skills.surgeon_hours))
+                }
+            } @else {
+                p class="text-muted small-copy" { "Skill records have not been created yet." }
+            }
+        }))
+    }
+}
+
+fn party_skill_row(name: &str, hours: f32) -> Markup {
+    html! { div class="party-skill-row" { span { (name) } strong { (format!("{hours:.0}h")) } } }
+}
+
+fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
+    let Some(attributes) = attributes else { return html! {}; };
+    html! {
+        div class="character-attribute-overlay" aria-label="Character attributes" {
+            div class="attribute-callout attribute-head" { "Mind " strong { (format!("{:.1}", attributes.intelligence)) } }
+            div class="attribute-callout attribute-chest" { "Endurance " strong { (format!("{:.1}", attributes.endurance)) } }
+            div class="attribute-callout attribute-left-arm" { "L arm " strong { (format!("{:.1}", attributes.left_arm_strength)) } }
+            div class="attribute-callout attribute-right-arm" { "R arm " strong { (format!("{:.1}", attributes.right_arm_strength)) } }
+            div class="attribute-callout attribute-left-leg" { "L leg " strong { (format!("{:.1}", attributes.left_leg_strength)) } }
+            div class="attribute-callout attribute-right-leg" { "R leg " strong { (format!("{:.1}", attributes.right_leg_strength)) } }
+        }
+    }
+}
+
 fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     html! {
         figure class=(format!("service-visual service-visual-{}", kind)) {
@@ -331,7 +444,12 @@ fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     }
 }
 
-fn party_portrait_overlay(party_members: &[Character], active_character: Option<&Character>) -> Markup {
+fn party_portrait_overlay(
+    party_members: &[Character],
+    active_character: Option<&Character>,
+    settlement_id: &str,
+    selected_character_id: Option<u64>,
+) -> Markup {
     let members: Vec<&Character> = if party_members.is_empty() {
         active_character.into_iter().collect()
     } else {
@@ -342,7 +460,9 @@ fn party_portrait_overlay(party_members: &[Character], active_character: Option<
         @if !members.is_empty() {
             div class="party-portrait-overlay" aria-label="Active party" {
                 @for member in members {
-                    a href=(format!("/characters/{}", member.id)) class="party-portrait" title=(&member.name) {
+                    a href=(format!("/settlements/{}/party/{}", settlement_id, member.id))
+                        class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
+                        title=(&member.name) {
                         span class="party-portrait-initial" {
                             span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                         }

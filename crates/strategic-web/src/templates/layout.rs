@@ -88,7 +88,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=service-icons-5";
-                link rel="stylesheet" href="/static/css/components.css?v=rest-days";
+                link rel="stylesheet" href="/static/css/components.css?v=party-tabs";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}

@@ -10,10 +10,13 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, InventoryItem, Party, PartyMember, Quest, Settlement};
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterSkills, InventoryItem, Party, PartyMember, Quest,
+    Settlement,
+};
 use crate::templates::settlement::{
-    armor_page, clothing_page, inn_page, merchants_page, noticeboard_page, religion_page,
-    settlements_list_page, smith_page, weapons_page,
+    armor_page, clothing_page, inn_page, merchants_page, noticeboard_page, party_member_page,
+    religion_page, settlements_list_page, smith_page, weapons_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -21,6 +24,7 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
         .route("/settlements/{id}/noticeboard", get(noticeboard))
+        .route("/settlements/{id}/party/{character_id}", get(party_member))
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
         .route("/settlements/{id}/weapons", get(weapons))
@@ -110,6 +114,88 @@ async fn noticeboard(
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &party_members,
             logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+async fn party_member(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+
+    let Some((active_character, active_inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Html("<h1>Choose a character first</h1>".to_string());
+    };
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
+    if character_id != active_character.id && !party_members.iter().any(|member| member.id == character_id) {
+        return Html("<h1>Party member not found</h1>".to_string());
+    }
+
+    let selected = if character_id == active_character.id {
+        active_character.clone()
+    } else {
+        let characters: Vec<Character> = state
+            .db
+            .query(&format!("SELECT * FROM character WHERE id = {character_id}"))
+            .await
+            .unwrap_or_default();
+        match characters.into_iter().next() {
+            Some(character) => character,
+            None => return Html("<h1>Party member not found</h1>".to_string()),
+        }
+    };
+    let selected_inventory: Vec<InventoryItem> = if character_id == active_character.id {
+        active_inventory.clone()
+    } else {
+        state
+            .db
+            .query(&format!("SELECT * FROM inventory_item WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    };
+
+    let attributes: Vec<CharacterAttributes> = if character_id == active_character.id {
+        state
+            .db
+            .query(&format!("SELECT * FROM character_attributes WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let skills: Vec<CharacterSkills> = if character_id == active_character.id {
+        state
+            .db
+            .query(&format!("SELECT * FROM character_skills WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    Html(
+        party_member_page(
+            settlement,
+            &selected,
+            &selected_inventory,
+            &active_character,
+            &active_inventory,
+            &party_members,
+            attributes.first(),
+            skills.first(),
             session.theme(),
         )
         .into_string(),

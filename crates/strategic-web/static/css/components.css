@@ -1347,6 +1347,61 @@
   text-decoration: none;
 }
 
+.party-portrait.active {
+  color: var(--accent-dark);
+}
+
+.party-portrait.active .party-portrait-initial {
+  box-shadow: 0 0 0 2px var(--accent-dark), 0 0 0 4px var(--panel-bg);
+}
+
+.party-skills-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.party-skill-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.42rem 0;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.party-skill-row strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.character-attribute-overlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0 0 11.5rem;
+  pointer-events: none;
+}
+
+.attribute-callout {
+  position: absolute;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--border-accent) 75%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  box-shadow: var(--shadow-sm);
+}
+
+.attribute-callout strong { color: var(--accent-dark); }
+.attribute-head { top: 25%; left: 50%; transform: translateX(-50%); }
+.attribute-chest { top: 47%; left: 50%; transform: translateX(-50%); }
+.attribute-left-arm { top: 48%; left: 18%; }
+.attribute-right-arm { top: 48%; right: 18%; }
+.attribute-left-leg { top: 70%; left: 31%; }
+.attribute-right-leg { top: 70%; right: 31%; }
+
 .party-portrait-initial {
   display: grid;
   width: 2.65rem;
