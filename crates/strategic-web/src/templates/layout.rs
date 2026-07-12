@@ -174,12 +174,10 @@ fn settlement_top_bar(
 ) -> Markup {
     let services = [
         ("noticeboard", "Notice Board", "noticeboard"),
-        ("tavern", "Tavern", "tavern"),
         ("merchants", "General Market", "market"),
         ("weapons", "Weapons", "weapons"),
         ("armor", "Armour", "armor"),
         ("clothing", "Clothing", "clothing"),
-        ("consumables", "Provisions", "provisions"),
         ("inn", "Inn", "inn"),
         ("religion", "Church", "church"),
     ];
@@ -257,12 +255,13 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 /// Helper for settlement service menu
 pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
     let items = [
-        ("", "Overview"),
         ("noticeboard", "Notice Board"),
-        ("tavern", "Tavern"),
         ("merchants", "Merchants"),
-        ("smith", "Smith"),
+        ("weapons", "Weapons"),
+        ("armor", "Armour"),
+        ("clothing", "Clothing"),
         ("inn", "Inn"),
+        ("religion", "Church"),
     ];
 
     html! {

@@ -60,6 +60,7 @@ pub fn settlements_list_page(
 pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
+    parties: &[Party],
     active_character: Option<&Character>,
     _inventory: &[InventoryItem],
     party_members: &[Character],
@@ -93,30 +94,7 @@ pub fn noticeboard_page(
                     }
                 }
             }))
-        }
-        main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character))
-            (visual_stage("map", "Settlement map", "TODO: settlement map image"))
-            (settlement_chat_area("Notice Board", active_character))
-        }
-        aside class="right-sidebar" { (quest_detail_rail()) }
-    };
-    settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
-}
-
-/// Tavern page.
-pub fn tavern_page(
-    settlement: &Settlement,
-    parties: &[Party],
-    active_character: Option<&Character>,
-    _inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Parties in the tavern", html! {
+            (sidebar_section("Party formation", html! {
                 @if parties.is_empty() {
                     p class="text-muted small-copy" { "No parties currently recruiting." }
                 } @else {
@@ -134,12 +112,12 @@ pub fn tavern_page(
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character))
-            (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
-            (settlement_chat_area("Tavern", active_character))
+            (visual_stage("map", "Settlement map", "TODO: settlement map image"))
+            (settlement_chat_area("Notice Board", active_character))
         }
-        aside class="right-sidebar" { (tavern_detail_rail()) }
+        aside class="right-sidebar" { (quest_detail_rail()) }
     };
-    settlement_layout_with_session("Tavern", &settlement.name, &settlement.id, "tavern", content, logged_in_as, theme)
+    settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
 }
 
 /// Market interface. Inventory and prices are intentionally UI-only placeholders
@@ -203,22 +181,6 @@ pub fn clothing_page(
     service_page(
         settlement, "clothing", "Tailor", "Tailor",
         "Clothing stock, prices, and purchases require settlement inventories and trade reducers.",
-        active_character, inventory, party_members, logged_in_as, theme,
-    )
-}
-
-/// Provisioner placeholder.
-pub fn consumables_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    service_page(
-        settlement, "consumables", "Provisioner", "Provisioner",
-        "Provision stock, prices, and purchases require settlement inventories and trade reducers.",
         active_character, inventory, party_members, logged_in_as, theme,
     )
 }
@@ -288,7 +250,7 @@ fn service_page(
         "weapons" => Some(("Weapons", &["Weapon offer", "Shield offer", "Ammunition offer"])),
         "armor" => Some(("Armour", &["Head protection", "Torso protection", "Limb protection"])),
         "clothing" => Some(("Clothing", &["Travel attire", "Cold-weather clothing", "Fine clothing"])),
-        "consumables" => Some(("Provisions", &["Rations", "Water", "Supplies"])),
+        "inn" => Some(("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])),
         _ => None,
     };
     let content = html! {
@@ -506,17 +468,6 @@ fn quest_detail_rail() -> Markup {
             div class="context-placeholder" {
                 p { "Select a quest to inspect its full details." }
                 p class="text-muted small-copy" { "TODO: quest selection and detail rendering are not connected yet." }
-            }
-        }))
-    }
-}
-
-fn tavern_detail_rail() -> Markup {
-    html! {
-        (sidebar_section("Recruitment", html! {
-            div class="context-placeholder" {
-                p { "Review party listings on the left, then join or create a party." }
-                p class="text-muted small-copy" { "TODO: party-role requirements and recruitment chat are not implemented yet." }
             }
         }))
     }
