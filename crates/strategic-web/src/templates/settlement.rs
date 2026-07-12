@@ -112,7 +112,7 @@ pub fn tavern_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (settlement_rail(settlement, "Innkeeper", "Adventurers, rumours, and open tables."))
+            (service_host("Innkeeper", "Adventurers, rumours, and open tables."))
             (sidebar_section("Parties in the tavern", html! {
                 @if parties.is_empty() {
                     p class="text-muted small-copy" { "No parties currently recruiting." }
@@ -202,7 +202,7 @@ fn service_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (settlement_rail(settlement, npc_name, introduction))
+            (service_host(npc_name, introduction))
             (sidebar_section("Settlement offerings", html! {
                 div class="service-placeholder-list" {
                     span { "Inventory / offers" }
@@ -221,14 +221,8 @@ fn service_page(
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
 }
 
-fn settlement_rail(settlement: &Settlement, npc_name: &str, description: &str) -> Markup {
+fn service_host(npc_name: &str, description: &str) -> Markup {
     html! {
-        (sidebar_section("Settlement", html! {
-            div class="settlement-summary" {
-                strong { (settlement.name) }
-                span { (population_description(settlement.population_level)) }
-            }
-        }))
         (sidebar_section("Service host", html! {
             div class="npc-card" {
                 div class="npc-monogram" { (npc_name.chars().next().unwrap_or('?')) }
@@ -306,7 +300,7 @@ fn party_rail(active_character: Option<&Character>, inventory: &[InventoryItem])
             @if let Some(character) = active_character {
                 div class="party-member-card" {
                     div class="party-monogram" { (character.name.chars().next().unwrap_or('?')) }
-                    div { strong { (&character.name) } span { "Active adventurer · level " (character.level) } }
+                    div { strong { (&character.name) } span { "Active adventurer" } }
                 }
                 a href=(format!("/characters/{}", character.id)) class="btn btn-secondary btn-small btn-block mt-1" { "View character sheet" }
                 div class="party-inventory" {
