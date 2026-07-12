@@ -272,13 +272,22 @@ fn service_page(
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
-        aside class="right-sidebar" {
+        aside class=(if service_id == "inn" || service_id == "religion" { "right-sidebar service-right-sidebar" } else { "right-sidebar" }) {
             @if trade_offers.is_some() {
-                (inventory_rail(
-                    active_character,
-                    inventory,
-                    Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
-                ))
+                @if service_id == "inn" {
+                    (inventory_and_rest_rail(
+                        active_character,
+                        inventory,
+                        Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
+                        "Inn",
+                    ))
+                } @else {
+                    (inventory_rail(
+                        active_character,
+                        inventory,
+                        Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
+                    ))
+                }
             } @else if service_id == "smith" {
                 (inventory_rail(
                     active_character,
@@ -286,13 +295,31 @@ fn service_page(
                     Some(("Repair", "TODO: repairs require durability, pricing, and smithing reducers")),
                 ))
             } @else if service_id == "religion" {
-                (religion_detail_rail())
+                (inventory_and_rest_rail(active_character, inventory, None, "Church"))
             } @else {
-                (inn_detail_rail())
+                (sidebar_section("Service", html! {
+                    p class="text-muted small-copy" { (todo) }
+                }))
             }
         }
     };
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
+}
+
+fn inventory_and_rest_rail(
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    trade_action: Option<(&str, &str)>,
+    location: &str,
+) -> Markup {
+    html! {
+        div class="service-right-stack" {
+            div class="service-inventory-area" {
+                (inventory_rail(active_character, inventory, trade_action))
+            }
+            (rest_service_menu(location))
+        }
+    }
 }
 
 fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
@@ -462,38 +489,32 @@ fn inventory_table_header() -> Markup {
     }
 }
 
+fn rest_service_menu(location: &str) -> Markup {
+    html! {
+        section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+            div class="rest-service-heading" {
+                strong { "Rest" }
+                span class="badge badge-warning" { "TODO" }
+            }
+            p class="rest-service-copy" { "Choose how long to rest. Recovery and time advancement are not implemented yet." }
+            div class="rest-duration-options" role="group" aria-label="Rest duration" {
+                button type="button" disabled title="TODO: resting requires strategic downtime support" { "1 hour" }
+                button type="button" disabled title="TODO: resting requires strategic downtime support" { "8 hours" }
+                button type="button" class="active" disabled
+                    title="TODO: resting requires strategic downtime support" { "Until fully healed" }
+            }
+            button type="button" class="btn btn-primary btn-small btn-block" disabled
+                title="TODO: resting requires strategic downtime support" { "Rest" }
+        }
+    }
+}
+
 fn quest_detail_rail() -> Markup {
     html! {
         (sidebar_section("Quest details", html! {
             div class="context-placeholder" {
                 p { "Select a quest to inspect its full details." }
                 p class="text-muted small-copy" { "TODO: quest selection and detail rendering are not connected yet." }
-            }
-        }))
-    }
-}
-
-fn religion_detail_rail() -> Markup {
-    html! {
-        (sidebar_section("Devotion", html! {
-            div class="context-placeholder" {
-                strong { "Church services" }
-                p class="text-muted small-copy" { "TODO: faith, donations, and divine services are not implemented yet." }
-                button type="button" class="btn btn-secondary btn-small" disabled
-                    title="TODO: donations require the religion and currency systems" { "Donate" }
-            }
-        }))
-    }
-}
-
-fn inn_detail_rail() -> Markup {
-    html! {
-        (sidebar_section("Accommodation", html! {
-            div class="context-placeholder" {
-                strong { "Rest at the inn" }
-                p class="text-muted small-copy" { "TODO: room selection, recovery, and time advancement require strategic downtime support." }
-                button type="button" class="btn btn-secondary btn-small btn-block" disabled
-                    title="TODO: resting requires strategic downtime support" { "Unavailable" }
             }
         }))
     }
