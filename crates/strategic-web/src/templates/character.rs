@@ -3,7 +3,7 @@
 use maud::{html, Markup};
 
 use super::{
-    base_layout_with_session, divider, gold_display, input_field, list_item,
+    base_layout_with_session, divider, entry_layout, gold_display, input_field, list_item,
     loading_indicator, panel, sidebar_section, xp_display,
 };
 use crate::spacetimedb::{
@@ -16,96 +16,56 @@ pub fn characters_list_page(
     current_character_id: Option<u64>,
     theme: &str,
 ) -> Markup {
-    let logged_in_as = current_character_id
-        .and_then(|id| characters.iter().find(|c| c.id == id))
-        .map(|c| c.name.as_str());
-
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Characters", html! {
-                @if characters.is_empty() {
-                    p class="text-muted" style="font-size:var(--font-size-sm)" {
-                        "No characters yet"
-                    }
-                } @else {
-                    div # "character-list" {
-                        @for character in characters {
-                            @let is_current = current_character_id == Some(character.id);
-                            div class=(if is_current { "list-item-wrapper current" } else { "list-item-wrapper" }) {
-                                (list_item(
-                                    &format!("/characters/{}", character.id),
-                                    &character.name,
-                                    Some(&format!("Lv{} - {} gold{}", character.level, character.gold, if is_current { " (playing)" } else { "" })),
-                                ))
-                            }
-                        }
-                    }
-                }
+            (sidebar_section("Choose an adventurer", html! {
+                p class="small-copy text-muted" { "A character must be selected before entering the strategic layer." }
+                a href="/characters/new" class="btn btn-primary btn-block mt-1" { "Create adventurer" }
             }))
-
-            (divider())
-
-            a href="/characters/new" class="btn btn-primary btn-block" {
-                "Create Character"
-            }
         }
 
         main class="center-content" {
-            @if let Some(current_id) = current_character_id {
-                @if let Some(current) = characters.iter().find(|c| c.id == current_id) {
-                    h2 class="page-title" { (current.name) }
-                    div class="character-banner" {
-                        span { "Currently playing as " strong { (current.name) } " (Level " (current.level) ")" }
-                        form action="/characters/logout" method="post" style="display:inline" {
-                            button type="submit" class="btn btn-small btn-secondary" { "Switch" }
-                        }
-                    }
-                    (panel("Stats", html! {
-                        div class="stat-grid" {
-                            div class="stat-item" {
-                                span class="stat-label" { "Level" }
-                                span class="stat-value" { (current.level) }
-                            }
-                            div class="stat-item" {
-                                span class="stat-label" { "Gold" }
-                                span class="stat-value" { (gold_display(current.gold)) }
-                            }
-                            div class="stat-item" {
-                                span class="stat-label" { "XP" }
-                                span class="stat-value" { (xp_display(current.xp)) }
-                            }
-                        }
-                    }))
-                } @else {
-                    div class="center-welcome" {
-                        h2 { "Select a Character" }
-                        p { "Choose a character from the list to view details." }
-                    }
+            h2 class="page-title" { "Select your adventurer" }
+            @if characters.is_empty() {
+                div class="center-welcome" {
+                    p { "Create your first adventurer to begin." }
+                    a href="/characters/new" class="btn btn-primary mt-1" { "Create adventurer" }
                 }
             } @else {
-                div class="center-welcome" {
-                    h2 { "Characters" }
-                    p { "Select a character to play, or create a new one." }
+                div class="character-select-grid" {
+                    @for character in characters {
+                        @let is_current = current_character_id == Some(character.id);
+                        (panel(&character.name, html! {
+                            div class="stat-grid" {
+                                div class="stat-item" { span class="stat-label" { "Level" } span class="stat-value" { (character.level) } }
+                                div class="stat-item" { span class="stat-label" { "Gold" } span class="stat-value" { (gold_display(character.gold)) } }
+                            }
+                            @if is_current {
+                                p class="text-accent small-copy" { "Currently selected" }
+                            }
+                            form action=(format!("/characters/{}/select", character.id)) method="post" class="mt-1" {
+                                button type="submit" class="btn btn-primary btn-block" {
+                                    @if is_current { "Continue" } @else { "Play as " (&character.name) }
+                                }
+                            }
+                        }))
+                    }
                 }
             }
         }
 
         aside class="right-sidebar" {
-            (sidebar_section("Actions", html! {
-                div class="service-menu" {
-                    a href="/characters/new" class="service-menu-item" { "Create New Character" }
-                    a href="/settlements" class="service-menu-item" { "View Settlements" }
-                    a href="/parties" class="service-menu-item" { "Find Party" }
-                }
+            (sidebar_section("Starting in Riverdale", html! {
+                p class="small-copy text-muted" { "New adventurers begin in Riverdale with basic supplies." }
             }))
         }
     };
 
-    base_layout_with_session("Characters", content, logged_in_as, theme)
+    entry_layout("Select Adventurer", content, theme)
 }
 
 /// Character creation form
-pub fn character_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
+pub fn character_new_page(_logged_in_as: Option<&str>, theme: &str) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Tips", html! {
@@ -149,7 +109,7 @@ pub fn character_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
         }
     };
 
-    base_layout_with_session("Create Character", content, logged_in_as, theme)
+    entry_layout("Create Character", content, theme)
 }
 
 /// Character detail page

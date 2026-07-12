@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::AppState;
-use crate::session::{clear_character_cookie, set_character_cookie, Session};
+use crate::session::{set_character_cookie, Session};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem,
 };
@@ -27,7 +27,6 @@ pub fn routes() -> Router<AppState> {
         .route("/characters/{id}", post(update_character))
         .route("/characters/{id}/select", post(select_character))
         .route("/characters/{id}/inventory", get(show_inventory))
-        .route("/characters/logout", post(logout))
 }
 
 #[derive(Deserialize)]
@@ -84,15 +83,14 @@ async fn select_character(Path(id): Path<String>) -> Response {
     set_character_cookie(&id, "/")
 }
 
-async fn logout() -> Response {
-    clear_character_cookie("/characters")
-}
-
 async fn show_character(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Html<String> {
+) -> Response {
+    if session.character_id_u64().is_none() {
+        return Redirect::to("/characters").into_response();
+    }
     let characters: Vec<Character> = state
         .db
         .query(&format!("SELECT * FROM character WHERE id = {}", id))
@@ -101,7 +99,7 @@ async fn show_character(
 
     let character = match characters.first() {
         Some(c) => c,
-        None => return Html("<h1>Character not found</h1>".to_string()),
+        None => return Redirect::to("/characters").into_response(),
     };
 
     let inventory: Vec<InventoryItem> = state
@@ -154,6 +152,7 @@ async fn show_character(
         )
         .into_string(),
     )
+    .into_response()
 }
 
 async fn update_character(

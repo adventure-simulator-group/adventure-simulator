@@ -35,6 +35,13 @@ pub fn base_layout_with_session(
     page_shell(title, top_bar(logged_in_as, theme), content, theme)
 }
 
+/// Minimal shell for selecting or creating a character. It intentionally omits
+/// strategic navigation: an adventurer must be selected before play begins.
+pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(title, entry_top_bar(theme), content, theme)
+}
+
 /// Settlement-specific layout. Settlement services replace the global navigation
 /// so their context stays visible while the player moves between service pages.
 pub fn settlement_layout_with_session(
@@ -120,11 +127,6 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
                     span class="player-name" {
                         "Playing as " strong { (name) }
                     }
-                    form action="/characters/logout" method="post" style="display:inline" {
-                        button type="submit" class="btn btn-small" title="Switch Character" {
-                            "Switch"
-                        }
-                    }
                 } @else {
                     span class="player-name player-name-none" {
                         "No character"
@@ -141,6 +143,18 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
                     }
                 }
             }
+        }
+    }
+}
+
+fn entry_top_bar(current_theme: &str) -> Markup {
+    html! {
+        header class="top-bar entry-top-bar" {
+            div class="top-bar-left" {
+                h1 class="logo" { "Adventure Simulator" }
+            }
+            div class="entry-message" { "Choose an adventurer to begin" }
+            div class="top-bar-right" { (theme_switcher(current_theme)) }
         }
     }
 }
