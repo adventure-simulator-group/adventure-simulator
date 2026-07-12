@@ -281,27 +281,27 @@
 }
 
 /* Trade controls extend from the rails over the service portrait. */
-.left-sidebar:has(.trade-inventory-list),
-.right-sidebar:has(.inventory-trade-row) {
+.left-sidebar:has(.trade-inventory-table),
+.right-sidebar:has(.trade-inventory-table) {
   position: relative;
   z-index: 10;
   padding: 0;
   overflow: visible;
 }
 
-.left-sidebar:has(.trade-inventory-list) .sidebar-section,
-.right-sidebar:has(.inventory-trade-row) .sidebar-section {
+.left-sidebar:has(.trade-inventory-table) .sidebar-section,
+.right-sidebar:has(.trade-inventory-table) .sidebar-section {
   margin: 0;
 }
 
-.left-sidebar:has(.trade-inventory-list) .sidebar-header,
-.right-sidebar:has(.inventory-trade-row) .sidebar-header {
+.left-sidebar:has(.trade-inventory-table) .sidebar-header,
+.right-sidebar:has(.trade-inventory-table) .sidebar-header {
   margin: 0;
   padding: var(--padding) var(--padding) 0.5rem;
 }
 
-.left-sidebar:has(.trade-inventory-list) .small-copy,
-.right-sidebar:has(.inventory-trade-row) .small-copy {
+.left-sidebar:has(.trade-inventory-table) .small-copy,
+.right-sidebar:has(.trade-inventory-table) .small-copy {
   margin: 0;
   padding: 0 var(--padding) 0.65rem;
 }

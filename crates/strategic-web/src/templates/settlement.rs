@@ -421,22 +421,23 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
     html! {
         (sidebar_section(title, html! {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
-            div class="inventory-list trade-inventory-list mt-1" {
+            table class="trade-inventory-table" {
+                (inventory_table_header())
+                tbody {
                 @for offer in placeholder_offers {
-                    div class="inventory-item inventory-trade-row trade-row-merchant"
+                    tr class="trade-inventory-row trade-row-merchant"
                         title="TODO: buying requires merchant inventory, pricing, and trade reducers" {
-                        div class="inventory-item-summary" {
-                            span class="item-name" { (offer) }
-                            div class="inventory-item-meta" {
-                                span class="item-qty" { "×1" }
-                                span class="item-weight" { "— wt" }
-                                span class="item-value" { "— g" }
-                            }
+                        td class="inventory-item-name" {
+                            (offer)
+                            button type="button" class="trade-transfer trade-transfer-right" disabled
+                                aria-label=(format!("Buy {}", offer))
+                                title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "▶" }
                         }
-                        button type="button" class="trade-transfer trade-transfer-right" disabled
-                            aria-label=(format!("Buy {}", offer))
-                            title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "▶" }
+                        td class="inventory-count" { "1" }
+                        td class="inventory-weight" { "—" }
+                        td class="inventory-gold" { "—" }
                     }
+                }
                 }
             }
         }))
@@ -457,27 +458,45 @@ fn inventory_rail(
             @if inventory.is_empty() {
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
-                div class="inventory-list" {
+                table class="trade-inventory-table" {
+                    (inventory_table_header())
+                    tbody {
                     @for item in inventory {
-                        div class=(if trade_action.is_some() { "inventory-item inventory-trade-row" } else { "inventory-item" }) {
-                            @if let Some((action, tooltip)) = trade_action {
+                        tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
                                     aria-label=(format!("{} {}", action, item.item_id))
                                     title=(tooltip) { "◀" }
-                            }
-                            div class="inventory-item-summary" {
-                                span class="item-name" { (&item.item_id) }
-                                div class="inventory-item-meta" {
-                                    span class="item-qty" { "×" (item.qty) }
-                                    span class="item-weight" { "— wt" }
-                                    span class="item-value" { "— g" }
                                 }
                             }
+                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-weight" { "—" }
+                            td class="inventory-gold" { "—" }
                         }
                     }
                 }
+                }
             }
         }))
+    }
+}
+
+fn inventory_table_header() -> Markup {
+    html! {
+        thead {
+            tr {
+                th scope="col" class="inventory-column-item" { "Item" }
+                th scope="col" class="inventory-column-count" title="Count" { "#" }
+                th scope="col" class="inventory-column-weight" title="Weight" {
+                    span class="inventory-header-weight" aria-label="Weight" {}
+                }
+                th scope="col" class="inventory-column-gold" title="Gold" {
+                    span class="inventory-header-coin" aria-label="Gold" {}
+                }
+            }
+        }
     }
 }
 
