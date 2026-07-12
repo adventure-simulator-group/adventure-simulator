@@ -99,6 +99,64 @@ pub struct InventoryItem {
     pub qty: u32,
 }
 
+/// Attribute values for a character. These mirror the public strategic tables
+/// and are rendered as the base values on the character sheet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterAttributes {
+    pub character_id: u64,
+    pub endurance: f32,
+    pub immunity: f32,
+    pub gut: f32,
+    pub precision: f32,
+    pub intelligence: f32,
+    pub instinct: f32,
+    pub eyesight: f32,
+    pub hearing: f32,
+    pub left_arm_strength: f32,
+    pub right_arm_strength: f32,
+    pub left_leg_strength: f32,
+    pub right_leg_strength: f32,
+    pub left_arm_agility: f32,
+    pub right_arm_agility: f32,
+    pub left_leg_agility: f32,
+    pub right_leg_agility: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterSkills {
+    pub character_id: u64,
+    pub melee_hours: f32,
+    pub dodge_hours: f32,
+    pub block_hours: f32,
+    pub ranged_hours: f32,
+    pub will_hours: f32,
+    pub charisma_hours: f32,
+    pub medicine_hours: f32,
+    pub faith_hours: f32,
+    pub stealth_hours: f32,
+    pub balance_hours: f32,
+    pub surgeon_hours: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterStats {
+    pub character_id: u64,
+    pub calories_used: f32,
+    pub focus: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterLimbs {
+    pub character_id: u64,
+    pub left_arm_health: f32,
+    pub right_arm_health: f32,
+    pub left_leg_health: f32,
+    pub right_leg_health: f32,
+    pub head_health: f32,
+    pub chest_health: f32,
+    pub stomach_health: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TacticalServer {
     #[serde(default)]

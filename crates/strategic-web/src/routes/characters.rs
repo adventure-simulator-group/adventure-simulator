@@ -11,7 +11,9 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::{clear_character_cookie, set_character_cookie, Session};
-use crate::spacetimedb::{Character, InventoryItem};
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem,
+};
 use crate::templates::character::{
     character_detail_page, character_new_page, characters_list_page,
 };
@@ -111,6 +113,27 @@ async fn show_character(
         .await
         .unwrap_or_default();
 
+    let attributes: Vec<CharacterAttributes> = state
+        .db
+        .query(&format!("SELECT * FROM character_attributes WHERE character_id = {}", id))
+        .await
+        .unwrap_or_default();
+    let skills: Vec<CharacterSkills> = state
+        .db
+        .query(&format!("SELECT * FROM character_skills WHERE character_id = {}", id))
+        .await
+        .unwrap_or_default();
+    let stats: Vec<CharacterStats> = state
+        .db
+        .query(&format!("SELECT * FROM character_stats WHERE character_id = {}", id))
+        .await
+        .unwrap_or_default();
+    let limbs: Vec<CharacterLimbs> = state
+        .db
+        .query(&format!("SELECT * FROM character_limbs WHERE character_id = {}", id))
+        .await
+        .unwrap_or_default();
+
     let is_current = session.character_id_u64() == id.parse::<u64>().ok();
     let logged_in_as = if is_current {
         Some(character.name.clone())
@@ -121,6 +144,10 @@ async fn show_character(
         character_detail_page(
             character,
             &inventory,
+            attributes.first(),
+            skills.first(),
+            stats.first(),
+            limbs.first(),
             is_current,
             logged_in_as.as_deref(),
             session.theme(),
