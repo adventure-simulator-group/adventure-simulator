@@ -922,14 +922,13 @@
   position: absolute;
   z-index: 20;
   top: 50%;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 3.2rem;
+  height: 3.2rem;
   padding: 0;
   border: 0;
-  border-radius: 50%;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent) 24%, var(--panel-bg));
-  font-size: 0.72rem;
+  background: transparent;
+  font-size: 1.44rem;
   line-height: 1;
   opacity: 0;
   transform: translateY(-50%) scale(0.72);
@@ -938,11 +937,11 @@
 }
 
 .trade-row-merchant .trade-transfer {
-  right: -0.8rem;
+  right: -1.6rem;
 }
 
 .inventory-trade-row:not(.trade-row-merchant) .trade-transfer {
-  left: -0.8rem;
+  left: -1.6rem;
 }
 
 .trade-row:hover .trade-transfer,
@@ -955,7 +954,7 @@
 
 .trade-transfer:disabled {
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent) 24%, var(--panel-bg));
+  background: transparent;
   cursor: not-allowed;
 }
 
@@ -1021,7 +1020,7 @@
 }
 
 .trade-inventory-row:not(.trade-row-merchant) .trade-transfer {
-  left: -0.8rem;
+  left: -1.6rem;
 }
 
 .trade-inventory-row:hover .trade-transfer,
