@@ -280,6 +280,14 @@
   height: 100%;
 }
 
+/* Trade controls extend from the rails over the service portrait. */
+.left-sidebar:has(.trade-inventory-list),
+.right-sidebar:has(.inventory-trade-row) {
+  position: relative;
+  z-index: 3;
+  overflow-x: visible;
+}
+
 /* Left Sidebar */
 .left-sidebar {
   background: var(--sidebar-bg);

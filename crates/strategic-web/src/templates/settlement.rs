@@ -421,13 +421,17 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
     html! {
         (sidebar_section(title, html! {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
-            div class="trade-list mt-1" {
+            div class="inventory-list trade-inventory-list mt-1" {
                 @for offer in placeholder_offers {
-                    div class="trade-row trade-row-merchant"
+                    div class="inventory-item inventory-trade-row trade-row-merchant"
                         title="TODO: buying requires merchant inventory, pricing, and trade reducers" {
-                        div class="trade-item-summary" {
-                            strong { (offer) }
-                            span { "Unavailable" }
+                        div class="inventory-item-summary" {
+                            span class="item-name" { (offer) }
+                            div class="inventory-item-meta" {
+                                span class="item-qty" { "×1" }
+                                span class="item-weight" { "— wt" }
+                                span class="item-value" { "— g" }
+                            }
                         }
                         button type="button" class="trade-transfer trade-transfer-right" disabled
                             aria-label=(format!("Buy {}", offer))
@@ -463,7 +467,11 @@ fn inventory_rail(
                             }
                             div class="inventory-item-summary" {
                                 span class="item-name" { (&item.item_id) }
-                                span class="item-qty" { "×" (item.qty) }
+                                div class="inventory-item-meta" {
+                                    span class="item-qty" { "×" (item.qty) }
+                                    span class="item-weight" { "— wt" }
+                                    span class="item-value" { "— g" }
+                                }
                             }
                         }
                     }

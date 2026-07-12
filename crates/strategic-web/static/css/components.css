@@ -860,7 +860,8 @@
   margin-top: 0.6rem;
 }
 
-.trade-list {
+.trade-list,
+.trade-inventory-list {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -868,6 +869,7 @@
 
 .trade-row,
 .inventory-trade-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -883,6 +885,15 @@
   flex: 1;
 }
 
+.inventory-item-meta {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
 .trade-row strong {
   display: block;
   color: var(--text-primary);
@@ -896,7 +907,9 @@
 }
 
 .trade-transfer {
-  flex: 0 0 1.6rem;
+  position: absolute;
+  z-index: 5;
+  top: 50%;
   width: 1.6rem;
   height: 1.6rem;
   padding: 0;
@@ -907,9 +920,17 @@
   font-size: 0.72rem;
   line-height: 1;
   opacity: 0;
-  transform: scale(0.72);
+  transform: translateY(-50%) scale(0.72);
   transition: opacity 120ms ease, transform 120ms ease;
   cursor: not-allowed;
+}
+
+.trade-row-merchant .trade-transfer {
+  right: calc(-1.6rem - 0.75rem);
+}
+
+.inventory-trade-row:not(.trade-row-merchant) .trade-transfer {
+  left: calc(-1.6rem - 0.75rem);
 }
 
 .trade-row:hover .trade-transfer,
@@ -917,7 +938,7 @@
 .trade-row:focus-within .trade-transfer,
 .inventory-trade-row:focus-within .trade-transfer {
   opacity: 0.7;
-  transform: scale(1);
+  transform: translateY(-50%) scale(1);
 }
 
 .trade-transfer:disabled {
@@ -927,11 +948,7 @@
 }
 
 .inventory-trade-row {
-  padding-inline: 0;
-  border-inline: 0;
-  border-top: 0;
-  border-radius: 0;
-  background: transparent;
+  overflow: visible;
 }
 
 .inventory-item-summary {
