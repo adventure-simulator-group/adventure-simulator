@@ -193,19 +193,8 @@ pub fn create_named_character_with_id(
 pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     const DAMAGED_CHARACTER_ID: u64 = 9_999_999_999_999_999;
 
-    if ctx
-        .db
-        .character()
-        .id()
-        .find(DAMAGED_CHARACTER_ID)
-        .is_none()
-    {
-        insert_new_character(
-            ctx,
-            "Wounded Demo".to_string(),
-            DAMAGED_CHARACTER_ID,
-            false,
-        )?;
+    if ctx.db.character().id().find(DAMAGED_CHARACTER_ID).is_none() {
+        insert_new_character(ctx, "Wounded Demo".to_string(), DAMAGED_CHARACTER_ID, false)?;
     }
 
     let mut limbs = ctx
@@ -310,6 +299,7 @@ pub(crate) fn insert_new_character(
     });
 
     // Starter items
+    add_inventory_item(ctx, character.id, "gold_coin", 100);
     add_inventory_item(ctx, character.id, "torch", 1);
     add_inventory_item(ctx, character.id, "bandage", 3);
 

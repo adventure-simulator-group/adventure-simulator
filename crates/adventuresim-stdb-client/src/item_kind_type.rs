@@ -15,6 +15,10 @@ pub enum ItemKind {
     Armor,
 
     Shield,
+
+    Clothing,
+
+    Currency,
 }
 
 impl __sdk::InModule for ItemKind {

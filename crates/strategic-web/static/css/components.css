@@ -928,8 +928,37 @@
 .trade-delta { margin-left: .25rem; font-weight: 700; }
 .trade-delta.negative { color: var(--danger); }
 .trade-delta.positive { color: var(--success); }
-.party-offer { position: absolute; z-index: 5; right: 1rem; bottom: 12rem; }
-.party-offer button { min-width: 5rem; }
+.party-offer {
+  position: absolute;
+  z-index: 5;
+  bottom: 12rem;
+  left: 50%;
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border: 1px solid var(--border-accent);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(-50%);
+}
+.party-offer[hidden] { display: none; }
+.party-offer button {
+  min-width: 5rem;
+  border: 1px solid var(--border-accent);
+}
+.party-offer [type="submit"] {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+.party-offer-cancel {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.party-offer button:not(:disabled):hover {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+}
 
 .trade-transfer::before {
   display: block;
@@ -944,11 +973,11 @@
 .trade-transfer-left::before { margin-left: auto; border-right: 1.7rem solid currentColor; }
 
 .trade-row-merchant .trade-transfer {
-  right: -3.15rem;
+  right: -3.6rem;
 }
 
 .trade-row-player .trade-transfer {
-  left: -3.15rem;
+  left: -3.6rem;
 }
 
 /* Keep row hover active while the pointer crosses the visual gap to its transfer control. */
@@ -965,7 +994,7 @@
 .trade-row-player::after { left: -0.6rem; }
 
 .inventory-trade-row:not(.trade-row-merchant) .trade-transfer {
-  left: -2.6rem;
+  left: -3.6rem;
 }
 
 .trade-row:hover .trade-transfer,
@@ -985,7 +1014,7 @@
 .trade-inventory-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   background: var(--panel-bg);
 }
 
@@ -1011,8 +1040,31 @@
 .inventory-equipped,
 .inventory-weight,
 .inventory-gold {
-  width: 2.35rem;
+  width: auto;
   text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-column-item { width: 100%; }
+
+.inventory-column-count,
+.inventory-column-equipped,
+.inventory-column-weight,
+.inventory-column-gold,
+.inventory-count,
+.inventory-equipped,
+.inventory-weight,
+.inventory-gold {
+  padding-inline: 0.3rem;
+}
+
+.inventory-column-count,
+.inventory-column-weight,
+.inventory-column-gold,
+.inventory-count,
+.inventory-weight,
+.inventory-gold {
+  min-width: 3ch;
 }
 
 .trade-inventory-row {
@@ -1046,7 +1098,7 @@
 }
 
 .trade-inventory-row:not(.trade-row-merchant) .trade-transfer {
-  left: -2.6rem;
+  left: -3.6rem;
 }
 
 .repair-placeholder {

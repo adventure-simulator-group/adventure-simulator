@@ -4,16 +4,58 @@
 //! settlement-owned information on the left, service context in the center,
 //! and the active player's party on the right.
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section, status_badge,
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem, Party, Quest,
-    Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem,
+    Party, Quest, Settlement,
 };
+
+/// The currently available merchant storefronts. They share trade mechanics,
+/// but each storefront limits the stock shown on its left-hand side.
+#[derive(Clone, Copy)]
+pub enum MerchantShop {
+    General,
+    Weapons,
+    Armor,
+    Clothing,
+}
+
+impl MerchantShop {
+    pub fn service_id(self) -> &'static str {
+        match self {
+            Self::General => "merchants",
+            Self::Weapons => "weapons",
+            Self::Armor => "armor",
+            Self::Clothing => "clothing",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::General => "Market Square",
+            Self::Weapons => "Weaponsmith",
+            Self::Armor => "Armourer",
+            Self::Clothing => "Tailor",
+        }
+    }
+
+    fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
+        match self {
+            Self::General => kind != crate::spacetimedb::ItemKind::Currency,
+            Self::Weapons => kind == crate::spacetimedb::ItemKind::Weapon,
+            Self::Armor => matches!(
+                kind,
+                crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield
+            ),
+            Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
+        }
+    }
+}
 
 /// List all settlements.
 pub fn settlements_list_page(
@@ -120,7 +162,15 @@ pub fn noticeboard_page(
         }
         aside class="right-sidebar" { (quest_detail_rail()) }
     };
-    settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
+    settlement_layout_with_session(
+        "Notice Board",
+        &settlement.name,
+        &settlement.id,
+        "noticeboard",
+        content,
+        logged_in_as,
+        theme,
+    )
 }
 
 /// Market interface. Inventory and prices are intentionally UI-only placeholders
@@ -134,57 +184,16 @@ pub fn merchants_page(
     theme: &str,
 ) -> Markup {
     service_page(
-        settlement, "merchants", "Market Square", "Market Steward",
+        settlement,
+        "merchants",
+        "Market Square",
+        "Market Steward",
         "Merchant stock and prices will appear here once the trade backend is available.",
-        active_character, inventory, party_members, logged_in_as, theme,
-    )
-}
-
-/// Weapons shop placeholder.
-pub fn weapons_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    service_page(
-        settlement, "weapons", "Weaponsmith", "Weaponsmith",
-        "Weapon stock, prices, and purchases require settlement inventories and trade reducers.",
-        active_character, inventory, party_members, logged_in_as, theme,
-    )
-}
-
-/// Armour shop placeholder.
-pub fn armor_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    service_page(
-        settlement, "armor", "Armourer", "Armourer",
-        "Armour stock, prices, and purchases require settlement inventories and trade reducers.",
-        active_character, inventory, party_members, logged_in_as, theme,
-    )
-}
-
-/// Clothing shop placeholder.
-pub fn clothing_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    service_page(
-        settlement, "clothing", "Tailor", "Tailor",
-        "Clothing stock, prices, and purchases require settlement inventories and trade reducers.",
-        active_character, inventory, party_members, logged_in_as, theme,
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
     )
 }
 
@@ -198,9 +207,16 @@ pub fn smith_page(
     theme: &str,
 ) -> Markup {
     service_page(
-        settlement, "smith", "The Smithy", "Master Smith",
+        settlement,
+        "smith",
+        "The Smithy",
+        "Master Smith",
         "Repair costs and crafting orders require inventory durability and smithing reducers.",
-        active_character, inventory, party_members, logged_in_as, theme,
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
     )
 }
 
@@ -214,9 +230,16 @@ pub fn inn_page(
     theme: &str,
 ) -> Markup {
     service_page(
-        settlement, "inn", "The Inn", "Innkeeper",
+        settlement,
+        "inn",
+        "The Inn",
+        "Innkeeper",
         "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
-        active_character, inventory, party_members, logged_in_as, theme,
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
     )
 }
 
@@ -230,9 +253,16 @@ pub fn religion_page(
     theme: &str,
 ) -> Markup {
     service_page(
-        settlement, "religion", "Church", "Priest",
+        settlement,
+        "religion",
+        "Church",
+        "Priest",
         "Faith, donations, and divine services require the religion and reputation systems.",
-        active_character, inventory, party_members, logged_in_as, theme,
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
     )
 }
 
@@ -243,6 +273,7 @@ pub fn party_inventory_page(
     selected_inventory: &[InventoryItem],
     active_character: &Character,
     active_inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     selected_equip: Option<&CharacterEquip>,
     active_equip: Option<&CharacterEquip>,
@@ -250,21 +281,30 @@ pub fn party_inventory_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(&settlement.id, selected, selected_inventory, active_character.id, "right", selected_equip))
+            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (settlement_chat_area(&selected.name, Some(active_character)))
-            form id="party-offer" class="party-offer" action=(format!("/settlements/{}/party/{}/inventory/offer", settlement.id, selected.id)) method="post" {
+            form id="party-offer" class="party-offer" action=(format!("/settlements/{}/party/{}/inventory/offer", settlement.id, selected.id)) method="post" hidden {
+                button type="button" class="party-offer-cancel" data-cancel-trade="party" { "Cancel" }
                 button type="submit" disabled { "Offer" }
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(&settlement.id, active_character, active_inventory, selected.id, "left", active_equip))
+            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip))
         }
     };
-    settlement_layout_with_session("Party", &settlement.name, &settlement.id, "", content, Some(&active_character.name), theme)
+    settlement_layout_with_session(
+        "Party",
+        &settlement.name,
+        &settlement.id,
+        "",
+        content,
+        Some(&active_character.name),
+        theme,
+    )
 }
 
 /// Active character's combined strategic view.
@@ -290,7 +330,15 @@ pub fn party_personal_page(
         }
         aside class="right-sidebar" { (inventory_rail(Some(active_character), active_inventory, None, false)) }
     };
-    settlement_layout_with_session("Party", &settlement.name, &settlement.id, "", content, Some(&active_character.name), theme)
+    settlement_layout_with_session(
+        "Party",
+        &settlement.name,
+        &settlement.id,
+        "",
+        content,
+        Some(&active_character.name),
+        theme,
+    )
 }
 
 /// Party stat comparison, with the selected member on the left and the active
@@ -325,7 +373,15 @@ pub fn party_stats_page(
             (party_skills_rail("Your skills", active_skills, active_limbs))
         }
     };
-    settlement_layout_with_session("Party stats", &settlement.name, &settlement.id, "", content, Some(&active_character.name), theme)
+    settlement_layout_with_session(
+        "Party stats",
+        &settlement.name,
+        &settlement.id,
+        "",
+        content,
+        Some(&active_character.name),
+        theme,
+    )
 }
 
 fn service_page(
@@ -341,11 +397,26 @@ fn service_page(
     theme: &str,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
-        "merchants" => Some(("Merchant stock", &["Weapon offer", "Armour offer", "Provision offer"])),
-        "weapons" => Some(("Weapons", &["Weapon offer", "Shield offer", "Ammunition offer"])),
-        "armor" => Some(("Armour", &["Head protection", "Torso protection", "Limb protection"])),
-        "clothing" => Some(("Clothing", &["Travel attire", "Cold-weather clothing", "Fine clothing"])),
-        "inn" => Some(("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])),
+        "merchants" => Some((
+            "Merchant stock",
+            &["Weapon offer", "Armour offer", "Provision offer"],
+        )),
+        "weapons" => Some((
+            "Weapons",
+            &["Weapon offer", "Shield offer", "Ammunition offer"],
+        )),
+        "armor" => Some((
+            "Armour",
+            &["Head protection", "Torso protection", "Limb protection"],
+        )),
+        "clothing" => Some((
+            "Clothing",
+            &["Travel attire", "Cold-weather clothing", "Fine clothing"],
+        )),
+        "inn" => Some((
+            "Inn supplies",
+            &["Rations", "Water", "Supplies", "Bed for the night"],
+        )),
         _ => None,
     };
     let content = html! {
@@ -409,13 +480,21 @@ fn service_page(
             }
         }
     };
-    settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
+    settlement_layout_with_session(
+        title,
+        &settlement.name,
+        &settlement.id,
+        service_id,
+        content,
+        logged_in_as,
+        theme,
+    )
 }
 
 fn party_trade_inventory_rail(
-    settlement_id: &str,
     character: &Character,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     recipient_id: u64,
     direction: &str,
     equip: Option<&CharacterEquip>,
@@ -426,52 +505,137 @@ fn party_trade_inventory_rail(
             @if inventory.is_empty() {
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
-                table class="trade-inventory-table" {
-                    colgroup {
-                        col class="inventory-column-item";
-                        col class="inventory-column-count";
-                        col class="inventory-column-equipped";
-                        col class="inventory-column-weight";
-                        col class="inventory-column-gold";
-                    }
-                    (party_inventory_table_header())
-                    tbody {
-                        @for item in inventory {
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                 td class="inventory-item-name" {
                                     (&item.item_id)
-                                    button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer"))
+                                    @if !is_equipped { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer"))
                                         data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty)
                                             aria-label=(format!("Transfer {}", item.item_id))
-                                            title="Stage one item for trade" {}
+                                            title="Stage one item for trade" {} }
                                 }
                                 td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { input type="checkbox" checked[equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)))] disabled; }
-                                td class="inventory-weight" { "—" }
-                                td class="inventory-gold" { "—" }
+                                td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                                td class="inventory-weight" { (item_weight(definition)) }
+                                td class="inventory-gold" { (item_value(definition)) }
                             }
-                        }
                     }
-                }
+                }))
             }
         }))
     }
 }
 
-fn party_inventory_table_header() -> Markup {
+pub fn live_merchant_shop_page(
+    settlement: &Settlement,
+    character: &Character,
+    inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    party_members: &[Character],
+    equip: Option<&CharacterEquip>,
+    theme: &str,
+    shop: MerchantShop,
+) -> Markup {
+    let title = shop.title();
+    let service_id = shop.service_id();
+    let content = html! {
+        aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
+            (trade_inventory_table(false, html! {
+                @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
+                    @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
+                    @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(&item.id) data-merchant-buy-price=(buy_price) aria-label=(format!("Buy {}", item.id)) title=(format!("Buy {}", item.id)) { "" } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                }
+            }))
+        })) }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &settlement.id, None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_chat_area(title, Some(character))) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        aside class="right-sidebar" {
+            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
+                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) {
+                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(item.id) data-item-name=(&item.item_id) data-merchant-sell-price=(sell_price) aria-label=(format!("Sell {}", item.item_id)) title=(format!("Sell {}", item.item_id)) {} } }
+                        td class="inventory-count" { (item.qty) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                    }}
+                }))
+            }))
+        }
+    };
+    settlement_layout_with_session(
+        title,
+        &settlement.name,
+        &settlement.id,
+        service_id,
+        content,
+        Some(&character.name),
+        theme,
+    )
+}
+
+fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+    item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+    item.and_then(|item| item.base_value)
+        .map_or_else(|| "—".to_owned(), |value| value.to_string())
+}
+
+fn weight_display(weight: f32) -> String {
+    let display = format!("{weight:.2}");
+    display
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
+}
+
+fn trade_inventory_table(show_equipped: bool, rows: Markup) -> Markup {
+    html! {
+        table class="trade-inventory-table" {
+            @if show_equipped {
+                colgroup {
+                    col class="inventory-column-item";
+                    col class="inventory-column-count";
+                    col class="inventory-column-equipped";
+                    col class="inventory-column-weight";
+                    col class="inventory-column-gold";
+                }
+            }
+            (trade_inventory_table_header(show_equipped))
+            tbody { (rows) }
+        }
+    }
+}
+
+fn trade_inventory_table_header(show_equipped: bool) -> Markup {
     html! { thead { tr {
         th scope="col" class="inventory-column-item" { "Item" }
         th scope="col" class="inventory-column-count" { "#" }
-        th scope="col" class="inventory-column-equipped" title="Equipped" { "✓" }
+        @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { "✓" } }
         th scope="col" class="inventory-column-weight" title="Weight" { span class="inventory-header-weight" aria-label="Weight" {} }
         th scope="col" class="inventory-column-gold" title="Gold" { span class="inventory-header-coin" aria-label="Gold" {} }
     } } }
 }
 
-fn party_skills_rail(title: &str, skills: Option<&CharacterSkills>, limbs: Option<&CharacterLimbs>) -> Markup {
+fn party_skills_rail(
+    title: &str,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
-    let upper_health = limbs.map_or(1.0, |limbs| (limbs.left_arm_health + limbs.right_arm_health) / 2.0);
-    let lower_health = limbs.map_or(1.0, |limbs| (limbs.left_leg_health + limbs.right_leg_health) / 2.0);
+    let upper_health = limbs.map_or(1.0, |limbs| {
+        (limbs.left_arm_health + limbs.right_arm_health) / 2.0
+    });
+    let lower_health = limbs.map_or(1.0, |limbs| {
+        (limbs.left_leg_health + limbs.right_leg_health) / 2.0
+    });
     html! {
         (sidebar_section(title, html! {
             @if let Some(skills) = skills {
@@ -521,8 +685,14 @@ fn party_skill_row(name: &str, icon: &str, hours: f32, half_hours: f32, health: 
     }
 }
 
-fn party_attributes_rail(title: &str, attributes: Option<&CharacterAttributes>, limbs: Option<&CharacterLimbs>) -> Markup {
-    let Some(attributes) = attributes else { return html! {}; };
+fn party_attributes_rail(
+    title: &str,
+    attributes: Option<&CharacterAttributes>,
+    limbs: Option<&CharacterLimbs>,
+) -> Markup {
+    let Some(attributes) = attributes else {
+        return html! {};
+    };
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let chest_health = limbs.map_or(1.0, |limbs| limbs.chest_health);
     let stomach_health = limbs.map_or(1.0, |limbs| limbs.stomach_health);
@@ -571,7 +741,12 @@ fn party_attributes_rail(title: &str, attributes: Option<&CharacterAttributes>, 
     }
 }
 
-fn limb_attribute_column(name: &str, side: &str, health: f32, rows: &[(&str, &str, f32)]) -> Markup {
+fn limb_attribute_column(
+    name: &str,
+    side: &str,
+    health: f32,
+    rows: &[(&str, &str, f32)],
+) -> Markup {
     attribute_group_with_labels(name, health, rows, false, Some(side))
 }
 
@@ -767,7 +942,7 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
         (sidebar_section(title, html! {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
             table class="trade-inventory-table" {
-                (inventory_table_header())
+                (trade_inventory_table_header(false))
                 tbody {
                 @for offer in placeholder_offers {
                     tr class="trade-inventory-row trade-row-merchant"
@@ -805,7 +980,7 @@ fn inventory_rail(
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
                 table class="trade-inventory-table" {
-                    (inventory_table_header())
+                    (trade_inventory_table_header(false))
                     tbody {
                     @for item in inventory {
                         tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
@@ -833,23 +1008,6 @@ fn inventory_rail(
                 }
             }
         }))
-    }
-}
-
-fn inventory_table_header() -> Markup {
-    html! {
-        thead {
-            tr {
-                th scope="col" class="inventory-column-item" { "Item" }
-                th scope="col" class="inventory-column-count" title="Count" { "#" }
-                th scope="col" class="inventory-column-weight" title="Weight" {
-                    span class="inventory-header-weight" aria-label="Weight" {}
-                }
-                th scope="col" class="inventory-column-gold" title="Gold" {
-                    span class="inventory-header-coin" aria-label="Gold" {}
-                }
-            }
-        }
     }
 }
 

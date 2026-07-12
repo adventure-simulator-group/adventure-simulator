@@ -102,16 +102,24 @@ pub struct InventoryItem {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CharacterEquip {
     pub character_id: u64,
-    pub left_hand_item_id: Option<u64>, pub right_hand_item_id: Option<u64>,
-    pub left_arm_armor_id: Option<u64>, pub right_arm_armor_id: Option<u64>,
-    pub left_leg_armor_id: Option<u64>, pub right_leg_armor_id: Option<u64>,
-    pub head_armor_id: Option<u64>, pub chest_armor_id: Option<u64>, pub stomach_armor_id: Option<u64>,
+    pub left_hand_item_id: Option<u64>,
+    pub right_hand_item_id: Option<u64>,
+    pub left_arm_armor_id: Option<u64>,
+    pub right_arm_armor_id: Option<u64>,
+    pub left_leg_armor_id: Option<u64>,
+    pub right_leg_armor_id: Option<u64>,
+    pub head_armor_id: Option<u64>,
+    pub chest_armor_id: Option<u64>,
+    pub stomach_armor_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ItemDefinition {
     pub id: String,
+    pub weight: f32,
     pub kind: ItemKind,
+    #[serde(default)]
+    pub base_value: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -126,6 +134,8 @@ pub enum ItemKind {
     Shield,
     #[serde(alias = "Clothing", alias = "clothing")]
     Clothing,
+    #[serde(alias = "Currency", alias = "currency")]
+    Currency,
 }
 
 /// Attribute values for a character. These mirror the public strategic tables

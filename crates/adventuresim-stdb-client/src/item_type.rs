@@ -25,6 +25,7 @@ pub struct Item {
     pub range_of_motion: f32,
     pub precise: bool,
     pub balance: f32,
+    pub base_value: Option<u32>,
 }
 
 impl __sdk::InModule for Item {
