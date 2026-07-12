@@ -938,11 +938,11 @@
 }
 
 .trade-row-merchant .trade-transfer {
-  right: calc(-1.6rem - 0.75rem);
+  right: -0.8rem;
 }
 
 .inventory-trade-row:not(.trade-row-merchant) .trade-transfer {
-  left: calc(-1.6rem - 0.75rem);
+  left: -0.8rem;
 }
 
 .trade-row:hover .trade-transfer,
@@ -1021,7 +1021,7 @@
 }
 
 .trade-inventory-row:not(.trade-row-merchant) .trade-transfer {
-  left: calc(-1.6rem - 0.75rem);
+  left: -0.8rem;
 }
 
 .trade-inventory-row:hover .trade-transfer,
