@@ -758,7 +758,14 @@
    SETTLEMENT INTERFACE
    ============================================ */
 .settlement-main {
+  display: flex;
+  flex-direction: column;
   max-width: 980px;
+  overflow: hidden;
+}
+
+.settlement-main .page-title {
+  flex: 0 0 auto;
 }
 
 .settlement-grid {
@@ -910,9 +917,10 @@
 
 .service-visual {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  min-height: min(62vh, 620px);
-  margin: 0;
+  min-height: 0;
+  margin: 0 0 0.75rem;
   border: 1px solid var(--border-accent);
   border-radius: var(--radius);
   overflow: hidden;
@@ -927,7 +935,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  min-height: 420px;
+  min-height: 0;
   color: var(--accent-dark);
   background:
     linear-gradient(135deg, transparent 49.5%, color-mix(in srgb, var(--accent) 10%, transparent) 50%, transparent 50.5%),
@@ -967,6 +975,106 @@
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   text-align: center;
+}
+
+/* Persistent, currently read-only chat area from the settlement UX prototype. */
+.settlement-chat {
+  display: flex;
+  flex: 0 0 11.5rem;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.settlement-chat-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.settlement-chat-tab {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-right: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-display), serif;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: not-allowed;
+}
+
+.settlement-chat-tab:last-child {
+  border-right: 0;
+}
+
+.settlement-chat-tab.active {
+  background: var(--panel-bg);
+  color: var(--accent-dark);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.settlement-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.55rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.chat-system-message,
+.chat-npc-message {
+  margin-bottom: 0.35rem;
+}
+
+.chat-system-message {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.chat-npc-message {
+  color: var(--text-primary);
+}
+
+.chat-timestamp {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.settlement-chat-composer {
+  display: flex;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.settlement-chat-composer input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: not-allowed;
+}
+
+.settlement-chat-composer .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .small-copy {

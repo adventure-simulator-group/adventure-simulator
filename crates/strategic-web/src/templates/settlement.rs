@@ -94,6 +94,7 @@ pub fn noticeboard_page(
         main class="center-content settlement-main" {
             h2 class="page-title" { "Notice Board" }
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
+            (settlement_chat_area("Notice Board", active_character))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -131,6 +132,7 @@ pub fn tavern_page(
         main class="center-content settlement-main" {
             h2 class="page-title" { "The Tavern" }
             (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
+            (settlement_chat_area("Tavern", active_character))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -212,6 +214,7 @@ fn service_page(
         main class="center-content settlement-main" {
             h2 class="page-title" { (title) }
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
+            (settlement_chat_area(title, active_character))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -248,6 +251,51 @@ fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
                 }
             }
             figcaption { (title) " · " (placeholder) }
+        }
+    }
+}
+
+/// Layout-only chat panel matching the UX prototype. Channels, message history,
+/// and sending are deliberately disabled until the strategic chat backend exists.
+fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
+    let party_label = active_character
+        .map(|character| format!("{}'s party", character.name))
+        .unwrap_or_else(|| "Party".to_string());
+
+    html! {
+        section class="settlement-chat" aria-label="Settlement chat" {
+            div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
+                button type="button" class="settlement-chat-tab active" disabled
+                    title="TODO: party chat requires real-time message delivery" {
+                    (party_label)
+                }
+                button type="button" class="settlement-chat-tab" disabled
+                    title="TODO: settlement chat requires real-time message delivery" {
+                    "Settlement"
+                }
+                button type="button" class="settlement-chat-tab" disabled
+                    title="TODO: guild chat requires guild membership and real-time message delivery" {
+                    "Guild"
+                }
+            }
+            div class="settlement-chat-messages" aria-live="polite" {
+                div class="chat-system-message" {
+                    span class="chat-timestamp" { "[--:--]" }
+                    " Chat is not connected yet. Message history and live delivery are TODO."
+                }
+                div class="chat-npc-message" {
+                    span class="chat-timestamp" { "[--:--]" }
+                    (location) " chat will appear here when the strategic chat service is available."
+                }
+            }
+            div class="settlement-chat-composer" {
+                input type="text" disabled placeholder="Chat is not implemented yet"
+                    title="TODO: sending messages requires the strategic chat backend";
+                button type="button" class="btn btn-primary btn-icon" disabled
+                    title="TODO: sending messages requires the strategic chat backend" aria-label="Send message" {
+                    "➤"
+                }
+            }
         }
     }
 }
