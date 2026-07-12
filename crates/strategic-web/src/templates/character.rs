@@ -248,7 +248,6 @@ fn character_stats_sheet(
                     (attribute_row("Endurance", attributes.endurance))
                     (attribute_row("Immunity", attributes.immunity))
                     (attribute_row("Gut", attributes.gut))
-                    (attribute_row("Precision", attributes.precision))
                 }))
                 (attribute_group("Left arm", html! {
                     (attribute_row("Strength", attributes.left_arm_strength))

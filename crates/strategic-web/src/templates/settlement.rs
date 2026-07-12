@@ -419,36 +419,49 @@ fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
     let Some(attributes) = attributes else { return html! {}; };
     html! {
         div class="character-attribute-overlay" aria-label="Character attributes" {
-            div class="attribute-callout attribute-head" {
-                "Int " strong { (format!("{:.0}", attributes.intelligence)) }
-                " · Inst " strong { (format!("{:.0}", attributes.instinct)) }
-                br;
-                "Sight " strong { (format!("{:.0}", attributes.eyesight)) }
-                " · Hear " strong { (format!("{:.0}", attributes.hearing)) }
-            }
-            div class="attribute-callout attribute-chest" {
-                "Endurance " strong { (format!("{:.0}", attributes.endurance)) }
-                " · Precision " strong { (format!("{:.0}", attributes.precision)) }
-            }
-            div class="attribute-callout attribute-stomach" {
-                "Immunity " strong { (format!("{:.0}", attributes.immunity)) }
-                " · Gut " strong { (format!("{:.0}", attributes.gut)) }
-            }
-            div class="attribute-callout attribute-left-arm" {
-                "L arm " strong { (format!("S {:.0}", attributes.left_arm_strength)) }
-                " · " strong { (format!("A {:.0}", attributes.left_arm_agility)) }
-            }
-            div class="attribute-callout attribute-right-arm" {
-                "R arm " strong { (format!("S {:.0}", attributes.right_arm_strength)) }
-                " · " strong { (format!("A {:.0}", attributes.right_arm_agility)) }
-            }
-            div class="attribute-callout attribute-left-leg" {
-                "L leg " strong { (format!("S {:.0}", attributes.left_leg_strength)) }
-                " · " strong { (format!("A {:.0}", attributes.left_leg_agility)) }
-            }
-            div class="attribute-callout attribute-right-leg" {
-                "R leg " strong { (format!("S {:.0}", attributes.right_leg_strength)) }
-                " · " strong { (format!("A {:.0}", attributes.right_leg_agility)) }
+            (attribute_island("attribute-head", "Head", &[
+                ("Intelligence", attributes.intelligence),
+                ("Instinct", attributes.instinct),
+                ("Eyesight", attributes.eyesight),
+                ("Hearing", attributes.hearing),
+            ]))
+            (attribute_island("attribute-chest", "Chest", &[
+                ("Endurance", attributes.endurance),
+            ]))
+            (attribute_island("attribute-stomach", "Stomach", &[
+                ("Immunity", attributes.immunity),
+                ("Gut", attributes.gut),
+            ]))
+            (attribute_island("attribute-left-arm", "Left Arm", &[
+                ("Strength", attributes.left_arm_strength),
+                ("Agility", attributes.left_arm_agility),
+            ]))
+            (attribute_island("attribute-right-arm", "Right Arm", &[
+                ("Strength", attributes.right_arm_strength),
+                ("Agility", attributes.right_arm_agility),
+            ]))
+            (attribute_island("attribute-left-leg", "Left Leg", &[
+                ("Strength", attributes.left_leg_strength),
+                ("Agility", attributes.left_leg_agility),
+            ]))
+            (attribute_island("attribute-right-leg", "Right Leg", &[
+                ("Strength", attributes.right_leg_strength),
+                ("Agility", attributes.right_leg_agility),
+            ]))
+        }
+    }
+}
+
+fn attribute_island(position: &str, title: &str, rows: &[(&str, f32)]) -> Markup {
+    html! {
+        section class=(format!("attribute-callout {position}")) {
+            h3 { (title) }
+            hr;
+            @for (name, value) in rows {
+                div class="attribute-island-row" {
+                    span { (name) }
+                    strong { (format!("{value:.0}")) }
+                }
             }
         }
     }

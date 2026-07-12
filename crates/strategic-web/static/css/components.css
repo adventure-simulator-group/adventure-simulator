@@ -1385,7 +1385,8 @@
 
 .attribute-callout {
   position: absolute;
-  padding: 0.25rem 0.4rem;
+  min-width: 7.75rem;
+  padding: 0.35rem 0.45rem 0.4rem;
   border: 1px solid color-mix(in srgb, var(--border-accent) 75%, transparent);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
@@ -1395,9 +1396,29 @@
 }
 
 .attribute-callout strong { color: var(--accent-dark); }
-.attribute-head { top: 21%; left: 50%; transform: translateX(-50%); text-align: center; }
+.attribute-callout h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.attribute-callout hr {
+  margin: 0.2rem 0 0.25rem;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-accent) 60%, transparent);
+}
+
+.attribute-island-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  line-height: 1.35;
+}
+
+.attribute-head { top: 14%; left: 50%; transform: translateX(-50%); }
 .attribute-chest { top: 43%; left: 50%; transform: translateX(-50%); }
-.attribute-stomach { top: 51%; left: 50%; transform: translateX(-50%); }
+.attribute-stomach { top: 52%; left: 50%; transform: translateX(-50%); }
 .attribute-left-arm { top: 48%; left: 18%; }
 .attribute-right-arm { top: 48%; right: 18%; }
 .attribute-left-leg { top: 70%; left: 31%; }
