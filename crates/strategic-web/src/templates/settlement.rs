@@ -1,14 +1,18 @@
-//! Settlement templates
+//! Settlement templates.
+//!
+//! Settlement pages deliberately keep the same ownership model: services and
+//! settlement-owned information on the left, service context in the center,
+//! and the active player's party on the right.
 
 use maud::{html, Markup};
 
 use super::{
-    base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
-    panel, population_description, service_menu, sidebar_section, status_badge, xp_display,
+    difficulty_stars, empty_state, gold_display, list_item, panel, population_description,
+    settlement_layout_with_session, sidebar_section, status_badge, xp_display,
 };
 use crate::spacetimedb::{Party, Quest, Settlement};
 
-/// List all settlements
+/// List all settlements.
 pub fn settlements_list_page(
     settlements: &[Settlement],
     logged_in_as: Option<&str>,
@@ -30,44 +34,27 @@ pub fn settlements_list_page(
                 }
             }))
         }
-
         main class="center-content" {
             h2 class="page-title" { "World Map" }
-            @if settlements.is_empty() {
-                div class="center-welcome" {
-                    p { "No settlements have been discovered yet." }
-                }
-            } @else {
-                div class="flex flex-col gap-md" {
-                    @for settlement in settlements {
-                        a href=(format!("/settlements/{}", settlement.id)) class="settlement-card" {
-                            h3 { (settlement.name) }
-                            p class="population" { (population_description(settlement.population_level)) }
-                            div class="coords" {
-                                "(" (settlement.coord_x as i32) ", " (settlement.coord_y as i32) ")"
-                            }
-                        }
+            div class="settlement-grid" {
+                @for settlement in settlements {
+                    a href=(format!("/settlements/{}", settlement.id)) class="settlement-card" {
+                        h3 { (settlement.name) }
+                        p class="population" { (population_description(settlement.population_level)) }
+                        div class="coords" { "(" (settlement.coord_x as i32) ", " (settlement.coord_y as i32) ")" }
                     }
                 }
             }
         }
-
         aside class="right-sidebar" {
-            (sidebar_section("Info", html! {
-                (panel("", html! {
-                    p style="font-size:var(--font-size-sm)" {
-                        "Travel to a settlement to access services, "
-                        "find quests, and recruit party members."
-                    }
-                }))
-            }))
+            (party_rail(logged_in_as))
         }
     };
 
-    base_layout_with_session("Settlements", content, logged_in_as, theme)
+    super::base_layout_with_session("Settlements", content, logged_in_as, theme)
 }
 
-/// Settlement detail page
+/// Settlement overview.
 pub fn settlement_detail_page(
     settlement: &Settlement,
     quests: &[Quest],
@@ -77,47 +64,20 @@ pub fn settlement_detail_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section(&settlement.name, html! {
-                p style="font-size:var(--font-size-sm)" {
-                    (population_description(settlement.population_level))
-                }
-            }))
-
-            (divider())
-
-            (sidebar_section("Services", html! {
-                (service_menu(&settlement.id, ""))
-            }))
-
-            (divider())
-
-            (sidebar_section("Travel", html! {
-                form action=(format!("/settlements/{}/travel", settlement.id)) method="post" {
-                    button type="submit" class="btn btn-primary btn-block btn-small" {
-                        "Travel Here"
-                    }
-                }
-            }))
+            (settlement_rail(settlement, "Town Crier", "A guide to local services and opportunities."))
         }
-
-        main class="center-content" {
+        main class="center-content settlement-main" {
             h2 class="page-title" { (settlement.name) }
-
-            (panel("About", html! {
-                p {
-                    "A " (population_description(settlement.population_level).to_lowercase())
-                    " with various services available to adventurers."
-                }
-                p { "Scene: " (settlement.scene_key) }
-            }))
-
-            @if !quests.is_empty() {
-                (panel("Available Quests", html! {
+            (service_context("Welcome to town", "The settlement is your base for trade, rest, recruitment, and new work."))
+            (panel("Available Quests", html! {
+                @if quests.is_empty() {
+                    p class="text-muted" { "No notices are posted today." }
+                } @else {
                     @for quest in quests.iter().take(3) {
                         a href=(format!("/quests/{}", quest.id)) class="quest-card" {
                             div class="quest-card-header" {
                                 span class="quest-card-title" { (quest.title) }
-                                (status_badge(&format!("{:?}", quest.status).replace("\"", "")))
+                                (status_badge(&quest.status))
                             }
                             div class="quest-card-meta" {
                                 (difficulty_stars(quest.difficulty))
@@ -129,39 +89,29 @@ pub fn settlement_detail_page(
                         }
                     }
                     @if quests.len() > 3 {
-                        a href=(format!("/settlements/{}/noticeboard", settlement.id)) class="btn btn-secondary btn-small mt-1" {
-                            "View All Quests"
-                        }
+                        a href=(format!("/settlements/{}/noticeboard", settlement.id)) class="btn btn-secondary btn-small mt-1" { "View notice board" }
                     }
-                }))
-            }
+                }
+            }))
         }
-
         aside class="right-sidebar" {
-            @if !parties.is_empty() {
-                (sidebar_section("Parties in Town", html! {
+            (party_rail(logged_in_as))
+            (sidebar_section("Parties in town", html! {
+                @if parties.is_empty() {
+                    p class="text-muted small-copy" { "No other parties are currently here." }
+                } @else {
                     @for party in parties {
-                        (list_item(
-                            &format!("/parties/{}", party.id),
-                            &party.name,
-                            party.active_quest_id.as_ref().map(|_| "On a quest"),
-                        ))
+                        (list_item(&format!("/parties/{}", party.id), &party.name, party.active_quest_id.as_deref()))
                     }
-                }))
-            }
-
-            (sidebar_section("", html! {
-                a href=(format!("/settlements/{}/tavern", settlement.id)) class="btn btn-secondary btn-block btn-small" {
-                    "Visit Tavern"
                 }
             }))
         }
     };
 
-    base_layout_with_session(&settlement.name, content, logged_in_as, theme)
+    settlement_layout_with_session(&settlement.name, &settlement.name, &settlement.id, "", content, logged_in_as, theme)
 }
 
-/// Notice board page
+/// Notice board page.
 pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
@@ -169,69 +119,39 @@ pub fn noticeboard_page(
     theme: &str,
 ) -> Markup {
     let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section(&settlement.name, html! {
-                p style="font-size:var(--font-size-sm)" {
-                    (population_description(settlement.population_level))
-                }
-            }))
-            (divider())
-            (sidebar_section("Services", html! {
-                (service_menu(&settlement.id, "noticeboard"))
-            }))
-        }
-
-        main class="center-content" {
+        aside class="left-sidebar" { (settlement_rail(settlement, "Notice Board", "Notices posted by local patrons.")) }
+        main class="center-content settlement-main" {
             h2 class="page-title" { "Notice Board" }
-
+            (service_context("Posted work", "Review local opportunities and accept a quest as your party leader."))
             @if quests.is_empty() {
                 (empty_state("No quests posted on the notice board.", None, None))
             } @else {
                 @for quest in quests {
                     (panel(&quest.title, html! {
                         div class="flex justify-between items-center mb-1" {
-                            (status_badge(&format!("{:?}", quest.status).replace("\"", "")))
+                            (status_badge(&quest.status))
                             (difficulty_stars(quest.difficulty))
                         }
-                        p style="font-size:var(--font-size-sm)" { (quest.description) }
-                        (divider())
-                        div class="quest-card-meta" {
-                            span class="quest-card-enemy" {
-                                "Target: " (quest.enemy_count) " " (quest.enemy_type)
-                            }
-                            div class="quest-card-reward" {
-                                (gold_display(quest.gold_reward))
-                                (xp_display(quest.xp_reward))
-                            }
+                        p class="small-copy" { (quest.description) }
+                        div class="quest-card-meta mt-1" {
+                            span class="quest-card-enemy" { "Target: " (quest.enemy_count) " " (quest.enemy_type) }
+                            div class="quest-card-reward" { (gold_display(quest.gold_reward)) (xp_display(quest.xp_reward)) }
                         }
                         @if quest.status.to_lowercase().contains("available") {
                             form action=(format!("/quests/{}/accept", quest.id)) method="post" class="mt-1" {
-                                button type="submit" class="btn btn-primary btn-small" {
-                                    "Accept Quest"
-                                }
+                                button type="submit" class="btn btn-primary btn-small" { "Accept quest" }
                             }
                         }
                     }))
                 }
             }
         }
-
-        aside class="right-sidebar" {
-            (sidebar_section("Info", html! {
-                (panel("", html! {
-                    p style="font-size:var(--font-size-sm)" {
-                        "Accept quests from the notice board. "
-                        "You must be a party leader at this settlement."
-                    }
-                }))
-            }))
-        }
+        aside class="right-sidebar" { (party_rail(logged_in_as)) }
     };
-
-    base_layout_with_session("Notice Board", content, logged_in_as, theme)
+    settlement_layout_with_session("Notice Board", &settlement.name, &settlement.id, "noticeboard", content, logged_in_as, theme)
 }
 
-/// Tavern page
+/// Tavern page.
 pub fn tavern_page(
     settlement: &Settlement,
     parties: &[Party],
@@ -239,33 +159,17 @@ pub fn tavern_page(
     theme: &str,
 ) -> Markup {
     let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section(&settlement.name, html! {
-                p style="font-size:var(--font-size-sm)" {
-                    (population_description(settlement.population_level))
-                }
-            }))
-            (divider())
-            (sidebar_section("Services", html! {
-                (service_menu(&settlement.id, "tavern"))
-            }))
-        }
-
-        main class="center-content" {
+        aside class="left-sidebar" { (settlement_rail(settlement, "Innkeeper", "Adventurers, rumours, and open tables.")) }
+        main class="center-content settlement-main" {
             h2 class="page-title" { "The Tavern" }
-
-            (panel("Parties Looking for Members", html! {
+            (service_context("A place to gather", "Meet other adventurers, form a party, and prepare for your next expedition."))
+            (panel("Parties looking for members", html! {
                 @if parties.is_empty() {
                     p class="text-muted" { "No parties currently recruiting." }
                 } @else {
                     @for party in parties {
                         div class="member-item" {
-                            div {
-                                span class="member-name" { (party.name) }
-                                @if party.active_quest_id.is_some() {
-                                    span class="badge badge-warning ml-1" style="margin-left:0.5rem" { "On Quest" }
-                                }
-                            }
+                            span class="member-name" { (party.name) }
                             form action=(format!("/parties/{}/join", party.id)) method="post" {
                                 button type="submit" class="btn btn-secondary btn-small" { "Join" }
                             }
@@ -273,94 +177,121 @@ pub fn tavern_page(
                     }
                 }
             }))
-
-            (panel("Form New Party", html! {
-                p style="font-size:var(--font-size-sm)" { "Gather allies and take on quests together." }
-                a href="/parties/new" class="btn btn-primary mt-1" { "Create Party" }
+            (panel("Start a party", html! {
+                p class="small-copy" { "Gather allies before accepting a job from the notice board." }
+                a href="/parties/new" class="btn btn-primary mt-1" { "Create party" }
             }))
         }
-
-        aside class="right-sidebar" {
-            (sidebar_section("Info", html! {
-                (panel("", html! {
-                    p style="font-size:var(--font-size-sm)" {
-                        "The tavern is where adventurers meet. "
-                        "Join an existing party or form your own."
-                    }
-                }))
-            }))
-        }
+        aside class="right-sidebar" { (party_rail(logged_in_as)) }
     };
-
-    base_layout_with_session("Tavern", content, logged_in_as, theme)
+    settlement_layout_with_session("Tavern", &settlement.name, &settlement.id, "tavern", content, logged_in_as, theme)
 }
 
-/// Merchants page placeholder
+/// Market interface. Inventory and prices are intentionally UI-only placeholders
+/// until settlement-owned inventory and trade reducers exist.
 pub fn merchants_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
-    service_placeholder_page(
-        settlement,
-        "merchants",
-        "Merchants",
-        "Buy and sell goods here.",
-        logged_in_as,
-        theme,
+    service_page(
+        settlement, "merchants", "Market Square", "Market Steward",
+        "Browse settlement goods and compare them against your party's packs.",
+        "Merchant stock and prices will appear here once the trade backend is available.",
+        logged_in_as, theme,
     )
 }
 
-/// Smith page placeholder
+/// Smith interface placeholder.
 pub fn smith_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
-    service_placeholder_page(
-        settlement,
-        "smith",
-        "The Smithy",
-        "Repair and upgrade equipment here.",
-        logged_in_as,
-        theme,
+    service_page(
+        settlement, "smith", "The Smithy", "Master Smith",
+        "Inspect equipment on the right, then commission repairs or replacements here.",
+        "Repair costs and crafting orders require inventory durability and smithing reducers.",
+        logged_in_as, theme,
     )
 }
 
-/// Inn page placeholder
+/// Inn interface placeholder.
 pub fn inn_page(settlement: &Settlement, logged_in_as: Option<&str>, theme: &str) -> Markup {
-    service_placeholder_page(
-        settlement,
-        "inn",
-        "The Inn",
-        "Rest and recover here.",
-        logged_in_as,
-        theme,
+    service_page(
+        settlement, "inn", "The Inn", "Innkeeper",
+        "Choose accommodation and manage downtime for your party.",
+        "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
+        logged_in_as, theme,
     )
 }
 
-fn service_placeholder_page(
+fn service_page(
     settlement: &Settlement,
     service_id: &str,
     title: &str,
-    description: &str,
+    npc_name: &str,
+    introduction: &str,
+    todo: &str,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section(&settlement.name, html! {
-                p style="font-size:var(--font-size-sm)" {
-                    (population_description(settlement.population_level))
+            (settlement_rail(settlement, npc_name, introduction))
+            (sidebar_section("Settlement offerings", html! {
+                div class="service-placeholder-list" {
+                    span { "Inventory / offers" }
+                    span class="badge badge-warning" { "TODO" }
                 }
-            }))
-            (divider())
-            (sidebar_section("Services", html! {
-                (service_menu(&settlement.id, service_id))
+                p class="text-muted small-copy" { (todo) }
             }))
         }
-
-        main class="center-content" {
+        main class="center-content settlement-main" {
             h2 class="page-title" { (title) }
-            (panel("Services", html! {
-                p { "Coming soon - " (description.to_lowercase()) }
+            (service_context(npc_name, introduction))
+            (panel("Service", html! {
+                p { (todo) }
+                button class="btn btn-secondary mt-1" disabled title="TODO: requires strategic service reducer" { "Unavailable" }
             }))
         }
-
-        aside class="right-sidebar" {}
+        aside class="right-sidebar" { (party_rail(logged_in_as)) }
     };
+    settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
+}
 
-    base_layout_with_session(title, content, logged_in_as, theme)
+fn settlement_rail(settlement: &Settlement, npc_name: &str, description: &str) -> Markup {
+    html! {
+        (sidebar_section("Settlement", html! {
+            div class="settlement-summary" {
+                strong { (settlement.name) }
+                span { (population_description(settlement.population_level)) }
+            }
+        }))
+        (sidebar_section("Service host", html! {
+            div class="npc-card" {
+                div class="npc-monogram" { (npc_name.chars().next().unwrap_or('?')) }
+                div { strong { (npc_name) } p class="small-copy" { (description) } }
+            }
+        }))
+    }
+}
+
+fn service_context(title: &str, copy: &str) -> Markup {
+    html! {
+        section class="service-context" {
+            strong class="service-context-title" { (title) }
+            p class="service-context-copy" { (copy) }
+        }
+    }
+}
+
+fn party_rail(logged_in_as: Option<&str>) -> Markup {
+    html! {
+        (sidebar_section("Your party", html! {
+            @if let Some(name) = logged_in_as {
+                div class="party-member-card" {
+                    div class="party-monogram" { (name.chars().next().unwrap_or('?')) }
+                    div { strong { (name) } span { "Active adventurer" } }
+                }
+                a href="/characters" class="btn btn-secondary btn-small btn-block mt-1" { "View character sheet" }
+                p class="text-muted small-copy mt-1" { "TODO: party members, inventory, condition, and equipment will appear here." }
+            } @else {
+                p class="text-muted small-copy" { "Select a character to view party-owned information." }
+                a href="/characters" class="btn btn-secondary btn-small btn-block mt-1" { "Choose character" }
+            }
+        }))
+    }
 }

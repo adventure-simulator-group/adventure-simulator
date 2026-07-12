@@ -32,6 +32,36 @@ pub fn base_layout_with_session(
 ) -> Markup {
     let theme = validated_theme(theme);
 
+    page_shell(title, top_bar(logged_in_as, theme), content, theme)
+}
+
+/// Settlement-specific layout. Settlement services replace the global navigation
+/// so their context stays visible while the player moves between service pages.
+pub fn settlement_layout_with_session(
+    title: &str,
+    settlement_name: &str,
+    settlement_id: &str,
+    active_service: &str,
+    content: Markup,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(
+        title,
+        settlement_top_bar(
+            settlement_name,
+            settlement_id,
+            active_service,
+            logged_in_as,
+            theme,
+        ),
+        content,
+        theme,
+    )
+}
+
+fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -52,7 +82,7 @@ pub fn base_layout_with_session(
             }
             body {
                 div class="app" {
-                    (top_bar(logged_in_as, theme))
+                    (header)
 
                     div class="main-grid" {
                         (content)
@@ -110,6 +140,72 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
                         {}
                     }
                 }
+            }
+        }
+    }
+}
+
+fn settlement_top_bar(
+    settlement_name: &str,
+    settlement_id: &str,
+    active_service: &str,
+    logged_in_as: Option<&str>,
+    current_theme: &str,
+) -> Markup {
+    let services = [
+        ("", "Overview"),
+        ("noticeboard", "Notice Board"),
+        ("tavern", "Tavern"),
+        ("merchants", "Market"),
+        ("smith", "Smith"),
+        ("inn", "Inn"),
+    ];
+
+    html! {
+        header class="top-bar settlement-top-bar" {
+            div class="top-bar-left settlement-location" {
+                a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
+                    (settlement_name)
+                }
+                span class="settlement-time" title="TODO: connect this display to strategic world time" {
+                    "1st of First Seed · 08:00"
+                }
+            }
+
+            nav class="top-bar-center settlement-services" aria-label="Settlement services" {
+                @for (path, label) in services {
+                    @let href = if path.is_empty() {
+                        format!("/settlements/{}", settlement_id)
+                    } else {
+                        format!("/settlements/{}/{}", settlement_id, path)
+                    };
+                    a href=(href)
+                        class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                    { (label) }
+                }
+            }
+
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" { "Party: " strong { (name) } }
+                } @else {
+                    span class="player-name player-name-none" { "No active party" }
+                }
+                (theme_switcher(current_theme))
+            }
+        }
+    }
+}
+
+fn theme_switcher(current_theme: &str) -> Markup {
+    html! {
+        div class="theme-switcher" {
+            @for (id, _label) in THEMES {
+                a href=(format!("/theme/{}", id))
+                    class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
+                    data-theme=(id)
+                    title=(_label)
+                {}
             }
         }
     }

@@ -755,6 +755,117 @@
 }
 
 /* ============================================
+   SETTLEMENT INTERFACE
+   ============================================ */
+.settlement-main {
+  max-width: 980px;
+}
+
+.settlement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+}
+
+.settlement-summary,
+.party-member-card,
+.npc-card {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.settlement-summary {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.settlement-summary strong,
+.party-member-card strong,
+.npc-card strong {
+  color: var(--text-primary);
+  font-family: var(--font-display), serif;
+}
+
+.settlement-summary span,
+.party-member-card span {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.npc-card,
+.party-member-card {
+  padding: 0.65rem;
+  border: 1px solid var(--border-light);
+  background: var(--panel-bg);
+  border-radius: var(--radius);
+}
+
+.npc-monogram,
+.party-monogram {
+  display: grid;
+  place-items: center;
+  flex: 0 0 2.4rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-accent);
+  color: var(--accent-dark);
+  font-family: var(--font-display), serif;
+  font-weight: 700;
+}
+
+.party-monogram {
+  background: color-mix(in srgb, var(--accent) 15%, var(--panel-bg));
+}
+
+.service-context {
+  position: relative;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border-accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel-bg));
+  border-radius: var(--radius);
+}
+
+.service-context::before {
+  content: "✦";
+  color: var(--accent);
+  margin-right: 0.5rem;
+}
+
+.service-context-title {
+  margin-right: 0.5rem;
+  color: var(--accent-dark);
+  font-family: var(--font-display), serif;
+}
+
+.service-context-copy {
+  display: inline;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.service-placeholder-list {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.small-copy {
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+/* ============================================
    ANIMATIONS
    ============================================ */
 @keyframes fadeIn {
