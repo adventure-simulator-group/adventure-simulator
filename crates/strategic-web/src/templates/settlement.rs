@@ -7,8 +7,8 @@
 use maud::{html, Markup};
 
 use super::{
-    difficulty_stars, empty_state, gold_display, list_item, panel, population_description,
-    settlement_layout_with_session, sidebar_section, status_badge, xp_display,
+    difficulty_stars, empty_state, gold_display, list_item, population_description,
+    settlement_layout_with_session, sidebar_section, status_badge,
 };
 use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
 
@@ -54,65 +54,6 @@ pub fn settlements_list_page(
     super::base_layout_with_session("Settlements", content, logged_in_as, theme)
 }
 
-/// Settlement overview.
-pub fn settlement_detail_page(
-    settlement: &Settlement,
-    quests: &[Quest],
-    parties: &[Party],
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (settlement_rail(settlement, "Town Crier", "A guide to local services and opportunities."))
-        }
-        main class="center-content settlement-main" {
-            h2 class="page-title" { (settlement.name) }
-            (service_context("Welcome to town", "The settlement is your base for trade, rest, recruitment, and new work."))
-            (panel("Available Quests", html! {
-                @if quests.is_empty() {
-                    p class="text-muted" { "No notices are posted today." }
-                } @else {
-                    @for quest in quests.iter().take(3) {
-                        a href=(format!("/quests/{}", quest.id)) class="quest-card" {
-                            div class="quest-card-header" {
-                                span class="quest-card-title" { (quest.title) }
-                                (status_badge(&quest.status))
-                            }
-                            div class="quest-card-meta" {
-                                (difficulty_stars(quest.difficulty))
-                                div class="quest-card-reward" {
-                                    (gold_display(quest.gold_reward))
-                                    (xp_display(quest.xp_reward))
-                                }
-                            }
-                        }
-                    }
-                    @if quests.len() > 3 {
-                        a href=(format!("/settlements/{}/noticeboard", settlement.id)) class="btn btn-secondary btn-small mt-1" { "View notice board" }
-                    }
-                }
-            }))
-        }
-        aside class="right-sidebar" {
-            (party_rail(active_character, inventory))
-            (sidebar_section("Parties in town", html! {
-                @if parties.is_empty() {
-                    p class="text-muted small-copy" { "No other parties are currently here." }
-                } @else {
-                    @for party in parties {
-                        (list_item(&format!("/parties/{}", party.id), &party.name, party.active_quest_id.as_deref()))
-                    }
-                }
-            }))
-        }
-    };
-
-    settlement_layout_with_session(&settlement.name, &settlement.name, &settlement.id, "", content, logged_in_as, theme)
-}
-
 /// Notice board page.
 pub fn noticeboard_page(
     settlement: &Settlement,
@@ -123,32 +64,36 @@ pub fn noticeboard_page(
     theme: &str,
 ) -> Markup {
     let content = html! {
-        aside class="left-sidebar" { (settlement_rail(settlement, "Notice Board", "Notices posted by local patrons.")) }
-        main class="center-content settlement-main" {
-            h2 class="page-title" { "Notice Board" }
-            (service_context("Posted work", "Review local opportunities and accept a quest as your party leader."))
-            @if quests.is_empty() {
-                (empty_state("No quests posted on the notice board.", None, None))
-            } @else {
-                @for quest in quests {
-                    (panel(&quest.title, html! {
-                        div class="flex justify-between items-center mb-1" {
-                            (status_badge(&quest.status))
-                            (difficulty_stars(quest.difficulty))
-                        }
-                        p class="small-copy" { (quest.description) }
-                        div class="quest-card-meta mt-1" {
-                            span class="quest-card-enemy" { "Target: " (quest.enemy_count) " " (quest.enemy_type) }
-                            div class="quest-card-reward" { (gold_display(quest.gold_reward)) (xp_display(quest.xp_reward)) }
-                        }
-                        @if quest.status.to_lowercase().contains("available") {
-                            form action=(format!("/quests/{}/accept", quest.id)) method="post" class="mt-1" {
-                                button type="submit" class="btn btn-primary btn-small" { "Accept quest" }
+        aside class="left-sidebar" {
+            (sidebar_section("Posted quests", html! {
+                @if quests.is_empty() {
+                    p class="text-muted small-copy" { "No notices have been posted." }
+                } @else {
+                    div class="notice-quest-list" {
+                        @for quest in quests {
+                            article class="notice-quest" {
+                                strong { (quest.title) }
+                                div class="notice-quest-meta" {
+                                    (difficulty_stars(quest.difficulty))
+                                    (gold_display(quest.gold_reward))
+                                }
+                                p class="small-copy" { (quest.enemy_count) " " (quest.enemy_type) }
+                                @if quest.status.to_lowercase().contains("available") {
+                                    form action=(format!("/quests/{}/accept", quest.id)) method="post" {
+                                        button type="submit" class="btn btn-primary btn-small btn-block" { "Accept" }
+                                    }
+                                } @else {
+                                    (status_badge(&quest.status))
+                                }
                             }
                         }
-                    }))
+                    }
                 }
-            }
+            }))
+        }
+        main class="center-content settlement-main" {
+            h2 class="page-title" { "Notice Board" }
+            (visual_stage("map", "Settlement map", "TODO: settlement map image"))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -165,13 +110,11 @@ pub fn tavern_page(
     theme: &str,
 ) -> Markup {
     let content = html! {
-        aside class="left-sidebar" { (settlement_rail(settlement, "Innkeeper", "Adventurers, rumours, and open tables.")) }
-        main class="center-content settlement-main" {
-            h2 class="page-title" { "The Tavern" }
-            (service_context("A place to gather", "Meet other adventurers, form a party, and prepare for your next expedition."))
-            (panel("Parties looking for members", html! {
+        aside class="left-sidebar" {
+            (settlement_rail(settlement, "Innkeeper", "Adventurers, rumours, and open tables."))
+            (sidebar_section("Parties in the tavern", html! {
                 @if parties.is_empty() {
-                    p class="text-muted" { "No parties currently recruiting." }
+                    p class="text-muted small-copy" { "No parties currently recruiting." }
                 } @else {
                     @for party in parties {
                         div class="member-item" {
@@ -182,11 +125,12 @@ pub fn tavern_page(
                         }
                     }
                 }
+                a href="/parties/new" class="btn btn-primary btn-small btn-block mt-1" { "Create party" }
             }))
-            (panel("Start a party", html! {
-                p class="small-copy" { "Gather allies before accepting a job from the notice board." }
-                a href="/parties/new" class="btn btn-primary mt-1" { "Create party" }
-            }))
+        }
+        main class="center-content settlement-main" {
+            h2 class="page-title" { "The Tavern" }
+            (visual_stage("npc", "Innkeeper", "TODO: innkeeper portrait"))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -267,11 +211,7 @@ fn service_page(
         }
         main class="center-content settlement-main" {
             h2 class="page-title" { (title) }
-            (service_context(npc_name, introduction))
-            (panel("Service", html! {
-                p { (todo) }
-                button class="btn btn-secondary mt-1" disabled title="TODO: requires strategic service reducer" { "Unavailable" }
-            }))
+            (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
         }
         aside class="right-sidebar" { (party_rail(active_character, inventory)) }
     };
@@ -295,11 +235,19 @@ fn settlement_rail(settlement: &Settlement, npc_name: &str, description: &str) -
     }
 }
 
-fn service_context(title: &str, copy: &str) -> Markup {
+fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     html! {
-        section class="service-context" {
-            strong class="service-context-title" { (title) }
-            p class="service-context-copy" { (copy) }
+        figure class=(format!("service-visual service-visual-{}", kind)) {
+            div class="service-visual-placeholder" role="img" aria-label=(placeholder) {
+                @if kind == "map" {
+                    span class="visual-symbol" { "⌖" }
+                    span class="visual-label" { "Map placeholder" }
+                } @else {
+                    span class="visual-symbol" { (title.chars().next().unwrap_or('?')) }
+                    span class="visual-label" { "Portrait placeholder" }
+                }
+            }
+            figcaption { (title) " · " (placeholder) }
         }
     }
 }

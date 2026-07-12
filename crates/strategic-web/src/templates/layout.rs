@@ -167,7 +167,6 @@ fn settlement_top_bar(
     current_theme: &str,
 ) -> Markup {
     let services = [
-        ("", "Overview"),
         ("noticeboard", "Notice Board"),
         ("tavern", "Tavern"),
         ("merchants", "Market"),

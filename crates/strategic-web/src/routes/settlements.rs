@@ -12,7 +12,7 @@ use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{Character, InventoryItem, Party, Quest, Settlement};
 use crate::templates::settlement::{
-    inn_page, merchants_page, noticeboard_page, settlement_detail_page, settlements_list_page,
+    inn_page, merchants_page, noticeboard_page, settlements_list_page,
     smith_page, tavern_page,
 };
 
@@ -42,64 +42,9 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
 }
 
 async fn show_settlement(
-    State(state): State<AppState>,
     Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    // Get quests at this settlement, then filter by available status in Rust.
-    // SpacetimeDB enums may not compare reliably with SQL string literals.
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-    let available_quests: Vec<Quest> = quests
-        .into_iter()
-        .filter(|q| is_available_status(&q.status))
-        .collect();
-
-    // Get parties at this settlement
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    Html(
-        settlement_detail_page(
-            settlement,
-            &available_quests,
-            &parties,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
+ ) -> Redirect {
+    Redirect::to(&format!("/settlements/{id}/noticeboard"))
 }
 
 async fn noticeboard(
@@ -346,6 +291,3 @@ async fn get_active_character(
     Some((character, inventory))
 }
 
-fn is_available_status(status: &str) -> bool {
-    status.to_ascii_lowercase().contains("available")
-}
