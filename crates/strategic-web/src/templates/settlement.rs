@@ -254,8 +254,26 @@ fn service_page(
         _ => None,
     };
     let content = html! {
-        aside class="left-sidebar" {
-            @if let Some((stock_title, offers)) = trade_offers {
+        aside class=(if service_id == "inn" || service_id == "religion" { "left-sidebar service-left-sidebar" } else { "left-sidebar" }) {
+            @if service_id == "inn" {
+                div class="service-left-stack" {
+                    div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
+                    (rest_service_menu("Inn"))
+                }
+            } @else if service_id == "religion" {
+                div class="service-left-stack" {
+                    div class="service-inventory-area" {
+                        (sidebar_section("Church services", html! {
+                            div class="service-placeholder-list" {
+                                span { "Sanctuary services" }
+                                span class="badge badge-warning" { "TODO" }
+                            }
+                            p class="text-muted small-copy" { (todo) }
+                        }))
+                    }
+                    (rest_service_menu("Church"))
+                }
+            } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
             } @else {
                 (sidebar_section("Settlement offerings", html! {
@@ -272,22 +290,13 @@ fn service_page(
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
-        aside class=(if service_id == "inn" || service_id == "religion" { "right-sidebar service-right-sidebar" } else { "right-sidebar" }) {
+        aside class="right-sidebar" {
             @if trade_offers.is_some() {
-                @if service_id == "inn" {
-                    (inventory_and_rest_rail(
-                        active_character,
-                        inventory,
-                        Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
-                        "Inn",
-                    ))
-                } @else {
-                    (inventory_rail(
-                        active_character,
-                        inventory,
-                        Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
-                    ))
-                }
+                (inventory_rail(
+                    active_character,
+                    inventory,
+                    Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
+                ))
             } @else if service_id == "smith" {
                 (inventory_rail(
                     active_character,
@@ -295,7 +304,7 @@ fn service_page(
                     Some(("Repair", "TODO: repairs require durability, pricing, and smithing reducers")),
                 ))
             } @else if service_id == "religion" {
-                (inventory_and_rest_rail(active_character, inventory, None, "Church"))
+                (inventory_rail(active_character, inventory, None))
             } @else {
                 (sidebar_section("Service", html! {
                     p class="text-muted small-copy" { (todo) }
@@ -304,22 +313,6 @@ fn service_page(
         }
     };
     settlement_layout_with_session(title, &settlement.name, &settlement.id, service_id, content, logged_in_as, theme)
-}
-
-fn inventory_and_rest_rail(
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    trade_action: Option<(&str, &str)>,
-    location: &str,
-) -> Markup {
-    html! {
-        div class="service-right-stack" {
-            div class="service-inventory-area" {
-                (inventory_rail(active_character, inventory, trade_action))
-            }
-            (rest_service_menu(location))
-        }
-    }
 }
 
 fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
@@ -496,12 +489,15 @@ fn rest_service_menu(location: &str) -> Markup {
                 strong { "Rest" }
                 span class="badge badge-warning" { "TODO" }
             }
-            p class="rest-service-copy" { "Choose how long to rest. Recovery and time advancement are not implemented yet." }
-            div class="rest-duration-options" role="group" aria-label="Rest duration" {
-                button type="button" disabled title="TODO: resting requires strategic downtime support" { "1 hour" }
-                button type="button" disabled title="TODO: resting requires strategic downtime support" { "8 hours" }
-                button type="button" class="active" disabled
-                    title="TODO: resting requires strategic downtime support" { "Until fully healed" }
+            p class="rest-service-copy" { "Choose how many days to rest. Recovery and time advancement are not implemented yet." }
+            div class="rest-days-control" {
+                button type="button" class="rest-days-step" disabled aria-label="Decrease rest days"
+                    title="TODO: resting requires strategic downtime support" { "−" }
+                input type="number" value="0" min="0" disabled aria-label="Rest days"
+                    title="Default: the number of days needed to fully heal once strategic recovery is implemented";
+                span class="rest-days-unit" { "days" }
+                button type="button" class="rest-days-step" disabled aria-label="Increase rest days"
+                    title="TODO: resting requires strategic downtime support" { "+" }
             }
             button type="button" class="btn btn-primary btn-small btn-block" disabled
                 title="TODO: resting requires strategic downtime support" { "Rest" }
