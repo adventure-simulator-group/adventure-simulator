@@ -391,17 +391,17 @@ fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
         (sidebar_section("Your skills", html! {
             @if let Some(skills) = skills {
                 div class="party-skills-list" {
-                    (party_skill_row("Will", skills.will_hours))
-                    (party_skill_row("Charisma", skills.charisma_hours))
-                    (party_skill_row("Medicine", skills.medicine_hours))
-                    (party_skill_row("Faith", skills.faith_hours))
-                    (party_skill_row("Melee", skills.melee_hours))
-                    (party_skill_row("Ranged", skills.ranged_hours))
-                    (party_skill_row("Dodge", skills.dodge_hours))
-                    (party_skill_row("Block", skills.block_hours))
-                    (party_skill_row("Stealth", skills.stealth_hours))
-                    (party_skill_row("Balance", skills.balance_hours))
-                    (party_skill_row("Surgeon", skills.surgeon_hours))
+                    (party_skill_row("Will", skills.will_hours, 5_000.0))
+                    (party_skill_row("Charisma", skills.charisma_hours, 20_000.0))
+                    (party_skill_row("Medicine", skills.medicine_hours, 10_000.0))
+                    (party_skill_row("Faith", skills.faith_hours, 5_000.0))
+                    (party_skill_row("Melee", skills.melee_hours, 8_000.0))
+                    (party_skill_row("Ranged", skills.ranged_hours, 15_000.0))
+                    (party_skill_row("Dodge", skills.dodge_hours, 20_000.0))
+                    (party_skill_row("Block", skills.block_hours, 12_000.0))
+                    (party_skill_row("Stealth", skills.stealth_hours, 8_000.0))
+                    (party_skill_row("Balance", skills.balance_hours, 30_000.0))
+                    (party_skill_row("Surgeon", skills.surgeon_hours, 10_000.0))
                 }
             } @else {
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
@@ -410,20 +410,21 @@ fn party_skills_rail(skills: Option<&CharacterSkills>) -> Markup {
     }
 }
 
-fn party_skill_row(name: &str, hours: f32) -> Markup {
-    html! { div class="party-skill-row" { span { (name) } strong { (format!("{hours:.0}h")) } } }
+fn party_skill_row(name: &str, hours: f32, half_hours: f32) -> Markup {
+    let rank = 5.0 * hours / (hours + half_hours);
+    html! { div class="party-skill-row" { span { (name) } strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.1} / 5")) } } }
 }
 
 fn attribute_overlay(attributes: Option<&CharacterAttributes>) -> Markup {
     let Some(attributes) = attributes else { return html! {}; };
     html! {
         div class="character-attribute-overlay" aria-label="Character attributes" {
-            div class="attribute-callout attribute-head" { "Mind " strong { (format!("{:.1}", attributes.intelligence)) } }
-            div class="attribute-callout attribute-chest" { "Endurance " strong { (format!("{:.1}", attributes.endurance)) } }
-            div class="attribute-callout attribute-left-arm" { "L arm " strong { (format!("{:.1}", attributes.left_arm_strength)) } }
-            div class="attribute-callout attribute-right-arm" { "R arm " strong { (format!("{:.1}", attributes.right_arm_strength)) } }
-            div class="attribute-callout attribute-left-leg" { "L leg " strong { (format!("{:.1}", attributes.left_leg_strength)) } }
-            div class="attribute-callout attribute-right-leg" { "R leg " strong { (format!("{:.1}", attributes.right_leg_strength)) } }
+            div class="attribute-callout attribute-head" { "Mind " strong { (format!("{:.0}", attributes.intelligence)) } }
+            div class="attribute-callout attribute-chest" { "Endurance " strong { (format!("{:.0}", attributes.endurance)) } }
+            div class="attribute-callout attribute-left-arm" { "L arm " strong { (format!("{:.0}", attributes.left_arm_strength)) } }
+            div class="attribute-callout attribute-right-arm" { "R arm " strong { (format!("{:.0}", attributes.right_arm_strength)) } }
+            div class="attribute-callout attribute-left-leg" { "L leg " strong { (format!("{:.0}", attributes.left_leg_strength)) } }
+            div class="attribute-callout attribute-right-leg" { "R leg " strong { (format!("{:.0}", attributes.right_leg_strength)) } }
         }
     }
 }

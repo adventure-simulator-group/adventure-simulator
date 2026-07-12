@@ -323,10 +323,10 @@ fn attribute_row(name: &str, value: f32) -> Markup {
     html! {
         div class="attribute-row" {
             span { (name) }
-            div class="attribute-meter" title=(format!("{value:.1} / 5")) {
+            div class="attribute-meter" title=(format!("{value:.0} / 5")) {
                 span style=(format!("width:{width:.1}%")) {}
             }
-            strong { (format!("{value:.1}")) }
+            strong { (format!("{value:.0}")) }
         }
     }
 }
@@ -347,9 +347,9 @@ fn training_row(name: &str, hours: f32, half_hours: f32) -> Markup {
     let width = (rank / 5.0) * 100.0;
     html! {
         div class="training-row" {
-            div class="training-label" { span { (name) } strong { (format!("{rank:.1}")) } }
+            div class="training-label" { span { (name) } strong title=(format!("{hours:.0} hours trained")) { (format!("{rank:.1} / 5")) } }
             div class="training-meter" title=(format!("{hours:.0} hours trained")) { span style=(format!("width:{width:.1}%")) {} }
-            small { (format!("{hours:.0} h")) }
+            small title=(format!("{hours:.0} hours trained")) { (format!("{rank:.1} / 5")) }
         }
     }
 }
