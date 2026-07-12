@@ -764,6 +764,7 @@
   padding: 0;
   overflow: hidden;
   position: relative;
+  z-index: 1;
 }
 
 .settlement-main .page-title {
@@ -867,6 +868,11 @@
   gap: 0.45rem;
 }
 
+.trade-inventory-list {
+  gap: 0;
+  margin-top: 0 !important;
+}
+
 .trade-row,
 .inventory-trade-row {
   position: relative;
@@ -878,6 +884,12 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
   background: var(--panel-bg);
+}
+
+.trade-inventory-list .inventory-trade-row {
+  width: 100%;
+  border-inline: 0;
+  border-radius: 0;
 }
 
 .trade-item-summary {
@@ -908,7 +920,7 @@
 
 .trade-transfer {
   position: absolute;
-  z-index: 5;
+  z-index: 20;
   top: 50%;
   width: 1.6rem;
   height: 1.6rem;

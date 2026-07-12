@@ -284,8 +284,26 @@
 .left-sidebar:has(.trade-inventory-list),
 .right-sidebar:has(.inventory-trade-row) {
   position: relative;
-  z-index: 3;
+  z-index: 10;
+  padding: 0;
   overflow-x: visible;
+}
+
+.left-sidebar:has(.trade-inventory-list) .sidebar-section,
+.right-sidebar:has(.inventory-trade-row) .sidebar-section {
+  margin: 0;
+}
+
+.left-sidebar:has(.trade-inventory-list) .sidebar-header,
+.right-sidebar:has(.inventory-trade-row) .sidebar-header {
+  margin: 0;
+  padding: var(--padding) var(--padding) 0.5rem;
+}
+
+.left-sidebar:has(.trade-inventory-list) .small-copy,
+.right-sidebar:has(.inventory-trade-row) .small-copy {
+  margin: 0;
+  padding: 0 var(--padding) 0.65rem;
 }
 
 /* Left Sidebar */
