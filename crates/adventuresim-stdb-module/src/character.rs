@@ -188,8 +188,47 @@ pub fn create_named_character_with_id(
     insert_new_character(ctx, name, id, false)
 }
 
+/// Seed an injured character for local UI development and visual verification.
 #[reducer]
-fn insert_new_character(
+pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
+    const DAMAGED_CHARACTER_ID: u64 = 9_999_999_999_999_999;
+
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(DAMAGED_CHARACTER_ID)
+        .is_none()
+    {
+        insert_new_character(
+            ctx,
+            "Wounded Demo".to_string(),
+            DAMAGED_CHARACTER_ID,
+            false,
+        )?;
+    }
+
+    let mut limbs = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(DAMAGED_CHARACTER_ID)
+        .ok_or_else(|| "Damaged demo character is missing limb data".to_string())?;
+
+    limbs.left_arm_health = 0.55;
+    limbs.right_arm_health = 0.80;
+    limbs.left_leg_health = 0.65;
+    limbs.right_leg_health = 0.90;
+    limbs.head_health = 0.75;
+    limbs.chest_health = 0.85;
+    limbs.stomach_health = 0.70;
+    ctx.db.character_limbs().character_id().update(limbs);
+
+    Ok(())
+}
+
+#[reducer]
+pub(crate) fn insert_new_character(
     ctx: &ReducerContext,
     name: String,
     id: u64,

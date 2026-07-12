@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
 
-use crate::{character::character, tactical::tactical_server_request};
+use crate::{character::{character, character_equip}, item::{inventory_item, InventoryItem}, tactical::tactical_server_request};
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -136,6 +136,102 @@ pub fn join_party(ctx: &ReducerContext, character_id: u64, party_id: String) -> 
 
     character.party_id = Some(party_id);
     ctx.db.character().id().update(character);
+    Ok(())
+}
+
+/// Transfer a stack of items between two members of the same party.
+#[reducer]
+pub fn transfer_party_item(
+    ctx: &ReducerContext,
+    from_character_id: u64,
+    to_character_id: u64,
+    inventory_item_id: u64,
+    quantity: u32,
+) -> Result<(), String> {
+    if quantity == 0 || from_character_id == to_character_id {
+        return Err("Transfer quantity must be positive and between different characters".into());
+    }
+    let Some(from) = ctx.db.character().id().find(from_character_id) else { return Err("Source character not found".into()); };
+    let Some(to) = ctx.db.character().id().find(to_character_id) else { return Err("Recipient character not found".into()); };
+    if from.party_id.is_none() || from.party_id != to.party_id {
+        return Err("Characters must belong to the same party".into());
+    }
+    let Some(source_item) = ctx.db.inventory_item().id().find(inventory_item_id) else { return Err("Inventory item not found".into()); };
+    if source_item.character_id != from_character_id || source_item.quantity < quantity {
+        return Err("Source character does not have that quantity".into());
+    }
+    if ctx.db.character_equip().character_id().find(from_character_id)
+        .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some()) {
+        return Err("Unequip an item before transferring it".into());
+    }
+
+    if source_item.quantity == quantity {
+        ctx.db.inventory_item().id().delete(inventory_item_id);
+    } else {
+        let mut updated = source_item.clone();
+        updated.quantity -= quantity;
+        ctx.db.inventory_item().id().update(updated);
+    }
+    if let Some(mut destination_item) = ctx.db.inventory_item().character_and_item_id().filter((to_character_id, &source_item.item_id)).next() {
+        destination_item.quantity = destination_item.quantity.saturating_add(quantity);
+        ctx.db.inventory_item().id().update(destination_item);
+    } else {
+        ctx.db.inventory_item().insert(InventoryItem { id: 0, character_id: to_character_id, item_id: source_item.item_id, quantity });
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn finalize_party_offer(
+    ctx: &ReducerContext,
+    from_character_ids: Vec<u64>,
+    to_character_ids: Vec<u64>,
+    inventory_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if from_character_ids.len() != to_character_ids.len()
+        || from_character_ids.len() != inventory_item_ids.len()
+        || from_character_ids.len() != quantities.len()
+        || from_character_ids.is_empty() {
+        return Err("Offer entries must be non-empty and aligned".into());
+    }
+    for index in 0..from_character_ids.len() {
+        let from_id = from_character_ids[index];
+        let to_id = to_character_ids[index];
+        let quantity = quantities[index];
+        let Some(from) = ctx.db.character().id().find(from_id) else { return Err("Source character not found".into()); };
+        let Some(to) = ctx.db.character().id().find(to_id) else { return Err("Recipient character not found".into()); };
+        let Some(item) = ctx.db.inventory_item().id().find(inventory_item_ids[index]) else { return Err("Inventory item not found".into()); };
+        if quantity == 0 || from_id == to_id || from.party_id.is_none() || from.party_id != to.party_id || item.character_id != from_id || item.quantity < quantity {
+            return Err("Invalid party trade offer".into());
+        }
+        if ctx.db.character_equip().character_id().find(from_id).is_some_and(|equip| equip.is_equiped(item.id).is_some()) {
+            return Err("Unequip an item before offering it".into());
+        }
+    }
+    for index in 0..from_character_ids.len() {
+        transfer_party_item(ctx, from_character_ids[index], to_character_ids[index], inventory_item_ids[index], quantities[index])?;
+    }
+    Ok(())
+}
+
+/// Adds two deterministic companions to the specified character's party for
+/// strategic UI development. Safe to call repeatedly.
+#[reducer]
+pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    let party_id = "demo-party".to_string();
+    if ctx.db.party().id().find(&party_id).is_none() {
+        create_party(ctx, party_id.clone(), "Riverdale Company".into(), leader_id)?;
+    }
+
+    for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {
+        if ctx.db.character().id().find(id).is_none() {
+            crate::character::insert_new_character(ctx, name.into(), id, false)?;
+        }
+        if ctx.db.character().id().find(id).and_then(|character| character.party_id).is_none() {
+            join_party(ctx, id, party_id.clone())?;
+        }
+    }
     Ok(())
 }
 

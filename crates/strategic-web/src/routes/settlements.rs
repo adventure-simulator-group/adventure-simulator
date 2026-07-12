@@ -4,19 +4,21 @@ use axum::{
     extract::{Path, State},
     response::{Html, Redirect},
     routing::{get, post},
-    Router,
+    Form, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterSkills, InventoryItem, Party, PartyMember, Quest,
-    Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem, ItemDefinition,
+    ItemKind, Party,
+    PartyMember, Quest, Settlement,
 };
 use crate::templates::settlement::{
-    armor_page, clothing_page, inn_page, merchants_page, noticeboard_page, party_member_page,
-    religion_page, settlements_list_page, smith_page, weapons_page,
+    armor_page, clothing_page, inn_page, merchants_page, noticeboard_page, party_inventory_page,
+    party_personal_page, party_stats_page, religion_page, settlements_list_page, smith_page, weapons_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -24,7 +26,11 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
         .route("/settlements/{id}/noticeboard", get(noticeboard))
-        .route("/settlements/{id}/party/{character_id}", get(party_member))
+        .route("/settlements/{id}/party/{character_id}", get(party_personal))
+        .route("/settlements/{id}/party/{character_id}/inventory", get(party_member))
+        .route("/settlements/{id}/party/{character_id}/inventory/transfer", post(transfer_party_item))
+        .route("/settlements/{id}/party/{character_id}/inventory/offer", post(finalize_party_offer))
+        .route("/settlements/{id}/party/{character_id}/stats", get(party_stats))
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
         .route("/settlements/{id}/weapons", get(weapons))
@@ -120,6 +126,22 @@ async fn noticeboard(
     )
 }
 
+async fn party_personal(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state.db.query(&format!("SELECT * FROM settlement WHERE id = '{}'", id)).await.unwrap_or_default();
+    let Some(settlement) = settlements.first() else { return Html("<h1>Settlement not found</h1>".to_string()); };
+    let Some((active_character, active_inventory)) = get_active_character(&state, session.character_id_u64()).await else { return Html("<h1>Choose a character first</h1>".to_string()); };
+    if character_id != active_character.id { return Html("<h1>Party member not found</h1>".to_string()); }
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
+    let attributes: Vec<CharacterAttributes> = state.db.query(&format!("SELECT * FROM character_attributes WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let skills: Vec<CharacterSkills> = state.db.query(&format!("SELECT * FROM character_skills WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let limbs: Vec<CharacterLimbs> = state.db.query(&format!("SELECT * FROM character_limbs WHERE character_id = {character_id}")).await.unwrap_or_default();
+    Html(party_personal_page(settlement, &active_character, &active_inventory, &party_members, attributes.first(), skills.first(), limbs.first(), session.theme()).into_string())
+}
+
 async fn party_member(
     State(state): State<AppState>,
     Path((id, character_id)): Path<(String, u64)>,
@@ -167,39 +189,100 @@ async fn party_member(
             .unwrap_or_default()
     };
 
-    let attributes: Vec<CharacterAttributes> = if character_id == active_character.id {
-        state
-            .db
-            .query(&format!("SELECT * FROM character_attributes WHERE character_id = {character_id}"))
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let skills: Vec<CharacterSkills> = if character_id == active_character.id {
-        state
-            .db
-            .query(&format!("SELECT * FROM character_skills WHERE character_id = {character_id}"))
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let selected_equip: Vec<CharacterEquip> = state.db.query(&format!("SELECT * FROM character_equip WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let active_equip: Vec<CharacterEquip> = if character_id == active_character.id { selected_equip.clone() } else { state.db.query(&format!("SELECT * FROM character_equip WHERE character_id = {}", active_character.id)).await.unwrap_or_default() };
 
     Html(
-        party_member_page(
+        party_inventory_page(
             settlement,
             &selected,
             &selected_inventory,
             &active_character,
             &active_inventory,
             &party_members,
-            attributes.first(),
-            skills.first(),
+            selected_equip.first(),
+            active_equip.first(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+async fn party_stats(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state.db.query(&format!("SELECT * FROM settlement WHERE id = '{}'", id)).await.unwrap_or_default();
+    let Some(settlement) = settlements.first() else { return Html("<h1>Settlement not found</h1>".to_string()); };
+    let Some((active_character, _)) = get_active_character(&state, session.character_id_u64()).await else { return Html("<h1>Choose a character first</h1>".to_string()); };
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
+    if character_id != active_character.id && !party_members.iter().any(|member| member.id == character_id) {
+        return Html("<h1>Party member not found</h1>".to_string());
+    }
+    let selected = if character_id == active_character.id { active_character.clone() } else {
+        let characters: Vec<Character> = state.db.query(&format!("SELECT * FROM character WHERE id = {character_id}")).await.unwrap_or_default();
+        match characters.into_iter().next() { Some(character) => character, None => return Html("<h1>Party member not found</h1>".to_string()) }
+    };
+    let selected_attributes: Vec<CharacterAttributes> = state.db.query(&format!("SELECT * FROM character_attributes WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let selected_skills: Vec<CharacterSkills> = state.db.query(&format!("SELECT * FROM character_skills WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let selected_limbs: Vec<CharacterLimbs> = state.db.query(&format!("SELECT * FROM character_limbs WHERE character_id = {character_id}")).await.unwrap_or_default();
+    let active_id = active_character.id;
+    let active_attributes: Vec<CharacterAttributes> = state.db.query(&format!("SELECT * FROM character_attributes WHERE character_id = {active_id}")).await.unwrap_or_default();
+    let active_skills: Vec<CharacterSkills> = state.db.query(&format!("SELECT * FROM character_skills WHERE character_id = {active_id}")).await.unwrap_or_default();
+    let active_limbs: Vec<CharacterLimbs> = state.db.query(&format!("SELECT * FROM character_limbs WHERE character_id = {active_id}")).await.unwrap_or_default();
+    Html(party_stats_page(settlement, &selected, &active_character, &party_members, selected_attributes.first(), selected_skills.first(), selected_limbs.first(), active_attributes.first(), active_skills.first(), active_limbs.first(), session.theme()).into_string())
+}
+
+#[derive(Deserialize)]
+struct PartyTransferForm {
+    from_character_id: u64,
+    inventory_item_id: u64,
+    quantity: u32,
+}
+
+#[derive(Deserialize)]
+struct PartyOfferForm { from_character_ids: String, to_character_ids: String, inventory_item_ids: String, quantities: String }
+
+async fn finalize_party_offer(State(state): State<AppState>, Path((settlement_id, character_id)): Path<(String, u64)>, session: Session, Form(form): Form<PartyOfferForm>) -> Redirect {
+    if let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await {
+        let parse = |value: &str| value.split(',').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>();
+        let quantities = form.quantities.split(',').map(str::parse::<u32>).collect::<Result<Vec<_>, _>>();
+        if let (Ok(from_ids), Ok(to_ids), Ok(item_ids), Ok(quantities)) = (parse(&form.from_character_ids), parse(&form.to_character_ids), parse(&form.inventory_item_ids), quantities) {
+        if from_ids.iter().all(|id| *id == active.id || *id == character_id)
+            && to_ids.iter().all(|id| *id == active.id || *id == character_id) {
+            let _ = state.db.call("finalize_party_offer", &[json!(from_ids), json!(to_ids), json!(item_ids), json!(quantities)]).await;
+        }
+        }
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}/party/{character_id}/inventory"))
+}
+
+async fn transfer_party_item(
+    State(state): State<AppState>,
+    Path((settlement_id, recipient_id)): Path<(String, u64)>,
+    session: Session,
+    Form(form): Form<PartyTransferForm>,
+) -> Redirect {
+    let Some((active_character, _)) = get_active_character(&state, session.character_id_u64()).await else {
+        return Redirect::to("/characters");
+    };
+    if form.from_character_id != active_character.id && recipient_id != active_character.id {
+        return Redirect::to(&format!("/settlements/{settlement_id}"));
+    }
+    let to_character_id = if form.from_character_id == active_character.id { recipient_id } else { active_character.id };
+    if let Err(error) = state.db.call(
+        "transfer_party_item",
+        &[json!(form.from_character_id), json!(to_character_id), json!(form.inventory_item_id), json!(form.quantity)],
+    ).await {
+        tracing::warn!("Party item transfer failed: {error}");
+    }
+    let comparison_character_id = if form.from_character_id == active_character.id {
+        recipient_id
+    } else {
+        form.from_character_id
+    };
+    Redirect::to(&format!("/settlements/{settlement_id}/party/{comparison_character_id}/inventory"))
 }
 
 async fn merchants(
@@ -356,19 +439,19 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
 }
 
 async fn weapons(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
-    render_service_page(state, id, session, weapons_page).await
+    render_service_page(state, id, session, weapons_page, Some(ServiceInventoryFilter::Weapons)).await
 }
 
 async fn armor(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
-    render_service_page(state, id, session, armor_page).await
+    render_service_page(state, id, session, armor_page, Some(ServiceInventoryFilter::Armor)).await
 }
 
 async fn clothing(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
-    render_service_page(state, id, session, clothing_page).await
+    render_service_page(state, id, session, clothing_page, Some(ServiceInventoryFilter::Clothing)).await
 }
 
 async fn religion(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
-    render_service_page(state, id, session, religion_page).await
+    render_service_page(state, id, session, religion_page, None).await
 }
 
 type ServiceRenderer = fn(
@@ -380,11 +463,15 @@ type ServiceRenderer = fn(
     &str,
 ) -> maud::Markup;
 
+#[derive(Clone, Copy)]
+enum ServiceInventoryFilter { Weapons, Armor, Clothing }
+
 async fn render_service_page(
     state: AppState,
     id: String,
     session: Session,
     render: ServiceRenderer,
+    inventory_filter: Option<ServiceInventoryFilter>,
 ) -> Html<String> {
     let settlements: Vec<Settlement> = state
         .db
@@ -406,13 +493,22 @@ async fn render_service_page(
         .as_ref()
         .map(|(character, _)| character.name.clone());
 
+    let filtered_inventory = if let (Some((_, inventory)), Some(filter)) = (&active_character, inventory_filter) {
+        let items: Vec<ItemDefinition> = state.db.query("SELECT * FROM item").await.unwrap_or_default();
+        inventory.iter().filter(|entry| {
+            items.iter().find(|item| item.id == entry.item_id).is_some_and(|item| match filter {
+                ServiceInventoryFilter::Weapons => item.kind == ItemKind::Weapon,
+                ServiceInventoryFilter::Armor => matches!(item.kind, ItemKind::Armor | ItemKind::Shield),
+                ServiceInventoryFilter::Clothing => item.kind == ItemKind::Clothing,
+            })
+        }).cloned().collect::<Vec<_>>()
+    } else { active_character.as_ref().map_or_else(Vec::new, |(_, inventory)| inventory.clone()) };
+
     Html(
         render(
             settlement,
             active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &filtered_inventory,
             &party_members,
             logged_in_as.as_deref(),
             session.theme(),
