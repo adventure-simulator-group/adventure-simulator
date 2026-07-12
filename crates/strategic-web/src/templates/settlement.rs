@@ -255,7 +255,7 @@ pub fn inn_page(
     )
 }
 
-/// Temple placeholder.
+/// Church placeholder.
 pub fn religion_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -265,7 +265,7 @@ pub fn religion_page(
     theme: &str,
 ) -> Markup {
     service_page(
-        settlement, "religion", "Temple", "Priest",
+        settlement, "religion", "Church", "Priest",
         "Faith, donations, and divine services require the religion and reputation systems.",
         active_character, inventory, party_members, logged_in_as, theme,
     )
@@ -499,7 +499,7 @@ fn religion_detail_rail() -> Markup {
     html! {
         (sidebar_section("Devotion", html! {
             div class="context-placeholder" {
-                strong { "Temple services" }
+                strong { "Church services" }
                 p class="text-muted small-copy" { "TODO: faith, donations, and divine services are not implemented yet." }
                 button type="button" class="btn btn-secondary btn-small" disabled
                     title="TODO: donations require the religion and currency systems" { "Donate" }

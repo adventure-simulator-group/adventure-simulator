@@ -87,7 +87,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css";
+                link rel="stylesheet" href="/static/css/layout.css?v=service-icons-3";
                 link rel="stylesheet" href="/static/css/components.css?v=trade-arrows";
 
                 // Datastar
@@ -173,16 +173,15 @@ fn settlement_top_bar(
     current_theme: &str,
 ) -> Markup {
     let services = [
-        ("noticeboard", "Notice Board", "✦"),
-        ("tavern", "Tavern", "♜"),
-        ("merchants", "General Market", "▦"),
-        ("weapons", "Weapons", "⚔"),
-        ("armor", "Armour", "⛨"),
-        ("clothing", "Clothing", "♙"),
-        ("consumables", "Provisions", "♨"),
-        ("smith", "Smithy", "⚒"),
-        ("inn", "Inn", "☾"),
-        ("religion", "Temple", "✠"),
+        ("noticeboard", "Notice Board", "noticeboard"),
+        ("tavern", "Tavern", "tavern"),
+        ("merchants", "General Market", "market"),
+        ("weapons", "Weapons", "weapons"),
+        ("armor", "Armour", "armor"),
+        ("clothing", "Clothing", "clothing"),
+        ("consumables", "Provisions", "provisions"),
+        ("inn", "Inn", "inn"),
+        ("religion", "Church", "church"),
     ];
 
     html! {
@@ -207,7 +206,13 @@ fn settlement_top_bar(
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
                         aria-label=(label)
                         title=(label)
-                    { span class="service-tab-icon" aria-hidden="true" { (icon) } }
+                    {
+                        span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {
+                            span class="notice-slip notice-slip-one" {}
+                            span class="notice-slip notice-slip-two" {}
+                            span class="notice-slip notice-slip-three" {}
+                        }
+                    }
                 }
             }
 
