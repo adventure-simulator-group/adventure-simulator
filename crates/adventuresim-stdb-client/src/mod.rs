@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod abandon_quest_reducer;
 pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
+pub mod autoresolve_quest_reducer;
 pub mod backfill_item_values_reducer;
 pub mod begin_world_data_import_reducer;
 pub mod cancel_mission_request_reducer;
@@ -91,6 +92,7 @@ pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
+pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
 pub mod update_training_schedule_reducer;
@@ -110,6 +112,9 @@ pub use abandon_quest_reducer::{
 pub use accept_quest_reducer::{accept_quest, set_flags_for_accept_quest, AcceptQuestCallbackId};
 pub use add_and_equip_item_reducer::{
     add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
+};
+pub use autoresolve_quest_reducer::{
+    autoresolve_quest, set_flags_for_autoresolve_quest, AutoresolveQuestCallbackId,
 };
 pub use backfill_item_values_reducer::{
     backfill_item_values, set_flags_for_backfill_item_values, BackfillItemValuesCallbackId,
@@ -265,6 +270,9 @@ pub use transfer_party_item_reducer::{
 pub use travel_edge_import_type::TravelEdgeImport;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
+pub use travel_to_quest_reducer::{
+    set_flags_for_travel_to_quest, travel_to_quest, TravelToQuestCallbackId,
+};
 pub use travel_to_settlement_reducer::{
     set_flags_for_travel_to_settlement, travel_to_settlement, TravelToSettlementCallbackId,
 };
@@ -305,6 +313,10 @@ pub enum Reducer {
         character_id: u64,
         item_id: String,
         destination: ItemSlot,
+    },
+    AutoresolveQuest {
+        character_id: u64,
+        quest_id: String,
     },
     BackfillItemValues,
     BeginWorldDataImport,
@@ -468,6 +480,10 @@ pub enum Reducer {
         inventory_item_id: u64,
         quantity: u32,
     },
+    TravelToQuest {
+        character_id: u64,
+        quest_id: String,
+    },
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
@@ -503,6 +519,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonQuest { .. } => "abandon_quest",
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
+            Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BeginWorldDataImport => "begin_world_data_import",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
@@ -543,6 +560,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedWorld => "seed_world",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
+            Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
@@ -568,6 +586,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "add_and_equip_item" => Ok(__sdk::parse_reducer_args::<
                 add_and_equip_item_reducer::AddAndEquipItemArgs,
             >("add_and_equip_item", &value.args)?
+            .into()),
+            "autoresolve_quest" => Ok(__sdk::parse_reducer_args::<
+                autoresolve_quest_reducer::AutoresolveQuestArgs,
+            >("autoresolve_quest", &value.args)?
             .into()),
             "backfill_item_values" => Ok(__sdk::parse_reducer_args::<
                 backfill_item_values_reducer::BackfillItemValuesArgs,
@@ -761,6 +783,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "transfer_party_item" => Ok(__sdk::parse_reducer_args::<
                 transfer_party_item_reducer::TransferPartyItemArgs,
             >("transfer_party_item", &value.args)?
+            .into()),
+            "travel_to_quest" => Ok(__sdk::parse_reducer_args::<
+                travel_to_quest_reducer::TravelToQuestArgs,
+            >("travel_to_quest", &value.args)?
             .into()),
             "travel_to_settlement" => Ok(__sdk::parse_reducer_args::<
                 travel_to_settlement_reducer::TravelToSettlementArgs,

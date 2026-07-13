@@ -45,6 +45,7 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
 }
 
@@ -85,6 +86,12 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub location_description: String,
+    pub location_scene_key: String,
+    pub location_coord_x: f64,
+    pub location_coord_y: f64,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +100,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
 }
 

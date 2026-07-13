@@ -7,6 +7,11 @@ use super::{
     panel, sidebar_section, status_badge,
 };
 use crate::spacetimedb::Quest;
+use crate::{
+    routes::quests::NearbySettlement,
+    spacetimedb::Character,
+    templates::settlement::{settlement_chat_area, visual_stage},
+};
 
 /// List all quests
 pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &str) -> Markup {
@@ -193,5 +198,87 @@ pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
                 ))
             }
         }
+    }
+}
+
+/// Off-road strategic location reached after accepting and travelling to a quest.
+pub fn quest_location_page(
+    quest: &Quest,
+    nearby: &[NearbySettlement],
+    active_character: Option<&Character>,
+    can_travel: bool,
+    can_fight: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Location", html! {
+                h3 { (&quest.title) }
+                p class="small-copy" { (&quest.location_description) }
+                p class="text-muted small-copy" { "This is an off-road quest location." }
+            }))
+        }
+
+        main class="center-content settlement-main quest-location-main" {
+            div class="quest-visual-wrap" {
+                (visual_stage("map", &quest.title, "TODO: quest location image"))
+                div class="quest-combat-actions" aria-label="Quest actions" {
+                    @if can_fight {
+                        form action="/missions/enter" method="post" {
+                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                        }
+                        form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
+                            button type="submit" class="btn btn-primary" { "Autoresolve" }
+                        }
+                    } @else {
+                        span class="badge badge-info" { "Quest resolved" }
+                    }
+                }
+            }
+            (settlement_chat_area(&quest.title, active_character))
+        }
+
+        aside class="right-sidebar" {
+            (sidebar_section("Nearby settlements", html! {
+                @if nearby.is_empty() {
+                    (empty_state("No settlements are nearby.", None, None))
+                } @else {
+                    @for destination in nearby {
+                        article class="travel-destination" {
+                            div {
+                                strong { (&destination.settlement.name) }
+                                p class="text-muted small-copy" {
+                                    (format_distance(destination.distance_m))
+                                    " · " (format_journey_time(destination.journey_minutes))
+                                }
+                            }
+                            @if can_travel {
+                                form method="post" action=(format!("/settlements/{}/travel", destination.settlement.id)) {
+                                    button type="submit" class="btn btn-primary btn-small" { "Travel" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }))
+            (sidebar_section("Travel", html! {
+                p class="small-copy" { "Cross-country travel moves at 1.25 km/h: one quarter of road speed." }
+                p class="text-muted small-copy" { "Quest locations do not require a road connection." }
+            }))
+        }
+    };
+    base_layout_with_session(&quest.title, content, logged_in_as, theme)
+}
+
+fn format_distance(distance_m: u64) -> String {
+    format!("{:.1} km", distance_m as f64 / 1_000.0)
+}
+
+fn format_journey_time(minutes: u64) -> String {
+    if minutes < 60 {
+        format!("{minutes} min")
+    } else {
+        format!("{} hr {} min", minutes / 60, minutes % 60)
     }
 }

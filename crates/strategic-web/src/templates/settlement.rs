@@ -8,7 +8,7 @@ use maud::{Markup, html};
 
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
-    settlement_layout_with_session, sidebar_section, status_badge,
+    settlement_layout_with_session, sidebar_section,
 };
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
@@ -218,10 +218,13 @@ fn format_journey_time(minutes: u64) -> String {
 pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
+    selected_quest: Option<&Quest>,
     parties: &[Party],
     active_character: Option<&Character>,
     _inventory: &[InventoryItem],
     party_members: &[Character],
+    can_accept: bool,
+    can_travel: bool,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -233,20 +236,13 @@ pub fn noticeboard_page(
                 } @else {
                     div class="notice-quest-list" {
                         @for quest in quests {
-                            article class="notice-quest" {
+                            a href=(format!("/settlements/{}/noticeboard?quest={}", settlement.id, quest.id)) class="notice-quest notice-quest-link" {
                                 strong { (quest.title) }
                                 div class="notice-quest-meta" {
                                     (difficulty_stars(quest.difficulty))
                                     (gold_display(quest.gold_reward))
                                 }
                                 p class="small-copy" { (quest.enemy_count) " " (quest.enemy_type) }
-                                @if quest.status.to_lowercase().contains("available") {
-                                    form action=(format!("/quests/{}/accept", quest.id)) method="post" {
-                                        button type="submit" class="btn btn-primary btn-small btn-block" { "Accept" }
-                                    }
-                                } @else {
-                                    (status_badge(&quest.status))
-                                }
                             }
                         }
                     }
@@ -273,7 +269,7 @@ pub fn noticeboard_page(
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
-        aside class="right-sidebar" { (quest_detail_rail()) }
+        aside class="right-sidebar" { (quest_detail_rail(selected_quest, can_accept, can_travel)) }
     };
     settlement_layout_with_session(
         "Notice Board",
@@ -1057,7 +1053,7 @@ fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
     }
 }
 
-fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
+pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     html! {
         figure class=(format!("service-visual service-visual-{}", kind)) {
             div class="service-visual-placeholder" role="img" aria-label=(placeholder) {
@@ -1142,7 +1138,7 @@ fn incapacitation_wheel_placeholder() -> Markup {
 
 /// Layout-only chat panel matching the UX prototype. Channels, message history,
 /// and sending are deliberately disabled until the strategic chat backend exists.
-fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
+pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
     let party_label = active_character
         .map(|character| format!("{}'s party", character.name))
         .unwrap_or_else(|| "Party".to_string());
@@ -1376,13 +1372,62 @@ fn rest_service_menu_placeholder(location: &str) -> Markup {
     }
 }
 
-fn quest_detail_rail() -> Markup {
+fn quest_detail_rail(quest: Option<&Quest>, can_accept: bool, can_travel: bool) -> Markup {
     html! {
         (sidebar_section("Quest details", html! {
-            div class="context-placeholder" {
-                p { "Select a quest to inspect its full details." }
-                p class="text-muted small-copy" { "TODO: quest selection and detail rendering are not connected yet." }
+            @if let Some(quest) = quest {
+                div class="quest-board-detail" {
+                    h3 { (&quest.title) }
+                    p class="small-copy" { (&quest.description) }
+                    div class="notice-quest-meta" {
+                        (difficulty_stars(quest.difficulty))
+                        (gold_display(quest.gold_reward))
+                    }
+                    p class="small-copy" { "Target: " (quest.enemy_count) " " (&quest.enemy_type) }
+                    @if quest.status.to_lowercase().contains("accepted") && can_travel {
+                        div class="quest-travel-footer" {
+                            div class="quest-travel-summary" {
+                                strong { (format!("{:.1} km", quest.distance_m as f64 / 1_000.0)) }
+                                span { (format_quest_time(quest.distance_m)) }
+                            }
+                            form action=(format!("/quests/{}/travel", quest.id)) method="post" class="quest-travel-action" {
+                                button type="submit" class="btn btn-primary" { "Travel" }
+                            }
+                        }
+                    } @else {
+                        div class="quest-travel-summary" {
+                            strong { (format!("{:.1} km", quest.distance_m as f64 / 1_000.0)) }
+                            span { (format_quest_time(quest.distance_m)) }
+                        }
+                    }
+                    @if quest.status.to_lowercase().contains("available") && can_accept {
+                        form action=(format!("/quests/{}/accept", quest.id)) method="post" {
+                            button type="submit" class="btn btn-primary btn-block" { "Accept Quest" }
+                        }
+                    } @else if quest.status.to_lowercase().contains("accepted") && !can_travel {
+                        p class="text-muted small-copy" { "Your party must be at the posting settlement to travel." }
+                    } @else if quest.status.to_lowercase().contains("available") && !can_accept {
+                        p class="text-muted small-copy" { "A party leader without an active quest may accept this posting." }
+                    }
+                }
+            } @else {
+                div class="context-placeholder" {
+                    p { "Select a quest to inspect its full details." }
+                }
             }
         }))
+    }
+}
+
+fn format_quest_time(distance_m: u64) -> String {
+    let minutes = distance_m
+        .saturating_mul(60)
+        .div_ceil(5_000)
+        .saturating_mul(4)
+        .max(1);
+    if minutes < 60 {
+        format!("{minutes} min")
+    } else {
+        format!("{} hr {} min", minutes / 60, minutes % 60)
     }
 }

@@ -11,6 +11,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
 }
 

@@ -60,8 +60,8 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `party_member` | Party membership |
 | `mission` | Active and completed missions |
 | `mission_commit` | Idempotent mission result tracking |
-| `quest_def` | Quest definitions |
-| `character_quest` | Per-character quest progress |
+| `quest` | Settlement-owned generated postings, off-road locations, and acceptance state |
+| `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
 ### Key Reducers
@@ -75,6 +75,8 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
+| `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
+| `autoresolve_quest` | Apply a placeholder victory, rewards, and final persistent injury results |
 
 ## adventuresim-tactical-server
 
@@ -182,3 +184,4 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Scene allowlist**: Never accept arbitrary paths from clients
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
+- **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.

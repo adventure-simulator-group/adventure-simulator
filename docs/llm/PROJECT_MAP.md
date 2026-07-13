@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (221)
+## Files (297)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -46,6 +46,9 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/abandon_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/accept_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/add_and_equip_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/autoresolve_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/backfill_item_values_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/begin_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/cancel_mission_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/change_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/character_attributes_table.rs` — Generated SpacetimeDB table interface.
@@ -59,6 +62,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_stats_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_stats_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_time_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_time_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_training_schedule_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_training_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/complete_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/connected_player_item_type.rs` — Generated SpacetimeDB data type.
@@ -72,6 +79,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/create_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_temporary_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_armor_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/define_clothing_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_shield_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_weapon_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -80,6 +88,11 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/end_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/enter_mission_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/equip_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/finalize_merchant_trade_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/finalize_party_offer_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/import_settlements_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/import_travel_edges_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/import_world_nodes_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/insert_new_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/inventory_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/inventory_item_type.rs` — Generated SpacetimeDB data type.
@@ -99,17 +112,38 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/quest_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quest_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/quest_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/refresh_world_clock_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_for_scene_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/rest_at_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/seed_damaged_character_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/seed_party_companions_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_world_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/synchronize_character_time_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_server_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/transfer_party_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/travel_edge_import_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/travel_edge_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/travel_edge_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/travel_to_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/travel_to_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/update_character_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/update_training_schedule_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/world_clock_schedule_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/world_clock_schedule_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/world_clock_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/world_clock_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/world_data_import_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/world_data_import_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/world_node_import_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/world_node_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/world_node_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-module/.gitignore` — Repository support file.
 - `crates/adventuresim-stdb-module/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-module/README.md` — Component overview and usage notes.
@@ -118,6 +152,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/map.html` — Browser UI page.
 - `crates/adventuresim-stdb-module/static/serve.py` — Development or documentation automation script.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
@@ -189,20 +224,61 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/dark-arcanum.css` — Browser UI styling.
+- `crates/strategic-web/static/css/themes/fraktur-nocturne.css` — Browser UI styling.
+- `crates/strategic-web/static/css/themes/fraktur-texturina.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/imperial-crimson.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/northern-frost.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/renaissance-gold.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/verdant-chronicle.css` — Browser UI styling.
+- `crates/strategic-web/static/icons/character/inventory.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/character/repair.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/character/stats-sheet.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/endurance.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/eyesight.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/gut.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/hearing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/instinct.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/intelligence.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/strength-arm.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/attributes/strength-leg.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/balance.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/block.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/charisma.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/dodge.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/faith.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/medicine.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/melee.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/ranged.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/stealth.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/surgeon.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/skills/will.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/armor.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/church.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/clothing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/inn.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/noticeboard.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/party-trade.js` — Repository support file.
+- `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/textures/parchment-noise.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/textures/parchment-stains.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.
+- `docs/VIABUNDUS.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_wasm.sh` — Development or documentation automation script.
+- `scripts/import_viabundus.py` — Development or documentation automation script.
+- `scripts/init_viabundus.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `utils/generate_certificates.sh` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.

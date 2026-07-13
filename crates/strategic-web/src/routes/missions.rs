@@ -1,11 +1,11 @@
 //! Mission route handlers.
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
-    Router,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -58,6 +58,9 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     let Some(quest_id) = &party.active_quest_id else {
         return Redirect::to(&format!("/parties/{}", party_id));
     };
+    if character.current_quest_location_id.as_ref() != Some(quest_id) {
+        return Redirect::to(&format!("/quests/{quest_id}"));
+    }
 
     let scene_key = quest_scene_key(&state, quest_id)
         .await
@@ -155,15 +158,7 @@ async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
         .await
         .ok()?;
     let quest = quests.first()?;
-    let settlements: Vec<crate::spacetimedb::Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = '{}'",
-            quest.settlement_id
-        ))
-        .await
-        .ok()?;
-    settlements.first().map(|s| s.scene_key.clone())
+    Some(quest.location_scene_key.clone())
 }
 
 async fn get_mission_for_viewer(

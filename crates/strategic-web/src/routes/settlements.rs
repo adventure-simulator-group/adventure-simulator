@@ -2,7 +2,7 @@
 
 use axum::{
     Form, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::{Html, Redirect},
     routing::{get, post},
 };
@@ -232,6 +232,7 @@ async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
 async fn noticeboard(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<NoticeboardQuery>,
     session: Session,
 ) -> Html<String> {
     let settlements: Vec<Settlement> = state
@@ -264,6 +265,48 @@ async fn noticeboard(
         .unwrap_or_default();
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let active_party = if let Some(party_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.party_id.as_ref())
+    {
+        state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let posted_quests: Vec<Quest> = quests
+        .iter()
+        .filter(|quest| quest.status.to_lowercase().contains("available"))
+        .cloned()
+        .collect();
+    let active_quest = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_ref())
+        .and_then(|active_id| quests.iter().find(|quest| &quest.id == active_id));
+    let selected_quest = query
+        .quest
+        .as_ref()
+        .and_then(|selected_id| quests.iter().find(|quest| &quest.id == selected_id))
+        .or(active_quest);
+    let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
+        active_party.as_ref().is_some_and(|party| {
+            party.leader_id == character.id
+                && party.active_quest_id.is_none()
+                && character.current_settlement_id.as_deref() == Some(&id)
+        })
+    });
+    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
+        active_party.as_ref().is_some_and(|party| {
+            party.leader_id == character.id
+                && party.active_quest_id.as_deref() == selected_quest.map(|quest| quest.id.as_str())
+                && character.current_settlement_id.as_deref() == Some(&id)
+        })
+    });
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -275,18 +318,26 @@ async fn noticeboard(
     Html(
         noticeboard_page(
             settlement,
-            &quests,
+            &posted_quests,
+            selected_quest,
             &parties,
             active_character.as_ref().map(|(character, _)| character),
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &party_members,
+            can_accept,
+            can_travel,
             logged_in_as.as_deref(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Default, Deserialize)]
+struct NoticeboardQuery {
+    quest: Option<String>,
 }
 
 async fn party_personal(

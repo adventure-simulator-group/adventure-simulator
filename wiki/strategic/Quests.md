@@ -1,4 +1,8 @@
-For the MVP, quests are not based on the state of the world. Settlements simply will always have a fixed number of quests available at different difficulty levels, and every time a party takes one another will immediately be generated. The difficulty (and proportional reward) of a quest is a function of the estimated difficulty of the enemies (greater than the sum of their individual levels), the distance to them, and the difficulty of traversing that distance (how dangerous the area is and how difficult the terrain is). For the MVP, the only quests are just bounties to kill parties of enemies, which may be mobile or immobile.
+For the MVP, quests are not based on the state of the world. Each settlement has its own notice-board inventory of three randomly generated quests, and every time a party takes one another is immediately generated for that settlement. A posting owns a terse off-road destination, target, distance, difficulty, and proportional reward. The MVP quests are bounties to defeat parties of enemies.
+
+Accepting a quest does not teleport the party. The notice board shows the selected posting on the right, including its travel distance and time. Travel to a quest and travel onward from its location are straight-line, off-road journeys at one quarter of the normal 5 km/h settlement travel speed. Quest locations therefore do not need a Viabundus road connection.
+
+At the destination, the strategic page retains the normal chat placeholder, shows a location-image placeholder, and offers tactical combat or a placeholder autoresolve. Autoresolve always wins, completes the quest, grants its rewards, and applies a random 5–20% injury to one body part per party member. This is a final strategic result; tactical tick state remains transient and is not persisted.
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
@@ -8,4 +12,4 @@ Rewards are proportional to difficulty, which is better thought of as a measurem
 ## Interface
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations
-TODO: come up with a first-pass starting point to use to assess party power level. 
+TODO: come up with a first-pass starting point to use to assess party power level.

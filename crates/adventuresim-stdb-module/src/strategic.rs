@@ -1,7 +1,7 @@
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
-    character::{character, character_equip},
+    character::{character, character_equip, character_limbs},
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
     time::advance_character_time,
@@ -11,8 +11,10 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 const MERCHANT_MARGIN: f32 = 1.25;
 const SALES_TAX: f32 = 0.10;
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
 const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
+const QUESTS_PER_SETTLEMENT: usize = 3;
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -243,11 +245,13 @@ pub fn import_settlements(
             scene_key: settlement.scene_key,
             source_node_id: Some(settlement.source_node_id),
         };
+        let settlement_id = row.id.clone();
         if ctx.db.settlement().id().find(&row.id).is_some() {
             ctx.db.settlement().id().update(row);
         } else {
             ctx.db.settlement().insert(row);
         }
+        ensure_settlement_quests(ctx, &settlement_id)?;
     }
     Ok(())
 }
@@ -268,6 +272,12 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub location_description: String,
+    pub location_scene_key: String,
+    pub location_coord_x: f64,
+    pub location_coord_y: f64,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -278,6 +288,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
 }
 
@@ -325,6 +336,7 @@ pub fn create_party(
         name,
         leader_id,
         current_settlement_id: leader.current_settlement_id.clone(),
+        current_quest_location_id: leader.current_quest_location_id.clone(),
         active_quest_id: None,
     });
 
@@ -354,7 +366,9 @@ pub fn join_party(ctx: &ReducerContext, character_id: u64, party_id: String) -> 
         return Err("Party not found".into());
     };
 
-    if character.current_settlement_id != party.current_settlement_id {
+    if character.current_settlement_id != party.current_settlement_id
+        || character.current_quest_location_id != party.current_quest_location_id
+    {
         return Err("Must be in the same settlement as the party".into());
     }
 
@@ -726,6 +740,9 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if party.current_quest_location_id.is_some() {
+        return Err("Travel to a settlement before disbanding the party".into());
+    }
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
     for member in members {
@@ -737,11 +754,7 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
     }
 
     if let Some(quest_id) = party.active_quest_id {
-        if let Some(mut quest) = ctx.db.quest().id().find(&quest_id) {
-            quest.status = QuestStatus::Available;
-            quest.accepted_by = None;
-            ctx.db.quest().id().update(quest);
-        }
+        ctx.db.quest().id().delete(&quest_id);
     }
 
     ctx.db.party().id().delete(&party_id);
@@ -788,10 +801,12 @@ pub fn accept_quest(
 
     quest.status = QuestStatus::Accepted;
     quest.accepted_by = Some(party_id.clone());
+    let settlement_id = quest.settlement_id.clone();
     ctx.db.quest().id().update(quest);
 
     party.active_quest_id = Some(quest_id);
     ctx.db.party().id().update(party);
+    generate_quest_for_settlement(ctx, &settlement_id)?;
     Ok(())
 }
 
@@ -816,8 +831,11 @@ pub fn abandon_quest(
     if party.leader_id != character_id {
         return Err("Only the party leader can abandon quests".into());
     }
+    if character.current_quest_location_id.is_some() {
+        return Err("Travel to a settlement before abandoning the quest".into());
+    }
 
-    let Some(mut quest) = ctx.db.quest().id().find(&quest_id) else {
+    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
         return Err("Quest not found".into());
     };
 
@@ -825,9 +843,7 @@ pub fn abandon_quest(
         return Err("This quest is not accepted by your party".into());
     }
 
-    quest.status = QuestStatus::Available;
-    quest.accepted_by = None;
-    ctx.db.quest().id().update(quest);
+    ctx.db.quest().id().delete(&quest.id);
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
@@ -900,6 +916,78 @@ fn journey_minutes(distance_m: u64) -> u64 {
         .max(1)
 }
 
+fn quest_journey_minutes(distance_m: u64) -> u64 {
+    journey_minutes(distance_m).saturating_mul(QUEST_TRAVEL_SPEED_DIVISOR)
+}
+
+fn straight_line_distance_m(
+    from_x: f64,
+    from_y: f64,
+    to_x: f64,
+    to_y: f64,
+    geographic: bool,
+) -> u64 {
+    if geographic {
+        let earth_radius_m = 6_371_000.0_f64;
+        let lat1 = from_y.to_radians();
+        let lat2 = to_y.to_radians();
+        let delta_lat = (to_y - from_y).to_radians();
+        let delta_lon = (to_x - from_x).to_radians();
+        let a = (delta_lat / 2.0).sin().powi(2)
+            + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
+        (earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
+    } else {
+        (((from_x - to_x).powi(2) + (from_y - to_y).powi(2)).sqrt() * METERS_PER_KILOMETER as f64)
+            .round() as u64
+    }
+}
+
+#[reducer]
+pub fn travel_to_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
+    };
+    let Some(party_id) = character.party_id.clone() else {
+        return Err("Must be in a party to travel to a quest".into());
+    };
+    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != character_id {
+        return Err("Only the party leader can travel".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
+    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
+        return Err("Quest not found".into());
+    };
+    if quest.status != QuestStatus::Accepted || quest.accepted_by.as_ref() != Some(&party_id) {
+        return Err("Quest is not accepted by this party".into());
+    }
+    if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
+        return Err("Travel to the quest must begin at its posting settlement".into());
+    }
+
+    let travel_minutes = quest_journey_minutes(quest.distance_m);
+    for membership in ctx.db.party_member().party_id().filter(&party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+            advance_character_time(ctx, member.id, travel_minutes)?;
+            member.current_settlement_id = None;
+            member.current_quest_location_id = Some(quest_id.clone());
+            ctx.db.character().id().update(member);
+        }
+    }
+    party.current_settlement_id = None;
+    party.current_quest_location_id = Some(quest_id);
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
 #[reducer]
 pub fn travel_to_settlement(
     ctx: &ReducerContext,
@@ -941,16 +1029,68 @@ pub fn travel_to_settlement(
                 journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER)),
             )?;
         }
+    } else if let Some(quest_id) = &character.current_quest_location_id {
+        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+            return Err("Character's current quest location does not exist".into());
+        };
+        let distance_m = straight_line_distance_m(
+            quest.location_coord_x,
+            quest.location_coord_y,
+            destination.coord_x,
+            destination.coord_y,
+            quest.coordinates_are_geographic && destination.source_node_id.is_some(),
+        );
+        advance_character_time(ctx, character_id, quest_journey_minutes(distance_m))?;
+    } else {
+        return Err("Character is not at a known location".into());
     }
 
+    let departing_quest = character.current_quest_location_id.clone();
     character.current_settlement_id = Some(settlement_id.clone());
+    character.current_quest_location_id = None;
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
 
     if let Some(party_id) = party_id {
         if let Some(mut party) = ctx.db.party().id().find(&party_id) {
             if party.leader_id == character_id {
+                if departing_quest.is_some() {
+                    let members: Vec<_> =
+                        ctx.db.party_member().party_id().filter(&party_id).collect();
+                    for membership in members {
+                        if membership.character_id == character_id {
+                            continue;
+                        }
+                        if let Some(mut member) =
+                            ctx.db.character().id().find(membership.character_id)
+                        {
+                            let quest = ctx
+                                .db
+                                .quest()
+                                .id()
+                                .find(departing_quest.as_ref().unwrap())
+                                .ok_or("Party's quest location does not exist")?;
+                            let distance_m = straight_line_distance_m(
+                                quest.location_coord_x,
+                                quest.location_coord_y,
+                                destination.coord_x,
+                                destination.coord_y,
+                                quest.coordinates_are_geographic
+                                    && destination.source_node_id.is_some(),
+                            );
+                            advance_character_time(
+                                ctx,
+                                member.id,
+                                quest_journey_minutes(distance_m),
+                            )?;
+                            member.current_settlement_id = Some(settlement_id.clone());
+                            member.current_quest_location_id = None;
+                            ctx.db.character().id().update(member);
+                        }
+                    }
+                }
                 party.current_settlement_id = Some(settlement_id);
+                party.current_quest_location_id = None;
                 ctx.db.party().id().update(party);
             }
         }
@@ -999,6 +1139,53 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 }
 
 #[reducer]
+pub fn autoresolve_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
+    };
+    let Some(party_id) = character.party_id else {
+        return Err("Must be in a party".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != character_id {
+        return Err("Only the party leader can autoresolve".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id)
+        || party.current_quest_location_id.as_deref() != Some(&quest_id)
+    {
+        return Err("Party must be at its active quest location".into());
+    }
+
+    for member in ctx.db.party_member().party_id().filter(&party_id) {
+        if let Some(mut limbs) = ctx
+            .db
+            .character_limbs()
+            .character_id()
+            .find(member.character_id)
+        {
+            let damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            match ctx.random::<u64>() % 7 {
+                0 => limbs.left_arm_health = (limbs.left_arm_health - damage).max(0.0),
+                1 => limbs.right_arm_health = (limbs.right_arm_health - damage).max(0.0),
+                2 => limbs.left_leg_health = (limbs.left_leg_health - damage).max(0.0),
+                3 => limbs.right_leg_health = (limbs.right_leg_health - damage).max(0.0),
+                4 => limbs.head_health = (limbs.head_health - damage).max(0.0),
+                5 => limbs.chest_health = (limbs.chest_health - damage).max(0.0),
+                _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
+            }
+            ctx.db.character_limbs().character_id().update(limbs);
+        }
+    }
+    complete_quest(ctx, quest_id)
+}
+
+#[reducer]
 pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
     ctx.db
         .tactical_server_request()
@@ -1030,98 +1217,137 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         }
     }
 
-    seed_quest(
-        ctx,
-        "goblin-cave-1",
-        "Clear the Goblin Cave",
-        "A band of goblins has taken up residence nearby.",
-        2,
-        50,
-        25,
-        "riverdale",
-        "goblins",
-        5,
-    )?;
-    seed_quest(
-        ctx,
-        "bandit-camp-1",
-        "Bandit Troubles",
-        "Bandits have been raiding merchant caravans.",
-        3,
-        100,
-        50,
-        "riverdale",
-        "bandits",
-        8,
-    )?;
-    seed_quest(
-        ctx,
-        "wolf-hunt-1",
-        "Wolf Pack",
-        "A pack of wolves has been attacking livestock.",
-        1,
-        25,
-        15,
-        "riverdale",
-        "wolves",
-        4,
-    )?;
-    seed_quest(
-        ctx,
-        "mine-infestation-1",
-        "Mine Infestation",
-        "Giant spiders have infested the old mine.",
-        3,
-        75,
-        40,
-        "ironforge",
-        "spiders",
-        6,
-    )?;
-    seed_quest(
-        ctx,
-        "ore-thieves-1",
-        "Ore Thieves",
-        "Thieves have been stealing ore shipments.",
-        2,
-        60,
-        30,
-        "ironforge",
-        "thieves",
-        4,
-    )?;
+    let settlement_ids: Vec<_> = ctx
+        .db
+        .settlement()
+        .iter()
+        .map(|settlement| settlement.id)
+        .collect();
+    for settlement_id in settlement_ids {
+        ensure_settlement_quests(ctx, &settlement_id)?;
+    }
 
     Ok(())
 }
 
-fn seed_quest(
-    ctx: &ReducerContext,
-    id: &str,
-    title: &str,
-    description: &str,
-    difficulty: i32,
-    gold_reward: i32,
-    xp_reward: i32,
-    settlement_id: &str,
-    enemy_type: &str,
-    enemy_count: i32,
-) -> Result<(), String> {
-    if ctx.db.quest().id().find(&id.to_string()).is_some() {
-        return Ok(());
+fn ensure_settlement_quests(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    let available = ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+        .filter(|quest| quest.status == QuestStatus::Available)
+        .count();
+    for _ in available..QUESTS_PER_SETTLEMENT {
+        generate_quest_for_settlement(ctx, settlement_id)?;
     }
+    Ok(())
+}
 
+fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    let Some(settlement) = ctx.db.settlement().id().find(&settlement_id.to_string()) else {
+        return Err("Settlement not found".into());
+    };
+    let archetypes = [
+        (
+            "Clear the Goblin Cave",
+            "A band of goblins has taken up residence nearby.",
+            "goblins",
+            "cave",
+            "You arrive at a cave.",
+            2,
+        ),
+        (
+            "Break Up the Bandit Camp",
+            "Bandits have been raiding merchant caravans.",
+            "bandits",
+            "camp",
+            "You arrive at a rough camp.",
+            3,
+        ),
+        (
+            "Hunt the Wolf Pack",
+            "Wolves have been attacking livestock outside the walls.",
+            "wolves",
+            "woods",
+            "You arrive at a wooded hollow.",
+            1,
+        ),
+        (
+            "Purge the Old Mine",
+            "Giant spiders have infested an abandoned mine.",
+            "spiders",
+            "mine",
+            "You arrive at an old mine.",
+            3,
+        ),
+        (
+            "Recover the Stolen Ore",
+            "Thieves are hiding with a stolen ore shipment.",
+            "thieves",
+            "camp",
+            "You arrive at a hidden camp.",
+            2,
+        ),
+        (
+            "Quiet the Restless Dead",
+            "Travelers report dead men walking near a ruined chapel.",
+            "skeletons",
+            "ruins",
+            "You arrive at ruined chapel.",
+            4,
+        ),
+    ];
+    let occupied: HashSet<String> = ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement.id)
+        .filter(|quest| quest.status != QuestStatus::Completed)
+        .map(|quest| quest.title)
+        .collect();
+    let start = ctx.random::<u64>() as usize % archetypes.len();
+    let Some((title, description, enemy, scene, arrival, difficulty)) = (0..archetypes.len())
+        .map(|offset| archetypes[(start + offset) % archetypes.len()])
+        .find(|archetype| !occupied.contains(&format!("{} near {}", archetype.0, settlement.name)))
+    else {
+        return Err("No distinct quest archetype is available".into());
+    };
+    let distance_m = 4_000 + ctx.random::<u64>() % 17_000;
+    let angle = (ctx.random::<u64>() as f64 / u64::MAX as f64) * std::f64::consts::TAU;
+    let geographic = settlement.source_node_id.is_some();
+    let (offset_x, offset_y) = if geographic {
+        let distance_km = distance_m as f64 / 1_000.0;
+        let latitude_scale = 111.0;
+        let longitude_scale = latitude_scale * settlement.coord_y.to_radians().cos().abs().max(0.1);
+        (
+            angle.cos() * distance_km / longitude_scale,
+            angle.sin() * distance_km / latitude_scale,
+        )
+    } else {
+        let distance_km = distance_m as f64 / 1_000.0;
+        (angle.cos() * distance_km, angle.sin() * distance_km)
+    };
+    let enemy_count = difficulty * 2 + (ctx.random::<u64>() % 4) as i32;
+    let nonce = ctx.random::<u64>();
     ctx.db.quest().insert(Quest {
-        id: id.into(),
-        title: title.into(),
+        id: format!("{}-{nonce:016x}", settlement.id),
+        title: format!("{title} near {}", settlement.name),
         description: description.into(),
         difficulty,
-        gold_reward,
-        xp_reward,
-        settlement_id: settlement_id.into(),
+        gold_reward: difficulty * 35 + distance_m.div_ceil(1_000) as i32 * 2,
+        xp_reward: difficulty * 20,
+        settlement_id: settlement.id,
         status: QuestStatus::Available,
         accepted_by: None,
-        enemy_type: enemy_type.into(),
+        enemy_type: enemy.into(),
         enemy_count,
+        location_description: arrival.into(),
+        location_scene_key: scene.into(),
+        location_coord_x: settlement.coord_x + offset_x,
+        location_coord_y: settlement.coord_y + offset_y,
+        coordinates_are_geographic: geographic,
+        distance_m,
     });
     Ok(())
 }

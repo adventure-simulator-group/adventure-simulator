@@ -29,10 +29,16 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     let Some(character) = characters.first() else {
         return Redirect::to("/characters").into_response();
     };
-    match &character.current_settlement_id {
-        Some(settlement_id) => {
+    match (
+        &character.current_settlement_id,
+        &character.current_quest_location_id,
+    ) {
+        (Some(settlement_id), _) => {
             Redirect::to(&format!("/settlements/{settlement_id}")).into_response()
         }
-        None => Redirect::to("/settlements").into_response(),
+        (_, Some(quest_id)) => {
+            Redirect::to(&format!("/quests/{quest_id}/location")).into_response()
+        }
+        _ => Redirect::to("/settlements").into_response(),
     }
 }

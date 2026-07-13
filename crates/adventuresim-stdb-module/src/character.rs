@@ -17,6 +17,8 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    /// The quest location occupied by this character, mutually exclusive with a settlement.
+    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     #[index(btree)]
     pub server: Identity,
@@ -240,6 +242,7 @@ pub(crate) fn insert_new_character(
         level: 1,
         gold: 100,
         current_settlement_id: Some(start_settlement.id.clone()),
+        current_quest_location_id: None,
         party_id: None,
         server: Identity::ZERO,
         in_server: false,
