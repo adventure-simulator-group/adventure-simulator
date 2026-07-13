@@ -1,6 +1,6 @@
 //! Reusable Maud components
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 /// A panel component with header and body
 pub fn panel(title: &str, content: Markup) -> Markup {
@@ -117,16 +117,6 @@ pub fn gold_display(amount: impl std::fmt::Display) -> Markup {
         span class="gold-amount" {
             (amount)
             span class="gold-icon" {}
-        }
-    }
-}
-
-/// XP display
-pub fn xp_display(amount: impl std::fmt::Display) -> Markup {
-    html! {
-        span class="xp-amount" {
-            (amount)
-            " XP"
         }
     }
 }

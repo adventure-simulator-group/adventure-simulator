@@ -1,87 +1,38 @@
 //! Home route handlers
 
-use axum::{extract::State, response::Html, routing::get, Router};
+use axum::{
+    Router,
+    extract::State,
+    response::{IntoResponse, Redirect, Response},
+    routing::get,
+};
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
-use crate::templates::home::home_page;
+use crate::spacetimedb::Character;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
 }
 
-async fn home(State(state): State<AppState>, session: Session) -> Html<String> {
-    // Get all characters
+async fn home(State(state): State<AppState>, session: Session) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
     let characters: Vec<Character> = state
         .db
-        .query("SELECT * FROM character")
+        .query(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
         .await
         .unwrap_or_default();
-
-    // Find current character from session
-    let current_character = session
-        .character_id_u64()
-        .and_then(|id| characters.iter().find(|c| c.id == id));
-
-    // Get related data if we have a current character
-    let (current_settlement, active_party, active_quest) =
-        if let Some(character) = current_character {
-            // Get settlement
-            let settlement: Option<Settlement> =
-                if let Some(settlement_id) = &character.current_settlement_id {
-                    let settlements: Vec<Settlement> = state
-                        .db
-                        .query(&format!(
-                            "SELECT * FROM settlement WHERE id = '{}'",
-                            settlement_id
-                        ))
-                        .await
-                        .unwrap_or_default();
-                    settlements.into_iter().next()
-                } else {
-                    None
-                };
-
-            // Get party
-            let party: Option<Party> = if let Some(party_id) = &character.party_id {
-                let parties: Vec<Party> = state
-                    .db
-                    .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-                    .await
-                    .unwrap_or_default();
-                parties.into_iter().next()
-            } else {
-                None
-            };
-
-            // Get active quest if party has one
-            let quest: Option<Quest> =
-                if let Some(quest_id) = party.as_ref().and_then(|p| p.active_quest_id.as_ref()) {
-                    let quests: Vec<Quest> = state
-                        .db
-                        .query(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
-                        .await
-                        .unwrap_or_default();
-                    quests.into_iter().next()
-                } else {
-                    None
-                };
-
-            (settlement, party, quest)
-        } else {
-            (None, None, None)
-        };
-
-    Html(
-        home_page(
-            &characters,
-            current_character,
-            current_settlement.as_ref(),
-            active_party.as_ref(),
-            active_quest.as_ref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
+    let Some(character) = characters.first() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match &character.current_settlement_id {
+        Some(settlement_id) => {
+            Redirect::to(&format!("/settlements/{settlement_id}")).into_response()
+        }
+        None => Redirect::to("/settlements").into_response(),
+    }
 }

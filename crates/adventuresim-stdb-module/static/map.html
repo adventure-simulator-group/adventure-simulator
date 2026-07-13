@@ -111,11 +111,7 @@
         </div>
 
         <div class="panel" id="character-panel" style="display:none;">
-            <h2>Stats</h2>
-            <div class="stats">
-                <div class="stat"><div class="stat-value" id="stat-xp">0</div><div class="stat-label">XP</div></div>
-                <div class="stat"><div class="stat-value" id="stat-level">1</div><div class="stat-label">Level</div></div>
-            </div>
+            <h2>Character</h2>
         </div>
 
         <div class="panel" id="inventory-panel" style="display:none;">
@@ -221,13 +217,6 @@
             if (!characterId) return;
 
             try {
-                // Get character stats
-                const chars = await query(`SELECT * FROM character WHERE id = '${characterId}'`);
-                if (chars.rows.length > 0) {
-                    document.getElementById('stat-xp').textContent = chars.rows[0].xp;
-                    document.getElementById('stat-level').textContent = chars.rows[0].level;
-                }
-
                 // Get inventory
                 const items = await query(`SELECT * FROM inventory_item WHERE character_id = '${characterId}'`);
                 const inv = document.getElementById('inventory');

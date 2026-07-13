@@ -3,7 +3,13 @@
 use maud::{html, Markup, DOCTYPE};
 
 const THEMES: &[(&str, &str)] = &[
+    ("fraktur-texturina", "Fraktur trial: Texturina (readable)"),
     ("renaissance-gold", "Renaissance Gold"),
+    ("fraktur-grenze", "Fraktur trial: Grenze Gotisch (most readable)"),
+    ("fraktur-new-rocker", "Fraktur trial: New Rocker (medium)"),
+    ("fraktur-cook", "Fraktur trial: UnifrakturCook (traditional)"),
+    ("fraktur-maguntia", "Fraktur trial: UnifrakturMaguntia (challenging)"),
+    ("fraktur-ewert", "Fraktur trial: Ewert (most ornate)"),
     ("dark-arcanum", "Dark Arcanum"),
     ("northern-frost", "Northern Frost"),
     ("verdant-chronicle", "Verdant Chronicle"),
@@ -14,7 +20,7 @@ fn validated_theme(theme: &str) -> &str {
     if THEMES.iter().any(|(id, _)| *id == theme) {
         theme
     } else {
-        "renaissance-gold"
+        "fraktur-texturina"
     }
 }
 
@@ -32,6 +38,43 @@ pub fn base_layout_with_session(
 ) -> Markup {
     let theme = validated_theme(theme);
 
+    page_shell(title, top_bar(logged_in_as, theme), content, theme)
+}
+
+/// Minimal shell for selecting or creating a character. It intentionally omits
+/// strategic navigation: an adventurer must be selected before play begins.
+pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(title, entry_top_bar(theme), content, theme)
+}
+
+/// Settlement-specific layout. Settlement services replace the global navigation
+/// so their context stays visible while the player moves between service pages.
+pub fn settlement_layout_with_session(
+    title: &str,
+    settlement_name: &str,
+    settlement_id: &str,
+    active_service: &str,
+    content: Markup,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(
+        title,
+        settlement_top_bar(
+            settlement_name,
+            settlement_id,
+            active_service,
+            logged_in_as,
+            theme,
+        ),
+        content,
+        theme,
+    )
+}
+
+fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -44,15 +87,15 @@ pub fn base_layout_with_session(
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css";
-                link rel="stylesheet" href="/static/css/components.css";
+                link rel="stylesheet" href="/static/css/layout.css?v=service-icons-5";
+                link rel="stylesheet" href="/static/css/components.css?v=party-tabs";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
             }
             body {
                 div class="app" {
-                    (top_bar(logged_in_as, theme))
+                    (header)
 
                     div class="main-grid" {
                         (content)
@@ -90,11 +133,6 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
                     span class="player-name" {
                         "Playing as " strong { (name) }
                     }
-                    form action="/characters/logout" method="post" style="display:inline" {
-                        button type="submit" class="btn btn-small" title="Switch Character" {
-                            "Switch"
-                        }
-                    }
                 } @else {
                     span class="player-name player-name-none" {
                         "No character"
@@ -115,6 +153,93 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
     }
 }
 
+fn entry_top_bar(current_theme: &str) -> Markup {
+    html! {
+        header class="top-bar entry-top-bar" {
+            div class="top-bar-left" {
+                h1 class="logo" { "Adventure Simulator" }
+            }
+            div class="entry-message" { "Choose an adventurer to begin" }
+            div class="top-bar-right" { (theme_switcher(current_theme)) }
+        }
+    }
+}
+
+fn settlement_top_bar(
+    settlement_name: &str,
+    settlement_id: &str,
+    active_service: &str,
+    logged_in_as: Option<&str>,
+    current_theme: &str,
+) -> Markup {
+    let services = [
+        ("noticeboard", "Notice Board", "noticeboard"),
+        ("merchants", "General Market", "market"),
+        ("weapons", "Weapons", "weapons"),
+        ("armor", "Armour", "armor"),
+        ("clothing", "Clothing", "clothing"),
+        ("inn", "Inn", "inn"),
+        ("religion", "Church", "church"),
+    ];
+
+    html! {
+        header class="top-bar settlement-top-bar" {
+            div class="top-bar-left settlement-location" {
+                a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
+                    (settlement_name)
+                }
+                span class="settlement-time" title="TODO: connect this display to strategic world time" {
+                    "1st of First Seed · 08:00"
+                }
+            }
+
+            nav class="top-bar-center settlement-services" aria-label="Settlement services" {
+                @for (path, label, icon) in services {
+                    @let href = if path.is_empty() {
+                        format!("/settlements/{}", settlement_id)
+                    } else {
+                        format!("/settlements/{}/{}", settlement_id, path)
+                    };
+                    a href=(href)
+                        class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                        aria-label=(label)
+                        title=(label)
+                    {
+                        span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {
+                            span class="notice-slip notice-slip-one" {}
+                            span class="notice-slip notice-slip-two" {}
+                            span class="notice-slip notice-slip-three" {}
+                        }
+                    }
+                }
+            }
+
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" { "Party: " strong { (name) } }
+                } @else {
+                    span class="player-name player-name-none" { "No active party" }
+                }
+                (theme_switcher(current_theme))
+            }
+        }
+    }
+}
+
+fn theme_switcher(current_theme: &str) -> Markup {
+    html! {
+        div class="theme-switcher" {
+            @for (id, _label) in THEMES {
+                a href=(format!("/theme/{}", id))
+                    class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
+                    data-theme=(id)
+                    title=(_label)
+                {}
+            }
+        }
+    }
+}
+
 /// Helper to build a left sidebar section
 pub fn sidebar_section(title: &str, content: Markup) -> Markup {
     html! {
@@ -130,12 +255,13 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 /// Helper for settlement service menu
 pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
     let items = [
-        ("", "Overview"),
         ("noticeboard", "Notice Board"),
-        ("tavern", "Tavern"),
         ("merchants", "Merchants"),
-        ("smith", "Smith"),
+        ("weapons", "Weapons"),
+        ("armor", "Armour"),
+        ("clothing", "Clothing"),
         ("inn", "Inn"),
+        ("religion", "Church"),
     ];
 
     html! {

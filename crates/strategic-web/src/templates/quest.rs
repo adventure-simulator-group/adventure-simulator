@@ -1,10 +1,10 @@
 //! Quest templates
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
-    panel, sidebar_section, status_badge, xp_display,
+    panel, sidebar_section, status_badge,
 };
 use crate::spacetimedb::Quest;
 
@@ -59,7 +59,6 @@ pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &st
                             }
                             div class="quest-card-reward" {
                                 (gold_display(quest.gold_reward))
-                                (xp_display(quest.xp_reward))
                             }
                         }
                     }
@@ -131,10 +130,6 @@ pub fn quest_detail_page(
                     div class="stat-item" {
                         span class="stat-label" { "Gold" }
                         span class="stat-value" { (gold_display(quest.gold_reward)) }
-                    }
-                    div class="stat-item" {
-                        span class="stat-label" { "Experience" }
-                        span class="stat-value" { (xp_display(quest.xp_reward)) }
                     }
                 }
             }))

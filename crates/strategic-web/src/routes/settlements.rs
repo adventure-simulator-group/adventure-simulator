@@ -10,10 +10,13 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterSkills, InventoryItem, Party, PartyMember, Quest,
+    Settlement,
+};
 use crate::templates::settlement::{
-    inn_page, merchants_page, noticeboard_page, settlement_detail_page, settlements_list_page,
-    smith_page, tavern_page,
+    armor_page, clothing_page, inn_page, merchants_page, noticeboard_page, party_member_page,
+    religion_page, settlements_list_page, smith_page, weapons_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -21,10 +24,16 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
         .route("/settlements/{id}/noticeboard", get(noticeboard))
-        .route("/settlements/{id}/tavern", get(tavern))
+        .route("/settlements/{id}/party/{character_id}", get(party_member))
+        .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
+        .route("/settlements/{id}/weapons", get(weapons))
+        .route("/settlements/{id}/armor", get(armor))
+        .route("/settlements/{id}/clothing", get(clothing))
+        .route("/settlements/{id}/consumables", get(redirect_to_inn))
         .route("/settlements/{id}/smith", get(smith))
         .route("/settlements/{id}/inn", get(inn))
+        .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/travel", post(travel))
 }
 
@@ -42,57 +51,13 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
 }
 
 async fn show_settlement(
-    State(state): State<AppState>,
     Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
+ ) -> Redirect {
+    Redirect::to(&format!("/settlements/{id}/noticeboard"))
+}
 
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    // Get quests at this settlement, then filter by available status in Rust.
-    // SpacetimeDB enums may not compare reliably with SQL string literals.
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-    let available_quests: Vec<Quest> = quests
-        .into_iter()
-        .filter(|q| is_available_status(&q.status))
-        .collect();
-
-    // Get parties at this settlement
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(
-        settlement_detail_page(
-            settlement,
-            &available_quests,
-            &parties,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
+async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
+    Redirect::to(&format!("/settlements/{id}/inn"))
 }
 
 async fn noticeboard(
@@ -120,34 +85,6 @@ async fn noticeboard(
         .await
         .unwrap_or_default();
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(
-        noticeboard_page(
-            settlement,
-            &quests,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
-}
-
-async fn tavern(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
     let parties: Vec<Party> = state
         .db
         .query(&format!(
@@ -157,12 +94,108 @@ async fn tavern(
         .await
         .unwrap_or_default();
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
     Html(
-        tavern_page(
+        noticeboard_page(
             settlement,
+            &quests,
             &parties,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
             logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+async fn party_member(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+
+    let Some((active_character, active_inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Html("<h1>Choose a character first</h1>".to_string());
+    };
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
+    if character_id != active_character.id && !party_members.iter().any(|member| member.id == character_id) {
+        return Html("<h1>Party member not found</h1>".to_string());
+    }
+
+    let selected = if character_id == active_character.id {
+        active_character.clone()
+    } else {
+        let characters: Vec<Character> = state
+            .db
+            .query(&format!("SELECT * FROM character WHERE id = {character_id}"))
+            .await
+            .unwrap_or_default();
+        match characters.into_iter().next() {
+            Some(character) => character,
+            None => return Html("<h1>Party member not found</h1>".to_string()),
+        }
+    };
+    let selected_inventory: Vec<InventoryItem> = if character_id == active_character.id {
+        active_inventory.clone()
+    } else {
+        state
+            .db
+            .query(&format!("SELECT * FROM inventory_item WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    };
+
+    let attributes: Vec<CharacterAttributes> = if character_id == active_character.id {
+        state
+            .db
+            .query(&format!("SELECT * FROM character_attributes WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let skills: Vec<CharacterSkills> = if character_id == active_character.id {
+        state
+            .db
+            .query(&format!("SELECT * FROM character_skills WHERE character_id = {character_id}"))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    Html(
+        party_member_page(
+            settlement,
+            &selected,
+            &selected_inventory,
+            &active_character,
+            &active_inventory,
+            &party_members,
+            attributes.first(),
+            skills.first(),
             session.theme(),
         )
         .into_string(),
@@ -185,8 +218,28 @@ async fn merchants(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(merchants_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        merchants_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn smith(
@@ -205,8 +258,28 @@ async fn smith(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(smith_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        smith_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn inn(
@@ -225,8 +298,28 @@ async fn inn(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(inn_page(settlement, logged_in_as.as_deref(), session.theme()).into_string())
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        inn_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
 }
 
 async fn travel(
@@ -262,6 +355,114 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
     characters.first().map(|c| c.name.clone())
 }
 
-fn is_available_status(status: &str) -> bool {
-    status.to_ascii_lowercase().contains("available")
+async fn weapons(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
+    render_service_page(state, id, session, weapons_page).await
 }
+
+async fn armor(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
+    render_service_page(state, id, session, armor_page).await
+}
+
+async fn clothing(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
+    render_service_page(state, id, session, clothing_page).await
+}
+
+async fn religion(State(state): State<AppState>, Path(id): Path<String>, session: Session) -> Html<String> {
+    render_service_page(state, id, session, religion_page).await
+}
+
+type ServiceRenderer = fn(
+    &Settlement,
+    Option<&Character>,
+    &[InventoryItem],
+    &[Character],
+    Option<&str>,
+    &str,
+) -> maud::Markup;
+
+async fn render_service_page(
+    state: AppState,
+    id: String,
+    session: Session,
+    render: ServiceRenderer,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let settlement = match settlements.first() {
+        Some(settlement) => settlement,
+        None => return Html("<h1>Settlement not found</h1>".to_string()),
+    };
+
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+
+    Html(
+        render(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+async fn get_active_character(
+    state: &AppState,
+    character_id: Option<u64>,
+) -> Option<(Character, Vec<InventoryItem>)> {
+    let character_id = character_id?;
+    let characters: Vec<Character> = state
+        .db
+        .query(&format!("SELECT * FROM character WHERE id = {character_id}"))
+        .await
+        .unwrap_or_default();
+    let character = characters.into_iter().next()?;
+    let inventory: Vec<InventoryItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM inventory_item WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    Some((character, inventory))
+}
+
+async fn get_active_party_members(state: &AppState, active_character: Option<&Character>) -> Vec<Character> {
+    let Some(party_id) = active_character.and_then(|character| character.party_id.as_ref()) else {
+        return Vec::new();
+    };
+    let memberships: Vec<PartyMember> = state
+        .db
+        .query(&format!("SELECT * FROM party_member WHERE party_id = '{}'", party_id))
+        .await
+        .unwrap_or_default();
+
+    let mut members = Vec::new();
+    for membership in memberships {
+        let characters: Vec<Character> = state
+            .db
+            .query(&format!("SELECT * FROM character WHERE id = {}", membership.character_id))
+            .await
+            .unwrap_or_default();
+        if let Some(character) = characters.into_iter().next() {
+            members.push(character);
+        }
+    }
+    members
+}
+
