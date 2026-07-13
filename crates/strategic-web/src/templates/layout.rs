@@ -87,7 +87,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
-                script src="/static/party-trade.js" {}
+                script src="/static/party-trade.js?v=unified-trade-1" {}
             }
             body {
                 div class="app" {
