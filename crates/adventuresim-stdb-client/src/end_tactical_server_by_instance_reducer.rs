@@ -84,8 +84,8 @@ impl end_tactical_server_by_instance for super::RemoteReducers {
     fn on_end_tactical_server_by_instance(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &TacticalServer, &bool, &i32)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> EndTacticalServerByInstanceCallbackId {
         EndTacticalServerByInstanceCallbackId(self.imp.on_reducer(
             "end_tactical_server_by_instance",

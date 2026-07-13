@@ -10,6 +10,12 @@
   --font-display: 'Cinzel';
   --font-body: 'Crimson Text';
   --font-mono: 'Courier New', monospace;
+  --icon-default: #e2e4eb;
+  --icon-mental: #b8a6f4;
+  --icon-physical: #f0cf68;
+  --icon-intelligence: #84baf0;
+  --icon-instinct: #d7a9ef;
+  --icon-strength: #f3948c;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;

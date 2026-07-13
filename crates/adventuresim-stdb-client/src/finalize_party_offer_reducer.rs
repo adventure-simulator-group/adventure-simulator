@@ -57,8 +57,8 @@ pub trait finalize_party_offer {
     fn on_finalize_party_offer(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &Vec<u64>, &Vec<u64>, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> FinalizePartyOfferCallbackId;
     /// Cancel a callback previously registered by [`Self::on_finalize_party_offer`],
     /// causing it not to run in the future.
@@ -85,14 +85,9 @@ impl finalize_party_offer for super::RemoteReducers {
     }
     fn on_finalize_party_offer(
         &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &Vec<u64>,
-            &Vec<u64>,
-            &Vec<u64>,
-            &Vec<u32>,
-        ) + Send
-        + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<u64>, &Vec<u64>, &Vec<u64>, &Vec<u32>)
+            + Send
+            + 'static,
     ) -> FinalizePartyOfferCallbackId {
         FinalizePartyOfferCallbackId(self.imp.on_reducer(
             "finalize_party_offer",
