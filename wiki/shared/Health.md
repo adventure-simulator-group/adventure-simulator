@@ -16,6 +16,10 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 # Healing
 
+## Current strategic implementation
+
+For the current settlement-rest MVP, each body part recovers 5 percentage points of health per full game day. Resting characters convalesce before they train; the detailed wound, bandaging, and treatment model below will eventually replace this temporary rate.
+
 ```rs
 const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70
 fn determine_max_blood(character):

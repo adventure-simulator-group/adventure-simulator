@@ -8,6 +8,8 @@ Each character has their own absolute minute. Character time advances lazily whe
 
 The only implemented downtime effect is skill training. A character has a 24-hour daily budget with integer-minute allocations for every skill and labor. Leisure is the unallocated remainder and includes sleep. Server-side progression applies each skill's saved daily minutes proportionally over elapsed game time. Labor and leisure have no gameplay effects yet.
 
+At a settlement, a player may spend whole available days resting at an inn or temple. Rest first convalesces every injured body part at 5 percentage points per day; only the days left after the slowest injury has fully recovered apply the saved training schedule. Inn rest costs 1 gold per completed day. Temple rest is free sanctuary intended for characters down on their luck; a future karma system will account for taking undue advantage of it.
+
 Throughout this wiki, the term "official time" refers to the *most current* time according to the server. Your character can be exactly one year behind official time, beyond that they will have to catch up with downtime (resting or training) before you can do anything else. You cannot go *ahead* of official time.
 
 For example, in the [example scenario](../Scenario.md), at the time that they venture forth from a settlement they are in sync with the official time, but their four ~20-minute simulated encounters incurs a time-debt of 80 real-world minutes. 80 minutes in the real world is about 3 days of official time, thus when their characters return to a settlement they will ostensibly be recovering, training, relaxing, traveling between [settlements](Settlement.md), or working some non-adventurous job for at least 3 days before they set out again.

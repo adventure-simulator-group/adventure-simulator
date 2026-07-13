@@ -25,6 +25,13 @@ pub enum MerchantShop {
     Clothing,
 }
 
+pub struct RestSummary {
+    pub days: u64,
+    pub gold_spent: u32,
+    pub healed: Vec<(String, f32)>,
+    pub trained: Vec<(String, f32)>,
+}
+
 impl MerchantShop {
     pub fn service_id(self) -> &'static str {
         match self {
@@ -194,6 +201,7 @@ pub fn merchants_page(
         party_members,
         logged_in_as,
         theme,
+        None,
     )
 }
 
@@ -217,6 +225,7 @@ pub fn smith_page(
         party_members,
         logged_in_as,
         theme,
+        None,
     )
 }
 
@@ -240,6 +249,7 @@ pub fn inn_page(
         party_members,
         logged_in_as,
         theme,
+        None,
     )
 }
 
@@ -263,6 +273,7 @@ pub fn religion_page(
         party_members,
         logged_in_as,
         theme,
+        None,
     )
 }
 
@@ -397,6 +408,7 @@ fn service_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
+    rest_summary: Option<&RestSummary>,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
         "merchants" => Some((
@@ -426,7 +438,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn"))
+                    (rest_service_menu("Inn", &settlement.id, "inn", rest_summary))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -439,7 +451,7 @@ fn service_page(
                             p class="text-muted small-copy" { (todo) }
                         }))
                     }
-                    (rest_service_menu("Church"))
+                    (rest_service_menu("Temple", &settlement.id, "temple", rest_summary))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -733,7 +745,13 @@ fn party_skill_row(
     }
 }
 
-fn schedule_special_row(label: &str, icon: &str, name: &str, minutes: u16, editable: bool) -> Markup {
+fn schedule_special_row(
+    label: &str,
+    icon: &str,
+    name: &str,
+    minutes: u16,
+    editable: bool,
+) -> Markup {
     html! {
         tr class="party-skill-row schedule-special-row" {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
@@ -1126,7 +1144,72 @@ fn inventory_rail(
     }
 }
 
-fn rest_service_menu(location: &str) -> Markup {
+pub fn rest_result_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+    at_inn: bool,
+    summary: &RestSummary,
+) -> Markup {
+    service_page(
+        settlement,
+        if at_inn { "inn" } else { "religion" },
+        if at_inn { "The Inn" } else { "Church" },
+        if at_inn { "Innkeeper" } else { "Priest" },
+        "",
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
+        Some(summary),
+    )
+}
+
+fn rest_service_menu(
+    location: &str,
+    settlement_id: &str,
+    kind: &str,
+    summary: Option<&RestSummary>,
+) -> Markup {
+    html! {
+        section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+            div class="rest-service-heading" { strong { "Rest" } }
+            @if kind == "inn" {
+                p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any scheduled training." }
+            } @else {
+                p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any scheduled training." }
+            }
+            form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
+                div class="rest-days-control" {
+                    input type="number" name="days" value="1" min="1" max="365" aria-label="Rest days";
+                    span class="rest-days-unit" { "days" }
+                }
+                button type="submit" class="btn btn-primary btn-small btn-block" { "Rest" }
+            }
+            @if let Some(summary) = summary {
+                div class="rest-summary" {
+                    strong { "Rest summary" }
+                    p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
+                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
+                    @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
+                        p { "Healed:" }
+                        ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
+                    }
+                    @if summary.trained.is_empty() { p { "No time remained for scheduled training." } } @else {
+                        p { "Training:" }
+                        ul { @for (skill, hours) in &summary.trained { li { (skill) ": +" (format!("{hours:.2}h")) } } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn rest_service_menu_placeholder(location: &str) -> Markup {
     html! {
         section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
             div class="rest-service-heading" {
