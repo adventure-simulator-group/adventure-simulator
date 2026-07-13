@@ -1766,9 +1766,15 @@
 .role-slider { display: flex; flex-direction: column; gap: 0.15rem; }
 .role-slider-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .role-slider-heading output { color: var(--accent-dark); font-weight: 700; }
-.role-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+.role-slider input[type="range"] {
+  --role-slider-thumb-width: 1rem;
+  width: calc(100% + var(--role-slider-thumb-width));
+  margin-inline: calc(var(--role-slider-thumb-width) / -2);
+  accent-color: var(--accent);
+}
 .role-slider-ticks { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; }
 .role-slider-ticks-armor { font-size: 0.6rem; }
+.role-slider-ticks-precision { font-size: 0.6rem; }
 .saved-role-list, .active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
 .saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }

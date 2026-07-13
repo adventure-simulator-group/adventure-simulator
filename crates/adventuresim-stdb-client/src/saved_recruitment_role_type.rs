@@ -13,6 +13,7 @@ pub struct SavedRecruitmentRole {
     pub owner_character_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
+    pub weapon_precision: f32,
 }
 
 impl __sdk::InModule for SavedRecruitmentRole {

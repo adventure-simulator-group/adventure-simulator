@@ -25,6 +25,7 @@ pub struct CharacterCapability {
     pub surgery: f32,
     pub charisma: f32,
     pub faith: f32,
+    pub weapon_precision: f32,
 }
 
 impl __sdk::InModule for CharacterCapability {

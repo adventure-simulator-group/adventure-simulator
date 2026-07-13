@@ -13,6 +13,7 @@ pub(super) struct CreateRecruitmentRoleArgs {
     pub name: String,
     pub quantity: u32,
     pub requirements: RecruitmentRequirements,
+    pub weapon_precision: f32,
     pub save_role: bool,
 }
 
@@ -23,6 +24,7 @@ impl From<CreateRecruitmentRoleArgs> for super::Reducer {
             name: args.name,
             quantity: args.quantity,
             requirements: args.requirements,
+            weapon_precision: args.weapon_precision,
             save_role: args.save_role,
         }
     }
@@ -50,6 +52,7 @@ pub trait create_recruitment_role {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
+        weapon_precision: f32,
         save_role: bool,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `create_recruitment_role`.
@@ -67,6 +70,7 @@ pub trait create_recruitment_role {
             &String,
             &u32,
             &RecruitmentRequirements,
+            &f32,
             &bool,
         ) + Send
         + 'static,
@@ -83,6 +87,7 @@ impl create_recruitment_role for super::RemoteReducers {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
+        weapon_precision: f32,
         save_role: bool,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
@@ -92,6 +97,7 @@ impl create_recruitment_role for super::RemoteReducers {
                 name,
                 quantity,
                 requirements,
+                weapon_precision,
                 save_role,
             },
         )
@@ -104,6 +110,7 @@ impl create_recruitment_role for super::RemoteReducers {
             &String,
             &u32,
             &RecruitmentRequirements,
+            &f32,
             &bool,
         ) + Send
         + 'static,
@@ -121,6 +128,7 @@ impl create_recruitment_role for super::RemoteReducers {
                                     name,
                                     quantity,
                                     requirements,
+                                    weapon_precision,
                                     save_role,
                                 },
                             ..
@@ -130,7 +138,15 @@ impl create_recruitment_role for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, leader_id, name, quantity, requirements, save_role)
+                callback(
+                    ctx,
+                    leader_id,
+                    name,
+                    quantity,
+                    requirements,
+                    weapon_precision,
+                    save_role,
+                )
             }),
         ))
     }

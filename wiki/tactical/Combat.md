@@ -12,6 +12,8 @@ Broadly speaking, the flow goes like this:
 		2. If they are two handing, 0.75 for main and 0.25 for off-hand
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/Controls.md)
+
+The weapon term also provides the strategic recruitment **weapon precision** scale. The current discrete recommendations are 0.5 for clubs and hammers, 1.0 for axes, 1.5 for ordinary swords and spears, and 2.0 for purpose-built precise weapons such as rapiers or bodkin ammunition. Damage type is not a recruitment role: slash, pierce, and blunt weapons are compared through this single precision scale instead.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
 		1. This isn't actually the weight of the armor; it's based on articulations on joints.

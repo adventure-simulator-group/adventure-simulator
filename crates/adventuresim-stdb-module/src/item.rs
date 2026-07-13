@@ -131,7 +131,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         false,
     );
     define_weapon(
-        ctx, "club", 2.0, 1.0, 0.5, 1.0, 0.3, false, true, false, true, false, false,
+        ctx, "club", 2.0, 0.5, 0.5, 1.0, 0.3, false, true, false, true, false, false,
     );
     define_weapon(
         ctx,
@@ -152,7 +152,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         ctx,
         "bot_multirole_weapon",
         4.0,
-        1.5,
+        2.0,
         1.0,
         2.0,
         0.5,
@@ -308,6 +308,18 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     );
 
     Ok(())
+}
+
+/// Applies recruitment precision calibration to databases created before the
+/// numeric weapon-precision scale was introduced.
+#[reducer]
+pub fn calibrate_weapon_precision(ctx: &ReducerContext) {
+    for (item_id, accuracy) in [("club", 0.5), ("bot_multirole_weapon", 2.0)] {
+        if let Some(mut item) = ctx.db.item().id().find(item_id.to_string()) {
+            item.accuracy = accuracy;
+            ctx.db.item().id().update(item);
+        }
+    }
 }
 
 #[reducer]

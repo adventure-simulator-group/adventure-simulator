@@ -335,15 +335,17 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
         Self {
             melee: value.melee,
             ranged: value.ranged,
-            precise: value.precise,
+            weapon_precision: adventuresim_core::capability::legacy_weapon_precision(
+                value.precise,
+                value.blunt,
+                value.slash,
+                value.pierce,
+            ),
             heavy: value.heavy,
             quarter_armor: value.quarter_armor,
             half_armor: value.half_armor,
             three_quarter_armor: value.three_quarter_armor,
             full_armor: value.full_armor,
-            blunt: value.blunt,
-            slash: value.slash,
-            pierce: value.pierce,
             athletics: value.athletics,
             endurance: value.endurance,
             medicine: value.medicine,
@@ -365,6 +367,8 @@ pub struct PartyRecruitmentRole {
     pub name: String,
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
+    #[default(0.0)]
+    pub weapon_precision: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -377,6 +381,8 @@ pub struct SavedRecruitmentRole {
     pub owner_character_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
+    #[default(0.0)]
+    pub weapon_precision: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -458,10 +464,16 @@ pub fn create_recruitment_role(
     name: String,
     quantity: u32,
     requirements: RecruitmentRequirements,
+    weapon_precision: f32,
     save_role: bool,
 ) -> Result<(), String> {
     if quantity == 0 || quantity > 8 {
         return Err("Role quantity must be between 1 and 8".into());
+    }
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
+        || (weapon_precision * 2.0).fract() != 0.0
+    {
+        return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
     }
     if [
         requirements.athletics,
@@ -505,6 +517,7 @@ pub fn create_recruitment_role(
             name: role_name.clone(),
             requirements,
             quantity,
+            weapon_precision,
         });
     if save_role {
         if name.trim().is_empty() {
@@ -517,6 +530,7 @@ pub fn create_recruitment_role(
                 owner_character_id: leader_id,
                 name: role_name,
                 requirements,
+                weapon_precision,
             });
     }
     Ok(())
@@ -547,6 +561,14 @@ fn filled_role_slots(ctx: &ReducerContext, role_id: u64) -> u32 {
         .iter()
         .filter(|member| member.recruitment_role_id == Some(role_id))
         .count() as u32
+}
+
+fn role_requirements(
+    role: &PartyRecruitmentRole,
+) -> adventuresim_core::capability::RoleRequirements {
+    let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
+    requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
+    requirements
 }
 
 #[reducer]
@@ -604,7 +626,7 @@ pub fn request_to_join_party(
         party_id,
         recruitment_role_id,
         character_id,
-        meets_requirements: capabilities.meets(role.requirements.into()),
+        meets_requirements: capabilities.meets(role_requirements(&role)),
     });
     Ok(())
 }
@@ -853,27 +875,18 @@ pub fn seed_bot_join_requests(
                     "short_bow",
                     crate::ItemSlot::RightHolding,
                 )?;
-            } else if requirements.ranged || requirements.precise {
+            } else if requirements.ranged {
                 crate::character::add_and_equip_item(
                     ctx,
                     id,
                     "club",
                     crate::ItemSlot::RightHolding,
                 )?;
-            } else if requirements.blunt {
-                crate::character::add_and_equip_item(
-                    ctx,
-                    id,
-                    "short_sword",
-                    crate::ItemSlot::RightHolding,
-                )?;
-            } else if requirements.slash || requirements.pierce {
-                crate::character::add_and_equip_item(
-                    ctx,
-                    id,
-                    "club",
-                    crate::ItemSlot::RightHolding,
-                )?;
+            } else if role.weapon_precision > 0.0 {
+                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
+                equip.left_hand_item_id = None;
+                equip.right_hand_item_id = None;
+                ctx.db.character_equip().character_id().update(equip);
             }
         }
         ctx.db.character_attributes().character_id().update(attrs);
@@ -1194,6 +1207,7 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
             name: "Companion".into(),
             requirements: RecruitmentRequirements::default(),
             quantity: 2,
+            weapon_precision: 0.0,
         });
 
     for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {

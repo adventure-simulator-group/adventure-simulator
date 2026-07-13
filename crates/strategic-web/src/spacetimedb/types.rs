@@ -151,6 +151,7 @@ pub struct PartyRecruitmentRole {
     pub name: String,
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
+    pub weapon_precision: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +160,30 @@ pub struct SavedRecruitmentRole {
     pub owner_character_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
+    pub weapon_precision: f32,
+}
+
+impl PartyRecruitmentRole {
+    pub fn effective_weapon_precision(&self) -> f32 {
+        self.weapon_precision
+            .max(legacy_weapon_precision(self.requirements))
+    }
+}
+
+impl SavedRecruitmentRole {
+    pub fn effective_weapon_precision(&self) -> f32 {
+        self.weapon_precision
+            .max(legacy_weapon_precision(self.requirements))
+    }
+}
+
+fn legacy_weapon_precision(requirements: RecruitmentRequirements) -> f32 {
+    adventuresim_core::capability::legacy_weapon_precision(
+        requirements.precise,
+        requirements.blunt,
+        requirements.slash,
+        requirements.pierce,
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +206,7 @@ pub struct CharacterCapability {
     pub surgery: f32,
     pub charisma: f32,
     pub faith: f32,
+    pub weapon_precision: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -66,17 +66,11 @@ struct RecruitmentRoleForm {
     #[serde(default)]
     ranged: bool,
     #[serde(default)]
-    precise: bool,
+    weapon_precision: f32,
     #[serde(default)]
     heavy: bool,
     #[serde(default)]
     armor_tier: u8,
-    #[serde(default)]
-    blunt: bool,
-    #[serde(default)]
-    slash: bool,
-    #[serde(default)]
-    pierce: bool,
     #[serde(default)]
     athletics: u8,
     #[serde(default)]
@@ -96,15 +90,15 @@ impl RecruitmentRoleForm {
         RecruitmentRequirements {
             melee: self.melee,
             ranged: self.ranged,
-            precise: self.precise,
+            precise: false,
             heavy: self.heavy,
             quarter_armor: self.armor_tier == 1,
             half_armor: self.armor_tier == 2,
             three_quarter_armor: self.armor_tier == 3,
             full_armor: self.armor_tier == 4,
-            blunt: self.blunt,
-            slash: self.slash,
-            pierce: self.pierce,
+            blunt: false,
+            slash: false,
+            pierce: false,
             athletics: self.athletics,
             endurance: self.endurance,
             medicine: self.medicine,
@@ -112,6 +106,11 @@ impl RecruitmentRoleForm {
             charisma: self.charisma,
             faith: self.faith,
         }
+    }
+
+    fn weapon_precision(&self) -> f32 {
+        ((self.weapon_precision * 2.0).round() / 2.0)
+            .clamp(0.0, adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
     }
 }
 
@@ -133,6 +132,7 @@ async fn create_recruitment_role(
                 json!(form.name),
                 json!(form.quantity),
                 json!(requirements),
+                json!(form.weapon_precision()),
                 json!(form.save_role),
             ],
         )
@@ -391,18 +391,15 @@ async fn character_capabilities(
 
 fn capability_tags(c: CharacterCapability) -> Vec<String> {
     let mut tags = Vec::new();
-    for (enabled, label) in [
-        (c.melee, "Melee"),
-        (c.ranged, "Ranged"),
-        (c.precise, "Precise"),
-        (c.heavy, "Heavy"),
-        (c.blunt, "Blunt"),
-        (c.slash, "Slash"),
-        (c.pierce, "Pierce"),
-    ] {
+    for (enabled, label) in [(c.melee, "Melee"), (c.ranged, "Ranged"), (c.heavy, "Heavy")] {
         if enabled {
             tags.push(label.into());
         }
+    }
+    if let Some(label) =
+        adventuresim_core::capability::weapon_precision_tier_label(c.weapon_precision)
+    {
+        tags.push(label.into());
     }
     if c.full_armor {
         tags.push("Full armor".into());

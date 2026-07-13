@@ -8,20 +8,21 @@ pub const HEAVY_WEAPON_MIN_WEIGHT: f32 = 4.0;
 pub const HEAVY_WEAPON_MIN_ARM_STRENGTH: f32 = 3.0;
 pub const DEFAULT_NUMERIC_REQUIREMENT: u8 = 3;
 pub const FULL_ARMOR_MIN_REGION_COVERAGE: f32 = 0.75;
+pub const WEAPON_PRECISION_CLUB: f32 = 0.5;
+pub const WEAPON_PRECISION_AXE: f32 = 1.0;
+pub const WEAPON_PRECISION_SWORD: f32 = 1.5;
+pub const WEAPON_PRECISION_RAPIER: f32 = 2.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CharacterCapabilities {
     pub melee: bool,
     pub ranged: bool,
-    pub precise: bool,
+    pub weapon_precision: f32,
     pub heavy: bool,
     pub quarter_armor: bool,
     pub half_armor: bool,
     pub three_quarter_armor: bool,
     pub full_armor: bool,
-    pub blunt: bool,
-    pub slash: bool,
-    pub pierce: bool,
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
@@ -34,15 +35,12 @@ pub struct CharacterCapabilities {
 pub struct RoleRequirements {
     pub melee: bool,
     pub ranged: bool,
-    pub precise: bool,
+    pub weapon_precision: f32,
     pub heavy: bool,
     pub quarter_armor: bool,
     pub half_armor: bool,
     pub three_quarter_armor: bool,
     pub full_armor: bool,
-    pub blunt: bool,
-    pub slash: bool,
-    pub pierce: bool,
     pub athletics: u8,
     pub endurance: u8,
     pub medicine: u8,
@@ -55,15 +53,12 @@ impl CharacterCapabilities {
     pub fn meets(self, requirements: RoleRequirements) -> bool {
         (!requirements.melee || self.melee)
             && (!requirements.ranged || self.ranged)
-            && (!requirements.precise || self.precise)
+            && self.weapon_precision >= requirements.weapon_precision
             && (!requirements.heavy || self.heavy)
             && (!requirements.quarter_armor || self.quarter_armor)
             && (!requirements.half_armor || self.half_armor)
             && (!requirements.three_quarter_armor || self.three_quarter_armor)
             && (!requirements.full_armor || self.full_armor)
-            && (!requirements.blunt || self.blunt)
-            && (!requirements.slash || self.slash)
-            && (!requirements.pierce || self.pierce)
             && rating(self.athletics) >= requirements.athletics
             && rating(self.endurance) >= requirements.endurance
             && rating(self.medicine) >= requirements.medicine
@@ -75,6 +70,32 @@ impl CharacterCapabilities {
 
 pub fn rating(value: f32) -> u8 {
     value.round().clamp(0.0, 5.0) as u8
+}
+
+pub fn weapon_precision_tier_label(value: f32) -> Option<&'static str> {
+    if value >= WEAPON_PRECISION_RAPIER {
+        Some("Rapier/bodkin precision")
+    } else if value >= WEAPON_PRECISION_SWORD {
+        Some("Sword/spear precision")
+    } else if value >= WEAPON_PRECISION_AXE {
+        Some("Axe precision")
+    } else if value >= WEAPON_PRECISION_CLUB {
+        Some("Club/hammer precision")
+    } else {
+        None
+    }
+}
+
+pub fn legacy_weapon_precision(precise: bool, blunt: bool, slash: bool, pierce: bool) -> f32 {
+    if precise {
+        WEAPON_PRECISION_RAPIER
+    } else if slash || pierce {
+        WEAPON_PRECISION_SWORD
+    } else if blunt {
+        WEAPON_PRECISION_CLUB
+    } else {
+        0.0
+    }
 }
 
 pub fn armor_tiers(equipment: &impl PlayerEquipment) -> (bool, bool, bool, bool) {
@@ -133,16 +154,13 @@ pub fn evaluate_capabilities(
     CharacterCapabilities {
         melee: equipment.weapon_is_melee(),
         ranged: equipment.weapon_is_ranged(),
-        precise: equipment.weapon_is_precise(),
+        weapon_precision: equipment.weapon_accuracy().max(0.0),
         heavy: equipment.weapon_weight() >= HEAVY_WEAPON_MIN_WEIGHT
             && arm_strength >= HEAVY_WEAPON_MIN_ARM_STRENGTH,
         quarter_armor,
         half_armor,
         three_quarter_armor,
         full_armor,
-        blunt: equipment.weapon_does_blunt(),
-        slash: equipment.weapon_does_slash(),
-        pierce: equipment.weapon_does_pierce(),
         athletics: ((climb + swim) * 0.5).clamp(0.0, 5.0),
         endurance: endurance.clamp(0.0, 5.0),
         medicine: skills
@@ -252,8 +270,21 @@ mod tests {
 
     #[test]
     fn recommendations_combine_tags_and_rounded_ratings() {
+        assert_eq!(
+            legacy_weapon_precision(true, true, true, true),
+            WEAPON_PRECISION_RAPIER
+        );
+        assert_eq!(
+            legacy_weapon_precision(false, false, true, false),
+            WEAPON_PRECISION_SWORD
+        );
+        assert_eq!(
+            legacy_weapon_precision(false, true, false, false),
+            WEAPON_PRECISION_CLUB
+        );
         let capabilities = CharacterCapabilities {
             melee: true,
+            weapon_precision: WEAPON_PRECISION_SWORD,
             quarter_armor: true,
             endurance: 2.49,
             medicine: 3.5,
@@ -261,6 +292,7 @@ mod tests {
         };
         assert!(capabilities.meets(RoleRequirements {
             melee: true,
+            weapon_precision: WEAPON_PRECISION_AXE,
             quarter_armor: true,
             endurance: 2,
             medicine: 4,
@@ -268,6 +300,10 @@ mod tests {
         }));
         assert!(!capabilities.meets(RoleRequirements {
             ranged: true,
+            ..Default::default()
+        }));
+        assert!(!capabilities.meets(RoleRequirements {
+            weapon_precision: WEAPON_PRECISION_RAPIER,
             ..Default::default()
         }));
         assert!(!capabilities.meets(RoleRequirements {

@@ -265,7 +265,7 @@ pub fn noticeboard_page(
                             div {
                                 span class="member-name" { (&listing.party.name) }
                                 span class="member-role" { (&listing.role.name) }
-                                p class="small-copy text-muted" { (requirements_label(listing.role.requirements)) }
+                                p class="small-copy text-muted" { (requirements_label(listing.role.requirements, listing.role.effective_weapon_precision())) }
                                 @if !listing.meets_requirements { p class="small-copy role-warning" { "⚠ Your character does not meet every recommendation." } }
                             }
                             @if can_request_to_join && active_character.is_some() {

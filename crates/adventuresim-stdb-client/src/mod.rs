@@ -14,6 +14,7 @@ pub mod autoresolve_quest_reducer;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod begin_world_data_import_reducer;
+pub mod calibrate_weapon_precision_reducer;
 pub mod cancel_mission_request_reducer;
 pub mod change_inventory_item_reducer;
 pub mod character_attributes_table;
@@ -143,6 +144,10 @@ pub use backfill_solo_parties_reducer::{
 };
 pub use begin_world_data_import_reducer::{
     BeginWorldDataImportCallbackId, begin_world_data_import, set_flags_for_begin_world_data_import,
+};
+pub use calibrate_weapon_precision_reducer::{
+    CalibrateWeaponPrecisionCallbackId, calibrate_weapon_precision,
+    set_flags_for_calibrate_weapon_precision,
 };
 pub use cancel_mission_request_reducer::{
     CancelMissionRequestCallbackId, cancel_mission_request, set_flags_for_cancel_mission_request,
@@ -374,6 +379,7 @@ pub enum Reducer {
     BackfillItemValues,
     BackfillSoloParties,
     BeginWorldDataImport,
+    CalibrateWeaponPrecision,
     CancelMissionRequest {
         mission_id: String,
     },
@@ -400,6 +406,7 @@ pub enum Reducer {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
+        weapon_precision: f32,
         save_role: bool,
     },
     CreateTacticalServer {
@@ -599,6 +606,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport => "begin_world_data_import",
+            Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CompleteQuest { .. } => "complete_quest",
@@ -690,6 +698,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 begin_world_data_import_reducer::BeginWorldDataImportArgs,
             >("begin_world_data_import", &value.args)?
             .into()),
+            "calibrate_weapon_precision" => {
+                Ok(__sdk::parse_reducer_args::<
+                    calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs,
+                >("calibrate_weapon_precision", &value.args)?
+                .into())
+            }
             "cancel_mission_request" => Ok(__sdk::parse_reducer_args::<
                 cancel_mission_request_reducer::CancelMissionRequestArgs,
             >("cancel_mission_request", &value.args)?

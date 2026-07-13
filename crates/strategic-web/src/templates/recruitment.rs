@@ -47,7 +47,7 @@ pub fn recruitment_panel(
                             }
                             div class="party-role-hover-card" {
                                 strong { (&panel.role.name) }
-                                span class="party-role-hover-tags" { (requirements_label(panel.role.requirements)) }
+                                span class="party-role-hover-tags" { (requirements_label(panel.role.requirements, panel.role.effective_weapon_precision())) }
                                 @if can_manage {
                                     @if panel.requests.is_empty() {
                                         span class="small-copy text-muted" { "No join requests" }
@@ -86,6 +86,7 @@ pub fn recruitment_panel(
                                             data-load-saved-role
                                             data-role-name=(&saved.name)
                                             data-role-requirements=(requirements_json(saved.requirements))
+                                            data-role-weapon-precision=(saved.effective_weapon_precision())
                                         { (&saved.name) }
                                         form action=(format!("/party-recruitment/saved/{}/delete", saved.id)) method="post" {
                                             button type="submit" class="btn btn-danger btn-small" aria-label=(format!("Delete {}", saved.name)) { "Delete" }
@@ -102,11 +103,7 @@ pub fn recruitment_panel(
                             label class="role-save-toggle" { input type="checkbox" name="save_role" value="true"; " Save this role" }
                         }
                         div class="role-requirement-columns" {
-                            (boolean_group("Combat", &[
-                                ("melee", "Melee"), ("ranged", "Ranged"), ("precise", "Precise"),
-                                ("heavy", "Heavy"),
-                                ("blunt", "Blunt"), ("slash", "Slash"), ("pierce", "Pierce"),
-                            ]))
+                            (combat_requirements())
                             div class="role-requirement-group" {
                                 h3 { "Armor & mobility" }
                                 (armor_requirement())
@@ -138,17 +135,19 @@ fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Ma
                 @for (required, label) in [
                     (role.requirements.melee, "Melee"),
                     (role.requirements.ranged, "Ranged"),
-                    (role.requirements.precise, "Precise"),
                     (role.requirements.heavy, "Heavy"),
-                    (role.requirements.blunt, "Blunt"),
-                    (role.requirements.slash, "Slash"),
-                    (role.requirements.pierce, "Pierce"),
                     (role.requirements.quarter_armor, "1/4 armor"),
                     (role.requirements.half_armor, "1/2 armor"),
                     (role.requirements.three_quarter_armor, "3/4 armor"),
                     (role.requirements.full_armor, "Full armor"),
                 ] {
                     @if required { div class="role-detail-row" { span { (label) } strong { "Required" } } }
+                }
+                @if role.effective_weapon_precision() > 0.0 {
+                    div class="role-detail-row" {
+                        span { "Weapon precision" }
+                        strong { (format!("{:.1}+", role.effective_weapon_precision())) }
+                    }
                 }
                 @for (minimum, label) in [
                     (role.requirements.athletics, "Athletics"),
@@ -181,7 +180,7 @@ fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
                                 @else { "Below one or more recommendations" }
                             }
                             @if let Some(capability) = capability {
-                                (capability_comparison(panel.role.requirements, capability))
+                                (capability_comparison(panel.role.requirements, panel.role.effective_weapon_precision(), capability))
                             } @else {
                                 p class="small-copy text-muted" { "Exact capability details unavailable." }
                             }
@@ -201,12 +200,17 @@ fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
     }
 }
 
-fn capability_comparison(requirements: RecruitmentRequirements, c: &CharacterCapability) -> Markup {
+fn capability_comparison(
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+    c: &CharacterCapability,
+) -> Markup {
     html! {
         p class="capability-detail-tags" { (capability_tag_label(c)) }
         div class="role-detail-list capability-exact-values" {
             @for (actual, label) in [
                 (c.athletics, "Athletics"),
+                (c.weapon_precision, "Weapon precision"),
                 (c.endurance, "Endurance"),
                 (c.medicine, "Medicine"),
                 (c.surgery, "Surgery"),
@@ -220,11 +224,7 @@ fn capability_comparison(requirements: RecruitmentRequirements, c: &CharacterCap
             @for (required, actual, label) in [
                 (requirements.melee, c.melee, "Melee"),
                 (requirements.ranged, c.ranged, "Ranged"),
-                (requirements.precise, c.precise, "Precise"),
                 (requirements.heavy, c.heavy, "Heavy"),
-                (requirements.blunt, c.blunt, "Blunt"),
-                (requirements.slash, c.slash, "Slash"),
-                (requirements.pierce, c.pierce, "Pierce"),
                 (requirements.quarter_armor, c.quarter_armor, "1/4 armor"),
                 (requirements.half_armor, c.half_armor, "1/2 armor"),
                 (requirements.three_quarter_armor, c.three_quarter_armor, "3/4 armor"),
@@ -234,6 +234,12 @@ fn capability_comparison(requirements: RecruitmentRequirements, c: &CharacterCap
                     div class=(if actual { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
                         span { (label) } strong { @if actual { "Yes" } @else { "No" } }
                     }
+                }
+            }
+            @if weapon_precision > 0.0 {
+                div class=(if c.weapon_precision >= weapon_precision { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
+                    span { "Weapon precision" }
+                    strong { (format!("{:.2} / {:.1}", c.weapon_precision, weapon_precision)) }
                 }
             }
             @for (minimum, actual, label) in [
@@ -257,18 +263,15 @@ fn capability_comparison(requirements: RecruitmentRequirements, c: &CharacterCap
 
 fn capability_tag_label(c: &CharacterCapability) -> String {
     let mut labels = Vec::new();
-    for (enabled, label) in [
-        (c.melee, "Melee"),
-        (c.ranged, "Ranged"),
-        (c.precise, "Precise"),
-        (c.heavy, "Heavy"),
-        (c.blunt, "Blunt"),
-        (c.slash, "Slash"),
-        (c.pierce, "Pierce"),
-    ] {
+    for (enabled, label) in [(c.melee, "Melee"), (c.ranged, "Ranged"), (c.heavy, "Heavy")] {
         if enabled {
             labels.push(label);
         }
+    }
+    if let Some(label) =
+        adventuresim_core::capability::weapon_precision_tier_label(c.weapon_precision)
+    {
+        labels.push(label);
     }
     if c.full_armor {
         labels.push("Full armor");
@@ -286,10 +289,23 @@ fn capability_tag_label(c: &CharacterCapability) -> String {
     }
 }
 
-fn boolean_group(title: &str, requirements: &[(&str, &str)]) -> Markup {
-    html! { div class="role-requirement-group" { h3 { (title) }
-        @for (name, label) in requirements {
+fn combat_requirements() -> Markup {
+    html! { div class="role-requirement-group" { h3 { "Combat" }
+        @for (name, label) in [("melee", "Melee"), ("ranged", "Ranged"), ("heavy", "Heavy")] {
             label class="role-toggle" { input type="checkbox" name=(name) value="true"; span { (label) } }
+        }
+        (weapon_precision_requirement())
+    } }
+}
+
+fn weapon_precision_requirement() -> Markup {
+    html! { label class="role-slider" {
+        span class="role-slider-heading" { span { "Precision" } output data-slider-output="weapon_precision" { "Off" } }
+        input type="range" name="weapon_precision" min="0" max="2" step="0.5" value="0"
+            data-discrete-slider data-slider-labels="Off|0.5|1.0|1.5|2.0";
+        span class="role-slider-ticks role-slider-ticks-precision" aria-hidden="true" {
+            span { "Off" } span title="Clubs and hammers" { "0.5" } span title="Axes" { "1.0" }
+            span title="Swords and spears" { "1.5" } span title="Rapiers and bodkin ammunition" { "2.0" }
         }
     } }
 }
@@ -320,24 +336,23 @@ fn requirements_json(requirements: RecruitmentRequirements) -> String {
     serde_json::to_string(&requirements).unwrap_or_else(|_| "{}".into())
 }
 
-pub fn requirements_label(r: RecruitmentRequirements) -> String {
+pub fn requirements_label(r: RecruitmentRequirements, weapon_precision: f32) -> String {
     let mut labels = Vec::new();
     for (required, label) in [
         (r.melee, "Melee"),
         (r.ranged, "Ranged"),
-        (r.precise, "Precise"),
         (r.heavy, "Heavy"),
         (r.quarter_armor, "1/4 armor"),
         (r.half_armor, "1/2 armor"),
         (r.three_quarter_armor, "3/4 armor"),
         (r.full_armor, "Full armor"),
-        (r.blunt, "Blunt"),
-        (r.slash, "Slash"),
-        (r.pierce, "Pierce"),
     ] {
         if required {
             labels.push(label.to_string());
         }
+    }
+    if weapon_precision > 0.0 {
+        labels.push(format!("Precision {weapon_precision:.1}+"));
     }
     for (value, label) in [
         (r.athletics, "Athletics"),

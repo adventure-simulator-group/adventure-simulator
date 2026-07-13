@@ -29,6 +29,8 @@ pub struct CharacterCapability {
     pub surgery: f32,
     pub charisma: f32,
     pub faith: f32,
+    #[default(0.0)]
+    pub weapon_precision: f32,
 }
 
 impl From<(u64, CharacterCapabilities)> for CharacterCapability {
@@ -37,21 +39,23 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             character_id,
             melee: value.melee,
             ranged: value.ranged,
-            precise: value.precise,
+            precise: value.weapon_precision
+                >= adventuresim_core::capability::WEAPON_PRECISION_RAPIER,
             heavy: value.heavy,
             quarter_armor: value.quarter_armor,
             half_armor: value.half_armor,
             three_quarter_armor: value.three_quarter_armor,
             full_armor: value.full_armor,
-            blunt: value.blunt,
-            slash: value.slash,
-            pierce: value.pierce,
+            blunt: false,
+            slash: false,
+            pierce: false,
             athletics: value.athletics,
             endurance: value.endurance,
             medicine: value.medicine,
             surgery: value.surgery,
             charisma: value.charisma,
             faith: value.faith,
+            weapon_precision: value.weapon_precision,
         }
     }
 }

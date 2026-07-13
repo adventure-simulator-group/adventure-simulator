@@ -14,6 +14,7 @@ pub struct PartyRecruitmentRole {
     pub name: String,
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
+    pub weapon_precision: f32,
 }
 
 impl __sdk::InModule for PartyRecruitmentRole {

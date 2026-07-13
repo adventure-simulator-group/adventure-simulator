@@ -74,7 +74,9 @@
     const syncSlider = (slider) => {
       const labels = (slider.dataset.sliderLabels || "").split("|");
       const output = panel.querySelector(`[data-slider-output="${slider.name}"]`);
-      if (output) output.textContent = labels[Number(slider.value)] || slider.value;
+      const step = Number(slider.step) || 1;
+      const index = Math.round((Number(slider.value) - Number(slider.min || 0)) / step);
+      if (output) output.textContent = labels[index] || slider.value;
     };
     panel.querySelectorAll("[data-discrete-slider]").forEach((slider) => {
       slider.addEventListener("input", () => syncSlider(slider));
@@ -94,6 +96,9 @@
           if (typeof value === "boolean") field.checked = value;
           else field.value = String(value);
         });
+        if (form.elements.weapon_precision) {
+          form.elements.weapon_precision.value = button.dataset.roleWeaponPrecision || "0";
+        }
         const armor = form.elements.armor_tier;
         if (armor) {
           armor.value = requirements.full_armor ? "4"

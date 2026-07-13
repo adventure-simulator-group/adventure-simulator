@@ -341,9 +341,13 @@ async fn noticeboard(
                 .filter(|member| member.recruitment_role_id == Some(role.id))
                 .count() as u32;
             if filled < role.quantity {
-                let meets_requirements = active_capability
-                    .as_ref()
-                    .is_none_or(|capability| capability_meets(capability, role.requirements));
+                let meets_requirements = active_capability.as_ref().is_none_or(|capability| {
+                    capability_meets(
+                        capability,
+                        role.requirements,
+                        role.effective_weapon_precision(),
+                    )
+                });
                 recruiting_roles.push(RecruitingPartyRole {
                     party: party.clone(),
                     role,
@@ -1411,19 +1415,20 @@ async fn render_service_page(
     )
 }
 
-fn capability_meets(c: &CharacterCapability, r: RecruitmentRequirements) -> bool {
+fn capability_meets(
+    c: &CharacterCapability,
+    r: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> bool {
     adventuresim_core::capability::CharacterCapabilities {
         melee: c.melee,
         ranged: c.ranged,
-        precise: c.precise,
+        weapon_precision: c.weapon_precision,
         heavy: c.heavy,
         quarter_armor: c.quarter_armor,
         half_armor: c.half_armor,
         three_quarter_armor: c.three_quarter_armor,
         full_armor: c.full_armor,
-        blunt: c.blunt,
-        slash: c.slash,
-        pierce: c.pierce,
         athletics: c.athletics,
         endurance: c.endurance,
         medicine: c.medicine,
@@ -1434,15 +1439,12 @@ fn capability_meets(c: &CharacterCapability, r: RecruitmentRequirements) -> bool
     .meets(adventuresim_core::capability::RoleRequirements {
         melee: r.melee,
         ranged: r.ranged,
-        precise: r.precise,
+        weapon_precision,
         heavy: r.heavy,
         quarter_armor: r.quarter_armor,
         half_armor: r.half_armor,
         three_quarter_armor: r.three_quarter_armor,
         full_armor: r.full_armor,
-        blunt: r.blunt,
-        slash: r.slash,
-        pierce: r.pierce,
         athletics: r.athletics,
         endurance: r.endurance,
         medicine: r.medicine,
