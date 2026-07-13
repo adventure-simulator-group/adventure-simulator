@@ -1196,7 +1196,7 @@ fn rest_service_menu(
                 div class="rest-days-control" {
                     button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
                         title="Set the rest duration needed to fully heal"
-                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "✚" }
+                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                     button type="button" class="rest-days-step" aria-label="Decrease rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
                     input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
