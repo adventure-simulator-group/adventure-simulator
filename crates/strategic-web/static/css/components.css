@@ -72,6 +72,17 @@
   transform: translateY(1px);
 }
 
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  background: var(--bg-tertiary);
+  border-color: var(--border-light);
+  color: var(--text-muted);
+}
+
 .btn-primary {
   background: var(--accent);
   color: var(--bg-primary);

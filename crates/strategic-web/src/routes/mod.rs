@@ -52,15 +52,16 @@ struct CurrentTime {
 
 async fn current_time(State(state): State<AppState>, session: Session) -> Json<CurrentTime> {
     let Some(character_id) = session.character_id_u64() else {
-        return Json(CurrentTime { character_minutes: 0, official_minutes: 0 });
+        return Json(CurrentTime {
+            character_minutes: 0,
+            official_minutes: 0,
+        });
     };
-    let _ = state
-        .db
-        .call("synchronize_character_time", &[serde_json::json!(character_id)])
-        .await;
     let character_time: Vec<CharacterTime> = state
         .db
-        .query(&format!("SELECT * FROM character_time WHERE character_id = {character_id}"))
+        .query(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
         .await
         .unwrap_or_default();
     let world_clock: Vec<WorldClock> = state
@@ -70,7 +71,9 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Json<C
         .unwrap_or_default();
     Json(CurrentTime {
         character_minutes: character_time.first().map_or(0, |time| time.minutes),
-        official_minutes: world_clock.first().map_or(0, |clock| clock.official_minutes),
+        official_minutes: world_clock
+            .first()
+            .map_or(0, |clock| clock.official_minutes),
     })
 }
 
