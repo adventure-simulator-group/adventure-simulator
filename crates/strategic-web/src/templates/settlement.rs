@@ -1188,9 +1188,9 @@ fn rest_service_menu(
     section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any scheduled training." }
+            p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any downtime." }
         } @else {
-            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any scheduled training." }
+            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 div class="rest-days-control" {
@@ -1220,7 +1220,7 @@ fn rest_service_menu(
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
                     }
-                    @if summary.trained.is_empty() { p { "No time remained for scheduled training." } } @else {
+                    @if summary.trained.is_empty() { p { "No time remained for downtime." } } @else {
                         p { "Training:" }
                         ul { @for (skill, hours) in &summary.trained { li { (skill) ": +" (format!("{hours:.2}h")) } } }
                     }
