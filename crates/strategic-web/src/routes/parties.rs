@@ -339,7 +339,21 @@ async fn recruitment_panel_fragment(
             .filter(|request| request.recruitment_role_id == role.id)
         {
             if let Some(character) = get_character(&state, request.character_id).await {
-                applicants.push((request.clone(), character));
+                let _ = state
+                    .db
+                    .call("refresh_capabilities", &[json!(request.character_id)])
+                    .await;
+                let capability = state
+                    .db
+                    .query::<CharacterCapability>(&format!(
+                        "SELECT * FROM character_capability WHERE character_id = {}",
+                        request.character_id
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next();
+                applicants.push((request.clone(), character, capability));
             }
         }
         panels.push(RecruitmentRolePanel {

@@ -1,14 +1,14 @@
 use maud::{Markup, html};
 
 use crate::spacetimedb::{
-    Character, Party, PartyJoinRequest, PartyRecruitmentRole, RecruitmentRequirements,
-    SavedRecruitmentRole,
+    Character, CharacterCapability, Party, PartyJoinRequest, PartyRecruitmentRole,
+    RecruitmentRequirements, SavedRecruitmentRole,
 };
 
 pub struct RecruitmentRolePanel {
     pub role: PartyRecruitmentRole,
     pub filled: Vec<Character>,
-    pub requests: Vec<(PartyJoinRequest, Character)>,
+    pub requests: Vec<(PartyJoinRequest, Character, Option<CharacterCapability>)>,
 }
 
 pub fn recruitment_panel(
@@ -25,44 +25,45 @@ pub fn recruitment_panel(
         {
             div data-party-slot-groups hidden {
                 @for panel in roles {
-                    div class="party-role-group" data-party-role-group data-role-id=(panel.role.id) {
-                        div class="party-role-portraits" {
-                            span class="party-role-connector" aria-hidden="true" {}
-                            @for character in &panel.filled {
-                                span data-filled-character-id=(character.id) {}
-                            }
-                            @for _ in panel.filled.len()..panel.role.quantity as usize {
-                                span class="party-portrait party-role-slot" title=(format!("Open slot: {}", panel.role.name)) {
-                                    span class="party-slot-plus" { "+" }
-                                    span class="party-portrait-name" { (&panel.role.name) }
+                    @let remaining = (panel.role.quantity as usize).saturating_sub(panel.filled.len());
+                    @if remaining > 0 {
+                        div class="party-role-group" data-party-role-group data-role-id=(panel.role.id) {
+                            div class="party-role-portraits" {
+                                @for slot in 0..remaining {
+                                    button type="button" class="party-portrait party-role-slot"
+                                        data-select-party-role aria-pressed="false"
+                                        aria-label=(format!("{} slot {}", panel.role.name, slot + 1))
+                                        title=(format!("Inspect open {} slot", panel.role.name))
+                                        style=(format!("z-index: {}", remaining - slot)) {
+                                        span class="party-slot-plus" { "+" }
+                                        @if slot == 0 { span class="party-portrait-name" { (&panel.role.name) } }
+                                    }
+                                }
+                                @if can_manage {
+                                    span class="party-role-notification-badge"
+                                        data-party-role-notification-badge data-role-id=(panel.role.id)
+                                        hidden[panel.requests.is_empty()] { (panel.requests.len()) }
                                 }
                             }
-                            @if can_manage {
-                                span class="party-role-notification-badge"
-                                    data-party-role-notification-badge data-role-id=(panel.role.id)
-                                    hidden[panel.requests.is_empty()] { (panel.requests.len()) }
-                            }
-                        }
-                        @if can_manage {
-                            div class="party-role-invitations" {
+                            div class="party-role-hover-card" {
                                 strong { (&panel.role.name) }
-                                span class="small-copy text-muted" { (requirements_label(panel.role.requirements)) }
-                                @if panel.requests.is_empty() {
-                                    span class="small-copy text-muted" { "No invitations" }
-                                } @else {
-                                    @for (request, character) in &panel.requests {
-                                        div class=(if request.meets_requirements { "role-applicant" } else { "role-applicant role-applicant-warning" }) {
-                                            span { (&character.name) @if !request.meets_requirements { " ! Below recommendations" } }
-                                            div class="flex gap-sm" {
-                                                form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
-                                                    button class="btn btn-primary btn-small" { "Accept" }
-                                                }
-                                                form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
-                                                    button class="btn btn-secondary btn-small" { "Reject" }
-                                                }
-                                            }
+                                span class="party-role-hover-tags" { (requirements_label(panel.role.requirements)) }
+                                @if can_manage {
+                                    @if panel.requests.is_empty() {
+                                        span class="small-copy text-muted" { "No join requests" }
+                                    } @else {
+                                        @for (_, character, _) in &panel.requests {
+                                            span class="party-role-hover-request" { (&character.name) }
                                         }
                                     }
+                                }
+                            }
+                            template data-role-left-template {
+                                (role_requirements_detail(&panel.role, remaining))
+                            }
+                            @if can_manage {
+                                template data-role-right-template {
+                                    (role_requests_detail(party, panel))
                                 }
                             }
                         }
@@ -125,6 +126,163 @@ pub fn recruitment_panel(
                 }
             }
         }
+    }
+}
+
+fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Markup {
+    html! {
+        section class="role-inspection-content" {
+            h3 class="sidebar-header" { (&role.name) }
+            p class="small-copy text-muted" { (remaining) " open " @if remaining == 1 { "slot" } @else { "slots" } }
+            div class="role-detail-list" {
+                @for (required, label) in [
+                    (role.requirements.melee, "Melee"),
+                    (role.requirements.ranged, "Ranged"),
+                    (role.requirements.precise, "Precise"),
+                    (role.requirements.heavy, "Heavy"),
+                    (role.requirements.blunt, "Blunt"),
+                    (role.requirements.slash, "Slash"),
+                    (role.requirements.pierce, "Pierce"),
+                    (role.requirements.quarter_armor, "1/4 armor"),
+                    (role.requirements.half_armor, "1/2 armor"),
+                    (role.requirements.three_quarter_armor, "3/4 armor"),
+                    (role.requirements.full_armor, "Full armor"),
+                ] {
+                    @if required { div class="role-detail-row" { span { (label) } strong { "Required" } } }
+                }
+                @for (minimum, label) in [
+                    (role.requirements.athletics, "Athletics"),
+                    (role.requirements.endurance, "Endurance"),
+                    (role.requirements.medicine, "Medicine"),
+                    (role.requirements.surgery, "Surgery"),
+                    (role.requirements.charisma, "Charisma"),
+                    (role.requirements.faith, "Faith"),
+                ] {
+                    @if minimum > 0 { div class="role-detail-row" { span { (label) } strong { (minimum) "+" } } }
+                }
+            }
+        }
+    }
+}
+
+fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
+    html! {
+        section class="role-inspection-content" {
+            h3 class="sidebar-header" { "Join requests" }
+            @if panel.requests.is_empty() {
+                p class="small-copy text-muted" { "No pending requests for this role." }
+            } @else {
+                div class="role-request-detail-list" {
+                    @for (request, character, capability) in &panel.requests {
+                        article class=(if request.meets_requirements { "role-request-detail" } else { "role-request-detail role-applicant-warning" }) {
+                            h4 { (&character.name) }
+                            p class="small-copy" {
+                                @if request.meets_requirements { "Meets every recommendation" }
+                                @else { "Below one or more recommendations" }
+                            }
+                            @if let Some(capability) = capability {
+                                (capability_comparison(panel.role.requirements, capability))
+                            } @else {
+                                p class="small-copy text-muted" { "Exact capability details unavailable." }
+                            }
+                            div class="flex gap-sm" {
+                                form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
+                                    button class="btn btn-primary btn-small" { "Accept" }
+                                }
+                                form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
+                                    button class="btn btn-secondary btn-small" { "Reject" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn capability_comparison(requirements: RecruitmentRequirements, c: &CharacterCapability) -> Markup {
+    html! {
+        p class="capability-detail-tags" { (capability_tag_label(c)) }
+        div class="role-detail-list capability-exact-values" {
+            @for (actual, label) in [
+                (c.athletics, "Athletics"),
+                (c.endurance, "Endurance"),
+                (c.medicine, "Medicine"),
+                (c.surgery, "Surgery"),
+                (c.charisma, "Charisma"),
+                (c.faith, "Faith"),
+            ] {
+                div class="role-detail-row" { span { (label) } strong { (format!("{actual:.2}")) } }
+            }
+        }
+        div class="role-detail-list" {
+            @for (required, actual, label) in [
+                (requirements.melee, c.melee, "Melee"),
+                (requirements.ranged, c.ranged, "Ranged"),
+                (requirements.precise, c.precise, "Precise"),
+                (requirements.heavy, c.heavy, "Heavy"),
+                (requirements.blunt, c.blunt, "Blunt"),
+                (requirements.slash, c.slash, "Slash"),
+                (requirements.pierce, c.pierce, "Pierce"),
+                (requirements.quarter_armor, c.quarter_armor, "1/4 armor"),
+                (requirements.half_armor, c.half_armor, "1/2 armor"),
+                (requirements.three_quarter_armor, c.three_quarter_armor, "3/4 armor"),
+                (requirements.full_armor, c.full_armor, "Full armor"),
+            ] {
+                @if required {
+                    div class=(if actual { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
+                        span { (label) } strong { @if actual { "Yes" } @else { "No" } }
+                    }
+                }
+            }
+            @for (minimum, actual, label) in [
+                (requirements.athletics, c.athletics, "Athletics"),
+                (requirements.endurance, c.endurance, "Endurance"),
+                (requirements.medicine, c.medicine, "Medicine"),
+                (requirements.surgery, c.surgery, "Surgery"),
+                (requirements.charisma, c.charisma, "Charisma"),
+                (requirements.faith, c.faith, "Faith"),
+            ] {
+                @if minimum > 0 {
+                    div class=(if actual.round() as u8 >= minimum { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
+                        span { (label) }
+                        strong { (format!("{actual:.2} / {minimum}")) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn capability_tag_label(c: &CharacterCapability) -> String {
+    let mut labels = Vec::new();
+    for (enabled, label) in [
+        (c.melee, "Melee"),
+        (c.ranged, "Ranged"),
+        (c.precise, "Precise"),
+        (c.heavy, "Heavy"),
+        (c.blunt, "Blunt"),
+        (c.slash, "Slash"),
+        (c.pierce, "Pierce"),
+    ] {
+        if enabled {
+            labels.push(label);
+        }
+    }
+    if c.full_armor {
+        labels.push("Full armor");
+    } else if c.three_quarter_armor {
+        labels.push("3/4 armor");
+    } else if c.half_armor {
+        labels.push("1/2 armor");
+    } else if c.quarter_armor {
+        labels.push("1/4 armor");
+    }
+    if labels.is_empty() {
+        "No equipment tags".into()
+    } else {
+        labels.join(" · ")
     }
 }
 

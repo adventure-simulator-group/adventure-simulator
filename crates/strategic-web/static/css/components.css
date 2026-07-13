@@ -1647,24 +1647,13 @@
 
 .party-role-group {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding-left: 0.55rem;
+  display: block;
 }
 
 .party-role-portraits {
   position: relative;
   display: flex;
-  gap: 0.25rem;
-}
-
-.party-role-connector {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  border-top: 1px solid var(--border-accent);
+  align-items: center;
 }
 
 .party-role-notification-badge {
@@ -1686,26 +1675,44 @@
 
 .party-role-notification-badge[hidden] { display: none; }
 
-.party-role-invitations {
-  display: flex;
+.party-role-hover-card {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  left: 50%;
+  display: none;
   width: 18rem;
-  max-height: 13rem;
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.55rem;
-  overflow-y: auto;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
-  box-shadow: var(--shadow-sm);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-xs);
+  transform: translateX(-50%);
 }
 
-.party-role-invitations .role-applicant { font-size: var(--font-size-xs); }
+.party-role-group:not(.selected):hover .party-role-hover-card,
+.party-role-group:not(.selected):focus-within .party-role-hover-card { display: flex; }
+
+.party-role-hover-tags { color: var(--text-muted); line-height: 1.35; }
+.party-role-hover-request { padding-top: 0.3rem; border-top: 1px solid var(--border-light); }
 
 .party-role-slot {
+  padding: 0;
   border: 1px dashed var(--border-accent);
   border-radius: 50%;
   background: color-mix(in srgb, var(--panel-bg) 78%, transparent);
+}
+
+.party-role-slot + .party-role-slot { margin-left: -2.5rem; }
+.party-role-slot:hover,
+.party-role-slot:focus-visible,
+.party-role-slot[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--accent-dark);
+  background: var(--panel-bg);
 }
 
 .party-slot-plus { color: var(--text-muted); font-size: 1.35rem; }
@@ -1766,6 +1773,18 @@
 .saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
 .role-applicant-warning, .role-warning { color: var(--warning, #d99b2b); }
+.role-inspection-hidden { display: none !important; }
+.role-inspection-panel { height: 100%; overflow-y: auto; }
+.role-inspection-content { display: flex; flex-direction: column; gap: 0.65rem; padding: 0.8rem; }
+.role-detail-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.role-detail-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--border-light); }
+.role-detail-row strong { color: var(--accent-dark); font-size: var(--font-size-xs); }
+.role-detail-miss strong { color: var(--warning, #d99b2b); }
+.role-request-detail-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.role-request-detail { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.65rem; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--panel-bg); }
+.role-request-detail h4 { color: var(--text-primary); font-family: var(--font-display), serif; }
+.capability-detail-tags { color: var(--text-muted); font-size: var(--font-size-xs); line-height: 1.4; }
+.capability-exact-values { padding: 0.4rem 0; border-block: 1px solid var(--border-light); }
 .recruiting-role { padding: 0.55rem 0; border-bottom: 1px solid var(--border-light); }
 .recruiting-role-warning { border-left: 2px solid var(--warning, #d99b2b); padding-left: 0.45rem; }
 

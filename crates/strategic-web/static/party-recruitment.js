@@ -23,12 +23,37 @@
 
     panel.querySelectorAll("[data-party-role-group]").forEach((group) => {
       group.hidden = false;
-      group.querySelectorAll("[data-filled-character-id]").forEach((marker) => {
-        const portrait = overlay.querySelector(`[data-character-id="${marker.dataset.filledCharacterId}"]`);
-        if (portrait) marker.replaceWith(portrait);
-        else marker.remove();
-      });
       overlay.append(group);
+    });
+
+    const leftSidebar = document.querySelector(".left-sidebar");
+    const rightSidebar = document.querySelector(".right-sidebar");
+    const clearRoleInspection = () => {
+      document.querySelectorAll("[data-party-role-group].selected").forEach((group) => {
+        group.classList.remove("selected");
+        group.querySelectorAll("[data-select-party-role]").forEach((button) => button.setAttribute("aria-pressed", "false"));
+      });
+      document.querySelectorAll("[data-role-inspection-panel]").forEach((detail) => detail.remove());
+      document.querySelectorAll(".role-inspection-hidden").forEach((element) => element.classList.remove("role-inspection-hidden"));
+    };
+    const inspectRole = (group) => {
+      const wasSelected = group.classList.contains("selected");
+      clearRoleInspection();
+      if (wasSelected) return;
+      group.classList.add("selected");
+      group.querySelectorAll("[data-select-party-role]").forEach((button) => button.setAttribute("aria-pressed", "true"));
+      [[leftSidebar, group.querySelector("[data-role-left-template]")], [rightSidebar, group.querySelector("[data-role-right-template]")]].forEach(([sidebar, template]) => {
+        if (!sidebar || !template) return;
+        Array.from(sidebar.children).forEach((child) => child.classList.add("role-inspection-hidden"));
+        const detail = document.createElement("div");
+        detail.dataset.roleInspectionPanel = "true";
+        detail.className = "role-inspection-panel";
+        detail.append(template.content.cloneNode(true));
+        sidebar.append(detail);
+      });
+    };
+    overlay.querySelectorAll("[data-select-party-role]").forEach((button) => {
+      button.addEventListener("click", () => inspectRole(button.closest("[data-party-role-group]")));
     });
 
     if (panel.dataset.canManage === "true" && leaderPortrait) {
@@ -80,14 +105,14 @@
       });
     });
 
-    document.querySelectorAll("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post']").forEach((form) => {
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const body = new URLSearchParams(new FormData(form));
-        const response = await fetch(form.action, { method: "POST", body });
-        if (!response.ok) return;
-        window.location.reload();
-      });
+    document.addEventListener("submit", async (event) => {
+      const form = event.target.closest?.("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post'], [data-role-inspection-panel] form[method='post']");
+      if (!form) return;
+      event.preventDefault();
+      const body = new URLSearchParams(new FormData(form));
+      const response = await fetch(form.action, { method: "POST", body });
+      if (!response.ok) return;
+      window.location.reload();
     });
   }
 
