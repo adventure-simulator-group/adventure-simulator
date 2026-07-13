@@ -678,32 +678,32 @@ fn skills_table(
     schedule: Option<&CharacterTrainingSchedule>,
 ) -> Markup {
     html! {
-        table class="party-skills-table" {
-            colgroup {
-                col class="party-skill-icon-column";
-                col class="party-skill-name-column";
-                col class="party-skill-meter-column";
-                @if schedule.is_some() {
-                    col class="party-skill-time-column";
+            table class="party-skills-table" {
+                colgroup {
+                    col class="party-skill-icon-column";
+                    col class="party-skill-name-column";
+                    col class="party-skill-meter-column";
+                    @if schedule.is_some() {
+                        col class="party-skill-time-column";
+                    }
                 }
-            }
-            tbody {
-                (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
-                (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
-                (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
-                (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
-                (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
-                (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
-                (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
-                (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
-                (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
-                (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
-                (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
-                @if let Some(schedule) = schedule {
-                    tr class="schedule-divider" { td colspan="4" {} }
-                    (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
-                    (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
-                }
+                tbody {
+                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
+                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
+                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
+                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
+                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
+                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
+                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
+                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
+                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
+                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
+                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+                    @if let Some(schedule) = schedule {
+                        tr class="schedule-divider" { td colspan="4" {} }
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
+                    }
             }
         }
     }
@@ -1176,23 +1176,32 @@ fn rest_service_menu(
     summary: Option<&RestSummary>,
 ) -> Markup {
     html! {
-        section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
-            div class="rest-service-heading" { strong { "Rest" } }
-            @if kind == "inn" {
-                p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any scheduled training." }
-            } @else {
-                p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any scheduled training." }
+    section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+        div class="rest-service-heading" { strong { "Rest" } }
+        @if kind == "inn" {
+            p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any scheduled training." }
+        } @else {
+            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any scheduled training." }
+        }
+        form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
+            div class="rest-days-control" {
+                button type="button" class="rest-days-step" aria-label="Decrease rest days"
+                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
+                input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
+                    oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
+                span class="rest-days-unit" { "days" }
+                button type="button" class="rest-days-step" aria-label="Increase rest days"
+                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(365, Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
             }
-            form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
-                div class="rest-days-control" {
-                    input type="number" name="days" value="1" min="1" max="365" aria-label="Rest days";
-                    span class="rest-days-unit" { "days" }
-                }
-                button type="submit" class="btn btn-primary btn-small btn-block" { "Rest" }
-            }
-            @if let Some(summary) = summary {
-                div class="rest-summary" {
-                    strong { "Rest summary" }
+            button type="submit" class="btn btn-primary btn-small btn-block" disabled { "Rest" }
+        }
+        @if let Some(summary) = summary {
+            div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
+                section class="rest-summary" {
+                    div class="rest-summary-heading" {
+                        strong id="rest-summary-title" { "Rest summary" }
+                        a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
+                    }
                     p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
@@ -1206,9 +1215,9 @@ fn rest_service_menu(
                 }
             }
         }
+        }
     }
 }
-
 fn rest_service_menu_placeholder(location: &str) -> Markup {
     html! {
         section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
