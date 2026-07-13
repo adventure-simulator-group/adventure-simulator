@@ -1,11 +1,31 @@
 (() => {
   const DAY = 1440;
-  const MIN_LEISURE = 360;
   const STEP = 15;
+  const leisureTip = 'It is strongly recommended to leave enough leisure time for sleep, and a moderate amount beyond that for morale.';
 
   function format(minutes) {
     const whole = Math.floor(minutes / 60);
     return `${whole}${['', '¼', '½', '¾'][(minutes % 60) / STEP]}h`;
+  }
+
+  function leisureColor(minutes) {
+    const stops = [
+      [480, [105, 168, 107]], // green
+      [420, [214, 196, 83]],  // yellow
+      [360, [217, 120, 53]],  // orange
+      [300, [178, 59, 59]],   // red
+      [0, [16, 16, 16]],      // black
+    ];
+    for (let index = 0; index < stops.length - 1; index += 1) {
+      const [high, highColor] = stops[index];
+      const [low, lowColor] = stops[index + 1];
+      if (minutes >= low) {
+        const ratio = Math.min(1, Math.max(0, (minutes - low) / (high - low)));
+        const color = highColor.map((channel, channelIndex) => Math.round(lowColor[channelIndex] + (channel - lowColor[channelIndex]) * ratio));
+        return `rgb(${color.join(' ')})`;
+      }
+    }
+    return 'rgb(16 16 16)';
   }
 
   function distribute(values, names, amount) {
@@ -61,8 +81,11 @@
       root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(minutes); });
     });
     root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => { output.textContent = format(leisure); });
-    root.querySelectorAll('[data-leisure-fill]').forEach((fill) => { fill.style.width = `${leisure / DAY * 100}%`; });
-    root.querySelectorAll('[data-leisure-warning]').forEach((warning) => { warning.hidden = leisure >= MIN_LEISURE; });
+    root.querySelectorAll('[data-leisure-fill]').forEach((fill) => {
+      fill.style.width = `${leisure / DAY * 100}%`;
+      fill.style.backgroundColor = leisureColor(leisure);
+      fill.parentElement.title = leisureTip;
+    });
   }
 
   function setValue(root, state, target, wanted) {

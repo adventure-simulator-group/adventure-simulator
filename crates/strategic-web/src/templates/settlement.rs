@@ -646,7 +646,6 @@ fn party_skills_rail(
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
-                        p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
                     }
                     script src="/static/training-schedule.js?v=hourglass-handle-1" {}
                 } @else {

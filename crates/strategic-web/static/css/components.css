@@ -1972,7 +1972,6 @@
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }
 .schedule-leisure-fill { display: block; height: 100%; background: var(--success, #69a86b); }
-.schedule-warning { margin: 0; color: var(--warning, #dca83b); font-size: 0.85rem; }
 
 /* ============================================
    ANIMATIONS
