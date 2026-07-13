@@ -1237,7 +1237,7 @@
 
 .rest-days-control {
   display: grid;
-  grid-template-columns: 1.7rem 1.7rem minmax(0, 1fr) auto 1.7rem;
+  grid-template-columns: auto 1.7rem minmax(3.5ch, 1fr) auto 1.7rem;
   align-items: center;
   margin-bottom: 0.55rem;
   overflow: hidden;
@@ -1265,6 +1265,9 @@
 }
 
 .rest-days-heal {
+  width: auto;
+  padding-inline: 0.45rem;
+  white-space: nowrap;
   border-right: 1px solid var(--border-light);
 }
 
@@ -1277,7 +1280,7 @@
 }
 
 .rest-days-control input {
-  min-width: 0;
+  min-width: 3.5ch;
   height: 2rem;
   padding: 0 0.35rem;
   border: 0;
