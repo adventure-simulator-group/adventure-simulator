@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct FinalizeMerchantTradeArgs {
     pub character_id: u64,
+    pub settlement_id: String,
     pub buy_item_ids: Vec<String>,
     pub buy_quantities: Vec<u32>,
     pub sell_inventory_ids: Vec<u64>,
@@ -18,6 +19,7 @@ impl From<FinalizeMerchantTradeArgs> for super::Reducer {
     fn from(args: FinalizeMerchantTradeArgs) -> Self {
         Self::FinalizeMerchantTrade {
             character_id: args.character_id,
+            settlement_id: args.settlement_id,
             buy_item_ids: args.buy_item_ids,
             buy_quantities: args.buy_quantities,
             sell_inventory_ids: args.sell_inventory_ids,
@@ -45,6 +47,7 @@ pub trait finalize_merchant_trade {
     fn finalize_merchant_trade(
         &self,
         character_id: u64,
+        settlement_id: String,
         buy_item_ids: Vec<String>,
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
@@ -60,14 +63,15 @@ pub trait finalize_merchant_trade {
     fn on_finalize_merchant_trade(
         &self,
         callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &Vec<String>,
-            &Vec<u32>,
-            &Vec<u64>,
-            &Vec<u32>,
-        ) + Send
-        + 'static,
+                &super::ReducerEventContext,
+                &u64,
+                &String,
+                &Vec<String>,
+                &Vec<u32>,
+                &Vec<u64>,
+                &Vec<u32>,
+            ) + Send
+            + 'static,
     ) -> FinalizeMerchantTradeCallbackId;
     /// Cancel a callback previously registered by [`Self::on_finalize_merchant_trade`],
     /// causing it not to run in the future.
@@ -78,6 +82,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
     fn finalize_merchant_trade(
         &self,
         character_id: u64,
+        settlement_id: String,
         buy_item_ids: Vec<String>,
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
@@ -87,6 +92,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
             "finalize_merchant_trade",
             FinalizeMerchantTradeArgs {
                 character_id,
+                settlement_id,
                 buy_item_ids,
                 buy_quantities,
                 sell_inventory_ids,
@@ -97,14 +103,15 @@ impl finalize_merchant_trade for super::RemoteReducers {
     fn on_finalize_merchant_trade(
         &self,
         mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &Vec<String>,
-            &Vec<u32>,
-            &Vec<u64>,
-            &Vec<u32>,
-        ) + Send
-        + 'static,
+                &super::ReducerEventContext,
+                &u64,
+                &String,
+                &Vec<String>,
+                &Vec<u32>,
+                &Vec<u64>,
+                &Vec<u32>,
+            ) + Send
+            + 'static,
     ) -> FinalizeMerchantTradeCallbackId {
         FinalizeMerchantTradeCallbackId(self.imp.on_reducer(
             "finalize_merchant_trade",
@@ -116,6 +123,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                             reducer:
                                 super::Reducer::FinalizeMerchantTrade {
                                     character_id,
+                                    settlement_id,
                                     buy_item_ids,
                                     buy_quantities,
                                     sell_inventory_ids,
@@ -131,6 +139,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                 callback(
                     ctx,
                     character_id,
+                    settlement_id,
                     buy_item_ids,
                     buy_quantities,
                     sell_inventory_ids,

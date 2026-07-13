@@ -56,6 +56,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub scene_key: String,
+    pub source_node_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

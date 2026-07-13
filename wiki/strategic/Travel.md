@@ -31,6 +31,16 @@ Essentially, the travel map is a minigame where each "party" (players or enemies
 - In any given region, you can view a list of what sorts of enemies are in an area along with an estimate of the size of a party of that enemy type from which you could not reliably evade. This is important for planning your journey. If a particular area has parties that are too powerful for you to beat in combat *or* evade (because they are elite warriors), you should find a different route or rethink your party.
 - Different sorts of terrain may also have different travel speed multipliers. Traveling on roads is very fast, fording a river is extremely slow. Your route will show the speed multiplier at any given point along its path.
 - This isn't necessary for the MVP, but a pathfinding algorithm should be used on the terrain map to find the optimal route between each point. The point of placing points should be more to plan around resources or route around areas with dangerous enemies, not a check to see whether your brain is capable of intuitively computing A*.
+
+## Viabundus road network
+
+The historical world importer represents the Viabundus road system as graph
+nodes and edges in the strategic database. The initial 1544 import admits land
+roads and ferries; intermediate junctions, bridges, and ferry endpoints remain
+in the graph so that a route is not incorrectly collapsed into a direct line
+between settlements. Travel currently requires a connected land/ferry route
+between imported settlements. Route cost, party speed, terrain, rest stops,
+and encounters are subsequent layers on this graph.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.

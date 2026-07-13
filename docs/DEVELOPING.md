@@ -84,7 +84,37 @@ just build-all        # Build everything
 # Database
 just publish          # Publish SpacetimeDB module
 just publish-reset    # Publish and clear database
+
+# World-data source
+just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
+just normalise-viabundus # Write the 1544 strategic graph to target/
+just load-viabundus-world # Load it into a published local SpacetimeDB module
 ```
+
+## Viabundus source data
+
+The Viabundus v2 CSV download is a local development input for the strategic
+world importer. It is intentionally ignored by Git. Initialise or restore it
+from the official Zenodo record with:
+
+```bash
+just init-viabundus
+```
+
+Use `python3 scripts/init_viabundus.py --force` only when replacing an existing
+local download. The command records the source URLs and SHA-256 checksums in
+`viabundus/.viabundus-source.json`.
+
+`just normalise-viabundus` retains active 1544 land and ferry segments, all
+nodes needed to connect those segments, and active settlements. It writes a
+deterministic, generated artifact to `target/viabundus-v2-1544.json` and emits
+a validation report. `just load-viabundus-world` sends that same normalized
+data in bounded batches to a published local module. Run it after
+`just publish-reset`, without `_seed-world`, when using the historical world.
+
+The loader claims a one-time import identity before sending batches. For a
+production deployment, the operator must make that first call before allowing
+untrusted clients to connect.
 
 ## Strategic UI
 

@@ -1,7 +1,7 @@
 # Trade
 
-For the current strategic prototype, every merchant exposes the same unlimited
-catalogue. Items have a base gold value; merchant buy and sell prices are
+For the current strategic prototype, every settlement exposes the same unlimited
+merchant catalogue, including imported Viabundus settlements. Items have a base gold value; merchant buy and sell prices are
 derived from it with shared hidden profit-margin and sales-tax multipliers.
 Both the merchant and player inventory tables display each item's per-unit
 weight and relevant gold value.
@@ -14,6 +14,8 @@ unlimited displayed stock by item category, while all use the same pricing and
 buy/sell behavior. Drafting a trade immediately displays the item and gold
 quantity changes on both sides; inventory changes only persist after choosing
 **Offer**.
+Trades are bound to the settlement where the character is currently located;
+visiting another settlement's URL does not allow remote trading.
 Removing a staged purchase before offering it simply cancels that purchase;
 it does not create a sale or apply a merchant fee.
 The centered action bar above chat appears only for a pending exchange and

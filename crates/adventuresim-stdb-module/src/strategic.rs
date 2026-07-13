@@ -1,11 +1,11 @@
-use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
     character::{character, character_equip},
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 const MERCHANT_MARGIN: f32 = 1.25;
 const SALES_TAX: f32 = 0.10;
@@ -27,6 +27,220 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub scene_key: String,
+    /// Viabundus node that supplies this settlement, if it was imported from
+    /// the historical world dataset. Demo settlements deliberately leave this
+    /// empty.
+    pub source_node_id: Option<u64>,
+}
+
+/// A navigational point in the imported Viabundus network. This contains the
+/// topology required for strategic routing, not tactical state or map artwork.
+#[derive(Clone, Debug)]
+#[table(name = world_node, public)]
+pub struct WorldNode {
+    #[primary_key]
+    pub id: u64,
+    pub parent_node_id: Option<u64>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub is_settlement: bool,
+    pub is_town: bool,
+    pub is_ferry: bool,
+    pub is_harbour: bool,
+}
+
+/// An active 1544 land-network segment. Geometry remains an offline map asset;
+/// the strategic database needs only endpoint topology and travel metadata.
+#[derive(Clone, Debug)]
+#[table(name = travel_edge, public)]
+pub struct TravelEdge {
+    #[primary_key]
+    pub id: u64,
+    #[index(btree)]
+    pub from_node_id: u64,
+    #[index(btree)]
+    pub to_node_id: u64,
+    pub kind: String,
+    pub length_m: u32,
+    pub slope_multiplier: f32,
+    pub certainty: u8,
+    pub section: String,
+}
+
+/// The identity that started the one-time local world-data import. All later
+/// batches must come from the same identity.
+#[derive(Clone, Debug)]
+#[table(name = world_data_import, public)]
+pub struct WorldDataImport {
+    #[primary_key]
+    pub id: u8,
+    pub owner: Identity,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct WorldNodeImport {
+    pub id: u64,
+    pub parent_node_id: Option<u64>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub is_settlement: bool,
+    pub is_town: bool,
+    pub is_ferry: bool,
+    pub is_harbour: bool,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct TravelEdgeImport {
+    pub id: u64,
+    pub from_node_id: u64,
+    pub to_node_id: u64,
+    pub kind: String,
+    pub length_m: u32,
+    pub slope_multiplier: f32,
+    pub certainty: u8,
+    pub section: String,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct SettlementImport {
+    pub id: String,
+    pub source_node_id: u64,
+    pub name: String,
+    pub longitude: f64,
+    pub latitude: f64,
+    pub population_level: i32,
+    pub scene_key: String,
+}
+
+/// Start a world import. This must be called before sending any import batch.
+/// The first caller becomes the owner of this import session; in production the
+/// deployment operator must claim it before the database is opened to players.
+#[reducer]
+pub fn begin_world_data_import(ctx: &ReducerContext) -> Result<(), String> {
+    match ctx.db.world_data_import().id().find(0) {
+        Some(import) if import.owner == ctx.sender => Ok(()),
+        Some(_) => Err("World data import is owned by another identity".into()),
+        None => {
+            ctx.db.world_data_import().insert(WorldDataImport {
+                id: 0,
+                owner: ctx.sender,
+            });
+            Ok(())
+        }
+    }
+}
+
+fn require_world_import_owner(ctx: &ReducerContext) -> Result<(), String> {
+    let Some(import) = ctx.db.world_data_import().id().find(0) else {
+        return Err("Call begin_world_data_import before loading world data".into());
+    };
+    if import.owner != ctx.sender {
+        return Err("Only the world data import owner may load batches".into());
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> Result<(), String> {
+    require_world_import_owner(ctx)?;
+    if nodes.is_empty() {
+        return Err("World-node batch is empty".into());
+    }
+    for node in nodes {
+        let row = WorldNode {
+            id: node.id,
+            parent_node_id: node.parent_node_id,
+            latitude: node.latitude,
+            longitude: node.longitude,
+            is_settlement: node.is_settlement,
+            is_town: node.is_town,
+            is_ferry: node.is_ferry,
+            is_harbour: node.is_harbour,
+        };
+        if ctx.db.world_node().id().find(row.id).is_some() {
+            ctx.db.world_node().id().update(row);
+        } else {
+            ctx.db.world_node().insert(row);
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn import_travel_edges(
+    ctx: &ReducerContext,
+    edges: Vec<TravelEdgeImport>,
+) -> Result<(), String> {
+    require_world_import_owner(ctx)?;
+    if edges.is_empty() {
+        return Err("Travel-edge batch is empty".into());
+    }
+    for edge in edges {
+        if ctx.db.world_node().id().find(edge.from_node_id).is_none()
+            || ctx.db.world_node().id().find(edge.to_node_id).is_none()
+        {
+            return Err(format!(
+                "Travel edge {} references an unknown world node",
+                edge.id
+            ));
+        }
+        let row = TravelEdge {
+            id: edge.id,
+            from_node_id: edge.from_node_id,
+            to_node_id: edge.to_node_id,
+            kind: edge.kind,
+            length_m: edge.length_m,
+            slope_multiplier: edge.slope_multiplier,
+            certainty: edge.certainty,
+            section: edge.section,
+        };
+        if ctx.db.travel_edge().id().find(row.id).is_some() {
+            ctx.db.travel_edge().id().update(row);
+        } else {
+            ctx.db.travel_edge().insert(row);
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn import_settlements(
+    ctx: &ReducerContext,
+    settlements: Vec<SettlementImport>,
+) -> Result<(), String> {
+    require_world_import_owner(ctx)?;
+    if settlements.is_empty() {
+        return Err("Settlement batch is empty".into());
+    }
+    for settlement in settlements {
+        if ctx
+            .db
+            .world_node()
+            .id()
+            .find(settlement.source_node_id)
+            .is_none()
+        {
+            return Err(format!(
+                "Settlement {} references an unknown world node",
+                settlement.id
+            ));
+        }
+        let row = Settlement {
+            id: settlement.id,
+            name: settlement.name,
+            coord_x: settlement.longitude,
+            coord_y: settlement.latitude,
+            population_level: settlement.population_level,
+            scene_key: settlement.scene_key,
+            source_node_id: Some(settlement.source_node_id),
+        };
+        if ctx.db.settlement().id().find(&row.id).is_some() {
+            ctx.db.settlement().id().update(row);
+        } else {
+            ctx.db.settlement().insert(row);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -274,6 +488,7 @@ pub fn finalize_party_offer(
 pub fn finalize_merchant_trade(
     ctx: &ReducerContext,
     character_id: u64,
+    settlement_id: String,
     buy_item_ids: Vec<String>,
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
@@ -287,8 +502,8 @@ pub fn finalize_merchant_trade(
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
-    if character.current_settlement_id.is_none() {
-        return Err("Character is not in a settlement".into());
+    if character.current_settlement_id.as_deref() != Some(&settlement_id) {
+        return Err("Character must be at this settlement to trade".into());
     }
     let mut net: HashMap<String, i64> = HashMap::new();
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
@@ -610,19 +825,63 @@ pub fn abandon_quest(
     Ok(())
 }
 
+fn route_exists(ctx: &ReducerContext, start: u64, destination: u64) -> bool {
+    if start == destination {
+        return true;
+    }
+
+    let mut visited = HashSet::from([start]);
+    let mut pending = VecDeque::from([start]);
+    while let Some(node) = pending.pop_front() {
+        for edge in ctx.db.travel_edge().from_node_id().filter(&node) {
+            if matches!(edge.kind.as_str(), "land" | "ferry") && visited.insert(edge.to_node_id) {
+                if edge.to_node_id == destination {
+                    return true;
+                }
+                pending.push_back(edge.to_node_id);
+            }
+        }
+        for edge in ctx.db.travel_edge().to_node_id().filter(&node) {
+            if matches!(edge.kind.as_str(), "land" | "ferry") && visited.insert(edge.from_node_id) {
+                if edge.from_node_id == destination {
+                    return true;
+                }
+                pending.push_back(edge.from_node_id);
+            }
+        }
+    }
+    false
+}
+
 #[reducer]
 pub fn travel_to_settlement(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
 ) -> Result<(), String> {
-    if ctx.db.settlement().id().find(&settlement_id).is_none() {
+    let Some(destination) = ctx.db.settlement().id().find(&settlement_id) else {
         return Err("Settlement not found".into());
-    }
+    };
 
     let Some(mut character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
+
+    if let Some(origin_id) = &character.current_settlement_id {
+        let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
+            return Err("Character's current settlement does not exist".into());
+        };
+        // Demo settlements remain usable before a Viabundus world is loaded.
+        // Once both endpoints are sourced from the imported graph, teleporting
+        // between disconnected settlements is no longer permitted.
+        if let (Some(origin_node), Some(destination_node)) =
+            (origin.source_node_id, destination.source_node_id)
+        {
+            if !route_exists(ctx, origin_node, destination_node) {
+                return Err("No land or ferry route connects those settlements".into());
+            }
+        }
+    }
 
     character.current_settlement_id = Some(settlement_id.clone());
     let party_id = character.party_id.clone();
@@ -705,6 +964,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 coord_y: y,
                 population_level: pop,
                 scene_key: scene.into(),
+                source_node_id: None,
             });
         }
     }
