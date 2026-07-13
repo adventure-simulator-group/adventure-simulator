@@ -1433,6 +1433,26 @@
   margin: 0;
 }
 
+.quest-party-form,
+.quest-applicants {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.quest-party-form input[type="number"] {
+  width: 100%;
+}
+
+.quest-applicant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .quest-travel-summary {
   display: flex;
   align-items: baseline;

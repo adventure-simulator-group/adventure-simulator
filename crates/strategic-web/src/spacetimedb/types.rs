@@ -102,6 +102,8 @@ pub struct Party {
     pub current_settlement_id: Option<String>,
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
+    pub recruiting_quest_id: Option<String>,
+    pub desired_additional_members: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +112,13 @@ pub struct PartyMember {
     pub party_id: String,
     pub character_id: u64,
     pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJoinRequest {
+    pub id: u64,
+    pub party_id: String,
+    pub character_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

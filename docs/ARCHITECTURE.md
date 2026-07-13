@@ -49,7 +49,7 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 
 ## SpacetimeDB Module
 
-### Tables (9 total)
+### Strategic tables
 
 | Table | Description |
 |-------|-------------|
@@ -58,6 +58,7 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `inventory_item` | Persistent items |
 | `party` | Party groups |
 | `party_member` | Party membership |
+| `party_join_request` | Pending applications to quest-recruiting parties |
 | `mission` | Active and completed missions |
 | `mission_commit` | Idempotent mission result tracking |
 | `quest` | Settlement-owned generated postings, off-road locations, and acceptance state |
@@ -70,7 +71,8 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 |---------|-------------|
 | `upsert_character` | Create/update character (gives starter items) |
 | `add_item_to_inventory` | Add items |
-| `create_party` / `join_party` / `leave_party` | Party management |
+| `create_party` / `leave_party` | Party lifecycle management |
+| `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Quest-specific party recruitment |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |

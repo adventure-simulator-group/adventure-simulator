@@ -2,8 +2,8 @@
 
 use reqwest::Client;
 use serde::de::DeserializeOwned;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::time::Duration;
 
 use super::types::{AlgebraicType, QueryResponse};
@@ -152,6 +152,12 @@ impl SpacetimeClient {
     pub fn with_token(mut self, token: Option<String>) -> Self {
         self.token = token;
         self
+    }
+
+    /// Whether this client points at the local development database.
+    pub fn is_local(&self) -> bool {
+        let base = self.base_url.to_ascii_lowercase();
+        base.contains("localhost") || base.contains("127.0.0.1") || base.contains("[::1]")
     }
 
     /// Run a SQL query and return typed rows

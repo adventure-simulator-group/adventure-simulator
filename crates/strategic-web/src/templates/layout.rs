@@ -1,6 +1,6 @@
 //! Base layout template - Three-column design with theme support
 
-use maud::{html, Markup, DOCTYPE};
+use maud::{DOCTYPE, Markup, html};
 
 const THEMES: &[(&str, &str)] = &[
     ("fraktur-texturina", "Fraktura"),
@@ -88,6 +88,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/party-trade.js?v=unified-trade-1" {}
+                script src="/static/party-notifications.js?v=party-requests-1" defer {}
             }
             body {
                 div class="app" {
@@ -195,6 +196,9 @@ fn settlement_top_bar(
                         title=(label)
                     {
                         span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
+                        @if path == "noticeboard" {
+                            span class="service-notification-badge" data-party-notification-badge hidden { "0" }
+                        }
                     }
                 }
             }

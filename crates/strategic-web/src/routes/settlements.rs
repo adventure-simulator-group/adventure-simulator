@@ -14,8 +14,8 @@ use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest,
-    Settlement, TravelEdge,
+    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyJoinRequest, PartyMember,
+    Quest, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
@@ -257,12 +257,12 @@ async fn noticeboard(
 
     let parties: Vec<Party> = state
         .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
+        .query::<Party>("SELECT * FROM party")
         .await
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|party| party.current_settlement_id.as_deref() == Some(id.as_str()))
+        .collect();
 
     let active_character = get_active_character(&state, session.character_id_u64()).await;
     let active_party = if let Some(party_id) = active_character
@@ -293,6 +293,43 @@ async fn noticeboard(
         .as_ref()
         .and_then(|selected_id| quests.iter().find(|quest| &quest.id == selected_id))
         .or(active_quest);
+    let recruiting_parties: Vec<Party> = selected_quest.map_or_else(Vec::new, |quest| {
+        parties
+            .iter()
+            .filter(|party| party.recruiting_quest_id.as_deref() == Some(quest.id.as_str()))
+            .cloned()
+            .collect()
+    });
+    let mut join_applicants = Vec::new();
+    if let Some(party) = active_party.as_ref().filter(|party| {
+        active_character
+            .as_ref()
+            .is_some_and(|(character, _)| party.leader_id == character.id)
+    }) {
+        let requests: Vec<PartyJoinRequest> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM party_join_request WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .unwrap_or_default();
+        for request in requests {
+            if let Some(character) = state
+                .db
+                .query::<Character>(&format!(
+                    "SELECT * FROM character WHERE id = {}",
+                    request.character_id
+                ))
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .next()
+            {
+                join_applicants.push((request, character));
+            }
+        }
+    }
     let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
         active_party.as_ref().is_some_and(|party| {
             party.leader_id == character.id
@@ -320,7 +357,9 @@ async fn noticeboard(
             settlement,
             &posted_quests,
             selected_quest,
-            &parties,
+            &recruiting_parties,
+            active_party.as_ref(),
+            &join_applicants,
             active_character.as_ref().map(|(character, _)| character),
             active_character
                 .as_ref()

@@ -6,76 +6,76 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct JoinPartyArgs {
+pub(super) struct RequestToJoinPartyArgs {
     pub character_id: u64,
     pub party_id: String,
 }
 
-impl From<JoinPartyArgs> for super::Reducer {
-    fn from(args: JoinPartyArgs) -> Self {
-        Self::JoinParty {
+impl From<RequestToJoinPartyArgs> for super::Reducer {
+    fn from(args: RequestToJoinPartyArgs) -> Self {
+        Self::RequestToJoinParty {
             character_id: args.character_id,
             party_id: args.party_id,
         }
     }
 }
 
-impl __sdk::InModule for JoinPartyArgs {
+impl __sdk::InModule for RequestToJoinPartyArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct JoinPartyCallbackId(__sdk::CallbackId);
+pub struct RequestToJoinPartyCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `join_party`.
+/// Extension trait for access to the reducer `request_to_join_party`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait join_party {
-    /// Request that the remote module invoke the reducer `join_party` to run as soon as possible.
+pub trait request_to_join_party {
+    /// Request that the remote module invoke the reducer `request_to_join_party` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_join_party`] callbacks.
-    fn join_party(&self, character_id: u64, party_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `join_party`.
+    ///  and its status can be observed by listening for [`Self::on_request_to_join_party`] callbacks.
+    fn request_to_join_party(&self, character_id: u64, party_id: String) -> __sdk::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `request_to_join_party`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
-    /// The returned [`JoinPartyCallbackId`] can be passed to [`Self::remove_on_join_party`]
+    /// The returned [`RequestToJoinPartyCallbackId`] can be passed to [`Self::remove_on_request_to_join_party`]
     /// to cancel the callback.
-    fn on_join_party(
+    fn on_request_to_join_party(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> JoinPartyCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_join_party`],
+    ) -> RequestToJoinPartyCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_request_to_join_party`],
     /// causing it not to run in the future.
-    fn remove_on_join_party(&self, callback: JoinPartyCallbackId);
+    fn remove_on_request_to_join_party(&self, callback: RequestToJoinPartyCallbackId);
 }
 
-impl join_party for super::RemoteReducers {
-    fn join_party(&self, character_id: u64, party_id: String) -> __sdk::Result<()> {
+impl request_to_join_party for super::RemoteReducers {
+    fn request_to_join_party(&self, character_id: u64, party_id: String) -> __sdk::Result<()> {
         self.imp.call_reducer(
-            "join_party",
-            JoinPartyArgs {
+            "request_to_join_party",
+            RequestToJoinPartyArgs {
                 character_id,
                 party_id,
             },
         )
     }
-    fn on_join_party(
+    fn on_request_to_join_party(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> JoinPartyCallbackId {
-        JoinPartyCallbackId(self.imp.on_reducer(
-            "join_party",
+    ) -> RequestToJoinPartyCallbackId {
+        RequestToJoinPartyCallbackId(self.imp.on_reducer(
+            "request_to_join_party",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
                             reducer:
-                                super::Reducer::JoinParty {
+                                super::Reducer::RequestToJoinParty {
                                     character_id,
                                     party_id,
                                 },
@@ -90,27 +90,29 @@ impl join_party for super::RemoteReducers {
             }),
         ))
     }
-    fn remove_on_join_party(&self, callback: JoinPartyCallbackId) {
-        self.imp.remove_on_reducer("join_party", callback.0)
+    fn remove_on_request_to_join_party(&self, callback: RequestToJoinPartyCallbackId) {
+        self.imp
+            .remove_on_reducer("request_to_join_party", callback.0)
     }
 }
 
 #[allow(non_camel_case_types)]
 #[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `join_party`.
+/// Extension trait for setting the call-flags for the reducer `request_to_join_party`.
 ///
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_join_party {
-    /// Set the call-reducer flags for the reducer `join_party` to `flags`.
+pub trait set_flags_for_request_to_join_party {
+    /// Set the call-reducer flags for the reducer `request_to_join_party` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    fn join_party(&self, flags: __ws::CallReducerFlags);
+    fn request_to_join_party(&self, flags: __ws::CallReducerFlags);
 }
 
-impl set_flags_for_join_party for super::SetReducerFlags {
-    fn join_party(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("join_party", flags);
+impl set_flags_for_request_to_join_party for super::SetReducerFlags {
+    fn request_to_join_party(&self, flags: __ws::CallReducerFlags) {
+        self.imp
+            .set_call_reducer_flags("request_to_join_party", flags);
     }
 }

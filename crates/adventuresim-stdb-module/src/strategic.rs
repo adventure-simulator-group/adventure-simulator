@@ -290,6 +290,8 @@ pub struct Party {
     pub current_settlement_id: Option<String>,
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
+    pub recruiting_quest_id: Option<String>,
+    pub desired_additional_members: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -303,6 +305,18 @@ pub struct PartyMember {
     #[index(btree)]
     pub character_id: u64,
     pub role: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_join_request, public)]
+pub struct PartyJoinRequest {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub character_id: u64,
 }
 
 #[reducer]
@@ -322,6 +336,8 @@ pub fn create_party(
     id: String,
     name: String,
     leader_id: u64,
+    recruiting_quest_id: Option<String>,
+    desired_additional_members: u32,
 ) -> Result<(), String> {
     let Some(mut leader) = ctx.db.character().id().find(leader_id) else {
         return Err("Leader character not found".into());
@@ -329,6 +345,17 @@ pub fn create_party(
 
     if leader.party_id.is_some() {
         return Err("Leader is already in a party".into());
+    }
+    if desired_additional_members > 8 {
+        return Err("A party may recruit at most 8 additional members".into());
+    }
+    if let Some(quest_id) = &recruiting_quest_id {
+        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+            return Err("Recruiting quest not found".into());
+        };
+        if leader.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
+            return Err("Must be at the quest's settlement to recruit for it".into());
+        }
     }
 
     ctx.db.party().insert(Party {
@@ -338,6 +365,8 @@ pub fn create_party(
         current_settlement_id: leader.current_settlement_id.clone(),
         current_quest_location_id: leader.current_quest_location_id.clone(),
         active_quest_id: None,
+        recruiting_quest_id,
+        desired_additional_members,
     });
 
     ctx.db.party_member().insert(PartyMember {
@@ -352,8 +381,11 @@ pub fn create_party(
     Ok(())
 }
 
-#[reducer]
-pub fn join_party(ctx: &ReducerContext, character_id: u64, party_id: String) -> Result<(), String> {
+fn add_party_member(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: String,
+) -> Result<(), String> {
     let Some(mut character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -381,6 +413,132 @@ pub fn join_party(ctx: &ReducerContext, character_id: u64, party_id: String) -> 
 
     character.party_id = Some(party_id);
     ctx.db.character().id().update(character);
+    Ok(())
+}
+
+#[reducer]
+pub fn request_to_join_party(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: String,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
+    };
+    if character.party_id.is_some() {
+        return Err("Character is already in a party".into());
+    }
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    if character.current_settlement_id != party.current_settlement_id
+        || character.current_quest_location_id != party.current_quest_location_id
+    {
+        return Err("Must be in the same settlement as the party".into());
+    }
+    let member_count = ctx.db.party_member().party_id().filter(&party_id).count() as u32;
+    if member_count >= 1 + party.desired_additional_members {
+        return Err("Party has filled its requested places".into());
+    }
+    if ctx
+        .db
+        .party_join_request()
+        .character_id()
+        .filter(character_id)
+        .any(|request| request.party_id == party_id)
+    {
+        return Err("A join request is already pending".into());
+    }
+    ctx.db.party_join_request().insert(PartyJoinRequest {
+        id: 0,
+        party_id,
+        character_id,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn accept_party_join_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
+        return Err("Join request not found".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can accept join requests".into());
+    }
+    let member_count = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&request.party_id)
+        .count() as u32;
+    if member_count >= 1 + party.desired_additional_members {
+        return Err("Party has filled its requested places".into());
+    }
+    add_party_member(ctx, request.character_id, request.party_id.clone())?;
+    let requests: Vec<_> = ctx
+        .db
+        .party_join_request()
+        .character_id()
+        .filter(request.character_id)
+        .collect();
+    for pending in requests {
+        ctx.db.party_join_request().id().delete(pending.id);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn reject_party_join_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
+        return Err("Join request not found".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can reject join requests".into());
+    }
+    ctx.db.party_join_request().id().delete(request_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn seed_bot_join_requests(
+    ctx: &ReducerContext,
+    party_id: String,
+    count: u32,
+) -> Result<(), String> {
+    use petname::Generator;
+
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    for _ in 0..count.min(8) {
+        let name = petname::Petnames::default()
+            .generate(&mut ctx.rng(), 2, " ")
+            .ok_or("Could not generate bot applicant name")?;
+        let mut id = ctx.random::<u64>() | (1_u64 << 63);
+        while ctx.db.character().id().find(id).is_some() {
+            id = ctx.random::<u64>() | (1_u64 << 63);
+        }
+        crate::character::insert_new_character(ctx, name, id, true)?;
+        let mut bot = ctx.db.character().id().find(id).unwrap();
+        bot.current_settlement_id = party.current_settlement_id.clone();
+        bot.current_quest_location_id = party.current_quest_location_id.clone();
+        ctx.db.character().id().update(bot);
+        request_to_join_party(ctx, id, party_id.clone())?;
+    }
     Ok(())
 }
 
@@ -681,7 +839,14 @@ pub fn finalize_merchant_trade(
 pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
     let party_id = "demo-party".to_string();
     if ctx.db.party().id().find(&party_id).is_none() {
-        create_party(ctx, party_id.clone(), "Riverdale Company".into(), leader_id)?;
+        create_party(
+            ctx,
+            party_id.clone(),
+            "Riverdale Company".into(),
+            leader_id,
+            None,
+            2,
+        )?;
     }
 
     for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {
@@ -696,7 +861,7 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
             .and_then(|character| character.party_id)
             .is_none()
         {
-            join_party(ctx, id, party_id.clone())?;
+            add_party_member(ctx, id, party_id.clone())?;
         }
     }
     Ok(())
@@ -751,6 +916,16 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
             ctx.db.character().id().update(character);
         }
         ctx.db.party_member().id().delete(member.id);
+    }
+
+    let requests: Vec<_> = ctx
+        .db
+        .party_join_request()
+        .party_id()
+        .filter(&party_id)
+        .collect();
+    for request in requests {
+        ctx.db.party_join_request().id().delete(request.id);
     }
 
     if let Some(quest_id) = party.active_quest_id {

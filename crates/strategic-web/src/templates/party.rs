@@ -105,6 +105,11 @@ pub fn party_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
             (panel("Party Details", html! {
                 form # "party-form" action="/parties" method="post" {
                     (input_field("name", "Party Name", "text", true, None))
+                    div class="form-group" {
+                        label for="desired-additional-members" { "Additional party members" }
+                        input id="desired-additional-members" type="number" name="desired_additional_members"
+                            min="0" max="8" value="2" required;
+                    }
                     div class="form-actions" {
                         button type="submit" class="btn btn-primary" { "Create Party" }
                         a href="/parties" class="btn btn-secondary" { "Cancel" }

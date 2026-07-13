@@ -10,6 +10,8 @@ pub(super) struct CreatePartyArgs {
     pub id: String,
     pub name: String,
     pub leader_id: u64,
+    pub recruiting_quest_id: Option<String>,
+    pub desired_additional_members: u32,
 }
 
 impl From<CreatePartyArgs> for super::Reducer {
@@ -18,6 +20,8 @@ impl From<CreatePartyArgs> for super::Reducer {
             id: args.id,
             name: args.name,
             leader_id: args.leader_id,
+            recruiting_quest_id: args.recruiting_quest_id,
+            desired_additional_members: args.desired_additional_members,
         }
     }
 }
@@ -38,7 +42,14 @@ pub trait create_party {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_create_party`] callbacks.
-    fn create_party(&self, id: String, name: String, leader_id: u64) -> __sdk::Result<()>;
+    fn create_party(
+        &self,
+        id: String,
+        name: String,
+        leader_id: u64,
+        recruiting_quest_id: Option<String>,
+        desired_additional_members: u32,
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `create_party`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -48,7 +59,9 @@ pub trait create_party {
     /// to cancel the callback.
     fn on_create_party(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u64) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u64, &Option<String>, &u32)
+            + Send
+            + 'static,
     ) -> CreatePartyCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_party`],
     /// causing it not to run in the future.
@@ -56,19 +69,30 @@ pub trait create_party {
 }
 
 impl create_party for super::RemoteReducers {
-    fn create_party(&self, id: String, name: String, leader_id: u64) -> __sdk::Result<()> {
+    fn create_party(
+        &self,
+        id: String,
+        name: String,
+        leader_id: u64,
+        recruiting_quest_id: Option<String>,
+        desired_additional_members: u32,
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "create_party",
             CreatePartyArgs {
                 id,
                 name,
                 leader_id,
+                recruiting_quest_id,
+                desired_additional_members,
             },
         )
     }
     fn on_create_party(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u64) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &u64, &Option<String>, &u32)
+            + Send
+            + 'static,
     ) -> CreatePartyCallbackId {
         CreatePartyCallbackId(self.imp.on_reducer(
             "create_party",
@@ -82,6 +106,8 @@ impl create_party for super::RemoteReducers {
                                     id,
                                     name,
                                     leader_id,
+                                    recruiting_quest_id,
+                                    desired_additional_members,
                                 },
                             ..
                         },
@@ -90,7 +116,14 @@ impl create_party for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, id, name, leader_id)
+                callback(
+                    ctx,
+                    id,
+                    name,
+                    leader_id,
+                    recruiting_quest_id,
+                    desired_additional_members,
+                )
             }),
         ))
     }

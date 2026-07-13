@@ -7,6 +7,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod abandon_quest_reducer;
+pub mod accept_party_join_request_reducer;
 pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
 pub mod autoresolve_quest_reducer;
@@ -63,9 +64,10 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
-pub mod join_party_reducer;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
+pub mod party_join_request_table;
+pub mod party_join_request_type;
 pub mod party_member_table;
 pub mod party_member_type;
 pub mod party_table;
@@ -74,9 +76,12 @@ pub mod quest_status_type;
 pub mod quest_table;
 pub mod quest_type;
 pub mod refresh_world_clock_reducer;
+pub mod reject_party_join_request_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
+pub mod request_to_join_party_reducer;
 pub mod rest_at_settlement_reducer;
+pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
@@ -108,6 +113,10 @@ pub mod world_node_type;
 
 pub use abandon_quest_reducer::{
     abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
+};
+pub use accept_party_join_request_reducer::{
+    accept_party_join_request, set_flags_for_accept_party_join_request,
+    AcceptPartyJoinRequestCallbackId,
 };
 pub use accept_quest_reducer::{accept_quest, set_flags_for_accept_quest, AcceptQuestCallbackId};
 pub use add_and_equip_item_reducer::{
@@ -221,11 +230,12 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
-pub use join_party_reducer::{join_party, set_flags_for_join_party, JoinPartyCallbackId};
 pub use leave_mission_reducer::{
     leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
 };
 pub use leave_party_reducer::{leave_party, set_flags_for_leave_party, LeavePartyCallbackId};
+pub use party_join_request_table::*;
+pub use party_join_request_type::PartyJoinRequest;
 pub use party_member_table::*;
 pub use party_member_type::PartyMember;
 pub use party_table::*;
@@ -236,6 +246,10 @@ pub use quest_type::Quest;
 pub use refresh_world_clock_reducer::{
     refresh_world_clock, set_flags_for_refresh_world_clock, RefreshWorldClockCallbackId,
 };
+pub use reject_party_join_request_reducer::{
+    reject_party_join_request, set_flags_for_reject_party_join_request,
+    RejectPartyJoinRequestCallbackId,
+};
 pub use request_tactical_server_for_scene_reducer::{
     request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
     RequestTacticalServerForSceneCallbackId,
@@ -243,8 +257,14 @@ pub use request_tactical_server_for_scene_reducer::{
 pub use request_tactical_server_reducer::{
     request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
 };
+pub use request_to_join_party_reducer::{
+    request_to_join_party, set_flags_for_request_to_join_party, RequestToJoinPartyCallbackId,
+};
 pub use rest_at_settlement_reducer::{
     rest_at_settlement, set_flags_for_rest_at_settlement, RestAtSettlementCallbackId,
+};
+pub use seed_bot_join_requests_reducer::{
+    seed_bot_join_requests, set_flags_for_seed_bot_join_requests, SeedBotJoinRequestsCallbackId,
 };
 pub use seed_damaged_character_reducer::{
     seed_damaged_character, set_flags_for_seed_damaged_character, SeedDamagedCharacterCallbackId,
@@ -305,6 +325,10 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    AcceptPartyJoinRequest {
+        leader_id: u64,
+        request_id: u64,
+    },
     AcceptQuest {
         character_id: u64,
         quest_id: String,
@@ -345,6 +369,8 @@ pub enum Reducer {
         id: String,
         name: String,
         leader_id: u64,
+        recruiting_quest_id: Option<String>,
+        desired_additional_members: u32,
     },
     CreateTacticalServer {
         mission_id: String,
@@ -441,10 +467,6 @@ pub enum Reducer {
         id: u64,
         temporary: bool,
     },
-    JoinParty {
-        character_id: u64,
-        party_id: String,
-    },
     LeaveMission {
         character_id: u64,
     },
@@ -454,6 +476,10 @@ pub enum Reducer {
     RefreshWorldClock {
         schedule: WorldClockSchedule,
     },
+    RejectPartyJoinRequest {
+        leader_id: u64,
+        request_id: u64,
+    },
     RequestTacticalServer {
         mission_id: String,
         scene_key: String,
@@ -461,10 +487,18 @@ pub enum Reducer {
     RequestTacticalServerForScene {
         scene_key: String,
     },
+    RequestToJoinParty {
+        character_id: u64,
+        party_id: String,
+    },
     RestAtSettlement {
         character_id: u64,
         requested_days: u16,
         at_inn: bool,
+    },
+    SeedBotJoinRequests {
+        party_id: String,
+        count: u32,
     },
     SeedDamagedCharacter,
     SeedPartyCompanions {
@@ -517,6 +551,7 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::AbandonQuest { .. } => "abandon_quest",
+            Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
@@ -548,13 +583,15 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
-            Reducer::JoinParty { .. } => "join_party",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::RefreshWorldClock { .. } => "refresh_world_clock",
+            Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
+            Reducer::RequestToJoinParty { .. } => "request_to_join_party",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
+            Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedWorld => "seed_world",
@@ -576,6 +613,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 abandon_quest_reducer::AbandonQuestArgs,
             >("abandon_quest", &value.args)?
             .into()),
+            "accept_party_join_request" => {
+                Ok(__sdk::parse_reducer_args::<
+                    accept_party_join_request_reducer::AcceptPartyJoinRequestArgs,
+                >("accept_party_join_request", &value.args)?
+                .into())
+            }
             "accept_quest" => Ok(
                 __sdk::parse_reducer_args::<accept_quest_reducer::AcceptQuestArgs>(
                     "accept_quest",
@@ -723,13 +766,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 insert_new_character_reducer::InsertNewCharacterArgs,
             >("insert_new_character", &value.args)?
             .into()),
-            "join_party" => Ok(
-                __sdk::parse_reducer_args::<join_party_reducer::JoinPartyArgs>(
-                    "join_party",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "leave_mission" => Ok(__sdk::parse_reducer_args::<
                 leave_mission_reducer::LeaveMissionArgs,
             >("leave_mission", &value.args)?
@@ -745,6 +781,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 refresh_world_clock_reducer::RefreshWorldClockArgs,
             >("refresh_world_clock", &value.args)?
             .into()),
+            "reject_party_join_request" => {
+                Ok(__sdk::parse_reducer_args::<
+                    reject_party_join_request_reducer::RejectPartyJoinRequestArgs,
+                >("reject_party_join_request", &value.args)?
+                .into())
+            }
             "request_tactical_server" => Ok(__sdk::parse_reducer_args::<
                 request_tactical_server_reducer::RequestTacticalServerArgs,
             >("request_tactical_server", &value.args)?
@@ -755,9 +797,17 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 >("request_tactical_server_for_scene", &value.args)?
                 .into())
             }
+            "request_to_join_party" => Ok(__sdk::parse_reducer_args::<
+                request_to_join_party_reducer::RequestToJoinPartyArgs,
+            >("request_to_join_party", &value.args)?
+            .into()),
             "rest_at_settlement" => Ok(__sdk::parse_reducer_args::<
                 rest_at_settlement_reducer::RestAtSettlementArgs,
             >("rest_at_settlement", &value.args)?
+            .into()),
+            "seed_bot_join_requests" => Ok(__sdk::parse_reducer_args::<
+                seed_bot_join_requests_reducer::SeedBotJoinRequestsArgs,
+            >("seed_bot_join_requests", &value.args)?
             .into()),
             "seed_damaged_character" => Ok(__sdk::parse_reducer_args::<
                 seed_damaged_character_reducer::SeedDamagedCharacterArgs,
@@ -828,6 +878,7 @@ pub struct DbUpdate {
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     item: __sdk::TableUpdate<Item>,
     party: __sdk::TableUpdate<Party>,
+    party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_member: __sdk::TableUpdate<PartyMember>,
     quest: __sdk::TableUpdate<Quest>,
     settlement: __sdk::TableUpdate<Settlement>,
@@ -882,6 +933,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "party" => db_update
                     .party
                     .append(party_table::parse_table_update(table_update)?),
+                "party_join_request" => db_update
+                    .party_join_request
+                    .append(party_join_request_table::parse_table_update(table_update)?),
                 "party_member" => db_update
                     .party_member
                     .append(party_member_table::parse_table_update(table_update)?),
@@ -971,6 +1025,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party = cache
             .apply_diff_to_table::<Party>("party", &self.party)
             .with_updates_by_pk(|row| &row.id);
+        diff.party_join_request = cache
+            .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
+            .with_updates_by_pk(|row| &row.id);
         diff.party_member = cache
             .apply_diff_to_table::<PartyMember>("party_member", &self.party_member)
             .with_updates_by_pk(|row| &row.id);
@@ -1030,6 +1087,7 @@ pub struct AppliedDiff<'r> {
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     party: __sdk::TableAppliedDiff<'r, Party>,
+    party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
     quest: __sdk::TableAppliedDiff<'r, Quest>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
@@ -1101,6 +1159,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         );
         callbacks.invoke_table_row_callbacks::<Item>("item", &self.item, event);
         callbacks.invoke_table_row_callbacks::<Party>("party", &self.party, event);
+        callbacks.invoke_table_row_callbacks::<PartyJoinRequest>(
+            "party_join_request",
+            &self.party_join_request,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<PartyMember>(
             "party_member",
             &self.party_member,
@@ -1862,6 +1925,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         inventory_item_table::register_table(client_cache);
         item_table::register_table(client_cache);
         party_table::register_table(client_cache);
+        party_join_request_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         quest_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
