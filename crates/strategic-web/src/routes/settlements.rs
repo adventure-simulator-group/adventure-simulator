@@ -772,6 +772,12 @@ async fn inn(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let limbs = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+        }
+        None => None,
+    };
     Html(
         inn_page(
             settlement,
@@ -780,6 +786,7 @@ async fn inn(
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &party_members,
+            limbs.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -1033,6 +1040,7 @@ type ServiceRenderer = fn(
     Option<&Character>,
     &[InventoryItem],
     &[Character],
+    Option<&CharacterLimbs>,
     Option<&str>,
     &str,
 ) -> maud::Markup;
@@ -1130,6 +1138,12 @@ async fn render_service_page(
     let inventory = active_character
         .as_ref()
         .map_or_else(Vec::new, |(_, inventory)| inventory.clone());
+    let limbs = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+        }
+        None => None,
+    };
 
     Html(
         render(
@@ -1137,6 +1151,7 @@ async fn render_service_page(
             active_character.as_ref().map(|(character, _)| character),
             &inventory,
             &party_members,
+            limbs.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )

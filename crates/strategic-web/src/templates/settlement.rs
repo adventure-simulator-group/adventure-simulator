@@ -202,6 +202,7 @@ pub fn merchants_page(
         logged_in_as,
         theme,
         None,
+        None,
     )
 }
 
@@ -226,6 +227,7 @@ pub fn smith_page(
         logged_in_as,
         theme,
         None,
+        None,
     )
 }
 
@@ -235,6 +237,7 @@ pub fn inn_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     party_members: &[Character],
+    limbs: Option<&CharacterLimbs>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -249,6 +252,7 @@ pub fn inn_page(
         party_members,
         logged_in_as,
         theme,
+        limbs.map(days_to_full_health),
         None,
     )
 }
@@ -259,6 +263,7 @@ pub fn religion_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     party_members: &[Character],
+    limbs: Option<&CharacterLimbs>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -273,6 +278,7 @@ pub fn religion_page(
         party_members,
         logged_in_as,
         theme,
+        limbs.map(days_to_full_health),
         None,
     )
 }
@@ -408,6 +414,7 @@ fn service_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
+    healing_days: Option<u16>,
     rest_summary: Option<&RestSummary>,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
@@ -438,7 +445,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", rest_summary))
+                    (rest_service_menu("Inn", &settlement.id, "inn", healing_days, rest_summary))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -451,7 +458,7 @@ fn service_page(
                             p class="text-muted small-copy" { (todo) }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", rest_summary))
+                    (rest_service_menu("Temple", &settlement.id, "temple", healing_days, rest_summary))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -1165,6 +1172,7 @@ pub fn rest_result_page(
         party_members,
         logged_in_as,
         theme,
+        None,
         Some(summary),
     )
 }
@@ -1173,6 +1181,7 @@ fn rest_service_menu(
     location: &str,
     settlement_id: &str,
     kind: &str,
+    healing_days: Option<u16>,
     summary: Option<&RestSummary>,
 ) -> Markup {
     html! {
@@ -1184,7 +1193,10 @@ fn rest_service_menu(
             p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any scheduled training." }
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
-            div class="rest-days-control" {
+                div class="rest-days-control" {
+                    button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
+                        title="Set the rest duration needed to fully heal"
+                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "✚" }
                     button type="button" class="rest-days-step" aria-label="Decrease rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
                     input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
@@ -1217,6 +1229,21 @@ fn rest_service_menu(
         }
         }
     }
+}
+
+fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
+    let lowest_health = [
+        limbs.left_arm_health,
+        limbs.right_arm_health,
+        limbs.left_leg_health,
+        limbs.right_leg_health,
+        limbs.head_health,
+        limbs.chest_health,
+        limbs.stomach_health,
+    ]
+    .into_iter()
+    .fold(1.0_f32, f32::min);
+    ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
 }
 fn rest_service_menu_placeholder(location: &str) -> Markup {
     html! {
