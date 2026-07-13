@@ -4,11 +4,15 @@ use crate::{
     character::{character, character_equip},
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
+    time::advance_character_time,
 };
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 const MERCHANT_MARGIN: f32 = 1.25;
 const SALES_TAX: f32 = 0.10;
+const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+const METERS_PER_KILOMETER: u64 = 1_000;
+const MINUTES_PER_HOUR: u64 = 60;
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -26,6 +30,8 @@ pub struct Settlement {
     pub coord_x: f64,
     pub coord_y: f64,
     pub population_level: i32,
+    /// Approximate population in inhabitants; zero means the world data has no estimate.
+    pub population_estimate: u32,
     pub scene_key: String,
     /// Viabundus node that supplies this settlement, if it was imported from
     /// the historical world dataset. Demo settlements deliberately leave this
@@ -109,6 +115,8 @@ pub struct SettlementImport {
     pub longitude: f64,
     pub latitude: f64,
     pub population_level: i32,
+    /// Viabundus records this approximation in thousands of inhabitants; zero means absent.
+    pub population_estimate: u32,
     pub scene_key: String,
 }
 
@@ -231,6 +239,7 @@ pub fn import_settlements(
             coord_x: settlement.longitude,
             coord_y: settlement.latitude,
             population_level: settlement.population_level,
+            population_estimate: settlement.population_estimate,
             scene_key: settlement.scene_key,
             source_node_id: Some(settlement.source_node_id),
         };
@@ -825,32 +834,70 @@ pub fn abandon_quest(
     Ok(())
 }
 
-fn route_exists(ctx: &ReducerContext, start: u64, destination: u64) -> bool {
-    if start == destination {
-        return true;
-    }
+fn travel_neighbors(ctx: &ReducerContext, node: u64) -> Vec<(u64, u32)> {
+    let mut neighbors: Vec<_> = ctx
+        .db
+        .travel_edge()
+        .from_node_id()
+        .filter(&node)
+        .filter_map(|edge| {
+            matches!(edge.kind.as_str(), "land" | "ferry")
+                .then_some((edge.to_node_id, edge.length_m))
+        })
+        .collect();
+    neighbors.extend(
+        ctx.db
+            .travel_edge()
+            .to_node_id()
+            .filter(&node)
+            .filter_map(|edge| {
+                matches!(edge.kind.as_str(), "land" | "ferry")
+                    .then_some((edge.from_node_id, edge.length_m))
+            }),
+    );
+    neighbors
+}
 
-    let mut visited = HashSet::from([start]);
-    let mut pending = VecDeque::from([start]);
-    while let Some(node) = pending.pop_front() {
-        for edge in ctx.db.travel_edge().from_node_id().filter(&node) {
-            if matches!(edge.kind.as_str(), "land" | "ferry") && visited.insert(edge.to_node_id) {
-                if edge.to_node_id == destination {
-                    return true;
-                }
-                pending.push_back(edge.to_node_id);
-            }
+/// Returns the next settlements reached from a source. Paths end at the first
+/// settlement encountered, so journeys cannot skip intermediate settlements.
+fn connected_settlement_distances(ctx: &ReducerContext, source_node_id: u64) -> HashMap<u64, u64> {
+    let settlement_nodes: HashSet<u64> = ctx
+        .db
+        .settlement()
+        .iter()
+        .filter_map(|settlement| settlement.source_node_id)
+        .collect();
+    let mut distances = HashMap::from([(source_node_id, 0_u64)]);
+    let mut pending = BinaryHeap::from([std::cmp::Reverse((0_u64, source_node_id))]);
+    let mut destinations = HashMap::new();
+
+    while let Some(std::cmp::Reverse((distance, node))) = pending.pop() {
+        if distances.get(&node).is_some_and(|known| *known != distance) {
+            continue;
         }
-        for edge in ctx.db.travel_edge().to_node_id().filter(&node) {
-            if matches!(edge.kind.as_str(), "land" | "ferry") && visited.insert(edge.from_node_id) {
-                if edge.from_node_id == destination {
-                    return true;
-                }
-                pending.push_back(edge.from_node_id);
+        if node != source_node_id && settlement_nodes.contains(&node) {
+            destinations.insert(node, distance);
+            continue;
+        }
+        for (neighbor, length_m) in travel_neighbors(ctx, node) {
+            let next_distance = distance.saturating_add(u64::from(length_m));
+            if distances
+                .get(&neighbor)
+                .is_none_or(|known| next_distance < *known)
+            {
+                distances.insert(neighbor, next_distance);
+                pending.push(std::cmp::Reverse((next_distance, neighbor)));
             }
         }
     }
-    false
+    destinations
+}
+
+fn journey_minutes(distance_m: u64) -> u64 {
+    distance_m
+        .saturating_mul(MINUTES_PER_HOUR)
+        .div_ceil(WALKING_SPEED_KM_PER_HOUR * METERS_PER_KILOMETER)
+        .max(1)
 }
 
 #[reducer]
@@ -872,14 +919,27 @@ pub fn travel_to_settlement(
             return Err("Character's current settlement does not exist".into());
         };
         // Demo settlements remain usable before a Viabundus world is loaded.
-        // Once both endpoints are sourced from the imported graph, teleporting
-        // between disconnected settlements is no longer permitted.
+        // Imported journeys must lead to the next settlement on the road graph.
         if let (Some(origin_node), Some(destination_node)) =
             (origin.source_node_id, destination.source_node_id)
         {
-            if !route_exists(ctx, origin_node, destination_node) {
-                return Err("No land or ferry route connects those settlements".into());
-            }
+            let Some(distance_m) = connected_settlement_distances(ctx, origin_node)
+                .get(&destination_node)
+                .copied()
+            else {
+                return Err("That settlement is not directly connected by land or ferry".into());
+            };
+            advance_character_time(ctx, character_id, journey_minutes(distance_m))?;
+        } else {
+            let distance_km = ((origin.coord_x - destination.coord_x).powi(2)
+                + (origin.coord_y - destination.coord_y).powi(2))
+            .sqrt()
+            .ceil() as u64;
+            advance_character_time(
+                ctx,
+                character_id,
+                journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER)),
+            )?;
         }
     }
 
@@ -963,6 +1023,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 coord_x: x,
                 coord_y: y,
                 population_level: pop,
+                population_estimate: 0,
                 scene_key: scene.into(),
                 source_node_id: None,
             });

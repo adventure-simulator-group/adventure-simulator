@@ -10,6 +10,7 @@ use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section, status_badge,
 };
+use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
     CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement,
@@ -106,6 +107,111 @@ pub fn settlements_list_page(
     };
 
     super::base_layout_with_session("Settlements", content, logged_in_as, theme)
+}
+
+/// Settlement information and the next destinations on the imported road and
+/// ferry network.
+pub fn settlement_overview_page(
+    settlement: &Settlement,
+    destinations: &[TravelDestination],
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    can_travel: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Settlement", html! {
+                div class="settlement-summary" {
+                    strong { (&settlement.name) }
+                    span class="text-muted small-copy" { "Population: " (format_population(settlement)) }
+                }
+            }))
+        }
+        main class="center-content settlement-main settlement-overview" {
+            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (visual_stage("map", &settlement.name, "TODO: settlement image"))
+            (settlement_chat_area(&settlement.name, active_character))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section("Connected destinations", html! {
+                @if destinations.is_empty() {
+                    (empty_state("No land or ferry destination is currently connected to this settlement.", None, None))
+                } @else {
+                    @for destination in destinations {
+                        article class="travel-destination" {
+                            div {
+                                strong { (&destination.settlement.name) }
+                                p class="text-muted small-copy" {
+                                    (format_population(&destination.settlement))
+                                    " · " (format_distance(destination.distance_m))
+                                    " · " (format_journey_time(destination.journey_minutes))
+                                }
+                            }
+                            @if can_travel {
+                                form method="post" action={ "/settlements/" (&destination.settlement.id) "/travel" } {
+                                    button type="submit" class="btn btn-primary btn-small" { "Travel" }
+                                }
+                            } @else {
+                                span class="text-muted small-copy" { "Travel from your current settlement" }
+                            }
+                        }
+                    }
+                }
+            }))
+            (sidebar_section("Travel", html! {
+                p class="small-copy" { "Journeys use an average walking pace of 5 km/h." }
+                p class="text-muted small-copy" { "Travel time advances your strategic clock." }
+            }))
+        }
+    };
+    settlement_layout_with_session(
+        &settlement.name,
+        &settlement.name,
+        &settlement.id,
+        "overview",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+fn format_distance(distance_m: u64) -> String {
+    format!("{:.1} km", distance_m as f64 / 1_000.0)
+}
+
+fn format_population(settlement: &Settlement) -> String {
+    match settlement.population_estimate {
+        0 => population_description(settlement.population_level).to_string(),
+        population => format!("approximately {}", format_number(population)),
+    }
+}
+
+fn format_number(value: u32) -> String {
+    let digits = value.to_string();
+    let first_group = match digits.len() % 3 {
+        0 => 3,
+        remainder => remainder,
+    };
+    let mut formatted = digits[..first_group].to_string();
+    for group in digits[first_group..].as_bytes().chunks(3) {
+        formatted.push(',');
+        formatted.push_str(std::str::from_utf8(group).expect("population digits are valid UTF-8"));
+    }
+    formatted
+}
+
+fn format_journey_time(minutes: u64) -> String {
+    let hours = minutes / 60;
+    let minutes = minutes % 60;
+    if hours == 0 {
+        format!("{minutes} min")
+    } else if minutes == 0 {
+        format!("{hours} h")
+    } else {
+        format!("{hours} h {minutes} min")
+    }
 }
 
 /// Notice board page.

@@ -13,6 +13,7 @@ pub struct SettlementImport {
     pub longitude: f64,
     pub latitude: f64,
     pub population_level: i32,
+    pub population_estimate: u32,
     pub scene_key: String,
 }
 

@@ -55,8 +55,21 @@ pub struct Settlement {
     pub coord_x: f64,
     pub coord_y: f64,
     pub population_level: i32,
+    pub population_estimate: u32,
     pub scene_key: String,
     pub source_node_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TravelEdge {
+    pub id: u64,
+    pub from_node_id: u64,
+    pub to_node_id: u64,
+    pub kind: String,
+    pub length_m: u32,
+    pub slope_multiplier: f32,
+    pub certainty: u8,
+    pub section: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

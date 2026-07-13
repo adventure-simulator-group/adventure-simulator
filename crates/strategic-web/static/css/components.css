@@ -933,6 +933,31 @@
   cursor: not-allowed;
 }
 
+/* ============================================
+   SETTLEMENT TRAVEL
+   ============================================ */
+.travel-destinations {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.travel-destinations > h3 {
+  font-family: var(--font-display), serif;
+  font-size: var(--font-size-lg);
+}
+
+.travel-destination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-light);
+  background: var(--panel-bg);
+}
+
+.travel-destination p { margin: 0.2rem 0 0; }
+
 .trade-transfer:not(:disabled) { cursor: pointer; }
 
 .party-trade-changed { background: color-mix(in srgb, var(--accent) 12%, var(--panel-bg)); }

@@ -38,9 +38,13 @@ The historical world importer represents the Viabundus road system as graph
 nodes and edges in the strategic database. The initial 1544 import admits land
 roads and ferries; intermediate junctions, bridges, and ferry endpoints remain
 in the graph so that a route is not incorrectly collapsed into a direct line
-between settlements. Travel currently requires a connected land/ferry route
-between imported settlements. Route cost, party speed, terrain, rest stops,
-and encounters are subsequent layers on this graph.
+between settlements. Selecting a settlement name opens its overview, which
+lists the next connected settlements on the road/ferry graph. Selecting a
+destination shows its route distance and an MVP journey-time estimate at an
+average walking pace of 5 km/h. Confirming advances the character's strategic
+time by that duration and moves them to the destination. Route cost, party
+speed, terrain, rest stops, and encounters are subsequent layers on this
+graph.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.

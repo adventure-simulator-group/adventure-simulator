@@ -75,6 +75,7 @@ pub mod quest_type;
 pub mod refresh_world_clock_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
+pub mod rest_at_settlement_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
@@ -236,6 +237,9 @@ pub use request_tactical_server_for_scene_reducer::{
 };
 pub use request_tactical_server_reducer::{
     request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
+};
+pub use rest_at_settlement_reducer::{
+    rest_at_settlement, set_flags_for_rest_at_settlement, RestAtSettlementCallbackId,
 };
 pub use seed_damaged_character_reducer::{
     seed_damaged_character, set_flags_for_seed_damaged_character, SeedDamagedCharacterCallbackId,
@@ -445,6 +449,11 @@ pub enum Reducer {
     RequestTacticalServerForScene {
         scene_key: String,
     },
+    RestAtSettlement {
+        character_id: u64,
+        requested_days: u16,
+        at_inn: bool,
+    },
     SeedDamagedCharacter,
     SeedPartyCompanions {
         leader_id: u64,
@@ -528,6 +537,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RefreshWorldClock { .. } => "refresh_world_clock",
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
+            Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedWorld => "seed_world",
@@ -723,6 +733,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 >("request_tactical_server_for_scene", &value.args)?
                 .into())
             }
+            "rest_at_settlement" => Ok(__sdk::parse_reducer_args::<
+                rest_at_settlement_reducer::RestAtSettlementArgs,
+            >("rest_at_settlement", &value.args)?
+            .into()),
             "seed_damaged_character" => Ok(__sdk::parse_reducer_args::<
                 seed_damaged_character_reducer::SeedDamagedCharacterArgs,
             >("seed_damaged_character", &value.args)?

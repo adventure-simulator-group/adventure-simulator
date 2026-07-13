@@ -119,6 +119,7 @@ def normalise(raw_dir: Path, year: int) -> dict[str, Any]:
                 "longitude": float(row["longitude"]),
                 "latitude": float(row["latitude"]),
                 "population_level": population_level(estimate[1] if estimate else None),
+                "population_estimate": estimate[1] * 1_000 if estimate else 0,
                 # Terrain-scene selection remains a tactical content decision.
                 "scene_key": "hills",
             }
