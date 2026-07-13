@@ -2,9 +2,7 @@
 
 use maud::{Markup, html};
 
-use super::{
-    base_layout_with_session, divider, empty_state, input_field, list_item, panel, sidebar_section,
-};
+use super::{base_layout_with_session, divider, empty_state, list_item, panel, sidebar_section};
 use crate::spacetimedb::{Character, Party, PartyMember, Quest};
 
 /// List all parties
@@ -36,7 +34,7 @@ pub fn parties_list_page(
 
             (divider())
 
-            a href="/parties/new" class="btn btn-primary btn-block" { "Create Party" }
+            p class="text-muted small-copy" { "Party leaders add recruitment roles from the + beneath their portrait." }
         }
 
         main class="center-content" {
@@ -51,8 +49,8 @@ pub fn parties_list_page(
             @if parties.is_empty() {
                 (empty_state(
                     "No parties found. Be the first to form one!",
-                    Some("/parties/new"),
-                    Some("Create Party"),
+                    None,
+                    None,
                 ))
             } @else {
                 @for party in parties {
@@ -84,44 +82,6 @@ pub fn parties_list_page(
     };
 
     base_layout_with_session("Parties", content, logged_in_as, theme)
-}
-
-/// Party creation form
-pub fn party_new_page(logged_in_as: Option<&str>, theme: &str) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Tips", html! {
-                (panel("", html! {
-                    p style="font-size:var(--font-size-sm)" {
-                        "As party leader, you can accept quests and start tactical missions. "
-                        "Other players can join your party at the same settlement."
-                    }
-                }))
-            }))
-        }
-
-        main class="center-content" {
-            h2 class="page-title" { "Create Party" }
-            (panel("Party Details", html! {
-                form # "party-form" action="/parties" method="post" {
-                    (input_field("name", "Party Name", "text", true, None))
-                    div class="form-group" {
-                        label for="desired-additional-members" { "Additional party members" }
-                        input id="desired-additional-members" type="number" name="desired_additional_members"
-                            min="0" max="8" value="2" required;
-                    }
-                    div class="form-actions" {
-                        button type="submit" class="btn btn-primary" { "Create Party" }
-                        a href="/parties" class="btn btn-secondary" { "Cancel" }
-                    }
-                }
-            }))
-        }
-
-        aside class="right-sidebar" {}
-    };
-
-    base_layout_with_session("Create Party", content, logged_in_as, theme)
 }
 
 /// Party detail page

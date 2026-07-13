@@ -13,14 +13,14 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyJoinRequest, PartyMember,
-    Quest, Settlement, TravelEdge,
+    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember,
+    PartyRecruitmentRole, Quest, RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
-    MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
-    party_inventory_page, party_personal_page, party_stats_page, religion_page, rest_result_page,
-    settlement_overview_page, settlements_list_page, smith_page,
+    MerchantShop, RecruitingPartyRole, RestSummary, inn_page, live_merchant_shop_page,
+    merchants_page, noticeboard_page, party_inventory_page, party_personal_page, party_stats_page,
+    religion_page, rest_result_page, settlement_overview_page, settlements_list_page, smith_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -293,40 +293,62 @@ async fn noticeboard(
         .as_ref()
         .and_then(|selected_id| quests.iter().find(|quest| &quest.id == selected_id))
         .or(active_quest);
-    let recruiting_parties: Vec<Party> = selected_quest.map_or_else(Vec::new, |quest| {
-        parties
-            .iter()
-            .filter(|party| party.recruiting_quest_id.as_deref() == Some(quest.id.as_str()))
-            .cloned()
-            .collect()
-    });
-    let mut join_applicants = Vec::new();
-    if let Some(party) = active_party.as_ref().filter(|party| {
-        active_character
+    let active_capability = if let Some((character, _)) = active_character.as_ref() {
+        let _ = state
+            .db
+            .call("refresh_capabilities", &[json!(character.id)])
+            .await;
+        state
+            .db
+            .query::<CharacterCapability>(&format!(
+                "SELECT * FROM character_capability WHERE character_id = {}",
+                character.id
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let mut recruiting_roles = Vec::new();
+    for party in &parties {
+        if active_character
             .as_ref()
-            .is_some_and(|(character, _)| party.leader_id == character.id)
-    }) {
-        let requests: Vec<PartyJoinRequest> = state
+            .and_then(|(character, _)| character.party_id.as_deref())
+            == Some(party.id.as_str())
+        {
+            continue;
+        }
+        let roles: Vec<PartyRecruitmentRole> = state
             .db
             .query(&format!(
-                "SELECT * FROM party_join_request WHERE party_id = '{}'",
+                "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
                 party.id
             ))
             .await
             .unwrap_or_default();
-        for request in requests {
-            if let Some(character) = state
+        for role in roles {
+            let filled = state
                 .db
-                .query::<Character>(&format!(
-                    "SELECT * FROM character WHERE id = {}",
-                    request.character_id
+                .query::<PartyMember>(&format!(
+                    "SELECT * FROM party_member WHERE party_id = '{}'",
+                    party.id
                 ))
                 .await
                 .unwrap_or_default()
                 .into_iter()
-                .next()
-            {
-                join_applicants.push((request, character));
+                .filter(|member| member.recruitment_role_id == Some(role.id))
+                .count() as u32;
+            if filled < role.quantity {
+                let meets_requirements = active_capability
+                    .as_ref()
+                    .is_none_or(|capability| capability_meets(capability, role.requirements));
+                recruiting_roles.push(RecruitingPartyRole {
+                    party: party.clone(),
+                    role,
+                    meets_requirements,
+                });
             }
         }
     }
@@ -357,9 +379,8 @@ async fn noticeboard(
             settlement,
             &posted_quests,
             selected_quest,
-            &recruiting_parties,
-            active_party.as_ref(),
-            &join_applicants,
+            &recruiting_roles,
+            active_party.as_ref().is_some_and(|party| party.is_solo),
             active_character.as_ref().map(|(character, _)| character),
             active_character
                 .as_ref()
@@ -1388,6 +1409,45 @@ async fn render_service_page(
         )
         .into_string(),
     )
+}
+
+fn capability_meets(c: &CharacterCapability, r: RecruitmentRequirements) -> bool {
+    adventuresim_core::capability::CharacterCapabilities {
+        melee: c.melee,
+        ranged: c.ranged,
+        precise: c.precise,
+        heavy: c.heavy,
+        armored: c.armored,
+        shield: c.shield,
+        blunt: c.blunt,
+        slash: c.slash,
+        pierce: c.pierce,
+        climb: c.climb,
+        swim: c.swim,
+        endurance: c.endurance,
+        medicine: c.medicine,
+        surgery: c.surgery,
+        charisma: c.charisma,
+        faith: c.faith,
+    }
+    .meets(adventuresim_core::capability::RoleRequirements {
+        melee: r.melee,
+        ranged: r.ranged,
+        precise: r.precise,
+        heavy: r.heavy,
+        armored: r.armored,
+        shield: r.shield,
+        blunt: r.blunt,
+        slash: r.slash,
+        pierce: r.pierce,
+        climb: r.climb,
+        swim: r.swim,
+        endurance: r.endurance,
+        medicine: r.medicine,
+        surgery: r.surgery,
+        charisma: r.charisma,
+        faith: r.faith,
+    })
 }
 
 async fn get_active_character(

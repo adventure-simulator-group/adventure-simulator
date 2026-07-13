@@ -7,15 +7,13 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct SeedBotJoinRequestsArgs {
-    pub party_id: String,
-    pub count: u32,
+    pub recruitment_role_id: u64,
 }
 
 impl From<SeedBotJoinRequestsArgs> for super::Reducer {
     fn from(args: SeedBotJoinRequestsArgs) -> Self {
         Self::SeedBotJoinRequests {
-            party_id: args.party_id,
-            count: args.count,
+            recruitment_role_id: args.recruitment_role_id,
         }
     }
 }
@@ -36,7 +34,7 @@ pub trait seed_bot_join_requests {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_seed_bot_join_requests`] callbacks.
-    fn seed_bot_join_requests(&self, party_id: String, count: u32) -> __sdk::Result<()>;
+    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `seed_bot_join_requests`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +44,7 @@ pub trait seed_bot_join_requests {
     /// to cancel the callback.
     fn on_seed_bot_join_requests(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &u32) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
     ) -> SeedBotJoinRequestsCallbackId;
     /// Cancel a callback previously registered by [`Self::on_seed_bot_join_requests`],
     /// causing it not to run in the future.
@@ -54,15 +52,17 @@ pub trait seed_bot_join_requests {
 }
 
 impl seed_bot_join_requests for super::RemoteReducers {
-    fn seed_bot_join_requests(&self, party_id: String, count: u32) -> __sdk::Result<()> {
+    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "seed_bot_join_requests",
-            SeedBotJoinRequestsArgs { party_id, count },
+            SeedBotJoinRequestsArgs {
+                recruitment_role_id,
+            },
         )
     }
     fn on_seed_bot_join_requests(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &u32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
     ) -> SeedBotJoinRequestsCallbackId {
         SeedBotJoinRequestsCallbackId(self.imp.on_reducer(
             "seed_bot_join_requests",
@@ -71,7 +71,10 @@ impl seed_bot_join_requests for super::RemoteReducers {
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
-                            reducer: super::Reducer::SeedBotJoinRequests { party_id, count },
+                            reducer:
+                                super::Reducer::SeedBotJoinRequests {
+                                    recruitment_role_id,
+                                },
                             ..
                         },
                     ..
@@ -79,7 +82,7 @@ impl seed_bot_join_requests for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, party_id, count)
+                callback(ctx, recruitment_role_id)
             }),
         ))
     }

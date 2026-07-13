@@ -4,16 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::recruitment_requirements_type::RecruitmentRequirements;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct PartyJoinRequest {
+pub struct PartyRecruitmentRole {
     pub id: u64,
     pub party_id: String,
-    pub recruitment_role_id: u64,
-    pub character_id: u64,
-    pub meets_requirements: bool,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    pub quantity: u32,
 }
 
-impl __sdk::InModule for PartyJoinRequest {
+impl __sdk::InModule for PartyRecruitmentRole {
     type Module = super::RemoteModule;
 }

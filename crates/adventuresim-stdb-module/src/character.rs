@@ -326,6 +326,9 @@ pub(crate) fn insert_new_character(
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::LeftLeg)?;
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::RightLeg)?;
 
+    crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    crate::capability::refresh_character_capability(ctx, character.id)?;
+
     Ok(())
 }
 

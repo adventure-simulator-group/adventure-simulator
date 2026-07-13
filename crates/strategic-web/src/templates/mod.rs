@@ -8,6 +8,7 @@ pub mod home;
 pub mod mission;
 pub mod party;
 pub mod quest;
+pub mod recruitment;
 pub mod settlement;
 
 pub use components::*;

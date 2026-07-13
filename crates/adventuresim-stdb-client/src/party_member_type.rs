@@ -11,6 +11,7 @@ pub struct PartyMember {
     pub party_id: String,
     pub character_id: u64,
     pub role: Option<String>,
+    pub recruitment_role_id: Option<u64>,
 }
 
 impl __sdk::InModule for PartyMember {

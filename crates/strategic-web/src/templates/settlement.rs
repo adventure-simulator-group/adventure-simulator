@@ -6,6 +6,7 @@
 
 use maud::{Markup, html};
 
+use super::recruitment::requirements_label;
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section,
@@ -13,8 +14,14 @@ use super::{
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, Party, PartyJoinRequest, Quest, Settlement,
+    CharacterTrainingSchedule, InventoryItem, Party, PartyRecruitmentRole, Quest, Settlement,
 };
+
+pub struct RecruitingPartyRole {
+    pub party: Party,
+    pub role: PartyRecruitmentRole,
+    pub meets_requirements: bool,
+}
 
 /// The currently available merchant storefronts. They share trade mechanics,
 /// but each storefront limits the stock shown on its left-hand side.
@@ -219,9 +226,8 @@ pub fn noticeboard_page(
     settlement: &Settlement,
     quests: &[Quest],
     selected_quest: Option<&Quest>,
-    parties: &[Party],
-    active_party: Option<&Party>,
-    join_applicants: &[(PartyJoinRequest, Character)],
+    recruiting_roles: &[RecruitingPartyRole],
+    can_request_to_join: bool,
     active_character: Option<&Character>,
     _inventory: &[InventoryItem],
     party_members: &[Character],
@@ -251,19 +257,19 @@ pub fn noticeboard_page(
                 }
             }))
             (sidebar_section("Party formation", html! {
-                @if selected_quest.is_none() {
-                    p class="text-muted small-copy" { "Select a quest to see its recruiting parties." }
-                } @else if parties.is_empty() {
+                @if recruiting_roles.is_empty() {
                     p class="text-muted small-copy" { "No parties currently recruiting." }
                 } @else {
-                    @for party in parties {
-                        div class="member-item" {
+                    @for listing in recruiting_roles {
+                        div class=(if listing.meets_requirements { "recruiting-role" } else { "recruiting-role recruiting-role-warning" }) {
                             div {
-                                span class="member-name" { (party.name) }
-                                span class="member-role" { "Seeking " (party.desired_additional_members) }
+                                span class="member-name" { (&listing.party.name) }
+                                span class="member-role" { (&listing.role.name) }
+                                p class="small-copy text-muted" { (requirements_label(listing.role.requirements)) }
+                                @if !listing.meets_requirements { p class="small-copy role-warning" { "⚠ Your character does not meet every recommendation." } }
                             }
-                            @if active_character.is_some_and(|character| character.party_id.is_none()) {
-                                form action=(format!("/parties/{}/join", party.id)) method="post" {
+                            @if can_request_to_join && active_character.is_some() {
+                                form action=(format!("/party-roles/{}/join", listing.role.id)) method="post" {
                                     button type="submit" class="btn btn-secondary btn-small" { "Request to join" }
                                 }
                             }
@@ -278,15 +284,7 @@ pub fn noticeboard_page(
             (settlement_chat_area("Notice Board", active_character))
         }
         aside class="right-sidebar" {
-            (quest_detail_rail(
-                settlement,
-                selected_quest,
-                active_character,
-                active_party,
-                join_applicants,
-                can_accept,
-                can_travel,
-            ))
+            (quest_detail_rail(selected_quest, can_accept, can_travel))
         }
     };
     settlement_layout_with_session(
@@ -1107,21 +1105,25 @@ fn party_portrait_overlay(
                     @if is_active {
                     a href=(format!("/settlements/{}/party/{}", settlement_id, member.id))
                         class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
+                        data-character-id=(member.id) data-active-character
                         title=(format!("Open {}'s inventory and stats", member.name)) {
                         (incapacitation_wheel_placeholder())
                         span class="party-portrait-initial" {
                             span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                             span class="party-portrait-name" { (&member.name) }
                         }
+                        span class="party-portrait-tags" data-character-tags hidden {}
                     }
                     } @else {
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
+                        data-character-id=(member.id)
                         title=(&member.name) {
                         (incapacitation_wheel_placeholder())
                         span class="party-portrait-initial" {
                             span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                             span class="party-portrait-name" { (&member.name) }
                         }
+                        span class="party-portrait-tags" data-character-tags hidden {}
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             a href=(format!("/settlements/{}/party/{}/stats", settlement_id, member.id))
                                 class="party-portrait-action" title=(format!("Compare stats with {}", member.name)) {
@@ -1390,15 +1392,7 @@ fn rest_service_menu_placeholder(location: &str) -> Markup {
     }
 }
 
-fn quest_detail_rail(
-    settlement: &Settlement,
-    quest: Option<&Quest>,
-    active_character: Option<&Character>,
-    active_party: Option<&Party>,
-    join_applicants: &[(PartyJoinRequest, Character)],
-    can_accept: bool,
-    can_travel: bool,
-) -> Markup {
+fn quest_detail_rail(quest: Option<&Quest>, can_accept: bool, can_travel: bool) -> Markup {
     html! {
         (sidebar_section("Quest details", html! {
             @if let Some(quest) = quest {
@@ -1410,44 +1404,6 @@ fn quest_detail_rail(
                         (gold_display(quest.gold_reward))
                     }
                     p class="small-copy" { "Target: " (quest.enemy_count) " " (&quest.enemy_type) }
-                    @if active_character.is_some_and(|character| character.party_id.is_none())
-                        && quest.status.to_lowercase().contains("available")
-                    {
-                        form action="/parties" method="post" class="quest-party-form" {
-                            input type="hidden" name="recruiting_quest_id" value=(&quest.id);
-                            input type="hidden" name="return_to"
-                                value=(format!("/settlements/{}/noticeboard?quest={}", settlement.id, quest.id));
-                            label for="desired-party-members" { "Additional party members" }
-                            input id="desired-party-members" type="number" name="desired_additional_members"
-                                min="0" max="8" value="2" required;
-                            button type="submit" class="btn btn-primary btn-block" { "Create party" }
-                        }
-                    }
-                    @if let Some(party) = active_party.filter(|party| {
-                        party.recruiting_quest_id.as_deref() == Some(quest.id.as_str())
-                            && active_character.is_some_and(|character| party.leader_id == character.id)
-                    }) {
-                        div class="quest-applicants" {
-                            h4 { "Join requests" }
-                            @if join_applicants.is_empty() {
-                                p class="text-muted small-copy" { "No adventurers have applied yet." }
-                            } @else {
-                                @for (request, character) in join_applicants {
-                                    div class="quest-applicant" {
-                                        span { (&character.name) }
-                                        div class="flex gap-sm" {
-                                            form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
-                                                button type="submit" class="btn btn-primary btn-small" { "Accept" }
-                                            }
-                                            form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
-                                                button type="submit" class="btn btn-secondary btn-small" { "Reject" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                     @if quest.status.to_lowercase().contains("accepted") && can_travel {
                         div class="quest-travel-footer" {
                             div class="quest-travel-summary" {

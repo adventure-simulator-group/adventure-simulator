@@ -11,16 +11,25 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, PartyJoinRequest, PartyMember, Quest};
-use crate::templates::party::{parties_list_page, party_detail_page, party_new_page};
+use crate::spacetimedb::{
+    Character, CharacterCapability, Party, PartyJoinRequest, PartyMember, PartyRecruitmentRole,
+    Quest, RecruitmentRequirements, SavedRecruitmentRole,
+};
+use crate::templates::party::{parties_list_page, party_detail_page};
+use crate::templates::recruitment::{RecruitmentRolePanel, recruitment_panel};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/parties", get(list_parties))
-        .route("/parties/new", get(new_party_form))
-        .route("/parties", post(create_party))
         .route("/parties/{id}", get(show_party))
-        .route("/parties/{id}/join", post(join_party))
+        .route("/party-roles/{id}/join", post(join_party))
+        .route("/party-recruitment/panel", get(recruitment_panel_fragment))
+        .route("/party-recruitment/roles", post(create_recruitment_role))
+        .route(
+            "/party-recruitment/saved/{id}/delete",
+            post(delete_saved_role),
+        )
+        .route("/characters/{id}/capabilities", get(character_capabilities))
         .route(
             "/parties/{id}/requests/{request_id}/accept",
             post(accept_join_request),
@@ -34,17 +43,6 @@ pub fn routes() -> Router<AppState> {
         .route("/parties/{id}/disband", post(disband_party))
 }
 
-#[derive(Deserialize)]
-struct CreatePartyForm {
-    #[serde(default)]
-    name: String,
-    desired_additional_members: u32,
-    #[serde(default)]
-    recruiting_quest_id: Option<String>,
-    #[serde(default)]
-    return_to: Option<String>,
-}
-
 async fn list_parties(State(state): State<AppState>, session: Session) -> Html<String> {
     let parties: Vec<Party> = state
         .db
@@ -56,74 +54,134 @@ async fn list_parties(State(state): State<AppState>, session: Session) -> Html<S
     Html(parties_list_page(&parties, None, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
-async fn new_party_form(State(state): State<AppState>, session: Session) -> Html<String> {
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(party_new_page(logged_in_as.as_deref(), session.theme()).into_string())
+#[derive(Default, Deserialize)]
+struct RecruitmentRoleForm {
+    #[serde(default)]
+    name: String,
+    quantity: u32,
+    #[serde(default)]
+    save_role: bool,
+    #[serde(default)]
+    melee: bool,
+    #[serde(default)]
+    ranged: bool,
+    #[serde(default)]
+    precise: bool,
+    #[serde(default)]
+    heavy: bool,
+    #[serde(default)]
+    armored: bool,
+    #[serde(default)]
+    shield: bool,
+    #[serde(default)]
+    blunt: bool,
+    #[serde(default)]
+    slash: bool,
+    #[serde(default)]
+    pierce: bool,
+    #[serde(default)]
+    climb: u8,
+    #[serde(default)]
+    swim: u8,
+    #[serde(default)]
+    endurance: u8,
+    #[serde(default)]
+    medicine: u8,
+    #[serde(default)]
+    surgery: u8,
+    #[serde(default)]
+    charisma: u8,
+    #[serde(default)]
+    faith: u8,
 }
 
-async fn create_party(
+impl RecruitmentRoleForm {
+    fn requirements(&self) -> RecruitmentRequirements {
+        RecruitmentRequirements {
+            melee: self.melee,
+            ranged: self.ranged,
+            precise: self.precise,
+            heavy: self.heavy,
+            armored: self.armored,
+            shield: self.shield,
+            blunt: self.blunt,
+            slash: self.slash,
+            pierce: self.pierce,
+            climb: self.climb,
+            swim: self.swim,
+            endurance: self.endurance,
+            medicine: self.medicine,
+            surgery: self.surgery,
+            charisma: self.charisma,
+            faith: self.faith,
+        }
+    }
+}
+
+async fn create_recruitment_role(
     State(state): State<AppState>,
     session: Session,
-    Form(form): Form<CreatePartyForm>,
+    Form(form): Form<RecruitmentRoleForm>,
 ) -> Redirect {
     let Some(leader_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-
-    let id = format!("party-{}", chrono_id());
-    let leader = get_character(&state, leader_id).await;
-    let party_name = if form.name.trim().is_empty() {
-        leader
-            .as_ref()
-            .map(|character| format!("{}'s party", character.name))
-            .unwrap_or_else(|| "Adventuring party".to_string())
-    } else {
-        form.name
-    };
-    let desired = form.desired_additional_members.min(8);
-    let recruiting_quest_id = match form.recruiting_quest_id {
-        Some(quest_id) => json!({ "some": quest_id }),
-        None => json!({ "none": [] }),
-    };
-
-    let result = state
+    let requirements = form.requirements();
+    if let Err(error) = state
         .db
         .call(
-            "create_party",
+            "create_recruitment_role",
             &[
-                json!(id.clone()),
-                json!(party_name),
                 json!(leader_id),
-                recruiting_quest_id,
-                json!(desired),
+                json!(form.name),
+                json!(form.quantity),
+                json!(requirements),
+                json!(form.save_role),
             ],
         )
-        .await;
-
-    if let Err(error) = result {
-        tracing::warn!(
-            "Failed to create party for character {}: {:?}",
-            leader_id,
-            error
-        );
-        return Redirect::to("/parties/new");
+        .await
+    {
+        tracing::warn!("Failed to create recruitment role: {error:?}");
+        return Redirect::to("/");
     }
-
-    if state.db.is_local() && desired > 0 {
-        if let Err(error) = state
-            .db
-            .call("seed_bot_join_requests", &[json!(id), json!(desired)])
-            .await
-        {
-            tracing::warn!("Failed to seed local bot join requests: {error:?}");
+    if state.db.is_local() {
+        if let Some(character) = get_character(&state, leader_id).await {
+            if let Some(party_id) = character.party_id {
+                let roles: Vec<PartyRecruitmentRole> = state
+                    .db
+                    .query(&format!(
+                        "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
+                        party_id
+                    ))
+                    .await
+                    .unwrap_or_default();
+                if let Some(role) = roles.into_iter().max_by_key(|role| role.id) {
+                    let _ = state
+                        .db
+                        .call("seed_bot_join_requests", &[json!(role.id)])
+                        .await;
+                }
+            }
         }
     }
+    Redirect::to("/")
+}
 
-    let destination = form
-        .return_to
-        .filter(|path| path.starts_with("/settlements/") && !path.starts_with("//"))
-        .unwrap_or_else(|| format!("/parties/{id}"));
-    Redirect::to(&destination)
+async fn delete_saved_role(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Redirect {
+    if let Some(owner_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "delete_saved_recruitment_role",
+                &[json!(owner_id), json!(id)],
+            )
+            .await;
+    }
+    Redirect::to("/")
 }
 
 async fn show_party(
@@ -197,7 +255,7 @@ async fn show_party(
 
 async fn join_party(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(id): Path<u64>,
     session: Session,
 ) -> Redirect {
     let Some(character_id) = session.character_id_u64() else {
@@ -206,13 +264,149 @@ async fn join_party(
 
     let _ = state
         .db
-        .call(
-            "request_to_join_party",
-            &[json!(character_id), json!(id.clone())],
-        )
+        .call("request_to_join_party", &[json!(character_id), json!(id)])
         .await;
 
-    Redirect::to(&format!("/parties/{}", id))
+    Redirect::to("/")
+}
+
+async fn recruitment_panel_fragment(
+    State(state): State<AppState>,
+    session: Session,
+) -> Html<String> {
+    let Some(character_id) = session.character_id_u64() else {
+        return Html(String::new());
+    };
+    let Some(character) = get_character(&state, character_id).await else {
+        return Html(String::new());
+    };
+    let Some(party_id) = character.party_id else {
+        return Html(String::new());
+    };
+    let Some(party) = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+    else {
+        return Html(String::new());
+    };
+    let roles: Vec<PartyRecruitmentRole> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let memberships: Vec<PartyMember> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_member WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let requests: Vec<PartyJoinRequest> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_join_request WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let saved: Vec<SavedRecruitmentRole> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM saved_recruitment_role WHERE owner_character_id = {}",
+            character_id
+        ))
+        .await
+        .unwrap_or_default();
+    let mut panels = Vec::new();
+    for role in roles {
+        let mut filled = Vec::new();
+        for membership in memberships
+            .iter()
+            .filter(|member| member.recruitment_role_id == Some(role.id))
+        {
+            if let Some(character) = get_character(&state, membership.character_id).await {
+                filled.push(character);
+            }
+        }
+        let mut applicants = Vec::new();
+        for request in requests
+            .iter()
+            .filter(|request| request.recruitment_role_id == role.id)
+        {
+            if let Some(character) = get_character(&state, request.character_id).await {
+                applicants.push((request.clone(), character));
+            }
+        }
+        panels.push(RecruitmentRolePanel {
+            role,
+            filled,
+            requests: applicants,
+        });
+    }
+    Html(recruitment_panel(&party, character_id, &panels, &saved).into_string())
+}
+
+#[derive(Serialize)]
+struct CapabilityResponse {
+    tags: Vec<String>,
+}
+
+async fn character_capabilities(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+) -> Json<CapabilityResponse> {
+    let _ = state.db.call("refresh_capabilities", &[json!(id)]).await;
+    let capability = state
+        .db
+        .query::<CharacterCapability>(&format!(
+            "SELECT * FROM character_capability WHERE character_id = {id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    Json(CapabilityResponse {
+        tags: capability.map(capability_tags).unwrap_or_default(),
+    })
+}
+
+fn capability_tags(c: CharacterCapability) -> Vec<String> {
+    let mut tags = Vec::new();
+    for (enabled, label) in [
+        (c.melee, "Melee"),
+        (c.ranged, "Ranged"),
+        (c.precise, "Precise"),
+        (c.heavy, "Heavy"),
+        (c.armored, "Armored"),
+        (c.shield, "Shield"),
+        (c.blunt, "Blunt"),
+        (c.slash, "Slash"),
+        (c.pierce, "Pierce"),
+    ] {
+        if enabled {
+            tags.push(label.into());
+        }
+    }
+    for (value, label) in [
+        (c.climb, "Climb"),
+        (c.swim, "Swim"),
+        (c.endurance, "Endurance"),
+        (c.medicine, "Medicine"),
+        (c.surgery, "Surgery"),
+        (c.charisma, "Charisma"),
+        (c.faith, "Faith"),
+    ] {
+        tags.push(format!("{label} {}", value.round().clamp(0.0, 5.0) as u8));
+    }
+    tags
 }
 
 async fn accept_join_request(
@@ -260,12 +454,9 @@ async fn party_noticeboard_url(state: &AppState, party_id: &str) -> String {
     let Some(party) = parties.first() else {
         return "/parties".to_string();
     };
-    match (&party.current_settlement_id, &party.recruiting_quest_id) {
-        (Some(settlement), Some(quest)) => {
-            format!("/settlements/{settlement}/noticeboard?quest={quest}")
-        }
-        (Some(settlement), None) => format!("/settlements/{settlement}/noticeboard"),
-        _ => format!("/parties/{party_id}"),
+    match &party.current_settlement_id {
+        Some(settlement) => format!("/settlements/{settlement}/noticeboard"),
+        None => format!("/parties/{party_id}"),
     }
 }
 
@@ -337,15 +528,6 @@ async fn disband_party(State(state): State<AppState>, Path(id): Path<String>) ->
     let _ = state.db.call("disband_party", &[json!(id)]).await;
 
     Redirect::to("/parties")
-}
-
-/// Generate a simple timestamp-based ID
-fn chrono_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
 }
 
 /// Helper to get character name for session display

@@ -89,6 +89,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/party-trade.js?v=unified-trade-1" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
+                script src="/static/party-recruitment.js?v=role-slots-1" defer {}
             }
             body {
                 div class="app" {

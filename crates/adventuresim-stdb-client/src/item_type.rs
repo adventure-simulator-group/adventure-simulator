@@ -25,6 +25,11 @@ pub struct Item {
     pub range_of_motion: f32,
     pub precise: bool,
     pub balance: f32,
+    pub melee: bool,
+    pub ranged: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
     pub base_value: Option<u32>,
 }
 

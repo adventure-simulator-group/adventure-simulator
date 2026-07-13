@@ -71,6 +71,11 @@ pub struct Item {
     pub range_of_motion: f32,
     pub precise: bool,
     pub balance: f32,
+    pub melee: bool,
+    pub ranged: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
     pub base_value: Option<u32>,
 }
 
@@ -92,10 +97,72 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 
     define_shield(ctx, "buckler", 1.0, 1.0);
 
-    define_weapon(ctx, "short_sword", 1.5, 1.5, 1.0, 1.0, 0.5, true);
-    define_weapon(ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, true);
-    define_weapon(ctx, "zweihander", 6.0, 0.6, 1.0, 2.0, 0.3, false);
-    define_weapon(ctx, "club", 2.0, 1.0, 0.5, 1.0, 0.3, false);
+    define_weapon(
+        ctx,
+        "short_sword",
+        1.5,
+        1.5,
+        1.0,
+        1.0,
+        0.5,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+    );
+    define_weapon(
+        ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, true, true, false, false, true, true,
+    );
+    define_weapon(
+        ctx,
+        "zweihander",
+        6.0,
+        0.6,
+        1.0,
+        2.0,
+        0.3,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+    );
+    define_weapon(
+        ctx, "club", 2.0, 1.0, 0.5, 1.0, 0.3, false, true, false, true, false, false,
+    );
+    define_weapon(
+        ctx,
+        "short_bow",
+        1.0,
+        1.2,
+        1.0,
+        20.0,
+        0.4,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
+    );
+    define_weapon(
+        ctx,
+        "bot_multirole_weapon",
+        4.0,
+        1.5,
+        1.0,
+        2.0,
+        0.5,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+    );
 
     define_armor(
         ctx,
@@ -211,6 +278,11 @@ pub fn define_weapon(
     reach: f32,
     balance: f32,
     precise: bool,
+    melee: bool,
+    ranged: bool,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
 ) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -221,6 +293,11 @@ pub fn define_weapon(
         reach,
         balance,
         precise,
+        melee,
+        ranged,
+        blunt,
+        slash,
+        pierce,
         kind: ItemKind::Weapon,
         ..Item::default()
     });

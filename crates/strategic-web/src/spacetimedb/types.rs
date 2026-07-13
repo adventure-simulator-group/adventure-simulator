@@ -102,8 +102,7 @@ pub struct Party {
     pub current_settlement_id: Option<String>,
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
-    pub recruiting_quest_id: Option<String>,
-    pub desired_additional_members: u32,
+    pub is_solo: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,13 +111,74 @@ pub struct PartyMember {
     pub party_id: String,
     pub character_id: u64,
     pub role: Option<String>,
+    pub recruitment_role_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyJoinRequest {
     pub id: u64,
     pub party_id: String,
+    pub recruitment_role_id: u64,
     pub character_id: u64,
+    pub meets_requirements: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct RecruitmentRequirements {
+    pub melee: bool,
+    pub ranged: bool,
+    pub precise: bool,
+    pub heavy: bool,
+    pub armored: bool,
+    pub shield: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub climb: u8,
+    pub swim: u8,
+    pub endurance: u8,
+    pub medicine: u8,
+    pub surgery: u8,
+    pub charisma: u8,
+    pub faith: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRecruitmentRole {
+    pub id: u64,
+    pub party_id: String,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedRecruitmentRole {
+    pub id: u64,
+    pub owner_character_id: u64,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterCapability {
+    pub character_id: u64,
+    pub melee: bool,
+    pub ranged: bool,
+    pub precise: bool,
+    pub heavy: bool,
+    pub armored: bool,
+    pub shield: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub climb: f32,
+    pub swim: f32,
+    pub endurance: f32,
+    pub medicine: f32,
+    pub surgery: f32,
+    pub charisma: f32,
+    pub faith: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

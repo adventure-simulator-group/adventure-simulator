@@ -61,6 +61,32 @@ fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Val
                 return Value::String(identity.to_string());
             }
         }
+
+        if let Value::Array(values) = value {
+            let mut object = serde_json::Map::new();
+            for (element, value) in elements.iter().zip(values) {
+                let Some(name) = element
+                    .get("name")
+                    .and_then(|name| name.get("some"))
+                    .and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let nested_type = AlgebraicType::Value(
+                    element
+                        .get("algebraic_type")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                object.insert(
+                    name.to_string(),
+                    convert_spacetime_value(value, &nested_type),
+                );
+            }
+            if !object.is_empty() {
+                return Value::Object(object);
+            }
+        }
     }
 
     let Some(variants) = sum_variants(algebraic_type) else {
@@ -267,5 +293,24 @@ impl SpacetimeClient {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_named_nested_products_to_objects() {
+        let ty = AlgebraicType::Value(json!({
+            "Product": { "elements": [
+                { "name": { "some": "melee" }, "algebraic_type": { "Bool": [] } },
+                { "name": { "some": "endurance" }, "algebraic_type": { "U8": [] } }
+            ] }
+        }));
+        assert_eq!(
+            convert_spacetime_value(&json!([true, 3]), &ty),
+            json!({ "melee": true, "endurance": 3 })
+        );
     }
 }
