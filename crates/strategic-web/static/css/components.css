@@ -1879,10 +1879,12 @@
   content: "";
 }
 
+.party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; }
+
 .schedule-step {
   position: absolute;
   top: 50%;
-  z-index: 3;
+  z-index: 4;
   width: 0.45rem;
   height: 0.55rem;
   padding: 0;
