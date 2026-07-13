@@ -728,14 +728,16 @@ fn party_skill_row(
     let effective_rank = rank * health.clamp(0.0, 1.0);
     let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
     let damage_width = ((rank - effective_rank).max(0.0) / 5.0) * 100.0;
+    let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
             td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
             td class="party-skill-name" { (name) }
             td class="party-skill-meter" {
-                div class="skill-rank-bar" title=(format!("{effective_rank:.1}")) {
+                div class="skill-rank-bar" title=(format!("{invested_hours} hours invested")) {
                     span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                     span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
+                    span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
                     @if let Some(minutes) = schedule_minutes {
                         (schedule_handle(name, &format!("{}_minutes", icon), minutes))
                     }

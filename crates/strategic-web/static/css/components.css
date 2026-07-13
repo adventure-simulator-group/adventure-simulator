@@ -1591,7 +1591,7 @@
   white-space: nowrap;
 }
 
-.party-skill-meter .skill-rank-bar { width: 100%; }
+.party-skill-meter .skill-rank-bar { width: 100%; overflow: visible; }
 
 .skill-rank-bar,
 .attribute-rank-bar {
@@ -1929,6 +1929,29 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 0.75rem;
+}
+
+.skill-rank-value {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 0.35rem);
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity var(--transition-fast);
+  white-space: nowrap;
+}
+
+.skill-rank-bar:hover .skill-rank-value {
+  opacity: 1;
 }
 
 .party-skill-allocation {
