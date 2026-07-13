@@ -1,5 +1,0 @@
-/* Fraktur trial: a decorative display face; reserve for short headings. */
-@import url('https://fonts.googleapis.com/css2?family=Ewert&display=swap');
-@import url('./renaissance-gold.css');
-
-:root { --font-display: 'Ewert'; }

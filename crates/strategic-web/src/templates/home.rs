@@ -1,10 +1,10 @@
 //! Home page template
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{
-    base_layout_with_session, divider, empty_state, gold_display, list_item, panel,
-    population_description, sidebar_section, xp_display,
+    base_layout_with_session, divider, gold_display, list_item, panel, population_description,
+    sidebar_section,
 };
 use crate::spacetimedb::{Character, Party, Quest, Settlement};
 
@@ -21,24 +21,12 @@ pub fn home_page(
         aside class="left-sidebar" {
             @if let Some(character) = current_character {
                 (sidebar_section("Character", html! {
-                    div class="stat-grid" {
-                        div class="stat-item" {
-                            span class="stat-label" { "Level" }
-                            span class="stat-value" { (character.level) }
+                        div class="stat-grid" {
+                            div class="stat-item" {
+                                span class="stat-label" { "Gold" }
+                                span class="stat-value" { (gold_display(character.gold)) }
+                            }
                         }
-                        div class="stat-item" {
-                            span class="stat-label" { "Gold" }
-                            span class="stat-value" { (gold_display(character.gold)) }
-                        }
-                        div class="stat-item" {
-                            span class="stat-label" { "XP" }
-                            span class="stat-value" { (xp_display(character.xp)) }
-                        }
-                    }
-                    div class="progress-bar mt-1" {
-                        div class="progress-fill" style=(format!("width: {}%", character.xp % 100)) {}
-                    }
-                    span class="progress-label" { (character.xp % 100) "/100 to next level" }
                 }))
 
                 (divider())
@@ -83,7 +71,7 @@ pub fn home_page(
                             (list_item(
                                 &format!("/characters/{}", character.id),
                                 &character.name,
-                                Some(&format!("Level {}", character.level)),
+                                Some(&format!("{} Gold", character.gold)),
                             ))
                         }
                     }
@@ -147,7 +135,6 @@ pub fn home_page(
                             div class="quest-card-meta" {
                                 div class="quest-card-reward" {
                                     (gold_display(quest.gold_reward))
-                                    (xp_display(quest.xp_reward))
                                 }
                             }
                             p class="quest-card-enemy mt-1" {
@@ -173,7 +160,7 @@ pub fn home_page(
                     (panel("", html! {
                         p style="font-size:var(--font-size-sm)" {
                             "Create a character, join a party, accept a quest, "
-                            "and enter tactical missions to earn gold and experience."
+                            "and enter tactical missions to earn gold and supplies."
                         }
                     }))
                 }))

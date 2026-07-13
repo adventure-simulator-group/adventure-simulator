@@ -150,101 +150,37 @@
 }
 
 .service-tab-icon {
-  position: relative;
-  display: grid;
-  place-items: center;
+  display: block;
   width: 1.25rem;
   height: 1.25rem;
-  line-height: 1;
+  background-color: var(--accent);
+  -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
+  mask: var(--service-tab-icon) center / contain no-repeat;
+  transition: background-color var(--transition-fast);
 }
 
-.service-tab-icon::before,
-.service-tab-icon::after {
-  position: absolute;
-  display: block;
-}
+.service-tab-icon-noticeboard { --service-tab-icon: url("/static/icons/strategic/noticeboard.png"); }
+.service-tab-icon-tavern { --service-tab-icon: url("/static/icons/strategic/tavern.png"); }
+.service-tab-icon-market { --service-tab-icon: url("/static/icons/strategic/market.png"); }
+.service-tab-icon-weapons { --service-tab-icon: url("/static/icons/strategic/weapons.png"); }
+.service-tab-icon-armor { --service-tab-icon: url("/static/icons/strategic/armor.png"); }
+.service-tab-icon-clothing { --service-tab-icon: url("/static/icons/strategic/clothing.png"); }
+.service-tab-icon-inn { --service-tab-icon: url("/static/icons/strategic/inn.png"); }
+.service-tab-icon-church { --service-tab-icon: url("/static/icons/strategic/church.png"); }
 
-.service-tab-icon-tavern::before { content: "\1F37A"; font-size: 1.05rem; }
-.service-tab-icon-market::before { content: "\1F4B0"; font-size: 1.05rem; }
-.service-tab-icon-weapons::before { content: "\2694"; font-size: 1.05rem; transform: rotate(-12deg); }
-.service-tab-icon-weapons::after { content: "\2692"; right: -0.12rem; bottom: -0.1rem; font-size: 0.62rem; transform: rotate(16deg); }
-.service-tab-icon-provisions::before { content: "\1F35E"; font-size: 0.98rem; }
-.service-tab-icon-inn::before { content: "\1F6CF"; font-size: 1rem; }
-.service-tab-icon-church::before { content: "\271D"; font-family: Georgia, serif; font-size: 1.25rem; font-weight: 700; }
+.settlement-services .nav-tab:hover .service-tab-icon { background-color: var(--accent-hover); }
+.settlement-services .nav-tab.active .service-tab-icon { background-color: var(--accent-dark); }
 
-/* A compact barbute silhouette: dome, visor opening, and nose guard. */
-.service-tab-icon-armor::before {
-  width: 1.02rem;
-  height: 0.95rem;
-  border: 0.14rem solid currentColor;
-  border-radius: 0.56rem 0.56rem 0.25rem 0.25rem;
-  box-sizing: border-box;
-  background: linear-gradient(90deg, transparent 40%, currentColor 40% 54%, transparent 54%);
+/* Provisions remains outside the new settlement-icon set. */
+.service-tab-icon-provisions {
+  background: none;
+  -webkit-mask: none;
+  mask: none;
+  color: var(--accent);
+  font-size: 0.98rem;
+  line-height: 1.25rem;
 }
-.service-tab-icon-armor::after {
-  width: 0.5rem;
-  height: 0.18rem;
-  border-radius: 999px;
-  background: var(--bg-primary);
-  transform: translateY(-0.08rem);
-}
-
-/* Needle and a short curved thread. */
-.service-tab-icon-clothing::before {
-  width: 0.11rem;
-  height: 1.08rem;
-  border-radius: 999px;
-  background: currentColor;
-  transform: rotate(38deg);
-}
-.service-tab-icon-clothing::after {
-  width: 0.55rem;
-  height: 0.38rem;
-  right: 0.02rem;
-  bottom: 0.05rem;
-  border-right: 0.1rem solid currentColor;
-  border-bottom: 0.1rem solid currentColor;
-  border-radius: 0 0 0.45rem 0;
-  transform: rotate(-16deg);
-}
-
-/* A rain awning over a notice board with loose translucent notices. */
-.service-tab-icon-noticeboard::before {
-  z-index: 1;
-  top: 0.28rem;
-  left: 50%;
-  width: 1.02rem;
-  height: 0.84rem;
-  border: 0.12rem solid var(--accent-dark);
-  border-radius: 0.06rem;
-  background: var(--bg-tertiary);
-  box-shadow: inset 0 0 0 0.05rem color-mix(in srgb, var(--accent) 18%, transparent);
-  transform: translateX(-50%);
-}
-.service-tab-icon-noticeboard::after {
-  z-index: 2;
-  top: 0.02rem;
-  left: 50%;
-  width: 1.44rem;
-  height: 0.3rem;
-  border: 0.11rem solid var(--accent-dark);
-  border-radius: 0.18rem 0.18rem 0.04rem 0.04rem;
-  background: var(--panel-bg);
-  transform: translateX(-50%);
-}
-.notice-slip {
-  display: none;
-  position: absolute;
-  z-index: 3;
-  width: 0.27rem;
-  height: 0.22rem;
-  border: 1px solid color-mix(in srgb, var(--accent-dark) 70%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 55%, transparent);
-}
-.service-tab-icon-noticeboard .notice-slip { display: block; }
-.notice-slip-one { top: 0.47rem; left: 0.23rem; transform: rotate(-11deg); }
-.notice-slip-two { top: 0.61rem; right: 0.19rem; transform: rotate(14deg); }
-.notice-slip-three { bottom: 0.1rem; left: 0.46rem; transform: rotate(4deg); }
+.service-tab-icon-provisions::before { content: "\1F35E"; }
 
 .player-name {
   font-size: var(--font-size-sm);
@@ -359,16 +295,42 @@
    THEME SWITCHER
    ============================================ */
 .theme-switcher {
-  display: flex;
-  gap: 0.25rem;
+  position: relative;
+}
+
+.theme-switcher > summary {
+  list-style: none;
+}
+
+.theme-switcher > summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  display: none;
+  grid-template-columns: repeat(3, 16px);
+  gap: 0.4rem;
+  padding: 0.45rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+}
+
+.theme-switcher[open] .theme-menu {
+  display: grid;
 }
 
 .theme-dot {
   display: block;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
   border: 2px solid var(--border-color);
+  border-radius: 50%;
   transition: transform var(--transition-fast), border-color var(--transition-fast);
   cursor: pointer;
 }
@@ -383,13 +345,8 @@
   box-shadow: 0 0 0 2px var(--accent-light);
 }
 
-.theme-dot[data-theme="renaissance-gold"] { background: #b8860b; }
-.theme-dot[data-theme="fraktur-grenze"] { background: #d2a83e; }
 .theme-dot[data-theme="fraktur-texturina"] { background: #bd8a2c; }
-.theme-dot[data-theme="fraktur-new-rocker"] { background: #9e651e; }
-.theme-dot[data-theme="fraktur-cook"] { background: #7a4518; }
-.theme-dot[data-theme="fraktur-maguntia"] { background: #542c17; }
-.theme-dot[data-theme="fraktur-ewert"] { background: #30180e; }
+.theme-dot[data-theme="fraktur-nocturne"] { background: #3a2114; }
 .theme-dot[data-theme="dark-arcanum"] { background: #7c3aed; }
 .theme-dot[data-theme="northern-frost"] { background: #3a7bd5; }
 .theme-dot[data-theme="verdant-chronicle"] { background: #4a8c3f; }

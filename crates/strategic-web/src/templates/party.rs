@@ -1,6 +1,6 @@
 //! Party templates
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{
     base_layout_with_session, divider, empty_state, input_field, list_item, panel, sidebar_section,
@@ -141,7 +141,6 @@ pub fn party_detail_page(
                                         span class="leader-badge" { " (Leader)" }
                                     }
                                 }
-                                span class="member-level" { "Level " (ch.level) }
                             } @else {
                                 span class="member-name" { (member.character_id) }
                             }

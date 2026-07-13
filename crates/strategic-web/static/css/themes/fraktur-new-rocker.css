@@ -1,5 +1,0 @@
-/* Fraktur trial: unmistakably blackletter, but still reasonably open at UI sizes. */
-@import url('https://fonts.googleapis.com/css2?family=New+Rocker&display=swap');
-@import url('./renaissance-gold.css');
-
-:root { --font-display: 'New Rocker'; }

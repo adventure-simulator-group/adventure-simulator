@@ -1,6 +1,11 @@
 //! Home route handlers
 
-use axum::{extract::State, response::{IntoResponse, Redirect, Response}, routing::get, Router};
+use axum::{
+    Router,
+    extract::State,
+    response::{IntoResponse, Redirect, Response},
+    routing::get,
+};
 
 use super::AppState;
 use crate::session::Session;
@@ -16,14 +21,18 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     };
     let characters: Vec<Character> = state
         .db
-        .query(&format!("SELECT * FROM character WHERE id = {character_id}"))
+        .query(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
         .await
         .unwrap_or_default();
     let Some(character) = characters.first() else {
         return Redirect::to("/characters").into_response();
     };
     match &character.current_settlement_id {
-        Some(settlement_id) => Redirect::to(&format!("/settlements/{settlement_id}")).into_response(),
+        Some(settlement_id) => {
+            Redirect::to(&format!("/settlements/{settlement_id}")).into_response()
+        }
         None => Redirect::to("/settlements").into_response(),
     }
 }

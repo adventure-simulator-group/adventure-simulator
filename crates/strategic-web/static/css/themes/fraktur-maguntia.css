@@ -1,5 +1,0 @@
-/* Fraktur trial: a dense, historically rooted Fraktur face with true ligatures. */
-@import url('https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&display=swap');
-@import url('./renaissance-gold.css');
-
-:root { --font-display: 'UnifrakturMaguntia'; }
