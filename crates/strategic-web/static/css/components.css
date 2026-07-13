@@ -1870,7 +1870,7 @@
 
 .schedule-step {
   position: absolute;
-  top: 50%;
+  left: 50%;
   z-index: 3;
   width: 0.8rem;
   height: 1rem;
@@ -1882,14 +1882,14 @@
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  transform: translateY(-50%);
+  transform: translateX(-50%);
   transition: opacity 100ms ease;
 }
 
-.schedule-step-decrease { left: -0.1rem; }
-.schedule-step-increase { right: -0.1rem; }
+.schedule-step-decrease { bottom: -0.45rem; }
+.schedule-step-increase { top: -0.45rem; }
 .party-skill-allocation:hover .schedule-step,
-.party-skill-allocation:focus-within .schedule-step { opacity: 1; }
+.schedule-step:focus-visible { opacity: 1; }
 .schedule-time-input { width: 3.25rem; padding: 0; border: 1px solid var(--accent); text-align: right; font: inherit; color: inherit; background: var(--bg-tertiary); }
 
 /* Daily allocation handles sit over the existing skill-rank meters. */
@@ -1935,7 +1935,17 @@
 .schedule-special-row .party-skill-name { font-weight: 700; }
 .schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
 .schedule-special-track { overflow: visible; }
-.schedule-special-track::after { display: none; }
+.schedule-special-track::after {
+  display: block;
+  background:
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 85%, transparent), transparent) center / 3px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 80%, transparent), transparent) 25% / 2px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 80%, transparent), transparent) 75% / 2px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 12.5% / 1px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 37.5% / 1px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 62.5% / 1px 100% no-repeat,
+    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 87.5% / 1px 100% no-repeat;
+}
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }
