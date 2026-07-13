@@ -243,7 +243,7 @@ fn convalescence_minutes(limbs: &CharacterLimbs) -> u64 {
     }
 }
 
-/// Spend completed game days at a settlement. Injuries receive all available
+/// Spend completed game days at a settlement. Injuries receive all selected
 /// rest first; only the remaining time is eligible for scheduled training.
 #[reducer]
 pub fn rest_at_settlement(
@@ -253,15 +253,14 @@ pub fn rest_at_settlement(
     at_inn: bool,
 ) -> Result<(), String> {
     ensure_character_time(ctx, character_id)?;
-    let official_minutes = refresh_clock(ctx)?;
+    let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
-    let available_days = official_minutes.saturating_sub(character_time.minutes) / MINUTES_PER_DAY;
-    let days = u64::from(requested_days).min(available_days);
+    let days = u64::from(requested_days);
     if days == 0 {
         return Ok(());
     }

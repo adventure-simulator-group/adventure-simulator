@@ -13,13 +13,6 @@
         element.textContent = format(characterMinutes);
         element.title = `Official time: ${format(officialMinutes)}`;
       });
-      const availableDays = Math.floor(Math.max(0, officialMinutes - characterMinutes) / 1440);
-      document.querySelectorAll('[data-rest-days]').forEach((input) => {
-        input.max = availableDays;
-        if (Number(input.value) > availableDays) input.value = availableDays;
-        const submit = input.form?.querySelector('[data-rest-submit]');
-        if (submit) submit.disabled = Number(input.value) <= 0 || availableDays <= 0;
-      });
     })
     .catch(() => {});
 })();

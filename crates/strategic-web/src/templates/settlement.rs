@@ -1187,11 +1187,11 @@ fn rest_service_menu(
             div class="rest-days-control" {
                     button type="button" class="rest-days-step" aria-label="Decrease rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
-                    input type="number" name="days" value="0" min="0" max="0" aria-label="Rest days" data-rest-days
-                        oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0 || Number(this.value)>Number(this.max || 0);";
+                    input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
+                        oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
                     span class="rest-days-unit" { "days" }
                     button type="button" class="rest-days-step" aria-label="Increase rest days"
-                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 0), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
+                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
                 }
                 button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled { "Rest" }
         }
