@@ -1861,11 +1861,36 @@
 }
 
 .party-skill-allocation {
+  position: relative;
   padding-left: 0.45rem !important;
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+.schedule-step {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 0.8rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: opacity 100ms ease;
+}
+
+.schedule-step-decrease { left: -0.1rem; }
+.schedule-step-increase { right: -0.1rem; }
+.party-skill-allocation:hover .schedule-step,
+.party-skill-allocation:focus-within .schedule-step { opacity: 1; }
+.schedule-time-input { width: 3.25rem; padding: 0; border: 1px solid var(--accent); text-align: right; font: inherit; color: inherit; background: var(--bg-tertiary); }
 
 /* Daily allocation handles sit over the existing skill-rank meters. */
 .skill-schedule { display: grid; gap: 0.55rem; }

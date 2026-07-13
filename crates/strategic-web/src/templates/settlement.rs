@@ -647,7 +647,6 @@ fn party_skills_rail(
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
                         p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
-                        button type="submit" class="btn btn-primary btn-small" { "Save schedule" }
                     }
                     script src="/static/training-schedule.js?v=hourglass-handle-1" {}
                 } @else {
@@ -726,7 +725,9 @@ fn party_skill_row(
             }
             @if let Some(minutes) = schedule_minutes {
                 td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
-                    (format_schedule_hours(minutes))
+                    (schedule_step_button("Decrease daily allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    (schedule_step_button("Increase daily allocation", 15))
                 }
             }
         }
@@ -748,9 +749,21 @@ fn schedule_special_row(label: &str, icon: &str, name: &str, minutes: u16, edita
                 }
             }
             td class="party-skill-allocation" data-schedule-value=(name) {
-                @if editable { (format_schedule_hours(minutes)) } @else { "0h" }
+                @if editable {
+                    (schedule_step_button("Decrease daily allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    (schedule_step_button("Increase daily allocation", 15))
+                } @else { span data-schedule-display { "0h" } }
             }
         }
+    }
+}
+
+fn schedule_step_button(label: &str, delta: i16) -> Markup {
+    let glyph = if delta < 0 { "‹" } else { "›" };
+    html! {
+        button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
+            data-schedule-step=(delta) aria-label=(label) { (glyph) }
     }
 }
 

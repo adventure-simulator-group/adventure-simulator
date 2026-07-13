@@ -41,6 +41,7 @@
     };
     root._scheduleState = state;
     render(root, state);
+    bindEditing(root, state);
     return state;
   }
 
@@ -54,12 +55,12 @@
     Object.entries(state.handles).forEach(([name, handle]) => {
       const minutes = allocations[name];
       handle.style.left = `${minutes / DAY * 100}%`;
-      handle.title = `${minutes} minutes per day`;
+      handle.title = `${format(minutes)} per day`;
       handle.setAttribute('aria-valuenow', minutes);
       handle.setAttribute('aria-valuetext', format(minutes));
-      root.querySelectorAll(`[data-schedule-value="${name}"]`).forEach((output) => { output.textContent = format(minutes); });
+      root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(minutes); });
     });
-    root.querySelectorAll('[data-schedule-value="leisure_minutes"]').forEach((output) => { output.textContent = format(leisure); });
+    root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => { output.textContent = format(leisure); });
     root.querySelectorAll('[data-leisure-fill]').forEach((fill) => { fill.style.width = `${leisure / DAY * 100}%`; });
     root.querySelectorAll('[data-leisure-warning]').forEach((warning) => { warning.hidden = leisure >= MIN_LEISURE; });
   }
@@ -92,6 +93,69 @@
     render(root, state);
   }
 
+  function save(root, delay = 0) {
+    clearTimeout(root._scheduleSaveTimer);
+    root._scheduleSaveTimer = setTimeout(() => {
+      const body = new URLSearchParams(new FormData(root));
+      fetch(root.action, { method: 'POST', body, headers: { Accept: 'text/plain' } })
+        .catch(() => { root.dataset.scheduleSaveError = 'true'; });
+    }, delay);
+  }
+
+  function nameFor(element) {
+    return element.closest('.party-skill-row')?.querySelector('[data-schedule-handle]')?.dataset.scheduleName;
+  }
+
+  function bindEditing(root, state) {
+    root.querySelectorAll('.skill-rank-bar, .party-skill-allocation').forEach((element) => {
+      element.addEventListener('wheel', (evt) => {
+        const name = nameFor(element);
+        if (!name) return;
+        evt.preventDefault();
+        setValue(root, state, name, Number(state.inputs[name].value) + (evt.deltaY < 0 ? STEP : -STEP));
+        save(root, 180);
+      }, { passive: false });
+    });
+    root.querySelectorAll('[data-schedule-step]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const name = nameFor(button);
+        setValue(root, state, name, Number(state.inputs[name].value) + Number(button.dataset.scheduleStep));
+        save(root);
+      });
+    });
+    root.querySelectorAll('[data-schedule-display]').forEach((display) => {
+      display.addEventListener('click', () => {
+        const name = nameFor(display);
+        if (!name || display.dataset.editing) return;
+        display.dataset.editing = 'true';
+        const input = document.createElement('input');
+        input.className = 'schedule-time-input';
+        input.type = 'number';
+        input.min = '0';
+        input.max = '24';
+        input.step = '0.25';
+        input.value = String(Number(state.inputs[name].value) / 60);
+        const finish = (commit) => {
+          if (commit && input.value !== '') {
+            setValue(root, state, name, Number(input.value) * 60);
+            save(root);
+          }
+          display.textContent = format(Number(state.inputs[name].value));
+          delete display.dataset.editing;
+          input.replaceWith(display);
+        };
+        input.addEventListener('keydown', (evt) => {
+          if (evt.key === 'Enter') finish(true);
+          if (evt.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true), { once: true });
+        display.replaceWith(input);
+        input.focus();
+        input.select();
+      });
+    });
+  }
+
   window.scheduleDrag = {
     start(handle, evt) {
       evt.preventDefault();
@@ -107,6 +171,7 @@
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', finish);
         handle.removeEventListener('pointercancel', finish);
+        save(root);
       };
       handle.setPointerCapture(evt.pointerId);
       handle.addEventListener('pointermove', move);
@@ -122,6 +187,7 @@
       const state = stateFor(root);
       const current = Number(state.inputs[handle.dataset.scheduleName].value);
       setValue(root, state, handle.dataset.scheduleName, evt.key === 'Home' ? 0 : evt.key === 'End' ? DAY : current + steps[evt.key]);
+      save(root);
     },
   };
 
