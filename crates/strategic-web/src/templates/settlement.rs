@@ -726,7 +726,7 @@ fn party_skill_row(
             }
             @if let Some(minutes) = schedule_minutes {
                 td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
-                    (minutes) "m"
+                    (format_schedule_hours(minutes))
                 }
             }
         }
@@ -748,7 +748,7 @@ fn schedule_special_row(label: &str, icon: &str, name: &str, minutes: u16, edita
                 }
             }
             td class="party-skill-allocation" data-schedule-value=(name) {
-                @if editable { (minutes) "m" } @else { "0m" }
+                @if editable { (format_schedule_hours(minutes)) } @else { "0h" }
             }
         }
     }
@@ -771,9 +771,22 @@ fn schedule_handle(label: &str, name: &str, minutes: u16) -> Markup {
         input type="hidden" name=(name) value=(minutes) data-schedule-input;
         button type="button" class="schedule-handle" data-schedule-handle data-schedule-name=(name)
             aria-label=(format!("{} daily allocation", label)) aria-valuemin="0" aria-valuemax="1440"
-            aria-valuenow=(minutes) title=(format!("{} minutes per day", minutes))
+            aria-valuenow=(minutes) title=(format!("{} per day", format_schedule_hours(minutes)))
             data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
+}
+
+fn format_schedule_hours(minutes: u16) -> String {
+    let rounded = ((u32::from(minutes) + 7) / 15) * 15;
+    let hours = rounded / 60;
+    let fraction = match rounded % 60 {
+        0 => "",
+        15 => "¼",
+        30 => "½",
+        45 => "¾",
+        _ => unreachable!("rounded schedule minute must be a quarter hour"),
+    };
+    format!("{hours}{fraction}h")
 }
 
 fn party_attributes_rail(

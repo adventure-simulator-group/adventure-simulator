@@ -1907,10 +1907,10 @@
   border-top: 3px double var(--border-light);
 }
 
-.schedule-special-row .party-skill-name,
-.schedule-special-row .party-skill-allocation { font-weight: 700; }
+.schedule-special-row .party-skill-name { font-weight: 700; }
 .schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
 .schedule-special-track { overflow: visible; }
+.schedule-special-track::after { display: none; }
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }

@@ -1,8 +1,12 @@
 (() => {
   const DAY = 1440;
   const MIN_LEISURE = 360;
+  const STEP = 15;
 
-  const format = (minutes) => `${minutes}m`;
+  function format(minutes) {
+    const whole = Math.floor(minutes / 60);
+    return `${whole}${['', '¼', '½', '¾'][(minutes % 60) / STEP]}h`;
+  }
 
   function distribute(values, names, amount) {
     const total = names.reduce((sum, name) => sum + values[name], 0);
@@ -27,6 +31,9 @@
   function stateFor(root) {
     if (root._scheduleState) return root._scheduleState;
     const inputs = [...root.querySelectorAll('[data-schedule-input]')];
+    inputs.forEach((input) => {
+      input.value = Math.round(Number(input.value) / STEP) * STEP;
+    });
     const state = {
       inputs: Object.fromEntries(inputs.map((input) => [input.name, input])),
       handles: Object.fromEntries([...root.querySelectorAll('[data-schedule-handle]')]
@@ -60,7 +67,7 @@
   function setValue(root, state, target, wanted) {
     const allocation = values(state);
     const current = allocation[target];
-    const next = Math.max(0, Math.min(DAY, Math.round(wanted)));
+    const next = Math.max(0, Math.min(DAY, Math.round(wanted / STEP) * STEP));
     const delta = next - current;
     if (delta > 0) {
       const leisure = DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0);
@@ -108,7 +115,7 @@
       move(evt);
     },
     key(handle, evt) {
-      const steps = { ArrowLeft: -15, ArrowDown: -15, ArrowRight: 15, ArrowUp: 15, PageDown: -60, PageUp: 60 };
+      const steps = { ArrowLeft: -STEP, ArrowDown: -STEP, ArrowRight: STEP, ArrowUp: STEP, PageDown: -60, PageUp: 60 };
       if (!(evt.key in steps) && evt.key !== 'Home' && evt.key !== 'End') return;
       evt.preventDefault();
       const root = handle.closest('[data-skill-schedule]');
