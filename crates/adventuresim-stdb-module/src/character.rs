@@ -2,7 +2,9 @@ use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
-use crate::{ItemSlot, add_inventory_item, enter_mission, inventory_item};
+use crate::{
+    ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item, strategic::settlement,
+};
 
 /// General character info
 #[derive(Clone, Debug)]
@@ -225,13 +227,19 @@ pub(crate) fn insert_new_character(
 ) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
 
+    let settlements: Vec<Settlement> = ctx.db.settlement().iter().collect();
+    if settlements.is_empty() {
+        return Err("Cannot create a character before at least one settlement is loaded".into());
+    }
+    let start_settlement = &settlements[ctx.random::<u64>() as usize % settlements.len()];
+
     let character = ctx.db.character().insert(Character {
         id,
         name,
         xp: 0,
         level: 1,
         gold: 100,
-        current_settlement_id: Some("riverdale".into()),
+        current_settlement_id: Some(start_settlement.id.clone()),
         party_id: None,
         server: Identity::ZERO,
         in_server: false,

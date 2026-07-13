@@ -1,6 +1,6 @@
 //! Character selection and creation templates.
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{entry_layout, gold_display, input_field, panel, sidebar_section};
 use crate::spacetimedb::Character;
@@ -49,8 +49,8 @@ pub fn characters_list_page(
         }
 
         aside class="right-sidebar" {
-            (sidebar_section("Starting in Riverdale", html! {
-                p class="small-copy text-muted" { "New adventurers begin in Riverdale with basic supplies." }
+            (sidebar_section("Starting settlement", html! {
+                p class="small-copy text-muted" { "New adventurers begin at a random settlement with basic supplies." }
             }))
         }
     };

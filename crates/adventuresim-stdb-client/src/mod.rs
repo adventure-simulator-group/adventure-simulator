@@ -10,6 +10,7 @@ pub mod abandon_quest_reducer;
 pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
 pub mod backfill_item_values_reducer;
+pub mod begin_world_data_import_reducer;
 pub mod cancel_mission_request_reducer;
 pub mod change_inventory_item_reducer;
 pub mod character_attributes_table;
@@ -51,6 +52,9 @@ pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
+pub mod import_settlements_reducer;
+pub mod import_travel_edges_reducer;
+pub mod import_world_nodes_reducer;
 pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
@@ -74,6 +78,7 @@ pub mod request_tactical_server_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
+pub mod settlement_import_type;
 pub mod settlement_table;
 pub mod settlement_type;
 pub mod synchronize_character_time_reducer;
@@ -82,6 +87,9 @@ pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod transfer_party_item_reducer;
+pub mod travel_edge_import_type;
+pub mod travel_edge_table;
+pub mod travel_edge_type;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
 pub mod update_training_schedule_reducer;
@@ -89,6 +97,11 @@ pub mod world_clock_schedule_table;
 pub mod world_clock_schedule_type;
 pub mod world_clock_table;
 pub mod world_clock_type;
+pub mod world_data_import_table;
+pub mod world_data_import_type;
+pub mod world_node_import_type;
+pub mod world_node_table;
+pub mod world_node_type;
 
 pub use abandon_quest_reducer::{
     abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
@@ -99,6 +112,9 @@ pub use add_and_equip_item_reducer::{
 };
 pub use backfill_item_values_reducer::{
     backfill_item_values, set_flags_for_backfill_item_values, BackfillItemValuesCallbackId,
+};
+pub use begin_world_data_import_reducer::{
+    begin_world_data_import, set_flags_for_begin_world_data_import, BeginWorldDataImportCallbackId,
 };
 pub use cancel_mission_request_reducer::{
     cancel_mission_request, set_flags_for_cancel_mission_request, CancelMissionRequestCallbackId,
@@ -181,6 +197,15 @@ pub use finalize_merchant_trade_reducer::{
 pub use finalize_party_offer_reducer::{
     finalize_party_offer, set_flags_for_finalize_party_offer, FinalizePartyOfferCallbackId,
 };
+pub use import_settlements_reducer::{
+    import_settlements, set_flags_for_import_settlements, ImportSettlementsCallbackId,
+};
+pub use import_travel_edges_reducer::{
+    import_travel_edges, set_flags_for_import_travel_edges, ImportTravelEdgesCallbackId,
+};
+pub use import_world_nodes_reducer::{
+    import_world_nodes, set_flags_for_import_world_nodes, ImportWorldNodesCallbackId,
+};
 pub use insert_new_character_reducer::{
     insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
 };
@@ -219,6 +244,7 @@ pub use seed_party_companions_reducer::{
     seed_party_companions, set_flags_for_seed_party_companions, SeedPartyCompanionsCallbackId,
 };
 pub use seed_world_reducer::{seed_world, set_flags_for_seed_world, SeedWorldCallbackId};
+pub use settlement_import_type::SettlementImport;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
 pub use synchronize_character_time_reducer::{
@@ -232,6 +258,9 @@ pub use tactical_server_type::TacticalServer;
 pub use transfer_party_item_reducer::{
     set_flags_for_transfer_party_item, transfer_party_item, TransferPartyItemCallbackId,
 };
+pub use travel_edge_import_type::TravelEdgeImport;
+pub use travel_edge_table::*;
+pub use travel_edge_type::TravelEdge;
 pub use travel_to_settlement_reducer::{
     set_flags_for_travel_to_settlement, travel_to_settlement, TravelToSettlementCallbackId,
 };
@@ -246,6 +275,11 @@ pub use world_clock_schedule_table::*;
 pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
 pub use world_clock_type::WorldClock;
+pub use world_data_import_table::*;
+pub use world_data_import_type::WorldDataImport;
+pub use world_node_import_type::WorldNodeImport;
+pub use world_node_table::*;
+pub use world_node_type::WorldNode;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -269,6 +303,7 @@ pub enum Reducer {
         destination: ItemSlot,
     },
     BackfillItemValues,
+    BeginWorldDataImport,
     CancelMissionRequest {
         mission_id: String,
     },
@@ -364,6 +399,7 @@ pub enum Reducer {
     },
     FinalizeMerchantTrade {
         character_id: u64,
+        settlement_id: String,
         buy_item_ids: Vec<String>,
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
@@ -374,6 +410,15 @@ pub enum Reducer {
         to_character_ids: Vec<u64>,
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
+    },
+    ImportSettlements {
+        settlements: Vec<SettlementImport>,
+    },
+    ImportTravelEdges {
+        edges: Vec<TravelEdgeImport>,
+    },
+    ImportWorldNodes {
+        nodes: Vec<WorldNodeImport>,
     },
     InsertNewCharacter {
         name: String,
@@ -450,6 +495,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
             Reducer::BackfillItemValues => "backfill_item_values",
+            Reducer::BeginWorldDataImport => "begin_world_data_import",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CompleteQuest { .. } => "complete_quest",
@@ -472,6 +518,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
+            Reducer::ImportSettlements { .. } => "import_settlements",
+            Reducer::ImportTravelEdges { .. } => "import_travel_edges",
+            Reducer::ImportWorldNodes { .. } => "import_world_nodes",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
             Reducer::JoinParty { .. } => "join_party",
             Reducer::LeaveMission { .. } => "leave_mission",
@@ -513,6 +562,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "backfill_item_values" => Ok(__sdk::parse_reducer_args::<
                 backfill_item_values_reducer::BackfillItemValuesArgs,
             >("backfill_item_values", &value.args)?
+            .into()),
+            "begin_world_data_import" => Ok(__sdk::parse_reducer_args::<
+                begin_world_data_import_reducer::BeginWorldDataImportArgs,
+            >("begin_world_data_import", &value.args)?
             .into()),
             "cancel_mission_request" => Ok(__sdk::parse_reducer_args::<
                 cancel_mission_request_reducer::CancelMissionRequestArgs,
@@ -622,6 +675,18 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 finalize_party_offer_reducer::FinalizePartyOfferArgs,
             >("finalize_party_offer", &value.args)?
             .into()),
+            "import_settlements" => Ok(__sdk::parse_reducer_args::<
+                import_settlements_reducer::ImportSettlementsArgs,
+            >("import_settlements", &value.args)?
+            .into()),
+            "import_travel_edges" => Ok(__sdk::parse_reducer_args::<
+                import_travel_edges_reducer::ImportTravelEdgesArgs,
+            >("import_travel_edges", &value.args)?
+            .into()),
+            "import_world_nodes" => Ok(__sdk::parse_reducer_args::<
+                import_world_nodes_reducer::ImportWorldNodesArgs,
+            >("import_world_nodes", &value.args)?
+            .into()),
             "insert_new_character" => Ok(__sdk::parse_reducer_args::<
                 insert_new_character_reducer::InsertNewCharacterArgs,
             >("insert_new_character", &value.args)?
@@ -728,8 +793,11 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
+    travel_edge: __sdk::TableUpdate<TravelEdge>,
     world_clock: __sdk::TableUpdate<WorldClock>,
     world_clock_schedule: __sdk::TableUpdate<WorldClockSchedule>,
+    world_data_import: __sdk::TableUpdate<WorldDataImport>,
+    world_node: __sdk::TableUpdate<WorldNode>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -789,12 +857,21 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "tactical_server_request" => db_update.tactical_server_request.append(
                     tactical_server_request_table::parse_table_update(table_update)?,
                 ),
+                "travel_edge" => db_update
+                    .travel_edge
+                    .append(travel_edge_table::parse_table_update(table_update)?),
                 "world_clock" => db_update
                     .world_clock
                     .append(world_clock_table::parse_table_update(table_update)?),
                 "world_clock_schedule" => db_update.world_clock_schedule.append(
                     world_clock_schedule_table::parse_table_update(table_update)?,
                 ),
+                "world_data_import" => db_update
+                    .world_data_import
+                    .append(world_data_import_table::parse_table_update(table_update)?),
+                "world_node" => db_update
+                    .world_node
+                    .append(world_node_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
@@ -872,6 +949,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.tactical_server_request,
             )
             .with_updates_by_pk(|row| &row.mission_id);
+        diff.travel_edge = cache
+            .apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge)
+            .with_updates_by_pk(|row| &row.id);
         diff.world_clock = cache
             .apply_diff_to_table::<WorldClock>("world_clock", &self.world_clock)
             .with_updates_by_pk(|row| &row.id);
@@ -881,6 +961,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.world_clock_schedule,
             )
             .with_updates_by_pk(|row| &row.scheduled_id);
+        diff.world_data_import = cache
+            .apply_diff_to_table::<WorldDataImport>("world_data_import", &self.world_data_import)
+            .with_updates_by_pk(|row| &row.id);
+        diff.world_node = cache
+            .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
+            .with_updates_by_pk(|row| &row.id);
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -909,8 +995,11 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
+    travel_edge: __sdk::TableAppliedDiff<'r, TravelEdge>,
     world_clock: __sdk::TableAppliedDiff<'r, WorldClock>,
     world_clock_schedule: __sdk::TableAppliedDiff<'r, WorldClockSchedule>,
+    world_data_import: __sdk::TableAppliedDiff<'r, WorldDataImport>,
+    world_node: __sdk::TableAppliedDiff<'r, WorldNode>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -989,12 +1078,19 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.tactical_server_request,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<TravelEdge>("travel_edge", &self.travel_edge, event);
         callbacks.invoke_table_row_callbacks::<WorldClock>("world_clock", &self.world_clock, event);
         callbacks.invoke_table_row_callbacks::<WorldClockSchedule>(
             "world_clock_schedule",
             &self.world_clock_schedule,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<WorldDataImport>(
+            "world_data_import",
+            &self.world_data_import,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<WorldNode>("world_node", &self.world_node, event);
     }
 }
 
@@ -1731,7 +1827,10 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
+        travel_edge_table::register_table(client_cache);
         world_clock_table::register_table(client_cache);
         world_clock_schedule_table::register_table(client_cache);
+        world_data_import_table::register_table(client_cache);
+        world_node_table::register_table(client_cache);
     }
 }

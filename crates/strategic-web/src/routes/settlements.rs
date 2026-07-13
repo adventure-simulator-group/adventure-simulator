@@ -690,6 +690,7 @@ async fn finalize_merchant_offer(
                         "finalize_merchant_trade",
                         &[
                             json!(character.id),
+                            json!(id),
                             json!(items),
                             json!(quantities),
                             json!(sell_ids),

@@ -6,16 +6,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Settlement {
+pub struct SettlementImport {
     pub id: String,
+    pub source_node_id: u64,
     pub name: String,
-    pub coord_x: f64,
-    pub coord_y: f64,
+    pub longitude: f64,
+    pub latitude: f64,
     pub population_level: i32,
     pub scene_key: String,
-    pub source_node_id: Option<u64>,
 }
 
-impl __sdk::InModule for Settlement {
+impl __sdk::InModule for SettlementImport {
     type Module = super::RemoteModule;
 }

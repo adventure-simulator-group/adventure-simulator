@@ -234,6 +234,18 @@ generate-db-client:
 	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{strategic_dir}}"
 	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
 
+# Download and extract the Viabundus v2 CSV source data into viabundus/.
+init-viabundus:
+	@python3 scripts/init_viabundus.py
+
+# Normalise the local Viabundus v2 source CSVs for the 1544 strategic world.
+normalise-viabundus:
+	@python3 scripts/import_viabundus.py
+
+# Load the normalised Viabundus road graph into the published local module.
+load-viabundus-world server=spacetime_url:
+	@python3 scripts/import_viabundus.py --load --server {{server}} --database {{spacetime_module}}
+
 # Build the tactical server and spawner
 build-tactical: generate-db-client
 	@cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
