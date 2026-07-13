@@ -1900,9 +1900,18 @@
 .schedule-handle::after { bottom: 0; border-bottom: 0.21rem solid var(--text-primary); }
 .schedule-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.schedule-extra-row { display: grid; grid-template-columns: 5.75rem minmax(0, 1fr) 3.25rem; gap: 0.45rem; align-items: center; }
-.schedule-extra-label { font-size: var(--font-size-sm); }
-.schedule-extra-allocation { text-align: right; white-space: nowrap; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; }
+.schedule-divider td {
+  height: 0.8rem;
+  padding: 0 !important;
+  border-bottom: 0 !important;
+  border-top: 3px double var(--border-light);
+}
+
+.schedule-special-row .party-skill-name,
+.schedule-special-row .party-skill-allocation { font-weight: 700; }
+.schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
+.schedule-special-track { overflow: visible; }
+.schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }
 .schedule-leisure-fill { display: block; height: 100%; background: var(--success, #69a86b); }

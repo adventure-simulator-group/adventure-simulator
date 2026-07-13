@@ -646,8 +646,6 @@ fn party_skills_rail(
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
-                        (schedule_extra_bar("Labor", "labor_minutes", schedule.labor_minutes, true))
-                        (schedule_extra_bar("Leisure", "leisure_minutes", 0, false))
                         p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
                         button type="submit" class="btn btn-primary btn-small" { "Save schedule" }
                     }
@@ -691,6 +689,11 @@ fn skills_table(
                 (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
                 (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
                 (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+                @if let Some(schedule) = schedule {
+                    tr class="schedule-divider" { td colspan="4" {} }
+                    (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
+                    (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
+                }
             }
         }
     }
@@ -730,21 +733,36 @@ fn party_skill_row(
     }
 }
 
-fn schedule_extra_bar(label: &str, name: &str, minutes: u16, editable: bool) -> Markup {
+fn schedule_special_row(label: &str, icon: &str, name: &str, minutes: u16, editable: bool) -> Markup {
     html! {
-        div class="schedule-extra-row" {
-            strong class="schedule-extra-label" { (label) }
-            div class="schedule-extra-track" {
+        tr class="party-skill-row schedule-special-row" {
+            td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
+            td class="party-skill-name" { strong { (label) } }
+            td class="party-skill-meter" {
+                div class="skill-rank-bar schedule-special-track" {
                 @if editable {
                     (schedule_handle(label, name, minutes))
                 } @else {
                     span class="schedule-leisure-fill" data-leisure-fill {}
                 }
+                }
             }
-            span class="schedule-extra-allocation" data-schedule-value=(name) {
+            td class="party-skill-allocation" data-schedule-value=(name) {
                 @if editable { (minutes) "m" } @else { "0m" }
             }
         }
+    }
+}
+
+fn schedule_icon(label: &str, icon: &str) -> Markup {
+    html! {
+        span
+            class="stat-icon schedule-special-icon"
+            style=(format!("--stat-icon: url('/static/icons/strategic/{icon}.png')"))
+            role="img"
+            aria-label=(label)
+            title=(label)
+        {}
     }
 }
 
