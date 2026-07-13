@@ -1194,16 +1194,16 @@ fn rest_service_menu(
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 div class="rest-days-control" {
-                    button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
-                        title="Set the rest duration needed to fully heal"
-                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
-                    button type="button" class="rest-days-step" aria-label="Decrease rest days"
+                    button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
                     input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
                         oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
                     span class="rest-days-unit" { "days" }
-                    button type="button" class="rest-days-step" aria-label="Increase rest days"
+                    button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
+                    button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
+                        title="Set the rest duration needed to fully heal"
+                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                 }
                 button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled { "Rest" }
         }

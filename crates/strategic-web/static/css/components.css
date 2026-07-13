@@ -1237,7 +1237,7 @@
 
 .rest-days-control {
   display: grid;
-  grid-template-columns: auto 1.7rem minmax(3.5ch, 1fr) auto 1.7rem;
+  grid-template-columns: 1.7rem minmax(3.5ch, 1fr) auto 1.7rem auto;
   align-items: center;
   margin-bottom: 0.55rem;
   overflow: hidden;
@@ -1264,19 +1264,19 @@
   opacity: 0.45;
 }
 
+.rest-days-decrease {
+  border-right: 1px solid var(--border-light);
+}
+
+.rest-days-increase {
+  border-left: 1px solid var(--border-light);
+}
+
 .rest-days-heal {
   width: auto;
   padding-inline: 0.45rem;
-  white-space: nowrap;
-  border-right: 1px solid var(--border-light);
-}
-
-.rest-days-step:nth-child(2) {
-  border-right: 1px solid var(--border-light);
-}
-
-.rest-days-step:last-child {
   border-left: 1px solid var(--border-light);
+  white-space: nowrap;
 }
 
 .rest-days-control input {
