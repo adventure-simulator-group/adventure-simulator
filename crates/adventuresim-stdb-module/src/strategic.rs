@@ -315,13 +315,14 @@ pub struct RecruitmentRequirements {
     pub ranged: bool,
     pub precise: bool,
     pub heavy: bool,
-    pub armored: bool,
-    pub shield: bool,
+    pub quarter_armor: bool,
+    pub half_armor: bool,
+    pub three_quarter_armor: bool,
+    pub full_armor: bool,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
-    pub climb: u8,
-    pub swim: u8,
+    pub athletics: u8,
     pub endurance: u8,
     pub medicine: u8,
     pub surgery: u8,
@@ -336,13 +337,14 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
             ranged: value.ranged,
             precise: value.precise,
             heavy: value.heavy,
-            armored: value.armored,
-            shield: value.shield,
+            quarter_armor: value.quarter_armor,
+            half_armor: value.half_armor,
+            three_quarter_armor: value.three_quarter_armor,
+            full_armor: value.full_armor,
             blunt: value.blunt,
             slash: value.slash,
             pierce: value.pierce,
-            climb: value.climb,
-            swim: value.swim,
+            athletics: value.athletics,
             endurance: value.endurance,
             medicine: value.medicine,
             surgery: value.surgery,
@@ -462,8 +464,7 @@ pub fn create_recruitment_role(
         return Err("Role quantity must be between 1 and 8".into());
     }
     if [
-        requirements.climb,
-        requirements.swim,
+        requirements.athletics,
         requirements.endurance,
         requirements.medicine,
         requirements.surgery,
@@ -793,18 +794,34 @@ pub fn seed_bot_join_requests(
             "bot_multirole_weapon",
             crate::ItemSlot::RightHolding,
         )?;
+        if role.requirements.full_armor {
+            for (item, slot) in [
+                ("bot_plate_arm", crate::ItemSlot::LeftArm),
+                ("bot_plate_arm", crate::ItemSlot::RightArm),
+                ("bot_plate_leg", crate::ItemSlot::LeftLeg),
+                ("bot_plate_leg", crate::ItemSlot::RightLeg),
+                ("bot_plate_chest", crate::ItemSlot::Chest),
+                ("bot_plate_stomach", crate::ItemSlot::Stomach),
+                ("bot_plate_helmet", crate::ItemSlot::Head),
+            ] {
+                crate::character::add_and_equip_item(ctx, id, item, slot)?;
+            }
+        }
 
         if index % 2 == 1 {
             let requirements = role.requirements;
             if requirements.endurance > 0 {
                 attrs.endurance = 0.0;
-            } else if requirements.climb > 0 || requirements.heavy {
+            } else if requirements.athletics > 0 || requirements.heavy {
                 attrs.left_arm_strength = 0.0;
                 attrs.right_arm_strength = 0.0;
-            } else if requirements.swim > 0 {
-                attrs.endurance = 0.0;
-                attrs.left_leg_agility = 0.0;
-                attrs.right_leg_agility = 0.0;
+                if requirements.athletics > 0 {
+                    attrs.left_arm_agility = 0.0;
+                    attrs.right_arm_agility = 0.0;
+                    attrs.left_leg_agility = 0.0;
+                    attrs.right_leg_agility = 0.0;
+                    attrs.endurance = 0.0;
+                }
             } else if requirements.medicine > 0 {
                 skills.medicine_hours = 0.0;
             } else if requirements.surgery > 0 {
@@ -815,7 +832,11 @@ pub fn seed_bot_join_requests(
                 attrs.instinct = 0.0;
             } else if requirements.faith > 0 {
                 skills.faith_hours = 0.0;
-            } else if requirements.armored {
+            } else if requirements.quarter_armor
+                || requirements.half_armor
+                || requirements.three_quarter_armor
+                || requirements.full_armor
+            {
                 let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
                 equip.left_arm_armor_id = None;
                 equip.right_arm_armor_id = None;
@@ -824,10 +845,6 @@ pub fn seed_bot_join_requests(
                 equip.chest_armor_id = None;
                 equip.stomach_armor_id = None;
                 equip.head_armor_id = None;
-                ctx.db.character_equip().character_id().update(equip);
-            } else if requirements.shield {
-                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
-                equip.left_hand_item_id = None;
                 ctx.db.character_equip().character_id().update(equip);
             } else if requirements.melee {
                 crate::character::add_and_equip_item(

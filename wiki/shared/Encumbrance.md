@@ -9,4 +9,4 @@ fn encumbrance_term(character):
 	return 1 - ((player.calculate_body_weight() + player.inventory.calculate_weight()) / weight_capacity)
 ```
 
-The inventory term includes every carried item, including equipped items. Recruitment mobility tags use this same shared encumbrance penalty so a packed inventory lowers both Climb and Swim recommendations.
+The inventory term includes every carried item, including equipped items. The recruitment Athletics tag combines climbing and swimming performance and uses this same shared encumbrance penalty, so a packed inventory lowers the recommendation.

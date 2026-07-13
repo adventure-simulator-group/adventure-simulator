@@ -46,13 +46,6 @@
       });
     }
 
-    panel.querySelectorAll("[data-rating-toggle]").forEach((toggle) => {
-      const select = panel.querySelector(`[data-rating-select="${toggle.dataset.ratingToggle}"]`);
-      const sync = () => { if (select) select.disabled = !toggle.checked; };
-      toggle.addEventListener("change", sync);
-      sync();
-    });
-
     panel.querySelectorAll("[data-load-saved-role]").forEach((button) => {
       button.addEventListener("click", () => {
         const form = panel.querySelector("[data-role-builder]");
@@ -64,12 +57,7 @@
           const field = form.elements[name];
           if (!field) return;
           if (typeof value === "boolean") field.checked = value;
-          else if (Number(value) > 0) {
-            const toggle = form.querySelector(`[data-rating-toggle="${name}"]`);
-            if (toggle) toggle.checked = true;
-            field.disabled = false;
-            field.value = String(value);
-          }
+          else field.checked = Number(value) >= 3;
         });
       });
     });

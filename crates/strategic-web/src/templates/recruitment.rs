@@ -73,21 +73,22 @@ pub fn recruitment_panel(
                         div class="role-requirement-columns" {
                             (boolean_group("Combat", &[
                                 ("melee", "Melee"), ("ranged", "Ranged"), ("precise", "Precise"),
-                                ("heavy", "Heavy"), ("armored", "Armored"), ("shield", "Shield"),
+                                ("heavy", "Heavy"), ("quarter_armor", "1/4 armor"),
+                                ("half_armor", "1/2 armor"), ("three_quarter_armor", "3/4 armor"),
+                                ("full_armor", "Full armor"),
                                 ("blunt", "Blunt"), ("slash", "Slash"), ("pierce", "Pierce"),
                             ]))
                             div class="role-requirement-group" {
                                 h3 { "Mobility" }
-                                (rating_requirement("climb", "Climb"))
-                                (rating_requirement("swim", "Swim"))
-                                (rating_requirement("endurance", "Endurance"))
+                                (numeric_requirement("athletics", "Athletics"))
+                                (numeric_requirement("endurance", "Endurance"))
                             }
                             div class="role-requirement-group" {
                                 h3 { "Other" }
-                                (rating_requirement("medicine", "Medicine"))
-                                (rating_requirement("surgery", "Surgery"))
-                                (rating_requirement("charisma", "Charisma"))
-                                (rating_requirement("faith", "Faith"))
+                                (numeric_requirement("medicine", "Medicine"))
+                                (numeric_requirement("surgery", "Surgery"))
+                                (numeric_requirement("charisma", "Charisma"))
+                                (numeric_requirement("faith", "Faith"))
                             }
                         }
                         button type="submit" class="btn btn-primary" { "Add role" }
@@ -132,12 +133,11 @@ fn boolean_group(title: &str, requirements: &[(&str, &str)]) -> Markup {
     } }
 }
 
-fn rating_requirement(name: &str, label: &str) -> Markup {
-    html! { label class="rating-requirement" {
-        input type="checkbox" data-rating-toggle=(name); (label)
-        select name=(name) disabled data-rating-select=(name) aria-label=(format!("Minimum {label}")) {
-            @for value in 1..=5 { option value=(value) { (value) } }
-        }
+fn numeric_requirement(name: &str, label: &str) -> Markup {
+    html! { label {
+        input type="checkbox" name=(name)
+            value=(adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT);
+        (label)
     } }
 }
 
@@ -152,8 +152,10 @@ pub fn requirements_label(r: RecruitmentRequirements) -> String {
         (r.ranged, "Ranged"),
         (r.precise, "Precise"),
         (r.heavy, "Heavy"),
-        (r.armored, "Armored"),
-        (r.shield, "Shield"),
+        (r.quarter_armor, "1/4 armor"),
+        (r.half_armor, "1/2 armor"),
+        (r.three_quarter_armor, "3/4 armor"),
+        (r.full_armor, "Full armor"),
         (r.blunt, "Blunt"),
         (r.slash, "Slash"),
         (r.pierce, "Pierce"),
@@ -163,8 +165,7 @@ pub fn requirements_label(r: RecruitmentRequirements) -> String {
         }
     }
     for (value, label) in [
-        (r.climb, "Climb"),
-        (r.swim, "Swim"),
+        (r.athletics, "Athletics"),
         (r.endurance, "Endurance"),
         (r.medicine, "Medicine"),
         (r.surgery, "Surgery"),
@@ -172,7 +173,7 @@ pub fn requirements_label(r: RecruitmentRequirements) -> String {
         (r.faith, "Faith"),
     ] {
         if value > 0 {
-            labels.push(format!("{label} {value}+"));
+            labels.push(label.to_string());
         }
     }
     if labels.is_empty() {

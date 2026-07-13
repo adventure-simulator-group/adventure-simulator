@@ -70,9 +70,13 @@ struct RecruitmentRoleForm {
     #[serde(default)]
     heavy: bool,
     #[serde(default)]
-    armored: bool,
+    quarter_armor: bool,
     #[serde(default)]
-    shield: bool,
+    half_armor: bool,
+    #[serde(default)]
+    three_quarter_armor: bool,
+    #[serde(default)]
+    full_armor: bool,
     #[serde(default)]
     blunt: bool,
     #[serde(default)]
@@ -80,9 +84,7 @@ struct RecruitmentRoleForm {
     #[serde(default)]
     pierce: bool,
     #[serde(default)]
-    climb: u8,
-    #[serde(default)]
-    swim: u8,
+    athletics: u8,
     #[serde(default)]
     endurance: u8,
     #[serde(default)]
@@ -102,13 +104,14 @@ impl RecruitmentRoleForm {
             ranged: self.ranged,
             precise: self.precise,
             heavy: self.heavy,
-            armored: self.armored,
-            shield: self.shield,
+            quarter_armor: self.quarter_armor,
+            half_armor: self.half_armor,
+            three_quarter_armor: self.three_quarter_armor,
+            full_armor: self.full_armor,
             blunt: self.blunt,
             slash: self.slash,
             pierce: self.pierce,
-            climb: self.climb,
-            swim: self.swim,
+            athletics: self.athletics,
             endurance: self.endurance,
             medicine: self.medicine,
             surgery: self.surgery,
@@ -385,8 +388,6 @@ fn capability_tags(c: CharacterCapability) -> Vec<String> {
         (c.ranged, "Ranged"),
         (c.precise, "Precise"),
         (c.heavy, "Heavy"),
-        (c.armored, "Armored"),
-        (c.shield, "Shield"),
         (c.blunt, "Blunt"),
         (c.slash, "Slash"),
         (c.pierce, "Pierce"),
@@ -395,16 +396,28 @@ fn capability_tags(c: CharacterCapability) -> Vec<String> {
             tags.push(label.into());
         }
     }
+    if c.full_armor {
+        tags.push("Full armor".into());
+    } else if c.three_quarter_armor {
+        tags.push("3/4 armor".into());
+    } else if c.half_armor {
+        tags.push("1/2 armor".into());
+    } else if c.quarter_armor {
+        tags.push("1/4 armor".into());
+    }
     for (value, label) in [
-        (c.climb, "Climb"),
-        (c.swim, "Swim"),
+        (c.athletics, "Athletics"),
         (c.endurance, "Endurance"),
         (c.medicine, "Medicine"),
         (c.surgery, "Surgery"),
         (c.charisma, "Charisma"),
         (c.faith, "Faith"),
     ] {
-        tags.push(format!("{label} {}", value.round().clamp(0.0, 5.0) as u8));
+        if adventuresim_core::capability::rating(value)
+            >= adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT
+        {
+            tags.push(label.into());
+        }
     }
     tags
 }

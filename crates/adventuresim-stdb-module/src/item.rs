@@ -105,7 +105,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         1.0,
         1.0,
         0.5,
-        true,
+        false,
         true,
         false,
         false,
@@ -113,7 +113,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         true,
     );
     define_weapon(
-        ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, true, true, false, false, true, true,
+        ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, false, true, false, false, true, true,
     );
     define_weapon(
         ctx,
@@ -141,7 +141,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         1.0,
         20.0,
         0.4,
-        true,
+        false,
         false,
         true,
         false,
@@ -161,6 +161,27 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         true,
         true,
         true,
+        true,
+    );
+    define_weapon(
+        ctx, "rapier", 1.2, 2.0, 1.2, 1.8, 0.7, true, true, false, false, false, true,
+    );
+    define_weapon(
+        ctx, "rondel", 0.5, 2.0, 1.0, 0.6, 0.8, true, true, false, false, false, true,
+    );
+    define_weapon(
+        ctx,
+        "misericorde",
+        0.5,
+        2.0,
+        1.0,
+        0.7,
+        0.8,
+        true,
+        true,
+        false,
+        false,
+        false,
         true,
     );
 
@@ -229,6 +250,61 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         40.0,
         0.4,
         0.3,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_arm",
+        1.5,
+        ItemSlot::AnyArm,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_leg",
+        2.0,
+        ItemSlot::AnyLeg,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_chest",
+        3.0,
+        ItemSlot::Chest,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_stomach",
+        2.0,
+        ItemSlot::Stomach,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_helmet",
+        2.0,
+        ItemSlot::Head,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
     );
 
     Ok(())
