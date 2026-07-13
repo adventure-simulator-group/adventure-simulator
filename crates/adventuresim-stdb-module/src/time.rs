@@ -143,6 +143,28 @@ pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Res
     ensure_character_time(ctx, character_id)
 }
 
+/// Record time spent travelling without applying settlement-only recovery or
+/// training. Travel time belongs to the character's personal strategic clock.
+pub fn advance_character_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    ensure_character_time(ctx, character_id)?;
+    let mut character_time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character time record not found".to_string())?;
+    character_time.minutes = character_time.minutes.saturating_add(minutes);
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+    Ok(())
+}
+
 fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,

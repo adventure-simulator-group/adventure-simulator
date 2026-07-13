@@ -10,7 +10,8 @@ version 2 (released 25 April 2025), edited by Bart Holterman et al.
 The upstream CSVs are downloaded locally into the Git-ignored `viabundus/`
 directory with `just init-viabundus`. The generated strategic graph contains
 only the source attributes required to route between settlements in 1544:
-nodes, active land/ferry edges, and settlement metadata. It is an adapted
+nodes, active land/ferry edges, and settlement metadata, including each
+settlement's approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 

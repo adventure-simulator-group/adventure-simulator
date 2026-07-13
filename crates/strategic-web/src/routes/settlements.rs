@@ -8,18 +8,19 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
     CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest,
-    Settlement,
+    Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
     party_inventory_page, party_personal_page, party_stats_page, religion_page, rest_result_page,
-    settlements_list_page, smith_page,
+    settlement_overview_page, settlements_list_page, smith_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -81,8 +82,147 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
     )
 }
 
-async fn show_settlement(Path(id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/settlements/{id}/noticeboard"))
+async fn show_settlement(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query("SELECT * FROM settlement")
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+    let edges: Vec<TravelEdge> = state
+        .db
+        .query("SELECT * FROM travel_edge")
+        .await
+        .unwrap_or_default();
+    let destinations = connected_destinations(settlement, &settlements, &edges);
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(&settlement.id)
+    });
+    Html(
+        settlement_overview_page(
+            settlement,
+            &destinations,
+            active_character.as_ref().map(|(character, _)| character),
+            &party_members,
+            can_travel,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+
+#[derive(Clone)]
+pub struct TravelDestination {
+    pub settlement: Settlement,
+    pub distance_m: u64,
+    pub journey_minutes: u64,
+}
+
+fn connected_destinations(
+    origin: &Settlement,
+    settlements: &[Settlement],
+    edges: &[TravelEdge],
+) -> Vec<TravelDestination> {
+    let Some(origin_node) = origin.source_node_id else {
+        return settlements
+            .iter()
+            .filter(|settlement| settlement.id != origin.id)
+            .cloned()
+            .map(|settlement| {
+                let distance_km = ((origin.coord_x - settlement.coord_x).powi(2)
+                    + (origin.coord_y - settlement.coord_y).powi(2))
+                .sqrt()
+                .ceil() as u64;
+                let distance_m = distance_km.saturating_mul(1_000);
+                TravelDestination {
+                    settlement,
+                    distance_m,
+                    journey_minutes: journey_minutes(distance_m),
+                }
+            })
+            .collect();
+    };
+
+    let settlement_nodes: HashSet<u64> = settlements
+        .iter()
+        .filter_map(|settlement| settlement.source_node_id)
+        .collect();
+    let settlements_by_node: HashMap<u64, &Settlement> = settlements
+        .iter()
+        .filter_map(|settlement| settlement.source_node_id.map(|node| (node, settlement)))
+        .collect();
+    let mut adjacency: HashMap<u64, Vec<(u64, u32)>> = HashMap::new();
+    for edge in edges
+        .iter()
+        .filter(|edge| matches!(edge.kind.as_str(), "land" | "ferry"))
+    {
+        adjacency
+            .entry(edge.from_node_id)
+            .or_default()
+            .push((edge.to_node_id, edge.length_m));
+        adjacency
+            .entry(edge.to_node_id)
+            .or_default()
+            .push((edge.from_node_id, edge.length_m));
+    }
+    let mut distances = HashMap::from([(origin_node, 0_u64)]);
+    let mut pending = BinaryHeap::from([std::cmp::Reverse((0_u64, origin_node))]);
+    let mut destinations = Vec::new();
+    while let Some(std::cmp::Reverse((distance_m, node))) = pending.pop() {
+        if distances
+            .get(&node)
+            .is_some_and(|known| *known != distance_m)
+        {
+            continue;
+        }
+        if node != origin_node && settlement_nodes.contains(&node) {
+            if let Some(settlement) = settlements_by_node.get(&node) {
+                destinations.push(TravelDestination {
+                    settlement: (*settlement).clone(),
+                    distance_m,
+                    journey_minutes: journey_minutes(distance_m),
+                });
+            }
+            continue;
+        }
+        for (neighbor, edge_length_m) in adjacency.get(&node).into_iter().flatten() {
+            let next_distance = distance_m.saturating_add(u64::from(*edge_length_m));
+            if distances
+                .get(neighbor)
+                .is_none_or(|known| next_distance < *known)
+            {
+                distances.insert(*neighbor, next_distance);
+                pending.push(std::cmp::Reverse((next_distance, *neighbor)));
+            }
+        }
+    }
+    destinations.sort_by_key(|destination| destination.distance_m);
+    destinations
+}
+
+fn journey_minutes(distance_m: u64) -> u64 {
+    distance_m
+        .saturating_mul(60)
+        .div_ceil(WALKING_SPEED_KM_PER_HOUR * 1_000)
+        .max(1)
 }
 
 async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
