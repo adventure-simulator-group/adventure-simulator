@@ -11,8 +11,8 @@ use super::{
     settlement_layout_with_session, sidebar_section, status_badge,
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterTime,
-    CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement, WorldClock,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
+    CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -317,21 +317,13 @@ pub fn party_personal_page(
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
     schedule: Option<&CharacterTrainingSchedule>,
-    character_time: Option<&CharacterTime>,
-    world_clock: Option<&WorldClock>,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs))
-            (party_skills_rail("Your skills", skills, limbs))
-            (training_schedule_editor(
-                settlement,
-                active_character,
-                schedule,
-                character_time,
-                world_clock,
-            ))
+            @let schedule_action = format!("/settlements/{}/party/{}/schedule", settlement.id, active_character.id);
+            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
@@ -349,70 +341,6 @@ pub fn party_personal_page(
         Some(&active_character.name),
         theme,
     )
-}
-
-fn format_game_time(minutes: u64) -> String {
-    let day = minutes / 1_440 % 365 + 1;
-    let hour = minutes / 60 % 24;
-    let minute = minutes % 60;
-    format!("Day {day} · {hour:02}:{minute:02}")
-}
-
-fn training_schedule_editor(
-    settlement: &Settlement,
-    character: &Character,
-    schedule: Option<&CharacterTrainingSchedule>,
-    character_time: Option<&CharacterTime>,
-    world_clock: Option<&WorldClock>,
-) -> Markup {
-    let Some(schedule) = schedule else {
-        return html! { p class="text-muted small-copy" { "Training schedule unavailable." } };
-    };
-    let official_minutes = world_clock.map_or(0, |clock| clock.official_minutes);
-    let character_minutes = character_time.map_or(official_minutes, |time| time.minutes);
-    let lag = official_minutes.saturating_sub(character_minutes) / 1_440;
-    html! {
-        section class="training-schedule" data-training-schedule {
-            div class="training-schedule-heading" {
-                h3 { "Daily schedule" }
-                p class="text-muted small-copy" {
-                    "Character time: " (format_game_time(character_minutes))
-                    " · " (lag) " day" @if lag != 1 { "s" } " behind official time"
-                }
-            }
-            form action=(format!("/settlements/{}/party/{}/schedule", settlement.id, character.id)) method="post" {
-                (schedule_slider("Melee", "melee_minutes", schedule.melee_minutes))
-                (schedule_slider("Dodge", "dodge_minutes", schedule.dodge_minutes))
-                (schedule_slider("Block", "block_minutes", schedule.block_minutes))
-                (schedule_slider("Ranged", "ranged_minutes", schedule.ranged_minutes))
-                (schedule_slider("Will", "will_minutes", schedule.will_minutes))
-                (schedule_slider("Charisma", "charisma_minutes", schedule.charisma_minutes))
-                (schedule_slider("Medicine", "medicine_minutes", schedule.medicine_minutes))
-                (schedule_slider("Faith", "faith_minutes", schedule.faith_minutes))
-                (schedule_slider("Stealth", "stealth_minutes", schedule.stealth_minutes))
-                (schedule_slider("Balance", "balance_minutes", schedule.balance_minutes))
-                (schedule_slider("Surgeon", "surgeon_minutes", schedule.surgeon_minutes))
-                (schedule_slider("Labor", "labor_minutes", schedule.labor_minutes))
-                div class="schedule-leisure" {
-                    div class="schedule-slider-label" { strong { "Leisure" } output data-leisure-value {} }
-                    div class="schedule-leisure-bar" aria-hidden="true" { span data-leisure-bar {} }
-                    p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
-                }
-                button type="submit" class="btn btn-primary btn-small" { "Save schedule" }
-            }
-        }
-        script src="/static/training-schedule.js?v=time-schedule-1" {}
-    }
-}
-
-fn schedule_slider(label: &str, name: &str, minutes: u16) -> Markup {
-    html! {
-        label class="schedule-slider" {
-            span class="schedule-slider-label" { strong { (label) } output data-schedule-value {} }
-            input type="range" min="0" max="1440" step="1" name=(name) value=(minutes)
-                data-schedule-slider title=(format!("{minutes} minutes per day"));
-        }
-    }
 }
 
 /// Party stat comparison, with the selected member on the left and the active
@@ -435,7 +363,7 @@ pub fn party_stats_page(
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
-            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs))
+            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
@@ -444,7 +372,7 @@ pub fn party_stats_page(
         }
         aside class="right-sidebar" {
             (party_attributes_rail("Your attributes", active_attributes, active_limbs))
-            (party_skills_rail("Your skills", active_skills, active_limbs))
+            (party_skills_rail("Your skills", active_skills, active_limbs, None, None))
         }
     };
     settlement_layout_with_session(
@@ -702,6 +630,8 @@ fn party_skills_rail(
     title: &str,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    schedule: Option<&CharacterTrainingSchedule>,
+    schedule_action: Option<&str>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -713,25 +643,17 @@ fn party_skills_rail(
     html! {
         (sidebar_section(title, html! {
             @if let Some(skills) = skills {
-                table class="party-skills-table" {
-                    colgroup {
-                        col class="party-skill-icon-column";
-                        col class="party-skill-name-column";
-                        col class="party-skill-meter-column";
+                @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
+                    form class="skill-schedule" data-skill-schedule action=(action) method="post" {
+                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
+                        (schedule_extra_bar("Labor", "labor_minutes", schedule.labor_minutes, true))
+                        (schedule_extra_bar("Leisure", "leisure_minutes", 0, false))
+                        p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
+                        button type="submit" class="btn btn-primary btn-small" { "Save schedule" }
                     }
-                    tbody {
-                        (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health))
-                        (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health))
-                        (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health))
-                        (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health))
-                        (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health))
-                        (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health))
-                        (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health))
-                        (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health))
-                        (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health))
-                        (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health))
-                        (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health))
-                    }
+                    script src="/static/training-schedule.js?v=hourglass-handle-1" {}
+                } @else {
+                    (skills_table(skills, head_health, upper_health, lower_health, None))
                 }
             } @else {
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
@@ -740,7 +662,45 @@ fn party_skills_rail(
     }
 }
 
-fn party_skill_row(name: &str, icon: &str, hours: f32, half_hours: f32, health: f32) -> Markup {
+fn skills_table(
+    skills: &CharacterSkills,
+    head_health: f32,
+    upper_health: f32,
+    lower_health: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+) -> Markup {
+    html! {
+        table class="party-skills-table" {
+            colgroup {
+                col class="party-skill-icon-column";
+                col class="party-skill-name-column";
+                col class="party-skill-meter-column";
+            }
+            tbody {
+                (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
+                (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
+                (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
+                (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
+                (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
+                (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
+                (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
+                (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
+                (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
+                (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
+                (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+            }
+        }
+    }
+}
+
+fn party_skill_row(
+    name: &str,
+    icon: &str,
+    hours: f32,
+    half_hours: f32,
+    health: f32,
+    schedule_minutes: Option<u16>,
+) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
     let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
@@ -753,9 +713,37 @@ fn party_skill_row(name: &str, icon: &str, hours: f32, half_hours: f32, health: 
                 div class="skill-rank-bar" title=(format!("{effective_rank:.1}")) {
                     span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                     span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
+                    @if let Some(minutes) = schedule_minutes {
+                        (schedule_handle(name, &format!("{}_minutes", icon), minutes))
+                    }
                 }
             }
         }
+    }
+}
+
+fn schedule_extra_bar(label: &str, name: &str, minutes: u16, editable: bool) -> Markup {
+    html! {
+        div class="schedule-extra-row" {
+            div class="schedule-extra-label" { strong { (label) } span data-schedule-value=(name) {} }
+            div class="schedule-extra-track" {
+                @if editable {
+                    (schedule_handle(label, name, minutes))
+                } @else {
+                    span class="schedule-leisure-fill" data-leisure-fill {}
+                }
+            }
+        }
+    }
+}
+
+fn schedule_handle(label: &str, name: &str, minutes: u16) -> Markup {
+    html! {
+        input type="hidden" name=(name) value=(minutes) data-schedule-input;
+        button type="button" class="schedule-handle" data-schedule-handle data-schedule-name=(name)
+            aria-label=(format!("{} daily allocation", label)) aria-valuemin="0" aria-valuemax="1440"
+            aria-valuenow=(minutes) title=(format!("{} minutes per day", minutes))
+            data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
 }
 

@@ -12,9 +12,8 @@ use serde_json::json;
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterTime,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
     CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest, Settlement,
-    WorldClock,
 };
 use crate::templates::settlement::{
     MerchantShop, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
@@ -204,18 +203,6 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
-    let character_time: Vec<CharacterTime> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let world_clock: Vec<WorldClock> = state
-        .db
-        .query("SELECT * FROM world_clock WHERE id = 0")
-        .await
-        .unwrap_or_default();
     Html(
         party_personal_page(
             settlement,
@@ -226,8 +213,6 @@ async fn party_personal(
             skills.first(),
             limbs.first(),
             schedule.first(),
-            character_time.first(),
-            world_clock.first(),
             session.theme(),
         )
         .into_string(),

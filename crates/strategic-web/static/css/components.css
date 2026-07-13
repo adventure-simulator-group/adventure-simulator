@@ -1859,23 +1859,43 @@
   gap: 0.75rem;
 }
 
-/* Daily skill, labor, and leisure allocation controls. */
-.training-schedule {
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.8rem;
-  border: 1px solid var(--border-color, rgba(255,255,255,.2));
-  border-radius: 0.35rem;
+/* Daily allocation handles sit over the existing skill-rank meters. */
+.skill-schedule { display: grid; gap: 0.55rem; }
+.skill-schedule .skill-rank-bar { overflow: visible; cursor: crosshair; }
+.schedule-handle {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  width: 0.85rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(to right, transparent 42%, var(--text-primary) 42% 58%, transparent 58%);
+  cursor: ew-resize;
+  touch-action: none;
+  transform: translate(-50%, -50%);
 }
 
-.training-schedule-heading h3 { margin: 0; }
-.training-schedule-heading p { margin: 0.2rem 0 0; }
-.schedule-slider { display: grid; gap: 0.2rem; }
-.schedule-slider-label { display: flex; justify-content: space-between; gap: 0.5rem; }
-.schedule-slider input { width: 100%; }
-.schedule-leisure { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
-.schedule-leisure-bar { height: 0.55rem; overflow: hidden; background: rgba(255,255,255,.14); border-radius: 999px; }
-.schedule-leisure-bar span { display: block; height: 100%; background: var(--success, #69a86b); }
+.schedule-handle::before,
+.schedule-handle::after {
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  content: "";
+  border-right: 0.43rem solid transparent;
+  border-left: 0.43rem solid transparent;
+}
+
+.schedule-handle::before { top: 0; border-bottom: 0.42rem solid var(--text-primary); }
+.schedule-handle::after { bottom: 0; border-top: 0.42rem solid var(--text-primary); }
+.schedule-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.schedule-extra-row { display: grid; grid-template-columns: 5.75rem minmax(0, 1fr); gap: 0.45rem; align-items: center; }
+.schedule-extra-label { display: flex; justify-content: space-between; gap: 0.35rem; font-size: var(--font-size-sm); }
+.schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
+.schedule-extra-track .schedule-handle { top: 50%; }
+.schedule-leisure-fill { display: block; height: 100%; background: var(--success, #69a86b); }
 .schedule-warning { margin: 0; color: var(--warning, #dca83b); font-size: 0.85rem; }
 
 /* ============================================
