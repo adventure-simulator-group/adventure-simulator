@@ -1868,6 +1868,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Keep hover active while moving from the value into its floating arrows. */
+.party-skill-allocation::after {
+  position: absolute;
+  z-index: 2;
+  top: -0.35rem;
+  right: -1rem;
+  bottom: -0.35rem;
+  left: -0.25rem;
+  content: "";
+}
+
 .schedule-step {
   position: absolute;
   top: 50%;
