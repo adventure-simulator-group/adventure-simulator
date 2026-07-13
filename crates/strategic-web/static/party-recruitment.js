@@ -46,6 +46,16 @@
       });
     }
 
+    const syncSlider = (slider) => {
+      const labels = (slider.dataset.sliderLabels || "").split("|");
+      const output = panel.querySelector(`[data-slider-output="${slider.name}"]`);
+      if (output) output.textContent = labels[Number(slider.value)] || slider.value;
+    };
+    panel.querySelectorAll("[data-discrete-slider]").forEach((slider) => {
+      slider.addEventListener("input", () => syncSlider(slider));
+      syncSlider(slider);
+    });
+
     panel.querySelectorAll("[data-load-saved-role]").forEach((button) => {
       button.addEventListener("click", () => {
         const form = panel.querySelector("[data-role-builder]");
@@ -57,12 +67,20 @@
           const field = form.elements[name];
           if (!field) return;
           if (typeof value === "boolean") field.checked = value;
-          else field.checked = Number(value) >= 3;
+          else field.value = String(value);
         });
+        const armor = form.elements.armor_tier;
+        if (armor) {
+          armor.value = requirements.full_armor ? "4"
+            : requirements.three_quarter_armor ? "3"
+            : requirements.half_armor ? "2"
+            : requirements.quarter_armor ? "1" : "0";
+        }
+        form.querySelectorAll("[data-discrete-slider]").forEach(syncSlider);
       });
     });
 
-    panel.querySelectorAll("form[method='post']").forEach((form) => {
+    document.querySelectorAll("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post']").forEach((form) => {
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const body = new URLSearchParams(new FormData(form));

@@ -1586,6 +1586,7 @@
   max-width: calc(100% - 2rem);
   gap: 0.9rem;
   overflow: visible;
+  align-items: flex-start;
   transform: translateX(-50%);
 }
 
@@ -1647,8 +1648,15 @@
 .party-role-group {
   position: relative;
   display: flex;
-  gap: 0.25rem;
+  flex-direction: column;
+  gap: 0.4rem;
   padding-left: 0.55rem;
+}
+
+.party-role-portraits {
+  position: relative;
+  display: flex;
+  gap: 0.25rem;
 }
 
 .party-role-connector {
@@ -1658,6 +1666,41 @@
   width: 100%;
   border-top: 1px solid var(--border-accent);
 }
+
+.party-role-notification-badge {
+  position: absolute;
+  z-index: 9;
+  top: -0.45rem;
+  right: -0.45rem;
+  display: grid;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.25rem;
+  place-items: center;
+  border: 2px solid var(--surface-bg);
+  border-radius: 999px;
+  background: #b4232c;
+  color: #fff;
+  font: 700 0.68rem/1 sans-serif;
+}
+
+.party-role-notification-badge[hidden] { display: none; }
+
+.party-role-invitations {
+  display: flex;
+  width: 18rem;
+  max-height: 13rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.party-role-invitations .role-applicant { font-size: var(--font-size-xs); }
 
 .party-role-slot {
   border: 1px dashed var(--border-accent);
@@ -1691,6 +1734,8 @@
 .party-portrait:focus-within .party-portrait-tags { opacity: 1; }
 
 .recruitment-dialog {
+  position: fixed;
+  inset: 0;
   width: min(54rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   padding: 1.25rem;
@@ -1699,6 +1744,7 @@
   border-radius: var(--radius);
   background: var(--bg-secondary);
   color: var(--text-primary);
+  margin: auto;
 }
 
 .recruitment-dialog::backdrop { background: rgb(0 0 0 / 65%); }
@@ -1708,7 +1754,14 @@
 .role-builder-header { margin: 1rem 0; }
 .role-builder-header label, .role-requirement-group { display: flex; flex-direction: column; gap: 0.45rem; }
 .role-save-toggle { justify-content: end; }
-.rating-requirement { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.4rem; }
+.role-toggle { display: grid; grid-template-columns: auto 1fr; align-items: center; justify-content: start; gap: 0.4rem; }
+.role-toggle input { width: auto; margin: 0; }
+.role-slider { display: flex; flex-direction: column; gap: 0.15rem; }
+.role-slider-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.role-slider-heading output { color: var(--accent-dark); font-weight: 700; }
+.role-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+.role-slider-ticks { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; }
+.role-slider-ticks-armor { font-size: 0.6rem; }
 .saved-role-list, .active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
 .saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }

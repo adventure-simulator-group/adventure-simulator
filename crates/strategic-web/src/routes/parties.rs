@@ -70,13 +70,7 @@ struct RecruitmentRoleForm {
     #[serde(default)]
     heavy: bool,
     #[serde(default)]
-    quarter_armor: bool,
-    #[serde(default)]
-    half_armor: bool,
-    #[serde(default)]
-    three_quarter_armor: bool,
-    #[serde(default)]
-    full_armor: bool,
+    armor_tier: u8,
     #[serde(default)]
     blunt: bool,
     #[serde(default)]
@@ -104,10 +98,10 @@ impl RecruitmentRoleForm {
             ranged: self.ranged,
             precise: self.precise,
             heavy: self.heavy,
-            quarter_armor: self.quarter_armor,
-            half_armor: self.half_armor,
-            three_quarter_armor: self.three_quarter_armor,
-            full_armor: self.full_armor,
+            quarter_armor: self.armor_tier == 1,
+            half_armor: self.armor_tier == 2,
+            three_quarter_armor: self.armor_tier == 3,
+            full_armor: self.armor_tier == 4,
             blunt: self.blunt,
             slash: self.slash,
             pierce: self.pierce,
@@ -437,7 +431,7 @@ async fn accept_join_request(
             &[json!(leader_id), json!(request_id)],
         )
         .await;
-    Redirect::to(&party_noticeboard_url(&state, &id).await)
+    Redirect::to(&party_location_url(&state, &id).await)
 }
 
 async fn reject_join_request(
@@ -455,10 +449,10 @@ async fn reject_join_request(
             &[json!(leader_id), json!(request_id)],
         )
         .await;
-    Redirect::to(&party_noticeboard_url(&state, &id).await)
+    Redirect::to(&party_location_url(&state, &id).await)
 }
 
-async fn party_noticeboard_url(state: &AppState, party_id: &str) -> String {
+async fn party_location_url(state: &AppState, party_id: &str) -> String {
     let parties: Vec<Party> = state
         .db
         .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
@@ -468,7 +462,7 @@ async fn party_noticeboard_url(state: &AppState, party_id: &str) -> String {
         return "/parties".to_string();
     };
     match &party.current_settlement_id {
-        Some(settlement) => format!("/settlements/{settlement}/noticeboard"),
+        Some(settlement) => format!("/settlements/{settlement}"),
         None => format!("/parties/{party_id}"),
     }
 }
@@ -476,6 +470,13 @@ async fn party_noticeboard_url(state: &AppState, party_id: &str) -> String {
 #[derive(Serialize)]
 struct PartyNotifications {
     pending_join_requests: usize,
+    role_join_requests: Vec<RoleNotification>,
+}
+
+#[derive(Serialize)]
+struct RoleNotification {
+    role_id: u64,
+    count: usize,
 }
 
 async fn party_notifications(
@@ -485,16 +486,19 @@ async fn party_notifications(
     let Some(character_id) = session.character_id_u64() else {
         return Json(PartyNotifications {
             pending_join_requests: 0,
+            role_join_requests: Vec::new(),
         });
     };
     let Some(character) = get_character(&state, character_id).await else {
         return Json(PartyNotifications {
             pending_join_requests: 0,
+            role_join_requests: Vec::new(),
         });
     };
     let Some(party_id) = character.party_id else {
         return Json(PartyNotifications {
             pending_join_requests: 0,
+            role_join_requests: Vec::new(),
         });
     };
     let parties: Vec<Party> = state
@@ -508,6 +512,7 @@ async fn party_notifications(
     {
         return Json(PartyNotifications {
             pending_join_requests: 0,
+            role_join_requests: Vec::new(),
         });
     }
     let requests: Vec<PartyJoinRequest> = state
@@ -518,8 +523,16 @@ async fn party_notifications(
         ))
         .await
         .unwrap_or_default();
+    let mut counts = std::collections::BTreeMap::new();
+    for request in &requests {
+        *counts.entry(request.recruitment_role_id).or_insert(0) += 1;
+    }
     Json(PartyNotifications {
         pending_join_requests: requests.len(),
+        role_join_requests: counts
+            .into_iter()
+            .map(|(role_id, count)| RoleNotification { role_id, count })
+            .collect(),
     })
 }
 

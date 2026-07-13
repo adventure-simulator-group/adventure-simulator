@@ -88,7 +88,7 @@ pub fn armor_tiers(equipment: &impl PlayerEquipment) -> (bool, bool, bool, bool)
     // alternate lighter loadout. Three-quarter armor adds complete arm defenses
     // and thigh/knee defenses. Until the anatomy distinguishes upper and lower
     // limbs, high per-region coverage is the proxy for a head-to-toe harness.
-    let quarter = cuirass && (helmet || shield);
+    let quarter = (cuirass && helmet) || shield;
     let half = cuirass && helmet && (both_legs || shield);
     let three_quarter = cuirass && helmet && both_arms && both_legs;
     let full = three_quarter
@@ -277,20 +277,29 @@ mod tests {
     }
 
     #[test]
-    fn armor_tiers_require_a_cuirass_and_increasing_body_coverage() {
+    fn armor_tiers_allow_a_shield_or_require_increasing_body_coverage() {
         let no_cuirass = TestArmor {
             coverage: [0.9; 7],
             shield: true,
         };
         let mut no_cuirass = no_cuirass;
         no_cuirass.coverage[4] = 0.0;
-        assert_eq!(armor_tiers(&no_cuirass), (false, false, false, false));
+        assert_eq!(armor_tiers(&no_cuirass), (true, false, false, false));
 
-        let quarter = TestArmor {
+        let quarter_by_shield = TestArmor {
             coverage: [0.0, 0.0, 0.0, 0.0, 0.4, 0.4, 0.0],
             shield: true,
         };
-        assert_eq!(armor_tiers(&quarter), (true, false, false, false));
+        assert_eq!(armor_tiers(&quarter_by_shield), (true, false, false, false));
+
+        let helmet_without_cuirass = TestArmor {
+            coverage: [0.9, 0.9, 0.9, 0.9, 0.0, 0.0, 0.9],
+            shield: false,
+        };
+        assert_eq!(
+            armor_tiers(&helmet_without_cuirass),
+            (false, false, false, false)
+        );
 
         let three_quarter = TestArmor {
             coverage: [0.4; 7],

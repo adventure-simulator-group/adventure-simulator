@@ -197,9 +197,6 @@ fn settlement_top_bar(
                         title=(label)
                     {
                         span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
-                        @if path == "noticeboard" {
-                            span class="service-notification-badge" data-party-notification-badge hidden { "0" }
-                        }
                     }
                 }
             }

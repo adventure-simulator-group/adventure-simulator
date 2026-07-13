@@ -26,14 +26,44 @@ pub fn recruitment_panel(
             div data-party-slot-groups hidden {
                 @for panel in roles {
                     div class="party-role-group" data-party-role-group data-role-id=(panel.role.id) {
-                        span class="party-role-connector" aria-hidden="true" {}
-                        @for character in &panel.filled {
-                            span data-filled-character-id=(character.id) {}
+                        div class="party-role-portraits" {
+                            span class="party-role-connector" aria-hidden="true" {}
+                            @for character in &panel.filled {
+                                span data-filled-character-id=(character.id) {}
+                            }
+                            @for _ in panel.filled.len()..panel.role.quantity as usize {
+                                span class="party-portrait party-role-slot" title=(format!("Open slot: {}", panel.role.name)) {
+                                    span class="party-slot-plus" { "+" }
+                                    span class="party-portrait-name" { (&panel.role.name) }
+                                }
+                            }
+                            @if can_manage {
+                                span class="party-role-notification-badge"
+                                    data-party-role-notification-badge data-role-id=(panel.role.id)
+                                    hidden[panel.requests.is_empty()] { (panel.requests.len()) }
+                            }
                         }
-                        @for _ in panel.filled.len()..panel.role.quantity as usize {
-                            span class="party-portrait party-role-slot" title=(format!("Open slot: {}", panel.role.name)) {
-                                span class="party-slot-plus" { "+" }
-                                span class="party-portrait-name" { (&panel.role.name) }
+                        @if can_manage {
+                            div class="party-role-invitations" {
+                                strong { (&panel.role.name) }
+                                span class="small-copy text-muted" { (requirements_label(panel.role.requirements)) }
+                                @if panel.requests.is_empty() {
+                                    span class="small-copy text-muted" { "No invitations" }
+                                } @else {
+                                    @for (request, character) in &panel.requests {
+                                        div class=(if request.meets_requirements { "role-applicant" } else { "role-applicant role-applicant-warning" }) {
+                                            span { (&character.name) @if !request.meets_requirements { " ! Below recommendations" } }
+                                            div class="flex gap-sm" {
+                                                form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
+                                                    button class="btn btn-primary btn-small" { "Accept" }
+                                                }
+                                                form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
+                                                    button class="btn btn-secondary btn-small" { "Reject" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -73,13 +103,12 @@ pub fn recruitment_panel(
                         div class="role-requirement-columns" {
                             (boolean_group("Combat", &[
                                 ("melee", "Melee"), ("ranged", "Ranged"), ("precise", "Precise"),
-                                ("heavy", "Heavy"), ("quarter_armor", "1/4 armor"),
-                                ("half_armor", "1/2 armor"), ("three_quarter_armor", "3/4 armor"),
-                                ("full_armor", "Full armor"),
+                                ("heavy", "Heavy"),
                                 ("blunt", "Blunt"), ("slash", "Slash"), ("pierce", "Pierce"),
                             ]))
                             div class="role-requirement-group" {
-                                h3 { "Mobility" }
+                                h3 { "Armor & mobility" }
+                                (armor_requirement())
                                 (numeric_requirement("athletics", "Athletics"))
                                 (numeric_requirement("endurance", "Endurance"))
                             }
@@ -93,34 +122,6 @@ pub fn recruitment_panel(
                         }
                         button type="submit" class="btn btn-primary" { "Add role" }
                     }
-                    @if !roles.is_empty() {
-                        section class="active-role-section" {
-                            h3 { "Current roles" }
-                            @for panel in roles {
-                                article class="active-role-card" {
-                                    h4 { (&panel.role.name) " · " (panel.filled.len()) "/" (panel.role.quantity) }
-                                    p class="small-copy text-muted" { (requirements_label(panel.role.requirements)) }
-                                    @if panel.requests.is_empty() {
-                                        p class="small-copy text-muted" { "No pending requests." }
-                                    } @else {
-                                        @for (request, character) in &panel.requests {
-                                            div class=(if request.meets_requirements { "role-applicant" } else { "role-applicant role-applicant-warning" }) {
-                                                span { (&character.name) @if !request.meets_requirements { " ⚠ Does not meet recommendations" } }
-                                                div class="flex gap-sm" {
-                                                    form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
-                                                        button class="btn btn-primary btn-small" { "Accept" }
-                                                    }
-                                                    form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
-                                                        button class="btn btn-secondary btn-small" { "Reject" }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -129,15 +130,31 @@ pub fn recruitment_panel(
 
 fn boolean_group(title: &str, requirements: &[(&str, &str)]) -> Markup {
     html! { div class="role-requirement-group" { h3 { (title) }
-        @for (name, label) in requirements { label { input type="checkbox" name=(name) value="true"; (label) } }
+        @for (name, label) in requirements {
+            label class="role-toggle" { input type="checkbox" name=(name) value="true"; span { (label) } }
+        }
     } }
 }
 
 fn numeric_requirement(name: &str, label: &str) -> Markup {
-    html! { label {
-        input type="checkbox" name=(name)
-            value=(adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT);
-        (label)
+    html! { label class="role-slider" {
+        span class="role-slider-heading" { span { (label) } output data-slider-output=(name) { "Off" } }
+        input type="range" name=(name) min="0" max="5" step="1" value="0"
+            data-discrete-slider data-slider-labels="Off|1|2|3|4|5";
+        span class="role-slider-ticks" aria-hidden="true" {
+            @for value in 0..=5 { span { (value) } }
+        }
+    } }
+}
+
+fn armor_requirement() -> Markup {
+    html! { label class="role-slider" {
+        span class="role-slider-heading" { span { "Armor" } output data-slider-output="armor_tier" { "Off" } }
+        input type="range" name="armor_tier" min="0" max="4" step="1" value="0"
+            data-discrete-slider data-slider-labels="Off|1/4|1/2|3/4|Full";
+        span class="role-slider-ticks role-slider-ticks-armor" aria-hidden="true" {
+            span { "Off" } span { "1/4" } span { "1/2" } span { "3/4" } span { "Full" }
+        }
     } }
 }
 
@@ -173,7 +190,7 @@ pub fn requirements_label(r: RecruitmentRequirements) -> String {
         (r.faith, "Faith"),
     ] {
         if value > 0 {
-            labels.push(label.to_string());
+            labels.push(format!("{label} {value}+"));
         }
     }
     if labels.is_empty() {
