@@ -2,7 +2,7 @@
   const DAY = 1440;
   const MIN_LEISURE = 360;
 
-  const format = (minutes) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  const format = (minutes) => `${minutes}m`;
 
   function distribute(values, names, amount) {
     const total = names.reduce((sum, name) => sum + values[name], 0);

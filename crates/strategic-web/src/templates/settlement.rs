@@ -675,6 +675,9 @@ fn skills_table(
                 col class="party-skill-icon-column";
                 col class="party-skill-name-column";
                 col class="party-skill-meter-column";
+                @if schedule.is_some() {
+                    col class="party-skill-time-column";
+                }
             }
             tbody {
                 (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
@@ -718,6 +721,11 @@ fn party_skill_row(
                     }
                 }
             }
+            @if let Some(minutes) = schedule_minutes {
+                td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
+                    (minutes) "m"
+                }
+            }
         }
     }
 }
@@ -725,13 +733,16 @@ fn party_skill_row(
 fn schedule_extra_bar(label: &str, name: &str, minutes: u16, editable: bool) -> Markup {
     html! {
         div class="schedule-extra-row" {
-            div class="schedule-extra-label" { strong { (label) } span data-schedule-value=(name) {} }
+            strong class="schedule-extra-label" { (label) }
             div class="schedule-extra-track" {
                 @if editable {
                     (schedule_handle(label, name, minutes))
                 } @else {
                     span class="schedule-leisure-fill" data-leisure-fill {}
                 }
+            }
+            span class="schedule-extra-allocation" data-schedule-value=(name) {
+                @if editable { (minutes) "m" } @else { "0m" }
             }
         }
     }
