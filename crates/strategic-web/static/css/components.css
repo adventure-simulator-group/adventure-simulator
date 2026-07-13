@@ -1870,24 +1870,33 @@
 
 .schedule-step {
   position: absolute;
-  left: 50%;
+  top: 50%;
   z-index: 3;
-  width: 0.8rem;
-  height: 1rem;
+  width: 0.45rem;
+  height: 0.55rem;
   padding: 0;
   border: 0;
-  color: var(--text-primary);
   background: transparent;
-  font-size: 1.1rem;
-  line-height: 1;
   opacity: 0;
   cursor: pointer;
-  transform: translateX(-50%);
+  transform: translateY(-50%);
   transition: opacity 100ms ease;
 }
 
-.schedule-step-decrease { bottom: -0.45rem; }
-.schedule-step-increase { top: -0.45rem; }
+.schedule-step::before {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  height: 0;
+  content: "";
+  border-top: 0.275rem solid transparent;
+  border-bottom: 0.275rem solid transparent;
+}
+
+.schedule-step-decrease { right: 4ch; }
+.schedule-step-decrease::before { border-right: 0.4rem solid var(--text-primary); }
+.schedule-step-increase { right: -0.55rem; }
+.schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
 .party-skill-allocation:hover .schedule-step,
 .schedule-step:focus-visible { opacity: 1; }
 .schedule-time-input { width: 3.25rem; padding: 0; border: 1px solid var(--accent); text-align: right; font: inherit; color: inherit; background: var(--bg-tertiary); }

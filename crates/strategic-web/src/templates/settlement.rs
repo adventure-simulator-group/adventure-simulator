@@ -760,10 +760,9 @@ fn schedule_special_row(label: &str, icon: &str, name: &str, minutes: u16, edita
 }
 
 fn schedule_step_button(label: &str, delta: i16) -> Markup {
-    let glyph = if delta < 0 { "↓" } else { "↑" };
     html! {
         button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
-            data-schedule-step=(delta) aria-label=(label) { (glyph) }
+            data-schedule-step=(delta) aria-label=(label) {}
     }
 }
 
