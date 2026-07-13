@@ -57,8 +57,8 @@ pub trait create_tactical_server {
     fn on_create_tactical_server(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String, &String)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> CreateTacticalServerCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_tactical_server`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl create_tactical_server for super::RemoteReducers {
     fn on_create_tactical_server(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String, &String)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> CreateTacticalServerCallbackId {
         CreateTacticalServerCallbackId(self.imp.on_reducer(
             "create_tactical_server",

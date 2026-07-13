@@ -10,6 +10,12 @@
   --font-display: 'Metamorphous';
   --font-body: 'Source Serif 4';
   --font-mono: 'Courier New', monospace;
+  --icon-default: #1f3148;
+  --icon-mental: #5d55a6;
+  --icon-physical: #a87608;
+  --icon-intelligence: #286d9f;
+  --icon-instinct: #734293;
+  --icon-strength: #a73d39;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;

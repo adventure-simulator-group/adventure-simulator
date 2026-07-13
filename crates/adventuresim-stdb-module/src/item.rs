@@ -76,6 +76,7 @@ pub struct Item {
 
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
+    crate::time::initialize_time(ctx);
     log::info!("Populating items...");
 
     define_item(ctx, "torch", 0.5);

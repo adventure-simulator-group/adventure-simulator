@@ -11,8 +11,8 @@ use super::{
     settlement_layout_with_session, sidebar_section, status_badge,
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem,
-    Party, Quest, Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
+    CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -23,6 +23,13 @@ pub enum MerchantShop {
     Weapons,
     Armor,
     Clothing,
+}
+
+pub struct RestSummary {
+    pub days: u64,
+    pub gold_spent: u32,
+    pub healed: Vec<(String, f32)>,
+    pub trained: Vec<(String, f32)>,
 }
 
 impl MerchantShop {
@@ -194,6 +201,8 @@ pub fn merchants_page(
         party_members,
         logged_in_as,
         theme,
+        None,
+        None,
     )
 }
 
@@ -217,6 +226,8 @@ pub fn smith_page(
         party_members,
         logged_in_as,
         theme,
+        None,
+        None,
     )
 }
 
@@ -226,6 +237,7 @@ pub fn inn_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     party_members: &[Character],
+    limbs: Option<&CharacterLimbs>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -240,6 +252,8 @@ pub fn inn_page(
         party_members,
         logged_in_as,
         theme,
+        limbs.map(days_to_full_health),
+        None,
     )
 }
 
@@ -249,6 +263,7 @@ pub fn religion_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     party_members: &[Character],
+    limbs: Option<&CharacterLimbs>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -263,6 +278,8 @@ pub fn religion_page(
         party_members,
         logged_in_as,
         theme,
+        limbs.map(days_to_full_health),
+        None,
     )
 }
 
@@ -316,12 +333,14 @@ pub fn party_personal_page(
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    schedule: Option<&CharacterTrainingSchedule>,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs))
-            (party_skills_rail("Your skills", skills, limbs))
+            @let schedule_action = format!("/settlements/{}/party/{}/schedule", settlement.id, active_character.id);
+            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
@@ -361,7 +380,7 @@ pub fn party_stats_page(
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
-            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs))
+            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
@@ -370,7 +389,7 @@ pub fn party_stats_page(
         }
         aside class="right-sidebar" {
             (party_attributes_rail("Your attributes", active_attributes, active_limbs))
-            (party_skills_rail("Your skills", active_skills, active_limbs))
+            (party_skills_rail("Your skills", active_skills, active_limbs, None, None))
         }
     };
     settlement_layout_with_session(
@@ -395,6 +414,8 @@ fn service_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
+    healing_days: Option<u16>,
+    rest_summary: Option<&RestSummary>,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
         "merchants" => Some((
@@ -424,7 +445,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn"))
+                    (rest_service_menu("Inn", &settlement.id, "inn", healing_days, rest_summary))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -437,7 +458,7 @@ fn service_page(
                             p class="text-muted small-copy" { (todo) }
                         }))
                     }
-                    (rest_service_menu("Church"))
+                    (rest_service_menu("Temple", &settlement.id, "temple", healing_days, rest_summary))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -628,6 +649,8 @@ fn party_skills_rail(
     title: &str,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    schedule: Option<&CharacterTrainingSchedule>,
+    schedule_action: Option<&str>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -639,25 +662,13 @@ fn party_skills_rail(
     html! {
         (sidebar_section(title, html! {
             @if let Some(skills) = skills {
-                table class="party-skills-table" {
-                    colgroup {
-                        col class="party-skill-icon-column";
-                        col class="party-skill-name-column";
-                        col class="party-skill-meter-column";
+                @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
+                    form class="skill-schedule" data-skill-schedule action=(action) method="post" {
+                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
                     }
-                    tbody {
-                        (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health))
-                        (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health))
-                        (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health))
-                        (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health))
-                        (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health))
-                        (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health))
-                        (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health))
-                        (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health))
-                        (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health))
-                        (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health))
-                        (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health))
-                    }
+                    script src="/static/training-schedule.js?v=hourglass-handle-1" {}
+                } @else {
+                    (skills_table(skills, head_health, upper_health, lower_health, None))
                 }
             } @else {
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
@@ -666,23 +677,154 @@ fn party_skills_rail(
     }
 }
 
-fn party_skill_row(name: &str, icon: &str, hours: f32, half_hours: f32, health: f32) -> Markup {
+fn skills_table(
+    skills: &CharacterSkills,
+    head_health: f32,
+    upper_health: f32,
+    lower_health: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+) -> Markup {
+    html! {
+            table class="party-skills-table" {
+                colgroup {
+                    col class="party-skill-icon-column";
+                    col class="party-skill-name-column";
+                    col class="party-skill-meter-column";
+                    @if schedule.is_some() {
+                        col class="party-skill-time-column";
+                    }
+                }
+                tbody {
+                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
+                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
+                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
+                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
+                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
+                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
+                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
+                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
+                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
+                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
+                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+                    @if let Some(schedule) = schedule {
+                        tr class="schedule-divider" { td colspan="4" {} }
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
+                    }
+            }
+        }
+    }
+}
+
+fn party_skill_row(
+    name: &str,
+    icon: &str,
+    hours: f32,
+    half_hours: f32,
+    health: f32,
+    schedule_minutes: Option<u16>,
+) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
     let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
     let damage_width = ((rank - effective_rank).max(0.0) / 5.0) * 100.0;
+    let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
             td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
             td class="party-skill-name" { (name) }
             td class="party-skill-meter" {
-                div class="skill-rank-bar" title=(format!("{effective_rank:.1}")) {
+                div class="skill-rank-bar" title=(format!("{invested_hours} hours invested")) {
                     span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                     span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
+                    span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
+                    @if let Some(minutes) = schedule_minutes {
+                        (schedule_handle(name, &format!("{}_minutes", icon), minutes))
+                    }
+                }
+            }
+            @if let Some(minutes) = schedule_minutes {
+                td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
+                    (schedule_step_button("Decrease daily allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    (schedule_step_button("Increase daily allocation", 15))
                 }
             }
         }
     }
+}
+
+fn schedule_special_row(
+    label: &str,
+    icon: &str,
+    name: &str,
+    minutes: u16,
+    editable: bool,
+) -> Markup {
+    html! {
+        tr class="party-skill-row schedule-special-row" {
+            td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
+            td class="party-skill-name" { strong { (label) } }
+            td class="party-skill-meter" {
+                div class="skill-rank-bar schedule-special-track" {
+                @if editable {
+                    (schedule_handle(label, name, minutes))
+                } @else {
+                    span class="schedule-leisure-fill" data-leisure-fill {}
+                }
+                }
+            }
+            td class="party-skill-allocation" data-schedule-value=(name) {
+                @if editable {
+                    (schedule_step_button("Decrease daily allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    (schedule_step_button("Increase daily allocation", 15))
+                } @else { span data-schedule-display { "0h" } }
+            }
+        }
+    }
+}
+
+fn schedule_step_button(label: &str, delta: i16) -> Markup {
+    html! {
+        button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
+            data-schedule-step=(delta) aria-label=(label) {}
+    }
+}
+
+fn schedule_icon(label: &str, icon: &str) -> Markup {
+    html! {
+        span
+            class="stat-icon schedule-special-icon"
+            style=(format!("--stat-icon: url('/static/icons/strategic/{icon}.png')"))
+            role="img"
+            aria-label=(label)
+            title=(label)
+        {}
+    }
+}
+
+fn schedule_handle(label: &str, name: &str, minutes: u16) -> Markup {
+    html! {
+        input type="hidden" name=(name) value=(minutes) data-schedule-input;
+        button type="button" class="schedule-handle" data-schedule-handle data-schedule-name=(name)
+            aria-label=(format!("{} daily allocation", label)) aria-valuemin="0" aria-valuemax="1440"
+            aria-valuenow=(minutes) title=(format!("{} per day", format_schedule_hours(minutes)))
+            data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
+    }
+}
+
+fn format_schedule_hours(minutes: u16) -> String {
+    let rounded = ((u32::from(minutes) + 7) / 15) * 15;
+    let hours = rounded / 60;
+    let fraction = match rounded % 60 {
+        0 => "",
+        15 => "¼",
+        30 => "½",
+        45 => "¾",
+        _ => unreachable!("rounded schedule minute must be a quarter hour"),
+    };
+    format!("{hours}{fraction}h")
 }
 
 fn party_attributes_rail(
@@ -1011,7 +1153,101 @@ fn inventory_rail(
     }
 }
 
-fn rest_service_menu(location: &str) -> Markup {
+pub fn rest_result_page(
+    settlement: &Settlement,
+    active_character: Option<&Character>,
+    inventory: &[InventoryItem],
+    party_members: &[Character],
+    logged_in_as: Option<&str>,
+    theme: &str,
+    at_inn: bool,
+    summary: &RestSummary,
+) -> Markup {
+    service_page(
+        settlement,
+        if at_inn { "inn" } else { "religion" },
+        if at_inn { "The Inn" } else { "Church" },
+        if at_inn { "Innkeeper" } else { "Priest" },
+        "",
+        active_character,
+        inventory,
+        party_members,
+        logged_in_as,
+        theme,
+        None,
+        Some(summary),
+    )
+}
+
+fn rest_service_menu(
+    location: &str,
+    settlement_id: &str,
+    kind: &str,
+    healing_days: Option<u16>,
+    summary: Option<&RestSummary>,
+) -> Markup {
+    html! {
+    section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+        div class="rest-service-heading" { strong { "Rest" } }
+        @if kind == "inn" {
+            p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any downtime." }
+        } @else {
+            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
+        }
+        form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
+                div class="rest-days-control" {
+                    button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
+                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
+                    input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
+                        oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
+                    span class="rest-days-unit" { "days" }
+                    button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest days"
+                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
+                    button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
+                        title="Set the rest duration needed to fully heal"
+                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
+                }
+                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled { "Rest" }
+        }
+        @if let Some(summary) = summary {
+            div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
+                section class="rest-summary" {
+                    div class="rest-summary-heading" {
+                        strong id="rest-summary-title" { "Rest summary" }
+                        a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
+                    }
+                    p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
+                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
+                    @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
+                        p { "Healed:" }
+                        ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
+                    }
+                    @if summary.trained.is_empty() { p { "No time remained for downtime." } } @else {
+                        p { "Training:" }
+                        ul { @for (skill, hours) in &summary.trained { li { (skill) ": +" (format!("{hours:.2}h")) } } }
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
+    let lowest_health = [
+        limbs.left_arm_health,
+        limbs.right_arm_health,
+        limbs.left_leg_health,
+        limbs.right_leg_health,
+        limbs.head_health,
+        limbs.chest_health,
+        limbs.stomach_health,
+    ]
+    .into_iter()
+    .fold(1.0_f32, f32::min);
+    ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
+}
+fn rest_service_menu_placeholder(location: &str) -> Markup {
     html! {
         section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
             div class="rest-service-heading" {

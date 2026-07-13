@@ -68,6 +68,7 @@ Now when you click a location in the browser, a tactical server will automatical
 ```bash
 # Development
 just dev              # Start SpacetimeDB + UI server
+just web-damaged      # Start a fresh stack with an injured demo character
 just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
 

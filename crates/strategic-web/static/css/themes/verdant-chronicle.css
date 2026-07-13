@@ -10,6 +10,12 @@
   --font-display: 'MedievalSharp';
   --font-body: 'Lora';
   --font-mono: 'Courier New', monospace;
+  --icon-default: #283524;
+  --icon-mental: #5d55a6;
+  --icon-physical: #9d7609;
+  --icon-intelligence: #286b9e;
+  --icon-instinct: #74428d;
+  --icon-strength: #a63e38;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;

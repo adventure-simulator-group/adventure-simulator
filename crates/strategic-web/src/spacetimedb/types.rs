@@ -178,6 +178,36 @@ pub struct CharacterSkills {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterTime {
+    pub character_id: u64,
+    pub minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterTrainingSchedule {
+    pub character_id: u64,
+    pub melee_minutes: u16,
+    pub dodge_minutes: u16,
+    pub block_minutes: u16,
+    pub ranged_minutes: u16,
+    pub will_minutes: u16,
+    pub charisma_minutes: u16,
+    pub medicine_minutes: u16,
+    pub faith_minutes: u16,
+    pub stealth_minutes: u16,
+    pub balance_minutes: u16,
+    pub surgeon_minutes: u16,
+    pub labor_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldClock {
+    pub id: u64,
+    pub official_minutes: u64,
+    pub epoch_micros: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {
     pub character_id: u64,
     pub calories_used: f32,

@@ -10,6 +10,12 @@
   --font-display: 'Cinzel Decorative';
   --font-body: 'EB Garamond';
   --font-mono: 'Courier New', monospace;
+  --icon-default: #2c221d;
+  --icon-mental: #6256a5;
+  --icon-physical: #9b7008;
+  --icon-intelligence: #27699d;
+  --icon-instinct: #713f8c;
+  --icon-strength: #a43a35;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1.0625rem;

@@ -177,7 +177,7 @@ fn settlement_top_bar(
                 a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
-                span class="settlement-time" title="TODO: connect this display to strategic world time" {
+                span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
                 }
             }
@@ -209,6 +209,7 @@ fn settlement_top_bar(
                 (theme_switcher(current_theme))
             }
         }
+        script src="/static/strategic-time.js?v=player-time-1" {}
     }
 }
 

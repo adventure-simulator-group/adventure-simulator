@@ -2,4 +2,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Texturina:opsz,wght@12..72,400..700&display=swap');
 @import url('./renaissance-gold.css');
 
-:root { --font-display: 'Texturina'; }
+:root {
+  --font-display: 'Texturina';
+  --icon-default: #2a1f14;
+  --icon-mental: #6559a8;
+  --icon-physical: #a87708;
+  --icon-intelligence: #28629a;
+  --icon-instinct: #74428d;
+  --icon-strength: #a83b35;
+}

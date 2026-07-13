@@ -70,9 +70,28 @@ web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactic
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
 
+# Start a fresh local stack with an injured character for stat-bar UI verification.
+web-damaged: preflight build-wasm spacetime-start publish-reset _seed-world _seed-damaged-character build-tactical
+    @just _spawner-start
+    @echo ""
+    @echo "Starting strategic-web server with Wounded Demo..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
 # Seed the world with initial settlements and quests
 _seed-world server=spacetime_url:
     @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
+
+# Create or reset the injured Wounded Demo character used to verify damage bars.
+_seed-damaged-character server=spacetime_url:
+    @spacetime call --server {{server}} {{spacetime_module}} seed_damaged_character
 
 # Start SpacetimeDB if it is not already listening
 spacetime-start:

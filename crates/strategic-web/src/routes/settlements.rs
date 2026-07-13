@@ -12,12 +12,13 @@ use serde_json::json;
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem,
-    ItemDefinition, Party, PartyMember, Quest, Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
+    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest,
+    Settlement,
 };
 use crate::templates::settlement::{
-    MerchantShop, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
-    party_inventory_page, party_personal_page, party_stats_page, religion_page,
+    MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
+    party_inventory_page, party_personal_page, party_stats_page, religion_page, rest_result_page,
     settlements_list_page, smith_page,
 };
 
@@ -46,6 +47,10 @@ pub fn routes() -> Router<AppState> {
             "/settlements/{id}/party/{character_id}/stats",
             get(party_stats),
         )
+        .route(
+            "/settlements/{id}/party/{character_id}/schedule",
+            post(update_training_schedule),
+        )
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
@@ -59,6 +64,7 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}/smith", get(smith))
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
+        .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
 }
 
@@ -148,6 +154,12 @@ async fn party_personal(
     Path((id, character_id)): Path<(String, u64)>,
     session: Session,
 ) -> Html<String> {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call("synchronize_character_time", &[json!(character_id)])
+            .await;
+    }
     let settlements: Vec<Settlement> = state
         .db
         .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
@@ -186,6 +198,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let schedule: Vec<CharacterTrainingSchedule> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_training_schedule WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             settlement,
@@ -195,10 +214,61 @@ async fn party_personal(
             attributes.first(),
             skills.first(),
             limbs.first(),
+            schedule.first(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct TrainingScheduleForm {
+    melee_minutes: u16,
+    dodge_minutes: u16,
+    block_minutes: u16,
+    ranged_minutes: u16,
+    will_minutes: u16,
+    charisma_minutes: u16,
+    medicine_minutes: u16,
+    faith_minutes: u16,
+    stealth_minutes: u16,
+    balance_minutes: u16,
+    surgeon_minutes: u16,
+    labor_minutes: u16,
+}
+
+async fn update_training_schedule(
+    State(state): State<AppState>,
+    Path((settlement_id, character_id)): Path<(String, u64)>,
+    session: Session,
+    Form(form): Form<TrainingScheduleForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        let _ = state
+            .db
+            .call(
+                "update_training_schedule",
+                &[
+                    json!(character_id),
+                    json!(form.melee_minutes),
+                    json!(form.dodge_minutes),
+                    json!(form.block_minutes),
+                    json!(form.ranged_minutes),
+                    json!(form.will_minutes),
+                    json!(form.charisma_minutes),
+                    json!(form.medicine_minutes),
+                    json!(form.faith_minutes),
+                    json!(form.stealth_minutes),
+                    json!(form.balance_minutes),
+                    json!(form.surgeon_minutes),
+                    json!(form.labor_minutes),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!(
+        "/settlements/{settlement_id}/party/{character_id}"
+    ))
 }
 
 async fn party_member(
@@ -702,6 +772,12 @@ async fn inn(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let limbs = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+        }
+        None => None,
+    };
     Html(
         inn_page(
             settlement,
@@ -710,11 +786,188 @@ async fn inn(
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &party_members,
+            limbs.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct RestForm {
+    days: u16,
+}
+
+async fn rest(
+    State(state): State<AppState>,
+    Path((id, kind)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<RestForm>,
+) -> Html<String> {
+    let at_inn = match kind.as_str() {
+        "inn" => true,
+        "temple" => false,
+        _ => return Html("<h1>Rest service not found</h1>".to_string()),
+    };
+    let Some(character_id) = session.character_id_u64() else {
+        return Html("<h1>Choose a character first</h1>".to_string());
+    };
+    let before_character = get_active_character(&state, Some(character_id)).await;
+    let before_limbs =
+        query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+    let before_skills =
+        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+    let before_time =
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+            .await;
+    if let Err(error) = state
+        .db
+        .call(
+            "rest_at_settlement",
+            &[json!(character_id), json!(form.days.max(1)), json!(at_inn)],
+        )
+        .await
+    {
+        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>"));
+    }
+
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+    let active_character = get_active_character(&state, Some(character_id)).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let after_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+    let after_skills =
+        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+    let after_time =
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+            .await;
+    let summary = rest_summary(
+        before_character.as_ref().map(|(character, _)| character),
+        active_character.as_ref().map(|(character, _)| character),
+        before_limbs.as_ref(),
+        after_limbs.as_ref(),
+        before_skills.as_ref(),
+        after_skills.as_ref(),
+        before_time.as_ref(),
+        after_time.as_ref(),
+    );
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        rest_result_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            active_character
+                .as_ref()
+                .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+            at_inn,
+            &summary,
+        )
+        .into_string(),
+    )
+}
+
+async fn query_single<T: serde::de::DeserializeOwned>(
+    state: &AppState,
+    table: &str,
+    character_id: u64,
+) -> Option<T> {
+    state
+        .db
+        .query(&format!(
+            "SELECT * FROM {table} WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+}
+
+fn rest_summary(
+    before_character: Option<&Character>,
+    after_character: Option<&Character>,
+    before_limbs: Option<&CharacterLimbs>,
+    after_limbs: Option<&CharacterLimbs>,
+    before_skills: Option<&CharacterSkills>,
+    after_skills: Option<&CharacterSkills>,
+    before_time: Option<&crate::spacetimedb::CharacterTime>,
+    after_time: Option<&crate::spacetimedb::CharacterTime>,
+) -> RestSummary {
+    let days = before_time.zip(after_time).map_or(0, |(before, after)| {
+        after.minutes.saturating_sub(before.minutes) / 1_440
+    });
+    let gold_spent = before_character
+        .zip(after_character)
+        .map_or(0, |(before, after)| before.gold.saturating_sub(after.gold));
+    let healed = match (before_limbs, after_limbs) {
+        (Some(before), Some(after)) => limb_deltas(before, after),
+        _ => vec![],
+    };
+    let trained = match (before_skills, after_skills) {
+        (Some(before), Some(after)) => skill_deltas(before, after),
+        _ => vec![],
+    };
+    RestSummary {
+        days,
+        gold_spent,
+        healed,
+        trained,
+    }
+}
+
+fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Vec<(String, f32)> {
+    [
+        ("Left arm", before.left_arm_health, after.left_arm_health),
+        ("Right arm", before.right_arm_health, after.right_arm_health),
+        ("Left leg", before.left_leg_health, after.left_leg_health),
+        ("Right leg", before.right_leg_health, after.right_leg_health),
+        ("Head", before.head_health, after.head_health),
+        ("Chest", before.chest_health, after.chest_health),
+        ("Stomach", before.stomach_health, after.stomach_health),
+    ]
+    .into_iter()
+    .filter_map(|(name, before, after)| {
+        let delta = (after - before) * 100.0;
+        (delta > 0.01).then(|| (name.to_string(), delta))
+    })
+    .collect()
+}
+
+fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(String, f32)> {
+    [
+        ("Melee", before.melee_hours, after.melee_hours),
+        ("Dodge", before.dodge_hours, after.dodge_hours),
+        ("Block", before.block_hours, after.block_hours),
+        ("Ranged", before.ranged_hours, after.ranged_hours),
+        ("Will", before.will_hours, after.will_hours),
+        ("Charisma", before.charisma_hours, after.charisma_hours),
+        ("Medicine", before.medicine_hours, after.medicine_hours),
+        ("Faith", before.faith_hours, after.faith_hours),
+        ("Stealth", before.stealth_hours, after.stealth_hours),
+        ("Balance", before.balance_hours, after.balance_hours),
+        ("Surgeon", before.surgeon_hours, after.surgeon_hours),
+    ]
+    .into_iter()
+    .filter_map(|(name, before, after)| {
+        let delta = after - before;
+        (delta > 0.001).then(|| (name.to_string(), delta))
+    })
+    .collect()
 }
 
 async fn travel(
@@ -787,6 +1040,7 @@ type ServiceRenderer = fn(
     Option<&Character>,
     &[InventoryItem],
     &[Character],
+    Option<&CharacterLimbs>,
     Option<&str>,
     &str,
 ) -> maud::Markup;
@@ -884,6 +1138,12 @@ async fn render_service_page(
     let inventory = active_character
         .as_ref()
         .map_or_else(Vec::new, |(_, inventory)| inventory.clone());
+    let limbs = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+        }
+        None => None,
+    };
 
     Html(
         render(
@@ -891,6 +1151,7 @@ async fn render_service_page(
             active_character.as_ref().map(|(character, _)| character),
             &inventory,
             &party_members,
+            limbs.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )
