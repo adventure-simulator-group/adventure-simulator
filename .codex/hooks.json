@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/prevent_early_stop.js",
+            "timeout": 10,
+            "statusMessage": "Checking whether work is complete"
+          }
+        ]
+      }
+    ]
+  }
+}

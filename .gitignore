@@ -38,3 +38,10 @@ book
 # Generated browser build output
 crates/adventuresim-stdb-module/static/wasm/
 crates/adventuresim-stdb-module/static/assets/
+
+# Local browser inspection and development output
+.playwright-cli/
+output/
+scripts/__pycache__/
+*.stdout.log
+*.stderr.log
