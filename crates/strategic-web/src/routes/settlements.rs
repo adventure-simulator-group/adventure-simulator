@@ -12,8 +12,9 @@ use serde_json::json;
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem,
-    ItemDefinition, Party, PartyMember, Quest, Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterTime,
+    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest, Settlement,
+    WorldClock,
 };
 use crate::templates::settlement::{
     MerchantShop, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
@@ -45,6 +46,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/settlements/{id}/party/{character_id}/stats",
             get(party_stats),
+        )
+        .route(
+            "/settlements/{id}/party/{character_id}/schedule",
+            post(update_training_schedule),
         )
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
@@ -148,6 +153,12 @@ async fn party_personal(
     Path((id, character_id)): Path<(String, u64)>,
     session: Session,
 ) -> Html<String> {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call("synchronize_character_time", &[json!(character_id)])
+            .await;
+    }
     let settlements: Vec<Settlement> = state
         .db
         .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
@@ -186,6 +197,25 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let schedule: Vec<CharacterTrainingSchedule> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_training_schedule WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let character_time: Vec<CharacterTime> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let world_clock: Vec<WorldClock> = state
+        .db
+        .query("SELECT * FROM world_clock WHERE id = 0")
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             settlement,
@@ -195,10 +225,53 @@ async fn party_personal(
             attributes.first(),
             skills.first(),
             limbs.first(),
+            schedule.first(),
+            character_time.first(),
+            world_clock.first(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct TrainingScheduleForm {
+    melee_minutes: u16,
+    dodge_minutes: u16,
+    block_minutes: u16,
+    ranged_minutes: u16,
+    will_minutes: u16,
+    charisma_minutes: u16,
+    medicine_minutes: u16,
+    faith_minutes: u16,
+    stealth_minutes: u16,
+    balance_minutes: u16,
+    surgeon_minutes: u16,
+    labor_minutes: u16,
+}
+
+async fn update_training_schedule(
+    State(state): State<AppState>,
+    Path((settlement_id, character_id)): Path<(String, u64)>,
+    session: Session,
+    Form(form): Form<TrainingScheduleForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        let _ = state
+            .db
+            .call(
+                "update_training_schedule",
+                &[
+                    json!(character_id), json!(form.melee_minutes), json!(form.dodge_minutes),
+                    json!(form.block_minutes), json!(form.ranged_minutes), json!(form.will_minutes),
+                    json!(form.charisma_minutes), json!(form.medicine_minutes), json!(form.faith_minutes),
+                    json!(form.stealth_minutes), json!(form.balance_minutes), json!(form.surgeon_minutes),
+                    json!(form.labor_minutes),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}/party/{character_id}"))
 }
 
 async fn party_member(

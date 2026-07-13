@@ -256,6 +256,7 @@ pub(crate) fn insert_new_character(
         balance_hours: 1000.0,
         surgeon_hours: 1000.0,
     });
+    crate::time::initialize_character_time(ctx, id)?;
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
         character_id: id,
         left_arm_health: 1.0,

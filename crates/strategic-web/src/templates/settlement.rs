@@ -11,8 +11,8 @@ use super::{
     settlement_layout_with_session, sidebar_section, status_badge,
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, InventoryItem,
-    Party, Quest, Settlement,
+    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterTime,
+    CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement, WorldClock,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -316,12 +316,22 @@ pub fn party_personal_page(
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    schedule: Option<&CharacterTrainingSchedule>,
+    character_time: Option<&CharacterTime>,
+    world_clock: Option<&WorldClock>,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs))
             (party_skills_rail("Your skills", skills, limbs))
+            (training_schedule_editor(
+                settlement,
+                active_character,
+                schedule,
+                character_time,
+                world_clock,
+            ))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
@@ -339,6 +349,70 @@ pub fn party_personal_page(
         Some(&active_character.name),
         theme,
     )
+}
+
+fn format_game_time(minutes: u64) -> String {
+    let day = minutes / 1_440 % 365 + 1;
+    let hour = minutes / 60 % 24;
+    let minute = minutes % 60;
+    format!("Day {day} · {hour:02}:{minute:02}")
+}
+
+fn training_schedule_editor(
+    settlement: &Settlement,
+    character: &Character,
+    schedule: Option<&CharacterTrainingSchedule>,
+    character_time: Option<&CharacterTime>,
+    world_clock: Option<&WorldClock>,
+) -> Markup {
+    let Some(schedule) = schedule else {
+        return html! { p class="text-muted small-copy" { "Training schedule unavailable." } };
+    };
+    let official_minutes = world_clock.map_or(0, |clock| clock.official_minutes);
+    let character_minutes = character_time.map_or(official_minutes, |time| time.minutes);
+    let lag = official_minutes.saturating_sub(character_minutes) / 1_440;
+    html! {
+        section class="training-schedule" data-training-schedule {
+            div class="training-schedule-heading" {
+                h3 { "Daily schedule" }
+                p class="text-muted small-copy" {
+                    "Character time: " (format_game_time(character_minutes))
+                    " · " (lag) " day" @if lag != 1 { "s" } " behind official time"
+                }
+            }
+            form action=(format!("/settlements/{}/party/{}/schedule", settlement.id, character.id)) method="post" {
+                (schedule_slider("Melee", "melee_minutes", schedule.melee_minutes))
+                (schedule_slider("Dodge", "dodge_minutes", schedule.dodge_minutes))
+                (schedule_slider("Block", "block_minutes", schedule.block_minutes))
+                (schedule_slider("Ranged", "ranged_minutes", schedule.ranged_minutes))
+                (schedule_slider("Will", "will_minutes", schedule.will_minutes))
+                (schedule_slider("Charisma", "charisma_minutes", schedule.charisma_minutes))
+                (schedule_slider("Medicine", "medicine_minutes", schedule.medicine_minutes))
+                (schedule_slider("Faith", "faith_minutes", schedule.faith_minutes))
+                (schedule_slider("Stealth", "stealth_minutes", schedule.stealth_minutes))
+                (schedule_slider("Balance", "balance_minutes", schedule.balance_minutes))
+                (schedule_slider("Surgeon", "surgeon_minutes", schedule.surgeon_minutes))
+                (schedule_slider("Labor", "labor_minutes", schedule.labor_minutes))
+                div class="schedule-leisure" {
+                    div class="schedule-slider-label" { strong { "Leisure" } output data-leisure-value {} }
+                    div class="schedule-leisure-bar" aria-hidden="true" { span data-leisure-bar {} }
+                    p class="schedule-warning" data-leisure-warning hidden { "Less than 6 hours of leisure, including sleep." }
+                }
+                button type="submit" class="btn btn-primary btn-small" { "Save schedule" }
+            }
+        }
+        script src="/static/training-schedule.js?v=time-schedule-1" {}
+    }
+}
+
+fn schedule_slider(label: &str, name: &str, minutes: u16) -> Markup {
+    html! {
+        label class="schedule-slider" {
+            span class="schedule-slider-label" { strong { (label) } output data-schedule-value {} }
+            input type="range" min="0" max="1440" step="1" name=(name) value=(minutes)
+                data-schedule-slider title=(format!("{minutes} minutes per day"));
+        }
+    }
 }
 
 /// Party stat comparison, with the selected member on the left and the active

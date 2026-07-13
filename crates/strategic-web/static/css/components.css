@@ -1859,6 +1859,25 @@
   gap: 0.75rem;
 }
 
+/* Daily skill, labor, and leisure allocation controls. */
+.training-schedule {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-color, rgba(255,255,255,.2));
+  border-radius: 0.35rem;
+}
+
+.training-schedule-heading h3 { margin: 0; }
+.training-schedule-heading p { margin: 0.2rem 0 0; }
+.schedule-slider { display: grid; gap: 0.2rem; }
+.schedule-slider-label { display: flex; justify-content: space-between; gap: 0.5rem; }
+.schedule-slider input { width: 100%; }
+.schedule-leisure { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
+.schedule-leisure-bar { height: 0.55rem; overflow: hidden; background: rgba(255,255,255,.14); border-radius: 999px; }
+.schedule-leisure-bar span { display: block; height: 100%; background: var(--success, #69a86b); }
+.schedule-warning { margin: 0; color: var(--warning, #dca83b); font-size: 0.85rem; }
+
 /* ============================================
    ANIMATIONS
    ============================================ */

@@ -23,6 +23,10 @@ pub mod character_skills_type;
 pub mod character_stats_table;
 pub mod character_stats_type;
 pub mod character_table;
+pub mod character_time_table;
+pub mod character_time_type;
+pub mod character_training_schedule_table;
+pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod complete_quest_reducer;
 pub mod connected_player_item_type;
@@ -64,6 +68,7 @@ pub mod party_type;
 pub mod quest_status_type;
 pub mod quest_table;
 pub mod quest_type;
+pub mod refresh_world_clock_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod seed_damaged_character_reducer;
@@ -71,6 +76,7 @@ pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
 pub mod settlement_table;
 pub mod settlement_type;
+pub mod synchronize_character_time_reducer;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
@@ -78,22 +84,27 @@ pub mod tactical_server_type;
 pub mod transfer_party_item_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
+pub mod update_training_schedule_reducer;
+pub mod world_clock_schedule_table;
+pub mod world_clock_schedule_type;
+pub mod world_clock_table;
+pub mod world_clock_type;
 
 pub use abandon_quest_reducer::{
-    AbandonQuestCallbackId, abandon_quest, set_flags_for_abandon_quest,
+    abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
 };
-pub use accept_quest_reducer::{AcceptQuestCallbackId, accept_quest, set_flags_for_accept_quest};
+pub use accept_quest_reducer::{accept_quest, set_flags_for_accept_quest, AcceptQuestCallbackId};
 pub use add_and_equip_item_reducer::{
-    AddAndEquipItemCallbackId, add_and_equip_item, set_flags_for_add_and_equip_item,
+    add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
 };
 pub use backfill_item_values_reducer::{
-    BackfillItemValuesCallbackId, backfill_item_values, set_flags_for_backfill_item_values,
+    backfill_item_values, set_flags_for_backfill_item_values, BackfillItemValuesCallbackId,
 };
 pub use cancel_mission_request_reducer::{
-    CancelMissionRequestCallbackId, cancel_mission_request, set_flags_for_cancel_mission_request,
+    cancel_mission_request, set_flags_for_cancel_mission_request, CancelMissionRequestCallbackId,
 };
 pub use change_inventory_item_reducer::{
-    ChangeInventoryItemCallbackId, change_inventory_item, set_flags_for_change_inventory_item,
+    change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
 };
 pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
@@ -106,68 +117,72 @@ pub use character_skills_type::CharacterSkills;
 pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
 pub use character_table::*;
+pub use character_time_table::*;
+pub use character_time_type::CharacterTime;
+pub use character_training_schedule_table::*;
+pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use complete_quest_reducer::{
-    CompleteQuestCallbackId, complete_quest, set_flags_for_complete_quest,
+    complete_quest, set_flags_for_complete_quest, CompleteQuestCallbackId,
 };
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
 pub use create_character_reducer::{
-    CreateCharacterCallbackId, create_character, set_flags_for_create_character,
+    create_character, set_flags_for_create_character, CreateCharacterCallbackId,
 };
 pub use create_named_character_reducer::{
-    CreateNamedCharacterCallbackId, create_named_character, set_flags_for_create_named_character,
+    create_named_character, set_flags_for_create_named_character, CreateNamedCharacterCallbackId,
 };
 pub use create_named_character_with_id_reducer::{
-    CreateNamedCharacterWithIdCallbackId, create_named_character_with_id,
-    set_flags_for_create_named_character_with_id,
+    create_named_character_with_id, set_flags_for_create_named_character_with_id,
+    CreateNamedCharacterWithIdCallbackId,
 };
-pub use create_party_reducer::{CreatePartyCallbackId, create_party, set_flags_for_create_party};
+pub use create_party_reducer::{create_party, set_flags_for_create_party, CreatePartyCallbackId};
 pub use create_tactical_server_for_request_reducer::{
-    CreateTacticalServerForRequestCallbackId, create_tactical_server_for_request,
-    set_flags_for_create_tactical_server_for_request,
+    create_tactical_server_for_request, set_flags_for_create_tactical_server_for_request,
+    CreateTacticalServerForRequestCallbackId,
 };
 pub use create_tactical_server_reducer::{
-    CreateTacticalServerCallbackId, create_tactical_server, set_flags_for_create_tactical_server,
+    create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
 };
 pub use create_temporary_character_reducer::{
-    CreateTemporaryCharacterCallbackId, create_temporary_character,
-    set_flags_for_create_temporary_character,
+    create_temporary_character, set_flags_for_create_temporary_character,
+    CreateTemporaryCharacterCallbackId,
 };
-pub use define_armor_reducer::{DefineArmorCallbackId, define_armor, set_flags_for_define_armor};
+pub use define_armor_reducer::{define_armor, set_flags_for_define_armor, DefineArmorCallbackId};
 pub use define_clothing_reducer::{
-    DefineClothingCallbackId, define_clothing, set_flags_for_define_clothing,
+    define_clothing, set_flags_for_define_clothing, DefineClothingCallbackId,
 };
-pub use define_item_reducer::{DefineItemCallbackId, define_item, set_flags_for_define_item};
+pub use define_item_reducer::{define_item, set_flags_for_define_item, DefineItemCallbackId};
 pub use define_shield_reducer::{
-    DefineShieldCallbackId, define_shield, set_flags_for_define_shield,
+    define_shield, set_flags_for_define_shield, DefineShieldCallbackId,
 };
 pub use define_weapon_reducer::{
-    DefineWeaponCallbackId, define_weapon, set_flags_for_define_weapon,
+    define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
 };
 pub use disband_party_reducer::{
-    DisbandPartyCallbackId, disband_party, set_flags_for_disband_party,
+    disband_party, set_flags_for_disband_party, DisbandPartyCallbackId,
 };
 pub use end_tactical_server_by_instance_reducer::{
-    EndTacticalServerByInstanceCallbackId, end_tactical_server_by_instance,
-    set_flags_for_end_tactical_server_by_instance,
+    end_tactical_server_by_instance, set_flags_for_end_tactical_server_by_instance,
+    EndTacticalServerByInstanceCallbackId,
 };
 pub use end_tactical_server_reducer::{
-    EndTacticalServerCallbackId, end_tactical_server, set_flags_for_end_tactical_server,
+    end_tactical_server, set_flags_for_end_tactical_server, EndTacticalServerCallbackId,
 };
 pub use enter_mission_reducer::{
-    EnterMissionCallbackId, enter_mission, set_flags_for_enter_mission,
+    enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
 };
-pub use equip_item_reducer::{EquipItemCallbackId, equip_item, set_flags_for_equip_item};
+pub use equip_item_reducer::{equip_item, set_flags_for_equip_item, EquipItemCallbackId};
 pub use finalize_merchant_trade_reducer::{
-    FinalizeMerchantTradeCallbackId, finalize_merchant_trade, set_flags_for_finalize_merchant_trade,
+    finalize_merchant_trade, set_flags_for_finalize_merchant_trade, FinalizeMerchantTradeCallbackId,
 };
 pub use finalize_party_offer_reducer::{
-    FinalizePartyOfferCallbackId, finalize_party_offer, set_flags_for_finalize_party_offer,
+    finalize_party_offer, set_flags_for_finalize_party_offer, FinalizePartyOfferCallbackId,
 };
 pub use insert_new_character_reducer::{
-    InsertNewCharacterCallbackId, insert_new_character, set_flags_for_insert_new_character,
+    insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
 };
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
@@ -175,11 +190,11 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
-pub use join_party_reducer::{JoinPartyCallbackId, join_party, set_flags_for_join_party};
+pub use join_party_reducer::{join_party, set_flags_for_join_party, JoinPartyCallbackId};
 pub use leave_mission_reducer::{
-    LeaveMissionCallbackId, leave_mission, set_flags_for_leave_mission,
+    leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
 };
-pub use leave_party_reducer::{LeavePartyCallbackId, leave_party, set_flags_for_leave_party};
+pub use leave_party_reducer::{leave_party, set_flags_for_leave_party, LeavePartyCallbackId};
 pub use party_member_table::*;
 pub use party_member_type::PartyMember;
 pub use party_table::*;
@@ -187,35 +202,50 @@ pub use party_type::Party;
 pub use quest_status_type::QuestStatus;
 pub use quest_table::*;
 pub use quest_type::Quest;
+pub use refresh_world_clock_reducer::{
+    refresh_world_clock, set_flags_for_refresh_world_clock, RefreshWorldClockCallbackId,
+};
 pub use request_tactical_server_for_scene_reducer::{
-    RequestTacticalServerForSceneCallbackId, request_tactical_server_for_scene,
-    set_flags_for_request_tactical_server_for_scene,
+    request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
+    RequestTacticalServerForSceneCallbackId,
 };
 pub use request_tactical_server_reducer::{
-    RequestTacticalServerCallbackId, request_tactical_server, set_flags_for_request_tactical_server,
+    request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
 };
 pub use seed_damaged_character_reducer::{
-    SeedDamagedCharacterCallbackId, seed_damaged_character, set_flags_for_seed_damaged_character,
+    seed_damaged_character, set_flags_for_seed_damaged_character, SeedDamagedCharacterCallbackId,
 };
 pub use seed_party_companions_reducer::{
-    SeedPartyCompanionsCallbackId, seed_party_companions, set_flags_for_seed_party_companions,
+    seed_party_companions, set_flags_for_seed_party_companions, SeedPartyCompanionsCallbackId,
 };
-pub use seed_world_reducer::{SeedWorldCallbackId, seed_world, set_flags_for_seed_world};
+pub use seed_world_reducer::{seed_world, set_flags_for_seed_world, SeedWorldCallbackId};
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
+pub use synchronize_character_time_reducer::{
+    set_flags_for_synchronize_character_time, synchronize_character_time,
+    SynchronizeCharacterTimeCallbackId,
+};
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use transfer_party_item_reducer::{
-    TransferPartyItemCallbackId, set_flags_for_transfer_party_item, transfer_party_item,
+    set_flags_for_transfer_party_item, transfer_party_item, TransferPartyItemCallbackId,
 };
 pub use travel_to_settlement_reducer::{
-    TravelToSettlementCallbackId, set_flags_for_travel_to_settlement, travel_to_settlement,
+    set_flags_for_travel_to_settlement, travel_to_settlement, TravelToSettlementCallbackId,
 };
 pub use update_character_reducer::{
-    UpdateCharacterCallbackId, set_flags_for_update_character, update_character,
+    set_flags_for_update_character, update_character, UpdateCharacterCallbackId,
 };
+pub use update_training_schedule_reducer::{
+    set_flags_for_update_training_schedule, update_training_schedule,
+    UpdateTrainingScheduleCallbackId,
+};
+pub use world_clock_schedule_table::*;
+pub use world_clock_schedule_type::WorldClockSchedule;
+pub use world_clock_table::*;
+pub use world_clock_type::WorldClock;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -360,6 +390,9 @@ pub enum Reducer {
     LeaveParty {
         character_id: u64,
     },
+    RefreshWorldClock {
+        schedule: WorldClockSchedule,
+    },
     RequestTacticalServer {
         mission_id: String,
         scene_key: String,
@@ -372,6 +405,9 @@ pub enum Reducer {
         leader_id: u64,
     },
     SeedWorld,
+    SynchronizeCharacterTime {
+        character_id: u64,
+    },
     TransferPartyItem {
         from_character_id: u64,
         to_character_id: u64,
@@ -385,6 +421,21 @@ pub enum Reducer {
     UpdateCharacter {
         id: u64,
         name: String,
+    },
+    UpdateTrainingSchedule {
+        character_id: u64,
+        melee_minutes: u16,
+        dodge_minutes: u16,
+        block_minutes: u16,
+        ranged_minutes: u16,
+        will_minutes: u16,
+        charisma_minutes: u16,
+        medicine_minutes: u16,
+        faith_minutes: u16,
+        stealth_minutes: u16,
+        balance_minutes: u16,
+        surgeon_minutes: u16,
+        labor_minutes: u16,
     },
 }
 
@@ -425,14 +476,17 @@ impl __sdk::Reducer for Reducer {
             Reducer::JoinParty { .. } => "join_party",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
+            Reducer::RefreshWorldClock { .. } => "refresh_world_clock",
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedWorld => "seed_world",
+            Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::UpdateCharacter { .. } => "update_character",
+            Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
             _ => unreachable!(),
         }
     }
@@ -590,6 +644,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "refresh_world_clock" => Ok(__sdk::parse_reducer_args::<
+                refresh_world_clock_reducer::RefreshWorldClockArgs,
+            >("refresh_world_clock", &value.args)?
+            .into()),
             "request_tactical_server" => Ok(__sdk::parse_reducer_args::<
                 request_tactical_server_reducer::RequestTacticalServerArgs,
             >("request_tactical_server", &value.args)?
@@ -615,6 +673,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "synchronize_character_time" => {
+                Ok(__sdk::parse_reducer_args::<
+                    synchronize_character_time_reducer::SynchronizeCharacterTimeArgs,
+                >("synchronize_character_time", &value.args)?
+                .into())
+            }
             "transfer_party_item" => Ok(__sdk::parse_reducer_args::<
                 transfer_party_item_reducer::TransferPartyItemArgs,
             >("transfer_party_item", &value.args)?
@@ -627,6 +691,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 update_character_reducer::UpdateCharacterArgs,
             >("update_character", &value.args)?
             .into()),
+            "update_training_schedule" => {
+                Ok(__sdk::parse_reducer_args::<
+                    update_training_schedule_reducer::UpdateTrainingScheduleArgs,
+                >("update_training_schedule", &value.args)?
+                .into())
+            }
             unknown => {
                 Err(
                     __sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo")
@@ -647,6 +717,8 @@ pub struct DbUpdate {
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
+    character_time: __sdk::TableUpdate<CharacterTime>,
+    character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     item: __sdk::TableUpdate<Item>,
@@ -656,6 +728,8 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
+    world_clock: __sdk::TableUpdate<WorldClock>,
+    world_clock_schedule: __sdk::TableUpdate<WorldClockSchedule>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -682,6 +756,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character_stats" => db_update
                     .character_stats
                     .append(character_stats_table::parse_table_update(table_update)?),
+                "character_time" => db_update
+                    .character_time
+                    .append(character_time_table::parse_table_update(table_update)?),
+                "character_training_schedule" => db_update.character_training_schedule.append(
+                    character_training_schedule_table::parse_table_update(table_update)?,
+                ),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
@@ -708,6 +788,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                     .append(tactical_server_table::parse_table_update(table_update)?),
                 "tactical_server_request" => db_update.tactical_server_request.append(
                     tactical_server_request_table::parse_table_update(table_update)?,
+                ),
+                "world_clock" => db_update
+                    .world_clock
+                    .append(world_clock_table::parse_table_update(table_update)?),
+                "world_clock_schedule" => db_update.world_clock_schedule.append(
+                    world_clock_schedule_table::parse_table_update(table_update)?,
                 ),
 
                 unknown => {
@@ -750,6 +836,15 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
         diff.character_stats =
             cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
+        diff.character_time = cache
+            .apply_diff_to_table::<CharacterTime>("character_time", &self.character_time)
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_training_schedule = cache
+            .apply_diff_to_table::<CharacterTrainingSchedule>(
+                "character_training_schedule",
+                &self.character_training_schedule,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -777,6 +872,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.tactical_server_request,
             )
             .with_updates_by_pk(|row| &row.mission_id);
+        diff.world_clock = cache
+            .apply_diff_to_table::<WorldClock>("world_clock", &self.world_clock)
+            .with_updates_by_pk(|row| &row.id);
+        diff.world_clock_schedule = cache
+            .apply_diff_to_table::<WorldClockSchedule>(
+                "world_clock_schedule",
+                &self.world_clock_schedule,
+            )
+            .with_updates_by_pk(|row| &row.scheduled_id);
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -794,6 +898,8 @@ pub struct AppliedDiff<'r> {
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
+    character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
+    character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -803,6 +909,8 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
+    world_clock: __sdk::TableAppliedDiff<'r, WorldClock>,
+    world_clock_schedule: __sdk::TableAppliedDiff<'r, WorldClockSchedule>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -842,6 +950,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_stats,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterTime>(
+            "character_time",
+            &self.character_time,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
+            "character_training_schedule",
+            &self.character_training_schedule,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
@@ -869,6 +987,12 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<TacticalServerRequest>(
             "tactical_server_request",
             &self.tactical_server_request,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<WorldClock>("world_clock", &self.world_clock, event);
+        callbacks.invoke_table_row_callbacks::<WorldClockSchedule>(
+            "world_clock_schedule",
+            &self.world_clock_schedule,
             event,
         );
     }
@@ -1134,21 +1258,21 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext:
     __sdk::DbContext<
-        DbView = RemoteTables,
-        Reducers = RemoteReducers,
-        SetReducerFlags = SetReducerFlags,
-        SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-    >
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SetReducerFlags = SetReducerFlags,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+>
 {
 }
 impl<
-    Ctx: __sdk::DbContext<
+        Ctx: __sdk::DbContext<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
             SetReducerFlags = SetReducerFlags,
             SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
         >,
-> RemoteDbContext for Ctx
+    > RemoteDbContext for Ctx
 {
 }
 
@@ -1596,6 +1720,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_limbs_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
+        character_time_table::register_table(client_cache);
+        character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -1605,5 +1731,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
+        world_clock_table::register_table(client_cache);
+        world_clock_schedule_table::register_table(client_cache);
     }
 }
