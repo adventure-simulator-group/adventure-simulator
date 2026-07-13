@@ -26,6 +26,8 @@ pub enum ItemKind {
     Weapon,
     Armor,
     Shield,
+    Clothing,
+    Currency,
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
@@ -69,6 +71,7 @@ pub struct Item {
     pub range_of_motion: f32,
     pub precise: bool,
     pub balance: f32,
+    pub base_value: Option<u32>,
 }
 
 #[reducer(init)]
@@ -76,7 +79,15 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Populating items...");
 
     define_item(ctx, "torch", 0.5);
+    ctx.db.item().insert(Item {
+        id: "gold_coin".into(),
+        weight: 0.01,
+        base_value: Some(1),
+        kind: ItemKind::Currency,
+        ..Item::default()
+    });
     define_item(ctx, "bandage", 0.05);
+    define_clothing(ctx, "linen_tunic", 0.6);
 
     define_shield(ctx, "buckler", 1.0, 1.0);
 
@@ -160,9 +171,33 @@ pub fn define_item(ctx: &ReducerContext, item_id: &str, weight: f32) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
+        base_value: Some((weight * 10.0).ceil() as u32),
         kind: ItemKind::Simple,
         ..Item::default()
     });
+}
+
+/// Backfill base values for item records created before values were added to
+/// the item schema. New records receive these values in their definition
+/// reducers; this migration intentionally leaves existing explicit values
+/// untouched.
+#[reducer]
+pub fn backfill_item_values(ctx: &ReducerContext) {
+    for mut item in ctx.db.item().iter() {
+        if item.base_value.is_some() {
+            continue;
+        }
+
+        let multiplier = match item.kind {
+            ItemKind::Simple => 10.0,
+            ItemKind::Weapon => 15.0,
+            ItemKind::Armor | ItemKind::Clothing => 25.0,
+            ItemKind::Shield => 8.0,
+            ItemKind::Currency => 1.0,
+        };
+        item.base_value = Some((item.weight * multiplier).ceil() as u32);
+        ctx.db.item().id().update(item);
+    }
 }
 
 #[reducer]
@@ -179,6 +214,7 @@ pub fn define_weapon(
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
+        base_value: Some((weight * 15.0).ceil() as u32),
         accuracy,
         penetration,
         reach,
@@ -194,8 +230,20 @@ pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f3
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
+        base_value: Some((weight * 8.0).ceil() as u32),
         block,
         kind: ItemKind::Shield,
+        ..Item::default()
+    });
+}
+
+#[reducer]
+pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
+    ctx.db.item().insert(Item {
+        id: item_id.to_string(),
+        weight,
+        base_value: Some((weight * 25.0).ceil() as u32),
+        kind: ItemKind::Clothing,
         ..Item::default()
     });
 }
@@ -215,6 +263,7 @@ pub fn define_armor(
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
         weight,
+        base_value: Some((weight * 25.0).ceil() as u32),
         slot,
         coverage,
         resistance,

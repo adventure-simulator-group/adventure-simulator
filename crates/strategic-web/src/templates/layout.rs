@@ -3,13 +3,8 @@
 use maud::{html, Markup, DOCTYPE};
 
 const THEMES: &[(&str, &str)] = &[
-    ("fraktur-texturina", "Fraktur trial: Texturina (readable)"),
-    ("renaissance-gold", "Renaissance Gold"),
-    ("fraktur-grenze", "Fraktur trial: Grenze Gotisch (most readable)"),
-    ("fraktur-new-rocker", "Fraktur trial: New Rocker (medium)"),
-    ("fraktur-cook", "Fraktur trial: UnifrakturCook (traditional)"),
-    ("fraktur-maguntia", "Fraktur trial: UnifrakturMaguntia (challenging)"),
-    ("fraktur-ewert", "Fraktur trial: Ewert (most ornate)"),
+    ("fraktur-texturina", "Fraktura"),
+    ("fraktur-nocturne", "Dark Fraktura"),
     ("dark-arcanum", "Dark Arcanum"),
     ("northern-frost", "Northern Frost"),
     ("verdant-chronicle", "Verdant Chronicle"),
@@ -20,7 +15,7 @@ fn validated_theme(theme: &str) -> &str {
     if THEMES.iter().any(|(id, _)| *id == theme) {
         theme
     } else {
-        "fraktur-texturina"
+        "fraktur-nocturne"
     }
 }
 
@@ -87,11 +82,12 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=service-icons-5";
-                link rel="stylesheet" href="/static/css/components.css?v=party-tabs";
+                link rel="stylesheet" href="/static/css/layout.css?v=theme-dropdown-1";
+                link rel="stylesheet" href="/static/css/components.css?v=semantic-stat-icons-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
+                script src="/static/party-trade.js?v=unified-trade-1" {}
             }
             body {
                 div class="app" {
@@ -133,21 +129,14 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
                     span class="player-name" {
                         "Playing as " strong { (name) }
                     }
+                    (switch_character_button())
                 } @else {
                     span class="player-name player-name-none" {
                         "No character"
                     }
                 }
 
-                div class="theme-switcher" {
-                    @for (id, _label) in THEMES {
-                        a href=(format!("/theme/{}", id))
-                            class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
-                            data-theme=(id)
-                            title=(_label)
-                        {}
-                    }
-                }
+                (theme_switcher(current_theme))
             }
         }
     }
@@ -205,11 +194,7 @@ fn settlement_top_bar(
                         aria-label=(label)
                         title=(label)
                     {
-                        span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {
-                            span class="notice-slip notice-slip-one" {}
-                            span class="notice-slip notice-slip-two" {}
-                            span class="notice-slip notice-slip-three" {}
-                        }
+                        span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
                     }
                 }
             }
@@ -217,6 +202,7 @@ fn settlement_top_bar(
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
                     span class="player-name" { "Party: " strong { (name) } }
+                    (switch_character_button())
                 } @else {
                     span class="player-name player-name-none" { "No active party" }
                 }
@@ -226,15 +212,34 @@ fn settlement_top_bar(
     }
 }
 
+fn switch_character_button() -> Markup {
+    html! {
+        form action="/characters/switch" method="post" {
+            button type="submit" class="btn btn-secondary btn-small" { "Switch character" }
+        }
+    }
+}
+
 fn theme_switcher(current_theme: &str) -> Markup {
     html! {
-        div class="theme-switcher" {
-            @for (id, _label) in THEMES {
+        details class="theme-switcher" {
+            summary
+                class=(format!("theme-dot active theme-current theme-{}", current_theme))
+                data-theme=(current_theme)
+                title="Choose theme"
+                aria-label="Choose theme"
+            {
+                span class="sr-only" { "Choose theme" }
+            }
+            div class="theme-menu" {
+                @for (id, label) in THEMES {
                 a href=(format!("/theme/{}", id))
                     class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
                     data-theme=(id)
-                    title=(_label)
+                    title=(label)
+                    aria-label=(label)
                 {}
+                }
             }
         }
     }

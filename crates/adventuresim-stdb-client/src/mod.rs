@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod abandon_quest_reducer;
 pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
+pub mod backfill_item_values_reducer;
 pub mod cancel_mission_request_reducer;
 pub mod change_inventory_item_reducer;
 pub mod character_attributes_table;
@@ -35,6 +36,7 @@ pub mod create_tactical_server_for_request_reducer;
 pub mod create_tactical_server_reducer;
 pub mod create_temporary_character_reducer;
 pub mod define_armor_reducer;
+pub mod define_clothing_reducer;
 pub mod define_item_reducer;
 pub mod define_shield_reducer;
 pub mod define_weapon_reducer;
@@ -43,6 +45,8 @@ pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
+pub mod finalize_merchant_trade_reducer;
+pub mod finalize_party_offer_reducer;
 pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
@@ -62,6 +66,8 @@ pub mod quest_table;
 pub mod quest_type;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
+pub mod seed_damaged_character_reducer;
+pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
 pub mod settlement_table;
 pub mod settlement_type;
@@ -69,21 +75,25 @@ pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod transfer_party_item_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
 
 pub use abandon_quest_reducer::{
-    abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
+    AbandonQuestCallbackId, abandon_quest, set_flags_for_abandon_quest,
 };
-pub use accept_quest_reducer::{accept_quest, set_flags_for_accept_quest, AcceptQuestCallbackId};
+pub use accept_quest_reducer::{AcceptQuestCallbackId, accept_quest, set_flags_for_accept_quest};
 pub use add_and_equip_item_reducer::{
-    add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
+    AddAndEquipItemCallbackId, add_and_equip_item, set_flags_for_add_and_equip_item,
+};
+pub use backfill_item_values_reducer::{
+    BackfillItemValuesCallbackId, backfill_item_values, set_flags_for_backfill_item_values,
 };
 pub use cancel_mission_request_reducer::{
-    cancel_mission_request, set_flags_for_cancel_mission_request, CancelMissionRequestCallbackId,
+    CancelMissionRequestCallbackId, cancel_mission_request, set_flags_for_cancel_mission_request,
 };
 pub use change_inventory_item_reducer::{
-    change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
+    ChangeInventoryItemCallbackId, change_inventory_item, set_flags_for_change_inventory_item,
 };
 pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
@@ -98,57 +108,66 @@ pub use character_stats_type::CharacterStats;
 pub use character_table::*;
 pub use character_type::Character;
 pub use complete_quest_reducer::{
-    complete_quest, set_flags_for_complete_quest, CompleteQuestCallbackId,
+    CompleteQuestCallbackId, complete_quest, set_flags_for_complete_quest,
 };
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
 pub use create_character_reducer::{
-    create_character, set_flags_for_create_character, CreateCharacterCallbackId,
+    CreateCharacterCallbackId, create_character, set_flags_for_create_character,
 };
 pub use create_named_character_reducer::{
-    create_named_character, set_flags_for_create_named_character, CreateNamedCharacterCallbackId,
+    CreateNamedCharacterCallbackId, create_named_character, set_flags_for_create_named_character,
 };
 pub use create_named_character_with_id_reducer::{
-    create_named_character_with_id, set_flags_for_create_named_character_with_id,
-    CreateNamedCharacterWithIdCallbackId,
+    CreateNamedCharacterWithIdCallbackId, create_named_character_with_id,
+    set_flags_for_create_named_character_with_id,
 };
-pub use create_party_reducer::{create_party, set_flags_for_create_party, CreatePartyCallbackId};
+pub use create_party_reducer::{CreatePartyCallbackId, create_party, set_flags_for_create_party};
 pub use create_tactical_server_for_request_reducer::{
-    create_tactical_server_for_request, set_flags_for_create_tactical_server_for_request,
-    CreateTacticalServerForRequestCallbackId,
+    CreateTacticalServerForRequestCallbackId, create_tactical_server_for_request,
+    set_flags_for_create_tactical_server_for_request,
 };
 pub use create_tactical_server_reducer::{
-    create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
+    CreateTacticalServerCallbackId, create_tactical_server, set_flags_for_create_tactical_server,
 };
 pub use create_temporary_character_reducer::{
-    create_temporary_character, set_flags_for_create_temporary_character,
-    CreateTemporaryCharacterCallbackId,
+    CreateTemporaryCharacterCallbackId, create_temporary_character,
+    set_flags_for_create_temporary_character,
 };
-pub use define_armor_reducer::{define_armor, set_flags_for_define_armor, DefineArmorCallbackId};
-pub use define_item_reducer::{define_item, set_flags_for_define_item, DefineItemCallbackId};
+pub use define_armor_reducer::{DefineArmorCallbackId, define_armor, set_flags_for_define_armor};
+pub use define_clothing_reducer::{
+    DefineClothingCallbackId, define_clothing, set_flags_for_define_clothing,
+};
+pub use define_item_reducer::{DefineItemCallbackId, define_item, set_flags_for_define_item};
 pub use define_shield_reducer::{
-    define_shield, set_flags_for_define_shield, DefineShieldCallbackId,
+    DefineShieldCallbackId, define_shield, set_flags_for_define_shield,
 };
 pub use define_weapon_reducer::{
-    define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
+    DefineWeaponCallbackId, define_weapon, set_flags_for_define_weapon,
 };
 pub use disband_party_reducer::{
-    disband_party, set_flags_for_disband_party, DisbandPartyCallbackId,
+    DisbandPartyCallbackId, disband_party, set_flags_for_disband_party,
 };
 pub use end_tactical_server_by_instance_reducer::{
-    end_tactical_server_by_instance, set_flags_for_end_tactical_server_by_instance,
-    EndTacticalServerByInstanceCallbackId,
+    EndTacticalServerByInstanceCallbackId, end_tactical_server_by_instance,
+    set_flags_for_end_tactical_server_by_instance,
 };
 pub use end_tactical_server_reducer::{
-    end_tactical_server, set_flags_for_end_tactical_server, EndTacticalServerCallbackId,
+    EndTacticalServerCallbackId, end_tactical_server, set_flags_for_end_tactical_server,
 };
 pub use enter_mission_reducer::{
-    enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
+    EnterMissionCallbackId, enter_mission, set_flags_for_enter_mission,
 };
-pub use equip_item_reducer::{equip_item, set_flags_for_equip_item, EquipItemCallbackId};
+pub use equip_item_reducer::{EquipItemCallbackId, equip_item, set_flags_for_equip_item};
+pub use finalize_merchant_trade_reducer::{
+    FinalizeMerchantTradeCallbackId, finalize_merchant_trade, set_flags_for_finalize_merchant_trade,
+};
+pub use finalize_party_offer_reducer::{
+    FinalizePartyOfferCallbackId, finalize_party_offer, set_flags_for_finalize_party_offer,
+};
 pub use insert_new_character_reducer::{
-    insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
+    InsertNewCharacterCallbackId, insert_new_character, set_flags_for_insert_new_character,
 };
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
@@ -156,11 +175,11 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
-pub use join_party_reducer::{join_party, set_flags_for_join_party, JoinPartyCallbackId};
+pub use join_party_reducer::{JoinPartyCallbackId, join_party, set_flags_for_join_party};
 pub use leave_mission_reducer::{
-    leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
+    LeaveMissionCallbackId, leave_mission, set_flags_for_leave_mission,
 };
-pub use leave_party_reducer::{leave_party, set_flags_for_leave_party, LeavePartyCallbackId};
+pub use leave_party_reducer::{LeavePartyCallbackId, leave_party, set_flags_for_leave_party};
 pub use party_member_table::*;
 pub use party_member_type::PartyMember;
 pub use party_table::*;
@@ -169,24 +188,33 @@ pub use quest_status_type::QuestStatus;
 pub use quest_table::*;
 pub use quest_type::Quest;
 pub use request_tactical_server_for_scene_reducer::{
-    request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
-    RequestTacticalServerForSceneCallbackId,
+    RequestTacticalServerForSceneCallbackId, request_tactical_server_for_scene,
+    set_flags_for_request_tactical_server_for_scene,
 };
 pub use request_tactical_server_reducer::{
-    request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
+    RequestTacticalServerCallbackId, request_tactical_server, set_flags_for_request_tactical_server,
 };
-pub use seed_world_reducer::{seed_world, set_flags_for_seed_world, SeedWorldCallbackId};
+pub use seed_damaged_character_reducer::{
+    SeedDamagedCharacterCallbackId, seed_damaged_character, set_flags_for_seed_damaged_character,
+};
+pub use seed_party_companions_reducer::{
+    SeedPartyCompanionsCallbackId, seed_party_companions, set_flags_for_seed_party_companions,
+};
+pub use seed_world_reducer::{SeedWorldCallbackId, seed_world, set_flags_for_seed_world};
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use transfer_party_item_reducer::{
+    TransferPartyItemCallbackId, set_flags_for_transfer_party_item, transfer_party_item,
+};
 pub use travel_to_settlement_reducer::{
-    set_flags_for_travel_to_settlement, travel_to_settlement, TravelToSettlementCallbackId,
+    TravelToSettlementCallbackId, set_flags_for_travel_to_settlement, travel_to_settlement,
 };
 pub use update_character_reducer::{
-    set_flags_for_update_character, update_character, UpdateCharacterCallbackId,
+    UpdateCharacterCallbackId, set_flags_for_update_character, update_character,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -210,6 +238,7 @@ pub enum Reducer {
         item_id: String,
         destination: ItemSlot,
     },
+    BackfillItemValues,
     CancelMissionRequest {
         mission_id: String,
     },
@@ -260,6 +289,10 @@ pub enum Reducer {
         flexibility: f32,
         range_of_motion: f32,
     },
+    DefineClothing {
+        item_id: String,
+        weight: f32,
+    },
     DefineItem {
         item_id: String,
         weight: f32,
@@ -299,6 +332,19 @@ pub enum Reducer {
         inventory_item_id: u64,
         destination: ItemSlot,
     },
+    FinalizeMerchantTrade {
+        character_id: u64,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+    },
+    FinalizePartyOffer {
+        from_character_ids: Vec<u64>,
+        to_character_ids: Vec<u64>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    },
     InsertNewCharacter {
         name: String,
         id: u64,
@@ -321,7 +367,17 @@ pub enum Reducer {
     RequestTacticalServerForScene {
         scene_key: String,
     },
+    SeedDamagedCharacter,
+    SeedPartyCompanions {
+        leader_id: u64,
+    },
     SeedWorld,
+    TransferPartyItem {
+        from_character_id: u64,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
+    },
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
@@ -342,6 +398,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonQuest { .. } => "abandon_quest",
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
+            Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CompleteQuest { .. } => "complete_quest",
@@ -353,6 +410,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CreateTacticalServerForRequest { .. } => "create_tactical_server_for_request",
             Reducer::CreateTemporaryCharacter { .. } => "create_temporary_character",
             Reducer::DefineArmor { .. } => "define_armor",
+            Reducer::DefineClothing { .. } => "define_clothing",
             Reducer::DefineItem { .. } => "define_item",
             Reducer::DefineShield { .. } => "define_shield",
             Reducer::DefineWeapon { .. } => "define_weapon",
@@ -361,13 +419,18 @@ impl __sdk::Reducer for Reducer {
             Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
+            Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
+            Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
             Reducer::JoinParty { .. } => "join_party",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
+            Reducer::SeedDamagedCharacter => "seed_damaged_character",
+            Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedWorld => "seed_world",
+            Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::UpdateCharacter { .. } => "update_character",
             _ => unreachable!(),
@@ -392,6 +455,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "add_and_equip_item" => Ok(__sdk::parse_reducer_args::<
                 add_and_equip_item_reducer::AddAndEquipItemArgs,
             >("add_and_equip_item", &value.args)?
+            .into()),
+            "backfill_item_values" => Ok(__sdk::parse_reducer_args::<
+                backfill_item_values_reducer::BackfillItemValuesArgs,
+            >("backfill_item_values", &value.args)?
             .into()),
             "cancel_mission_request" => Ok(__sdk::parse_reducer_args::<
                 cancel_mission_request_reducer::CancelMissionRequestArgs,
@@ -449,6 +516,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "define_clothing" => Ok(__sdk::parse_reducer_args::<
+                define_clothing_reducer::DefineClothingArgs,
+            >("define_clothing", &value.args)?
+            .into()),
             "define_item" => Ok(
                 __sdk::parse_reducer_args::<define_item_reducer::DefineItemArgs>(
                     "define_item",
@@ -489,6 +560,14 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "finalize_merchant_trade" => Ok(__sdk::parse_reducer_args::<
+                finalize_merchant_trade_reducer::FinalizeMerchantTradeArgs,
+            >("finalize_merchant_trade", &value.args)?
+            .into()),
+            "finalize_party_offer" => Ok(__sdk::parse_reducer_args::<
+                finalize_party_offer_reducer::FinalizePartyOfferArgs,
+            >("finalize_party_offer", &value.args)?
+            .into()),
             "insert_new_character" => Ok(__sdk::parse_reducer_args::<
                 insert_new_character_reducer::InsertNewCharacterArgs,
             >("insert_new_character", &value.args)?
@@ -521,6 +600,14 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 >("request_tactical_server_for_scene", &value.args)?
                 .into())
             }
+            "seed_damaged_character" => Ok(__sdk::parse_reducer_args::<
+                seed_damaged_character_reducer::SeedDamagedCharacterArgs,
+            >("seed_damaged_character", &value.args)?
+            .into()),
+            "seed_party_companions" => Ok(__sdk::parse_reducer_args::<
+                seed_party_companions_reducer::SeedPartyCompanionsArgs,
+            >("seed_party_companions", &value.args)?
+            .into()),
             "seed_world" => Ok(
                 __sdk::parse_reducer_args::<seed_world_reducer::SeedWorldArgs>(
                     "seed_world",
@@ -528,6 +615,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "transfer_party_item" => Ok(__sdk::parse_reducer_args::<
+                transfer_party_item_reducer::TransferPartyItemArgs,
+            >("transfer_party_item", &value.args)?
+            .into()),
             "travel_to_settlement" => Ok(__sdk::parse_reducer_args::<
                 travel_to_settlement_reducer::TravelToSettlementArgs,
             >("travel_to_settlement", &value.args)?
@@ -1043,21 +1134,21 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext:
     __sdk::DbContext<
-    DbView = RemoteTables,
-    Reducers = RemoteReducers,
-    SetReducerFlags = SetReducerFlags,
-    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
->
+        DbView = RemoteTables,
+        Reducers = RemoteReducers,
+        SetReducerFlags = SetReducerFlags,
+        SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+    >
 {
 }
 impl<
-        Ctx: __sdk::DbContext<
+    Ctx: __sdk::DbContext<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
             SetReducerFlags = SetReducerFlags,
             SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
         >,
-    > RemoteDbContext for Ctx
+> RemoteDbContext for Ctx
 {
 }
 
