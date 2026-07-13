@@ -4,8 +4,9 @@
   const leisureTip = 'It is strongly recommended to leave enough leisure time for sleep, and a moderate amount beyond that for morale.';
 
   function format(minutes) {
-    const whole = Math.floor(minutes / 60);
-    return `${whole}${['', '¼', '½', '¾'][(minutes % 60) / STEP]}h`;
+    const snapped = Math.round(Number(minutes) / STEP) * STEP;
+    const whole = Math.floor(snapped / 60);
+    return `${whole}${['', '¼', '½', '¾'][(snapped % 60) / STEP]}h`;
   }
 
   function leisureColor(minutes) {
@@ -28,24 +29,15 @@
     return 'rgb(16 16 16)';
   }
 
-  function distribute(values, names, amount) {
-    const total = names.reduce((sum, name) => sum + values[name], 0);
-    if (!total || !amount) return 0;
-    const portions = names.map((name, index) => {
-      const exact = values[name] * amount / total;
-      return { name, index, amount: Math.min(values[name], Math.floor(exact)), remainder: exact % 1 };
-    });
-    let assigned = portions.reduce((sum, portion) => sum + portion.amount, 0);
-    portions.sort((a, b) => b.remainder - a.remainder || a.index - b.index);
-    for (const portion of portions) {
-      if (assigned === amount) break;
-      if (portion.amount < values[portion.name]) {
-        portion.amount += 1;
-        assigned += 1;
-      }
+  function drainFromBottom(values, names, amount) {
+    let remaining = amount;
+    for (const name of [...names].reverse()) {
+      if (!remaining) break;
+      const drained = Math.min(values[name], remaining);
+      values[name] -= drained;
+      remaining -= drained;
     }
-    portions.forEach(({ name, amount: reduction }) => { values[name] -= reduction; });
-    return assigned;
+    return amount - remaining;
   }
 
   function stateFor(root) {
@@ -108,7 +100,7 @@
         allocation.labor_minutes -= fromLabor;
         remaining -= fromLabor;
       }
-      if (remaining) distribute(allocation, otherSkills, remaining);
+      if (remaining) drainFromBottom(allocation, otherSkills, remaining);
     } else {
       allocation[target] = next;
     }
