@@ -93,6 +93,9 @@ fn elapsed_official_minutes(clock: &WorldClock, now: Timestamp) -> u64 {
 }
 
 pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
+    if ctx.db.world_clock().id().find(0).is_none() {
+        initialize_time(ctx);
+    }
     let mut clock = ctx
         .db
         .world_clock()
