@@ -1893,9 +1893,9 @@
   border-bottom: 0.275rem solid transparent;
 }
 
-.schedule-step-decrease { right: 4ch; }
+.schedule-step-decrease { right: 4.45ch; }
 .schedule-step-decrease::before { border-right: 0.4rem solid var(--text-primary); }
-.schedule-step-increase { right: -0.55rem; }
+.schedule-step-increase { right: -0.8rem; }
 .schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
 .party-skill-allocation:hover .schedule-step,
 .schedule-step:focus-visible { opacity: 1; }
