@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (341)
+## Files (343)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -135,6 +135,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/party_stake_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/quest_issuer_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/quest_issuer_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quest_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quest_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/quest_type.rs` — Generated SpacetimeDB data type.
@@ -302,12 +304,12 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/strategic/clothing.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/inn.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/noticeboard.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
+- `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/textures/parchment-noise.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/textures/parchment-stains.svg` — Vector UI or texture asset.

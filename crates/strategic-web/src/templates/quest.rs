@@ -92,7 +92,6 @@ pub fn quests_list_page(quests: &[Quest], logged_in_as: Option<&str>, theme: &st
 /// Quest detail page
 pub fn quest_detail_page(
     quest: &Quest,
-    can_accept: bool,
     is_party_quest: bool,
     logged_in_as: Option<&str>,
     theme: &str,
@@ -149,14 +148,8 @@ pub fn quest_detail_page(
                     @match quest.status.to_lowercase().as_str() {
                         "available" => {
                             p style="font-size:var(--font-size-sm)" { "This quest is available." }
-                            @if can_accept {
-                                form action=(format!("/quests/{}/accept", quest.id)) method="post" class="mt-1" {
-                                    button type="submit" class="btn btn-primary btn-block" { "Accept Quest" }
-                                }
-                            } @else {
-                                p class="text-muted" style="font-size:var(--font-size-xs);margin-top:0.5rem" {
-                                    "Must be a party leader at this settlement to accept."
-                                }
+                            p class="text-muted" style="font-size:var(--font-size-xs);margin-top:0.5rem" {
+                                "Speak with the local NPC who needs the work done to add it to your tracker."
                             }
                         }
                         "accepted" => {
@@ -243,7 +236,7 @@ pub fn quest_location_map_page(
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
-    let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.settlement.id == id));
+    let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
     let content = html! {
         (map_destination_list(
             nearby,

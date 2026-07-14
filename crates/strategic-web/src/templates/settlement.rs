@@ -6,25 +6,15 @@
 
 use maud::{Markup, html};
 
-use super::recruitment::{PartyCheckSummary, aggregate_check_bars, requirements_label};
 use super::{
-    difficulty_stars, empty_state, gold_display, list_item, population_description,
-    quest_location_layout_with_session, settlement_layout_with_session, sidebar_section,
+    empty_state, list_item, population_description, quest_location_layout_with_session,
+    settlement_layout_with_session, sidebar_section,
 };
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, Party, PartyInventoryItem,
-    PartyRecruitmentRole, Quest, Settlement,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, PartyInventoryItem, Settlement,
 };
-
-pub struct RecruitingPartyRole {
-    pub party: Party,
-    pub role: PartyRecruitmentRole,
-    pub meets_requirements: bool,
-    pub checks: PartyCheckSummary,
-    pub contribution: PartyCheckSummary,
-}
 
 #[derive(Clone, Debug)]
 pub struct LocationView {
@@ -215,8 +205,7 @@ pub fn settlement_map_page(
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
-    let selected =
-        selected_id.and_then(|id| destinations.iter().find(|entry| entry.settlement.id == id));
+    let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
     let content = html! {
         (map_destination_list(destinations, selected_id, &base_path))
@@ -251,9 +240,9 @@ pub(crate) fn map_destination_list(
                 } @else {
                     nav class="location-destination-list" aria-label="Travel destinations" {
                         @for destination in destinations {
-                            a href=(format!("{}?destination={}", base_path, destination.settlement.id))
-                                class=(if selected_id == Some(destination.settlement.id.as_str()) { "list-item active" } else { "list-item" }) {
-                                strong { (&destination.settlement.name) }
+                            a href=(format!("{}?destination={}", base_path, destination.id))
+                                class=(if selected_id == Some(destination.id.as_str()) { "list-item active" } else { "list-item" }) {
+                                strong { (&destination.name) }
                                 span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
                             }
                         }
@@ -271,16 +260,16 @@ pub(crate) fn map_destination_detail(
     html! {
         aside class="right-sidebar" {
             @if let Some(destination) = selected {
-                (sidebar_section(&destination.settlement.name, html! {
+                (sidebar_section(&destination.name, html! {
                     @if can_travel {
-                        form method="post" action={ "/settlements/" (&destination.settlement.id) "/travel" } {
+                        form method="post" action=(&destination.travel_action) {
                             button type="submit" class="btn btn-primary btn-block" { "Travel" }
                         }
                     }
-                    p { (settlement_description(destination.settlement.population_level)) }
+                    p { (&destination.description) }
                     p class="text-muted small-copy" {
-                        (format_population(&destination.settlement))
-                        " · " (format_distance(destination.distance_m))
+                        @if let Some(summary) = &destination.summary { (summary) " · " }
+                        (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                     }
                 }))
@@ -339,88 +328,6 @@ fn format_journey_time(minutes: u64) -> String {
     } else {
         format!("{hours} h {minutes} min")
     }
-}
-
-/// Notice board page.
-pub fn noticeboard_page(
-    settlement: &Settlement,
-    quests: &[Quest],
-    selected_quest: Option<&Quest>,
-    recruiting_roles: &[RecruitingPartyRole],
-    can_request_to_join: bool,
-    active_character: Option<&Character>,
-    _inventory: &[InventoryItem],
-    party_members: &[Character],
-    can_accept: bool,
-    can_travel: bool,
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Posted quests", html! {
-                @if quests.is_empty() {
-                    p class="text-muted small-copy" { "No notices have been posted." }
-                } @else {
-                    div class="notice-quest-list" {
-                        @for quest in quests {
-                            @let recruiting_party = recruiting_roles.iter().find(|listing| listing.party.active_quest_id.as_deref() == Some(quest.id.as_str()));
-                            a href=(format!("/settlements/{}/noticeboard?quest={}", settlement.id, quest.id)) class="notice-quest notice-quest-link" {
-                                strong { (quest.title) }
-                                div class="notice-quest-meta" {
-                                    (difficulty_stars(quest.difficulty))
-                                    (gold_display(quest.gold_reward))
-                                }
-                                p class="small-copy" { (quest.enemy_count) " " (quest.enemy_type) }
-                                @if let Some(listing) = recruiting_party {
-                                    p class="small-copy role-warning" { "Taken by " (&listing.party.name) " · recruiting" }
-                                }
-                            }
-                        }
-                    }
-                }
-            }))
-            (sidebar_section("Party formation", html! {
-                @if recruiting_roles.is_empty() {
-                    p class="text-muted small-copy" { "No parties currently recruiting." }
-                } @else {
-                    @for listing in recruiting_roles {
-                        div class=(if listing.meets_requirements { "recruiting-role" } else { "recruiting-role recruiting-role-warning" }) {
-                            div {
-                                span class="member-name" { (&listing.party.name) }
-                                span class="member-role" { (&listing.role.name) }
-                                p class="small-copy text-muted" { (requirements_label(listing.role.requirements, listing.role.effective_weapon_precision())) }
-                                (aggregate_check_bars(&listing.party, listing.checks, Some(listing.contribution), false, true))
-                                @if !listing.meets_requirements { p class="small-copy role-warning" { "⚠ Your character does not meet every recommendation." } }
-                            }
-                            @if can_request_to_join && active_character.is_some() {
-                                form action=(format!("/party-roles/{}/join", listing.role.id)) method="post" {
-                                    button type="submit" class="btn btn-secondary btn-small" { "Request to join" }
-                                }
-                            }
-                        }
-                    }
-                }
-            }))
-        }
-        main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
-            (visual_stage("map", "Settlement map", "TODO: settlement map image"))
-            (settlement_chat_area("Notice Board", active_character))
-        }
-        aside class="right-sidebar" {
-            (quest_detail_rail(selected_quest, can_accept, can_travel))
-        }
-    };
-    settlement_layout_with_session(
-        "Notice Board",
-        &settlement.name,
-        &settlement.id,
-        "noticeboard",
-        content,
-        logged_in_as,
-        theme,
-    )
 }
 
 /// Market interface. Inventory and prices are intentionally UI-only placeholders
@@ -728,7 +635,12 @@ fn service_page(
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
-            (settlement_chat_area(title, active_character))
+            (settlement_service_chat_area(
+                title,
+                active_character,
+                &settlement.id,
+                service_id,
+            ))
         }
         aside class="right-sidebar" {
             @if trade_offers.is_some() {
@@ -867,7 +779,7 @@ pub fn live_merchant_shop_page(
                 }
             }))
         })) }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_chat_area(title, Some(character))) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (trade_inventory_table(true, html! {
@@ -1484,12 +1396,35 @@ fn incapacitation_wheel_placeholder() -> Markup {
 /// Layout-only chat panel matching the UX prototype. Channels, message history,
 /// and sending are deliberately disabled until the strategic chat backend exists.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
+    chat_area(location, active_character, None)
+}
+
+fn settlement_service_chat_area(
+    location: &str,
+    active_character: Option<&Character>,
+    settlement_id: &str,
+    service_id: &str,
+) -> Markup {
+    chat_area(
+        location,
+        active_character,
+        Some((settlement_id, service_id)),
+    )
+}
+
+fn chat_area(
+    location: &str,
+    active_character: Option<&Character>,
+    service_context: Option<(&str, &str)>,
+) -> Markup {
     let party_label = active_character
         .map(|character| format!("{}'s party", character.name))
         .unwrap_or_else(|| "Party".to_string());
 
     html! {
-        section class="settlement-chat" aria-label="Settlement chat" {
+        section class="settlement-chat" aria-label="Settlement chat"
+            data-service-quest-settlement=[service_context.map(|context| context.0)]
+            data-service-quest-id=[service_context.map(|context| context.1)] {
             div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
                 button type="button" class="settlement-chat-tab active" disabled
                     title="TODO: party chat requires real-time message delivery" {
@@ -1714,65 +1649,5 @@ fn rest_service_menu_placeholder(location: &str) -> Markup {
             button type="button" class="btn btn-primary btn-small btn-block" disabled
                 title="TODO: resting requires strategic downtime support" { "Rest" }
         }
-    }
-}
-
-fn quest_detail_rail(quest: Option<&Quest>, can_accept: bool, can_travel: bool) -> Markup {
-    html! {
-        (sidebar_section("Quest details", html! {
-            @if let Some(quest) = quest {
-                div class="quest-board-detail" {
-                    h3 { (&quest.title) }
-                    p class="small-copy" { (&quest.description) }
-                    div class="notice-quest-meta" {
-                        (difficulty_stars(quest.difficulty))
-                        (gold_display(quest.gold_reward))
-                    }
-                    p class="small-copy" { "Target: " (quest.enemy_count) " " (&quest.enemy_type) }
-                    @if quest.status.to_lowercase().contains("accepted") && can_travel {
-                        div class="quest-travel-footer" {
-                            div class="quest-travel-summary" {
-                                strong { (format!("{:.1} km", quest.distance_m as f64 / 1_000.0)) }
-                                span { (format_quest_time(quest.distance_m)) }
-                            }
-                            form action=(format!("/quests/{}/travel", quest.id)) method="post" class="quest-travel-action" {
-                                button type="submit" class="btn btn-primary" { "Travel" }
-                            }
-                        }
-                    } @else {
-                        div class="quest-travel-summary" {
-                            strong { (format!("{:.1} km", quest.distance_m as f64 / 1_000.0)) }
-                            span { (format_quest_time(quest.distance_m)) }
-                        }
-                    }
-                    @if quest.status.to_lowercase().contains("available") && can_accept {
-                        form action=(format!("/quests/{}/accept", quest.id)) method="post" {
-                            button type="submit" class="btn btn-primary btn-block" { "Accept Quest" }
-                        }
-                    } @else if quest.status.to_lowercase().contains("accepted") && !can_travel {
-                        p class="text-muted small-copy" { "Your party must be at the posting settlement to travel." }
-                    } @else if quest.status.to_lowercase().contains("available") && !can_accept {
-                        p class="text-muted small-copy" { "A party leader without an active quest may accept this posting." }
-                    }
-                }
-            } @else {
-                div class="context-placeholder" {
-                    p { "Select a quest to inspect its full details." }
-                }
-            }
-        }))
-    }
-}
-
-fn format_quest_time(distance_m: u64) -> String {
-    let minutes = distance_m
-        .saturating_mul(60)
-        .div_ceil(5_000)
-        .saturating_mul(4)
-        .max(1);
-    if minutes < 60 {
-        format!("{minutes} min")
-    } else {
-        format!("{} hr {} min", minutes / 60, minutes % 60)
     }
 }

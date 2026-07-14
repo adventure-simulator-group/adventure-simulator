@@ -228,7 +228,6 @@
   transition: background-color var(--transition-fast);
 }
 
-.service-tab-icon-noticeboard { --service-tab-icon: url("/static/icons/strategic/noticeboard.png"); }
 .service-tab-icon-tavern { --service-tab-icon: url("/static/icons/strategic/tavern.png"); }
 .service-tab-icon-market { --service-tab-icon: url("/static/icons/strategic/market.png"); }
 .service-tab-icon-weapons { --service-tab-icon: url("/static/icons/strategic/weapons.png"); }

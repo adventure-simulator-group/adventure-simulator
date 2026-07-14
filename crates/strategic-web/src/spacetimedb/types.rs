@@ -97,6 +97,13 @@ pub struct Quest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestIssuer {
+    pub quest_id: String,
+    pub settlement_id: String,
+    pub service_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Party {
     pub id: String,
     pub name: String,

@@ -110,6 +110,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 script src="/static/party-trade.js?v=inventory-discard-2" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
                 script src="/static/party-recruitment.js?v=slider-endpoints-1" defer {}
+                script src="/static/service-quests.js?v=service-quests-1" defer {}
             }
             body {
                 div class="app" {
@@ -185,7 +186,6 @@ fn settlement_top_bar(
 ) -> Markup {
     let services = [
         ("map", "Map", "map"),
-        ("noticeboard", "Notice Board", "noticeboard"),
         ("merchants", "General Market", "market"),
         ("weapons", "Weapons", "weapons"),
         ("armor", "Armour", "armor"),
@@ -213,7 +213,8 @@ fn settlement_top_bar(
                 }
             }
 
-            nav class="top-bar-center settlement-services" aria-label="Settlement services" {
+            nav class="top-bar-center settlement-services" aria-label="Settlement services"
+                data-settlement-id=(settlement_id) {
                 @for (path, label, icon) in services {
                     @let href = if path == "map" {
                         format!("/locations/settlement/{}/map", settlement_id)
@@ -224,10 +225,14 @@ fn settlement_top_bar(
                     };
                     a href=(href)
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                        data-service-id=(path)
                         aria-label=(label)
                         title=(label)
                     {
                         span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
+                        @if path != "map" {
+                            span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
+                        }
                     }
                 }
             }
@@ -336,7 +341,6 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 /// Helper for settlement service menu
 pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
     let items = [
-        ("noticeboard", "Notice Board"),
         ("merchants", "Merchants"),
         ("weapons", "Weapons"),
         ("armor", "Armour"),

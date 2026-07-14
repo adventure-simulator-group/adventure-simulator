@@ -284,6 +284,17 @@ pub struct Quest {
 }
 
 #[derive(Clone, Debug)]
+#[table(name = quest_issuer, public)]
+pub struct QuestIssuer {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    #[index(btree)]
+    pub service_id: String,
+}
+
+#[derive(Clone, Debug)]
 #[table(name = party, public)]
 pub struct Party {
     #[primary_key]
@@ -2606,8 +2617,44 @@ fn ensure_settlement_activity_inner(
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
+    ensure_quest_issuers(ctx, settlement_id);
     ensure_npc_quest_parties(ctx, settlement_id)?;
     Ok(())
+}
+
+fn ensure_quest_issuers(ctx: &ReducerContext, settlement_id: &str) {
+    for quest in ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+    {
+        if ctx.db.quest_issuer().quest_id().find(&quest.id).is_none() {
+            ctx.db.quest_issuer().insert(QuestIssuer {
+                quest_id: quest.id,
+                settlement_id: settlement_id.to_string(),
+                service_id: quest_service_for_title(&quest.title).to_string(),
+            });
+        }
+    }
+}
+
+fn quest_service_for_title(title: &str) -> &'static str {
+    if title.starts_with("Break Up the Bandit Camp") {
+        "merchants"
+    } else if title.starts_with("Recover the Stolen Ore")
+        || title.starts_with("Recover the Stolen Arms")
+    {
+        "weapons"
+    } else if title.starts_with("Purge the Old Mine") {
+        "armor"
+    } else if title.starts_with("Hunt the Wolf Pack") {
+        "clothing"
+    } else if title.starts_with("Quiet the Restless Dead") {
+        "religion"
+    } else {
+        "inn"
+    }
 }
 
 fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
@@ -2731,11 +2778,12 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let archetypes = [
         (
             "Clear the Goblin Cave",
-            "A band of goblins has taken up residence nearby.",
+            "Goblins have been attacking travelers on the road after dark.",
             "goblins",
             "cave",
             "You arrive at a cave.",
             2,
+            "inn",
         ),
         (
             "Break Up the Bandit Camp",
@@ -2744,38 +2792,43 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
             "camp",
             "You arrive at a rough camp.",
             3,
+            "merchants",
         ),
         (
             "Hunt the Wolf Pack",
-            "Wolves have been attacking livestock outside the walls.",
+            "Wolves have been attacking the flocks that supply wool and hides.",
             "wolves",
             "woods",
             "You arrive at a wooded hollow.",
             1,
+            "clothing",
         ),
         (
             "Purge the Old Mine",
-            "Giant spiders have infested an abandoned mine.",
+            "Giant spiders have cut off the armourer's supply of ore.",
             "spiders",
             "mine",
             "You arrive at an old mine.",
             3,
+            "armor",
         ),
         (
-            "Recover the Stolen Ore",
-            "Thieves are hiding with a stolen ore shipment.",
+            "Recover the Stolen Arms",
+            "Thieves are hiding with a stolen shipment of weapons.",
             "thieves",
             "camp",
             "You arrive at a hidden camp.",
             2,
+            "weapons",
         ),
         (
             "Quiet the Restless Dead",
-            "Travelers report dead men walking near a ruined chapel.",
+            "A necromancer has raised skeletons in a nearby crypt.",
             "skeletons",
             "ruins",
             "You arrive at ruined chapel.",
             4,
+            "religion",
         ),
     ];
     let occupied: HashSet<String> = ctx
@@ -2787,7 +2840,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .map(|quest| quest.title)
         .collect();
     let start = ctx.random::<u64>() as usize % archetypes.len();
-    let Some((title, description, enemy, scene, arrival, difficulty)) = (0..archetypes.len())
+    let Some((title, description, enemy, scene, arrival, difficulty, service_id)) = (0..archetypes
+        .len())
         .map(|offset| archetypes[(start + offset) % archetypes.len()])
         .find(|archetype| !occupied.contains(&format!("{} near {}", archetype.0, settlement.name)))
     else {
@@ -2810,14 +2864,15 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     };
     let enemy_count = difficulty * 2 + (ctx.random::<u64>() % 4) as i32;
     let nonce = ctx.random::<u64>();
+    let quest_id = format!("{}-{nonce:016x}", settlement.id);
     ctx.db.quest().insert(Quest {
-        id: format!("{}-{nonce:016x}", settlement.id),
+        id: quest_id.clone(),
         title: format!("{title} near {}", settlement.name),
         description: description.into(),
         difficulty,
         gold_reward: difficulty * 35 + distance_m.div_ceil(1_000) as i32 * 2,
         xp_reward: difficulty * 20,
-        settlement_id: settlement.id,
+        settlement_id: settlement.id.clone(),
         status: QuestStatus::Available,
         accepted_by: None,
         enemy_type: enemy.into(),
@@ -2828,6 +2883,11 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         location_coord_y: settlement.coord_y + offset_y,
         coordinates_are_geographic: geographic,
         distance_m,
+    });
+    ctx.db.quest_issuer().insert(QuestIssuer {
+        quest_id,
+        settlement_id: settlement.id,
+        service_id: service_id.into(),
     });
     Ok(())
 }

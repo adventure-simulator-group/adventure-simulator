@@ -11,7 +11,7 @@ use serde_json::json;
 
 use super::{
     AppState,
-    settlements::{TravelDestination, get_active_party_members},
+    settlements::{TravelDestination, get_active_party_members, settlement_destination},
 };
 use crate::session::Session;
 use crate::spacetimedb::{
@@ -29,6 +29,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/current-quest", get(current_quest))
         .route("/quests/{id}", get(show_quest))
         .route("/quests/{id}/accept", post(accept_quest))
+        .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
         .route("/quests/{id}/travel", post(travel_to_quest))
         .route("/quests/{id}/location", get(quest_location_redirect))
@@ -113,10 +114,6 @@ async fn list_quests(State(state): State<AppState>, session: Session) -> Respons
             if let Some(quest_id) = &character.current_quest_location_id {
                 return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
             }
-            if let Some(settlement_id) = &character.current_settlement_id {
-                return Redirect::to(&format!("/settlements/{settlement_id}/noticeboard"))
-                    .into_response();
-            }
         }
     }
     let quests: Vec<Quest> = state
@@ -146,8 +143,6 @@ async fn show_quest(
         None => return Html("<h1>Quest not found</h1>".to_string()),
     };
 
-    // Check if user can accept: must be party leader at quest's settlement
-    let mut can_accept = false;
     let mut is_party_quest = false;
 
     if let Some(character_id) = session.character_id_u64() {
@@ -162,23 +157,8 @@ async fn show_quest(
             .unwrap_or_default();
 
         if let Some(character) = characters.first() {
-            // Check if at quest's settlement
-            let at_settlement =
-                character.current_settlement_id.as_ref() == Some(&quest.settlement_id);
-
-            // Check if party leader
             if let Some(party_id) = &character.party_id {
-                let parties: Vec<Party> = state
-                    .db
-                    .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-                    .await
-                    .unwrap_or_default();
-
-                if let Some(party) = parties.first() {
-                    let is_leader = party.leader_id == character_id;
-                    can_accept = is_available_status(&quest.status) && at_settlement && is_leader;
-                    is_party_quest = quest.accepted_by.as_ref() == Some(party_id);
-                }
+                is_party_quest = quest.accepted_by.as_ref() == Some(party_id);
             }
         }
     }
@@ -187,7 +167,6 @@ async fn show_quest(
     Html(
         quest_detail_page(
             quest,
-            can_accept,
             is_party_quest,
             logged_in_as.as_deref(),
             session.theme(),
@@ -209,10 +188,6 @@ async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Opt
     characters.first().map(|c| c.name.clone())
 }
 
-fn is_available_status(status: &str) -> bool {
-    status.to_ascii_lowercase().contains("available")
-}
-
 async fn accept_quest(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -228,15 +203,67 @@ async fn accept_quest(
         .await
         .unwrap_or_default();
     let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
-    let _ = state
-        .db
-        .call("accept_quest", &[json!(character_id), json!(id.clone())])
-        .await;
+    let _ = accept_quest_for_character(&state, character_id, &id).await;
 
     settlement_id.map_or_else(
         || Redirect::to("/quests"),
-        |settlement_id| Redirect::to(&format!("/settlements/{settlement_id}/noticeboard")),
+        |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
     )
+}
+
+#[derive(Serialize)]
+struct AcceptQuestResponse {
+    accepted: bool,
+    quest_id: String,
+    title: String,
+    message: String,
+}
+
+async fn accept_quest_api(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<AcceptQuestResponse> {
+    let title = state
+        .db
+        .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .map(|quest| quest.title)
+        .unwrap_or_else(|| "Quest".to_string());
+    let result = match session.character_id_u64() {
+        Some(character_id) => accept_quest_for_character(&state, character_id, &id).await,
+        None => Err("Choose a character first".to_string()),
+    };
+    match result {
+        Ok(()) => Json(AcceptQuestResponse {
+            accepted: true,
+            quest_id: id,
+            title,
+            message: "Quest added to your tracker.".to_string(),
+        }),
+        Err(error) => Json(AcceptQuestResponse {
+            accepted: false,
+            quest_id: id,
+            title,
+            message: error,
+        }),
+    }
+}
+
+async fn accept_quest_for_character(
+    state: &AppState,
+    character_id: u64,
+    quest_id: &str,
+) -> Result<(), String> {
+    state
+        .db
+        .call("accept_quest", &[json!(character_id), json!(quest_id)])
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 async fn abandon_quest(
@@ -261,7 +288,7 @@ async fn abandon_quest(
 
     settlement_id.map_or_else(
         || Redirect::to("/quests"),
-        |settlement_id| Redirect::to(&format!("/settlements/{settlement_id}/noticeboard")),
+        |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
     )
 }
 
@@ -485,11 +512,7 @@ async fn render_quest_location(
         .into_iter()
         .map(|settlement| {
             let distance_m = straight_line_distance_m(quest, &settlement);
-            TravelDestination {
-                settlement,
-                distance_m,
-                journey_minutes: ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64,
-            }
+            settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
     nearby.sort_by_key(|destination| destination.distance_m);
@@ -618,7 +641,11 @@ async fn autoresolve_quest(
     Redirect::to(&format!("/locations/quest/{id}/loot"))
 }
 
-fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -> u64 {
+pub(crate) fn offroad_journey_minutes(distance_m: u64) -> u64 {
+    ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64
+}
+
+pub(crate) fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -> u64 {
     if quest.coordinates_are_geographic && settlement.source_node_id.is_some() {
         let lat1 = quest.location_coord_y.to_radians();
         let lat2 = settlement.coord_y.to_radians();

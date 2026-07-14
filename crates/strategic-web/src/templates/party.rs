@@ -163,8 +163,8 @@ pub fn party_detail_page(
                     p class="text-muted" { "No active quest" }
                     @if is_leader {
                         @if let Some(settlement_id) = &party.current_settlement_id {
-                            a href=(format!("/settlements/{}/noticeboard", settlement_id)) class="btn btn-primary btn-small mt-1" {
-                                "Find Quest"
+                            a href=(format!("/locations/settlement/{}", settlement_id)) class="btn btn-primary btn-small mt-1" {
+                                "Ask Around Town"
                             }
                         } @else {
                             a href="/settlements" class="btn btn-primary btn-small mt-1" {

@@ -1,12 +1,12 @@
 //! Settlement route handlers
 
 use axum::{
-    Form, Router,
+    Form, Json, Router,
     extract::{Path, Query, State},
     response::{Html, Redirect},
     routing::{get, post},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -15,16 +15,13 @@ use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party,
-    PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    RecruitmentRequirements, Settlement, TravelEdge,
+    PartyInventoryItem, PartyMember, PartyStake, Quest, QuestIssuer, Settlement, TravelEdge,
 };
-use crate::templates::recruitment::PartyCheckSummary;
 use crate::templates::settlement::{
-    LocationView, MerchantShop, RecruitingPartyRole, RestSummary, inn_page,
-    live_merchant_shop_page, merchants_page, noticeboard_page, party_discard_page,
-    party_inventory_page, party_personal_page, party_pool_page, party_stats_page, religion_page,
-    rest_result_page, settlement_map_page, settlement_overview_page, settlements_list_page,
-    smith_page,
+    LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
+    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
+    party_stats_page, religion_page, rest_result_page, settlement_map_page,
+    settlement_overview_page, settlements_list_page, smith_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -33,7 +30,10 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}", get(show_settlement))
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
-        .route("/settlements/{id}/noticeboard", get(noticeboard))
+        .route(
+            "/api/settlements/{id}/service-quests",
+            get(service_quest_offers),
+        )
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
@@ -174,8 +174,47 @@ async fn settlement_map(
         .query("SELECT * FROM travel_edge")
         .await
         .unwrap_or_default();
-    let destinations = connected_destinations(settlement, &settlements, &edges);
+    let mut destinations = connected_destinations(settlement, &settlements, &edges);
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let active_party = if let Some(party_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.party_id.as_ref())
+    {
+        state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    if let Some(quest_id) = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_ref())
+        && let Some(quest) = state
+            .db
+            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    {
+        let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
+        destinations.push(TravelDestination {
+            id: quest.id.clone(),
+            name: quest.title.clone(),
+            description: quest.description.clone(),
+            summary: Some(format!(
+                "Active quest · {} {}",
+                quest.enemy_count, quest.enemy_type
+            )),
+            travel_action: format!("/quests/{}/travel", quest.id),
+            distance_m,
+            journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
+        });
+    }
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -183,6 +222,9 @@ async fn settlement_map(
     .await;
     let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
+            && active_party
+                .as_ref()
+                .is_some_and(|party| party.leader_id == character.id)
     });
     Html(
         settlement_map_page(
@@ -201,13 +243,218 @@ async fn settlement_map(
     )
 }
 
+#[derive(Serialize)]
+struct ServiceQuestOffer {
+    id: String,
+    title: String,
+    service_id: String,
+    npc_name: &'static str,
+    greeting: String,
+    problem: String,
+    follow_up: String,
+    details: String,
+    acceptance: &'static str,
+    can_accept: bool,
+}
+
+async fn service_quest_offers(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<Vec<ServiceQuestOffer>> {
+    if state.db.is_local() {
+        let _ = state
+            .db
+            .call("ensure_settlement_activity", &[json!(id.clone())])
+            .await;
+    }
+    let settlements: Vec<Settlement> = state
+        .db
+        .query("SELECT * FROM settlement")
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
+        return Json(Vec::new());
+    };
+    let issuers: Vec<QuestIssuer> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM quest_issuer WHERE settlement_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let quests: Vec<Quest> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM quest WHERE settlement_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let edges: Vec<TravelEdge> = state
+        .db
+        .query("SELECT * FROM travel_edge")
+        .await
+        .unwrap_or_default();
+    let neighboring_name = connected_destinations(settlement, &settlements, &edges)
+        .first()
+        .map(|destination| destination.name.clone())
+        .unwrap_or_else(|| "the next settlement".to_string());
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let active_party = if let Some(party_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.party_id.as_ref())
+    {
+        state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(id.as_str())
+            && active_party.as_ref().is_some_and(|party| {
+                party.leader_id == character.id && party.active_quest_id.is_none()
+            })
+    });
+
+    Json(
+        issuers
+            .into_iter()
+            .filter_map(|issuer| {
+                let quest = quests.iter().find(|quest| {
+                    quest.id == issuer.quest_id
+                        && quest.status.eq_ignore_ascii_case("available")
+                })?;
+                let problem = quest.description.trim_end_matches('.').to_lowercase();
+                let low = (quest.enemy_count - 2).max(1);
+                let high = quest.enemy_count + 2;
+                let (npc_name, greeting) = service_quest_greeting(&issuer.service_id);
+                Some(ServiceQuestOffer {
+                    id: quest.id.clone(),
+                    title: quest.title.clone(),
+                    service_id: issuer.service_id.clone(),
+                    npc_name,
+                    greeting: greeting.to_string(),
+                    follow_up: format!("{problem}?"),
+                    problem,
+                    details: service_quest_details(
+                        &issuer.service_id,
+                        quest,
+                        &settlement.name,
+                        &neighboring_name,
+                        low,
+                        high,
+                    ),
+                    acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
+                    can_accept,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
+    match service_id {
+        "weapons" => (
+            "Weaponsmith",
+            "Welcome. Business would be better, were it not for how",
+        ),
+        "armor" => ("Armourer", "Welcome. Production has nearly stopped because"),
+        "clothing" => (
+            "Clothier",
+            "Welcome, traveler. Cloth is scarce of late because",
+        ),
+        "inn" => (
+            "Innkeeper",
+            "Welcome. Travelers have been avoiding this road because",
+        ),
+        "religion" => (
+            "Priest",
+            "Peace be with you. I fear our prayers alone cannot mend this:",
+        ),
+        _ => (
+            "Merchant",
+            "Welcome, traveler. You'll have to excuse the sorry state of my inventory;",
+        ),
+    }
+}
+
+fn service_quest_details(
+    service_id: &str,
+    quest: &Quest,
+    settlement_name: &str,
+    neighboring_name: &str,
+    low: i32,
+    high: i32,
+) -> String {
+    let situation = match service_id {
+        "weapons" => format!(
+            "the thieves are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
+        ),
+        "armor" => format!(
+            "the old mine between {settlement_name} and {neighboring_name} is choked with giant spiders, and no miner will go near it"
+        ),
+        "clothing" => format!(
+            "the wolves are ranging through the grazing land between {settlement_name} and {neighboring_name}, where our shepherds cannot avoid them"
+        ),
+        "inn" => format!(
+            "the goblins are lairing in a cave near the road between {settlement_name} and {neighboring_name} and attacking travelers after dark"
+        ),
+        "religion" => format!(
+            "a necromancer has occupied an old crypt outside {settlement_name} and raised its dead"
+        ),
+        _ => format!(
+            "a handful of bandits are camped in the forest near the road between {settlement_name} and {neighboring_name} and have been laying ambushes for my caravans"
+        ),
+    };
+    format!(
+        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} gold to anyone who clears them out. Are you",
+        quest.enemy_type, quest.gold_reward,
+    )
+}
+
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 
 #[derive(Clone)]
 pub struct TravelDestination {
-    pub settlement: Settlement,
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub summary: Option<String>,
+    pub travel_action: String,
     pub distance_m: u64,
     pub journey_minutes: u64,
+}
+
+pub(crate) fn settlement_destination(
+    settlement: Settlement,
+    distance_m: u64,
+    journey_minutes: u64,
+) -> TravelDestination {
+    let summary = (settlement.population_estimate > 0).then(|| {
+        format!(
+            "Population approximately {}",
+            settlement.population_estimate
+        )
+    });
+    TravelDestination {
+        id: settlement.id.clone(),
+        name: settlement.name.clone(),
+        description: crate::templates::settlement::settlement_description(
+            settlement.population_level,
+        )
+        .to_string(),
+        summary,
+        travel_action: format!("/settlements/{}/travel", settlement.id),
+        distance_m,
+        journey_minutes,
+    }
 }
 
 fn connected_destinations(
@@ -226,11 +473,7 @@ fn connected_destinations(
                 .sqrt()
                 .ceil() as u64;
                 let distance_m = distance_km.saturating_mul(1_000);
-                TravelDestination {
-                    settlement,
-                    distance_m,
-                    journey_minutes: journey_minutes(distance_m),
-                }
+                settlement_destination(settlement, distance_m, journey_minutes(distance_m))
             })
             .collect();
     };
@@ -269,11 +512,11 @@ fn connected_destinations(
         }
         if node != origin_node && settlement_nodes.contains(&node) {
             if let Some(settlement) = settlements_by_node.get(&node) {
-                destinations.push(TravelDestination {
-                    settlement: (*settlement).clone(),
+                destinations.push(settlement_destination(
+                    (*settlement).clone(),
                     distance_m,
-                    journey_minutes: journey_minutes(distance_m),
-                });
+                    journey_minutes(distance_m),
+                ));
             }
             continue;
         }
@@ -301,258 +544,6 @@ fn journey_minutes(distance_m: u64) -> u64 {
 
 async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/settlements/{id}/inn"))
-}
-
-async fn noticeboard(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<NoticeboardQuery>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    if state.db.is_local() {
-        if let Err(error) = state
-            .db
-            .call("ensure_settlement_activity", &[json!(id.clone())])
-            .await
-        {
-            tracing::error!("Failed to deposit party inventory: {error:?}");
-        }
-    }
-
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let parties: Vec<Party> = state
-        .db
-        .query::<Party>("SELECT * FROM party")
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|party| party.current_settlement_id.as_deref() == Some(id.as_str()))
-        .collect();
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let active_party = if let Some(party_id) = active_character
-        .as_ref()
-        .and_then(|(character, _)| character.party_id.as_ref())
-    {
-        state
-            .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-    } else {
-        None
-    };
-    let posted_quests: Vec<Quest> = quests
-        .iter()
-        .filter(|quest| !quest.status.to_lowercase().contains("completed"))
-        .cloned()
-        .collect();
-    let active_quest = active_party
-        .as_ref()
-        .and_then(|party| party.active_quest_id.as_ref())
-        .and_then(|active_id| quests.iter().find(|quest| &quest.id == active_id));
-    let selected_quest = query
-        .quest
-        .as_ref()
-        .and_then(|selected_id| quests.iter().find(|quest| &quest.id == selected_id))
-        .or(active_quest);
-    let active_capability = if let Some((character, _)) = active_character.as_ref() {
-        if let Err(error) = state
-            .db
-            .call("refresh_capabilities", &[json!(character.id)])
-            .await
-        {
-            tracing::error!("Failed to withdraw party inventory: {error:?}");
-        }
-        state
-            .db
-            .query::<CharacterCapability>(&format!(
-                "SELECT * FROM character_capability WHERE character_id = {}",
-                character.id
-            ))
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-    } else {
-        None
-    };
-    let mut recruiting_roles = Vec::new();
-    for party in &parties {
-        if active_character
-            .as_ref()
-            .and_then(|(character, _)| character.party_id.as_deref())
-            == Some(party.id.as_str())
-        {
-            continue;
-        }
-        let roles: Vec<PartyRecruitmentRole> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
-                party.id
-            ))
-            .await
-            .unwrap_or_default();
-        let memberships = state
-            .db
-            .query::<PartyMember>(&format!(
-                "SELECT * FROM party_member WHERE party_id = '{}'",
-                party.id
-            ))
-            .await
-            .unwrap_or_default();
-        let mut capabilities = Vec::new();
-        for membership in &memberships {
-            let _ = state
-                .db
-                .call("refresh_capabilities", &[json!(membership.character_id)])
-                .await;
-            if let Some(capability) = state
-                .db
-                .query::<CharacterCapability>(&format!(
-                    "SELECT * FROM character_capability WHERE character_id = {}",
-                    membership.character_id
-                ))
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .next()
-            {
-                capabilities.push(capability);
-            }
-        }
-        let medicine: Vec<f32> = capabilities.iter().map(|value| value.medicine).collect();
-        let surgery: Vec<f32> = capabilities.iter().map(|value| value.surgery).collect();
-        let charisma: Vec<f32> = capabilities.iter().map(|value| value.charisma).collect();
-        let faith: Vec<f32> = capabilities.iter().map(|value| value.faith).collect();
-        let checks = PartyCheckSummary {
-            medicine: adventuresim_core::capability::aggregate_party_check(
-                medicine.iter().copied(),
-            ),
-            surgery: adventuresim_core::capability::aggregate_party_check(surgery.iter().copied()),
-            charisma: adventuresim_core::capability::aggregate_party_check(
-                charisma.iter().copied(),
-            ),
-            faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
-        };
-        let contribution =
-            active_capability
-                .as_ref()
-                .map_or_default(|candidate| PartyCheckSummary {
-                    medicine: adventuresim_core::capability::aggregate_party_contribution(
-                        &medicine,
-                        candidate.medicine,
-                    ),
-                    surgery: adventuresim_core::capability::aggregate_party_contribution(
-                        &surgery,
-                        candidate.surgery,
-                    ),
-                    charisma: adventuresim_core::capability::aggregate_party_contribution(
-                        &charisma,
-                        candidate.charisma,
-                    ),
-                    faith: adventuresim_core::capability::aggregate_party_contribution(
-                        &faith,
-                        candidate.faith,
-                    ),
-                });
-        for role in roles {
-            let filled = memberships
-                .iter()
-                .filter(|member| member.recruitment_role_id == Some(role.id))
-                .count() as u32;
-            if filled < role.quantity {
-                let meets_requirements = active_capability.as_ref().is_none_or(|capability| {
-                    capability_meets(
-                        capability,
-                        role.requirements,
-                        role.effective_weapon_precision(),
-                    )
-                });
-                recruiting_roles.push(RecruitingPartyRole {
-                    party: party.clone(),
-                    role,
-                    meets_requirements,
-                    checks,
-                    contribution,
-                });
-            }
-        }
-    }
-    let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
-        active_party.as_ref().is_some_and(|party| {
-            party.leader_id == character.id
-                && party.active_quest_id.is_none()
-                && character.current_settlement_id.as_deref() == Some(&id)
-        })
-    });
-    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
-        active_party.as_ref().is_some_and(|party| {
-            party.leader_id == character.id
-                && party.active_quest_id.as_deref() == selected_quest.map(|quest| quest.id.as_str())
-                && character.current_settlement_id.as_deref() == Some(&id)
-        })
-    });
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    Html(
-        noticeboard_page(
-            settlement,
-            &posted_quests,
-            selected_quest,
-            &recruiting_roles,
-            active_character.as_ref().is_some_and(|(character, _)| {
-                active_party.as_ref().is_some_and(|party| {
-                    party.leader_id == character.id
-                        && party.active_quest_id.is_none()
-                        && character.current_settlement_id.as_deref() == Some(&id)
-                })
-            }),
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &party_members,
-            can_accept,
-            can_travel,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
-}
-
-#[derive(Default, Deserialize)]
-struct NoticeboardQuery {
-    quest: Option<String>,
 }
 
 async fn resolve_location(state: &AppState, kind: &str, id: &str) -> Option<LocationView> {
@@ -1797,45 +1788,6 @@ async fn render_service_page(
         )
         .into_string(),
     )
-}
-
-fn capability_meets(
-    c: &CharacterCapability,
-    r: RecruitmentRequirements,
-    weapon_precision: f32,
-) -> bool {
-    adventuresim_core::capability::CharacterCapabilities {
-        melee: c.melee,
-        ranged: c.ranged,
-        weapon_precision: c.weapon_precision,
-        heavy: c.heavy,
-        quarter_armor: c.quarter_armor,
-        half_armor: c.half_armor,
-        three_quarter_armor: c.three_quarter_armor,
-        full_armor: c.full_armor,
-        athletics: c.athletics,
-        endurance: c.endurance,
-        medicine: c.medicine,
-        surgery: c.surgery,
-        charisma: c.charisma,
-        faith: c.faith,
-    }
-    .meets(adventuresim_core::capability::RoleRequirements {
-        melee: r.melee,
-        ranged: r.ranged,
-        weapon_precision,
-        heavy: r.heavy,
-        quarter_armor: r.quarter_armor,
-        half_armor: r.half_armor,
-        three_quarter_armor: r.three_quarter_armor,
-        full_armor: r.full_armor,
-        athletics: r.athletics,
-        endurance: r.endurance,
-        medicine: 0,
-        surgery: 0,
-        charisma: 0,
-        faith: 0,
-    })
 }
 
 async fn get_active_character(

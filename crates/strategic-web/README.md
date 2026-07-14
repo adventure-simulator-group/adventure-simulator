@@ -80,7 +80,7 @@ Environment variables:
 ### Settlements
 - `GET /settlements` - World map / settlement list
 - `GET /settlements/:id` - Settlement overview
-- `GET /settlements/:id/noticeboard` - Quest board
+- `GET /api/settlements/:id/service-quests` - Available NPC quest offers
 - `GET /settlements/:id/tavern` - Party recruitment
 - `GET /settlements/:id/merchants` - Shop (placeholder)
 - `GET /settlements/:id/smith` - Smithy (placeholder)

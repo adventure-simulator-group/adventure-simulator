@@ -2596,7 +2596,8 @@ button.party-portrait-action {
 }
 
 .chat-system-message,
-.chat-npc-message {
+.chat-npc-message,
+.chat-player-message {
   margin-bottom: 0.35rem;
 }
 
@@ -2607,6 +2608,17 @@ button.party-portrait-action {
 
 .chat-npc-message {
   color: var(--text-primary);
+}
+
+.chat-player-message {
+  color: var(--accent-dark);
+}
+
+.chat-quest-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
 }
 
 .chat-timestamp {
