@@ -1944,7 +1944,8 @@
 }
 
 .settlement-turn-in-badge,
-.destination-turn-in-badge {
+.destination-turn-in-badge,
+.destination-quest-badge {
   display: inline-grid;
   width: 1.15rem;
   height: 1.15rem;
@@ -1957,7 +1958,15 @@
 
 .settlement-turn-in-badge[hidden] { display: none; }
 
-.destination-turn-in-badge { margin-left: auto; }
+.destination-turn-in-badge,
+.destination-quest-badge { margin-left: auto; }
+
+.destination-quest-badge {
+  border-color: #db5960;
+  background: #b4232c;
+  color: #fff;
+  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
+}
 
 .chat-quest-link.service-role-link-none { color: #6fa8dc; }
 .chat-quest-link.service-role-link-all { color: #73b879; }

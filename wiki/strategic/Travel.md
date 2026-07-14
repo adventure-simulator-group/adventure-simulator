@@ -54,8 +54,10 @@ MVP's normal walking speed). Both settlement and quest-destination travel use th
 shared Map tab: destinations are selected in the left rail and their description,
 distance, journey time, and travel action appear in the right rail. A party's
 active quest destination is added to the settlement Map list alongside the
-road-connected settlements; quest-offer dialogue itself never presents a
-separate travel action.
+road-connected settlements and carries the same red exclamation used by the
+active quest tracker. Once resolved, the issuing settlement instead carries a
+gold turn-in exclamation. Quest-offer dialogue itself never presents a separate
+travel action.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.

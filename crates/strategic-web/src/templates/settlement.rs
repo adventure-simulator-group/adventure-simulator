@@ -244,7 +244,10 @@ pub(crate) fn map_destination_list(
                             a href=(format!("{}?destination={}", base_path, destination.id))
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item active" } else { "list-item" }) {
                                 strong { (&destination.name) }
-                                @if destination.turn_in_ready {
+                                @if destination.quest_in_progress {
+                                    span class="destination-quest-badge" title="Active quest destination"
+                                        aria-label="Active quest destination" { "!" }
+                                } @else if destination.turn_in_ready {
                                     span class="destination-turn-in-badge" title="Quest ready to turn in here"
                                         aria-label="Quest ready to turn in here" { "!" }
                                 }
@@ -1782,5 +1785,32 @@ fn rest_service_menu_placeholder(location: &str) -> Markup {
             button type="button" class="btn btn-primary btn-small btn-block" disabled
                 title="TODO: resting requires strategic downtime support" { "Rest" }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_quest_destination_has_red_status_badge() {
+        let destination = TravelDestination {
+            id: "quest-location".to_string(),
+            name: "Bandit camp".to_string(),
+            description: "A camp beside the road.".to_string(),
+            summary: Some("Active quest".to_string()),
+            travel_action: "/quests/quest-location/travel".to_string(),
+            distance_m: 1_000,
+            journey_minutes: 48,
+            quest_in_progress: true,
+            turn_in_ready: false,
+        };
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("destination-quest-badge"));
+        assert!(markup.contains("Active quest destination"));
+        assert!(!markup.contains("destination-turn-in-badge"));
     }
 }

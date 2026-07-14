@@ -226,6 +226,7 @@ async fn settlement_map(
             travel_action: format!("/quests/{}/travel", quest.id),
             distance_m,
             journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
+            quest_in_progress: true,
             turn_in_ready: false,
         });
     }
@@ -694,6 +695,7 @@ pub struct TravelDestination {
     pub travel_action: String,
     pub distance_m: u64,
     pub journey_minutes: u64,
+    pub quest_in_progress: bool,
     pub turn_in_ready: bool,
 }
 
@@ -719,6 +721,7 @@ pub(crate) fn settlement_destination(
         travel_action: format!("/settlements/{}/travel", settlement.id),
         distance_m,
         journey_minutes,
+        quest_in_progress: false,
         turn_in_ready: false,
     }
 }
