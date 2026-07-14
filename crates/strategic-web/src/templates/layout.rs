@@ -111,6 +111,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
                 script src="/static/party-recruitment.js?v=slider-endpoints-1" defer {}
                 script src="/static/service-quests.js?v=service-quests-1" defer {}
+                script src="/static/chat-resize.js?v=chat-resize-1" defer {}
             }
             body {
                 div class="app" {

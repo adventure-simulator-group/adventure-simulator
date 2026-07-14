@@ -1359,7 +1359,8 @@ pub(crate) fn record_battle_result(
         }
     }
     if include_random_quest_gold && ctx.random::<u64>().is_multiple_of(2) {
-        let gold = quest.gold_reward.max(0) as u32;
+        let maximum_gold = quest.difficulty.max(1) as u32 * 10;
+        let gold = 1 + (ctx.random::<u64>() % u64::from(maximum_gold)) as u32;
         if gold > 0 {
             *combined.entry("gold_coin".into()).or_default() += gold;
         }
@@ -2184,6 +2185,9 @@ pub fn abandon_quest(
     if quest.accepted_by.as_ref() != Some(&party_id) {
         return Err("This quest is not accepted by your party".into());
     }
+    if quest.status == QuestStatus::Completed {
+        return Err("A completed quest must be returned to its questgiver".into());
+    }
 
     ctx.db.quest().id().delete(&quest.id);
 
@@ -2455,9 +2459,12 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         return Err("Quest has no party assigned".into());
     };
 
-    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
     let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
@@ -2470,13 +2477,70 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         }
     }
 
-    let settlement_id = quest.settlement_id.clone();
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
+    Ok(())
+}
+
+#[reducer]
+pub fn turn_in_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Must be in a party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can turn in quests".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .ok_or("Quest not found")?;
+    if quest.status != QuestStatus::Completed || quest.accepted_by.as_ref() != Some(&party_id) {
+        return Err("The quest has not been completed by this party".into());
+    }
+    if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
+        return Err("Return to the questgiver's settlement to claim the reward".into());
+    }
+
+    let reward = quest.gold_reward.max(0) as u64;
+    if reward > 0 {
+        add_to_party_inventory(ctx, &party_id, "gold_coin", reward as u32);
+        let recipients: Vec<u64> = ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(&party_id)
+            .map(|member| member.character_id)
+            .collect();
+        let recipient_count = recipients.len().max(1) as u64;
+        let share = reward / recipient_count;
+        for recipient in recipients {
+            credit_party_stake(ctx, &party_id, recipient, share);
+        }
+        credit_party_reserve(ctx, &party_id, reward % recipient_count);
+    }
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
-    ensure_settlement_activity_inner(ctx, &settlement_id)?;
+    ensure_settlement_activity_inner(ctx, &quest.settlement_id)?;
     Ok(())
 }
 
@@ -2607,12 +2671,20 @@ fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
+    let tracked_quests: HashSet<String> = ctx
+        .db
+        .party()
+        .iter()
+        .filter_map(|party| party.active_quest_id)
+        .collect();
     let active = ctx
         .db
         .quest()
         .settlement_id()
         .filter(&settlement_id.to_string())
-        .filter(|quest| quest.status != QuestStatus::Completed)
+        .filter(|quest| {
+            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+        })
         .count();
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
@@ -2831,12 +2903,20 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
             "religion",
         ),
     ];
+    let tracked_quests: HashSet<String> = ctx
+        .db
+        .party()
+        .iter()
+        .filter_map(|party| party.active_quest_id)
+        .collect();
     let occupied: HashSet<String> = ctx
         .db
         .quest()
         .settlement_id()
         .filter(&settlement.id)
-        .filter(|quest| quest.status != QuestStatus::Completed)
+        .filter(|quest| {
+            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+        })
         .map(|quest| quest.title)
         .collect();
     let start = ctx.random::<u64>() as usize % archetypes.len();

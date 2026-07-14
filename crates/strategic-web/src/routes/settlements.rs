@@ -200,6 +200,7 @@ async fn settlement_map(
             .unwrap_or_default()
             .into_iter()
             .next()
+        && quest.status.eq_ignore_ascii_case("accepted")
     {
         let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
         destinations.push(TravelDestination {
@@ -254,7 +255,11 @@ struct ServiceQuestOffer {
     follow_up: String,
     details: String,
     acceptance: &'static str,
+    state: &'static str,
+    waiting: &'static str,
+    turn_in_response: String,
     can_accept: bool,
+    can_turn_in: bool,
 }
 
 async fn service_quest_offers(
@@ -322,15 +327,31 @@ async fn service_quest_offers(
                 party.leader_id == character.id && party.active_quest_id.is_none()
             })
     });
+    let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(id.as_str())
+            && active_party
+                .as_ref()
+                .is_some_and(|party| party.leader_id == character.id)
+    });
 
     Json(
         issuers
             .into_iter()
             .filter_map(|issuer| {
-                let quest = quests.iter().find(|quest| {
-                    quest.id == issuer.quest_id
-                        && quest.status.eq_ignore_ascii_case("available")
-                })?;
+                let quest = quests.iter().find(|quest| quest.id == issuer.quest_id)?;
+                let is_current = active_party.as_ref().is_some_and(|party| {
+                    party.active_quest_id.as_deref() == Some(quest.id.as_str())
+                        && quest.accepted_by.as_deref() == Some(party.id.as_str())
+                });
+                let state = if quest.status.eq_ignore_ascii_case("available") {
+                    "available"
+                } else if is_current && quest.status.eq_ignore_ascii_case("completed") {
+                    "ready"
+                } else if is_current {
+                    "underway"
+                } else {
+                    return None;
+                };
                 let problem = quest.description.trim_end_matches('.').to_lowercase();
                 let low = (quest.enemy_count - 2).max(1);
                 let high = quest.enemy_count + 2;
@@ -352,7 +373,14 @@ async fn service_quest_offers(
                         high,
                     ),
                     acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
+                    state,
+                    waiting: "Hello again, I eagerly await the results of your efforts.",
+                    turn_in_response: format!(
+                        "Excellent work. Here is the promised {} gold. You've earned it.",
+                        quest.gold_reward
+                    ),
                     can_accept,
+                    can_turn_in: can_turn_in && state == "ready",
                 })
             })
             .collect(),

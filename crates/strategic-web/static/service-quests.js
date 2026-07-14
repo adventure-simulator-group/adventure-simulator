@@ -57,6 +57,11 @@
     summary.hidden = false;
   };
 
+  const clearTracker = () => {
+    const summary = document.querySelector("[data-current-quest]");
+    if (summary) summary.hidden = true;
+  };
+
   const beginConversation = (quest) => {
     const messages = chat.querySelector(".settlement-chat-messages");
     messages?.querySelector(".chat-npc-message")?.remove();
@@ -93,6 +98,41 @@
     line("npc", quest.npc_name, greeting);
   };
 
+  const beginReturnConversation = (quest) => {
+    const messages = chat.querySelector(".settlement-chat-messages");
+    messages?.querySelector(".chat-npc-message")?.remove();
+    if (quest.state === "underway") {
+      line("npc", quest.npc_name, quest.waiting);
+      return;
+    }
+
+    const greeting = document.createDocumentFragment();
+    greeting.append(document.createTextNode("Welcome back. Have you "));
+    greeting.append(link("finished", async () => {
+      line("player", "You", "I've finished.");
+      if (!quest.can_turn_in) {
+        line("npc", quest.npc_name, "Your party leader should report the result and receive the reward.");
+        return;
+      }
+      const response = await fetch(`/api/quests/${encodeURIComponent(quest.id)}/turn-in`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const result = await response.json();
+      if (!result.claimed) {
+        line("npc", quest.npc_name, result.message || "I cannot settle this account just now.");
+        return;
+      }
+      line("npc", quest.npc_name, quest.turn_in_response);
+      clearTracker();
+      const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
+      const badge = tab?.querySelector("[data-service-quest-badge]");
+      if (badge) badge.hidden = true;
+    }));
+    greeting.append(document.createTextNode("?"));
+    line("npc", quest.npc_name, greeting);
+  };
+
   fetch(`/api/settlements/${encodeURIComponent(settlementId)}/service-quests`, {
     headers: { Accept: "application/json" },
   })
@@ -101,11 +141,12 @@
       quests.forEach((quest) => {
         const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
         const badge = tab?.querySelector("[data-service-quest-badge]");
-        if (badge) badge.hidden = false;
+        if (badge && quest.state !== "underway") badge.hidden = false;
       });
       if (!chat || chat.dataset.serviceQuestSettlement !== settlementId) return;
       const quest = quests.find((entry) => entry.service_id === chat.dataset.serviceQuestId);
-      if (quest) beginConversation(quest);
+      if (quest?.state === "available") beginConversation(quest);
+      else if (quest) beginReturnConversation(quest);
     })
     .catch(() => {});
 })();

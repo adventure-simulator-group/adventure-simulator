@@ -7,6 +7,8 @@ Services show up at the top, above the list of items in their own list. Each ser
 > Halbe: Brothels may provide... _other_ services... for a morale bonus. ||But also a risk of being afflicted by a disease||.
 
 In the center of the screen, clients may render a 3D window of the NPC representing the service. They can have dialogue that plays, like a greeting when you open their menu, a goodbye when you leave it, and comments as you interact with their menu. But this should never interfere with the gameplay. You don't have to click through dialogue in order to buy something, it just plays in the background as you use their service. This is not important for the MVP, and later down the line this would also be a great opportunity to add voice acting and mocap to give the world some personality.
+
+The shared chat panel can be resized vertically from its top edge. Its height is shared across settlement and quest-location pages and remembered by the client.
 > Halbe: The inspiration for this is the Maiden in Black from Demon's Souls, who recites an incantation while you are in the level-up menu.
 
 # Social

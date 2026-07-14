@@ -167,7 +167,11 @@ pub fn quest_detail_page(
                         }
                         "completed" => {
                             p class="text-success" style="font-size:var(--font-size-sm);font-weight:600" {
-                                "Quest completed!"
+                                @if is_party_quest {
+                                    "Objective complete — return to the questgiver for your reward."
+                                } @else {
+                                    "Quest completed!"
+                                }
                             }
                         }
                         _ => {

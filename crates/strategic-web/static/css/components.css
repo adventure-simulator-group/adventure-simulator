@@ -2543,15 +2543,53 @@ button.party-portrait-action {
 
 /* Persistent, currently read-only chat area from the settlement UX prototype. */
 .settlement-chat {
+  --chat-height: 11.5rem;
   display: flex;
-  flex: 0 0 11.5rem;
+  flex: 0 0 var(--chat-height);
   flex-direction: column;
-  min-height: 0;
+  min-height: 8rem;
+  max-height: calc(100% - 8rem);
   overflow: hidden;
   border: 1px solid var(--border-accent);
   border-radius: var(--radius);
   background: var(--panel-bg);
   box-shadow: var(--shadow-sm);
+}
+
+.settlement-chat-resize {
+  display: grid;
+  flex: 0 0 0.65rem;
+  place-items: center;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.settlement-chat-resize span {
+  width: 2.75rem;
+  height: 0.2rem;
+  border-radius: 999px;
+  background: var(--border-accent);
+  opacity: 0.65;
+  transition: width var(--transition-fast), opacity var(--transition-fast);
+}
+
+.settlement-chat-resize:is(:hover, :focus-visible) span,
+.settlement-chat-resize.is-resizing span {
+  width: 4rem;
+  opacity: 1;
+}
+
+.settlement-chat-resize:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+body.chat-resizing {
+  cursor: ns-resize;
+  user-select: none;
 }
 
 .settlement-chat-tabs {

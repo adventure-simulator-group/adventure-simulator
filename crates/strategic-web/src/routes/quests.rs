@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppState> {
         .route("/quests/{id}", get(show_quest))
         .route("/quests/{id}/accept", post(accept_quest))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
+        .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
         .route("/quests/{id}/travel", post(travel_to_quest))
         .route("/quests/{id}/location", get(quest_location_redirect))
@@ -96,7 +97,8 @@ async fn current_quest(
     Json(quest.map(|quest| CurrentQuestSummary {
         id: quest.id,
         title: quest.title,
-        can_abandon: party.leader_id == character.id
+        can_abandon: quest.status.eq_ignore_ascii_case("accepted")
+            && party.leader_id == character.id
             && character.current_quest_location_id.is_none(),
     }))
 }
@@ -264,6 +266,49 @@ async fn accept_quest_for_character(
         .await
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize)]
+struct TurnInQuestResponse {
+    claimed: bool,
+    reward: i32,
+    message: String,
+}
+
+async fn turn_in_quest_api(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<TurnInQuestResponse> {
+    let reward = state
+        .db
+        .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .map_or(0, |quest| quest.gold_reward);
+    let result = match session.character_id_u64() {
+        Some(character_id) => state
+            .db
+            .call("turn_in_quest", &[json!(character_id), json!(id)])
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        None => Err("Choose a character first".to_string()),
+    };
+    match result {
+        Ok(()) => Json(TurnInQuestResponse {
+            claimed: true,
+            reward,
+            message: "Quest reward added to the party inventory.".to_string(),
+        }),
+        Err(error) => Json(TurnInQuestResponse {
+            claimed: false,
+            reward: 0,
+            message: error,
+        }),
+    }
 }
 
 async fn abandon_quest(
@@ -522,6 +567,7 @@ async fn render_quest_location(
         .zip(party.as_ref())
         .is_some_and(|(character, party)| party.leader_id == character.id);
     let can_fight = can_control
+        && quest.status.eq_ignore_ascii_case("accepted")
         && party
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));

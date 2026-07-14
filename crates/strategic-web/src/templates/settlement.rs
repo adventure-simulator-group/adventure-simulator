@@ -1425,6 +1425,11 @@ fn chat_area(
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
             data-service-quest-id=[service_context.map(|context| context.1)] {
+            div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
+                aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
+                aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
+                span aria-hidden="true" {}
+            }
             div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
                 button type="button" class="settlement-chat-tab active" disabled
                     title="TODO: party chat requires real-time message delivery" {

@@ -132,6 +132,7 @@ pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
+pub mod turn_in_quest_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_training_schedule_reducer;
@@ -147,24 +148,24 @@ pub mod world_node_table;
 pub mod world_node_type;
 
 pub use abandon_quest_reducer::{
-    AbandonQuestCallbackId, abandon_quest, set_flags_for_abandon_quest,
+    abandon_quest, set_flags_for_abandon_quest, AbandonQuestCallbackId,
 };
 pub use accept_party_join_request_reducer::{
-    AcceptPartyJoinRequestCallbackId, accept_party_join_request,
-    set_flags_for_accept_party_join_request,
+    accept_party_join_request, set_flags_for_accept_party_join_request,
+    AcceptPartyJoinRequestCallbackId,
 };
-pub use accept_quest_reducer::{AcceptQuestCallbackId, accept_quest, set_flags_for_accept_quest};
+pub use accept_quest_reducer::{accept_quest, set_flags_for_accept_quest, AcceptQuestCallbackId};
 pub use add_and_equip_item_reducer::{
-    AddAndEquipItemCallbackId, add_and_equip_item, set_flags_for_add_and_equip_item,
+    add_and_equip_item, set_flags_for_add_and_equip_item, AddAndEquipItemCallbackId,
 };
 pub use autoresolve_quest_reducer::{
-    AutoresolveQuestCallbackId, autoresolve_quest, set_flags_for_autoresolve_quest,
+    autoresolve_quest, set_flags_for_autoresolve_quest, AutoresolveQuestCallbackId,
 };
 pub use backfill_item_values_reducer::{
-    BackfillItemValuesCallbackId, backfill_item_values, set_flags_for_backfill_item_values,
+    backfill_item_values, set_flags_for_backfill_item_values, BackfillItemValuesCallbackId,
 };
 pub use backfill_solo_parties_reducer::{
-    BackfillSoloPartiesCallbackId, backfill_solo_parties, set_flags_for_backfill_solo_parties,
+    backfill_solo_parties, set_flags_for_backfill_solo_parties, BackfillSoloPartiesCallbackId,
 };
 pub use battle_loot_item_table::*;
 pub use battle_loot_item_type::BattleLootItem;
@@ -173,17 +174,17 @@ pub use battle_participant_type::BattleParticipant;
 pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_world_data_import_reducer::{
-    BeginWorldDataImportCallbackId, begin_world_data_import, set_flags_for_begin_world_data_import,
+    begin_world_data_import, set_flags_for_begin_world_data_import, BeginWorldDataImportCallbackId,
 };
 pub use calibrate_weapon_precision_reducer::{
-    CalibrateWeaponPrecisionCallbackId, calibrate_weapon_precision,
-    set_flags_for_calibrate_weapon_precision,
+    calibrate_weapon_precision, set_flags_for_calibrate_weapon_precision,
+    CalibrateWeaponPrecisionCallbackId,
 };
 pub use cancel_mission_request_reducer::{
-    CancelMissionRequestCallbackId, cancel_mission_request, set_flags_for_cancel_mission_request,
+    cancel_mission_request, set_flags_for_cancel_mission_request, CancelMissionRequestCallbackId,
 };
 pub use change_inventory_item_reducer::{
-    ChangeInventoryItemCallbackId, change_inventory_item, set_flags_for_change_inventory_item,
+    change_inventory_item, set_flags_for_change_inventory_item, ChangeInventoryItemCallbackId,
 };
 pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
@@ -204,92 +205,92 @@ pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use complete_quest_reducer::{
-    CompleteQuestCallbackId, complete_quest, set_flags_for_complete_quest,
+    complete_quest, set_flags_for_complete_quest, CompleteQuestCallbackId,
 };
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
 pub use create_character_reducer::{
-    CreateCharacterCallbackId, create_character, set_flags_for_create_character,
+    create_character, set_flags_for_create_character, CreateCharacterCallbackId,
 };
 pub use create_named_character_reducer::{
-    CreateNamedCharacterCallbackId, create_named_character, set_flags_for_create_named_character,
+    create_named_character, set_flags_for_create_named_character, CreateNamedCharacterCallbackId,
 };
 pub use create_named_character_with_id_reducer::{
-    CreateNamedCharacterWithIdCallbackId, create_named_character_with_id,
-    set_flags_for_create_named_character_with_id,
+    create_named_character_with_id, set_flags_for_create_named_character_with_id,
+    CreateNamedCharacterWithIdCallbackId,
 };
 pub use create_recruitment_role_reducer::{
-    CreateRecruitmentRoleCallbackId, create_recruitment_role, set_flags_for_create_recruitment_role,
+    create_recruitment_role, set_flags_for_create_recruitment_role, CreateRecruitmentRoleCallbackId,
 };
 pub use create_tactical_server_for_request_reducer::{
-    CreateTacticalServerForRequestCallbackId, create_tactical_server_for_request,
-    set_flags_for_create_tactical_server_for_request,
+    create_tactical_server_for_request, set_flags_for_create_tactical_server_for_request,
+    CreateTacticalServerForRequestCallbackId,
 };
 pub use create_tactical_server_reducer::{
-    CreateTacticalServerCallbackId, create_tactical_server, set_flags_for_create_tactical_server,
+    create_tactical_server, set_flags_for_create_tactical_server, CreateTacticalServerCallbackId,
 };
 pub use create_temporary_character_reducer::{
-    CreateTemporaryCharacterCallbackId, create_temporary_character,
-    set_flags_for_create_temporary_character,
+    create_temporary_character, set_flags_for_create_temporary_character,
+    CreateTemporaryCharacterCallbackId,
 };
-pub use define_armor_reducer::{DefineArmorCallbackId, define_armor, set_flags_for_define_armor};
+pub use define_armor_reducer::{define_armor, set_flags_for_define_armor, DefineArmorCallbackId};
 pub use define_clothing_reducer::{
-    DefineClothingCallbackId, define_clothing, set_flags_for_define_clothing,
+    define_clothing, set_flags_for_define_clothing, DefineClothingCallbackId,
 };
-pub use define_item_reducer::{DefineItemCallbackId, define_item, set_flags_for_define_item};
+pub use define_item_reducer::{define_item, set_flags_for_define_item, DefineItemCallbackId};
 pub use define_shield_reducer::{
-    DefineShieldCallbackId, define_shield, set_flags_for_define_shield,
+    define_shield, set_flags_for_define_shield, DefineShieldCallbackId,
 };
 pub use define_weapon_reducer::{
-    DefineWeaponCallbackId, define_weapon, set_flags_for_define_weapon,
+    define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
 };
 pub use delete_saved_recruitment_role_reducer::{
-    DeleteSavedRecruitmentRoleCallbackId, delete_saved_recruitment_role,
-    set_flags_for_delete_saved_recruitment_role,
+    delete_saved_recruitment_role, set_flags_for_delete_saved_recruitment_role,
+    DeleteSavedRecruitmentRoleCallbackId,
 };
 pub use deposit_party_inventory_item_reducer::{
-    DepositPartyInventoryItemCallbackId, deposit_party_inventory_item,
-    set_flags_for_deposit_party_inventory_item,
+    deposit_party_inventory_item, set_flags_for_deposit_party_inventory_item,
+    DepositPartyInventoryItemCallbackId,
 };
 pub use disband_party_reducer::{
-    DisbandPartyCallbackId, disband_party, set_flags_for_disband_party,
+    disband_party, set_flags_for_disband_party, DisbandPartyCallbackId,
 };
 pub use discard_inventory_items_reducer::{
-    DiscardInventoryItemsCallbackId, discard_inventory_items, set_flags_for_discard_inventory_items,
+    discard_inventory_items, set_flags_for_discard_inventory_items, DiscardInventoryItemsCallbackId,
 };
 pub use end_tactical_server_by_instance_reducer::{
-    EndTacticalServerByInstanceCallbackId, end_tactical_server_by_instance,
-    set_flags_for_end_tactical_server_by_instance,
+    end_tactical_server_by_instance, set_flags_for_end_tactical_server_by_instance,
+    EndTacticalServerByInstanceCallbackId,
 };
 pub use end_tactical_server_reducer::{
-    EndTacticalServerCallbackId, end_tactical_server, set_flags_for_end_tactical_server,
+    end_tactical_server, set_flags_for_end_tactical_server, EndTacticalServerCallbackId,
 };
 pub use ensure_settlement_activity_reducer::{
-    EnsureSettlementActivityCallbackId, ensure_settlement_activity,
-    set_flags_for_ensure_settlement_activity,
+    ensure_settlement_activity, set_flags_for_ensure_settlement_activity,
+    EnsureSettlementActivityCallbackId,
 };
 pub use enter_mission_reducer::{
-    EnterMissionCallbackId, enter_mission, set_flags_for_enter_mission,
+    enter_mission, set_flags_for_enter_mission, EnterMissionCallbackId,
 };
-pub use equip_item_reducer::{EquipItemCallbackId, equip_item, set_flags_for_equip_item};
+pub use equip_item_reducer::{equip_item, set_flags_for_equip_item, EquipItemCallbackId};
 pub use finalize_merchant_trade_reducer::{
-    FinalizeMerchantTradeCallbackId, finalize_merchant_trade, set_flags_for_finalize_merchant_trade,
+    finalize_merchant_trade, set_flags_for_finalize_merchant_trade, FinalizeMerchantTradeCallbackId,
 };
 pub use finalize_party_offer_reducer::{
-    FinalizePartyOfferCallbackId, finalize_party_offer, set_flags_for_finalize_party_offer,
+    finalize_party_offer, set_flags_for_finalize_party_offer, FinalizePartyOfferCallbackId,
 };
 pub use import_settlements_reducer::{
-    ImportSettlementsCallbackId, import_settlements, set_flags_for_import_settlements,
+    import_settlements, set_flags_for_import_settlements, ImportSettlementsCallbackId,
 };
 pub use import_travel_edges_reducer::{
-    ImportTravelEdgesCallbackId, import_travel_edges, set_flags_for_import_travel_edges,
+    import_travel_edges, set_flags_for_import_travel_edges, ImportTravelEdgesCallbackId,
 };
 pub use import_world_nodes_reducer::{
-    ImportWorldNodesCallbackId, import_world_nodes, set_flags_for_import_world_nodes,
+    import_world_nodes, set_flags_for_import_world_nodes, ImportWorldNodesCallbackId,
 };
 pub use insert_new_character_reducer::{
-    InsertNewCharacterCallbackId, insert_new_character, set_flags_for_insert_new_character,
+    insert_new_character, set_flags_for_insert_new_character, InsertNewCharacterCallbackId,
 };
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
@@ -298,12 +299,12 @@ pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
 pub use leave_mission_reducer::{
-    LeaveMissionCallbackId, leave_mission, set_flags_for_leave_mission,
+    leave_mission, set_flags_for_leave_mission, LeaveMissionCallbackId,
 };
-pub use leave_party_reducer::{LeavePartyCallbackId, leave_party, set_flags_for_leave_party};
+pub use leave_party_reducer::{leave_party, set_flags_for_leave_party, LeavePartyCallbackId};
 pub use liquidate_party_inventory_reducer::{
-    LiquidatePartyInventoryCallbackId, liquidate_party_inventory,
-    set_flags_for_liquidate_party_inventory,
+    liquidate_party_inventory, set_flags_for_liquidate_party_inventory,
+    LiquidatePartyInventoryCallbackId,
 };
 pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
@@ -326,90 +327,93 @@ pub use quest_table::*;
 pub use quest_type::Quest;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::{
-    RefreshCapabilitiesCallbackId, refresh_capabilities, set_flags_for_refresh_capabilities,
+    refresh_capabilities, set_flags_for_refresh_capabilities, RefreshCapabilitiesCallbackId,
 };
 pub use refresh_world_clock_reducer::{
-    RefreshWorldClockCallbackId, refresh_world_clock, set_flags_for_refresh_world_clock,
+    refresh_world_clock, set_flags_for_refresh_world_clock, RefreshWorldClockCallbackId,
 };
 pub use reject_party_join_request_reducer::{
-    RejectPartyJoinRequestCallbackId, reject_party_join_request,
-    set_flags_for_reject_party_join_request,
+    reject_party_join_request, set_flags_for_reject_party_join_request,
+    RejectPartyJoinRequestCallbackId,
 };
 pub use remove_party_member_reducer::{
-    RemovePartyMemberCallbackId, remove_party_member, set_flags_for_remove_party_member,
+    remove_party_member, set_flags_for_remove_party_member, RemovePartyMemberCallbackId,
 };
 pub use rename_saved_recruitment_role_reducer::{
-    RenameSavedRecruitmentRoleCallbackId, rename_saved_recruitment_role,
-    set_flags_for_rename_saved_recruitment_role,
+    rename_saved_recruitment_role, set_flags_for_rename_saved_recruitment_role,
+    RenameSavedRecruitmentRoleCallbackId,
 };
 pub use request_tactical_server_for_scene_reducer::{
-    RequestTacticalServerForSceneCallbackId, request_tactical_server_for_scene,
-    set_flags_for_request_tactical_server_for_scene,
+    request_tactical_server_for_scene, set_flags_for_request_tactical_server_for_scene,
+    RequestTacticalServerForSceneCallbackId,
 };
 pub use request_tactical_server_reducer::{
-    RequestTacticalServerCallbackId, request_tactical_server, set_flags_for_request_tactical_server,
+    request_tactical_server, set_flags_for_request_tactical_server, RequestTacticalServerCallbackId,
 };
 pub use request_to_join_party_reducer::{
-    RequestToJoinPartyCallbackId, request_to_join_party, set_flags_for_request_to_join_party,
+    request_to_join_party, set_flags_for_request_to_join_party, RequestToJoinPartyCallbackId,
 };
 pub use rest_at_settlement_reducer::{
-    RestAtSettlementCallbackId, rest_at_settlement, set_flags_for_rest_at_settlement,
+    rest_at_settlement, set_flags_for_rest_at_settlement, RestAtSettlementCallbackId,
 };
 pub use save_recruitment_role_reducer::{
-    SaveRecruitmentRoleCallbackId, save_recruitment_role, set_flags_for_save_recruitment_role,
+    save_recruitment_role, set_flags_for_save_recruitment_role, SaveRecruitmentRoleCallbackId,
 };
 pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
 pub use seed_bot_join_requests_reducer::{
-    SeedBotJoinRequestsCallbackId, seed_bot_join_requests, set_flags_for_seed_bot_join_requests,
+    seed_bot_join_requests, set_flags_for_seed_bot_join_requests, SeedBotJoinRequestsCallbackId,
 };
 pub use seed_damaged_character_reducer::{
-    SeedDamagedCharacterCallbackId, seed_damaged_character, set_flags_for_seed_damaged_character,
+    seed_damaged_character, set_flags_for_seed_damaged_character, SeedDamagedCharacterCallbackId,
 };
 pub use seed_party_companions_reducer::{
-    SeedPartyCompanionsCallbackId, seed_party_companions, set_flags_for_seed_party_companions,
+    seed_party_companions, set_flags_for_seed_party_companions, SeedPartyCompanionsCallbackId,
 };
-pub use seed_world_reducer::{SeedWorldCallbackId, seed_world, set_flags_for_seed_world};
+pub use seed_world_reducer::{seed_world, set_flags_for_seed_world, SeedWorldCallbackId};
 pub use settlement_import_type::SettlementImport;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
 pub use store_battle_loot_reducer::{
-    StoreBattleLootCallbackId, set_flags_for_store_battle_loot, store_battle_loot,
+    set_flags_for_store_battle_loot, store_battle_loot, StoreBattleLootCallbackId,
 };
 pub use synchronize_character_time_reducer::{
-    SynchronizeCharacterTimeCallbackId, set_flags_for_synchronize_character_time,
-    synchronize_character_time,
+    set_flags_for_synchronize_character_time, synchronize_character_time,
+    SynchronizeCharacterTimeCallbackId,
 };
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use transfer_party_item_reducer::{
-    TransferPartyItemCallbackId, set_flags_for_transfer_party_item, transfer_party_item,
+    set_flags_for_transfer_party_item, transfer_party_item, TransferPartyItemCallbackId,
 };
 pub use travel_edge_import_type::TravelEdgeImport;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_to_quest_reducer::{
-    TravelToQuestCallbackId, set_flags_for_travel_to_quest, travel_to_quest,
+    set_flags_for_travel_to_quest, travel_to_quest, TravelToQuestCallbackId,
 };
 pub use travel_to_settlement_reducer::{
-    TravelToSettlementCallbackId, set_flags_for_travel_to_settlement, travel_to_settlement,
+    set_flags_for_travel_to_settlement, travel_to_settlement, TravelToSettlementCallbackId,
+};
+pub use turn_in_quest_reducer::{
+    set_flags_for_turn_in_quest, turn_in_quest, TurnInQuestCallbackId,
 };
 pub use update_character_reducer::{
-    UpdateCharacterCallbackId, set_flags_for_update_character, update_character,
+    set_flags_for_update_character, update_character, UpdateCharacterCallbackId,
 };
 pub use update_party_check_targets_reducer::{
-    UpdatePartyCheckTargetsCallbackId, set_flags_for_update_party_check_targets,
-    update_party_check_targets,
+    set_flags_for_update_party_check_targets, update_party_check_targets,
+    UpdatePartyCheckTargetsCallbackId,
 };
 pub use update_training_schedule_reducer::{
-    UpdateTrainingScheduleCallbackId, set_flags_for_update_training_schedule,
-    update_training_schedule,
+    set_flags_for_update_training_schedule, update_training_schedule,
+    UpdateTrainingScheduleCallbackId,
 };
 pub use withdraw_party_inventory_item_reducer::{
-    WithdrawPartyInventoryItemCallbackId, set_flags_for_withdraw_party_inventory_item,
-    withdraw_party_inventory_item,
+    set_flags_for_withdraw_party_inventory_item, withdraw_party_inventory_item,
+    WithdrawPartyInventoryItemCallbackId,
 };
 pub use world_clock_schedule_table::*;
 pub use world_clock_schedule_type::WorldClockSchedule;
@@ -682,6 +686,10 @@ pub enum Reducer {
         character_id: u64,
         settlement_id: String,
     },
+    TurnInQuest {
+        character_id: u64,
+        quest_id: String,
+    },
     UpdateCharacter {
         id: u64,
         name: String,
@@ -783,6 +791,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
+            Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
@@ -1084,6 +1093,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "travel_to_settlement" => Ok(__sdk::parse_reducer_args::<
                 travel_to_settlement_reducer::TravelToSettlementArgs,
             >("travel_to_settlement", &value.args)?
+            .into()),
+            "turn_in_quest" => Ok(__sdk::parse_reducer_args::<
+                turn_in_quest_reducer::TurnInQuestArgs,
+            >("turn_in_quest", &value.args)?
             .into()),
             "update_character" => Ok(__sdk::parse_reducer_args::<
                 update_character_reducer::UpdateCharacterArgs,
@@ -1856,21 +1869,21 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext:
     __sdk::DbContext<
-        DbView = RemoteTables,
-        Reducers = RemoteReducers,
-        SetReducerFlags = SetReducerFlags,
-        SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-    >
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SetReducerFlags = SetReducerFlags,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+>
 {
 }
 impl<
-    Ctx: __sdk::DbContext<
+        Ctx: __sdk::DbContext<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
             SetReducerFlags = SetReducerFlags,
             SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
         >,
-> RemoteDbContext for Ctx
+    > RemoteDbContext for Ctx
 {
 }
 
