@@ -14,12 +14,16 @@
     const leaderId = panel.dataset.leaderId;
     const leaderPortrait = overlay.querySelector(`[data-character-id="${leaderId}"]`);
     if (leaderPortrait) {
+      overlay.prepend(leaderPortrait);
       const crown = document.createElement("span");
       crown.className = "party-leader-crown";
       crown.textContent = "♛";
       crown.title = "Party leader";
       leaderPortrait.append(crown);
     }
+
+    const aggregateChecks = panel.querySelector("[data-party-aggregate-checks]");
+    if (aggregateChecks && leaderPortrait) overlay.insertBefore(aggregateChecks, leaderPortrait);
 
     panel.querySelectorAll("[data-party-role-group]").forEach((group) => {
       group.hidden = false;
@@ -28,12 +32,14 @@
 
     const leftSidebar = document.querySelector(".left-sidebar");
     const rightSidebar = document.querySelector(".right-sidebar");
+    const center = document.querySelector("main.center-content");
     const clearRoleInspection = () => {
       document.querySelectorAll("[data-party-role-group].selected").forEach((group) => {
         group.classList.remove("selected");
         group.querySelectorAll("[data-select-party-role]").forEach((button) => button.setAttribute("aria-pressed", "false"));
       });
       document.querySelectorAll("[data-role-inspection-panel]").forEach((detail) => detail.remove());
+      document.querySelectorAll("[data-applicant-inspection-preview]").forEach((detail) => detail.remove());
       document.querySelectorAll(".role-inspection-hidden").forEach((element) => element.classList.remove("role-inspection-hidden"));
     };
     const inspectRole = (group) => {
@@ -51,6 +57,34 @@
         detail.append(template.content.cloneNode(true));
         sidebar.append(detail);
       });
+      const rightDetail = rightSidebar?.querySelector("[data-role-inspection-panel]");
+      rightDetail?.querySelectorAll("[data-select-role-applicant]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const applicant = button.closest(".role-request-detail");
+          const leftTemplate = applicant?.querySelector("[data-applicant-left-template]");
+          const centerTemplate = applicant?.querySelector("[data-applicant-center-template]");
+          leftSidebar?.querySelector("[data-role-inspection-panel]")?.remove();
+          if (leftSidebar && leftTemplate) {
+            const detail = document.createElement("div");
+            detail.dataset.roleInspectionPanel = "true";
+            detail.className = "role-inspection-panel";
+            detail.append(leftTemplate.content.cloneNode(true));
+            leftSidebar.append(detail);
+          }
+          center?.querySelectorAll("[data-applicant-inspection-preview]").forEach((preview) => preview.remove());
+          center?.querySelectorAll(":scope > .service-visual").forEach((visual) => visual.classList.add("role-inspection-hidden"));
+          if (center && centerTemplate) {
+            const preview = document.createElement("div");
+            preview.dataset.applicantInspectionPreview = "true";
+            preview.className = "applicant-inspection-preview";
+            preview.append(centerTemplate.content.cloneNode(true));
+            center.prepend(preview);
+          }
+          rightDetail.querySelectorAll("[data-select-role-applicant]").forEach((candidate) => {
+            candidate.setAttribute("aria-pressed", String(candidate === button));
+          });
+        });
+      });
     };
     overlay.querySelectorAll("[data-select-party-role]").forEach((button) => {
       button.addEventListener("click", () => inspectRole(button.closest("[data-party-role-group]")));
@@ -59,11 +93,12 @@
     if (panel.dataset.canManage === "true" && leaderPortrait) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "party-recruitment-plus";
+      button.className = "party-recruitment-add";
       button.textContent = "+";
       button.title = "Add a recruitment role";
       button.setAttribute("aria-label", "Add a recruitment role");
-      leaderPortrait.append(button);
+      const firstRole = overlay.querySelector("[data-party-role-group]");
+      if (firstRole) overlay.insertBefore(button, firstRole); else overlay.append(button);
       const dialog = panel.querySelector("[data-recruitment-dialog]");
       button.addEventListener("click", (event) => {
         event.preventDefault();

@@ -14,6 +14,10 @@ pub struct Party {
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
+    pub medicine_target: f32,
+    pub surgery_target: f32,
+    pub charisma_target: f32,
+    pub faith_target: f32,
 }
 
 impl __sdk::InModule for Party {

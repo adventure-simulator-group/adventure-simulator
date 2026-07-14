@@ -12,11 +12,14 @@ use serde_json::json;
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterCapability, Party, PartyJoinRequest, PartyMember, PartyRecruitmentRole,
-    Quest, RecruitmentRequirements, SavedRecruitmentRole,
+    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
+    PartyJoinRequest, PartyMember, PartyRecruitmentRole, Quest, RecruitmentRequirements,
+    SavedRecruitmentRole,
 };
 use crate::templates::party::{parties_list_page, party_detail_page};
-use crate::templates::recruitment::{RecruitmentRolePanel, recruitment_panel};
+use crate::templates::recruitment::{
+    PartyCheckSummary, RecruitmentApplicant, RecruitmentRolePanel, recruitment_panel,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -25,6 +28,10 @@ pub fn routes() -> Router<AppState> {
         .route("/party-roles/{id}/join", post(join_party))
         .route("/party-recruitment/panel", get(recruitment_panel_fragment))
         .route("/party-recruitment/roles", post(create_recruitment_role))
+        .route(
+            "/party-recruitment/check-targets",
+            post(update_party_check_targets),
+        )
         .route(
             "/party-recruitment/saved/{id}/delete",
             post(delete_saved_role),
@@ -75,14 +82,6 @@ struct RecruitmentRoleForm {
     athletics: u8,
     #[serde(default)]
     endurance: u8,
-    #[serde(default)]
-    medicine: u8,
-    #[serde(default)]
-    surgery: u8,
-    #[serde(default)]
-    charisma: u8,
-    #[serde(default)]
-    faith: u8,
 }
 
 impl RecruitmentRoleForm {
@@ -101,10 +100,10 @@ impl RecruitmentRoleForm {
             pierce: false,
             athletics: self.athletics,
             endurance: self.endurance,
-            medicine: self.medicine,
-            surgery: self.surgery,
-            charisma: self.charisma,
-            faith: self.faith,
+            medicine: 0,
+            surgery: 0,
+            charisma: 0,
+            faith: 0,
         }
     }
 
@@ -112,6 +111,37 @@ impl RecruitmentRoleForm {
         ((self.weapon_precision * 2.0).round() / 2.0)
             .clamp(0.0, adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
     }
+}
+
+#[derive(Deserialize)]
+struct PartyCheckTargetsForm {
+    medicine: f32,
+    surgery: f32,
+    charisma: f32,
+    faith: f32,
+}
+
+async fn update_party_check_targets(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<PartyCheckTargetsForm>,
+) -> Redirect {
+    if let Some(leader_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "update_party_check_targets",
+                &[
+                    json!(leader_id),
+                    json!(form.medicine),
+                    json!(form.surgery),
+                    json!(form.charisma),
+                    json!(form.faith),
+                ],
+            )
+            .await;
+    }
+    Redirect::to("/")
 }
 
 async fn create_recruitment_role(
@@ -264,6 +294,51 @@ async fn join_party(
         .call("request_to_join_party", &[json!(character_id), json!(id)])
         .await;
 
+    let role = state
+        .db
+        .query::<PartyRecruitmentRole>(&format!(
+            "SELECT * FROM party_recruitment_role WHERE id = {id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    if let Some(role) = role {
+        let party = state
+            .db
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = '{}'",
+                role.party_id
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next();
+        if let Some(party) = party {
+            let leader = get_character(&state, party.leader_id).await;
+            if leader.is_some_and(|leader| leader.temporary) {
+                let request = state
+                    .db
+                    .query::<PartyJoinRequest>(&format!(
+                        "SELECT * FROM party_join_request WHERE character_id = {character_id}"
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|request| request.recruitment_role_id == id);
+                if let Some(request) = request {
+                    let _ = state
+                        .db
+                        .call(
+                            "accept_party_join_request",
+                            &[json!(party.leader_id), json!(request.id)],
+                        )
+                        .await;
+                }
+            }
+        }
+    }
+
     Redirect::to("/")
 }
 
@@ -322,6 +397,48 @@ async fn recruitment_panel_fragment(
         ))
         .await
         .unwrap_or_default();
+    let mut member_capabilities = Vec::new();
+    for membership in &memberships {
+        let _ = state
+            .db
+            .call("refresh_capabilities", &[json!(membership.character_id)])
+            .await;
+        if let Some(capability) = state
+            .db
+            .query::<CharacterCapability>(&format!(
+                "SELECT * FROM character_capability WHERE character_id = {}",
+                membership.character_id
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            member_capabilities.push(capability);
+        }
+    }
+    let medicine: Vec<f32> = member_capabilities
+        .iter()
+        .map(|value| value.medicine)
+        .collect();
+    let surgery: Vec<f32> = member_capabilities
+        .iter()
+        .map(|value| value.surgery)
+        .collect();
+    let charisma: Vec<f32> = member_capabilities
+        .iter()
+        .map(|value| value.charisma)
+        .collect();
+    let faith: Vec<f32> = member_capabilities
+        .iter()
+        .map(|value| value.faith)
+        .collect();
+    let checks = PartyCheckSummary {
+        medicine: adventuresim_core::capability::aggregate_party_check(medicine.iter().copied()),
+        surgery: adventuresim_core::capability::aggregate_party_check(surgery.iter().copied()),
+        charisma: adventuresim_core::capability::aggregate_party_check(charisma.iter().copied()),
+        faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
+    };
     let mut panels = Vec::new();
     for role in roles {
         let mut filled = Vec::new();
@@ -353,7 +470,66 @@ async fn recruitment_panel_fragment(
                     .unwrap_or_default()
                     .into_iter()
                     .next();
-                applicants.push((request.clone(), character, capability));
+                let attributes = state
+                    .db
+                    .query::<CharacterAttributes>(&format!(
+                        "SELECT * FROM character_attributes WHERE character_id = {}",
+                        request.character_id
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next();
+                let skills = state
+                    .db
+                    .query::<CharacterSkills>(&format!(
+                        "SELECT * FROM character_skills WHERE character_id = {}",
+                        request.character_id
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next();
+                let limbs = state
+                    .db
+                    .query::<CharacterLimbs>(&format!(
+                        "SELECT * FROM character_limbs WHERE character_id = {}",
+                        request.character_id
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next();
+                let contribution =
+                    capability
+                        .as_ref()
+                        .map_or_default(|candidate| PartyCheckSummary {
+                            medicine: adventuresim_core::capability::aggregate_party_contribution(
+                                &medicine,
+                                candidate.medicine,
+                            ),
+                            surgery: adventuresim_core::capability::aggregate_party_contribution(
+                                &surgery,
+                                candidate.surgery,
+                            ),
+                            charisma: adventuresim_core::capability::aggregate_party_contribution(
+                                &charisma,
+                                candidate.charisma,
+                            ),
+                            faith: adventuresim_core::capability::aggregate_party_contribution(
+                                &faith,
+                                candidate.faith,
+                            ),
+                        });
+                applicants.push(RecruitmentApplicant {
+                    request: request.clone(),
+                    character,
+                    capability,
+                    attributes,
+                    skills,
+                    limbs,
+                    contribution,
+                });
             }
         }
         panels.push(RecruitmentRolePanel {
@@ -362,7 +538,7 @@ async fn recruitment_panel_fragment(
             requests: applicants,
         });
     }
-    Html(recruitment_panel(&party, character_id, &panels, &saved).into_string())
+    Html(recruitment_panel(&party, character_id, &panels, &saved, checks).into_string())
 }
 
 #[derive(Serialize)]

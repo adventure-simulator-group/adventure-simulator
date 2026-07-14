@@ -17,6 +17,7 @@ use crate::spacetimedb::{
     CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember,
     PartyRecruitmentRole, Quest, RecruitmentRequirements, Settlement, TravelEdge,
 };
+use crate::templates::recruitment::PartyCheckSummary;
 use crate::templates::settlement::{
     MerchantShop, RecruitingPartyRole, RestSummary, inn_page, live_merchant_shop_page,
     merchants_page, noticeboard_page, party_discard_page, party_inventory_page,
@@ -251,6 +252,13 @@ async fn noticeboard(
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
+    if state.db.is_local() {
+        let _ = state
+            .db
+            .call("ensure_settlement_activity", &[json!(id.clone())])
+            .await;
+    }
+
     let quests: Vec<Quest> = state
         .db
         .query(&format!(
@@ -286,7 +294,7 @@ async fn noticeboard(
     };
     let posted_quests: Vec<Quest> = quests
         .iter()
-        .filter(|quest| quest.status.to_lowercase().contains("available"))
+        .filter(|quest| !quest.status.to_lowercase().contains("completed"))
         .cloned()
         .collect();
     let active_quest = active_party
@@ -333,16 +341,72 @@ async fn noticeboard(
             ))
             .await
             .unwrap_or_default();
-        for role in roles {
-            let filled = state
+        let memberships = state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .unwrap_or_default();
+        let mut capabilities = Vec::new();
+        for membership in &memberships {
+            let _ = state
                 .db
-                .query::<PartyMember>(&format!(
-                    "SELECT * FROM party_member WHERE party_id = '{}'",
-                    party.id
+                .call("refresh_capabilities", &[json!(membership.character_id)])
+                .await;
+            if let Some(capability) = state
+                .db
+                .query::<CharacterCapability>(&format!(
+                    "SELECT * FROM character_capability WHERE character_id = {}",
+                    membership.character_id
                 ))
                 .await
                 .unwrap_or_default()
                 .into_iter()
+                .next()
+            {
+                capabilities.push(capability);
+            }
+        }
+        let medicine: Vec<f32> = capabilities.iter().map(|value| value.medicine).collect();
+        let surgery: Vec<f32> = capabilities.iter().map(|value| value.surgery).collect();
+        let charisma: Vec<f32> = capabilities.iter().map(|value| value.charisma).collect();
+        let faith: Vec<f32> = capabilities.iter().map(|value| value.faith).collect();
+        let checks = PartyCheckSummary {
+            medicine: adventuresim_core::capability::aggregate_party_check(
+                medicine.iter().copied(),
+            ),
+            surgery: adventuresim_core::capability::aggregate_party_check(surgery.iter().copied()),
+            charisma: adventuresim_core::capability::aggregate_party_check(
+                charisma.iter().copied(),
+            ),
+            faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
+        };
+        let contribution =
+            active_capability
+                .as_ref()
+                .map_or_default(|candidate| PartyCheckSummary {
+                    medicine: adventuresim_core::capability::aggregate_party_contribution(
+                        &medicine,
+                        candidate.medicine,
+                    ),
+                    surgery: adventuresim_core::capability::aggregate_party_contribution(
+                        &surgery,
+                        candidate.surgery,
+                    ),
+                    charisma: adventuresim_core::capability::aggregate_party_contribution(
+                        &charisma,
+                        candidate.charisma,
+                    ),
+                    faith: adventuresim_core::capability::aggregate_party_contribution(
+                        &faith,
+                        candidate.faith,
+                    ),
+                });
+        for role in roles {
+            let filled = memberships
+                .iter()
                 .filter(|member| member.recruitment_role_id == Some(role.id))
                 .count() as u32;
             if filled < role.quantity {
@@ -357,6 +421,8 @@ async fn noticeboard(
                     party: party.clone(),
                     role,
                     meets_requirements,
+                    checks,
+                    contribution,
                 });
             }
         }
@@ -1486,10 +1552,10 @@ fn capability_meets(
         full_armor: r.full_armor,
         athletics: r.athletics,
         endurance: r.endurance,
-        medicine: r.medicine,
-        surgery: r.surgery,
-        charisma: r.charisma,
-        faith: r.faith,
+        medicine: 0,
+        surgery: 0,
+        charisma: 0,
+        faith: 0,
     })
 }
 

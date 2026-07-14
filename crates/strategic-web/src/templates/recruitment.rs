@@ -1,14 +1,33 @@
 use maud::{Markup, html};
 
 use crate::spacetimedb::{
-    Character, CharacterCapability, Party, PartyJoinRequest, PartyRecruitmentRole,
-    RecruitmentRequirements, SavedRecruitmentRole,
+    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
+    PartyJoinRequest, PartyRecruitmentRole, RecruitmentRequirements, SavedRecruitmentRole,
 };
+use crate::templates::settlement::{character_stats_panel, character_visual_preview};
+
+#[derive(Clone, Copy, Default)]
+pub struct PartyCheckSummary {
+    pub medicine: f32,
+    pub surgery: f32,
+    pub charisma: f32,
+    pub faith: f32,
+}
+
+pub struct RecruitmentApplicant {
+    pub request: PartyJoinRequest,
+    pub character: Character,
+    pub capability: Option<CharacterCapability>,
+    pub attributes: Option<CharacterAttributes>,
+    pub skills: Option<CharacterSkills>,
+    pub limbs: Option<CharacterLimbs>,
+    pub contribution: PartyCheckSummary,
+}
 
 pub struct RecruitmentRolePanel {
     pub role: PartyRecruitmentRole,
     pub filled: Vec<Character>,
-    pub requests: Vec<(PartyJoinRequest, Character, Option<CharacterCapability>)>,
+    pub requests: Vec<RecruitmentApplicant>,
 }
 
 pub fn recruitment_panel(
@@ -16,6 +35,7 @@ pub fn recruitment_panel(
     active_character_id: u64,
     roles: &[RecruitmentRolePanel],
     saved_roles: &[SavedRecruitmentRole],
+    checks: PartyCheckSummary,
 ) -> Markup {
     let can_manage = party.leader_id == active_character_id;
     html! {
@@ -23,6 +43,12 @@ pub fn recruitment_panel(
             data-leader-id=(party.leader_id)
             data-can-manage=(can_manage)
         {
+            div class="party-aggregate-checks" data-party-aggregate-checks {
+                (aggregate_check_badge("Medicine", "medicine", checks.medicine, party.medicine_target))
+                (aggregate_check_badge("Surgery", "surgeon", checks.surgery, party.surgery_target))
+                (aggregate_check_badge("Charisma", "charisma", checks.charisma, party.charisma_target))
+                (aggregate_check_badge("Faith", "faith", checks.faith, party.faith_target))
+            }
             div data-party-slot-groups hidden {
                 @for panel in roles {
                     @let remaining = (panel.role.quantity as usize).saturating_sub(panel.filled.len());
@@ -52,8 +78,8 @@ pub fn recruitment_panel(
                                     @if panel.requests.is_empty() {
                                         span class="small-copy text-muted" { "No join requests" }
                                     } @else {
-                                        @for (_, character, _) in &panel.requests {
-                                            span class="party-role-hover-request" { (&character.name) }
+                                        @for applicant in &panel.requests {
+                                            span class="party-role-hover-request" { (&applicant.character.name) }
                                         }
                                     }
                                 }
@@ -76,6 +102,17 @@ pub fn recruitment_panel(
                         button class="dialog-close" aria-label="Close recruitment" { "×" }
                     }
                     h2 { "Recruit party roles" }
+                    form action="/party-recruitment/check-targets" method="post" class="party-check-targets" {
+                        h3 { "Party-level check targets" }
+                        p class="small-copy text-muted" { "These goals describe party deficiencies; they do not filter applicants." }
+                        div class="party-check-target-grid" {
+                            (party_target_requirement("medicine", "Medicine", party.medicine_target))
+                            (party_target_requirement("surgery", "Surgery", party.surgery_target))
+                            (party_target_requirement("charisma", "Charisma", party.charisma_target))
+                            (party_target_requirement("faith", "Faith", party.faith_target))
+                        }
+                        button type="submit" class="btn btn-secondary btn-small" { "Save party targets" }
+                    }
                     @if !saved_roles.is_empty() {
                         section class="saved-role-section" {
                             h3 { "Saved roles" }
@@ -102,20 +139,13 @@ pub fn recruitment_panel(
                             label { "Slots" input type="number" name="quantity" min="1" max="8" value="1" required; }
                             label class="role-save-toggle" { input type="checkbox" name="save_role" value="true"; " Save this role" }
                         }
-                        div class="role-requirement-columns" {
+                        div class="role-requirement-columns role-requirement-columns-individual" {
                             (combat_requirements())
                             div class="role-requirement-group" {
                                 h3 { "Armor & mobility" }
                                 (armor_requirement())
                                 (numeric_requirement("athletics", "Athletics"))
                                 (numeric_requirement("endurance", "Endurance"))
-                            }
-                            div class="role-requirement-group" {
-                                h3 { "Other" }
-                                (numeric_requirement("medicine", "Medicine"))
-                                (numeric_requirement("surgery", "Surgery"))
-                                (numeric_requirement("charisma", "Charisma"))
-                                (numeric_requirement("faith", "Faith"))
                             }
                         }
                         button type="submit" class="btn btn-primary" { "Add role" }
@@ -152,10 +182,6 @@ fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Ma
                 @for (minimum, label) in [
                     (role.requirements.athletics, "Athletics"),
                     (role.requirements.endurance, "Endurance"),
-                    (role.requirements.medicine, "Medicine"),
-                    (role.requirements.surgery, "Surgery"),
-                    (role.requirements.charisma, "Charisma"),
-                    (role.requirements.faith, "Faith"),
                 ] {
                     @if minimum > 0 { div class="role-detail-row" { span { (label) } strong { (minimum) "+" } } }
                 }
@@ -172,25 +198,38 @@ fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
                 p class="small-copy text-muted" { "No pending requests for this role." }
             } @else {
                 div class="role-request-detail-list" {
-                    @for (request, character, capability) in &panel.requests {
-                        article class=(if request.meets_requirements { "role-request-detail" } else { "role-request-detail role-applicant-warning" }) {
-                            h4 { (&character.name) }
+                    @for applicant in &panel.requests {
+                        article class=(if applicant.request.meets_requirements { "role-request-detail" } else { "role-request-detail role-applicant-warning" }) {
+                            button type="button" class="role-applicant-portrait" data-select-role-applicant
+                                aria-label=(format!("Inspect {}", applicant.character.name)) {
+                                span class="party-portrait-initial" {
+                                    span class="party-portrait-face" { (applicant.character.name.chars().next().unwrap_or('?')) }
+                                    span class="party-portrait-name" { (&applicant.character.name) }
+                                }
+                            }
                             p class="small-copy" {
-                                @if request.meets_requirements { "Meets every recommendation" }
+                                @if applicant.request.meets_requirements { "Meets every individual recommendation" }
                                 @else { "Below one or more recommendations" }
                             }
-                            @if let Some(capability) = capability {
+                            (candidate_contribution(applicant.contribution))
+                            @if let Some(capability) = &applicant.capability {
                                 (capability_comparison(panel.role.requirements, panel.role.effective_weapon_precision(), capability))
                             } @else {
                                 p class="small-copy text-muted" { "Exact capability details unavailable." }
                             }
                             div class="flex gap-sm" {
-                                form action=(format!("/parties/{}/requests/{}/accept", party.id, request.id)) method="post" {
+                                form action=(format!("/parties/{}/requests/{}/accept", party.id, applicant.request.id)) method="post" {
                                     button class="btn btn-primary btn-small" { "Accept" }
                                 }
-                                form action=(format!("/parties/{}/requests/{}/reject", party.id, request.id)) method="post" {
+                                form action=(format!("/parties/{}/requests/{}/reject", party.id, applicant.request.id)) method="post" {
                                     button class="btn btn-secondary btn-small" { "Reject" }
                                 }
+                            }
+                            template data-applicant-left-template {
+                                (character_stats_panel(&applicant.character, applicant.capability.as_ref(), applicant.attributes.as_ref(), applicant.skills.as_ref(), applicant.limbs.as_ref()))
+                            }
+                            template data-applicant-center-template {
+                                (character_visual_preview(&applicant.character))
                             }
                         }
                     }
@@ -245,10 +284,6 @@ fn capability_comparison(
             @for (minimum, actual, label) in [
                 (requirements.athletics, c.athletics, "Athletics"),
                 (requirements.endurance, c.endurance, "Endurance"),
-                (requirements.medicine, c.medicine, "Medicine"),
-                (requirements.surgery, c.surgery, "Surgery"),
-                (requirements.charisma, c.charisma, "Charisma"),
-                (requirements.faith, c.faith, "Faith"),
             ] {
                 @if minimum > 0 {
                     div class=(if actual.round() as u8 >= minimum { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
@@ -321,6 +356,43 @@ fn numeric_requirement(name: &str, label: &str) -> Markup {
     } }
 }
 
+fn party_target_requirement(name: &str, label: &str, value: f32) -> Markup {
+    html! { label class="role-slider" {
+        span class="role-slider-heading" { span { (label) } output data-slider-output=(name) { (format!("{value:.1}")) } }
+        input type="range" name=(name) min="0" max="8" step="0.5" value=(value)
+            data-discrete-slider data-slider-labels="Off|0.5|1.0|1.5|2.0|2.5|3.0|3.5|4.0|4.5|5.0|5.5|6.0|6.5|7.0|7.5|8.0";
+        span class="role-slider-ticks" aria-hidden="true" { span { "Off" } span { "2" } span { "4" } span { "6" } span { "8" } }
+    } }
+}
+
+fn aggregate_check_badge(label: &str, icon: &str, current: f32, target: f32) -> Markup {
+    let deficient = target > 0.0 && current + 0.001 < target;
+    html! {
+        span class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
+            title=(if target > 0.0 { format!("{label}: {current:.2} / target {target:.1}") } else { format!("{label}: {current:.2}") }) {
+            span class=(format!("stat-icon stat-icon-{icon}"))
+                style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
+                role="img" aria-label=(label) {}
+            strong { (format!("{current:.1}")) }
+        }
+    }
+}
+
+fn candidate_contribution(contribution: PartyCheckSummary) -> Markup {
+    html! {
+        div class="candidate-party-contribution" {
+            @for (value, label) in [
+                (contribution.medicine, "Medicine"),
+                (contribution.surgery, "Surgery"),
+                (contribution.charisma, "Charisma"),
+                (contribution.faith, "Faith"),
+            ] {
+                @if value > 0.005 { span { (label) " +" (format!("{value:.2}")) } }
+            }
+        }
+    }
+}
+
 fn armor_requirement() -> Markup {
     html! { label class="role-slider" {
         span class="role-slider-heading" { span { "Armor" } output data-slider-output="armor_tier" { "Off" } }
@@ -354,14 +426,7 @@ pub fn requirements_label(r: RecruitmentRequirements, weapon_precision: f32) -> 
     if weapon_precision > 0.0 {
         labels.push(format!("Precision {weapon_precision:.1}+"));
     }
-    for (value, label) in [
-        (r.athletics, "Athletics"),
-        (r.endurance, "Endurance"),
-        (r.medicine, "Medicine"),
-        (r.surgery, "Surgery"),
-        (r.charisma, "Charisma"),
-        (r.faith, "Faith"),
-    ] {
+    for (value, label) in [(r.athletics, "Athletics"), (r.endurance, "Endurance")] {
         if value > 0 {
             labels.push(format!("{label} {value}+"));
         }

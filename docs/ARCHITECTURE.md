@@ -56,7 +56,7 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `player` | Maps SpacetimeDB identity to character |
 | `character` | Character progression (XP, level) - NO HP/damage! |
 | `inventory_item` | Persistent items |
-| `party` | Party groups; every character belongs to at least a solo party |
+| `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
 | `saved_recruitment_role` | Reusable named role requirement presets owned by a character |
@@ -76,8 +76,10 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 | `add_item_to_inventory` | Add items |
 | `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party |
 | `create_recruitment_role` / `delete_saved_recruitment_role` | Create grouped party slots and manage reusable role presets |
+| `update_party_check_targets` | Configure non-filtering Medicine, Surgery, Charisma, and Faith aggregate goals |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Party-independent role recruitment; a request remains pending until rejected, accepted, or its role fills |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
+| `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
@@ -150,7 +152,7 @@ Open `crates/adventuresim-stdb-module/static/map.html` in a browser
 ### 5. Demo Flow
 
 1. Enter a Character ID and Name, click "Create Character"
-2. Use the plus button beneath the leader portrait to add recruitment roles and slots
+2. Use the plus button to the right of the filled party portraits to add recruitment roles and slots
 3. Click "Town A" or "Town B" to start a mission
 4. Click "Simulate Victory" or "Simulate Defeat"
 5. Observe XP and items update in real-time

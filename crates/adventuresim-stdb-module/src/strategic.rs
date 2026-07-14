@@ -16,7 +16,8 @@ const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
 const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
-const QUESTS_PER_SETTLEMENT: usize = 3;
+const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
+const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -253,7 +254,7 @@ pub fn import_settlements(
         } else {
             ctx.db.settlement().insert(row);
         }
-        ensure_settlement_quests(ctx, &settlement_id)?;
+        ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
     Ok(())
 }
@@ -293,6 +294,14 @@ pub struct Party {
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
+    #[default(0.0)]
+    pub medicine_target: f32,
+    #[default(0.0)]
+    pub surgery_target: f32,
+    #[default(0.0)]
+    pub charisma_target: f32,
+    #[default(0.0)]
+    pub faith_target: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -428,6 +437,10 @@ pub(crate) fn create_solo_party_for_character(
             current_quest_location_id: character.current_quest_location_id.clone(),
             active_quest_id: None,
             is_solo: true,
+            medicine_target: 0.0,
+            surgery_target: 0.0,
+            charisma_target: 0.0,
+            faith_target: 0.0,
         });
         ctx.db.party_member().insert(PartyMember {
             id: 0,
@@ -537,6 +550,45 @@ pub fn create_recruitment_role(
 }
 
 #[reducer]
+pub fn update_party_check_targets(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    medicine: f32,
+    surgery: f32,
+    charisma: f32,
+    faith: f32,
+) -> Result<(), String> {
+    if [medicine, surgery, charisma, faith]
+        .into_iter()
+        .any(|value| !value.is_finite() || !(0.0..=8.0).contains(&value))
+    {
+        return Err("Party check targets must be between 0 and 8".into());
+    }
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can configure party checks".into());
+    }
+    party.medicine_target = medicine;
+    party.surgery_target = surgery;
+    party.charisma_target = charisma;
+    party.faith_target = faith;
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
+#[reducer]
 pub fn delete_saved_recruitment_role(
     ctx: &ReducerContext,
     owner_id: u64,
@@ -568,6 +620,10 @@ fn role_requirements(
 ) -> adventuresim_core::capability::RoleRequirements {
     let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
     requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
+    requirements.medicine = 0;
+    requirements.surgery = 0;
+    requirements.charisma = 0;
+    requirements.faith = 0;
     requirements
 }
 
@@ -1407,12 +1463,10 @@ pub fn accept_quest(
 
     quest.status = QuestStatus::Accepted;
     quest.accepted_by = Some(party_id.clone());
-    let settlement_id = quest.settlement_id.clone();
     ctx.db.quest().id().update(quest);
 
     party.active_quest_id = Some(quest_id);
     ctx.db.party().id().update(party);
-    generate_quest_for_settlement(ctx, &settlement_id)?;
     Ok(())
 }
 
@@ -1736,11 +1790,13 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         }
     }
 
+    let settlement_id = quest.settlement_id.clone();
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
+    ensure_settlement_activity_inner(ctx, &settlement_id)?;
     Ok(())
 }
 
@@ -1830,22 +1886,150 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         .map(|settlement| settlement.id)
         .collect();
     for settlement_id in settlement_ids {
-        ensure_settlement_quests(ctx, &settlement_id)?;
+        ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
 
     Ok(())
 }
 
-fn ensure_settlement_quests(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
-    let available = ctx
+#[reducer]
+pub fn ensure_settlement_activity(
+    ctx: &ReducerContext,
+    settlement_id: String,
+) -> Result<(), String> {
+    ensure_settlement_activity_inner(ctx, &settlement_id)
+}
+
+fn settlement_activity_target(settlement_id: &str) -> usize {
+    MIN_QUESTS_PER_SETTLEMENT
+        + settlement_id.bytes().map(usize::from).sum::<usize>()
+            % (MAX_QUESTS_PER_SETTLEMENT - MIN_QUESTS_PER_SETTLEMENT + 1)
+}
+
+fn ensure_settlement_activity_inner(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<(), String> {
+    let active = ctx
         .db
         .quest()
         .settlement_id()
         .filter(&settlement_id.to_string())
-        .filter(|quest| quest.status == QuestStatus::Available)
+        .filter(|quest| quest.status != QuestStatus::Completed)
         .count();
-    for _ in available..QUESTS_PER_SETTLEMENT {
+    for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
+    }
+    ensure_npc_quest_parties(ctx, settlement_id)?;
+    Ok(())
+}
+
+fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    let target = 1 + settlement_id.bytes().map(usize::from).sum::<usize>() % 2;
+    for mut party in ctx.db.party().iter().collect::<Vec<_>>() {
+        let Some(quest_id) = party.active_quest_id.as_ref() else {
+            continue;
+        };
+        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+            continue;
+        };
+        let Some(leader) = ctx.db.character().id().find(party.leader_id) else {
+            continue;
+        };
+        if !leader.temporary || quest.settlement_id != settlement_id {
+            continue;
+        }
+        party.current_settlement_id = Some(settlement_id.to_string());
+        if party.name.ends_with("'s party") {
+            party.name = format!("{}'s company", leader.name);
+        }
+        if party.medicine_target == 0.0
+            && party.surgery_target == 0.0
+            && party.charisma_target == 0.0
+            && party.faith_target == 0.0
+        {
+            party.medicine_target = 3.5;
+            party.surgery_target = 4.0;
+            party.charisma_target = 4.5;
+            party.faith_target = 4.0;
+        }
+        ctx.db.party().id().update(party);
+    }
+    let existing = ctx
+        .db
+        .party()
+        .iter()
+        .filter(|party| party.current_settlement_id.as_deref() == Some(settlement_id))
+        .filter(|party| party.active_quest_id.is_some())
+        .filter(|party| {
+            ctx.db
+                .character()
+                .id()
+                .find(party.leader_id)
+                .is_some_and(|leader| leader.temporary)
+        })
+        .count();
+    for _ in existing..target {
+        let Some(mut quest) = ctx
+            .db
+            .quest()
+            .settlement_id()
+            .filter(&settlement_id.to_string())
+            .find(|quest| quest.status == QuestStatus::Available)
+        else {
+            break;
+        };
+        use petname::Generator;
+        let leader_name = petname::Petnames::default()
+            .generate(&mut ctx.rng(), 2, " ")
+            .unwrap_or_else(|| "quest captain".into());
+        let mut leader_id = ctx.random::<u64>() | (1_u64 << 63);
+        while ctx.db.character().id().find(leader_id).is_some() {
+            leader_id = ctx.random::<u64>() | (1_u64 << 63);
+        }
+        crate::character::insert_new_character(ctx, leader_name.clone(), leader_id, true)?;
+        let mut leader = ctx.db.character().id().find(leader_id).unwrap();
+        leader.current_settlement_id = Some(settlement_id.to_string());
+        ctx.db.character().id().update(leader.clone());
+        let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
+        let mut party = ctx.db.party().id().find(&party_id).unwrap();
+        party.name = format!("{}'s company", leader_name);
+        party.current_settlement_id = Some(settlement_id.to_string());
+        party.active_quest_id = Some(quest.id.clone());
+        party.medicine_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
+        party.surgery_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
+        party.charisma_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
+        party.faith_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
+        ctx.db.party().id().update(party);
+
+        let mut requirements = RecruitmentRequirements::default();
+        if ctx.random::<u64>() % 2 == 0 {
+            requirements.melee = true;
+        } else {
+            requirements.ranged = true;
+        }
+        requirements.athletics = (ctx.random::<u64>() % 4) as u8;
+        requirements.endurance = (ctx.random::<u64>() % 4) as u8;
+        let armor = ctx.random::<u64>() % 3;
+        requirements.quarter_armor = armor == 1;
+        requirements.half_armor = armor == 2;
+        ctx.db
+            .party_recruitment_role()
+            .insert(PartyRecruitmentRole {
+                id: 0,
+                party_id: party_id.clone(),
+                name: if requirements.ranged {
+                    "Ranged support".into()
+                } else {
+                    "Vanguard".into()
+                },
+                requirements,
+                quantity: 3,
+                weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
+            });
+        quest.status = QuestStatus::Accepted;
+        quest.accepted_by = Some(party_id);
+        ctx.db.quest().id().update(quest);
     }
     Ok(())
 }

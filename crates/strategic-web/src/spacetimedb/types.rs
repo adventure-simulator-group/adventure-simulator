@@ -48,6 +48,7 @@ pub struct Character {
     pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     pub age_years: u16,
+    pub temporary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +105,10 @@ pub struct Party {
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
+    pub medicine_target: f32,
+    pub surgery_target: f32,
+    pub charisma_target: f32,
+    pub faith_target: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

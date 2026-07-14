@@ -6,7 +6,7 @@
 
 use maud::{Markup, html};
 
-use super::recruitment::requirements_label;
+use super::recruitment::{PartyCheckSummary, requirements_label};
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section,
@@ -22,6 +22,8 @@ pub struct RecruitingPartyRole {
     pub party: Party,
     pub role: PartyRecruitmentRole,
     pub meets_requirements: bool,
+    pub checks: PartyCheckSummary,
+    pub contribution: PartyCheckSummary,
 }
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -245,6 +247,7 @@ pub fn noticeboard_page(
                 } @else {
                     div class="notice-quest-list" {
                         @for quest in quests {
+                            @let recruiting_party = recruiting_roles.iter().find(|listing| listing.party.active_quest_id.as_deref() == Some(quest.id.as_str()));
                             a href=(format!("/settlements/{}/noticeboard?quest={}", settlement.id, quest.id)) class="notice-quest notice-quest-link" {
                                 strong { (quest.title) }
                                 div class="notice-quest-meta" {
@@ -252,6 +255,9 @@ pub fn noticeboard_page(
                                     (gold_display(quest.gold_reward))
                                 }
                                 p class="small-copy" { (quest.enemy_count) " " (quest.enemy_type) }
+                                @if let Some(listing) = recruiting_party {
+                                    p class="small-copy role-warning" { "Taken by " (&listing.party.name) " · recruiting" }
+                                }
                             }
                         }
                     }
@@ -267,6 +273,7 @@ pub fn noticeboard_page(
                                 span class="member-name" { (&listing.party.name) }
                                 span class="member-role" { (&listing.role.name) }
                                 p class="small-copy text-muted" { (requirements_label(listing.role.requirements, listing.role.effective_weapon_precision())) }
+                                (party_check_deficiencies(&listing.party, listing.checks, listing.contribution))
                                 @if !listing.meets_requirements { p class="small-copy role-warning" { "⚠ Your character does not meet every recommendation." } }
                             }
                             @if can_request_to_join && active_character.is_some() {
@@ -1043,6 +1050,28 @@ fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
     }
 }
 
+pub(crate) fn character_stats_panel(
+    character: &Character,
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+) -> Markup {
+    html! {
+        (character_summary_rail(capability))
+        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
+        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None))
+    }
+}
+
+pub(crate) fn character_visual_preview(character: &Character) -> Markup {
+    visual_stage(
+        "npc",
+        &character.name,
+        &format!("TODO: {} portrait", character.name.to_lowercase()),
+    )
+}
+
 fn character_bio_rail(character: &Character) -> Markup {
     html! {
         (sidebar_section("Bio", html! {
@@ -1533,6 +1562,30 @@ fn quest_detail_rail(quest: Option<&Quest>, can_accept: bool, can_travel: bool) 
                 }
             }
         }))
+    }
+}
+
+fn party_check_deficiencies(
+    party: &Party,
+    checks: PartyCheckSummary,
+    contribution: PartyCheckSummary,
+) -> Markup {
+    html! {
+        div class="recruiting-party-checks" {
+            @for (current, target, added, label) in [
+                (checks.medicine, party.medicine_target, contribution.medicine, "Medicine"),
+                (checks.surgery, party.surgery_target, contribution.surgery, "Surgery"),
+                (checks.charisma, party.charisma_target, contribution.charisma, "Charisma"),
+                (checks.faith, party.faith_target, contribution.faith, "Faith"),
+            ] {
+                @if target > current + 0.001 {
+                    p class="small-copy role-warning" {
+                        (label) " " (format!("{current:.1}/{target:.1}"))
+                        @if added > 0.005 { " · you add +" (format!("{added:.2}")) }
+                    }
+                }
+            }
+        }
     }
 }
 

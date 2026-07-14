@@ -56,6 +56,7 @@ pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
+pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
 pub mod finalize_merchant_trade_reducer;
@@ -112,6 +113,7 @@ pub mod travel_edge_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod update_character_reducer;
+pub mod update_party_check_targets_reducer;
 pub mod update_training_schedule_reducer;
 pub mod world_clock_schedule_table;
 pub mod world_clock_schedule_type;
@@ -232,6 +234,10 @@ pub use end_tactical_server_by_instance_reducer::{
 pub use end_tactical_server_reducer::{
     EndTacticalServerCallbackId, end_tactical_server, set_flags_for_end_tactical_server,
 };
+pub use ensure_settlement_activity_reducer::{
+    EnsureSettlementActivityCallbackId, ensure_settlement_activity,
+    set_flags_for_ensure_settlement_activity,
+};
 pub use enter_mission_reducer::{
     EnterMissionCallbackId, enter_mission, set_flags_for_enter_mission,
 };
@@ -336,6 +342,10 @@ pub use travel_to_settlement_reducer::{
 };
 pub use update_character_reducer::{
     UpdateCharacterCallbackId, set_flags_for_update_character, update_character,
+};
+pub use update_party_check_targets_reducer::{
+    UpdatePartyCheckTargetsCallbackId, set_flags_for_update_party_check_targets,
+    update_party_check_targets,
 };
 pub use update_training_schedule_reducer::{
     UpdateTrainingScheduleCallbackId, set_flags_for_update_training_schedule,
@@ -485,6 +495,9 @@ pub enum Reducer {
         success: bool,
         xp_gained: i32,
     },
+    EnsureSettlementActivity {
+        settlement_id: String,
+    },
     EnterMission {
         character_id: u64,
         server: __sdk::Identity,
@@ -583,6 +596,13 @@ pub enum Reducer {
         id: u64,
         name: String,
     },
+    UpdatePartyCheckTargets {
+        leader_id: u64,
+        medicine: f32,
+        surgery: f32,
+        charisma: f32,
+        faith: f32,
+    },
     UpdateTrainingSchedule {
         character_id: u64,
         melee_minutes: u16,
@@ -636,6 +656,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
+            Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
@@ -662,6 +683,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::UpdateCharacter { .. } => "update_character",
+            Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
             _ => unreachable!(),
         }
@@ -810,6 +832,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 >("end_tactical_server_by_instance", &value.args)?
                 .into())
             }
+            "ensure_settlement_activity" => {
+                Ok(__sdk::parse_reducer_args::<
+                    ensure_settlement_activity_reducer::EnsureSettlementActivityArgs,
+                >("ensure_settlement_activity", &value.args)?
+                .into())
+            }
             "enter_mission" => Ok(__sdk::parse_reducer_args::<
                 enter_mission_reducer::EnterMissionArgs,
             >("enter_mission", &value.args)?
@@ -929,6 +957,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 update_character_reducer::UpdateCharacterArgs,
             >("update_character", &value.args)?
             .into()),
+            "update_party_check_targets" => {
+                Ok(__sdk::parse_reducer_args::<
+                    update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs,
+                >("update_party_check_targets", &value.args)?
+                .into())
+            }
             "update_training_schedule" => {
                 Ok(__sdk::parse_reducer_args::<
                     update_training_schedule_reducer::UpdateTrainingScheduleArgs,

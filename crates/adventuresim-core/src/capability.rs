@@ -7,6 +7,28 @@ use crate::prelude::*;
 pub const HEAVY_WEAPON_MIN_WEIGHT: f32 = 4.0;
 pub const HEAVY_WEAPON_MIN_ARM_STRENGTH: f32 = 3.0;
 pub const DEFAULT_NUMERIC_REQUIREMENT: u8 = 3;
+
+/// Combines party-wide skill checks with diminishing returns. The strongest
+/// contributor counts fully, the next at half value, the third at one third,
+/// and so on, matching the aggregate check described by the morale design.
+pub fn aggregate_party_check(values: impl IntoIterator<Item = f32>) -> f32 {
+    let mut values: Vec<f32> = values
+        .into_iter()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .collect();
+    values.sort_by(|left, right| right.total_cmp(left));
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| value / (index + 1) as f32)
+        .sum()
+}
+
+pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
+    let before = aggregate_party_check(current.iter().copied());
+    let after = aggregate_party_check(current.iter().copied().chain([candidate]));
+    (after - before).max(0.0)
+}
 pub const FULL_ARMOR_MIN_REGION_COVERAGE: f32 = 0.75;
 pub const WEAPON_PRECISION_CLUB: f32 = 0.5;
 pub const WEAPON_PRECISION_AXE: f32 = 1.0;
@@ -348,5 +370,12 @@ mod tests {
             shield: false,
         };
         assert_eq!(armor_tiers(&full), (true, true, true, true));
+    }
+
+    #[test]
+    fn aggregate_checks_sort_contributors_and_apply_diminishing_returns() {
+        let current = [2.0, 4.0, 3.0];
+        assert!((aggregate_party_check(current) - (4.0 + 1.5 + 2.0 / 3.0)).abs() < 0.001);
+        assert!((aggregate_party_contribution(&current, 5.0) - 7.0 / 3.0).abs() < 0.001);
     }
 }
