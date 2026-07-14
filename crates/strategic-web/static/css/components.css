@@ -1707,11 +1707,11 @@
   background: repeating-linear-gradient(
     to right,
     transparent 0,
-    transparent calc(12.5% - 1px),
-    color-mix(in srgb, var(--panel-bg) 78%, transparent) calc(12.5% - 1px),
-    color-mix(in srgb, var(--panel-bg) 78%, transparent) calc(12.5% + 1px),
-    transparent calc(12.5% + 1px),
-    transparent 12.5%
+    transparent calc(20% - 1px),
+    color-mix(in srgb, var(--panel-bg) 78%, transparent) calc(20% - 1px),
+    color-mix(in srgb, var(--panel-bg) 78%, transparent) calc(20% + 1px),
+    transparent calc(20% + 1px),
+    transparent 20%
   );
   pointer-events: none;
 }

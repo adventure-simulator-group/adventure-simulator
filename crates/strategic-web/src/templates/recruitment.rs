@@ -354,10 +354,10 @@ fn aggregate_check_control(
     target: f32,
     can_manage: bool,
 ) -> Markup {
-    let target = target.round().clamp(0.0, 8.0);
+    let target = target.round().clamp(0.0, 5.0);
     let deficient = target > 0.0 && current + 0.001 < target;
-    let current_width = (current.clamp(0.0, 8.0) / 8.0) * 100.0;
-    let target_position = (target / 8.0) * 100.0;
+    let current_width = (current.clamp(0.0, 5.0) / 5.0) * 100.0;
+    let target_position = (target / 5.0) * 100.0;
     html! {
         div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
             data-party-check=(field) data-party-check-current=(current) {
@@ -385,10 +385,10 @@ fn party_check_target_form(
     html! {
         form action="/party-recruitment/check-targets" method="post" class="party-check-target-form"
             data-party-check-target-form data-check-name=(field) {
-            input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 8.0));
-            input type="hidden" name="surgery" value=(party.surgery_target.round().clamp(0.0, 8.0));
-            input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 8.0));
-            input type="hidden" name="faith" value=(party.faith_target.round().clamp(0.0, 8.0));
+            input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 5.0));
+            input type="hidden" name="surgery" value=(party.surgery_target.round().clamp(0.0, 5.0));
+            input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 5.0));
+            input type="hidden" name="faith" value=(party.faith_target.round().clamp(0.0, 5.0));
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
@@ -400,7 +400,7 @@ fn party_check_target_form(
                         data-party-check-target-handle data-check-name=(field)
                         style=(format!("left:{target_position:.1}%"))
                         role="slider" aria-label=(format!("{label} party target"))
-                        aria-valuemin="0" aria-valuemax="8" aria-valuenow=(target as u8)
+                        aria-valuemin="0" aria-valuemax="5" aria-valuenow=(target as u8)
                         title=(format!("{label} target: {target:.0}")) {}
                 }
             }

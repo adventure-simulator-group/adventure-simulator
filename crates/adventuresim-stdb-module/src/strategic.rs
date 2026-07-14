@@ -560,9 +560,9 @@ pub fn update_party_check_targets(
 ) -> Result<(), String> {
     if [medicine, surgery, charisma, faith]
         .into_iter()
-        .any(|value| !value.is_finite() || !(0.0..=8.0).contains(&value) || value.fract() != 0.0)
+        .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
     {
-        return Err("Party check targets must be whole numbers between 0 and 8".into());
+        return Err("Party check targets must be whole numbers between 0 and 5".into());
     }
     let leader = ctx
         .db
@@ -1948,11 +1948,15 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
             && party.charisma_target == 0.0
             && party.faith_target == 0.0
         {
-            party.medicine_target = 3.5;
+            party.medicine_target = 4.0;
             party.surgery_target = 4.0;
-            party.charisma_target = 4.5;
+            party.charisma_target = 5.0;
             party.faith_target = 4.0;
         }
+        party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
+        party.surgery_target = party.surgery_target.round().clamp(0.0, 5.0);
+        party.charisma_target = party.charisma_target.round().clamp(0.0, 5.0);
+        party.faith_target = party.faith_target.round().clamp(0.0, 5.0);
         ctx.db.party().id().update(party);
     }
     let existing = ctx

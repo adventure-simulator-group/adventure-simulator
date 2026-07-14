@@ -107,11 +107,11 @@
     }
 
     const setPartyCheckTarget = (track, value) => {
-      const target = Math.max(0, Math.min(8, Math.round(value)));
+      const target = Math.max(0, Math.min(5, Math.round(value)));
       const name = track.dataset.checkName;
       const label = track.dataset.checkLabel;
       const current = Number(track.dataset.checkCurrent) || 0;
-      panel.querySelectorAll(`[data-party-check-target-form] input[name="${name}"]`).forEach((input) => {
+      aggregateChecks?.querySelectorAll(`[data-party-check-target-form] input[name="${name}"]`).forEach((input) => {
         input.value = String(target);
       });
       track.dataset.checkTarget = String(target);
@@ -120,7 +120,7 @@
       if (exact) exact.textContent = `${label}: ${current.toFixed(2)} · target ${target}`;
       const handle = track.querySelector("[data-party-check-target-handle]");
       if (handle) {
-        handle.style.left = `${target / 8 * 100}%`;
+        handle.style.left = `${target / 5 * 100}%`;
         handle.setAttribute("aria-valuenow", String(target));
         handle.title = `${label} target: ${target}`;
       }
@@ -136,9 +136,9 @@
     };
     const targetFromPointer = (track, event) => {
       const rect = track.getBoundingClientRect();
-      return (event.clientX - rect.left) / rect.width * 8;
+      return (event.clientX - rect.left) / rect.width * 5;
     };
-    panel.querySelectorAll(".party-check-track-editable").forEach((track) => {
+    aggregateChecks?.querySelectorAll(".party-check-track-editable").forEach((track) => {
       track.addEventListener("click", (event) => {
         if (event.target.closest("[data-party-check-target-handle]")) return;
         setPartyCheckTarget(track, targetFromPointer(track, event));
@@ -166,7 +166,7 @@
         if (!(event.key in steps) && event.key !== "Home" && event.key !== "End") return;
         event.preventDefault();
         const current = Number(track.dataset.checkTarget) || 0;
-        setPartyCheckTarget(track, event.key === "Home" ? 0 : event.key === "End" ? 8 : current + steps[event.key]);
+        setPartyCheckTarget(track, event.key === "Home" ? 0 : event.key === "End" ? 5 : current + steps[event.key]);
         savePartyCheckTarget(track);
       });
     });
