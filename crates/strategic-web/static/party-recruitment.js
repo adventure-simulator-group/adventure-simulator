@@ -115,9 +115,9 @@
         input.value = String(target);
       });
       track.dataset.checkTarget = String(target);
-      track.title = `${label}: ${current.toFixed(2)}; target ${target}`;
+      track.title = `${label}: ${current.toFixed(1)}; target ${target}`;
       const exact = track.querySelector(".party-check-exact");
-      if (exact) exact.textContent = `${label}: ${current.toFixed(2)} · target ${target}`;
+      if (exact) exact.textContent = `${label}: ${current.toFixed(1)} · target ${target}`;
       const handle = track.querySelector("[data-party-check-target-handle]");
       if (handle) {
         handle.style.left = `${target / 5 * 100}%`;

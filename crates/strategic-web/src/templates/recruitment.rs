@@ -392,9 +392,9 @@ fn party_check_target_form(
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
-                title=(format!("{label}: {current:.2}; target {target:.0}")) {
+                title=(format!("{label}: {current:.1}; target {target:.0}")) {
                 span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
-                span class="party-check-exact" { (format!("{label}: {current:.2} · target {target:.0}")) }
+                span class="party-check-exact" { (format!("{label}: {current:.1} · target {target:.0}")) }
                 @if can_manage {
                     button type="button" class="party-check-target-handle"
                         data-party-check-target-handle data-check-name=(field)
