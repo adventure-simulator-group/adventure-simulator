@@ -9,12 +9,12 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::AppState;
+use super::{AppState, approve_party_action, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
-    PartyJoinRequest, PartyMember, PartyRecruitmentRole, RecruitmentRequirements,
-    SavedRecruitmentRole,
+    PartyActionRequest, PartyJoinRequest, PartyLeaderVote, PartyMember, PartyRecruitmentRole,
+    RecruitmentRequirements, SavedRecruitmentRole,
 };
 use crate::templates::recruitment::{
     PartyCheckSummary, RecruitmentApplicant, RecruitmentRolePanel, recruitment_panel,
@@ -23,6 +23,7 @@ use crate::templates::recruitment::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/party-roles/{id}/join", post(join_party))
+        .route("/parties/{id}/join-general", post(join_general_party))
         .route("/party-recruitment/panel", get(recruitment_panel_fragment))
         .route("/party-recruitment/roles", post(create_recruitment_role))
         .route("/party-recruitment/saved", post(save_recruitment_role))
@@ -48,6 +49,15 @@ pub fn routes() -> Router<AppState> {
             post(reject_join_request),
         )
         .route("/party-notifications", get(party_notifications))
+        .route(
+            "/party-action-requests/{id}/approve",
+            post(approve_action_request),
+        )
+        .route(
+            "/party-action-requests/{id}/deny",
+            post(deny_action_request),
+        )
+        .route("/party-leader-votes/{candidate_id}", post(vote_for_leader))
         .route("/parties/{id}/leave", post(leave_party))
         .route("/parties/{id}/disband", post(disband_party))
 }
@@ -117,20 +127,22 @@ async fn update_party_check_targets(
     session: Session,
     Form(form): Form<PartyCheckTargetsForm>,
 ) -> Redirect {
-    if let Some(leader_id) = session.character_id_u64() {
-        let _ = state
-            .db
-            .call(
-                "update_party_check_targets",
-                &[
-                    json!(leader_id),
-                    json!(form.medicine),
-                    json!(form.surgery),
-                    json!(form.charisma),
-                    json!(form.faith),
-                ],
-            )
-            .await;
+    if let Some(actor_id) = session.character_id_u64() {
+        let _ = execute_or_request_party_action(
+            &state,
+            actor_id,
+            "party_checks",
+            "Change party skill targets",
+            "update_party_check_targets",
+            vec![
+                json!(actor_id),
+                json!(form.medicine),
+                json!(form.surgery),
+                json!(form.charisma),
+                json!(form.faith),
+            ],
+        )
+        .await;
     }
     Redirect::to("/")
 }
@@ -140,30 +152,32 @@ async fn create_recruitment_role(
     session: Session,
     Form(form): Form<RecruitmentRoleForm>,
 ) -> Redirect {
-    let Some(leader_id) = session.character_id_u64() else {
+    let Some(actor_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
     let requirements = form.requirements();
-    if let Err(error) = state
-        .db
-        .call(
-            "create_recruitment_role",
-            &[
-                json!(leader_id),
-                json!(form.name),
-                json!(form.quantity),
-                json!(requirements),
-                json!(form.weapon_precision()),
-                json!(form.save_role),
-            ],
-        )
-        .await
-    {
+    let outcome = execute_or_request_party_action(
+        &state,
+        actor_id,
+        "add_role",
+        &format!("Add {} {} slot(s)", form.quantity, form.name),
+        "create_recruitment_role",
+        vec![
+            json!(actor_id),
+            json!(form.name),
+            json!(form.quantity),
+            json!(requirements),
+            json!(form.weapon_precision()),
+            json!(form.save_role),
+        ],
+    )
+    .await;
+    if let Err(error) = outcome {
         tracing::warn!("Failed to create recruitment role: {error:?}");
         return Redirect::to("/");
     }
-    if state.db.is_local() {
-        if let Some(character) = get_character(&state, leader_id).await {
+    if state.db.is_local() && matches!(outcome, Ok(super::PartyActionOutcome::Executed)) {
+        if let Some(character) = get_character(&state, actor_id).await {
             if let Some(party_id) = character.party_id {
                 let roles: Vec<PartyRecruitmentRole> = state
                     .db
@@ -306,6 +320,23 @@ async fn join_party(
         }
     }
 
+    Redirect::to("/")
+}
+
+async fn join_general_party(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "request_general_party_join",
+                &[json!(character_id), json!(id)],
+            )
+            .await;
+    }
     Redirect::to("/")
 }
 
@@ -540,16 +571,18 @@ async fn accept_join_request(
     Path((id, request_id)): Path<(String, u64)>,
     session: Session,
 ) -> Redirect {
-    let Some(leader_id) = session.character_id_u64() else {
+    let Some(actor_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    let _ = state
-        .db
-        .call(
-            "accept_party_join_request",
-            &[json!(leader_id), json!(request_id)],
-        )
-        .await;
+    let _ = execute_or_request_party_action(
+        &state,
+        actor_id,
+        "accept_join",
+        &format!("Accept join request {request_id}"),
+        "accept_party_join_request",
+        vec![json!(actor_id), json!(request_id)],
+    )
+    .await;
     Redirect::to(&party_location_url(&state, &id).await)
 }
 
@@ -558,16 +591,18 @@ async fn reject_join_request(
     Path((id, request_id)): Path<(String, u64)>,
     session: Session,
 ) -> Redirect {
-    let Some(leader_id) = session.character_id_u64() else {
+    let Some(actor_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    let _ = state
-        .db
-        .call(
-            "reject_party_join_request",
-            &[json!(leader_id), json!(request_id)],
-        )
-        .await;
+    let _ = execute_or_request_party_action(
+        &state,
+        actor_id,
+        "reject_join",
+        &format!("Reject join request {request_id}"),
+        "reject_party_join_request",
+        vec![json!(actor_id), json!(request_id)],
+    )
+    .await;
     Redirect::to(&party_location_url(&state, &id).await)
 }
 
@@ -590,6 +625,9 @@ async fn party_location_url(state: &AppState, party_id: &str) -> String {
 struct PartyNotifications {
     pending_join_requests: usize,
     role_join_requests: Vec<RoleNotification>,
+    action_requests: Vec<PartyActionRequest>,
+    succession_required: bool,
+    leader_votes: Vec<PartyLeaderVote>,
 }
 
 #[derive(Serialize)]
@@ -606,18 +644,27 @@ async fn party_notifications(
         return Json(PartyNotifications {
             pending_join_requests: 0,
             role_join_requests: Vec::new(),
+            action_requests: Vec::new(),
+            succession_required: false,
+            leader_votes: Vec::new(),
         });
     };
     let Some(character) = get_character(&state, character_id).await else {
         return Json(PartyNotifications {
             pending_join_requests: 0,
             role_join_requests: Vec::new(),
+            action_requests: Vec::new(),
+            succession_required: false,
+            leader_votes: Vec::new(),
         });
     };
     let Some(party_id) = character.party_id else {
         return Json(PartyNotifications {
             pending_join_requests: 0,
             role_join_requests: Vec::new(),
+            action_requests: Vec::new(),
+            succession_required: false,
+            leader_votes: Vec::new(),
         });
     };
     let parties: Vec<Party> = state
@@ -625,15 +672,9 @@ async fn party_notifications(
         .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
         .await
         .unwrap_or_default();
-    if parties
+    let is_leader = parties
         .first()
-        .is_none_or(|party| party.leader_id != character_id)
-    {
-        return Json(PartyNotifications {
-            pending_join_requests: 0,
-            role_join_requests: Vec::new(),
-        });
-    }
+        .is_some_and(|party| party.leader_id == character_id);
     let requests: Vec<PartyJoinRequest> = state
         .db
         .query(&format!(
@@ -646,13 +687,99 @@ async fn party_notifications(
     for request in &requests {
         *counts.entry(request.recruitment_role_id).or_insert(0) += 1;
     }
+    let action_requests = if is_leader {
+        state
+            .db
+            .query::<PartyActionRequest>(&format!(
+                "SELECT * FROM party_action_request WHERE party_id = '{}'",
+                party_id
+            ))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let actual_leader_alive = match parties.first() {
+        Some(party) => get_character(&state, party.leader_id)
+            .await
+            .is_some_and(|leader| leader.alive),
+        None => true,
+    };
+    let leader_votes = state
+        .db
+        .query::<PartyLeaderVote>(&format!(
+            "SELECT * FROM party_leader_vote WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
     Json(PartyNotifications {
-        pending_join_requests: requests.len(),
+        pending_join_requests: if is_leader { requests.len() } else { 0 },
         role_join_requests: counts
             .into_iter()
             .map(|(role_id, count)| RoleNotification { role_id, count })
             .collect(),
+        action_requests,
+        succession_required: !actual_leader_alive,
+        leader_votes,
     })
+}
+
+async fn approve_action_request(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Redirect {
+    let Some(leader_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    if let Some(request) = state
+        .db
+        .query::<PartyActionRequest>(&format!(
+            "SELECT * FROM party_action_request WHERE id = {id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+    {
+        let _ = approve_party_action(&state, leader_id, &request).await;
+    }
+    Redirect::to("/")
+}
+
+async fn deny_action_request(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Redirect {
+    if let Some(leader_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "dismiss_party_action_request",
+                &[json!(leader_id), json!(id)],
+            )
+            .await;
+    }
+    Redirect::to("/")
+}
+
+async fn vote_for_leader(
+    State(state): State<AppState>,
+    Path(candidate_id): Path<u64>,
+    session: Session,
+) -> Redirect {
+    if let Some(voter_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "vote_for_party_leader",
+                &[json!(voter_id), json!(candidate_id)],
+            )
+            .await;
+    }
+    Redirect::to("/")
 }
 
 async fn leave_party(
@@ -669,8 +796,22 @@ async fn leave_party(
     Redirect::to("/")
 }
 
-async fn disband_party(State(state): State<AppState>, Path(id): Path<String>) -> Redirect {
-    let _ = state.db.call("disband_party", &[json!(id)]).await;
+async fn disband_party(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Redirect {
+    if let Some(actor_id) = session.character_id_u64() {
+        let _ = execute_or_request_party_action(
+            &state,
+            actor_id,
+            "disband_party",
+            "Disband the party",
+            "disband_party",
+            vec![json!(actor_id), json!(id)],
+        )
+        .await;
+    }
 
     Redirect::to("/")
 }

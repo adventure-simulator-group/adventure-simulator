@@ -63,6 +63,8 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
 | `saved_recruitment_role` | Reusable named role requirement presets owned by a character |
 | `party_join_request` | Pending applications to a recruitment role |
+| `party_action_request` / `party_leader_vote` | Persistent member suggestions and dead-leader succession votes |
+| `local_chat_message` | Party-scoped NPC and face-to-face player conversation history |
 | `character_capability` | Cached automatic equipment, attribute, skill, and mobility tags |
 | `mission` | Active and completed missions |
 | `mission_commit` | Idempotent mission result tracking |
@@ -80,6 +82,8 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `create_recruitment_role` / `delete_saved_recruitment_role` | Create grouped party slots and manage reusable role presets |
 | `update_party_check_targets` | Configure non-filtering Medicine, Surgery, Charisma, and Faith aggregate goals |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |
+| `request_general_party_join` | Submit a retained application through a shared zero-capacity Unassigned role |
+| `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |

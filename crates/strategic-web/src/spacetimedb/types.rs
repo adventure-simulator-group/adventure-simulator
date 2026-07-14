@@ -48,6 +48,7 @@ pub struct Character {
     pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     pub age_years: u16,
+    pub alive: bool,
     pub temporary: bool,
 }
 
@@ -125,6 +126,34 @@ pub struct PartyMember {
     pub character_id: u64,
     pub role: Option<String>,
     pub recruitment_role_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyActionRequest {
+    pub id: u64,
+    pub party_id: String,
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyLeaderVote {
+    pub id: String,
+    pub party_id: String,
+    pub voter_id: u64,
+    pub candidate_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalChatMessage {
+    pub id: u64,
+    pub conversation_key: String,
+    pub sender_id: u64,
+    pub sender_name: String,
+    pub body: String,
+    pub created_micros: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

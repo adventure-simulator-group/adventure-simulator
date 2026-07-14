@@ -13,7 +13,7 @@ use super::{
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party,
     PartyInventoryItem, Settlement,
 };
 
@@ -456,7 +456,7 @@ pub fn party_inventory_page(
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
-            (settlement_chat_area(&selected.name, Some(active_character)))
+            (player_chat_area(selected, active_character))
             form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden {
                 button type="button" class="party-offer-cancel" data-cancel-trade="party" { "Cancel" }
                 button type="submit" disabled { "Offer" }
@@ -546,6 +546,8 @@ pub fn party_stats_page(
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
+    active_party: Option<&Party>,
+    selected_party: Option<&Party>,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -559,9 +561,38 @@ pub fn party_stats_page(
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
-            (settlement_chat_area(&selected.name, Some(active_character)))
+            (player_chat_area(selected, active_character))
         }
-        aside class="right-sidebar" { (character_bio_rail(selected)) }
+        aside class="right-sidebar" {
+            (character_bio_rail(selected))
+            @if selected.id != active_character.id {
+                @if active_character.party_id == selected.party_id {
+                    @if active_party.is_some_and(|party| party.leader_id == selected.id) {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), active_character.id)) {
+                                button type="submit" class="btn btn-danger btn-block" { "Leave party" }
+                            }
+                        }))
+                    } @else {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), selected.id)) {
+                                button type="submit" class="btn btn-danger btn-block" {
+                                    @if active_party.is_some_and(|party| party.leader_id == active_character.id) { "Kick from party" }
+                                    @else { "Request kick" }
+                                }
+                            }
+                        }))
+                    }
+                } @else if let Some(party) = selected_party {
+                    (sidebar_section("Party", html! {
+                        p { (&party.name) }
+                        form method="post" action=(format!("/parties/{}/join-general", party.id)) {
+                            button type="submit" class="btn btn-primary btn-block" { "Request to join party" }
+                        }
+                    }))
+                }
+            }
+        }
     };
     location.render_layout("Party stats", content, Some(&active_character.name), theme)
 }
@@ -1420,8 +1451,6 @@ pub(crate) fn party_portrait_overlay(
         party_members.iter().collect()
     };
     let leader_id = members.first().map(|member| member.id);
-    let active_is_leader =
-        active_character.is_some_and(|character| Some(character.id) == leader_id);
 
     html! {
         @if !members.is_empty() {
@@ -1435,7 +1464,7 @@ pub(crate) fn party_portrait_overlay(
                 }
                 @for member in members {
                     @let is_active = active_character.is_some_and(|character| character.id == member.id);
-                    @let can_remove = Some(member.id) != leader_id && (active_is_leader || is_active);
+                    @let can_remove = Some(member.id) != leader_id;
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
                         data-character-id=(member.id)
                         data-active-character[is_active]
@@ -1463,9 +1492,9 @@ pub(crate) fn party_portrait_overlay(
                             }
                             @if can_remove {
                                 form method="post" action=(format!("{}/party/{}/remove", location_path, member.id)) {
-                                    button type="submit" class="party-portrait-action party-member-remove"
-                                        title=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() })
-                                        aria-label=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() }) {
+                                    button type="submit" class=(if is_active { "party-portrait-action party-member-remove party-member-leave" } else { "party-portrait-action party-member-remove party-member-kick-request" })
+                                        title=(if is_active { "Leave party".to_string() } else { format!("Request to remove {} from the party", member.name) })
+                                        aria-label=(if is_active { "Leave party".to_string() } else { format!("Request to remove {} from the party", member.name) }) {
                                         span aria-hidden="true" { "×" }
                                     }
                                 }
@@ -1491,7 +1520,12 @@ fn incapacitation_wheel_placeholder() -> Markup {
 /// Layout-only chat panel matching the UX prototype. Channels, message history,
 /// and sending are deliberately disabled until the strategic chat backend exists.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    chat_area(location, active_character, None)
+    chat_area(location, active_character, None, None)
+}
+
+fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
+    let context = ("player", subject.id.to_string());
+    chat_area(&subject.name, Some(active_character), None, Some(context))
 }
 
 fn settlement_service_chat_area(
@@ -1500,10 +1534,12 @@ fn settlement_service_chat_area(
     settlement_id: &str,
     service_id: &str,
 ) -> Markup {
+    let subject_id = format!("{settlement_id}:{service_id}");
     chat_area(
         location,
         active_character,
         Some((settlement_id, service_id)),
+        Some(("npc", subject_id)),
     )
 }
 
@@ -1511,24 +1547,22 @@ fn chat_area(
     location: &str,
     active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
+    local_context: Option<(&str, String)>,
 ) -> Markup {
-    let party_label = active_character
-        .map(|character| format!("{}'s party", character.name))
-        .unwrap_or_else(|| "Party".to_string());
-
     html! {
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
-            data-service-quest-id=[service_context.map(|context| context.1)] {
+            data-service-quest-id=[service_context.map(|context| context.1)]
+            data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
+            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())] {
             div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
                 aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
                 span aria-hidden="true" {}
             }
             div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
-                button type="button" class="settlement-chat-tab active" disabled
-                    title="TODO: party chat requires real-time message delivery" {
-                    (party_label)
+                button type="button" class="settlement-chat-tab active" {
+                    "Local"
                 }
                 button type="button" class="settlement-chat-tab" disabled
                     title="TODO: settlement chat requires real-time message delivery" {
@@ -1540,20 +1574,15 @@ fn chat_area(
                 }
             }
             div class="settlement-chat-messages" aria-live="polite" {
-                div class="chat-system-message" {
+                @if local_context.is_none() { div class="chat-system-message" {
                     span class="chat-timestamp" { "[--:--]" }
-                    " Chat is not connected yet. Message history and live delivery are TODO."
-                }
-                div class="chat-npc-message" {
-                    span class="chat-timestamp" { "[--:--]" }
-                    (location) " chat will appear here when the strategic chat service is available."
-                }
+                    " Select a local character or settlement service to begin talking."
+                } }
             }
             div class="settlement-chat-composer" {
-                input type="text" disabled placeholder="Chat is not implemented yet"
-                    title="TODO: sending messages requires the strategic chat backend";
-                button type="button" class="btn btn-primary btn-icon" disabled
-                    title="TODO: sending messages requires the strategic chat backend" aria-label="Send message" {
+                input type="text" name="body" disabled[local_context.is_none()] placeholder=(format!("Message {location}"));
+                button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
+                    aria-label="Send message" {
                     "➤"
                 }
             }

@@ -556,6 +556,343 @@ pub struct PartyJoinRequest {
     pub meets_requirements: bool,
 }
 
+/// A party member's proposed use of authority normally reserved for the leader.
+/// `payload` is JSON so approval can replay the original typed reducer call.
+#[derive(Clone, Debug)]
+#[table(name = party_action_request, public)]
+pub struct PartyActionRequest {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_leader_vote, public)]
+pub struct PartyLeaderVote {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub voter_id: u64,
+    pub candidate_id: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = local_chat_message, public)]
+pub struct LocalChatMessage {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub conversation_key: String,
+    pub sender_id: u64,
+    pub sender_name: String,
+    pub body: String,
+    pub created_micros: i64,
+}
+
+fn same_location(left: &crate::Character, right: &crate::Character) -> bool {
+    left.current_settlement_id == right.current_settlement_id
+        && left.current_quest_location_id == right.current_quest_location_id
+        && (left.current_settlement_id.is_some() || left.current_quest_location_id.is_some())
+}
+
+fn player_conversation_key(
+    ctx: &ReducerContext,
+    sender: &crate::Character,
+    subject_id: u64,
+) -> Result<String, String> {
+    let subject = ctx
+        .db
+        .character()
+        .id()
+        .find(subject_id)
+        .ok_or("Conversation subject not found")?;
+    if !same_location(sender, &subject) {
+        return Err("Local conversations require a shared location".into());
+    }
+    let sender_party = sender.party_id.as_deref().ok_or("Sender has no party")?;
+    let subject_party = subject.party_id.as_deref().ok_or("Subject has no party")?;
+    let (first, second) = if sender_party <= subject_party {
+        (sender_party, subject_party)
+    } else {
+        (subject_party, sender_party)
+    };
+    Ok(format!("players:{first}:{second}"))
+}
+
+fn npc_conversation_key(sender: &crate::Character, subject_id: &str) -> Result<String, String> {
+    let party_id = sender.party_id.as_deref().ok_or("Sender has no party")?;
+    let settlement_id = sender
+        .current_settlement_id
+        .as_deref()
+        .ok_or("NPC conversations require a settlement")?;
+    if !subject_id.starts_with(&format!("{settlement_id}:")) {
+        return Err("NPC is not at the sender's settlement".into());
+    }
+    Ok(format!("npc:{party_id}:{subject_id}"))
+}
+
+#[reducer]
+pub fn send_local_chat_message(
+    ctx: &ReducerContext,
+    sender_id: u64,
+    subject_kind: String,
+    subject_id: String,
+    body: String,
+) -> Result<(), String> {
+    let sender = ctx
+        .db
+        .character()
+        .id()
+        .find(sender_id)
+        .ok_or("Sender not found")?;
+    let body = body.trim();
+    if body.is_empty() || body.chars().count() > 500 {
+        return Err("Messages must contain 1 to 500 characters".into());
+    }
+    let conversation_key = match subject_kind.as_str() {
+        "player" => player_conversation_key(
+            ctx,
+            &sender,
+            subject_id.parse().map_err(|_| "Invalid player subject")?,
+        )?,
+        "npc" => npc_conversation_key(&sender, &subject_id)?,
+        _ => return Err("Unknown Local conversation subject".into()),
+    };
+    ctx.db.local_chat_message().insert(LocalChatMessage {
+        id: 0,
+        conversation_key,
+        sender_id,
+        sender_name: sender.name,
+        body: body.to_string(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn record_local_npc_message(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    subject_id: String,
+    npc_name: String,
+    body: String,
+) -> Result<(), String> {
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Character not found")?;
+    let body = body.trim();
+    if body.is_empty() || body.chars().count() > 1000 {
+        return Err("NPC messages must contain 1 to 1000 characters".into());
+    }
+    let conversation_key = npc_conversation_key(&actor, &subject_id)?;
+    ctx.db.local_chat_message().insert(LocalChatMessage {
+        id: 0,
+        conversation_key,
+        sender_id: 0,
+        sender_name: npc_name.trim().to_string(),
+        body: body.to_string(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn request_party_action(
+    ctx: &ReducerContext,
+    requester_id: u64,
+    action_kind: String,
+    summary: String,
+    payload: String,
+) -> Result<(), String> {
+    let requester = ctx
+        .db
+        .character()
+        .id()
+        .find(requester_id)
+        .ok_or("Character not found")?;
+    let party_id = requester.party_id.ok_or("Character has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id == requester_id {
+        return Err("The party leader does not need to request permission".into());
+    }
+    let allowed = [
+        "travel",
+        "kick",
+        "add_role",
+        "accept_join",
+        "reject_join",
+        "accept_quest",
+        "abandon_quest",
+        "turn_in_quest",
+        "autoresolve",
+        "party_checks",
+        "party_inventory",
+        "disband_party",
+        "initiate_combat",
+        "cancel_mission",
+    ];
+    if !allowed.contains(&action_kind.as_str()) {
+        return Err("Unknown party action request".into());
+    }
+    // Travel destinations supersede one another. Inventory target/staging edits
+    // are intentionally coalesced to one notification per requesting member.
+    if action_kind == "travel" || action_kind == "party_inventory" {
+        let old: Vec<_> = ctx
+            .db
+            .party_action_request()
+            .requester_id()
+            .filter(requester_id)
+            .filter(|request| request.party_id == party_id && request.action_kind == action_kind)
+            .map(|request| request.id)
+            .collect();
+        for id in old {
+            ctx.db.party_action_request().id().delete(id);
+        }
+    }
+    ctx.db.party_action_request().insert(PartyActionRequest {
+        id: 0,
+        party_id,
+        requester_id,
+        action_kind,
+        summary: summary.trim().to_string(),
+        payload,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn dismiss_party_action_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let request = ctx
+        .db
+        .party_action_request()
+        .id()
+        .find(request_id)
+        .ok_or("Request not found")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&request.party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can resolve requests".into());
+    }
+    ctx.db.party_action_request().id().delete(request_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn vote_for_party_leader(
+    ctx: &ReducerContext,
+    voter_id: u64,
+    candidate_id: u64,
+) -> Result<(), String> {
+    let voter = ctx
+        .db
+        .character()
+        .id()
+        .find(voter_id)
+        .ok_or("Voter not found")?;
+    if !voter.alive {
+        return Err("Dead characters cannot vote".into());
+    }
+    let party_id = voter.party_id.ok_or("Voter has no party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(party.leader_id)
+        .ok_or("Leader not found")?;
+    if leader.alive {
+        return Err("Succession voting begins only after the leader dies".into());
+    }
+    let candidate = ctx
+        .db
+        .character()
+        .id()
+        .find(candidate_id)
+        .ok_or("Candidate not found")?;
+    if !candidate.alive || candidate.party_id.as_deref() != Some(&party_id) {
+        return Err("Candidate must be a living member of this party".into());
+    }
+    let id = format!("{party_id}:{voter_id}");
+    let vote = PartyLeaderVote {
+        id: id.clone(),
+        party_id: party_id.clone(),
+        voter_id,
+        candidate_id,
+    };
+    if ctx.db.party_leader_vote().id().find(&id).is_some() {
+        ctx.db.party_leader_vote().id().update(vote);
+    } else {
+        ctx.db.party_leader_vote().insert(vote);
+    }
+    let living = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .filter(|member| {
+            ctx.db
+                .character()
+                .id()
+                .find(member.character_id)
+                .is_some_and(|c| c.alive)
+        })
+        .count();
+    let votes = ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(&party_id)
+        .filter(|vote| vote.candidate_id == candidate_id)
+        .count();
+    if votes * 2 > living {
+        party.leader_id = candidate_id;
+        party.is_solo = living == 1;
+        ctx.db.party().id().update(party);
+        let ids: Vec<_> = ctx
+            .db
+            .party_leader_vote()
+            .party_id()
+            .filter(&party_id)
+            .map(|v| v.id)
+            .collect();
+        for id in ids {
+            ctx.db.party_leader_vote().id().delete(&id);
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn update_character(ctx: &ReducerContext, id: u64, name: String) -> Result<(), String> {
     let Some(mut character) = ctx.db.character().id().find(id) else {
@@ -885,7 +1222,7 @@ pub fn request_to_join_party(
     {
         return Err("Parties must be in the same location to merge".into());
     }
-    if filled_role_slots(ctx, role.id) >= role.quantity {
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
         return Err("Recruitment role is full".into());
     }
     if ctx
@@ -909,6 +1246,33 @@ pub fn request_to_join_party(
 }
 
 #[reducer]
+pub fn request_general_party_join(
+    ctx: &ReducerContext,
+    character_id: u64,
+    target_party_id: String,
+) -> Result<(), String> {
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(&target_party_id)
+        .find(|role| role.quantity == 0 && role.name == "Unassigned")
+        .unwrap_or_else(|| {
+            ctx.db
+                .party_recruitment_role()
+                .insert(PartyRecruitmentRole {
+                    id: 0,
+                    party_id: target_party_id.clone(),
+                    name: "Unassigned".into(),
+                    requirements: RecruitmentRequirements::default(),
+                    quantity: 0,
+                    weapon_precision: 0.0,
+                })
+        });
+    request_to_join_party(ctx, character_id, role.id)
+}
+
+#[reducer]
 pub fn accept_party_join_request(
     ctx: &ReducerContext,
     leader_id: u64,
@@ -929,7 +1293,7 @@ pub fn accept_party_join_request(
         .id()
         .find(request.recruitment_role_id)
         .ok_or("Recruitment role not found")?;
-    if filled_role_slots(ctx, role.id) >= role.quantity {
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
         return Err("Recruitment role is full".into());
     }
     let character = ctx
@@ -1070,7 +1434,7 @@ pub fn accept_party_join_request(
     for pending in requests {
         ctx.db.party_join_request().id().delete(pending.id);
     }
-    if filled_role_slots(ctx, role.id) >= role.quantity {
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
         for pending in ctx
             .db
             .party_join_request()
@@ -2190,10 +2554,13 @@ pub fn remove_party_member(
 }
 
 #[reducer]
-pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), String> {
+pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> Result<(), String> {
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can disband the party".into());
+    }
     if party.current_quest_location_id.is_some() {
         return Err("Travel to a settlement before disbanding the party".into());
     }

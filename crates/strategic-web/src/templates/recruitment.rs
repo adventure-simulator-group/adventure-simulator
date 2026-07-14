@@ -37,7 +37,7 @@ pub fn recruitment_panel(
     saved_roles: &[SavedRecruitmentRole],
     checks: PartyCheckSummary,
 ) -> Markup {
-    let can_manage = party.leader_id == active_character_id;
+    let can_manage = true;
     html! {
         div data-party-recruitment-panel
             data-leader-id=(party.leader_id)

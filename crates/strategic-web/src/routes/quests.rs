@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::{
-    AppState,
+    AppState, PartyActionOutcome, execute_or_request_party_action,
     settlements::{TravelDestination, get_active_party_members, settlement_destination},
 };
 use crate::session::Session;
@@ -95,7 +95,6 @@ async fn current_quest(
         id: quest.id,
         title: quest.title,
         can_abandon: quest.status.eq_ignore_ascii_case("accepted")
-            && party.leader_id == character.id
             && character.current_quest_location_id.is_none(),
     }))
 }
@@ -115,8 +114,11 @@ async fn accept_quest(
         .await
         .unwrap_or_default();
     let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
-    let _ = accept_quest_for_character(&state, character_id, &id).await;
+    let outcome = accept_quest_for_character(&state, character_id, &id).await;
 
+    if matches!(outcome, Ok(PartyActionOutcome::Requested)) {
+        return Redirect::to("/?party-requested=accept_quest");
+    }
     settlement_id.map_or_else(
         || Redirect::to("/"),
         |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
@@ -150,11 +152,16 @@ async fn accept_quest_api(
         None => Err("Choose a character first".to_string()),
     };
     match result {
-        Ok(()) => Json(AcceptQuestResponse {
-            accepted: true,
+        Ok(outcome) => Json(AcceptQuestResponse {
+            accepted: matches!(outcome, PartyActionOutcome::Executed),
             quest_id: id,
             title,
-            message: "Quest added to your tracker.".to_string(),
+            message: if matches!(outcome, PartyActionOutcome::Executed) {
+                "Quest added to your tracker."
+            } else {
+                "Requested that the party accept this quest."
+            }
+            .to_string(),
         }),
         Err(error) => Json(AcceptQuestResponse {
             accepted: false,
@@ -169,13 +176,16 @@ async fn accept_quest_for_character(
     state: &AppState,
     character_id: u64,
     quest_id: &str,
-) -> Result<(), String> {
-    state
-        .db
-        .call("accept_quest", &[json!(character_id), json!(quest_id)])
-        .await
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+) -> Result<PartyActionOutcome, String> {
+    execute_or_request_party_action(
+        state,
+        character_id,
+        "accept_quest",
+        &format!("Accept quest {quest_id}"),
+        "accept_quest",
+        vec![json!(character_id), json!(quest_id)],
+    )
+    .await
 }
 
 #[derive(Serialize)]
@@ -199,19 +209,33 @@ async fn turn_in_quest_api(
         .next()
         .map_or(0, |quest| quest.gold_reward);
     let result = match session.character_id_u64() {
-        Some(character_id) => state
-            .db
-            .call("turn_in_quest", &[json!(character_id), json!(id)])
+        Some(character_id) => {
+            execute_or_request_party_action(
+                &state,
+                character_id,
+                "turn_in_quest",
+                &format!("Turn in quest {id}"),
+                "turn_in_quest",
+                vec![json!(character_id), json!(id)],
+            )
             .await
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
+        }
         None => Err("Choose a character first".to_string()),
     };
     match result {
-        Ok(()) => Json(TurnInQuestResponse {
-            claimed: true,
-            reward,
-            message: "Quest reward added to the party inventory.".to_string(),
+        Ok(outcome) => Json(TurnInQuestResponse {
+            claimed: matches!(outcome, PartyActionOutcome::Executed),
+            reward: if matches!(outcome, PartyActionOutcome::Executed) {
+                reward
+            } else {
+                0
+            },
+            message: if matches!(outcome, PartyActionOutcome::Executed) {
+                "Quest reward added to the party inventory."
+            } else {
+                "Requested that the party turn in this quest."
+            }
+            .to_string(),
         }),
         Err(error) => Json(TurnInQuestResponse {
             claimed: false,
@@ -236,10 +260,15 @@ async fn abandon_quest(
         .await
         .unwrap_or_default();
     let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
-    let _ = state
-        .db
-        .call("abandon_quest", &[json!(character_id), json!(id.clone())])
-        .await;
+    let _ = execute_or_request_party_action(
+        &state,
+        character_id,
+        "abandon_quest",
+        &format!("Abandon quest {id}"),
+        "abandon_quest",
+        vec![json!(character_id), json!(id.clone())],
+    )
+    .await;
 
     settlement_id.map_or_else(
         || Redirect::to("/"),
@@ -255,15 +284,23 @@ async fn travel_to_quest(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    if let Err(error) = state
-        .db
-        .call("travel_to_quest", &[json!(character_id), json!(id.clone())])
-        .await
-    {
+    let outcome = execute_or_request_party_action(
+        &state,
+        character_id,
+        "travel",
+        &format!("Travel to quest {id}"),
+        "travel_to_quest",
+        vec![json!(character_id), json!(id.clone())],
+    )
+    .await;
+    if let Err(ref error) = outcome {
         tracing::error!("Failed to travel to quest: {error:?}");
         return Redirect::to("/");
     }
-    Redirect::to(&format!("/locations/quest/{id}"))
+    match outcome.unwrap() {
+        PartyActionOutcome::Executed => Redirect::to(&format!("/locations/quest/{id}")),
+        PartyActionOutcome::Requested => Redirect::to("/?party-requested=travel"),
+    }
 }
 
 async fn post_battle_loot(
@@ -498,10 +535,7 @@ async fn render_quest_location(
         .collect();
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
-    let can_control = character
-        .as_ref()
-        .zip(party.as_ref())
-        .is_some_and(|(character, party)| party.leader_id == character.id);
+    let can_control = character.as_ref().zip(party.as_ref()).is_some();
     let can_fight = can_control
         && quest.status.eq_ignore_ascii_case("accepted")
         && party
@@ -630,17 +664,23 @@ async fn autoresolve_quest(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    if let Err(error) = state
-        .db
-        .call(
-            "autoresolve_quest",
-            &[json!(character_id), json!(id.clone())],
-        )
-        .await
-    {
+    let outcome = execute_or_request_party_action(
+        &state,
+        character_id,
+        "autoresolve",
+        &format!("Autoresolve quest {id}"),
+        "autoresolve_quest",
+        vec![json!(character_id), json!(id.clone())],
+    )
+    .await;
+    if let Err(ref error) = outcome {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
-    Redirect::to(&format!("/locations/quest/{id}/loot"))
+    match outcome {
+        Ok(PartyActionOutcome::Executed) => Redirect::to(&format!("/locations/quest/{id}/loot")),
+        Ok(PartyActionOutcome::Requested) => Redirect::to("/?party-requested=autoresolve"),
+        Err(_) => Redirect::to(&format!("/locations/quest/{id}")),
+    }
 }
 
 pub(crate) fn offroad_journey_minutes(distance_m: u64) -> u64 {

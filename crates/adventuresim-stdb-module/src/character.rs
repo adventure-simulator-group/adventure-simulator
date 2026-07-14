@@ -26,6 +26,10 @@ pub struct Character {
     pub temporary: bool,
     #[default(25)]
     pub age_years: u16,
+    /// Strategic life state. Death transitions are intentionally deferred to the
+    /// future death system, but parties already use this to govern succession.
+    #[default(true)]
+    pub alive: bool,
 }
 
 /// [`Character`] attributes
@@ -250,6 +254,7 @@ pub(crate) fn insert_new_character(
         in_server: false,
         temporary,
         age_years: 25,
+        alive: true,
     });
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,

@@ -6,22 +6,15 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Character {
+pub struct PartyActionRequest {
     pub id: u64,
-    pub name: String,
-    pub xp: u32,
-    pub level: u32,
-    pub gold: u32,
-    pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
-    pub party_id: Option<String>,
-    pub server: __sdk::Identity,
-    pub in_server: bool,
-    pub temporary: bool,
-    pub age_years: u16,
-    pub alive: bool,
+    pub party_id: String,
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
 }
 
-impl __sdk::InModule for Character {
+impl __sdk::InModule for PartyActionRequest {
     type Module = super::RemoteModule;
 }

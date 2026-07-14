@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use super::AppState;
+use super::{AppState, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{BattleResult, Character, Party, TacticalServer, TacticalServerRequest};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
@@ -51,10 +51,6 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/");
     };
 
-    if party.leader_id != character_id {
-        return Redirect::to("/");
-    }
-
     let Some(quest_id) = &party.active_quest_id else {
         return Redirect::to("/");
     };
@@ -67,19 +63,24 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         .unwrap_or_else(|| "hills".to_string());
     let mission_id = format!("party-{}-{}", party_id, chrono_id());
 
-    if let Err(error) = state
-        .db
-        .call(
-            "request_tactical_server",
-            &[json!(mission_id.clone()), json!(scene_key.clone())],
-        )
-        .await
-    {
+    let outcome = execute_or_request_party_action(
+        &state,
+        character_id,
+        "initiate_combat",
+        "Initiate tactical combat",
+        "request_tactical_server",
+        vec![json!(mission_id.clone()), json!(scene_key.clone())],
+    )
+    .await;
+    if let Err(ref error) = outcome {
         tracing::error!("Failed to request mission: {:?}", error);
         return Redirect::to("/");
     }
 
-    Redirect::to(&format!("/missions/{}/status", mission_id))
+    match outcome.unwrap() {
+        PartyActionOutcome::Executed => Redirect::to(&format!("/missions/{mission_id}/status")),
+        PartyActionOutcome::Requested => Redirect::to("/?party-requested=initiate_combat"),
+    }
 }
 
 async fn mission_status(
@@ -145,18 +146,15 @@ async fn cancel_mission(
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
-    if !can_cancel_mission(&state, &viewer, &server).await {
-        return (
-            StatusCode::FORBIDDEN,
-            "Not authorized to cancel this mission",
-        )
-            .into_response();
-    }
-
-    let _ = state
-        .db
-        .call("cancel_mission_request", &[json!(mission_id)])
-        .await;
+    let _ = execute_or_request_party_action(
+        &state,
+        character_id,
+        "cancel_mission",
+        "Cancel tactical combat",
+        "cancel_mission_request",
+        vec![json!(mission_id)],
+    )
+    .await;
 
     if server.party_id.is_some() {
         Redirect::to("/").into_response()

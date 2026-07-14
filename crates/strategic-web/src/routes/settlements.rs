@@ -81,6 +81,10 @@ pub fn routes() -> Router<AppState> {
             get(party_stats),
         )
         .route(
+            "/locations/{kind}/{id}/players/{character_id}",
+            get(party_stats),
+        )
+        .route(
             "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
         )
@@ -224,10 +228,7 @@ async fn settlement_map(
     )
     .await;
     let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
-        character.current_settlement_id.as_deref() == Some(&settlement.id)
-            && active_party
-                .as_ref()
-                .is_some_and(|party| party.leader_id == character.id)
+        character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
     });
     Html(
         settlement_map_page(
@@ -344,15 +345,12 @@ async fn service_quest_offers(
     };
     let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(id.as_str())
-            && active_party.as_ref().is_some_and(|party| {
-                party.leader_id == character.id && party.active_quest_id.is_none()
-            })
-    });
-    let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
-        character.current_settlement_id.as_deref() == Some(id.as_str())
             && active_party
                 .as_ref()
-                .is_some_and(|party| party.leader_id == character.id)
+                .is_some_and(|party| party.active_quest_id.is_none())
+    });
+    let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(id.as_str()) && active_party.is_some()
     });
     let parties: Vec<Party> = state
         .db
@@ -418,9 +416,10 @@ async fn service_quest_offers(
                         return None;
                     }
                     let party = parties.iter().find(|party| party.id == party_id)?;
-                    let leader = characters.iter().find(|character| {
-                        character.id == party.leader_id && character.temporary
-                    })?;
+                    if party.current_settlement_id.as_deref() != Some(id.as_str()) {
+                        return None;
+                    }
+                    let leader = characters.iter().find(|character| character.id == party.leader_id)?;
                     let roles = recruitment_roles
                         .iter()
                         .filter(|role| role.party_id == party.id)
@@ -451,7 +450,7 @@ async fn service_quest_offers(
                             })
                         })
                         .collect::<Vec<_>>();
-                    (!roles.is_empty()).then(|| ServiceQuestRecruitment {
+                    Some(ServiceQuestRecruitment {
                         party_name: party.name.clone(),
                         leader_name: leader.name.clone(),
                         roles,
@@ -969,11 +968,6 @@ async fn party_member(
         return Html("<h1>Your party is not at this location</h1>".to_string());
     }
     let party_members = get_active_party_members(&state, Some(&active_character)).await;
-    if character_id != active_character.id
-        && !party_members.iter().any(|member| member.id == character_id)
-    {
-        return Html("<h1>Party member not found</h1>".to_string());
-    }
 
     let selected = if character_id == active_character.id {
         active_character.clone()
@@ -990,6 +984,11 @@ async fn party_member(
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
     };
+    if selected.current_settlement_id != active_character.current_settlement_id
+        || selected.current_quest_location_id != active_character.current_quest_location_id
+    {
+        return Html("<h1>Character is not at this location</h1>".to_string());
+    }
     let selected_inventory: Vec<InventoryItem> = if character_id == active_character.id {
         active_inventory.clone()
     } else {
@@ -1158,19 +1157,31 @@ async fn set_inventory_target(
     let Some(character_id) = session.character_id_u64() else {
         return (axum::http::StatusCode::UNAUTHORIZED, "Choose a character");
     };
-    match state
-        .db
-        .call(
+    let args = vec![
+        json!(character_id),
+        json!(form.party_scope),
+        json!(form.item_id),
+        json!(form.quantity),
+    ];
+    let result = if form.party_scope {
+        super::execute_or_request_party_action(
+            &state,
+            character_id,
+            "party_inventory",
+            "Manage party inventory targets",
             "set_inventory_quantity_target",
-            &[
-                json!(character_id),
-                json!(form.party_scope),
-                json!(form.item_id),
-                json!(form.quantity),
-            ],
+            args,
         )
         .await
-    {
+        .map(|_| ())
+    } else {
+        state
+            .db
+            .call("set_inventory_quantity_target", &args)
+            .await
+            .map_err(|error| error.to_string())
+    };
+    match result {
         Ok(()) => (axum::http::StatusCode::NO_CONTENT, ""),
         Err(error) => {
             tracing::warn!("Failed to save inventory target: {error}");
@@ -1259,14 +1270,25 @@ async fn remove_party_member(
     session: Session,
 ) -> Redirect {
     if let Some(actor_character_id) = session.character_id_u64() {
-        if let Err(error) = state
-            .db
-            .call(
+        let result = if actor_character_id == member_character_id {
+            state
+                .db
+                .call("leave_party", &[json!(actor_character_id)])
+                .await
+                .map_err(|error| error.to_string())
+        } else {
+            super::execute_or_request_party_action(
+                &state,
+                actor_character_id,
+                "kick",
+                &format!("Remove party member {member_character_id}"),
                 "remove_party_member",
-                &[json!(actor_character_id), json!(member_character_id)],
+                vec![json!(actor_character_id), json!(member_character_id)],
             )
             .await
-        {
+            .map(|_| ())
+        };
+        if let Err(error) = result {
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
@@ -1290,11 +1312,6 @@ async fn party_stats(
         return Html("<h1>Your party is not at this location</h1>".to_string());
     }
     let party_members = get_active_party_members(&state, Some(&active_character)).await;
-    if character_id != active_character.id
-        && !party_members.iter().any(|member| member.id == character_id)
-    {
-        return Html("<h1>Party member not found</h1>".to_string());
-    }
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
@@ -1309,6 +1326,31 @@ async fn party_stats(
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
+    };
+    if selected.current_settlement_id != active_character.current_settlement_id
+        || selected.current_quest_location_id != active_character.current_quest_location_id
+    {
+        return Html("<h1>Character is not at this location</h1>".to_string());
+    }
+    let active_party = match active_character.party_id.as_deref() {
+        Some(party_id) => state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next(),
+        None => None,
+    };
+    let selected_party = match selected.party_id.as_deref() {
+        Some(party_id) => state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next(),
+        None => None,
     };
     let selected_attributes: Vec<CharacterAttributes> = state
         .db
@@ -1342,6 +1384,8 @@ async fn party_stats(
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
+            active_party.as_ref(),
+            selected_party.as_ref(),
             session.theme(),
         )
         .into_string(),
@@ -1911,15 +1955,22 @@ async fn travel(
         return Redirect::to("/characters");
     };
 
-    let _ = state
-        .db
-        .call(
-            "travel_to_settlement",
-            &[json!(character_id), json!(id.clone())],
-        )
-        .await;
-
-    Redirect::to(&format!("/locations/settlement/{}", id))
+    let outcome = super::execute_or_request_party_action(
+        &state,
+        character_id,
+        "travel",
+        &format!("Travel to settlement {id}"),
+        "travel_to_settlement",
+        vec![json!(character_id), json!(id.clone())],
+    )
+    .await;
+    match outcome {
+        Ok(super::PartyActionOutcome::Executed) => {
+            Redirect::to(&format!("/locations/settlement/{id}"))
+        }
+        Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
+        Err(_) => Redirect::to("/"),
+    }
 }
 
 /// Helper to get character name for session display

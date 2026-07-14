@@ -10,6 +10,7 @@
     const messages = chat.querySelector(".settlement-chat-messages");
     if (!messages) return null;
     const row = document.createElement("div");
+    const body = typeof content === "string" ? content : content.textContent;
     row.className = kind === "player" ? "chat-player-message" : "chat-npc-message";
     const timestamp = document.createElement("span");
     timestamp.className = "chat-timestamp";
@@ -24,6 +25,16 @@
     else row.append(content);
     messages.append(row);
     messages.scrollTop = messages.scrollHeight;
+    const subject = chat.dataset.localChatSubject;
+    if (subject) {
+      const form = new URLSearchParams({ body: body || "", speaker: speaker || "" });
+      const suffix = kind === "player" ? "" : "/npc";
+      fetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form,
+      }).catch(() => {});
+    }
     return row;
   };
 
@@ -152,6 +163,12 @@
       leader.title = `Leader of ${quest.recruitment.party_name}`;
       leader.addEventListener("click", (event) => event.preventDefault());
       details.append(leader, document.createTextNode(" is looking for "));
+      if (quest.recruitment.roles.length === 0) {
+        details.replaceChildren();
+        details.append(leader, document.createTextNode(" and their party are already helping me with the matter."));
+        line("npc", quest.npc_name, details);
+        return;
+      }
       quest.recruitment.roles.forEach((role, index) => {
         if (index > 0) details.append(document.createTextNode(index + 1 === quest.recruitment.roles.length ? " and " : ", "));
         details.append(recruitmentLink(quest, role));
@@ -257,9 +274,13 @@
       const quest = serviceQuests.find((entry) => entry.state === "recruiting")
         || serviceQuests.find((entry) => entry.state === "available")
         || serviceQuests[0];
-      if (quest?.state === "available") beginConversation(quest);
-      else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
-      else if (quest) beginReturnConversation(quest);
+      const showConversation = () => {
+        if (quest?.state === "available") beginConversation(quest);
+        else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
+        else if (quest) beginReturnConversation(quest);
+      };
+      if (chat.dataset.localChatReady === "true") showConversation();
+      else chat.addEventListener("local-chat-ready", showConversation, { once: true });
     })
     .catch(() => {});
 })();

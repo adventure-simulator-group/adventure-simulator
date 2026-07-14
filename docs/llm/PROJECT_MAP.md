@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (347)
+## Files (361)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -99,6 +99,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/deposit_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/disband_party_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/discard_inventory_items_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/dismiss_party_action_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/end_tactical_server_by_instance_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/end_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/ensure_settlement_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -122,13 +123,19 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/leave_party_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/liquidate_party_inventory_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/local_chat_message_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/party_action_request_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/party_action_request_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_inventory_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_inventory_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_inventory_state_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_inventory_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_join_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_join_request_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/party_leader_vote_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/party_leader_vote_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_member_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_member_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_recruitment_role_table.rs` — Generated SpacetimeDB table interface.
@@ -142,12 +149,15 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/quest_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quest_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/quest_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/record_local_npc_message_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/recruitment_requirements_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/refresh_capabilities_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/refresh_world_clock_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reject_party_join_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/remove_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rename_saved_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/request_general_party_join_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/request_party_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_for_scene_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_to_join_party_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -159,6 +169,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/seed_damaged_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_party_companions_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_world_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/send_local_chat_message_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/set_inventory_quantity_target_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_table.rs` — Generated SpacetimeDB table interface.
@@ -179,6 +190,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/update_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/update_party_check_targets_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/update_training_schedule_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/vote_for_party_leader_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/world_clock_schedule_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_clock_schedule_type.rs` — Generated SpacetimeDB data type.
@@ -240,6 +252,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/main.rs` — Rust source module for this component.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/local_chat.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/missions.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/mod.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/parties.rs` — Strategic web HTTP route handler.
@@ -310,6 +323,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/local-chat.js` — Repository support file.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.

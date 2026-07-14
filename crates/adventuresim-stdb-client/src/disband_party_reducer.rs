@@ -7,12 +7,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DisbandPartyArgs {
+    pub leader_id: u64,
     pub party_id: String,
 }
 
 impl From<DisbandPartyArgs> for super::Reducer {
     fn from(args: DisbandPartyArgs) -> Self {
         Self::DisbandParty {
+            leader_id: args.leader_id,
             party_id: args.party_id,
         }
     }
@@ -34,7 +36,7 @@ pub trait disband_party {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_disband_party`] callbacks.
-    fn disband_party(&self, party_id: String) -> __sdk::Result<()>;
+    fn disband_party(&self, leader_id: u64, party_id: String) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `disband_party`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,7 +46,7 @@ pub trait disband_party {
     /// to cancel the callback.
     fn on_disband_party(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
     ) -> DisbandPartyCallbackId;
     /// Cancel a callback previously registered by [`Self::on_disband_party`],
     /// causing it not to run in the future.
@@ -52,13 +54,18 @@ pub trait disband_party {
 }
 
 impl disband_party for super::RemoteReducers {
-    fn disband_party(&self, party_id: String) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("disband_party", DisbandPartyArgs { party_id })
+    fn disband_party(&self, leader_id: u64, party_id: String) -> __sdk::Result<()> {
+        self.imp.call_reducer(
+            "disband_party",
+            DisbandPartyArgs {
+                leader_id,
+                party_id,
+            },
+        )
     }
     fn on_disband_party(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
     ) -> DisbandPartyCallbackId {
         DisbandPartyCallbackId(self.imp.on_reducer(
             "disband_party",
@@ -67,7 +74,11 @@ impl disband_party for super::RemoteReducers {
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
-                            reducer: super::Reducer::DisbandParty { party_id },
+                            reducer:
+                                super::Reducer::DisbandParty {
+                                    leader_id,
+                                    party_id,
+                                },
                             ..
                         },
                     ..
@@ -75,7 +86,7 @@ impl disband_party for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, party_id)
+                callback(ctx, leader_id, party_id)
             }),
         ))
     }

@@ -2297,6 +2297,55 @@ button.party-portrait-action {
   line-height: 1;
 }
 
+.party-action-notifications {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 1.65rem);
+  left: 50%;
+  display: grid;
+  width: max-content;
+  max-width: 16rem;
+  gap: 0.25rem;
+  transform: translateX(-50%);
+}
+
+.party-action-request {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.2rem;
+  background: var(--panel-bg);
+  box-shadow: 0 0.2rem 0.65rem #0008;
+  font-size: 0.72rem;
+}
+
+.party-action-request form { display: contents; }
+.party-action-request button,
+.party-succession-vote button { padding: 0 0.25rem; cursor: pointer; }
+.party-action-request form:last-child button { color: var(--danger); }
+
+.party-succession-vote {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 1.65rem);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.party-succession-vote button.selected { color: var(--accent); }
+
+.party-requested-toast {
+  position: fixed;
+  z-index: 1000;
+  right: 1rem;
+  bottom: 1rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--accent);
+  background: var(--panel-bg);
+  box-shadow: 0 0.25rem 1rem #0009;
+}
+
 .party-action-icon {
   display: block;
   width: 0.9rem;
@@ -2705,6 +2754,30 @@ body.chat-resizing {
 .settlement-chat-composer .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.local-chat-incoming {
+  position: absolute;
+  z-index: 6;
+  right: 0.75rem;
+  bottom: calc(var(--chat-height, 11.5rem) + 0.75rem);
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 0.35rem;
+}
+
+.local-chat-incoming-portrait {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  box-shadow: 0 0.2rem 0.7rem #0009;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .small-copy {
