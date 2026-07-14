@@ -103,7 +103,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=location-tabs-1";
-                link rel="stylesheet" href="/static/css/components.css?v=inventory-targets-1";
+                link rel="stylesheet" href="/static/css/components.css?v=inventory-arrow-rails-2";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
