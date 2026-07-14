@@ -6,7 +6,7 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, sidebar_section, status_badge,
 };
-use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest, Settlement};
+use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest};
 use crate::{
     routes::quests::NearbySettlement,
     spacetimedb::Character,
@@ -204,21 +204,42 @@ pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
 /// Off-road strategic location reached after accepting and travelling to a quest.
 pub fn quest_location_page(
     quest: &Quest,
-    origin_settlement: Option<&Settlement>,
     nearby: &[NearbySettlement],
     active_character: Option<&Character>,
     party_members: &[Character],
     can_travel: bool,
     can_fight: bool,
+    resolved: bool,
+    loot: &[BattleLootItem],
+    pooled: &[PartyInventoryItem],
+    stake: u64,
+    items: &[ItemDefinition],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Location", html! {
-                h3 { (&quest.title) }
-                p class="small-copy" { (&quest.location_description) }
-                p class="text-muted small-copy" { "This is an off-road quest location." }
+            (sidebar_section("Loot", html! {
+                @if loot.is_empty() {
+                    (empty_state(
+                        if resolved { "No unclaimed loot remains." } else { "No loot has been recovered." },
+                        None,
+                        None,
+                    ))
+                } @else {
+                    table class="trade-inventory-table" {
+                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
+                        tbody {
+                            @for entry in loot {
+                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
+                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
+                            }
+                        }
+                    }
+                    form method="post" action=(format!("/quests/{}/loot/store", quest.id)) {
+                        button type="submit" class="btn btn-primary btn-block" { "Store all in party inventory" }
+                    }
+                }
             }))
         }
 
@@ -239,8 +260,25 @@ pub fn quest_location_page(
                         form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
-                    } @else {
+                    } @else if resolved {
                         span class="badge badge-info" { "Quest resolved" }
+                    } @else {
+                        span class="badge badge-info" { "Waiting for party leader" }
+                    }
+                    @if can_travel {
+                        details class="quest-travel-menu" {
+                            summary class="btn btn-secondary" { "Travel" }
+                            div class="quest-travel-options" {
+                                @for destination in nearby {
+                                    form method="post" action=(format!("/settlements/{}/travel", destination.settlement.id)) {
+                                        button type="submit" class="btn btn-secondary btn-small" {
+                                            (&destination.settlement.name)
+                                            " · " (format_distance(destination.distance_m))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -248,39 +286,34 @@ pub fn quest_location_page(
         }
 
         aside class="right-sidebar" {
-            (sidebar_section("Nearby settlements", html! {
-                @if nearby.is_empty() {
-                    (empty_state("No settlements are nearby.", None, None))
+            (sidebar_section("Party inventory", html! {
+                div class="party-stake-summary" {
+                    span { "Your available stake" }
+                    strong { (stake) " gold" }
+                }
+                @if pooled.is_empty() {
+                    (empty_state("The party chest is empty.", None, None))
                 } @else {
-                    @for destination in nearby {
-                        article class="travel-destination" {
-                            div {
-                                strong { (&destination.settlement.name) }
-                                p class="text-muted small-copy" {
-                                    (format_distance(destination.distance_m))
-                                    " · " (format_journey_time(destination.journey_minutes))
-                                }
-                            }
-                            @if can_travel {
-                                form method="post" action=(format!("/settlements/{}/travel", destination.settlement.id)) {
-                                    button type="submit" class="btn btn-primary btn-small" { "Travel" }
+                    table class="trade-inventory-table" {
+                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
+                        tbody {
+                            @for entry in pooled {
+                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
+                                tr {
+                                    td { (&entry.item_id) }
+                                    td { (entry.quantity) }
+                                    td { (u64::from(value) * u64::from(entry.quantity)) }
                                 }
                             }
                         }
                     }
                 }
             }))
-            (sidebar_section("Travel", html! {
-                p class="small-copy" { "Cross-country travel moves at 1.25 km/h: one quarter of road speed." }
-                p class="text-muted small-copy" { "Quest locations do not require a road connection." }
-            }))
         }
     };
-    super::settlement_layout_with_session(
+    super::quest_location_layout_with_session(
         &quest.title,
-        origin_settlement.map_or("Quest location", |settlement| settlement.name.as_str()),
-        &quest.settlement_id,
-        "",
+        &quest.title,
         content,
         logged_in_as,
         theme,
@@ -370,12 +403,4 @@ pub fn post_battle_page(
 
 fn format_distance(distance_m: u64) -> String {
     format!("{:.1} km", distance_m as f64 / 1_000.0)
-}
-
-fn format_journey_time(minutes: u64) -> String {
-    if minutes < 60 {
-        format!("{minutes} min")
-    } else {
-        format!("{} hr {} min", minutes / 60, minutes % 60)
-    }
 }

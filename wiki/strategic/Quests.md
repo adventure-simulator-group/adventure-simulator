@@ -4,7 +4,7 @@ A party leader may request one of an NPC quest party's open roles while both par
 
 Accepting a quest does not teleport the party. The notice board shows the selected posting on the right, including its travel distance and time. While a quest is active, its name appears beside the settlement identity and time; at a settlement, the leader can hover that name to reveal the abandonment action. Travel to a quest and travel onward from its location are straight-line, off-road journeys at one quarter of the normal 5 km/h settlement travel speed. Quest locations therefore do not need a Viabundus road connection.
 
-The quest destination uses the same location header and party-portrait overlay as settlement pages.
+The quest destination uses the same location header and party-portrait overlay as settlement pages, but omits settlement-service tabs. Its left rail always shows unclaimed loot and starts empty; its right rail always shows the shared party inventory. Resolving combat adds enemy equipment and any quest gold to the loot rail, where it can be stored into the party inventory without leaving the location screen.
 
 At the destination, the strategic page retains the normal chat placeholder, shows a location-image placeholder, and offers tactical combat or a placeholder autoresolve. Autoresolve always wins, completes the quest, and applies a random 5–20% injury to one body part per party member. Tactical tick state remains transient and is not persisted, but the final battle result is persisted long enough for the post-battle screen to show the defeated enemies' equipped items and any randomly awarded quest gold. The leader then stores all of it in the party inventory.
 ## Planning

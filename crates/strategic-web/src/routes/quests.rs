@@ -382,14 +382,13 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    Redirect::to(&format!("/quests/{id}/loot"))
+    Redirect::to(&format!("/quests/{id}/location"))
 }
 
 #[derive(Debug, Clone)]
 pub struct NearbySettlement {
     pub settlement: Settlement,
     pub distance_m: u64,
-    pub journey_minutes: u64,
 }
 
 async fn quest_location(
@@ -440,10 +439,6 @@ async fn quest_location(
         .query("SELECT * FROM settlement")
         .await
         .unwrap_or_default();
-    let origin_settlement = settlements
-        .iter()
-        .find(|settlement| settlement.id == quest.settlement_id)
-        .cloned();
     let mut nearby: Vec<NearbySettlement> = settlements
         .into_iter()
         .map(|settlement| {
@@ -451,7 +446,6 @@ async fn quest_location(
             NearbySettlement {
                 settlement,
                 distance_m,
-                journey_minutes: quest_journey_minutes(distance_m),
             }
         })
         .collect();
@@ -465,16 +459,74 @@ async fn quest_location(
         && party
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
+    let results: Vec<BattleResult> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM battle_result WHERE quest_id = '{}'",
+            quest.id
+        ))
+        .await
+        .unwrap_or_default();
+    let resolved = party
+        .as_ref()
+        .is_some_and(|party| results.iter().any(|result| result.party_id == party.id));
+    let loot: Vec<BattleLootItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM battle_loot_item WHERE quest_id = '{}'",
+            quest.id
+        ))
+        .await
+        .unwrap_or_default();
+    let pooled: Vec<PartyInventoryItem> = if let Some(party) = party.as_ref() {
+        state
+            .db
+            .query(&format!(
+                "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let stakes: Vec<PartyStake> = if let Some(party) = party.as_ref() {
+        state
+            .db
+            .query(&format!(
+                "SELECT * FROM party_stake WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let stake = character.as_ref().map_or(0, |character| {
+        stakes
+            .iter()
+            .find(|stake| stake.character_id == character.id)
+            .map_or(0, |stake| stake.value)
+    });
+    let items: Vec<ItemDefinition> = state
+        .db
+        .query("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     let party_members = get_active_party_members(&state, character.as_ref()).await;
     Html(
         quest_location_page(
             quest,
-            origin_settlement.as_ref(),
             &nearby,
             character.as_ref(),
             &party_members,
             can_control,
             can_fight,
+            resolved,
+            &loot,
+            &pooled,
+            stake,
+            &items,
             character.as_ref().map(|c| c.name.as_str()),
             session.theme(),
         )
@@ -501,14 +553,6 @@ async fn autoresolve_quest(
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
     Redirect::to(&format!("/quests/{id}/location"))
-}
-
-fn quest_journey_minutes(distance_m: u64) -> u64 {
-    distance_m
-        .saturating_mul(60)
-        .div_ceil(5_000)
-        .saturating_mul(4)
-        .max(1)
 }
 
 fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -> u64 {

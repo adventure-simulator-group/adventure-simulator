@@ -69,6 +69,24 @@ pub fn settlement_layout_with_session(
     )
 }
 
+/// Off-road location layout. It keeps the strategic identity, time, and party
+/// controls without exposing settlement-only services.
+pub fn quest_location_layout_with_session(
+    title: &str,
+    location_name: &str,
+    content: Markup,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(
+        title,
+        quest_location_top_bar(location_name, logged_in_as, theme),
+        content,
+        theme,
+    )
+}
+
 fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Markup {
     html! {
         (DOCTYPE)
@@ -83,7 +101,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=theme-dropdown-1";
-                link rel="stylesheet" href="/static/css/components.css?v=party-skills-corner-1";
+                link rel="stylesheet" href="/static/css/components.css?v=quest-location-loot-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -221,6 +239,34 @@ fn settlement_top_bar(
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
         script src="/static/current-quest.js?v=current-quest-header-1" defer {}
+    }
+}
+
+fn quest_location_top_bar(
+    location_name: &str,
+    logged_in_as: Option<&str>,
+    current_theme: &str,
+) -> Markup {
+    html! {
+        header class="top-bar settlement-top-bar quest-location-top-bar" {
+            div class="top-bar-left settlement-location" {
+                div class="settlement-identity" {
+                    span class="settlement-name" { (location_name) }
+                    span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
+                }
+            }
+            div class="top-bar-center" aria-hidden="true" {}
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" { "Party: " strong { (name) } }
+                    (switch_character_button())
+                } @else {
+                    span class="player-name player-name-none" { "No active party" }
+                }
+                (theme_switcher(current_theme))
+            }
+        }
+        script src="/static/strategic-time.js?v=player-time-1" {}
     }
 }
 

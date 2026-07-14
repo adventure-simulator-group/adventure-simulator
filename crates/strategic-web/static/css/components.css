@@ -1492,8 +1492,11 @@
 }
 
 .quest-visual-wrap {
+  display: flex;
+  flex: 1 1 auto;
   position: relative;
   min-height: 0;
+  overflow: hidden;
 }
 
 .quest-visual-wrap .service-visual {
@@ -1517,6 +1520,39 @@
 
 .quest-combat-actions form {
   margin: 0;
+}
+
+.quest-travel-menu {
+  position: relative;
+}
+
+.quest-travel-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.quest-travel-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.quest-travel-options {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  display: grid;
+  width: max-content;
+  min-width: 13rem;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.quest-travel-options .btn {
+  width: 100%;
+  justify-content: space-between;
 }
 
 .service-visual {
