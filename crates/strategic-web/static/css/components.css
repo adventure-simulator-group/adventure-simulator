@@ -2964,6 +2964,7 @@ body.chat-resizing {
 
 .party-portrait-overlay > .party-aggregate-checks {
   position:static;
+  order:-2;
   flex:0 0 5.25rem;
   align-self:center;
   margin-right:-0.35rem;
