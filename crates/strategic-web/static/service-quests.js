@@ -56,9 +56,15 @@
     const summary = document.querySelector("[data-current-quest]");
     if (!summary) return;
     const name = summary.querySelector("[data-current-quest-name]");
+    const status = summary.querySelector("[data-current-quest-status]");
     const abandon = summary.querySelector("[data-current-quest-abandon]");
     if (name) {
       name.textContent = quest.title;
+    }
+    if (status) {
+      status.classList.remove("resolved");
+      status.title = "Quest in progress";
+      status.setAttribute("aria-label", status.title);
     }
     if (abandon) {
       abandon.action = `/quests/${encodeURIComponent(quest.quest_id)}/abandon`;

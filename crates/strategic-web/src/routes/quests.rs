@@ -44,6 +44,7 @@ struct CurrentQuestSummary {
     id: String,
     title: String,
     can_abandon: bool,
+    resolved: bool,
 }
 
 async fn current_quest(
@@ -96,6 +97,7 @@ async fn current_quest(
         title: quest.title,
         can_abandon: quest.status.eq_ignore_ascii_case("accepted")
             && character.current_quest_location_id.is_none(),
+        resolved: quest.status.eq_ignore_ascii_case("completed"),
     }))
 }
 

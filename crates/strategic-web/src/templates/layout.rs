@@ -207,12 +207,7 @@ fn settlement_top_bar(
                     "1st of First Seed · 08:00"
                 }
                 }
-                div class="current-quest-summary" data-current-quest hidden {
-                    span class="current-quest-name" data-current-quest-name {}
-                    form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
-                        button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
-                    }
-                }
+                (current_quest_summary())
             }
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
@@ -250,7 +245,7 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
-        script src="/static/current-quest.js?v=current-quest-label-1" defer {}
+        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
     }
 }
 
@@ -268,6 +263,7 @@ fn quest_location_top_bar(
                     a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
+                (current_quest_summary())
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 a href=(format!("/locations/quest/{}/map", location_id))
@@ -292,6 +288,20 @@ fn quest_location_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
+        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
+    }
+}
+
+fn current_quest_summary() -> Markup {
+    html! {
+        div class="current-quest-summary" data-current-quest hidden {
+            span class="current-quest-status" data-current-quest-status
+                title="Quest in progress" aria-label="Quest in progress" { "!" }
+            span class="current-quest-name" data-current-quest-name {}
+            form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
+                button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
+            }
+        }
     }
 }
 

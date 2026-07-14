@@ -230,6 +230,8 @@ document.addEventListener("click", (event) => {
     window.lootTransferDraft = new Map();
     document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
     const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); form.hidden = true;
+    const prompt = form.querySelector("[data-loot-transfer-prompt]");
+    if (prompt) prompt.textContent = "Apply staged loot to the party inventory?";
     return;
   }
   const lootStage = event.target.closest("[data-loot-stage]");
@@ -246,6 +248,9 @@ document.addEventListener("click", (event) => {
     const form = document.querySelector("#loot-transfer-offer");
     form.querySelectorAll("input").forEach((input) => input.remove());
     for (const [name, values] of Object.entries({ item_ids: [...draft.keys()], quantities: [...draft.values()] })) { const input = document.createElement("input"); input.type="hidden"; input.name=name; input.value=values.join(","); form.append(input); }
+    const prompt = form.querySelector("[data-loot-transfer-prompt]");
+    const total = [...draft.values()].reduce((sum, quantity) => sum + quantity, 0);
+    if (prompt) prompt.textContent = `Apply ${total} staged item${total === 1 ? "" : "s"} to the party inventory?`;
     form.hidden = false; form.querySelector('[type="submit"]').disabled = false;
     return;
   }

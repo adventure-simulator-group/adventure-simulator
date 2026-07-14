@@ -1016,6 +1016,26 @@
   color: #000;
 }
 
+#loot-transfer-offer {
+  position: fixed;
+  z-index: 400;
+  bottom: 2rem;
+  left: 50%;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(34rem, calc(100vw - 2rem));
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+.loot-transfer-prompt {
+  max-width: 20rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .trade-transfer::before {
   display: block;
   width: 0;

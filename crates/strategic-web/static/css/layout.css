@@ -121,9 +121,35 @@
 
 .current-quest-summary {
   position: relative;
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
   padding-left: 1rem;
   border-left: 1px solid var(--border-color);
+}
+
+.current-quest-summary[hidden] { display: none; }
+
+.current-quest-status {
+  display: inline-grid;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #db5960;
+  border-radius: 999px;
+  background: #b4232c;
+  color: #fff;
+  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
+  font: 800 0.72rem/1 sans-serif;
+}
+
+.current-quest-status.resolved {
+  border-color: #f2c66f;
+  background: #d39a32;
+  color: #211506;
+  box-shadow: 0 0 0.5rem rgb(211 154 50 / 75%);
 }
 
 .current-quest-name {
@@ -145,7 +171,7 @@
 .current-quest-abandon {
   position: absolute;
   top: calc(100% + 0.35rem);
-  left: 1rem;
+  left: 2.6rem;
   z-index: 110;
   visibility: hidden;
   opacity: 0;

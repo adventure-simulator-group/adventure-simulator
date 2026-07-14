@@ -92,6 +92,7 @@ fn quest_location_center(
             ))
             div class="quest-visual-wrap" {
                 (visual_stage("map", &quest.title, "TODO: quest location image"))
+                @if can_fight || !resolved {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
                         form action="/missions/enter" method="post" {
@@ -100,11 +101,10 @@ fn quest_location_center(
                         form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
-                    } @else if resolved {
-                        span class="badge badge-info" { "Quest resolved" }
                     } @else {
                         span class="badge badge-info" { "Waiting for party leader" }
                     }
+                }
                 }
             }
             (settlement_chat_area(&quest.title, active_character))
@@ -294,9 +294,10 @@ pub fn post_battle_page(
 
 fn loot_stage_form(quest_id: &str) -> Markup {
     html! {
-        form method="post" action=(format!("/quests/{quest_id}/loot/store")) id="loot-transfer-offer" class="party-offer" hidden {
+        form method="post" action=(format!("/quests/{quest_id}/loot/store")) id="loot-transfer-offer" class="party-offer loot-transfer-offer" hidden {
+            span class="loot-transfer-prompt" data-loot-transfer-prompt { "Apply staged loot to the party inventory?" }
             button type="button" class="party-offer-cancel" data-cancel-loot { "Cancel" }
-            button type="submit" disabled { "Offer" }
+            button type="submit" disabled { "Apply" }
         }
     }
 }
