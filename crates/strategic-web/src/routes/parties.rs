@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppState> {
         .route("/party-roles/{id}/join", post(join_party))
         .route("/party-recruitment/panel", get(recruitment_panel_fragment))
         .route("/party-recruitment/roles", post(create_recruitment_role))
+        .route("/party-recruitment/saved", post(save_recruitment_role))
         .route(
             "/party-recruitment/check-targets",
             post(update_party_check_targets),
@@ -35,6 +36,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/party-recruitment/saved/{id}/delete",
             post(delete_saved_role),
+        )
+        .route(
+            "/party-recruitment/saved/{id}/rename",
+            post(rename_saved_role),
         )
         .route("/characters/{id}/capabilities", get(character_capabilities))
         .route(
@@ -205,6 +210,51 @@ async fn delete_saved_role(
             .call(
                 "delete_saved_recruitment_role",
                 &[json!(owner_id), json!(id)],
+            )
+            .await;
+    }
+    Redirect::to("/")
+}
+
+async fn save_recruitment_role(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<RecruitmentRoleForm>,
+) -> Redirect {
+    if let Some(owner_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "save_recruitment_role",
+                &[
+                    json!(owner_id),
+                    json!(form.name),
+                    json!(form.requirements()),
+                    json!(form.weapon_precision()),
+                ],
+            )
+            .await;
+    }
+    Redirect::to("/")
+}
+
+#[derive(Deserialize)]
+struct RenameSavedRoleForm {
+    name: String,
+}
+
+async fn rename_saved_role(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+    Form(form): Form<RenameSavedRoleForm>,
+) -> Redirect {
+    if let Some(owner_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "rename_saved_recruitment_role",
+                &[json!(owner_id), json!(id), json!(form.name)],
             )
             .await;
     }

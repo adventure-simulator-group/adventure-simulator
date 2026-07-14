@@ -214,6 +214,47 @@
       });
     });
 
+    const roleBuilder = panel.querySelector("[data-role-builder]");
+    const saveRoleDialog = panel.querySelector("[data-save-role-dialog]");
+    const saveRoleForm = panel.querySelector("[data-save-role-form]");
+    panel.querySelector("[data-save-current-role]")?.addEventListener("click", () => {
+      if (!roleBuilder || !saveRoleDialog || !saveRoleForm) return;
+      const fields = saveRoleForm.querySelector("[data-saved-role-fields]");
+      fields.replaceChildren();
+      const values = new FormData(roleBuilder);
+      values.delete("name");
+      values.delete("quantity");
+      values.delete("save_role");
+      values.forEach((value, name) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        fields.append(input);
+      });
+      saveRoleForm.elements.name.value = roleBuilder.elements.name.value || "";
+      saveRoleDialog.showModal();
+      saveRoleForm.elements.name.focus();
+      saveRoleForm.elements.name.select();
+    });
+
+    const renameRoleDialog = panel.querySelector("[data-rename-role-dialog]");
+    const renameRoleForm = panel.querySelector("[data-rename-role-form]");
+    panel.querySelectorAll("[data-rename-saved-role]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!renameRoleDialog || !renameRoleForm) return;
+        renameRoleForm.action = `/party-recruitment/saved/${button.dataset.roleId}/rename`;
+        renameRoleForm.elements.name.value = button.dataset.roleName || "";
+        renameRoleDialog.showModal();
+        renameRoleForm.elements.name.focus();
+        renameRoleForm.elements.name.select();
+      });
+    });
+
+    panel.querySelectorAll("[data-cancel-role-name]").forEach((button) => {
+      button.addEventListener("click", () => button.closest("dialog")?.close());
+    });
+
     document.addEventListener("submit", async (event) => {
       const form = event.target.closest?.("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post'], [data-role-inspection-panel] form[method='post']");
       if (!form) return;

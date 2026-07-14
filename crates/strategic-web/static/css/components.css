@@ -1894,18 +1894,12 @@
 }
 .role-details-card { padding: 0.85rem 1rem 1rem; }
 .role-details-card > h3 { margin: 0 0 0.75rem; font-size: var(--font-size-md); }
-.role-builder-header { display: grid; grid-template-columns: minmax(0, 2fr) minmax(5rem, 0.55fr) minmax(12rem, 1.1fr); gap: 0.85rem; align-items: end; }
-.role-builder-header > label:not(.role-save-toggle) { display: flex; min-width: 0; flex-direction: column; gap: 0.35rem; color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 700; }
+.role-builder-header { display: grid; grid-template-columns: minmax(0, 2fr) minmax(5rem, 0.55fr); gap: 0.85rem; align-items: end; }
+.role-builder-header > label { display: flex; min-width: 0; flex-direction: column; gap: 0.35rem; color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 700; }
 .role-builder-header input[type="text"],
 .role-builder-header input[type="number"] { width: 100%; }
 .role-requirement-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
 .role-requirement-columns-individual { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.role-save-toggle { display: grid; grid-template-columns: auto 1fr; gap: 0.55rem; align-items: center; min-height: 2.7rem; padding: 0.45rem 0.65rem; border: 1px solid var(--border-light); border-radius: var(--radius); cursor: pointer; }
-.role-save-toggle:hover { border-color: var(--border-accent); }
-.role-save-toggle input { width: auto; margin: 0; }
-.role-save-toggle span { display: flex; flex-direction: column; gap: 0.1rem; }
-.role-save-toggle strong { font-size: var(--font-size-sm); }
-.role-save-toggle small { color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 400; }
 .role-requirements-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: -0.35rem; }
 .role-requirements-heading h3 { margin: 0; }
 .role-requirements-heading p { margin: 0; color: var(--text-muted); font-size: var(--font-size-xs); }
@@ -1978,10 +1972,69 @@
 .role-slider-ticks-precision { font-size: 0.6rem; }
 .role-builder-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 0.15rem; }
 .role-builder-footer .btn { min-width: 8rem; }
-.saved-role-section { margin: 1.1rem 1.5rem 0; padding: 0.85rem 1rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
-.saved-role-section h3 { margin: 0 0 0.65rem; font-size: var(--font-size-md); }
-.saved-role-list, .active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
-.saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.saved-role-section { padding: 0.85rem 1.5rem 1rem; border-bottom: 1px solid var(--border-light); background: color-mix(in srgb, var(--panel-bg) 38%, transparent); }
+.saved-role-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.65rem; }
+.saved-role-heading h3 { margin: 0; font-size: var(--font-size-md); }
+.saved-role-list { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+.saved-role-item { position: relative; min-width: 8.5rem; }
+.saved-role-load,
+.saved-role-save {
+  min-height: 2.75rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.saved-role-load { width: 100%; padding: 0.55rem 2.8rem; }
+.saved-role-load:hover,
+.saved-role-load:focus-visible,
+.saved-role-save:hover,
+.saved-role-save:focus-visible { border-color: var(--border-accent); background: var(--panel-bg); }
+.saved-role-save { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.8rem; border-style: dashed; color: var(--accent-dark); }
+.saved-role-save span { font-size: 1.1rem; line-height: 1; }
+.saved-role-action {
+  position: absolute;
+  z-index: 1;
+  top: 0.15rem;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.saved-role-rename { left: 0.25rem; }
+.saved-role-delete { right: 0.25rem; font-size: 1.15rem; }
+.saved-role-item:hover .saved-role-action,
+.saved-role-item:focus-within .saved-role-action { opacity: 1; pointer-events: auto; }
+.saved-role-rename:hover,
+.saved-role-rename:focus-visible { color: var(--accent-dark); }
+.saved-role-delete:hover,
+.saved-role-delete:focus-visible { color: var(--danger, #c9574f); }
+.saved-role-delete-form { display: contents; }
+.role-name-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(27rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--border-accent);
+  border-radius: calc(var(--radius) * 1.5);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  margin: auto;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 60%);
+}
+.role-name-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.role-name-form { display: flex; flex-direction: column; gap: 0.85rem; padding: 1.25rem; }
+.role-name-form h3,
+.role-name-form p { margin: 0; }
+.role-name-form label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 700; }
+.role-name-form footer { display: flex; justify-content: flex-end; gap: 0.55rem; margin-top: 0.25rem; }
+.active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
+.role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
 .role-applicant-warning, .role-warning { color: var(--warning, #d99b2b); }
 .role-inspection-hidden { display: none !important; }
@@ -2000,6 +2053,7 @@
   .role-requirements-heading,
   .role-builder-footer { align-items: stretch; flex-direction: column; }
   .role-builder-footer .btn { width: 100%; }
+  .saved-role-heading { align-items: flex-start; flex-direction: column; gap: 0.2rem; }
 }
 .role-applicant-portrait {
   position: relative;

@@ -105,23 +105,32 @@ pub fn recruitment_panel(
                         h2 { "Recruit party roles" }
                         p { "Describe the adventurers you want to add to your party." }
                     }
-                    @if !saved_roles.is_empty() {
-                        section class="saved-role-section" {
-                            h3 { "Saved roles" }
-                            div class="saved-role-list" {
-                                @for saved in saved_roles {
-                                    div class="saved-role-item" {
-                                        button type="button" class="btn btn-secondary btn-small"
-                                            data-load-saved-role
-                                            data-role-name=(&saved.name)
-                                            data-role-requirements=(requirements_json(saved.requirements))
-                                            data-role-weapon-precision=(saved.effective_weapon_precision())
-                                        { (&saved.name) }
-                                        form action=(format!("/party-recruitment/saved/{}/delete", saved.id)) method="post" {
-                                            button type="submit" class="btn btn-danger btn-small" aria-label=(format!("Delete {}", saved.name)) { "Delete" }
-                                        }
+                    section class="saved-role-section" aria-labelledby="saved-role-heading" {
+                        div class="saved-role-heading" {
+                            h3 id="saved-role-heading" { "Saved roles" }
+                            span class="small-copy text-muted" { "Choose a template or save the current recommendations." }
+                        }
+                        div class="saved-role-list" {
+                            @for saved in saved_roles {
+                                div class="saved-role-item" {
+                                    button type="button" class="saved-role-load"
+                                        data-load-saved-role
+                                        data-role-name=(&saved.name)
+                                        data-role-requirements=(requirements_json(saved.requirements))
+                                        data-role-weapon-precision=(saved.effective_weapon_precision())
+                                    { (&saved.name) }
+                                    button type="button" class="saved-role-action saved-role-rename"
+                                        data-rename-saved-role data-role-id=(saved.id) data-role-name=(&saved.name)
+                                        aria-label=(format!("Rename {}", saved.name)) { "Rename" }
+                                    form action=(format!("/party-recruitment/saved/{}/delete", saved.id)) method="post" class="saved-role-delete-form" {
+                                        button type="submit" class="saved-role-action saved-role-delete"
+                                            aria-label=(format!("Delete {}", saved.name)) title=(format!("Delete {}", saved.name)) { "×" }
                                     }
                                 }
+                            }
+                            button type="button" class="saved-role-save" data-save-current-role {
+                                span aria-hidden="true" { "+" }
+                                "Save role"
                             }
                         }
                     }
@@ -136,13 +145,6 @@ pub fn recruitment_panel(
                                 label class="role-slots-field" {
                                     span { "Slots" }
                                     input type="number" name="quantity" min="1" max="8" value="1" required;
-                                }
-                                label class="role-save-toggle" {
-                                    input type="checkbox" name="save_role" value="true";
-                                    span {
-                                        strong { "Save as a template" }
-                                        small { "Reuse these recommendations later" }
-                                    }
                                 }
                             }
                         }
@@ -164,6 +166,40 @@ pub fn recruitment_panel(
                         footer class="role-builder-footer" {
                             span class="small-copy text-muted" { "You can edit recruitment by removing and recreating a role." }
                             button type="submit" class="btn btn-primary" { "Add role" }
+                        }
+                    }
+                }
+                dialog class="role-name-dialog" data-save-role-dialog {
+                    form method="dialog" class="dialog-close-form" {
+                        button class="dialog-close" aria-label="Close save role dialog" { "×" }
+                    }
+                    form action="/party-recruitment/saved" method="post" class="role-name-form" data-save-role-form {
+                        h3 { "Save this role" }
+                        p class="small-copy text-muted" { "Name this set of recommendations so you can reuse it later." }
+                        label {
+                            span { "Role name" }
+                            input type="text" name="name" required autofocus placeholder="e.g. Armored melee";
+                        }
+                        div data-saved-role-fields {}
+                        footer {
+                            button type="button" class="btn btn-secondary" data-cancel-role-name { "Cancel" }
+                            button type="submit" class="btn btn-primary" { "Save" }
+                        }
+                    }
+                }
+                dialog class="role-name-dialog" data-rename-role-dialog {
+                    form method="dialog" class="dialog-close-form" {
+                        button class="dialog-close" aria-label="Close rename role dialog" { "×" }
+                    }
+                    form method="post" class="role-name-form" data-rename-role-form {
+                        h3 { "Rename saved role" }
+                        label {
+                            span { "Role name" }
+                            input type="text" name="name" required autofocus;
+                        }
+                        footer {
+                            button type="button" class="btn btn-secondary" data-cancel-role-name { "Cancel" }
+                            button type="submit" class="btn btn-primary" { "Rename" }
                         }
                     }
                 }

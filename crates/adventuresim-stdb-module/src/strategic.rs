@@ -550,6 +550,77 @@ pub fn create_recruitment_role(
 }
 
 #[reducer]
+pub fn save_recruitment_role(
+    ctx: &ReducerContext,
+    owner_id: u64,
+    name: String,
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if ctx.db.character().id().find(owner_id).is_none() {
+        return Err("Character not found".into());
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Saved roles must have a name".into());
+    }
+    validate_recruitment_requirements(requirements, weapon_precision)?;
+    ctx.db
+        .saved_recruitment_role()
+        .insert(SavedRecruitmentRole {
+            id: 0,
+            owner_character_id: owner_id,
+            name: name.to_string(),
+            requirements,
+            weapon_precision,
+        });
+    Ok(())
+}
+
+#[reducer]
+pub fn rename_saved_recruitment_role(
+    ctx: &ReducerContext,
+    owner_id: u64,
+    role_id: u64,
+    name: String,
+) -> Result<(), String> {
+    let mut role = ctx
+        .db
+        .saved_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Saved role not found")?;
+    if role.owner_character_id != owner_id {
+        return Err("Cannot rename another character's saved role".into());
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Saved roles must have a name".into());
+    }
+    role.name = name.to_string();
+    ctx.db.saved_recruitment_role().id().update(role);
+    Ok(())
+}
+
+fn validate_recruitment_requirements(
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
+        || (weapon_precision * 2.0).fract() != 0.0
+    {
+        return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
+    }
+    if [requirements.athletics, requirements.endurance]
+        .iter()
+        .any(|value| *value > 5)
+    {
+        return Err("Role ratings must be between 0 and 5".into());
+    }
+    Ok(())
+}
+
+#[reducer]
 pub fn update_party_check_targets(
     ctx: &ReducerContext,
     leader_id: u64,
