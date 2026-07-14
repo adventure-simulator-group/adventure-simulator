@@ -2,10 +2,13 @@
   const summary = document.querySelector("[data-current-quest]");
   if (!summary) return;
 
-  fetch("/api/current-quest", { headers: { Accept: "application/json" } })
+  const refreshCurrentQuest = () => fetch("/api/current-quest", { headers: { Accept: "application/json" } })
     .then((response) => (response.ok ? response.json() : null))
     .then((quest) => {
-      if (!quest) return;
+      if (!quest) {
+        summary.hidden = true;
+        return;
+      }
       const name = summary.querySelector("[data-current-quest-name]");
       const status = summary.querySelector("[data-current-quest-status]");
       const abandon = summary.querySelector("[data-current-quest-abandon]");
@@ -19,4 +22,6 @@
       summary.hidden = false;
     })
     .catch(() => {});
+  refreshCurrentQuest();
+  document.addEventListener("strategic-live-update", refreshCurrentQuest);
 })();

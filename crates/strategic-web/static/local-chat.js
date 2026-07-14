@@ -17,7 +17,7 @@
     }));
   };
   refreshIncoming();
-  window.setInterval(refreshIncoming, 5000);
+  document.addEventListener("strategic-live-update", refreshIncoming);
 
   const chat = document.querySelector(".settlement-chat[data-local-chat-kind][data-local-chat-subject]");
   if (!chat) return;
@@ -63,6 +63,6 @@
     chat.dataset.localChatReady = "true";
     chat.dispatchEvent(new Event("local-chat-ready"));
   });
-  if (kind === "player") window.setInterval(refresh, 2000);
+  document.addEventListener("strategic-live-update", refresh);
 
 })();

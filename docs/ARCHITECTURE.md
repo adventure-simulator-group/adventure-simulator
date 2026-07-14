@@ -9,6 +9,22 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 
 **Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the adventuresim-tactical-server game state.**
 
+## Strategic browser updates
+
+The strategic browser is server-authoritative. Browsers submit discrete commands
+to `strategic-web` over authenticated HTTP and never connect to SpacetimeDB
+directly. `strategic-web` owns a single generated-client WebSocket subscription
+to SpacetimeDB and fans database changes out to authenticated pages as Datastar
+server-sent events.
+
+The SSE stream patches a stable, server-rendered revision marker. Strategic UI
+components subscribe to that marker and refresh only their relevant state. This
+currently drives canonical-location navigation, party requests and
+notifications, the active quest indicator, incoming local-chat portraits, and
+local conversation history. New strategic live UI should extend this stream
+with stable Maud fragment roots rather than add polling timers or expose module
+credentials to browsers.
+
 The database stores ONLY:
 - Character progression (XP, level)
 - Persistent inventory

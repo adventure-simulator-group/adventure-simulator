@@ -72,5 +72,5 @@
     document.body.append(notice);
     window.setTimeout(() => notice.remove(), 3000);
   }
-  window.setInterval(refreshPartyNotifications, 5000);
+  document.addEventListener("strategic-live-update", refreshPartyNotifications);
 })();

@@ -5,6 +5,7 @@
 
 mod auth;
 mod config;
+mod live;
 mod routes;
 mod session;
 mod spacetimedb;
@@ -19,7 +20,8 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::Config;
-use routes::{build_router, AppState};
+use live::LiveState;
+use routes::{AppState, build_router};
 use spacetimedb::SpacetimeClient;
 
 #[tokio::main]
@@ -46,9 +48,14 @@ async fn main() -> anyhow::Result<()> {
     // Create SpacetimeDB client
     let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)
         .with_token(config.spacetimedb_token.clone());
+    let live = LiveState::connect(
+        &config.spacetimedb_host,
+        &config.spacetimedb_database,
+        config.spacetimedb_token.clone(),
+    )?;
 
     // Create app state
-    let state = AppState { db };
+    let state = AppState { db, live };
 
     // Build router
     let app = build_router(state);

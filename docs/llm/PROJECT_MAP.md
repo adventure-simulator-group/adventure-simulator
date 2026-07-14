@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (363)
+## Files (365)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -251,6 +251,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/README.md` — Component overview and usage notes.
 - `crates/strategic-web/src/auth.rs` — Rust source module for this component.
 - `crates/strategic-web/src/config.rs` — Rust source module for this component.
+- `crates/strategic-web/src/live.rs` — Rust source module for this component.
 - `crates/strategic-web/src/main.rs` — Rust source module for this component.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
@@ -325,6 +326,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.

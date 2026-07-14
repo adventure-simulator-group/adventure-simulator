@@ -19,6 +19,7 @@ use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session, set_theme_cookie};
 use crate::spacetimedb::{
     Character, CharacterTime, Party, PartyActionRequest, SpacetimeClient, WorldClock,
@@ -28,6 +29,7 @@ use crate::spacetimedb::{
 #[derive(Clone)]
 pub struct AppState {
     pub db: SpacetimeClient,
+    pub live: LiveState,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,6 +192,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(parties::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
+                .merge(crate::live::routes())
                 .route("/time", get(current_time))
                 .layer(middleware::from_fn(require_active_character)),
         )

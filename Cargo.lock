@@ -7471,10 +7471,12 @@ name = "strategic-web"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-stdb-client",
  "anyhow",
  "axum",
  "axum-extra",
  "clap",
+ "futures-util",
  "maud",
  "reqwest",
  "serde",

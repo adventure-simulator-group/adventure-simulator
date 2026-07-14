@@ -6,7 +6,7 @@
     return `Day ${day} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   };
 
-  fetch('/time')
+  const refreshTime = () => fetch('/time')
     .then((response) => response.json())
     .then(({ character_minutes: characterMinutes, official_minutes: officialMinutes }) => {
       document.querySelectorAll('[data-player-time]').forEach((element) => {
@@ -15,4 +15,6 @@
       });
     })
     .catch(() => {});
+  refreshTime();
+  document.addEventListener('strategic-live-update', refreshTime);
 })();

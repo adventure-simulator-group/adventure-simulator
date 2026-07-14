@@ -10,10 +10,12 @@ path = "src/main.rs"
 
 [dependencies]
 adventuresim-core.workspace = true
+adventuresim-stdb-client.workspace = true
 anyhow = "1"
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["cookie"] }
 tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
 maud = { version = "0.26", features = ["axum"] }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

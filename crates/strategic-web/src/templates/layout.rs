@@ -33,14 +33,14 @@ pub fn base_layout_with_session(
 ) -> Markup {
     let theme = validated_theme(theme);
 
-    page_shell(title, top_bar(logged_in_as, theme), content, theme)
+    page_shell(title, top_bar(logged_in_as, theme), content, theme, true)
 }
 
 /// Minimal shell for selecting or creating a character. It intentionally omits
 /// strategic navigation: an adventurer must be selected before play begins.
 pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
     let theme = validated_theme(theme);
-    page_shell(title, entry_top_bar(theme), content, theme)
+    page_shell(title, entry_top_bar(theme), content, theme, false)
 }
 
 /// Settlement-specific layout. Settlement services replace the global navigation
@@ -66,6 +66,7 @@ pub fn settlement_layout_with_session(
         ),
         content,
         theme,
+        true,
     )
 }
 
@@ -86,10 +87,11 @@ pub fn quest_location_layout_with_session(
         quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
         content,
         theme,
+        true,
     )
 }
 
-fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Markup {
+fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: bool) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -107,6 +109,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
+                script src="/static/live-state.js?v=sse-1" defer {}
                 script src="/static/party-trade.js?v=inventory-target-controls-1" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
                 script src="/static/party-recruitment.js?v=party-checks-leftmost-1" defer {}
@@ -115,6 +118,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 script src="/static/local-chat.js?v=local-chat-1" defer {}
             }
             body {
+                @if live {
+                    div id="strategic-live-stream" data-init="@get('/live', {openWhenHidden: true})" {
+                        span id="strategic-live-revision" data-live-revision="0" hidden {}
+                    }
+                }
                 div class="app" {
                     (header)
 
