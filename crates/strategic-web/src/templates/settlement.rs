@@ -908,37 +908,6 @@ pub fn party_pool_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section(&format!("{}'s inventory", character.name), html! {
-                p class="small-copy text-muted" { "Add items at their objective gold value." }
-                (trade_inventory_table(true, html! {
-                    @for item in inventory {
-                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let target = target_quantity(party_targets, &item.item_id);
-                        @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
-                        tr class="trade-inventory-row" {
-                            td class="inventory-item-name" {
-                                (&item.item_id)
-                                @if !equipped {
-                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
-                                }
-                            }
-                            td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
-                            td class="inventory-weight" { (item_weight(definition)) }
-                            td class="inventory-gold" { (item_value(definition)) }
-                        }
-                    }
-                }))
-                (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
-            }))
-        }
-        main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
-            (visual_stage("npc", "Party chest", "Shared party inventory chest"))
-            (settlement_chat_area("Party inventory", Some(character)))
-        }
-        aside class="right-sidebar" {
             (sidebar_section("Party inventory", html! {
                 div class="party-stake-summary" {
                     span { "Your available stake" }
@@ -954,7 +923,7 @@ pub fn party_pool_page(
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
                                 (&item.item_id)
-                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
                             }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
@@ -963,6 +932,37 @@ pub fn party_pool_page(
                     }
                 }))
                 (inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"))
+            }))
+        }
+        main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
+            (visual_stage("npc", "Party chest", "Shared party inventory chest"))
+            (settlement_chat_area("Party inventory", Some(character)))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+                p class="small-copy text-muted" { "Add items at their objective gold value." }
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let target = target_quantity(party_targets, &item.item_id);
+                        @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
+                        tr class="trade-inventory-row" {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if !equipped {
+                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                }
+                            }
+                            td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
+                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
             }))
         }
         form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }

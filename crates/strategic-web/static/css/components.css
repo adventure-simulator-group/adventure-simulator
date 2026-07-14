@@ -985,17 +985,21 @@
 .trade-delta.negative { color: var(--danger); }
 .trade-delta.positive { color: var(--success); }
 .party-offer {
-  position: absolute;
-  z-index: 5;
-  bottom: 12rem;
+  position: fixed;
+  z-index: 400;
+  top: 50%;
+  bottom: auto;
   left: 50%;
   display: flex;
+  align-items: center;
   gap: 0.45rem;
-  padding: 0.45rem;
+  max-width: min(34rem, calc(100vw - 2rem));
+  padding: 0.65rem 0.75rem;
   border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
   background: var(--panel-bg);
-  box-shadow: var(--shadow-sm);
-  transform: translateX(-50%);
+  box-shadow: var(--shadow-lg);
+  transform: translate(-50%, -50%);
 }
 .party-offer[hidden] { display: none; }
 .party-offer button {
@@ -1017,17 +1021,7 @@
 }
 
 #loot-transfer-offer {
-  position: fixed;
-  z-index: 400;
-  bottom: 2rem;
-  left: 50%;
-  align-items: center;
   gap: 0.65rem;
-  max-width: min(34rem, calc(100vw - 2rem));
-  padding: 0.65rem 0.75rem;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  transform: translateX(-50%);
 }
 
 .loot-transfer-prompt {
@@ -3094,6 +3088,11 @@ body.chat-resizing {
 .inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
 .inventory-footer-transfer:first-child { grid-column:2; }
 .right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
+.right-sidebar .inventory-row-actions [data-transfer-mode="all"],
+.right-sidebar .inventory-footer-actions [data-transfer-mode="all"] { order:1; }
+.right-sidebar .inventory-row-actions [data-transfer-mode="target"],
+.right-sidebar .inventory-footer-actions [data-transfer-mode="target"] { order:2; }
+.right-sidebar .inventory-row-actions [data-transfer-mode="one"] { order:3; }
 
 .party-portrait-overlay > .party-aggregate-checks {
   position:static;

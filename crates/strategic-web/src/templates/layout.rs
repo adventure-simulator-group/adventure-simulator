@@ -102,8 +102,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=location-tabs-1";
-                link rel="stylesheet" href="/static/css/components.css?v=quest-party-recruitment-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=quest-status-2";
+                link rel="stylesheet" href="/static/css/components.css?v=centered-trade-offers-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
