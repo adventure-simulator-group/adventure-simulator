@@ -482,7 +482,13 @@ async fn noticeboard(
             &posted_quests,
             selected_quest,
             &recruiting_roles,
-            active_party.as_ref().is_some_and(|party| party.is_solo),
+            active_character.as_ref().is_some_and(|(character, _)| {
+                active_party.as_ref().is_some_and(|party| {
+                    party.leader_id == character.id
+                        && party.active_quest_id.is_none()
+                        && character.current_settlement_id.as_deref() == Some(&id)
+                })
+            }),
             active_character.as_ref().map(|(character, _)| character),
             active_character
                 .as_ref()
@@ -1803,7 +1809,7 @@ async fn get_character_capability(
         .next()
 }
 
-async fn get_active_party_members(
+pub(crate) async fn get_active_party_members(
     state: &AppState,
     active_character: Option<&Character>,
 ) -> Vec<Character> {

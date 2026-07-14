@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (340)
+## Files (341)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -271,6 +271,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/themes/northern-frost.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/renaissance-gold.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/verdant-chronicle.css` — Browser UI styling.
+- `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/icons/character/inventory.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/character/repair.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/character/stats-sheet.png` — Binary game or UI asset.

@@ -1324,7 +1324,7 @@ pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup
     }
 }
 
-fn party_portrait_overlay(
+pub(crate) fn party_portrait_overlay(
     party_members: &[Character],
     active_character: Option<&Character>,
     settlement_id: &str,

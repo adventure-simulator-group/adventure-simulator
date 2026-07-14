@@ -1,14 +1,15 @@
 //! Quest route handlers
 
 use axum::{
-    Router,
+    Json, Router,
     extract::{Path, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
+use serde::Serialize;
 use serde_json::json;
 
-use super::AppState;
+use super::{AppState, settlements::get_active_party_members};
 use crate::session::Session;
 use crate::spacetimedb::{
     BattleLootItem, BattleResult, Character, ItemDefinition, Party, PartyInventoryItem, PartyStake,
@@ -21,6 +22,7 @@ use crate::templates::quest::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/quests", get(list_quests))
+        .route("/api/current-quest", get(current_quest))
         .route("/quests/{id}", get(show_quest))
         .route("/quests/{id}/accept", post(accept_quest))
         .route("/quests/{id}/abandon", post(abandon_quest))
@@ -29,6 +31,66 @@ pub fn routes() -> Router<AppState> {
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot", get(post_battle_loot))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
+}
+
+#[derive(Serialize)]
+struct CurrentQuestSummary {
+    id: String,
+    title: String,
+    can_abandon: bool,
+}
+
+async fn current_quest(
+    State(state): State<AppState>,
+    session: Session,
+) -> Json<Option<CurrentQuestSummary>> {
+    let Some(character_id) = session.character_id_u64() else {
+        return Json(None);
+    };
+    let character = state
+        .db
+        .query::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(character) = character else {
+        return Json(None);
+    };
+    let Some(party_id) = character.party_id.as_ref() else {
+        return Json(None);
+    };
+    let party = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(party) = party else {
+        return Json(None);
+    };
+    let Some(active_quest_id) = party.active_quest_id.as_ref() else {
+        return Json(None);
+    };
+    let quest = state
+        .db
+        .query::<Quest>(&format!(
+            "SELECT * FROM quest WHERE id = '{}'",
+            active_quest_id
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    Json(quest.map(|quest| CurrentQuestSummary {
+        id: quest.id,
+        title: quest.title,
+        can_abandon: party.leader_id == character.id
+            && character.current_quest_location_id.is_none(),
+    }))
 }
 
 async fn list_quests(State(state): State<AppState>, session: Session) -> Response {
@@ -212,7 +274,7 @@ async fn travel_to_quest(
         tracing::error!("Failed to travel to quest: {error:?}");
         return Redirect::to(&format!("/quests/{id}"));
     }
-    Redirect::to(&format!("/quests/{id}/loot"))
+    Redirect::to(&format!("/quests/{id}/location"))
 }
 
 async fn post_battle_loot(
@@ -378,6 +440,10 @@ async fn quest_location(
         .query("SELECT * FROM settlement")
         .await
         .unwrap_or_default();
+    let origin_settlement = settlements
+        .iter()
+        .find(|settlement| settlement.id == quest.settlement_id)
+        .cloned();
     let mut nearby: Vec<NearbySettlement> = settlements
         .into_iter()
         .map(|settlement| {
@@ -399,11 +465,14 @@ async fn quest_location(
         && party
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
+    let party_members = get_active_party_members(&state, character.as_ref()).await;
     Html(
         quest_location_page(
             quest,
+            origin_settlement.as_ref(),
             &nearby,
             character.as_ref(),
+            &party_members,
             can_control,
             can_fight,
             character.as_ref().map(|c| c.name.as_str()),

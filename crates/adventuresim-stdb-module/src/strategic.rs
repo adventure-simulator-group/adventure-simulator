@@ -774,18 +774,18 @@ pub fn request_to_join_party(
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
-    let current_party_id = character
-        .party_id
-        .clone()
-        .ok_or("Character has no solo party")?;
+    let current_party_id = character.party_id.clone().ok_or("Character has no party")?;
     let current_party = ctx
         .db
         .party()
         .id()
         .find(&current_party_id)
         .ok_or("Current party not found")?;
-    if !current_party.is_solo || current_party.leader_id != character_id {
-        return Err("Only a solo adventurer may request to join".into());
+    if current_party.leader_id != character_id {
+        return Err("Only a party leader may request a party merge".into());
+    }
+    if current_party.active_quest_id.is_some() {
+        return Err("Abandon the current quest before joining another party".into());
     }
     let role = ctx
         .db
@@ -797,10 +797,13 @@ pub fn request_to_join_party(
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
-    if character.current_settlement_id != party.current_settlement_id
-        || character.current_quest_location_id != party.current_quest_location_id
+    if current_party_id == party_id {
+        return Err("Cannot join your own party".into());
+    }
+    if current_party.current_settlement_id != party.current_settlement_id
+        || current_party.current_quest_location_id != party.current_quest_location_id
     {
-        return Err("Must be in the same settlement as the party".into());
+        return Err("Parties must be in the same location to merge".into());
     }
     if filled_role_slots(ctx, role.id) >= role.quantity {
         return Err("Recruitment role is full".into());
@@ -849,62 +852,130 @@ pub fn accept_party_join_request(
     if filled_role_slots(ctx, role.id) >= role.quantity {
         return Err("Recruitment role is full".into());
     }
-    let mut character = ctx
+    let character = ctx
         .db
         .character()
         .id()
         .find(request.character_id)
         .ok_or("Applicant not found")?;
-    let solo_id = character
-        .party_id
-        .clone()
-        .ok_or("Applicant has no solo party")?;
-    let solo = ctx
+    let source_party_id = character.party_id.clone().ok_or("Applicant has no party")?;
+    let source_party = ctx
         .db
         .party()
         .id()
-        .find(&solo_id)
-        .ok_or("Applicant solo party not found")?;
-    if !solo.is_solo {
-        return Err("Applicant is no longer solo".into());
+        .find(&source_party_id)
+        .ok_or("Applicant party not found")?;
+    if source_party.leader_id != request.character_id {
+        return Err("Applicant is no longer their party leader".into());
     }
-    for member in ctx
+    if source_party.active_quest_id.is_some() {
+        return Err("Applicant's party must abandon its current quest first".into());
+    }
+    if source_party.current_settlement_id != party.current_settlement_id
+        || source_party.current_quest_location_id != party.current_quest_location_id
+    {
+        return Err("Parties must be in the same location to merge".into());
+    }
+
+    // Preserve the source party's jointly-owned assets and each member's absolute
+    // stake. Combining the ledgers does not dilute either party; only future loot
+    // is shared among the newly combined membership.
+    for entry in ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        add_to_party_inventory(ctx, &request.party_id, &entry.item_id, entry.quantity);
+        ctx.db.party_inventory_item().id().delete(entry.id);
+    }
+    for stake in ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        credit_party_stake(ctx, &request.party_id, stake.character_id, stake.value);
+        ctx.db.party_stake().id().delete(stake.id);
+    }
+    if let Some(state) = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&source_party_id)
+    {
+        credit_party_reserve(ctx, &request.party_id, state.reserve_value);
+        ctx.db
+            .party_inventory_state()
+            .party_id()
+            .delete(&source_party_id);
+    }
+
+    let source_members: Vec<_> = ctx
         .db
         .party_member()
         .party_id()
-        .filter(&solo_id)
-        .collect::<Vec<_>>()
-    {
+        .filter(&source_party_id)
+        .collect();
+    let source_member_ids: Vec<_> = source_members
+        .iter()
+        .map(|member| member.character_id)
+        .collect();
+    for member in source_members {
         ctx.db.party_member().id().delete(member.id);
+        ctx.db.party_member().insert(PartyMember {
+            id: 0,
+            party_id: request.party_id.clone(),
+            character_id: member.character_id,
+            role: if member.character_id == request.character_id {
+                Some(role.name.clone())
+            } else {
+                member.role
+            },
+            recruitment_role_id: (member.character_id == request.character_id).then_some(role.id),
+        });
+        if let Some(mut source_character) = ctx.db.character().id().find(member.character_id) {
+            source_character.party_id = Some(request.party_id.clone());
+            source_character.current_settlement_id = party.current_settlement_id.clone();
+            source_character.current_quest_location_id = party.current_quest_location_id.clone();
+            ctx.db.character().id().update(source_character);
+        }
     }
-    for solo_role in ctx
+
+    // Incoming applications and recruitment roles belonged to the source party,
+    // so they cannot survive after its leader relinquishes command.
+    for source_role in ctx
         .db
         .party_recruitment_role()
         .party_id()
-        .filter(&solo_id)
+        .filter(&source_party_id)
         .collect::<Vec<_>>()
     {
         for pending in ctx
             .db
             .party_join_request()
             .recruitment_role_id()
-            .filter(solo_role.id)
+            .filter(source_role.id)
             .collect::<Vec<_>>()
         {
             ctx.db.party_join_request().id().delete(pending.id);
         }
-        ctx.db.party_recruitment_role().id().delete(solo_role.id);
+        ctx.db.party_recruitment_role().id().delete(source_role.id);
     }
-    ctx.db.party().id().delete(&solo_id);
-    ctx.db.party_member().insert(PartyMember {
-        id: 0,
-        party_id: request.party_id.clone(),
-        character_id: request.character_id,
-        role: Some(role.name.clone()),
-        recruitment_role_id: Some(role.id),
-    });
-    character.party_id = Some(request.party_id.clone());
-    ctx.db.character().id().update(character);
+    for member_id in source_member_ids {
+        for pending in ctx
+            .db
+            .party_join_request()
+            .character_id()
+            .filter(member_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_join_request().id().delete(pending.id);
+        }
+    }
+    ctx.db.party().id().delete(&source_party_id);
     if party.is_solo {
         let mut party = party;
         party.is_solo = false;

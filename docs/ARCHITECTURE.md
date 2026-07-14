@@ -79,7 +79,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party |
 | `create_recruitment_role` / `delete_saved_recruitment_role` | Create grouped party slots and manage reusable role presets |
 | `update_party_check_targets` | Configure non-filtering Medicine, Surgery, Charisma, and Faith aggregate goals |
-| `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Party-independent role recruitment; a request remains pending until rejected, accepted, or its role fills |
+| `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |

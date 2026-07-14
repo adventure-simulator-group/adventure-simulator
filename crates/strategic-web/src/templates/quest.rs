@@ -6,11 +6,11 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, sidebar_section, status_badge,
 };
-use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest};
+use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest, Settlement};
 use crate::{
     routes::quests::NearbySettlement,
     spacetimedb::Character,
-    templates::settlement::{settlement_chat_area, visual_stage},
+    templates::settlement::{party_portrait_overlay, settlement_chat_area, visual_stage},
 };
 
 /// List all quests
@@ -204,8 +204,10 @@ pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
 /// Off-road strategic location reached after accepting and travelling to a quest.
 pub fn quest_location_page(
     quest: &Quest,
+    origin_settlement: Option<&Settlement>,
     nearby: &[NearbySettlement],
     active_character: Option<&Character>,
+    party_members: &[Character],
     can_travel: bool,
     can_fight: bool,
     logged_in_as: Option<&str>,
@@ -221,6 +223,12 @@ pub fn quest_location_page(
         }
 
         main class="center-content settlement-main quest-location-main" {
+            (party_portrait_overlay(
+                party_members,
+                active_character,
+                &quest.settlement_id,
+                None,
+            ))
             div class="quest-visual-wrap" {
                 (visual_stage("map", &quest.title, "TODO: quest location image"))
                 div class="quest-combat-actions" aria-label="Quest actions" {
@@ -268,7 +276,15 @@ pub fn quest_location_page(
             }))
         }
     };
-    base_layout_with_session(&quest.title, content, logged_in_as, theme)
+    super::settlement_layout_with_session(
+        &quest.title,
+        origin_settlement.map_or("Quest location", |settlement| settlement.name.as_str()),
+        &quest.settlement_id,
+        "",
+        content,
+        logged_in_as,
+        theme,
+    )
 }
 
 /// Resolution screen shown before the party banks a battle's spoils.

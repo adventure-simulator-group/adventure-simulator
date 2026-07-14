@@ -176,11 +176,19 @@ fn settlement_top_bar(
     html! {
         header class="top-bar settlement-top-bar" {
             div class="top-bar-left settlement-location" {
+                div class="settlement-identity" {
                 a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
                 span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
+                }
+                }
+                div class="current-quest-summary" data-current-quest hidden {
+                    a class="current-quest-name" data-current-quest-name href="/quests" {}
+                    form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
+                        button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
+                    }
                 }
             }
 
@@ -212,6 +220,7 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
+        script src="/static/current-quest.js?v=current-quest-header-1" defer {}
     }
 }
 
