@@ -14,14 +14,15 @@ use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember,
-    PartyRecruitmentRole, Quest, RecruitmentRequirements, Settlement, TravelEdge,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party,
+    PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::recruitment::PartyCheckSummary;
 use crate::templates::settlement::{
     MerchantShop, RecruitingPartyRole, RestSummary, inn_page, live_merchant_shop_page,
     merchants_page, noticeboard_page, party_discard_page, party_inventory_page,
-    party_personal_page, party_stats_page, religion_page, rest_result_page,
+    party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
     settlement_overview_page, settlements_list_page, smith_page,
 };
 
@@ -49,6 +50,22 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/settlements/{id}/party/{character_id}/inventory/discard",
             post(discard_inventory_items),
+        )
+        .route(
+            "/settlements/{id}/party-inventory",
+            get(party_pool_inventory),
+        )
+        .route(
+            "/settlements/{id}/party-inventory/deposit",
+            post(deposit_party_inventory),
+        )
+        .route(
+            "/settlements/{id}/party-inventory/withdraw",
+            post(withdraw_party_inventory),
+        )
+        .route(
+            "/settlements/{id}/party-inventory/liquidate",
+            post(liquidate_party_assets),
         )
         .route(
             "/settlements/{id}/party/{character_id}/stats",
@@ -253,10 +270,13 @@ async fn noticeboard(
     };
 
     if state.db.is_local() {
-        let _ = state
+        if let Err(error) = state
             .db
             .call("ensure_settlement_activity", &[json!(id.clone())])
-            .await;
+            .await
+        {
+            tracing::error!("Failed to deposit party inventory: {error:?}");
+        }
     }
 
     let quests: Vec<Quest> = state
@@ -307,10 +327,13 @@ async fn noticeboard(
         .and_then(|selected_id| quests.iter().find(|quest| &quest.id == selected_id))
         .or(active_quest);
     let active_capability = if let Some((character, _)) = active_character.as_ref() {
-        let _ = state
+        if let Err(error) = state
             .db
             .call("refresh_capabilities", &[json!(character.id)])
-            .await;
+            .await
+        {
+            tracing::error!("Failed to withdraw party inventory: {error:?}");
+        }
         state
             .db
             .query::<CharacterCapability>(&format!(
@@ -481,10 +504,13 @@ async fn party_personal(
     session: Session,
 ) -> Html<String> {
     if let Some(character_id) = session.character_id_u64() {
-        let _ = state
+        if let Err(error) = state
             .db
             .call("synchronize_character_time", &[json!(character_id)])
-            .await;
+            .await
+        {
+            tracing::error!("Failed to liquidate party inventory: {error:?}");
+        }
     }
     let settlements: Vec<Settlement> = state
         .db
@@ -706,6 +732,158 @@ async fn party_member(
         )
         .into_string(),
     )
+}
+
+async fn party_pool_inventory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".into());
+    };
+    let Some((character, inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    if character.current_settlement_id.as_deref() != Some(&id) {
+        return Html("<h1>Your party is not at this settlement</h1>".into());
+    }
+    let Some(party_id) = character.party_id.as_ref() else {
+        return Html("<h1>Character has no party</h1>".into());
+    };
+    let pooled: Vec<PartyInventoryItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let stakes: Vec<PartyStake> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_stake WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let items: Vec<ItemDefinition> = state
+        .db
+        .query("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
+    let equip: Vec<CharacterEquip> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_equip WHERE character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default();
+    let members = get_active_party_members(&state, Some(&character)).await;
+    let stake = stakes
+        .iter()
+        .find(|stake| stake.character_id == character.id)
+        .map_or(0, |stake| stake.value);
+    Html(
+        party_pool_page(
+            settlement,
+            &character,
+            &inventory,
+            &pooled,
+            stake,
+            &items,
+            &members,
+            equip.first(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Deserialize)]
+struct PartyPoolTransferForm {
+    item_id: u64,
+    #[serde(default = "one")]
+    quantity: u32,
+}
+
+fn one() -> u32 {
+    1
+}
+
+async fn deposit_party_inventory(
+    State(state): State<AppState>,
+    Path(settlement_id): Path<String>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "deposit_party_inventory_item",
+                &[
+                    json!(character_id),
+                    json!(form.item_id),
+                    json!(form.quantity),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+}
+
+async fn withdraw_party_inventory(
+    State(state): State<AppState>,
+    Path(settlement_id): Path<String>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "withdraw_party_inventory_item",
+                &[
+                    json!(character_id),
+                    json!(form.item_id),
+                    json!(form.quantity),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+}
+
+async fn liquidate_party_assets(
+    State(state): State<AppState>,
+    Path(settlement_id): Path<String>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        let _ = state
+            .db
+            .call(
+                "liquidate_party_inventory",
+                &[
+                    json!(character_id),
+                    json!(settlement_id.clone()),
+                    json!(vec![form.item_id]),
+                    json!(vec![form.quantity]),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
 }
 
 async fn party_stats(

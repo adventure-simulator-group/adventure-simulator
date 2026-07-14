@@ -1605,6 +1605,45 @@
   color: var(--text-primary);
 }
 
+.party-inventory-portrait {
+  margin-right: 0.35rem;
+}
+
+.party-chest-face {
+  background: linear-gradient(145deg, #71491f, #2d1c0d);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold-light);
+  font-size: 1.45rem;
+}
+
+.party-stake-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.5rem 0 0.75rem;
+  color: var(--text-muted);
+}
+
+.party-stake-summary strong {
+  color: var(--accent-gold-light);
+  white-space: nowrap;
+}
+
+.party-liquidate-row + .party-liquidate-row {
+  margin-top: 0.4rem;
+}
+
+.post-battle-summary {
+  position: absolute;
+  top: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.75rem 1.25rem;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  border: 1px solid var(--border-medium);
+}
+
 .party-portrait.active {
   color: var(--accent-dark);
 }

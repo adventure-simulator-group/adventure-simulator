@@ -14,8 +14,8 @@ use super::{
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, Party, PartyRecruitmentRole, Quest,
-    Settlement,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, Party, PartyInventoryItem,
+    PartyRecruitmentRole, Quest, Settlement,
 };
 
 pub struct RecruitingPartyRole {
@@ -770,6 +770,10 @@ pub fn live_merchant_shop_page(
     let service_id = shop.service_id();
     let content = html! {
         aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
+            a class="btn btn-secondary btn-block mb-1"
+                href=(format!("/settlements/{}/party-inventory", settlement.id)) {
+                "Trade from party chest"
+            }
             (trade_inventory_table(false, html! {
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
@@ -800,6 +804,104 @@ pub fn live_merchant_shop_page(
         &settlement.name,
         &settlement.id,
         service_id,
+        content,
+        Some(&character.name),
+        theme,
+    )
+}
+
+/// Two-sided transfer view for the equally owned party chest.
+pub fn party_pool_page(
+    settlement: &Settlement,
+    character: &Character,
+    inventory: &[InventoryItem],
+    pooled: &[PartyInventoryItem],
+    stake: u64,
+    items: &[crate::spacetimedb::ItemDefinition],
+    party_members: &[Character],
+    equip: Option<&CharacterEquip>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+                p class="small-copy text-muted" { "Add items at their objective gold value." }
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        tr class="trade-inventory-row" {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if !equipped {
+                                    form method="post" action=(format!("/settlements/{}/party-inventory/deposit", settlement.id)) class="inline-form" {
+                                        input type="hidden" name="item_id" value=(item.id);
+                                        input type="hidden" name="quantity" value="1";
+                                        button type="submit" class="trade-transfer trade-transfer-right" title="Add one to party inventory" aria-label=(format!("Add {} to party inventory", item.item_id)) {}
+                                    }
+                                }
+                            }
+                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+            }))
+        }
+        main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, Some(character), &settlement.id, None))
+            (visual_stage("npc", "Party chest", "Shared party inventory chest"))
+            (settlement_chat_area("Party inventory", Some(character)))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section("Party inventory", html! {
+                div class="party-stake-summary" {
+                    span { "Your available stake" }
+                    strong { (stake) " gold" }
+                }
+                p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
+                (trade_inventory_table(false, html! {
+                    @for item in pooled {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
+                        tr class="trade-inventory-row" {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                form method="post" action=(format!("/settlements/{}/party-inventory/withdraw", settlement.id)) class="inline-form" {
+                                    input type="hidden" name="item_id" value=(item.id);
+                                    input type="hidden" name="quantity" value="1";
+                                    button type="submit" class="trade-transfer trade-transfer-left"
+                                        title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() })
+                                        aria-label=(format!("Withdraw {}", item.item_id)) {}
+                                }
+                            }
+                            td class="inventory-count" { (item.quantity) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                @if pooled.iter().any(|item| item.item_id != "gold_coin") {
+                    h4 class="mt-1" { "Liquidate at merchant" }
+                    p class="small-copy text-muted" { "Convert an item to party gold without changing anyone's stake." }
+                    @for item in pooled.iter().filter(|item| item.item_id != "gold_coin") {
+                        form method="post" action=(format!("/settlements/{}/party-inventory/liquidate", settlement.id)) class="party-liquidate-row" {
+                            input type="hidden" name="item_id" value=(item.id);
+                            input type="hidden" name="quantity" value=(item.quantity);
+                            button type="submit" class="btn btn-secondary btn-small" { "Sell all " (&item.item_id) }
+                        }
+                    }
+                }
+            }))
+        }
+    };
+    settlement_layout_with_session(
+        "Party inventory",
+        &settlement.name,
+        &settlement.id,
+        "merchants",
         content,
         Some(&character.name),
         theme,
@@ -1237,6 +1339,14 @@ fn party_portrait_overlay(
     html! {
         @if !members.is_empty() {
             div class="party-portrait-overlay" aria-label="Active party" {
+                @if active_character.is_some() {
+                    div class="party-portrait party-inventory-portrait" title="Party inventory" {
+                        a class="party-portrait-select" href=(format!("/settlements/{}/party-inventory", settlement_id)) {
+                            span class="party-portrait-initial party-chest-face" role="img" aria-label="Party inventory" { "▣" }
+                            span class="party-portrait-name" { "Chest" }
+                        }
+                    }
+                }
                 @for member in members {
                     @let is_active = active_character.is_some_and(|character| character.id == member.id);
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })

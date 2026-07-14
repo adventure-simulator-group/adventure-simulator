@@ -12,7 +12,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, TacticalServer, TacticalServerRequest};
+use crate::spacetimedb::{BattleResult, Character, Party, TacticalServer, TacticalServerRequest};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
 pub fn routes() -> Router<AppState> {
@@ -97,6 +97,20 @@ async fn mission_status(
     };
 
     let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+        let results: Vec<BattleResult> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM battle_result WHERE mission_id = '{}'",
+                mission_id
+            ))
+            .await
+            .unwrap_or_default();
+        if let Some(result) = results
+            .first()
+            .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
+        {
+            return Redirect::to(&format!("/quests/{}/loot", result.quest_id)).into_response();
+        }
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 

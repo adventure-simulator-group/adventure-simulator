@@ -79,8 +79,8 @@ impl discard_inventory_items for super::RemoteReducers {
     fn on_discard_inventory_items(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &Vec<u64>, &Vec<u32>)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> DiscardInventoryItemsCallbackId {
         DiscardInventoryItemsCallbackId(self.imp.on_reducer(
             "discard_inventory_items",

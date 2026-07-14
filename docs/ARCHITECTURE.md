@@ -18,6 +18,8 @@ The database stores ONLY:
 
 When a mission ends, the tactical server sends the **results** (XP gained, items earned) to SpacetimeDB via the `commit_mission` reducer.
 
+Finalized loot is strategic state. The tactical server derives drops from the temporary enemies' equipped inventory and records only the resulting item identifiers and quantities. The strategic layer owns the post-battle result, shared party inventory, and per-character value stakes; no enemy, damage, position, or other tactical tick state is persisted.
+
 ## Architecture
 
 ```

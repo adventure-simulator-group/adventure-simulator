@@ -10,8 +10,13 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, Quest, Settlement};
-use crate::templates::quest::{quest_detail_page, quest_location_page, quests_list_page};
+use crate::spacetimedb::{
+    BattleLootItem, BattleResult, Character, ItemDefinition, Party, PartyInventoryItem, PartyStake,
+    Quest, Settlement,
+};
+use crate::templates::quest::{
+    post_battle_page, quest_detail_page, quest_location_page, quests_list_page,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -22,6 +27,8 @@ pub fn routes() -> Router<AppState> {
         .route("/quests/{id}/travel", post(travel_to_quest))
         .route("/quests/{id}/location", get(quest_location))
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
+        .route("/quests/{id}/loot", get(post_battle_loot))
+        .route("/quests/{id}/loot/store", post(store_battle_loot))
 }
 
 async fn list_quests(State(state): State<AppState>, session: Session) -> Response {
@@ -205,7 +212,115 @@ async fn travel_to_quest(
         tracing::error!("Failed to travel to quest: {error:?}");
         return Redirect::to(&format!("/quests/{id}"));
     }
-    Redirect::to(&format!("/quests/{id}/location"))
+    Redirect::to(&format!("/quests/{id}/loot"))
+}
+
+async fn post_battle_loot(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    let Some(character_id) = session.character_id_u64() else {
+        return Html("<h1>Choose a character first</h1>".to_string());
+    };
+    let characters: Vec<Character> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let Some(character) = characters.first() else {
+        return Html("<h1>Character not found</h1>".to_string());
+    };
+    let results: Vec<BattleResult> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM battle_result WHERE quest_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let Some(result) = results.first() else {
+        return Html("<h1>Battle result not found</h1>".to_string());
+    };
+    if character.party_id.as_deref() != Some(&result.party_id) {
+        return Html("<h1>This battle belongs to another party</h1>".to_string());
+    }
+    let quests: Vec<Quest> = state
+        .db
+        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default();
+    let Some(quest) = quests.first() else {
+        return Html("<h1>Quest not found</h1>".to_string());
+    };
+    let loot: Vec<BattleLootItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM battle_loot_item WHERE quest_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let pooled: Vec<PartyInventoryItem> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+            result.party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let stakes: Vec<PartyStake> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_stake WHERE party_id = '{}'",
+            result.party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let items: Vec<ItemDefinition> = state
+        .db
+        .query("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
+    let stake = stakes
+        .iter()
+        .find(|stake| stake.character_id == character.id)
+        .map_or(0, |stake| stake.value);
+    Html(
+        post_battle_page(
+            quest,
+            character,
+            &loot,
+            &pooled,
+            stake,
+            &items,
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+async fn store_battle_loot(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Redirect {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "store_battle_loot",
+            &[json!(character_id), json!(id.clone())],
+        )
+        .await
+    {
+        tracing::error!("Failed to store battle loot: {error:?}");
+    }
+    Redirect::to(&format!("/quests/{id}/loot"))
 }
 
 #[derive(Debug, Clone)]

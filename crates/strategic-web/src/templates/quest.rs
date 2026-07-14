@@ -6,7 +6,7 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, sidebar_section, status_badge,
 };
-use crate::spacetimedb::Quest;
+use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest};
 use crate::{
     routes::quests::NearbySettlement,
     spacetimedb::Character,
@@ -269,6 +269,87 @@ pub fn quest_location_page(
         }
     };
     base_layout_with_session(&quest.title, content, logged_in_as, theme)
+}
+
+/// Resolution screen shown before the party banks a battle's spoils.
+pub fn post_battle_page(
+    quest: &Quest,
+    character: &Character,
+    loot: &[BattleLootItem],
+    pooled: &[PartyInventoryItem],
+    stake: u64,
+    items: &[ItemDefinition],
+    theme: &str,
+) -> Markup {
+    let loot_value: u64 = loot
+        .iter()
+        .map(|entry| {
+            let value = items
+                .iter()
+                .find(|item| item.id == entry.item_id)
+                .and_then(|item| item.base_value)
+                .unwrap_or(0);
+            u64::from(value) * u64::from(entry.quantity)
+        })
+        .sum();
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Loot", html! {
+                @if loot.is_empty() {
+                    (empty_state("All loot has been moved to the party inventory.", None, None))
+                } @else {
+                    table class="trade-inventory-table" {
+                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
+                        tbody {
+                            @for entry in loot {
+                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
+                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
+                            }
+                        }
+                    }
+                    p class="party-stake-summary" { span { "Total objective value" } strong { (loot_value) " gold" } }
+                    form method="post" action=(format!("/quests/{}/loot/store", quest.id)) {
+                        button type="submit" class="btn btn-primary btn-block" { "Store all in party inventory" }
+                    }
+                }
+            }))
+        }
+        main class="center-content settlement-main quest-location-main" {
+            (visual_stage("map", "Victory", "TODO: post-battle scene"))
+            div class="post-battle-summary" {
+                h2 { "Victory" }
+                p { "The party has defeated " (quest.enemy_count) " " (&quest.enemy_type) "." }
+            }
+            (settlement_chat_area(&quest.title, Some(character)))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section("Party inventory", html! {
+                div class="party-stake-summary" { span { "Your available stake" } strong { (stake) " gold" } }
+                @if pooled.is_empty() {
+                    (empty_state("The party chest is empty.", None, None))
+                } @else {
+                    table class="trade-inventory-table" {
+                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
+                        tbody {
+                            @for entry in pooled {
+                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
+                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
+                            }
+                        }
+                    }
+                }
+                @if loot.is_empty() {
+                    p class="small-copy text-muted" { "Your share of the new loot has been credited at its objective value." }
+                    @if let Some(settlement_id) = &character.current_settlement_id {
+                        a class="btn btn-primary btn-block" href=(format!("/settlements/{}/party-inventory", settlement_id)) { "Open party inventory" }
+                    } @else {
+                        a class="btn btn-secondary btn-block" href=(format!("/quests/{}/location", quest.id)) { "Return to location" }
+                    }
+                }
+            }))
+        }
+    };
+    base_layout_with_session("Battle spoils", content, Some(&character.name), theme)
 }
 
 fn format_distance(distance_m: u64) -> String {

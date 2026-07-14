@@ -121,6 +121,37 @@ pub struct PartyMember {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyInventoryItem {
+    pub id: u64,
+    pub party_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyStake {
+    pub id: u64,
+    pub party_id: String,
+    pub character_id: u64,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleResult {
+    pub quest_id: String,
+    pub party_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleLootItem {
+    pub id: u64,
+    pub quest_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyJoinRequest {
     pub id: u64,
     pub party_id: String,

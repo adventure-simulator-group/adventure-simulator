@@ -1,10 +1,10 @@
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table};
 
 use crate::{
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
     },
-    item::{InventoryItem, inventory_item, item},
+    item::{inventory_item, item, InventoryItem},
     tactical::tactical_server_request,
     time::advance_character_time,
 };
@@ -316,6 +316,73 @@ pub struct PartyMember {
     pub character_id: u64,
     pub role: Option<String>,
     pub recruitment_role_id: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_inventory_item, public)]
+pub struct PartyInventoryItem {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_stake, public)]
+pub struct PartyStake {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub value: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_inventory_state, public)]
+pub struct PartyInventoryState {
+    #[primary_key]
+    pub party_id: String,
+    pub reserve_value: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_result, public)]
+pub struct BattleResult {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_loot_item, public)]
+pub struct BattleLootItem {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub quest_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_participant, public)]
+pub struct BattleParticipant {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub quest_id: String,
+    pub character_id: u64,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1088,6 +1155,383 @@ pub fn transfer_party_item(
 }
 
 /// Permanently removes staged quantities from a character's unequipped inventory.
+fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, String> {
+    ctx.db
+        .item()
+        .id()
+        .find(&item_id.to_string())
+        .and_then(|item| item.base_value)
+        .map(u64::from)
+        .ok_or_else(|| format!("Item {item_id} has no objective value"))
+}
+
+fn add_to_party_inventory(ctx: &ReducerContext, party_id: &str, item_id: &str, quantity: u32) {
+    if quantity == 0 {
+        return;
+    }
+    if let Some(mut stack) = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .find(|stack| stack.item_id == item_id)
+    {
+        stack.quantity = stack.quantity.saturating_add(quantity);
+        ctx.db.party_inventory_item().id().update(stack);
+    } else {
+        ctx.db.party_inventory_item().insert(PartyInventoryItem {
+            id: 0,
+            party_id: party_id.to_string(),
+            item_id: item_id.to_string(),
+            quantity,
+        });
+    }
+}
+
+fn credit_party_stake(ctx: &ReducerContext, party_id: &str, character_id: u64, value: u64) {
+    if value == 0 {
+        return;
+    }
+    if let Some(mut stake) = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(party_id)
+        .find(|stake| stake.character_id == character_id)
+    {
+        stake.value = stake.value.saturating_add(value);
+        ctx.db.party_stake().id().update(stake);
+    } else {
+        ctx.db.party_stake().insert(PartyStake {
+            id: 0,
+            party_id: party_id.to_string(),
+            character_id,
+            value,
+        });
+    }
+}
+
+fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) {
+    if value == 0 {
+        return;
+    }
+    if let Some(mut state) = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id.to_string())
+    {
+        state.reserve_value = state.reserve_value.saturating_add(value);
+        ctx.db.party_inventory_state().party_id().update(state);
+    } else {
+        ctx.db.party_inventory_state().insert(PartyInventoryState {
+            party_id: party_id.to_string(),
+            reserve_value: value,
+        });
+    }
+}
+
+pub(crate) fn record_battle_result(
+    ctx: &ReducerContext,
+    party_id: &str,
+    quest_id: &str,
+    mission_id: &str,
+    dropped_items: Vec<(String, u32)>,
+    include_random_quest_gold: bool,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .battle_result()
+        .quest_id()
+        .find(&quest_id.to_string())
+        .is_some()
+    {
+        return Ok(());
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id.to_string())
+        .ok_or("Quest not found")?;
+    ctx.db.battle_result().insert(BattleResult {
+        quest_id: quest_id.to_string(),
+        party_id: party_id.to_string(),
+        mission_id: mission_id.to_string(),
+    });
+    for member in ctx.db.party_member().party_id().filter(party_id) {
+        ctx.db.battle_participant().insert(BattleParticipant {
+            id: 0,
+            quest_id: quest_id.to_string(),
+            character_id: member.character_id,
+        });
+    }
+    let mut combined: HashMap<String, u32> = HashMap::new();
+    for (item_id, quantity) in dropped_items {
+        if quantity > 0 && ctx.db.item().id().find(&item_id).is_some() {
+            *combined.entry(item_id).or_default() = combined
+                .get(&item_id)
+                .copied()
+                .unwrap_or_default()
+                .saturating_add(quantity);
+        }
+    }
+    if include_random_quest_gold && ctx.random::<u64>().is_multiple_of(2) {
+        let gold = quest.gold_reward.max(0) as u32;
+        if gold > 0 {
+            *combined.entry("gold_coin".into()).or_default() += gold;
+        }
+    }
+    for (item_id, quantity) in combined {
+        ctx.db.battle_loot_item().insert(BattleLootItem {
+            id: 0,
+            quest_id: quest_id.to_string(),
+            item_id,
+            quantity,
+        });
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn store_battle_loot(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let result = ctx
+        .db
+        .battle_result()
+        .quest_id()
+        .find(&quest_id)
+        .ok_or("Battle result not found")?;
+    if result.party_id != party_id {
+        return Err("Battle loot belongs to another party".into());
+    }
+    let loot: Vec<_> = ctx
+        .db
+        .battle_loot_item()
+        .quest_id()
+        .filter(&quest_id)
+        .collect();
+    let mut total_value = 0_u64;
+    for entry in &loot {
+        total_value = total_value.saturating_add(
+            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(entry.quantity)),
+        );
+    }
+    let participants: Vec<_> = ctx
+        .db
+        .battle_participant()
+        .quest_id()
+        .filter(&quest_id)
+        .collect();
+    if participants.is_empty() {
+        return Err("Battle has no eligible participants".into());
+    }
+    for entry in loot {
+        add_to_party_inventory(ctx, &party_id, &entry.item_id, entry.quantity);
+        ctx.db.battle_loot_item().id().delete(entry.id);
+    }
+    let participant_count = participants.len() as u64;
+    let share = total_value / participant_count;
+    for participant in participants {
+        credit_party_stake(ctx, &party_id, participant.character_id, share);
+    }
+    credit_party_reserve(ctx, &party_id, total_value % participant_count);
+    Ok(())
+}
+
+#[reducer]
+pub fn deposit_party_inventory_item(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or("Inventory item not found")?;
+    if quantity == 0 || inventory.character_id != character_id || inventory.quantity < quantity {
+        return Err("Invalid party inventory deposit".into());
+    }
+    if ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(character_id)
+        .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
+    {
+        return Err("Unequip an item before depositing it".into());
+    }
+    let value = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    credit_party_stake(ctx, &party_id, character_id, value);
+    if inventory.quantity == quantity {
+        ctx.db.inventory_item().id().delete(inventory.id);
+    } else {
+        inventory.quantity -= quantity;
+        ctx.db.inventory_item().id().update(inventory);
+    }
+    Ok(())
+}
+
+fn consume_personal_gold(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut amount: u64,
+) -> Result<(), String> {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, &"gold_coin".to_string()))
+        .collect();
+    let available: u64 = stacks.iter().map(|stack| u64::from(stack.quantity)).sum();
+    if available < amount {
+        return Err("Not enough personal gold to cover this withdrawal".into());
+    }
+    for mut stack in stacks {
+        let taken = amount.min(u64::from(stack.quantity)) as u32;
+        stack.quantity -= taken;
+        amount -= u64::from(taken);
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+        if amount == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn withdraw_party_inventory_item(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_inventory_item_id: u64,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut inventory = ctx
+        .db
+        .party_inventory_item()
+        .id()
+        .find(party_inventory_item_id)
+        .ok_or("Party inventory item not found")?;
+    if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
+        return Err("Invalid party inventory withdrawal".into());
+    }
+    let cost = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    let mut stake = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .find(|stake| stake.character_id == character_id);
+    let stake_value = stake.as_ref().map_or(0, |stake| stake.value);
+    if cost > stake_value {
+        let top_up = cost - stake_value;
+        consume_personal_gold(ctx, character_id, top_up)?;
+        add_to_party_inventory(ctx, &party_id, "gold_coin", top_up as u32);
+    }
+    if let Some(ref mut stake) = stake {
+        stake.value = stake.value.saturating_sub(cost);
+        ctx.db.party_stake().id().update(stake.clone());
+    }
+    crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    if inventory.quantity == quantity {
+        ctx.db.party_inventory_item().id().delete(inventory.id);
+    } else {
+        inventory.quantity -= quantity;
+        ctx.db.party_inventory_item().id().update(inventory);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn liquidate_party_inventory(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    party_inventory_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if party_inventory_item_ids.is_empty() || party_inventory_item_ids.len() != quantities.len() {
+        return Err("Liquidation entries must be non-empty and aligned".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if character.current_settlement_id.as_deref() != Some(&settlement_id) {
+        return Err("Character must be at this settlement to liquidate party assets".into());
+    }
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut staged = Vec::new();
+    let mut proceeds = 0_u64;
+    let mut seen = HashSet::new();
+    for (&id, &quantity) in party_inventory_item_ids.iter().zip(&quantities) {
+        if !seen.insert(id) {
+            return Err("Party liquidation item IDs must be unique".into());
+        }
+        let entry = ctx
+            .db
+            .party_inventory_item()
+            .id()
+            .find(id)
+            .ok_or("Party inventory item not found")?;
+        if quantity == 0
+            || entry.party_id != party_id
+            || entry.quantity < quantity
+            || entry.item_id == "gold_coin"
+        {
+            return Err("Invalid party asset liquidation".into());
+        }
+        proceeds = proceeds.saturating_add(
+            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(quantity)),
+        );
+        staged.push((entry, quantity));
+    }
+    for (mut entry, quantity) in staged {
+        if entry.quantity == quantity {
+            ctx.db.party_inventory_item().id().delete(entry.id);
+        } else {
+            entry.quantity -= quantity;
+            ctx.db.party_inventory_item().id().update(entry);
+        }
+    }
+    add_to_party_inventory(ctx, &party_id, "gold_coin", proceeds as u32);
+    Ok(())
+}
+
 #[reducer]
 pub fn discard_inventory_items(
     ctx: &ReducerContext,
@@ -1428,6 +1872,15 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
     if party.leader_id == character_id {
         return Err("Party leader cannot leave. Use disband_party instead.".into());
     }
+    if ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .any(|stake| stake.character_id == character_id && stake.value > 0)
+    {
+        return Err("Withdraw this character's party stake before leaving".into());
+    }
 
     if let Some(membership) = ctx
         .db
@@ -1452,6 +1905,62 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
     };
     if party.current_quest_location_id.is_some() {
         return Err("Travel to a settlement before disbanding the party".into());
+    }
+    if ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .any(|stake| stake.value > 0)
+    {
+        return Err("Settle every member's party stake before disbanding".into());
+    }
+    let pooled_items: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(&party_id)
+        .collect();
+    let reserve = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id)
+        .map_or(0, |state| state.reserve_value);
+    if pooled_items
+        .iter()
+        .any(|entry| entry.item_id != "gold_coin")
+        || pooled_items
+            .iter()
+            .map(|entry| u64::from(entry.quantity))
+            .sum::<u64>()
+            != reserve
+    {
+        return Err("Liquidate and distribute the party inventory before disbanding".into());
+    }
+    if reserve > 0 {
+        crate::add_inventory_item(ctx, party.leader_id, "gold_coin", reserve as u32);
+    }
+    for entry in pooled_items {
+        ctx.db.party_inventory_item().id().delete(entry.id);
+    }
+    if ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.party_inventory_state().party_id().delete(&party_id);
+    }
+    for stake in ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_stake().id().delete(stake.id);
     }
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
@@ -1849,12 +2358,10 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
     };
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
-    let gold_per_member = quest.gold_reward.max(0) as u32 / members.len().max(1) as u32;
     let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
 
     for member in members {
         if let Some(mut character) = ctx.db.character().id().find(member.character_id) {
-            character.gold += gold_per_member;
             character.xp += xp_per_member;
             character.level = 1 + character.xp / 100;
             ctx.db.character().id().update(character);
@@ -1894,6 +2401,23 @@ pub fn autoresolve_quest(
     {
         return Err("Party must be at its active quest location".into());
     }
+
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .ok_or("Quest not found")?;
+    // The current enemy generator equips its placeholder enemies with clubs.
+    let dropped_item = "club";
+    record_battle_result(
+        ctx,
+        &party_id,
+        &quest_id,
+        &format!("autoresolve-{quest_id}"),
+        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        true,
+    )?;
 
     for member in ctx.db.party_member().party_id().filter(&party_id) {
         if let Some(mut limbs) = ctx
