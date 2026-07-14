@@ -237,6 +237,19 @@
 .service-tab-icon-inn { --service-tab-icon: url("/static/icons/strategic/inn.png"); }
 .service-tab-icon-church { --service-tab-icon: url("/static/icons/strategic/church.png"); }
 
+.service-tab-icon-map,
+.service-tab-icon-loot {
+  display: grid;
+  place-items: center;
+  background: none !important;
+  font-size: 1.15rem;
+  -webkit-mask: none;
+  mask: none;
+}
+
+.service-tab-icon-map::before { content: "⌖"; }
+.service-tab-icon-loot::before { content: "◇"; }
+
 .settlement-services .nav-tab:hover .service-tab-icon { background-color: var(--accent-hover); }
 .settlement-services .nav-tab.active .service-tab-icon { background-color: var(--accent-dark); }
 

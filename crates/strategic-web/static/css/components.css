@@ -228,6 +228,26 @@
   background: var(--bg-tertiary);
 }
 
+.location-destination-list .list-item.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.location-stat-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.location-stat-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.location-stat-list dt { color: var(--text-muted); }
+.location-stat-list dd { margin: 0; text-align: right; }
+
 .list-item-content {
   display: flex;
   flex-direction: column;
@@ -1643,6 +1663,7 @@
 
 .party-inventory-portrait {
   margin-right: 0.35rem;
+  order: -1;
 }
 
 .party-chest-face {

@@ -37,7 +37,7 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
             Redirect::to(&format!("/settlements/{settlement_id}")).into_response()
         }
         (_, Some(quest_id)) => {
-            Redirect::to(&format!("/quests/{quest_id}/location")).into_response()
+            Redirect::to(&format!("/locations/quest/{quest_id}")).into_response()
         }
         _ => Redirect::to("/settlements").into_response(),
     }

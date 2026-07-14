@@ -9,7 +9,7 @@ use maud::{Markup, html};
 use super::recruitment::{PartyCheckSummary, aggregate_check_bars, requirements_label};
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
-    settlement_layout_with_session, sidebar_section,
+    quest_location_layout_with_session, settlement_layout_with_session, sidebar_section,
 };
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
@@ -24,6 +24,49 @@ pub struct RecruitingPartyRole {
     pub meets_requirements: bool,
     pub checks: PartyCheckSummary,
     pub contribution: PartyCheckSummary,
+}
+
+#[derive(Clone, Debug)]
+pub struct LocationView {
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+}
+
+impl LocationView {
+    pub fn base_path(&self) -> String {
+        format!("/locations/{}/{}", self.kind, self.id)
+    }
+
+    fn render_layout(
+        &self,
+        title: &str,
+        content: Markup,
+        logged_in_as: Option<&str>,
+        theme: &str,
+    ) -> Markup {
+        if self.kind == "settlement" {
+            settlement_layout_with_session(
+                title,
+                &self.name,
+                &self.id,
+                "",
+                content,
+                logged_in_as,
+                theme,
+            )
+        } else {
+            quest_location_layout_with_session(
+                title,
+                &self.name,
+                &self.id,
+                "",
+                content,
+                logged_in_as,
+                theme,
+            )
+        }
+    }
 }
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -89,7 +132,7 @@ pub fn settlements_list_page(
                 } @else {
                     @for settlement in settlements {
                         (list_item(
-                            &format!("/settlements/{}", settlement.id),
+                            &format!("/locations/settlement/{}", settlement.id),
                             &settlement.name,
                             Some(population_description(settlement.population_level)),
                         ))
@@ -101,7 +144,7 @@ pub fn settlements_list_page(
             h2 class="page-title" { "World Map" }
             div class="settlement-grid" {
                 @for settlement in settlements {
-                    a href=(format!("/settlements/{}", settlement.id)) class="settlement-card" {
+                    a href=(format!("/locations/settlement/{}", settlement.id)) class="settlement-card" {
                         h3 { (settlement.name) }
                         p class="population" { (population_description(settlement.population_level)) }
                         div class="coords" { "(" (settlement.coord_x as i32) ", " (settlement.coord_y as i32) ")" }
@@ -123,10 +166,8 @@ pub fn settlements_list_page(
 /// ferry network.
 pub fn settlement_overview_page(
     settlement: &Settlement,
-    destinations: &[TravelDestination],
     active_character: Option<&Character>,
     party_members: &[Character],
-    can_travel: bool,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -134,45 +175,22 @@ pub fn settlement_overview_page(
         aside class="left-sidebar" {
             (sidebar_section("Settlement", html! {
                 div class="settlement-summary" {
-                    strong { (&settlement.name) }
-                    span class="text-muted small-copy" { "Population: " (format_population(settlement)) }
+                    dl class="location-stat-list" {
+                        div { dt { "Population" } dd { (format_population(settlement)) } }
+                        div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
+                        div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
+                    }
                 }
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("map", &settlement.name, "TODO: settlement image"))
             (settlement_chat_area(&settlement.name, active_character))
         }
         aside class="right-sidebar" {
-            (sidebar_section("Connected destinations", html! {
-                @if destinations.is_empty() {
-                    (empty_state("No land or ferry destination is currently connected to this settlement.", None, None))
-                } @else {
-                    @for destination in destinations {
-                        article class="travel-destination" {
-                            div {
-                                strong { (&destination.settlement.name) }
-                                p class="text-muted small-copy" {
-                                    (format_population(&destination.settlement))
-                                    " · " (format_distance(destination.distance_m))
-                                    " · " (format_journey_time(destination.journey_minutes))
-                                }
-                            }
-                            @if can_travel {
-                                form method="post" action={ "/settlements/" (&destination.settlement.id) "/travel" } {
-                                    button type="submit" class="btn btn-primary btn-small" { "Travel" }
-                                }
-                            } @else {
-                                span class="text-muted small-copy" { "Travel from your current settlement" }
-                            }
-                        }
-                    }
-                }
-            }))
-            (sidebar_section("Travel", html! {
-                p class="small-copy" { "Journeys use an average walking pace of 5 km/h." }
-                p class="text-muted small-copy" { "Travel time advances your strategic clock." }
+            (sidebar_section("Description", html! {
+                p { (settlement_description(settlement.population_level)) }
             }))
         }
     };
@@ -180,11 +198,110 @@ pub fn settlement_overview_page(
         &settlement.name,
         &settlement.name,
         &settlement.id,
-        "overview",
+        "",
         content,
         logged_in_as,
         theme,
     )
+}
+
+pub fn settlement_map_page(
+    settlement: &Settlement,
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    can_travel: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let selected =
+        selected_id.and_then(|id| destinations.iter().find(|entry| entry.settlement.id == id));
+    let base_path = format!("/locations/settlement/{}/map", settlement.id);
+    let content = html! {
+        (map_destination_list(destinations, selected_id, &base_path))
+        main class="center-content settlement-main settlement-overview" {
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
+            (visual_stage("map", &settlement.name, "TODO: settlement map"))
+            (settlement_chat_area(&settlement.name, active_character))
+        }
+        (map_destination_detail(selected, can_travel))
+    };
+    settlement_layout_with_session(
+        &format!("{} map", settlement.name),
+        &settlement.name,
+        &settlement.id,
+        "map",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+pub(crate) fn map_destination_list(
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    base_path: &str,
+) -> Markup {
+    html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Destinations", html! {
+                @if destinations.is_empty() {
+                    (empty_state("No destinations are available from this location.", None, None))
+                } @else {
+                    nav class="location-destination-list" aria-label="Travel destinations" {
+                        @for destination in destinations {
+                            a href=(format!("{}?destination={}", base_path, destination.settlement.id))
+                                class=(if selected_id == Some(destination.settlement.id.as_str()) { "list-item active" } else { "list-item" }) {
+                                strong { (&destination.settlement.name) }
+                                span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
+                            }
+                        }
+                    }
+                }
+            }))
+        }
+    }
+}
+
+pub(crate) fn map_destination_detail(
+    selected: Option<&TravelDestination>,
+    can_travel: bool,
+) -> Markup {
+    html! {
+        aside class="right-sidebar" {
+            @if let Some(destination) = selected {
+                (sidebar_section(&destination.settlement.name, html! {
+                    @if can_travel {
+                        form method="post" action={ "/settlements/" (&destination.settlement.id) "/travel" } {
+                            button type="submit" class="btn btn-primary btn-block" { "Travel" }
+                        }
+                    }
+                    p { (settlement_description(destination.settlement.population_level)) }
+                    p class="text-muted small-copy" {
+                        (format_population(&destination.settlement))
+                        " · " (format_distance(destination.distance_m))
+                        " · " (format_journey_time(destination.journey_minutes))
+                    }
+                }))
+            } @else {
+                (sidebar_section("Destination", html! {
+                    p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
+                }))
+            }
+        }
+    }
+}
+
+pub(crate) fn settlement_description(population_level: i32) -> &'static str {
+    match population_level {
+        i32::MIN..=1 => "A quiet cluster of farmsteads and cottages.",
+        2 => "A quaint hamlet gathered around a well-worn road.",
+        3 => "A modest village serving the surrounding countryside.",
+        4 => "A busy market town with a steady flow of travelers.",
+        5 => "A prosperous town enclosed by crowded streets.",
+        _ => "A large and bustling city whose streets rarely fall silent.",
+    }
 }
 
 fn format_distance(distance_m: u64) -> String {
@@ -287,7 +404,7 @@ pub fn noticeboard_page(
             }))
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("map", "Settlement map", "TODO: settlement map image"))
             (settlement_chat_area("Notice Board", active_character))
         }
@@ -411,7 +528,7 @@ pub fn religion_page(
 
 /// Party inventory comparison.
 pub fn party_inventory_page(
-    settlement: &Settlement,
+    location: &LocationView,
     selected: &Character,
     selected_inventory: &[InventoryItem],
     active_character: &Character,
@@ -427,10 +544,10 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (settlement_chat_area(&selected.name, Some(active_character)))
-            form id="party-offer" class="party-offer" action=(format!("/settlements/{}/party/{}/inventory/offer", settlement.id, selected.id)) method="post" hidden {
+            form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden {
                 button type="button" class="party-offer-cancel" data-cancel-trade="party" { "Cancel" }
                 button type="submit" disabled { "Offer" }
             }
@@ -439,20 +556,12 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip))
         }
     };
-    settlement_layout_with_session(
-        "Party",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party", content, Some(&active_character.name), theme)
 }
 
 /// The active character's inventory with a staged discard list.
 pub fn party_discard_page(
-    settlement: &Settlement,
+    location: &LocationView,
     active_character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
@@ -471,11 +580,11 @@ pub fn party_discard_page(
             }))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             form id="inventory-discard" class="party-offer"
-                action=(format!("/settlements/{}/party/{}/inventory/discard", settlement.id, active_character.id))
+                action=(format!("{}/party/{}/inventory/discard", location.base_path(), active_character.id))
                 method="post" hidden {
                 button type="button" class="party-offer-cancel" data-cancel-trade="discard" { "Cancel" }
                 button type="submit" disabled { "Discard" }
@@ -485,20 +594,12 @@ pub fn party_discard_page(
             (discard_inventory_rail(active_character, inventory, items, equip))
         }
     };
-    settlement_layout_with_session(
-        "Inventory",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Inventory", content, Some(&active_character.name), theme)
 }
 
 /// Active character's combined strategic view.
 pub fn party_personal_page(
-    settlement: &Settlement,
+    location: &LocationView,
     active_character: &Character,
     party_members: &[Character],
     capability: Option<&CharacterCapability>,
@@ -512,30 +613,22 @@ pub fn party_personal_page(
         aside class="left-sidebar" {
             (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs))
-            @let schedule_action = format!("/settlements/{}/party/{}/schedule", settlement.id, active_character.id);
+            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
             (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
         aside class="right-sidebar" { (character_bio_rail(active_character)) }
     };
-    settlement_layout_with_session(
-        "Party",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party", content, Some(&active_character.name), theme)
 }
 
 /// Selected party member stats and biography.
 pub fn party_stats_page(
-    settlement: &Settlement,
+    location: &LocationView,
     selected: &Character,
     active_character: &Character,
     party_members: &[Character],
@@ -554,21 +647,13 @@ pub fn party_stats_page(
             (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (settlement_chat_area(&selected.name, Some(active_character)))
         }
         aside class="right-sidebar" { (character_bio_rail(selected)) }
     };
-    settlement_layout_with_session(
-        "Party stats",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party stats", content, Some(&active_character.name), theme)
 }
 
 fn service_page(
@@ -641,7 +726,7 @@ fn service_page(
             }
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_chat_area(title, active_character))
         }
@@ -771,7 +856,7 @@ pub fn live_merchant_shop_page(
     let content = html! {
         aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
             a class="btn btn-secondary btn-block mb-1"
-                href=(format!("/settlements/{}/party-inventory", settlement.id)) {
+                href=(format!("/locations/settlement/{}/party-inventory", settlement.id)) {
                 "Trade from party chest"
             }
             (trade_inventory_table(false, html! {
@@ -782,7 +867,7 @@ pub fn live_merchant_shop_page(
                 }
             }))
         })) }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &settlement.id, None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_chat_area(title, Some(character))) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_chat_area(title, Some(character))) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (trade_inventory_table(true, html! {
@@ -812,7 +897,7 @@ pub fn live_merchant_shop_page(
 
 /// Two-sided transfer view for the equally owned party chest.
 pub fn party_pool_page(
-    settlement: &Settlement,
+    location: &LocationView,
     character: &Character,
     inventory: &[InventoryItem],
     pooled: &[PartyInventoryItem],
@@ -834,7 +919,7 @@ pub fn party_pool_page(
                             td class="inventory-item-name" {
                                 (&item.item_id)
                                 @if !equipped {
-                                    form method="post" action=(format!("/settlements/{}/party-inventory/deposit", settlement.id)) class="inline-form" {
+                                    form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) class="inline-form" {
                                         input type="hidden" name="item_id" value=(item.id);
                                         input type="hidden" name="quantity" value="1";
                                         button type="submit" class="trade-transfer trade-transfer-right" title="Add one to party inventory" aria-label=(format!("Add {} to party inventory", item.item_id)) {}
@@ -851,7 +936,7 @@ pub fn party_pool_page(
             }))
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, Some(character), &settlement.id, None))
+            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
             (visual_stage("npc", "Party chest", "Shared party inventory chest"))
             (settlement_chat_area("Party inventory", Some(character)))
         }
@@ -869,7 +954,7 @@ pub fn party_pool_page(
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
                                 (&item.item_id)
-                                form method="post" action=(format!("/settlements/{}/party-inventory/withdraw", settlement.id)) class="inline-form" {
+                                form method="post" action=(format!("{}/party-inventory/withdraw", location.base_path())) class="inline-form" {
                                     input type="hidden" name="item_id" value=(item.id);
                                     input type="hidden" name="quantity" value="1";
                                     button type="submit" class="trade-transfer trade-transfer-left"
@@ -883,11 +968,11 @@ pub fn party_pool_page(
                         }
                     }
                 }))
-                @if pooled.iter().any(|item| item.item_id != "gold_coin") {
+                @if location.kind == "settlement" && pooled.iter().any(|item| item.item_id != "gold_coin") {
                     h4 class="mt-1" { "Liquidate at merchant" }
                     p class="small-copy text-muted" { "Convert an item to party gold without changing anyone's stake." }
                     @for item in pooled.iter().filter(|item| item.item_id != "gold_coin") {
-                        form method="post" action=(format!("/settlements/{}/party-inventory/liquidate", settlement.id)) class="party-liquidate-row" {
+                        form method="post" action=(format!("{}/party-inventory/liquidate", location.base_path())) class="party-liquidate-row" {
                             input type="hidden" name="item_id" value=(item.id);
                             input type="hidden" name="quantity" value=(item.quantity);
                             button type="submit" class="btn btn-secondary btn-small" { "Sell all " (&item.item_id) }
@@ -897,15 +982,7 @@ pub fn party_pool_page(
             }))
         }
     };
-    settlement_layout_with_session(
-        "Party inventory",
-        &settlement.name,
-        &settlement.id,
-        "merchants",
-        content,
-        Some(&character.name),
-        theme,
-    )
+    location.render_layout("Party inventory", content, Some(&character.name), theme)
 }
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
@@ -1327,7 +1404,7 @@ pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup
 pub(crate) fn party_portrait_overlay(
     party_members: &[Character],
     active_character: Option<&Character>,
-    settlement_id: &str,
+    location_path: &str,
     selected_character_id: Option<u64>,
 ) -> Markup {
     let members: Vec<&Character> = if party_members.is_empty() {
@@ -1344,9 +1421,8 @@ pub(crate) fn party_portrait_overlay(
             div class="party-portrait-overlay" aria-label="Active party" {
                 @if active_character.is_some() {
                     div class="party-portrait party-inventory-portrait" title="Party inventory" {
-                        a class="party-portrait-select" href=(format!("/settlements/{}/party-inventory", settlement_id)) {
+                        a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
                             span class="party-portrait-initial party-chest-face" role="img" aria-label="Party inventory" { "▣" }
-                            span class="party-portrait-name" { "Chest" }
                         }
                     }
                 }
@@ -1359,9 +1435,9 @@ pub(crate) fn party_portrait_overlay(
                         title=(&member.name) {
                         a class="party-portrait-select"
                             href=(if is_active {
-                                format!("/settlements/{}/party/{}", settlement_id, member.id)
+                                format!("{}/party/{}", location_path, member.id)
                             } else {
-                                format!("/settlements/{}/party/{}/stats", settlement_id, member.id)
+                                format!("{}/party/{}/stats", location_path, member.id)
                             })
                             title=(format!("Inspect {}", member.name)) {
                             (incapacitation_wheel_placeholder())
@@ -1371,7 +1447,7 @@ pub(crate) fn party_portrait_overlay(
                             }
                         }
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
-                            a href=(format!("/settlements/{}/party/{}/inventory", settlement_id, member.id))
+                            a href=(format!("{}/party/{}/inventory", location_path, member.id))
                                 class="party-portrait-action"
                                 title=(if is_active { "Open inventory and discard items".to_string() } else { format!("Compare inventory with {}", member.name) }) {
                                 span class="party-action-icon"
@@ -1379,7 +1455,7 @@ pub(crate) fn party_portrait_overlay(
                                     role="img" aria-label="Inventory" {}
                             }
                             @if can_remove {
-                                form method="post" action=(format!("/settlements/{}/party/{}/remove", settlement_id, member.id)) {
+                                form method="post" action=(format!("{}/party/{}/remove", location_path, member.id)) {
                                     button type="submit" class="party-portrait-action party-member-remove"
                                         title=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() })
                                         aria-label=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() }) {

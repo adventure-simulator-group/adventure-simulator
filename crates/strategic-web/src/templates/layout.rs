@@ -74,6 +74,8 @@ pub fn settlement_layout_with_session(
 pub fn quest_location_layout_with_session(
     title: &str,
     location_name: &str,
+    location_id: &str,
+    active_tab: &str,
     content: Markup,
     logged_in_as: Option<&str>,
     theme: &str,
@@ -81,7 +83,7 @@ pub fn quest_location_layout_with_session(
     let theme = validated_theme(theme);
     page_shell(
         title,
-        quest_location_top_bar(location_name, logged_in_as, theme),
+        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
         content,
         theme,
     )
@@ -100,8 +102,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=theme-dropdown-1";
-                link rel="stylesheet" href="/static/css/components.css?v=quest-location-loot-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=location-tabs-1";
+                link rel="stylesheet" href="/static/css/components.css?v=location-tabs-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -182,6 +184,7 @@ fn settlement_top_bar(
     current_theme: &str,
 ) -> Markup {
     let services = [
+        ("map", "Map", "map"),
         ("noticeboard", "Notice Board", "noticeboard"),
         ("merchants", "General Market", "market"),
         ("weapons", "Weapons", "weapons"),
@@ -195,7 +198,7 @@ fn settlement_top_bar(
         header class="top-bar settlement-top-bar" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
-                a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
+                a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
                 span class="settlement-time" data-player-time title="Loading official time…" {
@@ -212,8 +215,10 @@ fn settlement_top_bar(
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services" {
                 @for (path, label, icon) in services {
-                    @let href = if path.is_empty() {
-                        format!("/settlements/{}", settlement_id)
+                    @let href = if path == "map" {
+                        format!("/locations/settlement/{}/map", settlement_id)
+                    } else if path.is_empty() {
+                        format!("/locations/settlement/{}", settlement_id)
                     } else {
                         format!("/settlements/{}/{}", settlement_id, path)
                     };
@@ -244,6 +249,8 @@ fn settlement_top_bar(
 
 fn quest_location_top_bar(
     location_name: &str,
+    location_id: &str,
+    active_tab: &str,
     logged_in_as: Option<&str>,
     current_theme: &str,
 ) -> Markup {
@@ -251,11 +258,22 @@ fn quest_location_top_bar(
         header class="top-bar settlement-top-bar quest-location-top-bar" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
-                    span class="settlement-name" { (location_name) }
+                    a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
             }
-            div class="top-bar-center" aria-hidden="true" {}
+            nav class="top-bar-center settlement-services" aria-label="Location views" {
+                a href=(format!("/locations/quest/{}/map", location_id))
+                    class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
+                    aria-label="Map" title="Map" {
+                    span class="service-tab-icon service-tab-icon-map" aria-hidden="true" {}
+                }
+                a href=(format!("/locations/quest/{}/loot", location_id))
+                    class=(if active_tab == "loot" { "nav-tab active" } else { "nav-tab" })
+                    aria-label="Loot" title="Loot" {
+                    span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
+                }
+            }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
                     span class="player-name" { "Party: " strong { (name) } }

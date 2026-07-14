@@ -2,21 +2,25 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use serde::Serialize;
 use serde_json::json;
 
-use super::{AppState, settlements::get_active_party_members};
+use super::{
+    AppState,
+    settlements::{TravelDestination, get_active_party_members},
+};
 use crate::session::Session;
 use crate::spacetimedb::{
     BattleLootItem, BattleResult, Character, ItemDefinition, Party, PartyInventoryItem, PartyStake,
     Quest, Settlement,
 };
 use crate::templates::quest::{
-    post_battle_page, quest_detail_page, quest_location_page, quests_list_page,
+    post_battle_page, quest_detail_page, quest_location_base_page, quest_location_map_page,
+    quest_location_page, quests_list_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -27,7 +31,10 @@ pub fn routes() -> Router<AppState> {
         .route("/quests/{id}/accept", post(accept_quest))
         .route("/quests/{id}/abandon", post(abandon_quest))
         .route("/quests/{id}/travel", post(travel_to_quest))
-        .route("/quests/{id}/location", get(quest_location))
+        .route("/quests/{id}/location", get(quest_location_redirect))
+        .route("/locations/quest/{id}", get(quest_location_base))
+        .route("/locations/quest/{id}/map", get(quest_location_map))
+        .route("/locations/quest/{id}/loot", get(quest_location_loot))
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot", get(post_battle_loot))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
@@ -104,7 +111,7 @@ async fn list_quests(State(state): State<AppState>, session: Session) -> Respons
             .unwrap_or_default();
         if let Some(character) = characters.first() {
             if let Some(quest_id) = &character.current_quest_location_id {
-                return Redirect::to(&format!("/quests/{quest_id}/location")).into_response();
+                return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
             }
             if let Some(settlement_id) = &character.current_settlement_id {
                 return Redirect::to(&format!("/settlements/{settlement_id}/noticeboard"))
@@ -274,7 +281,7 @@ async fn travel_to_quest(
         tracing::error!("Failed to travel to quest: {error:?}");
         return Redirect::to(&format!("/quests/{id}"));
     }
-    Redirect::to(&format!("/quests/{id}/location"))
+    Redirect::to(&format!("/locations/quest/{id}"))
 }
 
 async fn post_battle_loot(
@@ -382,19 +389,54 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    Redirect::to(&format!("/quests/{id}/location"))
+    Redirect::to(&format!("/locations/quest/{id}/loot"))
 }
 
-#[derive(Debug, Clone)]
-pub struct NearbySettlement {
-    pub settlement: Settlement,
-    pub distance_m: u64,
+#[derive(Default, serde::Deserialize)]
+struct QuestMapQuery {
+    destination: Option<String>,
 }
 
-async fn quest_location(
+enum QuestLocationTab {
+    Base,
+    Map(Option<String>),
+    Loot,
+}
+
+async fn quest_location_redirect(Path(id): Path<String>) -> Redirect {
+    Redirect::to(&format!("/locations/quest/{id}"))
+}
+
+async fn quest_location_base(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
+) -> Html<String> {
+    render_quest_location(state, id, session, QuestLocationTab::Base).await
+}
+
+async fn quest_location_map(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<QuestMapQuery>,
+    session: Session,
+) -> Html<String> {
+    render_quest_location(state, id, session, QuestLocationTab::Map(query.destination)).await
+}
+
+async fn quest_location_loot(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    render_quest_location(state, id, session, QuestLocationTab::Loot).await
+}
+
+async fn render_quest_location(
+    state: AppState,
+    id: String,
+    session: Session,
+    tab: QuestLocationTab,
 ) -> Html<String> {
     let quests: Vec<Quest> = state
         .db
@@ -439,13 +481,14 @@ async fn quest_location(
         .query("SELECT * FROM settlement")
         .await
         .unwrap_or_default();
-    let mut nearby: Vec<NearbySettlement> = settlements
+    let mut nearby: Vec<TravelDestination> = settlements
         .into_iter()
         .map(|settlement| {
             let distance_m = straight_line_distance_m(quest, &settlement);
-            NearbySettlement {
+            TravelDestination {
                 settlement,
                 distance_m,
+                journey_minutes: ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64,
             }
         })
         .collect();
@@ -514,24 +557,44 @@ async fn quest_location(
         .await
         .unwrap_or_default();
     let party_members = get_active_party_members(&state, character.as_ref()).await;
-    Html(
-        quest_location_page(
+    let logged_in_as = character.as_ref().map(|c| c.name.as_str());
+    let page = match tab {
+        QuestLocationTab::Base => quest_location_base_page(
+            quest,
+            character.as_ref(),
+            &party_members,
+            can_fight,
+            resolved,
+            logged_in_as,
+            session.theme(),
+        ),
+        QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
             &nearby,
+            selected.as_deref(),
             character.as_ref(),
             &party_members,
             can_control,
+            can_fight,
+            resolved,
+            logged_in_as,
+            session.theme(),
+        ),
+        QuestLocationTab::Loot => quest_location_page(
+            quest,
+            character.as_ref(),
+            &party_members,
             can_fight,
             resolved,
             &loot,
             &pooled,
             stake,
             &items,
-            character.as_ref().map(|c| c.name.as_str()),
+            logged_in_as,
             session.theme(),
-        )
-        .into_string(),
-    )
+        ),
+    };
+    Html(page.into_string())
 }
 
 async fn autoresolve_quest(
@@ -552,7 +615,7 @@ async fn autoresolve_quest(
     {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
-    Redirect::to(&format!("/quests/{id}/location"))
+    Redirect::to(&format!("/locations/quest/{id}/loot"))
 }
 
 fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -> u64 {

@@ -20,63 +20,66 @@ use crate::spacetimedb::{
 };
 use crate::templates::recruitment::PartyCheckSummary;
 use crate::templates::settlement::{
-    MerchantShop, RecruitingPartyRole, RestSummary, inn_page, live_merchant_shop_page,
-    merchants_page, noticeboard_page, party_discard_page, party_inventory_page,
-    party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
-    settlement_overview_page, settlements_list_page, smith_page,
+    LocationView, MerchantShop, RecruitingPartyRole, RestSummary, inn_page,
+    live_merchant_shop_page, merchants_page, noticeboard_page, party_discard_page,
+    party_inventory_page, party_personal_page, party_pool_page, party_stats_page, religion_page,
+    rest_result_page, settlement_map_page, settlement_overview_page, settlements_list_page,
+    smith_page,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
+        .route("/locations/settlement/{id}", get(show_settlement_location))
+        .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/settlements/{id}/noticeboard", get(noticeboard))
         .route(
-            "/settlements/{id}/party/{character_id}",
+            "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory",
+            "/locations/{kind}/{id}/party/{character_id}/inventory",
             get(party_member),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory/transfer",
+            "/locations/{kind}/{id}/party/{character_id}/inventory/transfer",
             post(transfer_party_item),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/remove",
+            "/locations/{kind}/{id}/party/{character_id}/remove",
             post(remove_party_member),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory/offer",
+            "/locations/{kind}/{id}/party/{character_id}/inventory/offer",
             post(finalize_party_offer),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory/discard",
+            "/locations/{kind}/{id}/party/{character_id}/inventory/discard",
             post(discard_inventory_items),
         )
         .route(
-            "/settlements/{id}/party-inventory",
+            "/locations/{kind}/{id}/party-inventory",
             get(party_pool_inventory),
         )
         .route(
-            "/settlements/{id}/party-inventory/deposit",
+            "/locations/{kind}/{id}/party-inventory/deposit",
             post(deposit_party_inventory),
         )
         .route(
-            "/settlements/{id}/party-inventory/withdraw",
+            "/locations/{kind}/{id}/party-inventory/withdraw",
             post(withdraw_party_inventory),
         )
         .route(
-            "/settlements/{id}/party-inventory/liquidate",
+            "/locations/{kind}/{id}/party-inventory/liquidate",
             post(liquidate_party_assets),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/stats",
+            "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/schedule",
+            "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
         )
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
@@ -109,9 +112,53 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
     )
 }
 
-async fn show_settlement(
+async fn show_settlement(Path(id): Path<String>) -> Redirect {
+    Redirect::to(&format!("/locations/settlement/{id}"))
+}
+
+async fn show_settlement_location(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query("SELECT * FROM settlement")
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        settlement_overview_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Default, Deserialize)]
+struct LocationMapQuery {
+    destination: Option<String>,
+}
+
+async fn settlement_map(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<LocationMapQuery>,
     session: Session,
 ) -> Html<String> {
     let settlements: Vec<Settlement> = state
@@ -134,20 +181,20 @@ async fn show_settlement(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
     let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
     Html(
-        settlement_overview_page(
+        settlement_map_page(
             settlement,
             &destinations,
+            query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             can_travel,
-            logged_in_as.as_deref(),
+            active_character
+                .as_ref()
+                .map(|(character, _)| character.name.as_str()),
             session.theme(),
         )
         .into_string(),
@@ -508,9 +555,44 @@ struct NoticeboardQuery {
     quest: Option<String>,
 }
 
+async fn resolve_location(state: &AppState, kind: &str, id: &str) -> Option<LocationView> {
+    let name = match kind {
+        "settlement" => state
+            .db
+            .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .map(|settlement| settlement.name),
+        "quest" => state
+            .db
+            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .map(|quest| quest.title),
+        _ => None,
+    }?;
+    Some(LocationView {
+        kind: kind.to_string(),
+        id: id.to_string(),
+        name,
+    })
+}
+
+fn character_is_at_location(character: &Character, location: &LocationView) -> bool {
+    match location.kind.as_str() {
+        "settlement" => character.current_settlement_id.as_deref() == Some(location.id.as_str()),
+        "quest" => character.current_quest_location_id.as_deref() == Some(location.id.as_str()),
+        _ => false,
+    }
+}
+
 async fn party_personal(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
     if let Some(character_id) = session.character_id_u64() {
@@ -522,19 +604,17 @@ async fn party_personal(
             tracing::error!("Failed to liquidate party inventory: {error:?}");
         }
     }
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
+    }
     if character_id != active_character.id {
         return Html("<h1>Party member not found</h1>".to_string());
     }
@@ -570,7 +650,7 @@ async fn party_personal(
     let capability = get_character_capability(&state, character_id).await;
     Html(
         party_personal_page(
-            settlement,
+            &location,
             &active_character,
             &party_members,
             capability.as_ref(),
@@ -602,7 +682,7 @@ struct TrainingScheduleForm {
 
 async fn update_training_schedule(
     State(state): State<AppState>,
-    Path((settlement_id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<TrainingScheduleForm>,
 ) -> Redirect {
@@ -629,23 +709,16 @@ async fn update_training_schedule(
             )
             .await;
     }
-    Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{character_id}"
-    ))
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 async fn party_member(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
 
     let Some((active_character, active_inventory)) =
@@ -653,6 +726,9 @@ async fn party_member(
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
+    }
     let party_members = get_active_party_members(&state, Some(&active_character)).await;
     if character_id != active_character.id
         && !party_members.iter().any(|member| member.id == character_id)
@@ -715,7 +791,7 @@ async fn party_member(
     if character_id == active_character.id {
         return Html(
             party_discard_page(
-                settlement,
+                &location,
                 &active_character,
                 &active_inventory,
                 &items,
@@ -729,7 +805,7 @@ async fn party_member(
 
     Html(
         party_inventory_page(
-            settlement,
+            &location,
             &selected,
             &selected_inventory,
             &active_character,
@@ -746,24 +822,19 @@ async fn party_member(
 
 async fn party_pool_inventory(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path((kind, id)): Path<(String, String)>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".into());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".into());
     };
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".into());
     };
-    if character.current_settlement_id.as_deref() != Some(&id) {
-        return Html("<h1>Your party is not at this settlement</h1>".into());
+    if !character_is_at_location(&character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".into());
     }
     let Some(party_id) = character.party_id.as_ref() else {
         return Html("<h1>Character has no party</h1>".into());
@@ -804,7 +875,7 @@ async fn party_pool_inventory(
         .map_or(0, |stake| stake.value);
     Html(
         party_pool_page(
-            settlement,
+            &location,
             &character,
             &inventory,
             &pooled,
@@ -831,7 +902,7 @@ fn one() -> u32 {
 
 async fn deposit_party_inventory(
     State(state): State<AppState>,
-    Path(settlement_id): Path<String>,
+    Path((kind, id)): Path<(String, String)>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -848,12 +919,12 @@ async fn deposit_party_inventory(
             )
             .await;
     }
-    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
 }
 
 async fn withdraw_party_inventory(
     State(state): State<AppState>,
-    Path(settlement_id): Path<String>,
+    Path((kind, id)): Path<(String, String)>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -870,35 +941,37 @@ async fn withdraw_party_inventory(
             )
             .await;
     }
-    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
 }
 
 async fn liquidate_party_assets(
     State(state): State<AppState>,
-    Path(settlement_id): Path<String>,
+    Path((kind, id)): Path<(String, String)>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
-    if let Some(character_id) = session.character_id_u64() {
+    if kind == "settlement"
+        && let Some(character_id) = session.character_id_u64()
+    {
         let _ = state
             .db
             .call(
                 "liquidate_party_inventory",
                 &[
                     json!(character_id),
-                    json!(settlement_id.clone()),
+                    json!(id.clone()),
                     json!(vec![form.item_id]),
                     json!(vec![form.quantity]),
                 ],
             )
             .await;
     }
-    Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
 }
 
 async fn remove_party_member(
     State(state): State<AppState>,
-    Path((settlement_id, member_character_id)): Path<(String, u64)>,
+    Path((kind, id, member_character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Redirect {
     if let Some(actor_character_id) = session.character_id_u64() {
@@ -913,27 +986,25 @@ async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&format!("/settlements/{settlement_id}"))
+    Redirect::to(&format!("/locations/{kind}/{id}"))
 }
 
 async fn party_stats(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
+    }
     let party_members = get_active_party_members(&state, Some(&active_character)).await;
     if character_id != active_character.id
         && !party_members.iter().any(|member| member.id == character_id)
@@ -979,7 +1050,7 @@ async fn party_stats(
     let capability = get_character_capability(&state, character_id).await;
     Html(
         party_stats_page(
-            settlement,
+            &location,
             &selected,
             &active_character,
             &party_members,
@@ -1016,7 +1087,7 @@ struct DiscardInventoryForm {
 
 async fn discard_inventory_items(
     State(state): State<AppState>,
-    Path((settlement_id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<DiscardInventoryForm>,
 ) -> Redirect {
@@ -1045,13 +1116,13 @@ async fn discard_inventory_items(
         }
     }
     Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{character_id}/inventory"
+        "/locations/{kind}/{id}/party/{character_id}/inventory"
     ))
 }
 
 async fn finalize_party_offer(
     State(state): State<AppState>,
-    Path((settlement_id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
@@ -1096,13 +1167,13 @@ async fn finalize_party_offer(
         }
     }
     Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{character_id}/inventory"
+        "/locations/{kind}/{id}/party/{character_id}/inventory"
     ))
 }
 
 async fn transfer_party_item(
     State(state): State<AppState>,
-    Path((settlement_id, recipient_id)): Path<(String, u64)>,
+    Path((kind, id, recipient_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<PartyTransferForm>,
 ) -> Redirect {
@@ -1112,7 +1183,7 @@ async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&format!("/settlements/{settlement_id}"));
+        return Redirect::to(&format!("/locations/{kind}/{id}"));
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -1140,7 +1211,7 @@ async fn transfer_party_item(
         form.from_character_id
     };
     Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{comparison_character_id}/inventory"
+        "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
     ))
 }
 
@@ -1556,7 +1627,7 @@ async fn travel(
         )
         .await;
 
-    Redirect::to(&format!("/settlements/{}", id))
+    Redirect::to(&format!("/locations/settlement/{}", id))
 }
 
 /// Helper to get character name for session display

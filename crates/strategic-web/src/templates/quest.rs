@@ -6,11 +6,14 @@ use super::{
     base_layout_with_session, difficulty_stars, divider, empty_state, gold_display, list_item,
     panel, sidebar_section, status_badge,
 };
+use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest};
 use crate::{
-    routes::quests::NearbySettlement,
     spacetimedb::Character,
-    templates::settlement::{party_portrait_overlay, settlement_chat_area, visual_stage},
+    templates::settlement::{
+        map_destination_detail, map_destination_list, party_portrait_overlay, settlement_chat_area,
+        visual_stage,
+    },
 };
 
 /// List all quests
@@ -201,13 +204,108 @@ pub fn quests_list_fragment(quests: &[Quest]) -> Markup {
     }
 }
 
-/// Off-road strategic location reached after accepting and travelling to a quest.
-pub fn quest_location_page(
+pub fn quest_location_base_page(
     quest: &Quest,
-    nearby: &[NearbySettlement],
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    can_fight: bool,
+    resolved: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Location", html! { p { (&quest.location_description) } }))
+        }
+        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
+        aside class="right-sidebar" aria-label="Location details" {}
+    };
+    super::quest_location_layout_with_session(
+        &quest.title,
+        &quest.title,
+        &quest.id,
+        "",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+pub fn quest_location_map_page(
+    quest: &Quest,
+    nearby: &[TravelDestination],
+    selected_id: Option<&str>,
     active_character: Option<&Character>,
     party_members: &[Character],
     can_travel: bool,
+    can_fight: bool,
+    resolved: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.settlement.id == id));
+    let content = html! {
+        (map_destination_list(
+            nearby,
+            selected_id,
+            &format!("/locations/quest/{}/map", quest.id),
+        ))
+        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
+        (map_destination_detail(selected, can_travel))
+    };
+    super::quest_location_layout_with_session(
+        &format!("{} map", quest.title),
+        &quest.title,
+        &quest.id,
+        "map",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+fn quest_location_center(
+    quest: &Quest,
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    can_fight: bool,
+    resolved: bool,
+) -> Markup {
+    html! {
+        main class="center-content settlement-main quest-location-main" {
+            (party_portrait_overlay(
+                party_members,
+                active_character,
+                &format!("/locations/quest/{}", quest.id),
+                None,
+            ))
+            div class="quest-visual-wrap" {
+                (visual_stage("map", &quest.title, "TODO: quest location image"))
+                div class="quest-combat-actions" aria-label="Quest actions" {
+                    @if can_fight {
+                        form action="/missions/enter" method="post" {
+                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                        }
+                        form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
+                            button type="submit" class="btn btn-primary" { "Autoresolve" }
+                        }
+                    } @else if resolved {
+                        span class="badge badge-info" { "Quest resolved" }
+                    } @else {
+                        span class="badge badge-info" { "Waiting for party leader" }
+                    }
+                }
+            }
+            (settlement_chat_area(&quest.title, active_character))
+        }
+    }
+}
+
+/// Loot and shared inventory at an off-road quest location.
+pub fn quest_location_page(
+    quest: &Quest,
+    active_character: Option<&Character>,
+    party_members: &[Character],
     can_fight: bool,
     resolved: bool,
     loot: &[BattleLootItem],
@@ -243,47 +341,7 @@ pub fn quest_location_page(
             }))
         }
 
-        main class="center-content settlement-main quest-location-main" {
-            (party_portrait_overlay(
-                party_members,
-                active_character,
-                &quest.settlement_id,
-                None,
-            ))
-            div class="quest-visual-wrap" {
-                (visual_stage("map", &quest.title, "TODO: quest location image"))
-                div class="quest-combat-actions" aria-label="Quest actions" {
-                    @if can_fight {
-                        form action="/missions/enter" method="post" {
-                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
-                        }
-                        form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
-                            button type="submit" class="btn btn-primary" { "Autoresolve" }
-                        }
-                    } @else if resolved {
-                        span class="badge badge-info" { "Quest resolved" }
-                    } @else {
-                        span class="badge badge-info" { "Waiting for party leader" }
-                    }
-                    @if can_travel {
-                        details class="quest-travel-menu" {
-                            summary class="btn btn-secondary" { "Travel" }
-                            div class="quest-travel-options" {
-                                @for destination in nearby {
-                                    form method="post" action=(format!("/settlements/{}/travel", destination.settlement.id)) {
-                                        button type="submit" class="btn btn-secondary btn-small" {
-                                            (&destination.settlement.name)
-                                            " · " (format_distance(destination.distance_m))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            (settlement_chat_area(&quest.title, active_character))
-        }
+        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
 
         aside class="right-sidebar" {
             (sidebar_section("Party inventory", html! {
@@ -314,6 +372,8 @@ pub fn quest_location_page(
     super::quest_location_layout_with_session(
         &quest.title,
         &quest.title,
+        &quest.id,
+        "loot",
         content,
         logged_in_as,
         theme,
@@ -390,17 +450,13 @@ pub fn post_battle_page(
                 @if loot.is_empty() {
                     p class="small-copy text-muted" { "Your share of the new loot has been credited at its objective value." }
                     @if let Some(settlement_id) = &character.current_settlement_id {
-                        a class="btn btn-primary btn-block" href=(format!("/settlements/{}/party-inventory", settlement_id)) { "Open party inventory" }
+                        a class="btn btn-primary btn-block" href=(format!("/locations/settlement/{}/party-inventory", settlement_id)) { "Open party inventory" }
                     } @else {
-                        a class="btn btn-secondary btn-block" href=(format!("/quests/{}/location", quest.id)) { "Return to location" }
+                        a class="btn btn-secondary btn-block" href=(format!("/locations/quest/{}", quest.id)) { "Return to location" }
                     }
                 }
             }))
         }
     };
     base_layout_with_session("Battle spoils", content, Some(&character.name), theme)
-}
-
-fn format_distance(distance_m: u64) -> String {
-    format!("{:.1} km", distance_m as f64 / 1_000.0)
 }
