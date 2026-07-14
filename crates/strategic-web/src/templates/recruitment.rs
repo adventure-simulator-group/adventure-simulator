@@ -154,10 +154,9 @@ pub fn recruitment_panel(
                             (combat_requirements())
                             div class="role-requirement-group" {
                                 header class="role-requirement-heading" {
-                                    h3 { "Armor & mobility" }
-                                    p { "Protection and physical capability" }
+                                    h3 { "Mobility" }
+                                    p { "Movement and sustained physical capability" }
                                 }
-                                (armor_requirement())
                                 (numeric_requirement("athletics", "Athletics"))
                                 (numeric_requirement("endurance", "Endurance"))
                             }
@@ -353,6 +352,7 @@ fn combat_requirements() -> Markup {
             }
         }
         (weapon_precision_requirement())
+        (armor_requirement())
     } }
 }
 
