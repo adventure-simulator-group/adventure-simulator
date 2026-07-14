@@ -1669,26 +1669,51 @@
 }
 
 .party-aggregate-checks {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 0.2rem 0.45rem;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
   align-self: center;
-  padding: 0.3rem 0.45rem;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 85%));
 }
 
 .party-aggregate-check {
   display: flex;
+  min-width: 2.8rem;
+  flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
-  color: var(--text-muted);
+  justify-content: center;
+  gap: 0.05rem;
+  color: var(--text-primary);
   font-size: 0.68rem;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 95%), 0 0 4px rgb(0 0 0 / 75%);
 }
 
+.party-aggregate-check-value { display: flex; align-items: center; gap: 0.18rem; white-space: nowrap; }
 .party-aggregate-check .stat-icon { width: 0.8rem; height: 0.8rem; }
 .party-aggregate-check.deficient { color: var(--warning, #d99b2b); }
+.party-check-adjust-form { display: flex; height: 0.45rem; margin: 0; }
+.party-check-adjust {
+  width: 1.15rem;
+  height: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 90%));
+}
+.party-check-adjust::before {
+  display: block;
+  width: 0;
+  height: 0;
+  margin: auto;
+  border-right: 0.5rem solid transparent;
+  border-left: 0.5rem solid transparent;
+  content: "";
+}
+.party-check-adjust-up::before { border-bottom: 0.34rem solid currentcolor; }
+.party-check-adjust-down::before { border-top: 0.34rem solid currentcolor; }
+.party-check-adjust:hover,
+.party-check-adjust:focus-visible { color: var(--accent); transform: scale(1.08); }
 
 .party-portrait:hover .party-recruitment-plus,
 .party-portrait:focus-within .party-recruitment-plus {
@@ -1805,8 +1830,6 @@
 .role-slider-ticks-armor { font-size: 0.6rem; }
 .role-slider-ticks-precision { font-size: 0.6rem; }
 .saved-role-list, .active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
-.party-check-targets { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light); }
-.party-check-target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem 1rem; margin: 0.65rem 0; }
 .saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
 .role-applicant-warning, .role-warning { color: var(--warning, #d99b2b); }

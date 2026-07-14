@@ -44,10 +44,10 @@ pub fn recruitment_panel(
             data-can-manage=(can_manage)
         {
             div class="party-aggregate-checks" data-party-aggregate-checks {
-                (aggregate_check_badge("Medicine", "medicine", checks.medicine, party.medicine_target))
-                (aggregate_check_badge("Surgery", "surgeon", checks.surgery, party.surgery_target))
-                (aggregate_check_badge("Charisma", "charisma", checks.charisma, party.charisma_target))
-                (aggregate_check_badge("Faith", "faith", checks.faith, party.faith_target))
+                (aggregate_check_control(party, "Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, can_manage))
+                (aggregate_check_control(party, "Surgery", "surgeon", "surgery", checks.surgery, party.surgery_target, can_manage))
+                (aggregate_check_control(party, "Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, can_manage))
+                (aggregate_check_control(party, "Faith", "faith", "faith", checks.faith, party.faith_target, can_manage))
             }
             div data-party-slot-groups hidden {
                 @for panel in roles {
@@ -102,17 +102,6 @@ pub fn recruitment_panel(
                         button class="dialog-close" aria-label="Close recruitment" { "×" }
                     }
                     h2 { "Recruit party roles" }
-                    form action="/party-recruitment/check-targets" method="post" class="party-check-targets" {
-                        h3 { "Party-level check targets" }
-                        p class="small-copy text-muted" { "These goals describe party deficiencies; they do not filter applicants." }
-                        div class="party-check-target-grid" {
-                            (party_target_requirement("medicine", "Medicine", party.medicine_target))
-                            (party_target_requirement("surgery", "Surgery", party.surgery_target))
-                            (party_target_requirement("charisma", "Charisma", party.charisma_target))
-                            (party_target_requirement("faith", "Faith", party.faith_target))
-                        }
-                        button type="submit" class="btn btn-secondary btn-small" { "Save party targets" }
-                    }
                     @if !saved_roles.is_empty() {
                         section class="saved-role-section" {
                             h3 { "Saved roles" }
@@ -356,24 +345,68 @@ fn numeric_requirement(name: &str, label: &str) -> Markup {
     } }
 }
 
-fn party_target_requirement(name: &str, label: &str, value: f32) -> Markup {
-    html! { label class="role-slider" {
-        span class="role-slider-heading" { span { (label) } output data-slider-output=(name) { (format!("{value:.1}")) } }
-        input type="range" name=(name) min="0" max="8" step="0.5" value=(value)
-            data-discrete-slider data-slider-labels="Off|0.5|1.0|1.5|2.0|2.5|3.0|3.5|4.0|4.5|5.0|5.5|6.0|6.5|7.0|7.5|8.0";
-        span class="role-slider-ticks" aria-hidden="true" { span { "Off" } span { "2" } span { "4" } span { "6" } span { "8" } }
-    } }
-}
-
-fn aggregate_check_badge(label: &str, icon: &str, current: f32, target: f32) -> Markup {
+fn aggregate_check_control(
+    party: &Party,
+    label: &str,
+    icon: &str,
+    field: &str,
+    current: f32,
+    target: f32,
+    can_manage: bool,
+) -> Markup {
     let deficient = target > 0.0 && current + 0.001 < target;
     html! {
-        span class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
-            title=(if target > 0.0 { format!("{label}: {current:.2} / target {target:.1}") } else { format!("{label}: {current:.2}") }) {
-            span class=(format!("stat-icon stat-icon-{icon}"))
-                style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
-                role="img" aria-label=(label) {}
-            strong { (format!("{current:.1}")) }
+        div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
+            title=(format!("{label}: {current:.2} / target {target:.1}")) {
+            @if can_manage {
+                (party_check_adjust_form(party, field, (target + 0.5).min(8.0), label, true))
+            }
+            span class="party-aggregate-check-value" {
+                span class=(format!("stat-icon stat-icon-{icon}"))
+                    style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
+                    role="img" aria-label=(label) {}
+                strong { (format!("{current:.1}/{target:.1}")) }
+            }
+            @if can_manage {
+                (party_check_adjust_form(party, field, (target - 0.5).max(0.0), label, false))
+            }
+        }
+    }
+}
+
+fn party_check_adjust_form(
+    party: &Party,
+    field: &str,
+    adjusted_target: f32,
+    label: &str,
+    increase: bool,
+) -> Markup {
+    let mut medicine = party.medicine_target;
+    let mut surgery = party.surgery_target;
+    let mut charisma = party.charisma_target;
+    let mut faith = party.faith_target;
+    match field {
+        "medicine" => medicine = adjusted_target,
+        "surgery" => surgery = adjusted_target,
+        "charisma" => charisma = adjusted_target,
+        "faith" => faith = adjusted_target,
+        _ => {}
+    }
+    let direction = if increase { "Increase" } else { "Decrease" };
+    let class = if increase {
+        "party-check-adjust party-check-adjust-up"
+    } else {
+        "party-check-adjust party-check-adjust-down"
+    };
+    html! {
+        form action="/party-recruitment/check-targets" method="post" class="party-check-adjust-form" {
+            input type="hidden" name="medicine" value=(medicine);
+            input type="hidden" name="surgery" value=(surgery);
+            input type="hidden" name="charisma" value=(charisma);
+            input type="hidden" name="faith" value=(faith);
+            button type="submit" class=(class)
+                aria-label=(format!("{direction} {label} target"))
+                title=(format!("{direction} {label} target to {adjusted_target:.1}")) {}
         }
     }
 }
