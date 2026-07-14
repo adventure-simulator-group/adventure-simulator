@@ -24,6 +24,7 @@
 
     const aggregateChecks = panel.querySelector("[data-party-aggregate-checks]");
     const partyChest = overlay.querySelector(".party-inventory-portrait");
+    if (partyChest && leaderPortrait) overlay.insertBefore(partyChest, leaderPortrait);
     if (aggregateChecks) {
       if (partyChest) overlay.insertBefore(aggregateChecks, partyChest);
       else overlay.prepend(aggregateChecks);

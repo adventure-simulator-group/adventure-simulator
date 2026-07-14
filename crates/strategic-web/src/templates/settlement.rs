@@ -980,9 +980,12 @@ fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
     html! {
         span class="inventory-target-control" data-target-control data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
-            button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
-            span class="inventory-target-value" { (quantity) "/" span data-target-value { (target) } }
-            @if target > 0 { button type="button" class="inventory-target-step inventory-target-down" data-target-step="-1" aria-label=(format!("Decrease {} target", item_id)) { "⌄" } }
+            span class="inventory-target-prefix" { (quantity) "/" }
+            span class="inventory-target-denominator" {
+                button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
+                span class="inventory-target-value" data-target-value { (target) }
+                button type="button" class="inventory-target-step inventory-target-down" data-target-step="-1" aria-label=(format!("Decrease {} target", item_id)) hidden[target == 0] { "⌄" }
+            }
         }
     }
 }

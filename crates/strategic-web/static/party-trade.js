@@ -12,6 +12,28 @@ function mountInventoryBulkControls() {
   });
 }
 
+function changeInventoryTarget(control, change) {
+  const value = control?.querySelector("[data-target-value]");
+  const row = control?.closest("tr");
+  if (!value || !row) return;
+
+  const quantity = Math.max(0, Number(value.textContent) + change);
+  value.textContent = String(quantity);
+  row.dataset.target = String(quantity);
+  control.title = `Carrying ${row.dataset.inventoryQuantity || 0}; target ${quantity}`;
+  const down = control.querySelector('[data-target-step="-1"]');
+  if (down) down.hidden = quantity === 0;
+
+  fetch("/api/inventory-target", {
+    method: "POST",
+    body: new URLSearchParams({
+      item_id: control.dataset.itemId,
+      quantity: String(quantity),
+      party_scope: control.dataset.partyScope,
+    }),
+  });
+}
+
 function setTradeDraftCount(row, draftChange) {
   const count = row.querySelector(".inventory-count");
   count.dataset.base ||= count.textContent.trim();
@@ -192,17 +214,8 @@ document.addEventListener("click", (event) => {
   }
   const targetStep = event.target.closest("[data-target-step]");
   if (targetStep) {
-    const control = targetStep.closest("[data-target-control]");
-    const value = control.querySelector("[data-target-value]");
-    const quantity = Math.max(0, Number(value.textContent) + Number(targetStep.dataset.targetStep));
-    value.textContent = String(quantity);
-    control.closest("tr").dataset.target = String(quantity);
-    let down = control.querySelector('[data-target-step="-1"]');
-    if (!down && quantity > 0) {
-      down = targetStep.cloneNode(true); down.dataset.targetStep = "-1"; down.classList.replace("inventory-target-up", "inventory-target-down"); down.textContent = "⌄"; control.append(down);
-    }
-    if (down) down.hidden = quantity === 0;
-    fetch("/api/inventory-target", { method: "POST", body: new URLSearchParams({ item_id: control.dataset.itemId, quantity: String(quantity), party_scope: control.dataset.partyScope }) });
+    event.preventDefault();
+    changeInventoryTarget(targetStep.closest("[data-target-control]"), Number(targetStep.dataset.targetStep));
     return;
   }
   const bulk = event.target.closest("[data-inventory-bulk]");
@@ -391,11 +404,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("wheel", (event) => {
-  const control = event.target.closest("[data-target-control]");
+  const cell = event.target.closest(".inventory-count");
+  const control = cell?.querySelector("[data-target-control]");
   if (!control) return;
   event.preventDefault();
-  const selector = event.deltaY < 0 ? '[data-target-step="1"]' : '[data-target-step="-1"]';
-  control.querySelector(selector)?.click();
+  changeInventoryTarget(control, event.deltaY < 0 ? 1 : -1);
 }, { passive: false });
 
 if (document.readyState === "loading") {
