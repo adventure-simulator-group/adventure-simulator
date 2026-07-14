@@ -24,3 +24,9 @@ includes **Offer** and **Cancel** controls; Cancel discards the entire draft.
 Equipped inventory stacks remain separate from unequipped stacks. Merchant
 purchases are always added to an unequipped stack (or a new stack), and the UI
 does not offer transfer or sale controls for an equipped stack.
+
+The backpack action beneath the active character portrait opens the inventory
+discard view. Discarding follows the same draft-first interaction as trading:
+the player stages quantities into the left-side **Discard** list, may cancel the
+draft, and must press **Discard** before the server removes anything. Equipped
+items are never eligible for deletion.

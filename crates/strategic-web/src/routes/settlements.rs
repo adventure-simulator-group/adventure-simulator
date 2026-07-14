@@ -19,8 +19,9 @@ use crate::spacetimedb::{
 };
 use crate::templates::settlement::{
     MerchantShop, RecruitingPartyRole, RestSummary, inn_page, live_merchant_shop_page,
-    merchants_page, noticeboard_page, party_inventory_page, party_personal_page, party_stats_page,
-    religion_page, rest_result_page, settlement_overview_page, settlements_list_page, smith_page,
+    merchants_page, noticeboard_page, party_discard_page, party_inventory_page,
+    party_personal_page, party_stats_page, religion_page, rest_result_page,
+    settlement_overview_page, settlements_list_page, smith_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -43,6 +44,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/settlements/{id}/party/{character_id}/inventory/offer",
             post(finalize_party_offer),
+        )
+        .route(
+            "/settlements/{id}/party/{character_id}/inventory/discard",
+            post(discard_inventory_items),
         )
         .route(
             "/settlements/{id}/party/{character_id}/stats",
@@ -423,7 +428,7 @@ async fn party_personal(
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
-    let Some((active_character, active_inventory)) =
+    let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
@@ -460,12 +465,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let capability = get_character_capability(&state, character_id).await;
     Html(
         party_personal_page(
             settlement,
             &active_character,
-            &active_inventory,
             &party_members,
+            capability.as_ref(),
             attributes.first(),
             skills.first(),
             limbs.first(),
@@ -604,6 +610,21 @@ async fn party_member(
         .await
         .unwrap_or_default();
 
+    if character_id == active_character.id {
+        return Html(
+            party_discard_page(
+                settlement,
+                &active_character,
+                &active_inventory,
+                &items,
+                &party_members,
+                active_equip.first(),
+                session.theme(),
+            )
+            .into_string(),
+        );
+    }
+
     Html(
         party_inventory_page(
             settlement,
@@ -681,40 +702,17 @@ async fn party_stats(
         ))
         .await
         .unwrap_or_default();
-    let active_id = active_character.id;
-    let active_attributes: Vec<CharacterAttributes> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let active_skills: Vec<CharacterSkills> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let active_limbs: Vec<CharacterLimbs> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
+    let capability = get_character_capability(&state, character_id).await;
     Html(
         party_stats_page(
             settlement,
             &selected,
             &active_character,
             &party_members,
+            capability.as_ref(),
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
-            active_attributes.first(),
-            active_skills.first(),
-            active_limbs.first(),
             session.theme(),
         )
         .into_string(),
@@ -734,6 +732,47 @@ struct PartyOfferForm {
     to_character_ids: String,
     inventory_item_ids: String,
     quantities: String,
+}
+
+#[derive(Deserialize)]
+struct DiscardInventoryForm {
+    inventory_item_ids: String,
+    quantities: String,
+}
+
+async fn discard_inventory_items(
+    State(state): State<AppState>,
+    Path((settlement_id, character_id)): Path<(String, u64)>,
+    session: Session,
+    Form(form): Form<DiscardInventoryForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        let item_ids = form
+            .inventory_item_ids
+            .split(',')
+            .map(str::parse::<u64>)
+            .collect::<Result<Vec<_>, _>>();
+        let quantities = form
+            .quantities
+            .split(',')
+            .map(str::parse::<u32>)
+            .collect::<Result<Vec<_>, _>>();
+        if let (Ok(item_ids), Ok(quantities)) = (item_ids, quantities) {
+            if let Err(error) = state
+                .db
+                .call(
+                    "discard_inventory_items",
+                    &[json!(character_id), json!(item_ids), json!(quantities)],
+                )
+                .await
+            {
+                tracing::warn!("Inventory discard failed: {error}");
+            }
+        }
+    }
+    Redirect::to(&format!(
+        "/settlements/{settlement_id}/party/{character_id}/inventory"
+    ))
 }
 
 async fn finalize_party_offer(
@@ -1475,6 +1514,25 @@ async fn get_active_character(
         .await
         .unwrap_or_default();
     Some((character, inventory))
+}
+
+async fn get_character_capability(
+    state: &AppState,
+    character_id: u64,
+) -> Option<CharacterCapability> {
+    let _ = state
+        .db
+        .call("refresh_capabilities", &[json!(character_id)])
+        .await;
+    state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_capability WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
 }
 
 async fn get_active_party_members(

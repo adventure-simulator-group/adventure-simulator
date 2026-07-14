@@ -121,19 +121,5 @@
     });
   }
 
-  document.addEventListener("pointerenter", async (event) => {
-    const portrait = event.target.closest?.("[data-character-id]");
-    if (!portrait || portrait.dataset.tagsLoaded) return;
-    portrait.dataset.tagsLoaded = "true";
-    const response = await fetch(`/characters/${portrait.dataset.characterId}/capabilities`);
-    if (!response.ok) return;
-    const { tags = [] } = await response.json();
-    const target = portrait.querySelector("[data-character-tags]");
-    if (target) {
-      target.textContent = tags.join(" · ");
-      target.hidden = tags.length === 0;
-    }
-  }, true);
-
   loadRecruitment().catch(() => {});
 })();

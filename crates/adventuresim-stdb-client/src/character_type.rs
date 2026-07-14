@@ -18,6 +18,7 @@ pub struct Character {
     pub server: __sdk::Identity,
     pub in_server: bool,
     pub temporary: bool,
+    pub age_years: u16,
 }
 
 impl __sdk::InModule for Character {

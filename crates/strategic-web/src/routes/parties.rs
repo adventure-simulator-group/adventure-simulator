@@ -385,46 +385,11 @@ async fn character_capabilities(
         .into_iter()
         .next();
     Json(CapabilityResponse {
-        tags: capability.map(capability_tags).unwrap_or_default(),
+        tags: capability
+            .as_ref()
+            .map(CharacterCapability::summary_tags)
+            .unwrap_or_default(),
     })
-}
-
-fn capability_tags(c: CharacterCapability) -> Vec<String> {
-    let mut tags = Vec::new();
-    for (enabled, label) in [(c.melee, "Melee"), (c.ranged, "Ranged"), (c.heavy, "Heavy")] {
-        if enabled {
-            tags.push(label.into());
-        }
-    }
-    if let Some(label) =
-        adventuresim_core::capability::weapon_precision_tier_label(c.weapon_precision)
-    {
-        tags.push(label.into());
-    }
-    if c.full_armor {
-        tags.push("Full armor".into());
-    } else if c.three_quarter_armor {
-        tags.push("3/4 armor".into());
-    } else if c.half_armor {
-        tags.push("1/2 armor".into());
-    } else if c.quarter_armor {
-        tags.push("1/4 armor".into());
-    }
-    for (value, label) in [
-        (c.athletics, "Athletics"),
-        (c.endurance, "Endurance"),
-        (c.medicine, "Medicine"),
-        (c.surgery, "Surgery"),
-        (c.charisma, "Charisma"),
-        (c.faith, "Faith"),
-    ] {
-        if adventuresim_core::capability::rating(value)
-            >= adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT
-        {
-            tags.push(label.into());
-        }
-    }
-    tags
 }
 
 async fn accept_join_request(

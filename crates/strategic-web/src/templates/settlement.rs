@@ -13,8 +13,9 @@ use super::{
 };
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, Party, PartyRecruitmentRole, Quest, Settlement,
+    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, Party, PartyRecruitmentRole, Quest,
+    Settlement,
 };
 
 pub struct RecruitingPartyRole {
@@ -442,12 +443,58 @@ pub fn party_inventory_page(
     )
 }
 
+/// The active character's inventory with a staged discard list.
+pub fn party_discard_page(
+    settlement: &Settlement,
+    active_character: &Character,
+    inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    party_members: &[Character],
+    equip: Option<&CharacterEquip>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Discard", html! {
+                p class="text-muted small-copy" data-discard-empty { "Stage carried items here before discarding them." }
+                table class="trade-inventory-table" data-discard-table hidden {
+                    (trade_inventory_table_header(false))
+                    tbody data-discard-list {}
+                }
+            }))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
+            (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
+            (settlement_chat_area(&active_character.name, Some(active_character)))
+            form id="inventory-discard" class="party-offer"
+                action=(format!("/settlements/{}/party/{}/inventory/discard", settlement.id, active_character.id))
+                method="post" hidden {
+                button type="button" class="party-offer-cancel" data-cancel-trade="discard" { "Cancel" }
+                button type="submit" disabled { "Discard" }
+            }
+        }
+        aside class="right-sidebar" {
+            (discard_inventory_rail(active_character, inventory, items, equip))
+        }
+    };
+    settlement_layout_with_session(
+        "Inventory",
+        &settlement.name,
+        &settlement.id,
+        "",
+        content,
+        Some(&active_character.name),
+        theme,
+    )
+}
+
 /// Active character's combined strategic view.
 pub fn party_personal_page(
     settlement: &Settlement,
     active_character: &Character,
-    active_inventory: &[InventoryItem],
     party_members: &[Character],
+    capability: Option<&CharacterCapability>,
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
@@ -456,6 +503,7 @@ pub fn party_personal_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
+            (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs))
             @let schedule_action = format!("/settlements/{}/party/{}/schedule", settlement.id, active_character.id);
             (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
@@ -465,7 +513,7 @@ pub fn party_personal_page(
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
-        aside class="right-sidebar" { (inventory_rail(Some(active_character), active_inventory, None, false)) }
+        aside class="right-sidebar" { (character_bio_rail(active_character)) }
     };
     settlement_layout_with_session(
         "Party",
@@ -478,25 +526,23 @@ pub fn party_personal_page(
     )
 }
 
-/// Party stat comparison, with the selected member on the left and the active
-/// character on the right.
+/// Selected party member stats and biography.
 pub fn party_stats_page(
     settlement: &Settlement,
     selected: &Character,
     active_character: &Character,
     party_members: &[Character],
+    capability: Option<&CharacterCapability>,
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
-    active_attributes: Option<&CharacterAttributes>,
-    active_skills: Option<&CharacterSkills>,
-    active_limbs: Option<&CharacterLimbs>,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
+            (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
             (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
         }
@@ -505,10 +551,7 @@ pub fn party_stats_page(
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (settlement_chat_area(&selected.name, Some(active_character)))
         }
-        aside class="right-sidebar" {
-            (party_attributes_rail("Your attributes", active_attributes, active_limbs))
-            (party_skills_rail("Your skills", active_skills, active_limbs, None, None))
-        }
+        aside class="right-sidebar" { (character_bio_rail(selected)) }
     };
     settlement_layout_with_session(
         "Party stats",
@@ -661,6 +704,44 @@ fn party_trade_inventory_rail(
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
+                    }
+                }))
+            }
+        }))
+    }
+}
+
+fn discard_inventory_rail(
+    character: &Character,
+    inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    equip: Option<&CharacterEquip>,
+) -> Markup {
+    let title = format!("{}'s inventory", character.name);
+    html! {
+        (sidebar_section(&title, html! {
+            @if inventory.is_empty() {
+                p class="text-muted small-copy" { "No items carried." }
+            } @else {
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if !is_equipped {
+                                    button type="button" class="trade-transfer trade-transfer-left"
+                                        data-discard-item=(item.id) data-count=(item.qty)
+                                        aria-label=(format!("Discard {}", item.item_id))
+                                        title="Stage one item for discarding" {}
+                                }
+                            }
+                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
                     }
                 }))
             }
@@ -945,6 +1026,33 @@ fn format_schedule_hours(minutes: u16) -> String {
     format!("{hours}{fraction}h")
 }
 
+fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
+    let tags = capability
+        .map(CharacterCapability::summary_tags)
+        .unwrap_or_default();
+    html! {
+        (sidebar_section("Summary", html! {
+            @if tags.is_empty() {
+                p class="text-muted small-copy" { "No notable capabilities." }
+            } @else {
+                div class="character-summary-tags" aria-label="Character capability summary" {
+                    @for tag in tags { span class="character-summary-tag" { (tag) } }
+                }
+            }
+        }))
+    }
+}
+
+fn character_bio_rail(character: &Character) -> Markup {
+    html! {
+        (sidebar_section("Bio", html! {
+            dl class="character-bio" {
+                div { dt { "Age" } dd { (character.age_years) " years" } }
+            }
+        }))
+    }
+}
+
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1102,43 +1210,32 @@ fn party_portrait_overlay(
             div class="party-portrait-overlay" aria-label="Active party" {
                 @for member in members {
                     @let is_active = active_character.is_some_and(|character| character.id == member.id);
-                    @if is_active {
-                    a href=(format!("/settlements/{}/party/{}", settlement_id, member.id))
-                        class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
-                        data-character-id=(member.id) data-active-character
-                        title=(format!("Open {}'s inventory and stats", member.name)) {
-                        (incapacitation_wheel_placeholder())
-                        span class="party-portrait-initial" {
-                            span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                            span class="party-portrait-name" { (&member.name) }
-                        }
-                        span class="party-portrait-tags" data-character-tags hidden {}
-                    }
-                    } @else {
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
                         data-character-id=(member.id)
+                        data-active-character[is_active]
                         title=(&member.name) {
-                        (incapacitation_wheel_placeholder())
-                        span class="party-portrait-initial" {
-                            span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                            span class="party-portrait-name" { (&member.name) }
-                        }
-                        span class="party-portrait-tags" data-character-tags hidden {}
-                        span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
-                            a href=(format!("/settlements/{}/party/{}/stats", settlement_id, member.id))
-                                class="party-portrait-action" title=(format!("Compare stats with {}", member.name)) {
-                                span class="party-action-icon"
-                                    style="--party-action-icon: url('/static/icons/character/stats-sheet.png')"
-                                    role="img" aria-label="Stats" {}
+                        a class="party-portrait-select"
+                            href=(if is_active {
+                                format!("/settlements/{}/party/{}", settlement_id, member.id)
+                            } else {
+                                format!("/settlements/{}/party/{}/stats", settlement_id, member.id)
+                            })
+                            title=(format!("Inspect {}", member.name)) {
+                            (incapacitation_wheel_placeholder())
+                            span class="party-portrait-initial" {
+                                span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
+                                span class="party-portrait-name" { (&member.name) }
                             }
+                        }
+                        span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             a href=(format!("/settlements/{}/party/{}/inventory", settlement_id, member.id))
-                                class="party-portrait-action" title=(format!("Compare inventory with {}", member.name)) {
+                                class="party-portrait-action"
+                                title=(if is_active { "Open inventory and discard items".to_string() } else { format!("Compare inventory with {}", member.name) }) {
                                 span class="party-action-icon"
                                     style="--party-action-icon: url('/static/icons/character/inventory.png')"
                                     role="img" aria-label="Inventory" {}
                             }
                         }
-                    }
                     }
                 }
             }

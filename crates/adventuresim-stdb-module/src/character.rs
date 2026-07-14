@@ -24,6 +24,8 @@ pub struct Character {
     pub server: Identity,
     pub in_server: bool,
     pub temporary: bool,
+    #[default(25)]
+    pub age_years: u16,
 }
 
 /// [`Character`] attributes
@@ -247,6 +249,7 @@ pub(crate) fn insert_new_character(
         server: Identity::ZERO,
         in_server: false,
         temporary,
+        age_years: 25,
     });
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,

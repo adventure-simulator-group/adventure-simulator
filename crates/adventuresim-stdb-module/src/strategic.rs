@@ -960,6 +960,56 @@ pub fn transfer_party_item(
     Ok(())
 }
 
+/// Permanently removes staged quantities from a character's unequipped inventory.
+#[reducer]
+pub fn discard_inventory_items(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if inventory_item_ids.is_empty() || inventory_item_ids.len() != quantities.len() {
+        return Err("Discarded item IDs and quantities must be non-empty and aligned".into());
+    }
+    if ctx.db.character().id().find(character_id).is_none() {
+        return Err("Character not found".into());
+    }
+    let equip = ctx.db.character_equip().character_id().find(character_id);
+    let mut seen = HashSet::new();
+    let mut staged = Vec::with_capacity(inventory_item_ids.len());
+    for (&inventory_item_id, &quantity) in inventory_item_ids.iter().zip(&quantities) {
+        if quantity == 0 || !seen.insert(inventory_item_id) {
+            return Err("Discard quantities must be positive and item IDs unique".into());
+        }
+        let item = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(inventory_item_id)
+            .ok_or("Inventory item not found")?;
+        if item.character_id != character_id || item.quantity < quantity {
+            return Err("Character does not have the staged quantity".into());
+        }
+        if equip
+            .as_ref()
+            .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
+        {
+            return Err("Unequip an item before discarding it".into());
+        }
+        staged.push((item, quantity));
+    }
+
+    for (mut item, quantity) in staged {
+        if item.quantity == quantity {
+            ctx.db.inventory_item().id().delete(item.id);
+        } else {
+            item.quantity -= quantity;
+            ctx.db.inventory_item().id().update(item);
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn finalize_party_offer(
     ctx: &ReducerContext,

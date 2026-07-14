@@ -53,6 +53,7 @@ pub mod define_shield_reducer;
 pub mod define_weapon_reducer;
 pub mod delete_saved_recruitment_role_reducer;
 pub mod disband_party_reducer;
+pub mod discard_inventory_items_reducer;
 pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
 pub mod enter_mission_reducer;
@@ -220,6 +221,9 @@ pub use delete_saved_recruitment_role_reducer::{
 };
 pub use disband_party_reducer::{
     DisbandPartyCallbackId, disband_party, set_flags_for_disband_party,
+};
+pub use discard_inventory_items_reducer::{
+    DiscardInventoryItemsCallbackId, discard_inventory_items, set_flags_for_discard_inventory_items,
 };
 pub use end_tactical_server_by_instance_reducer::{
     EndTacticalServerByInstanceCallbackId, end_tactical_server_by_instance,
@@ -467,6 +471,11 @@ pub enum Reducer {
     DisbandParty {
         party_id: String,
     },
+    DiscardInventoryItems {
+        character_id: u64,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    },
     EndTacticalServer {
         success: bool,
         xp_gained: i32,
@@ -624,6 +633,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DefineWeapon { .. } => "define_weapon",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
             Reducer::DisbandParty { .. } => "disband_party",
+            Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnterMission { .. } => "enter_mission",
@@ -785,6 +795,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "disband_party" => Ok(__sdk::parse_reducer_args::<
                 disband_party_reducer::DisbandPartyArgs,
             >("disband_party", &value.args)?
+            .into()),
+            "discard_inventory_items" => Ok(__sdk::parse_reducer_args::<
+                discard_inventory_items_reducer::DiscardInventoryItemsArgs,
+            >("discard_inventory_items", &value.args)?
             .into()),
             "end_tactical_server" => Ok(__sdk::parse_reducer_args::<
                 end_tactical_server_reducer::EndTacticalServerArgs,

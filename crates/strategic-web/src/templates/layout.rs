@@ -83,13 +83,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=theme-dropdown-1";
-                link rel="stylesheet" href="/static/css/components.css?v=semantic-stat-icons-1";
+                link rel="stylesheet" href="/static/css/components.css?v=portrait-inspection-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
-                script src="/static/party-trade.js?v=unified-trade-1" {}
+                script src="/static/party-trade.js?v=inventory-discard-2" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
-                script src="/static/party-recruitment.js?v=role-slots-1" defer {}
+                script src="/static/party-recruitment.js?v=portrait-inspection-1" defer {}
             }
             body {
                 div class="app" {

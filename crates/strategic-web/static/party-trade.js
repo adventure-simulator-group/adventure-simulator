@@ -88,9 +88,66 @@ function resetTradeDraft(form) {
   window.merchantSaleDetails = new Map();
   window.merchantBuyPrices = new Map();
   window.partyTradeDraft = new Map();
+  window.inventoryDiscardDraft = new Map();
+  document.querySelectorAll("[data-generated-discard-row]").forEach((row) => row.remove());
+  const discardTable = document.querySelector("[data-discard-table]");
+  const discardEmpty = document.querySelector("[data-discard-empty]");
+  if (discardTable) discardTable.hidden = true;
+  if (discardEmpty) discardEmpty.hidden = false;
   form.querySelectorAll("input:not([name='return_to'])").forEach((input) => input.remove());
   form.hidden = true;
   form.querySelector("[type='submit']").disabled = true;
+}
+
+function updateDiscardForm() {
+  const form = document.querySelector("#inventory-discard");
+  if (!form) return;
+  form.querySelectorAll("input").forEach((input) => input.remove());
+  const draft = window.inventoryDiscardDraft ||= new Map();
+  const fields = {
+    inventory_item_ids: [...draft.keys()],
+    quantities: [...draft.values()],
+  };
+  Object.entries(fields).forEach(([name, values]) => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = values.join(",");
+    form.append(input);
+  });
+  const hasDraft = draft.size > 0;
+  form.hidden = !hasDraft;
+  form.querySelector("[type='submit']").disabled = !hasDraft;
+  const table = document.querySelector("[data-discard-table]");
+  const empty = document.querySelector("[data-discard-empty]");
+  if (table) table.hidden = !hasDraft;
+  if (empty) empty.hidden = hasDraft;
+}
+
+function ensureDiscardRow(sourceRow, inventoryId) {
+  let row = document.querySelector(`[data-discard-staged="${CSS.escape(inventoryId)}"]`);
+  if (row) return row;
+  row = sourceRow.cloneNode(true);
+  row.dataset.discardStaged = inventoryId;
+  row.dataset.generatedDiscardRow = "true";
+  row.classList.add("discard-staged-row");
+  delete row.dataset.discardSource;
+  row.querySelector(".inventory-equipped")?.remove();
+  const action = row.querySelector("[data-discard-item]");
+  if (action) {
+    delete action.dataset.discardItem;
+    action.dataset.unstageDiscard = inventoryId;
+    action.classList.remove("trade-transfer-left");
+    action.classList.add("trade-transfer-right");
+    action.title = "Remove one item from the discard list";
+    action.setAttribute("aria-label", "Remove one item from the discard list");
+  }
+  const count = row.querySelector(".inventory-count");
+  count.textContent = "0";
+  delete count.dataset.base;
+  delete count.dataset.tradeDraftChange;
+  document.querySelector("[data-discard-list]").append(row);
+  return row;
 }
 
 function updateMerchantGoldDraft() {
@@ -118,6 +175,38 @@ document.addEventListener("click", (event) => {
   const cancelTrade = event.target.closest("[data-cancel-trade]");
   if (cancelTrade) {
     resetTradeDraft(cancelTrade.closest("form"));
+    return;
+  }
+  const unstageDiscard = event.target.closest("[data-unstage-discard]");
+  if (unstageDiscard) {
+    const id = unstageDiscard.dataset.unstageDiscard;
+    const draft = window.inventoryDiscardDraft ||= new Map();
+    const stagedRow = unstageDiscard.closest("tr");
+    const quantity = draft.get(id) || Number(stagedRow.querySelector(".inventory-count").textContent) || 0;
+    if (!quantity) return;
+    const sourceRow = document.querySelector(`[data-discard-source="${CSS.escape(id)}"]`);
+    if (sourceRow) setTradeDraftCount(sourceRow, -(quantity - 1));
+    if (quantity === 1) {
+      draft.delete(id);
+      stagedRow.remove();
+    } else {
+      draft.set(id, quantity - 1);
+      stagedRow.querySelector(".inventory-count").textContent = String(quantity - 1);
+    }
+    updateDiscardForm();
+    return;
+  }
+  const discardItem = event.target.closest("[data-discard-item]");
+  if (discardItem) {
+    const id = discardItem.dataset.discardItem;
+    const sourceRow = discardItem.closest("tr");
+    const draft = window.inventoryDiscardDraft ||= new Map();
+    const quantity = draft.get(id) || 0;
+    if (quantity >= Number(discardItem.dataset.count)) return;
+    draft.set(id, quantity + 1);
+    setTradeDraftCount(sourceRow, -(quantity + 1));
+    ensureDiscardRow(sourceRow, id).querySelector(".inventory-count").textContent = String(quantity + 1);
+    updateDiscardForm();
     return;
   }
   const cancelBuy = event.target.closest("[data-merchant-cancel-buy]");
