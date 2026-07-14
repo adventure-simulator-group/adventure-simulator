@@ -23,8 +23,11 @@
     }
 
     const aggregateChecks = panel.querySelector("[data-party-aggregate-checks]");
-    const partyStage = overlay.closest("main.center-content");
-    if (aggregateChecks && partyStage) partyStage.prepend(aggregateChecks);
+    const partyChest = overlay.querySelector(".party-inventory-portrait");
+    if (aggregateChecks) {
+      if (partyChest) overlay.insertBefore(aggregateChecks, partyChest);
+      else overlay.prepend(aggregateChecks);
+    }
 
     panel.querySelectorAll("[data-party-role-group]").forEach((group) => {
       group.hidden = false;

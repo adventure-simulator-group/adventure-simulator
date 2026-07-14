@@ -2932,9 +2932,10 @@ body.chat-resizing {
 .mt-2 { margin-top: 0.75rem; }
 .mb-1 { margin-bottom: 0.5rem; }
 .mb-2 { margin-bottom: 0.75rem; }
-.inventory-owner-tabs { display:flex; gap:.25rem; padding:.5rem .75rem 0; }
+.inventory-owner-tabs { display:flex; height:2.46rem; box-sizing:border-box; align-items:stretch; gap:.25rem; padding:0 .75rem; border-bottom:1px solid var(--border-light); }
 .inventory-owner-tab { flex:1; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--color-text-muted); padding:.45rem; cursor:pointer; }
 .inventory-owner-tab.active { color:var(--color-text); border-bottom-color:var(--color-accent); }
+.inventory-owner-panel [data-inventory-pane] .sidebar-header { display:none; }
 .left-sidebar:has(.trade-inventory-table) .sidebar-section,
 .right-sidebar:has(.trade-inventory-table) .sidebar-section { position:relative; }
 .inventory-row-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; opacity:0; transform:translateY(-50%); transition:opacity .12s; }
@@ -2952,8 +2953,18 @@ body.chat-resizing {
 .inventory-transfer-glyph i { display:block; width:.48rem; height:.48rem; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); margin-left:-.16rem; }
 .inventory-transfer-glyph i:first-child { margin-left:0; }
 .trade-transfer-left .inventory-transfer-glyph { transform:rotate(180deg); }
-.inventory-footer-actions { position:absolute; z-index:30; top:100%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; padding-top:.35rem; }
+.trade-inventory-table thead tr { position:relative; }
+.inventory-footer-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; padding:0; transform:translateY(-50%); }
 .left-sidebar .inventory-footer-actions { right:-4.55rem; }
 .right-sidebar .inventory-footer-actions { left:-4.55rem; }
 .inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
 .inventory-footer-transfer:first-child { grid-column:2; }
+.right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
+
+.party-portrait-overlay > .party-aggregate-checks {
+  position:static;
+  flex:0 0 5.25rem;
+  align-self:center;
+  margin-right:-0.35rem;
+  filter:drop-shadow(0 1px 2px rgb(0 0 0 / 85%));
+}

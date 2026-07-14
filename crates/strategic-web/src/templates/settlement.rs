@@ -790,7 +790,7 @@ pub fn live_merchant_shop_page(
                 button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
             }
             div data-inventory-pane="player" {
-            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+            div class="sidebar-section" {
                 (trade_inventory_table(true, html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -814,10 +814,10 @@ pub fn live_merchant_shop_page(
                     }
                 }))
                 (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
-            }))
+            }
             }
             div data-inventory-pane="party" hidden {
-            (sidebar_section("Party inventory", html! {
+            div class="sidebar-section" {
                 (trade_inventory_table(false, html! {
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -842,7 +842,7 @@ pub fn live_merchant_shop_page(
                     }
                 }))
                 (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
-            }))
+            }
             }
         }
     };

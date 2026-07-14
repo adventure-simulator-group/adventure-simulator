@@ -4,6 +4,14 @@ function changeTradeDraftCount(row, change) {
   setTradeDraftCount(row, Number(count.dataset.tradeDraftChange || 0) + change);
 }
 
+function mountInventoryBulkControls() {
+  document.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
+    const section = actions.closest(".sidebar-section");
+    const headerRow = section?.querySelector(".trade-inventory-table thead tr");
+    if (headerRow) headerRow.append(actions);
+  });
+}
+
 function setTradeDraftCount(row, draftChange) {
   const count = row.querySelector(".inventory-count");
   count.dataset.base ||= count.textContent.trim();
@@ -389,3 +397,9 @@ document.addEventListener("wheel", (event) => {
   const selector = event.deltaY < 0 ? '[data-target-step="1"]' : '[data-target-step="-1"]';
   control.querySelector(selector)?.click();
 }, { passive: false });
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", mountInventoryBulkControls, { once: true });
+} else {
+  mountInventoryBulkControls();
+}
