@@ -15,8 +15,8 @@ use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyStake, Quest, QuestIssuer,
-    Settlement, TravelEdge,
+    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
+    Quest, QuestIssuer, RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
@@ -262,6 +262,25 @@ struct ServiceQuestOffer {
     turn_in_response: String,
     can_accept: bool,
     can_turn_in: bool,
+    recruitment: Option<ServiceQuestRecruitment>,
+}
+
+#[derive(Serialize)]
+struct ServiceQuestRecruitment {
+    party_name: String,
+    leader_name: String,
+    roles: Vec<ServiceQuestRole>,
+}
+
+#[derive(Serialize)]
+struct ServiceQuestRole {
+    id: u64,
+    name: String,
+    remaining: u32,
+    requirements: Vec<String>,
+    requirements_summary: String,
+    match_level: &'static str,
+    match_summary: String,
 }
 
 async fn service_quest_offers(
@@ -335,6 +354,55 @@ async fn service_quest_offers(
                 .as_ref()
                 .is_some_and(|party| party.leader_id == character.id)
     });
+    let parties: Vec<Party> = state
+        .db
+        .query("SELECT * FROM party")
+        .await
+        .unwrap_or_default();
+    let party_memberships: Vec<PartyMember> = state
+        .db
+        .query("SELECT * FROM party_member")
+        .await
+        .unwrap_or_default();
+    let recruitment_roles: Vec<PartyRecruitmentRole> = state
+        .db
+        .query("SELECT * FROM party_recruitment_role")
+        .await
+        .unwrap_or_default();
+    let characters: Vec<Character> = state
+        .db
+        .query("SELECT * FROM character")
+        .await
+        .unwrap_or_default();
+    let viewer_party_id = active_party.as_ref().map(|party| party.id.as_str());
+    let viewer_member_ids: Vec<u64> = viewer_party_id
+        .map(|party_id| {
+            party_memberships
+                .iter()
+                .filter(|member| member.party_id == party_id)
+                .map(|member| member.character_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut viewer_capabilities = Vec::new();
+    for character_id in viewer_member_ids {
+        let _ = state
+            .db
+            .call("refresh_capabilities", &[json!(character_id)])
+            .await;
+        if let Some(capability) = state
+            .db
+            .query::<CharacterCapability>(&format!(
+                "SELECT * FROM character_capability WHERE character_id = {character_id}"
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            viewer_capabilities.push(capability);
+        }
+    }
 
     Json(
         issuers
@@ -345,12 +413,58 @@ async fn service_quest_offers(
                     party.active_quest_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
+                let recruitment = quest.accepted_by.as_deref().and_then(|party_id| {
+                    if viewer_party_id == Some(party_id) {
+                        return None;
+                    }
+                    let party = parties.iter().find(|party| party.id == party_id)?;
+                    let leader = characters.iter().find(|character| {
+                        character.id == party.leader_id && character.temporary
+                    })?;
+                    let roles = recruitment_roles
+                        .iter()
+                        .filter(|role| role.party_id == party.id)
+                        .filter_map(|role| {
+                            let filled = party_memberships
+                                .iter()
+                                .filter(|member| member.recruitment_role_id == Some(role.id))
+                                .count() as u32;
+                            let remaining = role.quantity.saturating_sub(filled);
+                            if remaining == 0 {
+                                return None;
+                            }
+                            let requirements = role_requirement_labels(role);
+                            let (match_level, match_summary) =
+                                party_role_match(&viewer_capabilities, role);
+                            Some(ServiceQuestRole {
+                                id: role.id,
+                                name: role.name.clone(),
+                                remaining,
+                                requirements_summary: if requirements.is_empty() {
+                                    "No minimum recommendations".to_string()
+                                } else {
+                                    requirements.join(" · ")
+                                },
+                                requirements,
+                                match_level,
+                                match_summary,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    (!roles.is_empty()).then(|| ServiceQuestRecruitment {
+                        party_name: party.name.clone(),
+                        leader_name: leader.name.clone(),
+                        roles,
+                    })
+                });
                 let state = if quest.status.eq_ignore_ascii_case("available") {
                     "available"
                 } else if is_current && quest.status.eq_ignore_ascii_case("completed") {
                     "ready"
                 } else if is_current {
                     "underway"
+                } else if recruitment.is_some() {
+                    "recruiting"
                 } else {
                     return None;
                 };
@@ -383,6 +497,7 @@ async fn service_quest_offers(
                     ),
                     can_accept,
                     can_turn_in: can_turn_in && state == "ready",
+                    recruitment,
                 })
             })
             .collect(),
@@ -447,6 +562,109 @@ fn service_quest_details(
         "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} gold to anyone who clears them out. Are you",
         quest.enemy_type, quest.gold_reward,
     )
+}
+
+fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String> {
+    let requirements = role.requirements;
+    let mut labels = Vec::new();
+    for (required, label) in [
+        (requirements.melee, "Melee"),
+        (requirements.ranged, "Ranged"),
+        (requirements.heavy, "Heavy"),
+        (requirements.quarter_armor, "1/4 armor"),
+        (requirements.half_armor, "1/2 armor"),
+        (requirements.three_quarter_armor, "3/4 armor"),
+        (requirements.full_armor, "Full armor"),
+    ] {
+        if required {
+            labels.push(label.to_string());
+        }
+    }
+    let precision = role.effective_weapon_precision();
+    if precision > 0.0 {
+        labels.push(format!("Weapon precision {precision:.1}+"));
+    }
+    for (minimum, label) in [
+        (requirements.athletics, "Athletics"),
+        (requirements.endurance, "Endurance"),
+    ] {
+        if minimum > 0 {
+            labels.push(format!("{label} {minimum}+"));
+        }
+    }
+    labels
+}
+
+fn party_role_match(
+    capabilities: &[CharacterCapability],
+    role: &PartyRecruitmentRole,
+) -> (&'static str, String) {
+    let total = role_requirement_labels(role).len();
+    if total == 0 {
+        return (
+            "none",
+            "This role has no minimum recommendations.".to_string(),
+        );
+    }
+    let best = capabilities
+        .iter()
+        .map(|capability| matched_role_requirements(capability, role))
+        .max()
+        .unwrap_or(0);
+    if best == total {
+        (
+            "all",
+            "Someone in your party meets every recommendation.".to_string(),
+        )
+    } else if best > 0 {
+        (
+            "some",
+            format!("Your best candidate meets {best} of {total} recommendations."),
+        )
+    } else {
+        (
+            "none-met",
+            "No one in your party meets any recommendation.".to_string(),
+        )
+    }
+}
+
+fn matched_role_requirements(
+    capability: &CharacterCapability,
+    role: &PartyRecruitmentRole,
+) -> usize {
+    let requirements: RecruitmentRequirements = role.requirements;
+    let mut matched = 0;
+    for (required, present) in [
+        (requirements.melee, capability.melee),
+        (requirements.ranged, capability.ranged),
+        (requirements.heavy, capability.heavy),
+        (requirements.quarter_armor, capability.quarter_armor),
+        (requirements.half_armor, capability.half_armor),
+        (
+            requirements.three_quarter_armor,
+            capability.three_quarter_armor,
+        ),
+        (requirements.full_armor, capability.full_armor),
+    ] {
+        if required && present {
+            matched += 1;
+        }
+    }
+    if role.effective_weapon_precision() > 0.0
+        && capability.weapon_precision >= role.effective_weapon_precision()
+    {
+        matched += 1;
+    }
+    for (minimum, value) in [
+        (requirements.athletics, capability.athletics),
+        (requirements.endurance, capability.endurance),
+    ] {
+        if minimum > 0 && adventuresim_core::capability::rating(value) >= minimum {
+            matched += 1;
+        }
+    }
+    matched
 }
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;

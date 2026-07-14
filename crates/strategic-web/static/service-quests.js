@@ -48,7 +48,6 @@
     const abandon = summary.querySelector("[data-current-quest-abandon]");
     if (name) {
       name.textContent = quest.title;
-      name.href = `/quests/${encodeURIComponent(quest.quest_id)}`;
     }
     if (abandon) {
       abandon.action = `/quests/${encodeURIComponent(quest.quest_id)}/abandon`;
@@ -60,6 +59,108 @@
   const clearTracker = () => {
     const summary = document.querySelector("[data-current-quest]");
     if (summary) summary.hidden = true;
+  };
+
+  const clearRoleInspection = () => {
+    document.querySelectorAll("[data-service-role-inspection]").forEach((panel) => panel.remove());
+    document.querySelectorAll(".service-role-inspection-hidden").forEach((element) => {
+      element.classList.remove("service-role-inspection-hidden");
+    });
+  };
+
+  const inspectRecruitingRole = (quest, role) => {
+    clearRoleInspection();
+    const left = document.querySelector(".left-sidebar");
+    const right = document.querySelector(".right-sidebar");
+    if (!left || !right) return;
+    [left, right].forEach((sidebar) => {
+      Array.from(sidebar.children).forEach((child) => child.classList.add("service-role-inspection-hidden"));
+    });
+
+    const leftPanel = document.createElement("section");
+    leftPanel.dataset.serviceRoleInspection = "true";
+    leftPanel.className = "role-inspection-panel role-inspection-content";
+    const leftHeading = document.createElement("h3");
+    leftHeading.className = "sidebar-header";
+    leftHeading.textContent = role.name;
+    leftPanel.append(leftHeading);
+    const list = document.createElement("div");
+    list.className = "role-detail-list";
+    const requirements = role.requirements.length ? role.requirements : ["No minimum recommendations"];
+    requirements.forEach((requirement) => {
+      const row = document.createElement("div");
+      row.className = "role-detail-row";
+      row.append(document.createTextNode(requirement));
+      list.append(row);
+    });
+    leftPanel.append(list);
+
+    const rightPanel = document.createElement("section");
+    rightPanel.dataset.serviceRoleInspection = "true";
+    rightPanel.className = "role-inspection-panel role-inspection-content";
+    const rightHeading = document.createElement("h3");
+    rightHeading.className = "sidebar-header";
+    rightHeading.textContent = quest.recruitment.party_name;
+    rightPanel.append(rightHeading);
+    const leader = document.createElement("p");
+    leader.textContent = `Led by ${quest.recruitment.leader_name}`;
+    rightPanel.append(leader);
+    const match = document.createElement("p");
+    match.className = `small-copy service-role-match service-role-match-${role.match_level}`;
+    match.textContent = role.match_summary;
+    rightPanel.append(match);
+    const availability = document.createElement("p");
+    availability.className = "small-copy text-muted";
+    availability.textContent = `${role.remaining} opening${role.remaining === 1 ? "" : "s"}`;
+    rightPanel.append(availability);
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = `/party-roles/${encodeURIComponent(role.id)}/join`;
+    const button = document.createElement("button");
+    button.type = "submit";
+    button.className = "btn btn-primary btn-block mt-1";
+    button.textContent = "Send request to join";
+    button.disabled = !quest.can_accept;
+    if (!quest.can_accept) button.title = "Only a free party leader at this settlement can request a merge";
+    form.append(button);
+    rightPanel.append(form);
+    left.append(leftPanel);
+    right.append(rightPanel);
+  };
+
+  const recruitmentLink = (quest, role) => {
+    const anchor = link(role.name, () => inspectRecruitingRole(quest, role));
+    anchor.classList.add("service-role-link", `service-role-link-${role.match_level}`);
+    anchor.title = role.requirements_summary;
+    return anchor;
+  };
+
+  const beginRecruitmentConversation = (quest) => {
+    const messages = chat.querySelector(".settlement-chat-messages");
+    messages?.querySelector(".chat-npc-message")?.remove();
+    const greeting = document.createDocumentFragment();
+    greeting.append(document.createTextNode(`${quest.greeting} `));
+    greeting.append(link(quest.problem, () => {
+      line("player", "You", quest.follow_up);
+      const details = document.createDocumentFragment();
+      const situation = quest.details.replace(/\s*Are you\s*$/, "");
+      details.append(document.createTextNode(`${situation} `));
+      const leader = document.createElement("a");
+      leader.href = "#";
+      leader.className = "chat-quest-link";
+      leader.textContent = quest.recruitment.leader_name;
+      leader.title = `Leader of ${quest.recruitment.party_name}`;
+      leader.addEventListener("click", (event) => event.preventDefault());
+      details.append(leader, document.createTextNode(" is looking for "));
+      quest.recruitment.roles.forEach((role, index) => {
+        if (index > 0) details.append(document.createTextNode(index + 1 === quest.recruitment.roles.length ? " and " : ", "));
+        details.append(recruitmentLink(quest, role));
+      });
+      details.append(document.createTextNode(" to help."));
+      line("npc", quest.npc_name, details);
+    }));
+    greeting.append(document.createTextNode("."));
+    line("npc", quest.npc_name, greeting);
   };
 
   const beginConversation = (quest) => {
@@ -138,14 +239,26 @@
   })
     .then((response) => (response.ok ? response.json() : []))
     .then((quests) => {
-      quests.forEach((quest) => {
-        const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
+      const serviceIds = new Set(quests.map((quest) => quest.service_id));
+      serviceIds.forEach((serviceId) => {
+        const serviceQuests = quests.filter((quest) => quest.service_id === serviceId);
+        const tab = services.querySelector(`[data-service-id="${CSS.escape(serviceId)}"]`);
         const badge = tab?.querySelector("[data-service-quest-badge]");
-        if (badge && quest.state !== "underway") badge.hidden = false;
+        if (badge) {
+          badge.hidden = !serviceQuests.some((quest) => quest.state !== "underway");
+          badge.classList.toggle(
+            "service-recruitment-badge",
+            serviceQuests.some((quest) => quest.state === "recruiting"),
+          );
+        }
       });
       if (!chat || chat.dataset.serviceQuestSettlement !== settlementId) return;
-      const quest = quests.find((entry) => entry.service_id === chat.dataset.serviceQuestId);
+      const serviceQuests = quests.filter((entry) => entry.service_id === chat.dataset.serviceQuestId);
+      const quest = serviceQuests.find((entry) => entry.state === "recruiting")
+        || serviceQuests.find((entry) => entry.state === "available")
+        || serviceQuests[0];
       if (quest?.state === "available") beginConversation(quest);
+      else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
       else if (quest) beginReturnConversation(quest);
     })
     .catch(() => {});

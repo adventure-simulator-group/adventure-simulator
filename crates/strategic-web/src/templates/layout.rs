@@ -103,14 +103,14 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=location-tabs-1";
-                link rel="stylesheet" href="/static/css/components.css?v=party-checks-before-chest-1";
+                link rel="stylesheet" href="/static/css/components.css?v=quest-party-recruitment-2";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/party-trade.js?v=inventory-target-controls-1" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
                 script src="/static/party-recruitment.js?v=party-checks-leftmost-1" defer {}
-                script src="/static/service-quests.js?v=service-quests-1" defer {}
+                script src="/static/service-quests.js?v=quest-party-recruitment-3" defer {}
                 script src="/static/chat-resize.js?v=chat-resize-1" defer {}
             }
             body {
@@ -143,8 +143,6 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
             nav class="top-bar-center" {
                 a href="/" class="nav-tab" { "Home" }
                 a href="/settlements" class="nav-tab" { "Settlements" }
-                a href="/quests" class="nav-tab" { "Quests" }
-                a href="/parties" class="nav-tab" { "Parties" }
                 a href="/characters" class="nav-tab" { "Characters" }
             }
 
@@ -207,7 +205,7 @@ fn settlement_top_bar(
                 }
                 }
                 div class="current-quest-summary" data-current-quest hidden {
-                    a class="current-quest-name" data-current-quest-name href="/quests" {}
+                    span class="current-quest-name" data-current-quest-name {}
                     form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
                         button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
                     }
@@ -249,7 +247,7 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
-        script src="/static/current-quest.js?v=current-quest-header-1" defer {}
+        script src="/static/current-quest.js?v=current-quest-label-1" defer {}
     }
 }
 

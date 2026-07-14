@@ -13,18 +13,15 @@ use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
-    PartyJoinRequest, PartyMember, PartyRecruitmentRole, Quest, RecruitmentRequirements,
+    PartyJoinRequest, PartyMember, PartyRecruitmentRole, RecruitmentRequirements,
     SavedRecruitmentRole,
 };
-use crate::templates::party::{parties_list_page, party_detail_page};
 use crate::templates::recruitment::{
     PartyCheckSummary, RecruitmentApplicant, RecruitmentRolePanel, recruitment_panel,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/parties", get(list_parties))
-        .route("/parties/{id}", get(show_party))
         .route("/party-roles/{id}/join", post(join_party))
         .route("/party-recruitment/panel", get(recruitment_panel_fragment))
         .route("/party-recruitment/roles", post(create_recruitment_role))
@@ -53,17 +50,6 @@ pub fn routes() -> Router<AppState> {
         .route("/party-notifications", get(party_notifications))
         .route("/parties/{id}/leave", post(leave_party))
         .route("/parties/{id}/disband", post(disband_party))
-}
-
-async fn list_parties(State(state): State<AppState>, session: Session) -> Html<String> {
-    let parties: Vec<Party> = state
-        .db
-        .query("SELECT * FROM party")
-        .await
-        .unwrap_or_default();
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(parties_list_page(&parties, None, logged_in_as.as_deref(), session.theme()).into_string())
 }
 
 #[derive(Default, Deserialize)]
@@ -259,75 +245,6 @@ async fn rename_saved_role(
             .await;
     }
     Redirect::to("/")
-}
-
-async fn show_party(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!("SELECT * FROM party WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let party = match parties.first() {
-        Some(p) => p,
-        None => return Html("<h1>Party not found</h1>".to_string()),
-    };
-
-    // Get party members
-    let members: Vec<PartyMember> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party_member WHERE party_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    // Get character info for each member
-    let mut members_with_chars: Vec<(PartyMember, Option<Character>)> = Vec::new();
-    for member in members {
-        let chars: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {}",
-                member.character_id
-            ))
-            .await
-            .unwrap_or_default();
-        members_with_chars.push((member, chars.into_iter().next()));
-    }
-
-    // Get active quest if any
-    let active_quest: Option<Quest> = if let Some(quest_id) = &party.active_quest_id {
-        let quests: Vec<Quest> = state
-            .db
-            .query(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
-            .await
-            .unwrap_or_default();
-        quests.into_iter().next()
-    } else {
-        None
-    };
-
-    // Check if current user is the leader
-    let is_leader = session.character_id_u64() == Some(party.leader_id);
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(
-        party_detail_page(
-            party,
-            &members_with_chars,
-            active_quest.as_ref(),
-            is_leader,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
 }
 
 async fn join_party(
@@ -661,11 +578,11 @@ async fn party_location_url(state: &AppState, party_id: &str) -> String {
         .await
         .unwrap_or_default();
     let Some(party) = parties.first() else {
-        return "/parties".to_string();
+        return "/".to_string();
     };
     match &party.current_settlement_id {
         Some(settlement) => format!("/settlements/{settlement}"),
-        None => format!("/parties/{party_id}"),
+        None => "/".to_string(),
     }
 }
 
@@ -749,26 +666,13 @@ async fn leave_party(
 
     let _ = state.db.call("leave_party", &[json!(character_id)]).await;
 
-    Redirect::to("/parties")
+    Redirect::to("/")
 }
 
 async fn disband_party(State(state): State<AppState>, Path(id): Path<String>) -> Redirect {
     let _ = state.db.call("disband_party", &[json!(id)]).await;
 
-    Redirect::to("/parties")
-}
-
-/// Helper to get character name for session display
-async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Option<String> {
-    let Some(id) = character_id else {
-        return None;
-    };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!("SELECT * FROM character WHERE id = {}", id))
-        .await
-        .unwrap_or_default();
-    characters.first().map(|c| c.name.clone())
+    Redirect::to("/")
 }
 
 async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {

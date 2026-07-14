@@ -255,7 +255,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/party.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.

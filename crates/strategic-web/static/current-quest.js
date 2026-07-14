@@ -10,7 +10,6 @@
       const abandon = summary.querySelector("[data-current-quest-abandon]");
       if (!name || !abandon) return;
       name.textContent = quest.title;
-      name.href = `/quests/${encodeURIComponent(quest.id)}`;
       abandon.action = `/quests/${encodeURIComponent(quest.id)}/abandon`;
       abandon.hidden = !quest.can_abandon;
       summary.hidden = false;

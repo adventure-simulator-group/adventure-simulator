@@ -38,7 +38,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     };
 
     let Some(party_id) = &character.party_id else {
-        return Redirect::to("/parties");
+        return Redirect::to("/");
     };
 
     let parties: Vec<Party> = state
@@ -48,18 +48,18 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         .unwrap_or_default();
 
     let Some(party) = parties.first() else {
-        return Redirect::to("/parties");
+        return Redirect::to("/");
     };
 
     if party.leader_id != character_id {
-        return Redirect::to(&format!("/parties/{}", party_id));
+        return Redirect::to("/");
     }
 
     let Some(quest_id) = &party.active_quest_id else {
-        return Redirect::to(&format!("/parties/{}", party_id));
+        return Redirect::to("/");
     };
     if character.current_quest_location_id.as_ref() != Some(quest_id) {
-        return Redirect::to(&format!("/quests/{quest_id}"));
+        return Redirect::to("/");
     }
 
     let scene_key = quest_scene_key(&state, quest_id)
@@ -76,7 +76,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         .await
     {
         tracing::error!("Failed to request mission: {:?}", error);
-        return Redirect::to(&format!("/parties/{}", party_id));
+        return Redirect::to("/");
     }
 
     Redirect::to(&format!("/missions/{}/status", mission_id))
@@ -158,8 +158,8 @@ async fn cancel_mission(
         .call("cancel_mission_request", &[json!(mission_id)])
         .await;
 
-    if let Some(party_id) = server.party_id {
-        Redirect::to(&format!("/parties/{}", party_id)).into_response()
+    if server.party_id.is_some() {
+        Redirect::to("/").into_response()
     } else {
         Redirect::to("/").into_response()
     }

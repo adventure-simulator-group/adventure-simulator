@@ -3,7 +3,7 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{Html, Redirect},
     routing::{get, post},
 };
 use serde::Serialize;
@@ -19,15 +19,12 @@ use crate::spacetimedb::{
     PartyInventoryItem, PartyStake, Quest, Settlement,
 };
 use crate::templates::quest::{
-    post_battle_page, quest_detail_page, quest_location_base_page, quest_location_map_page,
-    quest_location_page, quests_list_page,
+    post_battle_page, quest_location_base_page, quest_location_map_page, quest_location_page,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/quests", get(list_quests))
         .route("/api/current-quest", get(current_quest))
-        .route("/quests/{id}", get(show_quest))
         .route("/quests/{id}/accept", post(accept_quest))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
@@ -103,93 +100,6 @@ async fn current_quest(
     }))
 }
 
-async fn list_quests(State(state): State<AppState>, session: Session) -> Response {
-    if let Some(character_id) = session.character_id_u64() {
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
-            ))
-            .await
-            .unwrap_or_default();
-        if let Some(character) = characters.first() {
-            if let Some(quest_id) = &character.current_quest_location_id {
-                return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
-            }
-        }
-    }
-    let quests: Vec<Quest> = state
-        .db
-        .query("SELECT * FROM quest")
-        .await
-        .unwrap_or_default();
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(quests_list_page(&quests, logged_in_as.as_deref(), session.theme()).into_string())
-        .into_response()
-}
-
-async fn show_quest(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let quest = match quests.first() {
-        Some(q) => q,
-        None => return Html("<h1>Quest not found</h1>".to_string()),
-    };
-
-    let mut is_party_quest = false;
-
-    if let Some(character_id) = session.character_id_u64() {
-        // Get character
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {}",
-                character_id
-            ))
-            .await
-            .unwrap_or_default();
-
-        if let Some(character) = characters.first() {
-            if let Some(party_id) = &character.party_id {
-                is_party_quest = quest.accepted_by.as_ref() == Some(party_id);
-            }
-        }
-    }
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(
-        quest_detail_page(
-            quest,
-            is_party_quest,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
-}
-
-/// Helper to get character name for session display
-async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Option<String> {
-    let Some(id) = character_id else {
-        return None;
-    };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!("SELECT * FROM character WHERE id = {}", id))
-        .await
-        .unwrap_or_default();
-    characters.first().map(|c| c.name.clone())
-}
-
 async fn accept_quest(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -208,7 +118,7 @@ async fn accept_quest(
     let _ = accept_quest_for_character(&state, character_id, &id).await;
 
     settlement_id.map_or_else(
-        || Redirect::to("/quests"),
+        || Redirect::to("/"),
         |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
     )
 }
@@ -332,7 +242,7 @@ async fn abandon_quest(
         .await;
 
     settlement_id.map_or_else(
-        || Redirect::to("/quests"),
+        || Redirect::to("/"),
         |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
     )
 }
@@ -351,7 +261,7 @@ async fn travel_to_quest(
         .await
     {
         tracing::error!("Failed to travel to quest: {error:?}");
-        return Redirect::to(&format!("/quests/{id}"));
+        return Redirect::to("/");
     }
     Redirect::to(&format!("/locations/quest/{id}"))
 }

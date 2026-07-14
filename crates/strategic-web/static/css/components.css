@@ -1915,6 +1915,22 @@
 
 .party-role-notification-badge[hidden] { display: none; }
 
+.service-notification-badge.service-recruitment-badge {
+  background: #4f77b8;
+  color: #f4f8ff;
+  box-shadow: 0 0 0.45rem rgb(79 119 184 / 70%);
+}
+
+.chat-quest-link.service-role-link-none { color: #6fa8dc; }
+.chat-quest-link.service-role-link-all { color: #73b879; }
+.chat-quest-link.service-role-link-some { color: #d8b85c; }
+.chat-quest-link.service-role-link-none-met { color: #d56c67; }
+.service-role-link { font-weight: 700; }
+.service-role-inspection-hidden { display: none !important; }
+.service-role-match-all { color: #73b879; }
+.service-role-match-some { color: #d8b85c; }
+.service-role-match-none-met { color: #d56c67; }
+
 .party-role-hover-card {
   position: absolute;
   z-index: 20;
