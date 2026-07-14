@@ -71,17 +71,17 @@ pub trait define_armor {
     fn on_define_armor(
         &self,
         callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &ItemSlot,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-        ) + Send
-        + 'static,
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &ItemSlot,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+            ) + Send
+            + 'static,
     ) -> DefineArmorCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_armor`],
     /// causing it not to run in the future.
@@ -117,17 +117,17 @@ impl define_armor for super::RemoteReducers {
     fn on_define_armor(
         &self,
         mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &ItemSlot,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-        ) + Send
-        + 'static,
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &ItemSlot,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+            ) + Send
+            + 'static,
     ) -> DefineArmorCallbackId {
         DefineArmorCallbackId(self.imp.on_reducer(
             "define_armor",

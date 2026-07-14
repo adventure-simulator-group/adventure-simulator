@@ -44,6 +44,10 @@ pub fn routes() -> Router<AppState> {
             post(transfer_party_item),
         )
         .route(
+            "/settlements/{id}/party/{character_id}/remove",
+            post(remove_party_member),
+        )
+        .route(
             "/settlements/{id}/party/{character_id}/inventory/offer",
             post(finalize_party_offer),
         )
@@ -884,6 +888,26 @@ async fn liquidate_party_assets(
             .await;
     }
     Redirect::to(&format!("/settlements/{settlement_id}/party-inventory"))
+}
+
+async fn remove_party_member(
+    State(state): State<AppState>,
+    Path((settlement_id, member_character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(actor_character_id) = session.character_id_u64() {
+        if let Err(error) = state
+            .db
+            .call(
+                "remove_party_member",
+                &[json!(actor_character_id), json!(member_character_id)],
+            )
+            .await
+        {
+            tracing::error!("Failed to remove party member: {error:?}");
+        }
+    }
+    Redirect::to(&format!("/settlements/{settlement_id}"))
 }
 
 async fn party_stats(
@@ -1795,6 +1819,13 @@ async fn get_active_party_members(
         .await
         .unwrap_or_default();
 
+    let leader_id = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .first()
+        .map(|party| party.leader_id);
     let mut members = Vec::new();
     for membership in memberships {
         let characters: Vec<Character> = state
@@ -1809,5 +1840,6 @@ async fn get_active_party_members(
             members.push(character);
         }
     }
+    members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
 }

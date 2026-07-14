@@ -43,12 +43,7 @@ pub fn recruitment_panel(
             data-leader-id=(party.leader_id)
             data-can-manage=(can_manage)
         {
-            div class="party-aggregate-checks" data-party-aggregate-checks {
-                (aggregate_check_control(party, "Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, can_manage))
-                (aggregate_check_control(party, "Surgery", "surgeon", "surgery", checks.surgery, party.surgery_target, can_manage))
-                (aggregate_check_control(party, "Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, can_manage))
-                (aggregate_check_control(party, "Faith", "faith", "faith", checks.faith, party.faith_target, can_manage))
-            }
+            (aggregate_check_bars(party, checks, None, can_manage, false))
             div data-party-slot-groups hidden {
                 @for panel in roles {
                     @let remaining = (panel.role.quantity as usize).saturating_sub(panel.filled.len());
@@ -89,7 +84,7 @@ pub fn recruitment_panel(
                             }
                             @if can_manage {
                                 template data-role-right-template {
-                                    (role_requests_detail(party, panel))
+                                    (role_requests_detail(party, panel, checks))
                                 }
                             }
                         }
@@ -242,7 +237,11 @@ fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Ma
     }
 }
 
-fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
+fn role_requests_detail(
+    party: &Party,
+    panel: &RecruitmentRolePanel,
+    checks: PartyCheckSummary,
+) -> Markup {
     html! {
         section class="role-inspection-content" {
             h3 class="sidebar-header" { "Join requests" }
@@ -263,12 +262,7 @@ fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
                                 @if applicant.request.meets_requirements { "Meets every individual recommendation" }
                                 @else { "Below one or more recommendations" }
                             }
-                            (candidate_contribution(applicant.contribution))
-                            @if let Some(capability) = &applicant.capability {
-                                (capability_comparison(panel.role.requirements, panel.role.effective_weapon_precision(), capability))
-                            } @else {
-                                p class="small-copy text-muted" { "Exact capability details unavailable." }
-                            }
+                            (aggregate_check_bars(party, checks, Some(applicant.contribution), false, true))
                             div class="flex gap-sm" {
                                 form action=(format!("/parties/{}/requests/{}/accept", party.id, applicant.request.id)) method="post" {
                                     button class="btn btn-primary btn-small" { "Accept" }
@@ -288,91 +282,6 @@ fn role_requests_detail(party: &Party, panel: &RecruitmentRolePanel) -> Markup {
                 }
             }
         }
-    }
-}
-
-fn capability_comparison(
-    requirements: RecruitmentRequirements,
-    weapon_precision: f32,
-    c: &CharacterCapability,
-) -> Markup {
-    html! {
-        p class="capability-detail-tags" { (capability_tag_label(c)) }
-        div class="role-detail-list capability-exact-values" {
-            @for (actual, label) in [
-                (c.athletics, "Athletics"),
-                (c.weapon_precision, "Weapon precision"),
-                (c.endurance, "Endurance"),
-                (c.medicine, "Medicine"),
-                (c.surgery, "Surgery"),
-                (c.charisma, "Charisma"),
-                (c.faith, "Faith"),
-            ] {
-                div class="role-detail-row" { span { (label) } strong { (format!("{actual:.2}")) } }
-            }
-        }
-        div class="role-detail-list" {
-            @for (required, actual, label) in [
-                (requirements.melee, c.melee, "Melee"),
-                (requirements.ranged, c.ranged, "Ranged"),
-                (requirements.heavy, c.heavy, "Heavy"),
-                (requirements.quarter_armor, c.quarter_armor, "1/4 armor"),
-                (requirements.half_armor, c.half_armor, "1/2 armor"),
-                (requirements.three_quarter_armor, c.three_quarter_armor, "3/4 armor"),
-                (requirements.full_armor, c.full_armor, "Full armor"),
-            ] {
-                @if required {
-                    div class=(if actual { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
-                        span { (label) } strong { @if actual { "Yes" } @else { "No" } }
-                    }
-                }
-            }
-            @if weapon_precision > 0.0 {
-                div class=(if c.weapon_precision >= weapon_precision { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
-                    span { "Weapon precision" }
-                    strong { (format!("{:.2} / {:.1}", c.weapon_precision, weapon_precision)) }
-                }
-            }
-            @for (minimum, actual, label) in [
-                (requirements.athletics, c.athletics, "Athletics"),
-                (requirements.endurance, c.endurance, "Endurance"),
-            ] {
-                @if minimum > 0 {
-                    div class=(if actual.round() as u8 >= minimum { "role-detail-row" } else { "role-detail-row role-detail-miss" }) {
-                        span { (label) }
-                        strong { (format!("{actual:.2} / {minimum}")) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn capability_tag_label(c: &CharacterCapability) -> String {
-    let mut labels = Vec::new();
-    for (enabled, label) in [(c.melee, "Melee"), (c.ranged, "Ranged"), (c.heavy, "Heavy")] {
-        if enabled {
-            labels.push(label);
-        }
-    }
-    if let Some(label) =
-        adventuresim_core::capability::weapon_precision_tier_label(c.weapon_precision)
-    {
-        labels.push(label);
-    }
-    if c.full_armor {
-        labels.push("Full armor");
-    } else if c.three_quarter_armor {
-        labels.push("3/4 armor");
-    } else if c.half_armor {
-        labels.push("1/2 armor");
-    } else if c.quarter_armor {
-        labels.push("1/4 armor");
-    }
-    if labels.is_empty() {
-        "No equipment tags".into()
-    } else {
-        labels.join(" · ")
     }
 }
 
@@ -421,6 +330,33 @@ fn numeric_requirement(name: &str, label: &str) -> Markup {
     } }
 }
 
+/// Shared aggregate-check display for leader editing and applicant projections.
+/// Projected displays omit checks to which the candidate contributes nothing.
+pub fn aggregate_check_bars(
+    party: &Party,
+    checks: PartyCheckSummary,
+    contribution: Option<PartyCheckSummary>,
+    can_manage: bool,
+    inline: bool,
+) -> Markup {
+    html! {
+        div class=(if inline { "party-aggregate-checks party-aggregate-checks-inline" } else { "party-aggregate-checks" })
+            data-party-aggregate-checks {
+            @for (label, icon, field, current, target, added) in [
+                ("Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, contribution.map_or(0.0, |value| value.medicine)),
+                ("Surgery", "surgeon", "surgery", checks.surgery, party.surgery_target, contribution.map_or(0.0, |value| value.surgery)),
+                ("Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, contribution.map_or(0.0, |value| value.charisma)),
+                ("Faith", "faith", "faith", checks.faith, party.faith_target, contribution.map_or(0.0, |value| value.faith)),
+            ] {
+                @if contribution.is_none() || (added > 0.005 && current < 4.995) {
+                    (aggregate_check_control(party, label, icon, field, current, target, added, can_manage))
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn aggregate_check_control(
     party: &Party,
     label: &str,
@@ -428,11 +364,14 @@ fn aggregate_check_control(
     field: &str,
     current: f32,
     target: f32,
+    contribution: f32,
     can_manage: bool,
 ) -> Markup {
     let target = target.round().clamp(0.0, 5.0);
     let deficient = target > 0.0 && current + 0.001 < target;
     let current_width = (current.clamp(0.0, 5.0) / 5.0) * 100.0;
+    let projected = (current + contribution).clamp(0.0, 5.0);
+    let contribution_width = ((projected - current.clamp(0.0, 5.0)) / 5.0) * 100.0;
     let target_position = (target / 5.0) * 100.0;
     html! {
         div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
@@ -441,7 +380,8 @@ fn aggregate_check_control(
                 style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
                 role="img" aria-label=(label) {}
             (party_check_target_form(
-                party, field, label, current, target, current_width, target_position, can_manage,
+                party, field, label, current, contribution, target, current_width,
+                contribution_width, target_position, can_manage,
             ))
         }
     }
@@ -453,8 +393,10 @@ fn party_check_target_form(
     field: &str,
     label: &str,
     current: f32,
+    contribution: f32,
     target: f32,
     current_width: f32,
+    contribution_width: f32,
     target_position: f32,
     can_manage: bool,
 ) -> Markup {
@@ -468,9 +410,23 @@ fn party_check_target_form(
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
-                title=(format!("{label}: {current:.1}; target {target:.0}")) {
+                title=(if contribution > 0.005 {
+                    format!("{label}: {current:.1} + {contribution:.1} = {:.1}; target {target:.0}", current + contribution)
+                } else {
+                    format!("{label}: {current:.1}; target {target:.0}")
+                }) {
                 span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
-                span class="party-check-exact" { (format!("{label}: {current:.1} · target {target:.0}")) }
+                @if contribution > 0.005 {
+                    span class="party-check-contribution"
+                        style=(format!("left:{current_width:.1}%;width:{contribution_width:.1}%")) {}
+                }
+                span class="party-check-exact" {
+                    @if contribution > 0.005 {
+                        (format!("{label}: {current:.1} + {contribution:.1} = {:.1} · target {target:.0}", current + contribution))
+                    } @else {
+                        (format!("{label}: {current:.1} · target {target:.0}"))
+                    }
+                }
                 @if can_manage {
                     button type="button" class="party-check-target-handle"
                         data-party-check-target-handle data-check-name=(field)
@@ -478,22 +434,10 @@ fn party_check_target_form(
                         role="slider" aria-label=(format!("{label} party target"))
                         aria-valuemin="0" aria-valuemax="5" aria-valuenow=(target as u8)
                         title=(format!("{label} target: {target:.0}")) {}
+                } @else {
+                    span class="party-check-target-handle party-check-target-static"
+                        style=(format!("left:{target_position:.1}%")) aria-hidden="true" {}
                 }
-            }
-        }
-    }
-}
-
-fn candidate_contribution(contribution: PartyCheckSummary) -> Markup {
-    html! {
-        div class="candidate-party-contribution" {
-            @for (value, label) in [
-                (contribution.medicine, "Medicine"),
-                (contribution.surgery, "Surgery"),
-                (contribution.charisma, "Charisma"),
-                (contribution.faith, "Faith"),
-            ] {
-                @if value > 0.005 { span { (label) " +" (format!("{value:.2}")) } }
             }
         }
     }

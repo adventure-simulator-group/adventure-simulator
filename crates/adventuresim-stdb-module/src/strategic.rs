@@ -1,10 +1,10 @@
-use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
     },
-    item::{inventory_item, item, InventoryItem},
+    item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
     time::advance_character_time,
 };
@@ -1857,7 +1857,21 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
 
 #[reducer]
 pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+    remove_party_member(ctx, character_id, character_id)
+}
+
+/// Removes a non-leader member. Leaders may remove their members and non-leaders
+/// may remove themselves; a leader must disband rather than remove themselves.
+#[reducer]
+pub fn remove_party_member(
+    ctx: &ReducerContext,
+    actor_character_id: u64,
+    member_character_id: u64,
+) -> Result<(), String> {
+    let Some(actor) = ctx.db.character().id().find(actor_character_id) else {
+        return Err("Acting character not found".into());
+    };
+    let Some(mut character) = ctx.db.character().id().find(member_character_id) else {
         return Err("Character not found".into());
     };
 
@@ -1869,15 +1883,21 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
         return Err("Party not found".into());
     };
 
-    if party.leader_id == character_id {
+    if actor.party_id.as_deref() != Some(&party_id) {
+        return Err("Characters are not in the same party".into());
+    }
+    if party.leader_id == member_character_id {
         return Err("Party leader cannot leave. Use disband_party instead.".into());
+    }
+    if actor_character_id != member_character_id && party.leader_id != actor_character_id {
+        return Err("Only the party leader may remove another member".into());
     }
     if ctx
         .db
         .party_stake()
         .party_id()
         .filter(&party_id)
-        .any(|stake| stake.character_id == character_id && stake.value > 0)
+        .any(|stake| stake.character_id == member_character_id && stake.value > 0)
     {
         return Err("Withdraw this character's party stake before leaving".into());
     }
@@ -1886,7 +1906,7 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
         .db
         .party_member()
         .character_id()
-        .filter(character_id)
+        .filter(member_character_id)
         .find(|m| m.party_id == party_id)
     {
         ctx.db.party_member().id().delete(membership.id);
@@ -1894,7 +1914,7 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
 
     character.party_id = None;
     ctx.db.character().id().update(character);
-    create_solo_party_for_character(ctx, character_id)?;
+    create_solo_party_for_character(ctx, member_character_id)?;
     Ok(())
 }
 

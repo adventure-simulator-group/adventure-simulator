@@ -82,8 +82,8 @@ impl create_tactical_server_for_request for super::RemoteReducers {
     fn on_create_tactical_server_for_request(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &String, &String, &String)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> CreateTacticalServerForRequestCallbackId {
         CreateTacticalServerForRequestCallbackId(self.imp.on_reducer(
             "create_tactical_server_for_request",

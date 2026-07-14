@@ -57,8 +57,8 @@ pub trait liquidate_party_inventory {
     fn on_liquidate_party_inventory(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> LiquidatePartyInventoryCallbackId;
     /// Cancel a callback previously registered by [`Self::on_liquidate_party_inventory`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl liquidate_party_inventory for super::RemoteReducers {
     fn on_liquidate_party_inventory(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> LiquidatePartyInventoryCallbackId {
         LiquidatePartyInventoryCallbackId(self.imp.on_reducer(
             "liquidate_party_inventory",

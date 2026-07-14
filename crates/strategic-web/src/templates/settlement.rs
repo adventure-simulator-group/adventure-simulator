@@ -6,7 +6,7 @@
 
 use maud::{Markup, html};
 
-use super::recruitment::{PartyCheckSummary, requirements_label};
+use super::recruitment::{PartyCheckSummary, aggregate_check_bars, requirements_label};
 use super::{
     difficulty_stars, empty_state, gold_display, list_item, population_description,
     settlement_layout_with_session, sidebar_section,
@@ -273,7 +273,7 @@ pub fn noticeboard_page(
                                 span class="member-name" { (&listing.party.name) }
                                 span class="member-role" { (&listing.role.name) }
                                 p class="small-copy text-muted" { (requirements_label(listing.role.requirements, listing.role.effective_weapon_precision())) }
-                                (party_check_deficiencies(&listing.party, listing.checks, listing.contribution))
+                                (aggregate_check_bars(&listing.party, listing.checks, Some(listing.contribution), false, true))
                                 @if !listing.meets_requirements { p class="small-copy role-warning" { "⚠ Your character does not meet every recommendation." } }
                             }
                             @if can_request_to_join && active_character.is_some() {
@@ -1335,6 +1335,9 @@ fn party_portrait_overlay(
     } else {
         party_members.iter().collect()
     };
+    let leader_id = members.first().map(|member| member.id);
+    let active_is_leader =
+        active_character.is_some_and(|character| Some(character.id) == leader_id);
 
     html! {
         @if !members.is_empty() {
@@ -1349,6 +1352,7 @@ fn party_portrait_overlay(
                 }
                 @for member in members {
                     @let is_active = active_character.is_some_and(|character| character.id == member.id);
+                    @let can_remove = Some(member.id) != leader_id && (active_is_leader || is_active);
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
                         data-character-id=(member.id)
                         data-active-character[is_active]
@@ -1373,6 +1377,15 @@ fn party_portrait_overlay(
                                 span class="party-action-icon"
                                     style="--party-action-icon: url('/static/icons/character/inventory.png')"
                                     role="img" aria-label="Inventory" {}
+                            }
+                            @if can_remove {
+                                form method="post" action=(format!("/settlements/{}/party/{}/remove", settlement_id, member.id)) {
+                                    button type="submit" class="party-portrait-action party-member-remove"
+                                        title=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() })
+                                        aria-label=(if active_is_leader { format!("Remove {} from the party", member.name) } else { "Leave party".to_string() }) {
+                                        span aria-hidden="true" { "×" }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1672,30 +1685,6 @@ fn quest_detail_rail(quest: Option<&Quest>, can_accept: bool, can_travel: bool) 
                 }
             }
         }))
-    }
-}
-
-fn party_check_deficiencies(
-    party: &Party,
-    checks: PartyCheckSummary,
-    contribution: PartyCheckSummary,
-) -> Markup {
-    html! {
-        div class="recruiting-party-checks" {
-            @for (current, target, added, label) in [
-                (checks.medicine, party.medicine_target, contribution.medicine, "Medicine"),
-                (checks.surgery, party.surgery_target, contribution.surgery, "Surgery"),
-                (checks.charisma, party.charisma_target, contribution.charisma, "Charisma"),
-                (checks.faith, party.faith_target, contribution.faith, "Faith"),
-            ] {
-                @if target > current + 0.001 {
-                    p class="small-copy role-warning" {
-                        (label) " " (format!("{current:.1}/{target:.1}"))
-                        @if added > 0.005 { " · you add +" (format!("{added:.2}")) }
-                    }
-                }
-            }
-        }
     }
 }
 

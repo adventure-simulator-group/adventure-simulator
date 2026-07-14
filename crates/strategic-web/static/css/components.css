@@ -1718,6 +1718,15 @@
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / 85%));
 }
 
+.party-aggregate-checks-inline {
+  position: static;
+  width: min(9rem, 100%);
+  margin: 0.45rem 0;
+  filter: none;
+}
+
+.party-aggregate-checks-inline .party-aggregate-check { width: 100%; }
+
 .party-aggregate-check {
   display: flex;
   width: 5.25rem;
@@ -1758,6 +1767,11 @@
   pointer-events: none;
 }
 .party-check-current { position: absolute; inset: 0 auto 0 0; background: var(--accent-dark); }
+.party-check-contribution {
+  position: absolute;
+  inset-block: 0;
+  background: var(--success);
+}
 .party-check-exact {
   position: absolute;
   z-index: 5;
@@ -1806,6 +1820,7 @@
 .party-check-target-handle::before { top: 0; border-top: 0.21rem solid currentcolor; }
 .party-check-target-handle::after { bottom: 0; border-bottom: 0.21rem solid currentcolor; }
 .party-check-target-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.party-check-target-static { pointer-events: none; }
 
 .party-portrait:hover .party-recruitment-plus,
 .party-portrait:focus-within .party-recruitment-plus {
@@ -2107,7 +2122,6 @@
 .role-applicant-portrait:hover,
 .role-applicant-portrait:focus-visible,
 .role-applicant-portrait[aria-pressed="true"] { border-color: var(--accent-dark); border-radius: 50%; }
-.candidate-party-contribution { display: flex; flex-wrap: wrap; gap: 0.3rem; color: var(--success); font-size: var(--font-size-xs); }
 .applicant-inspection-preview { display: contents; }
 .applicant-inspection-preview .service-visual { flex: 1 1 auto; }
 .role-request-detail h4 { color: var(--text-primary); font-family: var(--font-display), serif; }
@@ -2193,6 +2207,21 @@
   height: 1.35rem;
   place-items: center;
   color: var(--icon-default, var(--text-primary));
+}
+
+button.party-portrait-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.party-member-remove {
+  color: var(--danger);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .party-action-icon {
