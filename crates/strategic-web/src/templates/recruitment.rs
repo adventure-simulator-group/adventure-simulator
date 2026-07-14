@@ -359,8 +359,11 @@ fn combat_requirements() -> Markup {
 fn weapon_precision_requirement() -> Markup {
     html! { label class="role-slider" {
         span class="role-slider-heading" { span { "Precision" } output data-slider-output="weapon_precision" { "Off" } }
-        input type="range" name="weapon_precision" min="0" max="2" step="0.5" value="0"
-            data-discrete-slider data-slider-labels="Off|0.5|1.0|1.5|2.0";
+        div class="role-slider-control" {
+            span class="role-slider-rail" aria-hidden="true" {}
+            input type="range" name="weapon_precision" min="0" max="2" step="0.5" value="0"
+                data-discrete-slider data-slider-labels="Off|0.5|1.0|1.5|2.0";
+        }
         span class="role-slider-ticks role-slider-ticks-precision" aria-hidden="true" {
             span { "Off" } span title="Clubs and hammers" { "0.5" } span title="Axes" { "1.0" }
             span title="Swords and spears" { "1.5" } span title="Rapiers and bodkin ammunition" { "2.0" }
@@ -371,8 +374,11 @@ fn weapon_precision_requirement() -> Markup {
 fn numeric_requirement(name: &str, label: &str) -> Markup {
     html! { label class="role-slider" {
         span class="role-slider-heading" { span { (label) } output data-slider-output=(name) { "Off" } }
-        input type="range" name=(name) min="0" max="5" step="1" value="0"
-            data-discrete-slider data-slider-labels="Off|1|2|3|4|5";
+        div class="role-slider-control" {
+            span class="role-slider-rail" aria-hidden="true" {}
+            input type="range" name=(name) min="0" max="5" step="1" value="0"
+                data-discrete-slider data-slider-labels="Off|1|2|3|4|5";
+        }
         span class="role-slider-ticks" aria-hidden="true" {
             @for value in 0..=5 { span { (value) } }
         }
@@ -460,8 +466,11 @@ fn candidate_contribution(contribution: PartyCheckSummary) -> Markup {
 fn armor_requirement() -> Markup {
     html! { label class="role-slider" {
         span class="role-slider-heading" { span { "Armor" } output data-slider-output="armor_tier" { "Off" } }
-        input type="range" name="armor_tier" min="0" max="4" step="1" value="0"
-            data-discrete-slider data-slider-labels="Off|1/4|1/2|3/4|Full";
+        div class="role-slider-control" {
+            span class="role-slider-rail" aria-hidden="true" {}
+            input type="range" name="armor_tier" min="0" max="4" step="1" value="0"
+                data-discrete-slider data-slider-labels="Off|1/4|1/2|3/4|Full";
+        }
         span class="role-slider-ticks role-slider-ticks-armor" aria-hidden="true" {
             span { "Off" } span { "1/4" } span { "1/2" } span { "3/4" } span { "Full" }
         }

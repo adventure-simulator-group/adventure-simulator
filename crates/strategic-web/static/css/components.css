@@ -1919,12 +1919,60 @@
 .role-slider { display: flex; flex-direction: column; gap: 0.25rem; }
 .role-slider-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .role-slider-heading output { color: var(--accent-dark); font-weight: 700; }
-.role-slider input[type="range"] {
+.role-slider-control {
   --role-slider-thumb-width: 1rem;
-  width: calc(100% + var(--role-slider-thumb-width));
-  margin-inline: calc(var(--role-slider-thumb-width) / -2);
-  accent-color: var(--accent);
+  --role-slider-progress: 0%;
+  position: relative;
+  height: 1rem;
 }
+.role-slider-rail {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 0.38rem;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--role-slider-progress),
+    var(--bg-tertiary) var(--role-slider-progress) 100%
+  );
+  transform: translateY(-50%);
+}
+.role-slider input[type="range"] {
+  position: absolute;
+  inset: 0 auto auto calc(var(--role-slider-thumb-width) / -2);
+  width: calc(100% + var(--role-slider-thumb-width));
+  height: 1rem;
+  padding: 0;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.role-slider input[type="range"]::-webkit-slider-runnable-track { height: 0.38rem; background: transparent; }
+.role-slider input[type="range"]::-webkit-slider-thumb {
+  width: var(--role-slider-thumb-width);
+  height: var(--role-slider-thumb-width);
+  margin-top: calc((0.38rem - var(--role-slider-thumb-width)) / 2);
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+  background: var(--accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+.role-slider input[type="range"]::-moz-range-track { height: 0.38rem; border: 0; background: transparent; }
+.role-slider input[type="range"]::-moz-range-progress { height: 0.38rem; background: transparent; }
+.role-slider input[type="range"]::-moz-range-thumb {
+  width: var(--role-slider-thumb-width);
+  height: var(--role-slider-thumb-width);
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+.role-slider input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .role-slider-ticks { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; }
 .role-slider-ticks-armor { font-size: 0.6rem; }
 .role-slider-ticks-precision { font-size: 0.6rem; }

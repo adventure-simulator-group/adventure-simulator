@@ -175,8 +175,12 @@
       const labels = (slider.dataset.sliderLabels || "").split("|");
       const output = panel.querySelector(`[data-slider-output="${slider.name}"]`);
       const step = Number(slider.step) || 1;
-      const index = Math.round((Number(slider.value) - Number(slider.min || 0)) / step);
+      const min = Number(slider.min) || 0;
+      const max = Number(slider.max) || 1;
+      const value = Number(slider.value);
+      const index = Math.round((value - min) / step);
       if (output) output.textContent = labels[index] || slider.value;
+      slider.closest(".role-slider-control")?.style.setProperty("--role-slider-progress", `${(value - min) / (max - min) * 100}%`);
     };
     panel.querySelectorAll("[data-discrete-slider]").forEach((slider) => {
       slider.addEventListener("input", () => syncSlider(slider));
