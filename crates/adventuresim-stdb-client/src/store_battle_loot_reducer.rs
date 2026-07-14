@@ -9,6 +9,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct StoreBattleLootArgs {
     pub character_id: u64,
     pub quest_id: String,
+    pub loot_item_ids: Vec<u64>,
+    pub quantities: Vec<u32>,
 }
 
 impl From<StoreBattleLootArgs> for super::Reducer {
@@ -16,6 +18,8 @@ impl From<StoreBattleLootArgs> for super::Reducer {
         Self::StoreBattleLoot {
             character_id: args.character_id,
             quest_id: args.quest_id,
+            loot_item_ids: args.loot_item_ids,
+            quantities: args.quantities,
         }
     }
 }
@@ -36,7 +40,13 @@ pub trait store_battle_loot {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_store_battle_loot`] callbacks.
-    fn store_battle_loot(&self, character_id: u64, quest_id: String) -> __sdk::Result<()>;
+    fn store_battle_loot(
+        &self,
+        character_id: u64,
+        quest_id: String,
+        loot_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `store_battle_loot`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -46,7 +56,9 @@ pub trait store_battle_loot {
     /// to cancel the callback.
     fn on_store_battle_loot(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
+        + Send
+        + 'static,
     ) -> StoreBattleLootCallbackId;
     /// Cancel a callback previously registered by [`Self::on_store_battle_loot`],
     /// causing it not to run in the future.
@@ -54,18 +66,28 @@ pub trait store_battle_loot {
 }
 
 impl store_battle_loot for super::RemoteReducers {
-    fn store_battle_loot(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
+    fn store_battle_loot(
+        &self,
+        character_id: u64,
+        quest_id: String,
+        loot_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "store_battle_loot",
             StoreBattleLootArgs {
                 character_id,
                 quest_id,
+                loot_item_ids,
+                quantities,
             },
         )
     }
     fn on_store_battle_loot(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
+        + Send
+        + 'static,
     ) -> StoreBattleLootCallbackId {
         StoreBattleLootCallbackId(self.imp.on_reducer(
             "store_battle_loot",
@@ -78,6 +100,8 @@ impl store_battle_loot for super::RemoteReducers {
                                 super::Reducer::StoreBattleLoot {
                                     character_id,
                                     quest_id,
+                                    loot_item_ids,
+                                    quantities,
                                 },
                             ..
                         },
@@ -86,7 +110,7 @@ impl store_battle_loot for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, character_id, quest_id)
+                callback(ctx, character_id, quest_id, loot_item_ids, quantities)
             }),
         ))
     }

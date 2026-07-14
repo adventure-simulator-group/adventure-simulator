@@ -24,7 +24,7 @@ function merchantRow(itemId, sidebar) {
 }
 
 function ensureMerchantPlayerRow(itemId, sourceRow) {
-  const playerSidebar = document.querySelector(".right-sidebar");
+  const playerSidebar = document.querySelector('[data-inventory-pane]:not([hidden])') || document.querySelector(".right-sidebar");
   let row = [...playerSidebar.querySelectorAll(`tr[data-merchant-item="${CSS.escape(itemId)}"]`)]
     .find((candidate) => candidate.dataset.merchantEquipped !== "true");
   if (row) return row;
@@ -59,7 +59,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
 
 function updateMerchantOfferForm() {
   const form = document.querySelector("#merchant-offer");
-  form.querySelectorAll("input:not([name='return_to'])").forEach((input) => input.remove());
+  form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
   const buys = window.merchantDraft || new Map();
   const sells = window.merchantSells || new Map();
   const fields = {
@@ -94,7 +94,7 @@ function resetTradeDraft(form) {
   const discardEmpty = document.querySelector("[data-discard-empty]");
   if (discardTable) discardTable.hidden = true;
   if (discardEmpty) discardEmpty.hidden = false;
-  form.querySelectorAll("input:not([name='return_to'])").forEach((input) => input.remove());
+  form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
   form.hidden = true;
   form.querySelector("[type='submit']").disabled = true;
 }
@@ -172,6 +172,78 @@ function updateMerchantGoldDraft() {
 }
 
 document.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-inventory-tab]");
+  if (tab) {
+    const root = tab.closest("[data-inventory-tabs]");
+    root.querySelectorAll("[data-inventory-tab]").forEach((entry) => entry.classList.toggle("active", entry === tab));
+    root.querySelectorAll("[data-inventory-pane]").forEach((pane) => { pane.hidden = pane.dataset.inventoryPane !== tab.dataset.inventoryTab; });
+    const scope = document.querySelector("#merchant-offer [name='inventory_scope']");
+    if (scope) scope.value = tab.dataset.inventoryTab;
+    resetTradeDraft(document.querySelector("#merchant-offer"));
+    return;
+  }
+  const targetStep = event.target.closest("[data-target-step]");
+  if (targetStep) {
+    const control = targetStep.closest("[data-target-control]");
+    const value = control.querySelector("[data-target-value]");
+    const quantity = Math.max(0, Number(value.textContent) + Number(targetStep.dataset.targetStep));
+    value.textContent = String(quantity);
+    control.closest("tr").dataset.target = String(quantity);
+    let down = control.querySelector('[data-target-step="-1"]');
+    if (!down && quantity > 0) {
+      down = targetStep.cloneNode(true); down.dataset.targetStep = "-1"; down.classList.replace("inventory-target-up", "inventory-target-down"); down.textContent = "⌄"; control.append(down);
+    }
+    if (down) down.hidden = quantity === 0;
+    fetch("/api/inventory-target", { method: "POST", body: new URLSearchParams({ item_id: control.dataset.itemId, quantity: String(quantity), party_scope: control.dataset.partyScope }) });
+    return;
+  }
+  const bulk = event.target.closest("[data-inventory-bulk]");
+  if (bulk) {
+    const panel = bulk.closest("aside, section, .sidebar-section") || document;
+    const selector = bulk.dataset.inventoryBulk === "buy" ? "[data-merchant-buy]" : bulk.dataset.inventoryBulk === "loot" ? "[data-loot-stage]" : ["deposit", "withdraw"].includes(bulk.dataset.inventoryBulk) ? `[data-pool-stage][data-pool-direction="${bulk.dataset.inventoryBulk}"]` : bulk.dataset.inventoryBulk.startsWith("party-") ? ".party-draft-transfer" : "[data-merchant-sell]";
+    panel.querySelectorAll(`${selector}[data-transfer-mode="${bulk.dataset.transferMode}"]`).forEach((button) => button.click());
+    return;
+  }
+  const cancelLoot = event.target.closest("[data-cancel-loot]");
+  if (cancelLoot) {
+    window.lootTransferDraft = new Map();
+    document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
+    const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); form.hidden = true;
+    return;
+  }
+  const lootStage = event.target.closest("[data-loot-stage]");
+  if (lootStage) {
+    const row = lootStage.closest("tr");
+    const draft = window.lootTransferDraft ||= new Map();
+    const id = lootStage.dataset.lootStage;
+    const staged = draft.get(id) || 0;
+    const available = Number(row.dataset.count);
+    const mode = lootStage.dataset.transferMode || "one";
+    const amount = Math.max(0, Math.min(available - staged, mode === "all" ? available - staged : mode === "target" ? Number(row.dataset.target) - Number(row.dataset.current) - staged : 1));
+    if (!amount) return;
+    draft.set(id, staged + amount); setTradeDraftCount(row, -(staged + amount));
+    const form = document.querySelector("#loot-transfer-offer");
+    form.querySelectorAll("input").forEach((input) => input.remove());
+    for (const [name, values] of Object.entries({ item_ids: [...draft.keys()], quantities: [...draft.values()] })) { const input = document.createElement("input"); input.type="hidden"; input.name=name; input.value=values.join(","); form.append(input); }
+    form.hidden = false; form.querySelector('[type="submit"]').disabled = false;
+    return;
+  }
+  const cancelPool = event.target.closest("[data-cancel-pool]");
+  if (cancelPool) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; return; }
+  const poolStage = event.target.closest("[data-pool-stage]");
+  if (poolStage) {
+    const form = document.querySelector("#pool-transfer-offer");
+    if (form.dataset.direction && form.dataset.direction !== poolStage.dataset.poolDirection) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); }
+    form.dataset.direction = poolStage.dataset.poolDirection;
+    form.action = `${location.pathname}/${poolStage.dataset.poolDirection}`;
+    const draft = window.poolTransferDraft ||= new Map(); const id=poolStage.dataset.poolStage; const staged=draft.get(id)||0;
+    const available=Number(poolStage.dataset.count); const mode=poolStage.dataset.transferMode||"one";
+    const amount=Math.max(0,Math.min(available-staged,mode==="all"?available-staged:mode==="target"?Number(poolStage.dataset.target)-Number(poolStage.dataset.current)-staged:1));
+    if (!amount) return; draft.set(id,staged+amount); setTradeDraftCount(poolStage.closest("tr"),-(staged+amount));
+    form.querySelectorAll("input").forEach((input)=>input.remove());
+    for (const [name, values] of Object.entries({item_id:[...draft.keys()],quantity:[...draft.values()]})) { const input=document.createElement("input");input.type="hidden";input.name=name;input.value=values.join(",");form.append(input); }
+    form.hidden=false;form.querySelector('[type="submit"]').disabled=false;return;
+  }
   const cancelTrade = event.target.closest("[data-cancel-trade]");
   if (cancelTrade) {
     resetTradeDraft(cancelTrade.closest("form"));
@@ -240,11 +312,15 @@ document.addEventListener("click", (event) => {
     }
     const sells = window.merchantSells ||= new Map(); const id = merchantSell.dataset.merchantSell;
     const currentDraft = sells.get(id) || 0;
-    if (currentDraft >= Number(sourceRow.querySelector(".inventory-count").dataset.base || sourceRow.querySelector(".inventory-count").textContent.trim())) return;
-    sells.set(id, (sells.get(id) || 0) + 1);
+    const available = Number(merchantSell.dataset.count || sourceRow.dataset.inventoryQuantity || sourceRow.querySelector(".inventory-count").dataset.base || sourceRow.querySelector(".inventory-count").textContent.trim());
+    const target = Number(sourceRow.dataset.target || merchantSell.dataset.target || 0);
+    const mode = merchantSell.dataset.transferMode || "one";
+    const amount = Math.max(0, Math.min(available - currentDraft, mode === "all" ? available - currentDraft : mode === "target" ? available - target - currentDraft : 1));
+    if (!amount) return;
+    sells.set(id, currentDraft + amount);
     (window.merchantSaleDetails ||= new Map()).set(id, { itemId: merchantSell.dataset.itemName, price: Number(merchantSell.dataset.merchantSellPrice) });
-    changeTradeDraftCount(sourceRow, -1);
-    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), 1);
+    changeTradeDraftCount(sourceRow, -amount);
+    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
@@ -253,11 +329,20 @@ document.addEventListener("click", (event) => {
   if (merchantButton) {
     const draft = window.merchantDraft ||= new Map();
     const item = merchantButton.dataset.merchantBuy;
-    draft.set(item, (draft.get(item) || 0) + 1);
+    const currentDraft = draft.get(item) || 0;
+    const activePane = document.querySelector('[data-inventory-pane]:not([hidden])');
+    const destination = activePane?.querySelector(`tr[data-merchant-item="${CSS.escape(item)}"]`);
+    const current = Number(destination?.dataset.inventoryQuantity || 0);
+    const target = Number(destination?.dataset.target || merchantButton.dataset.target || 0);
+    const available = Number(merchantButton.dataset.count || 999);
+    const mode = merchantButton.dataset.transferMode || "one";
+    const amount = Math.max(0, Math.min(available - currentDraft, mode === "all" ? available - currentDraft : mode === "target" ? target - current - currentDraft : 1));
+    if (!amount) return;
+    draft.set(item, currentDraft + amount);
     (window.merchantBuyPrices ||= new Map()).set(item, Number(merchantButton.dataset.merchantBuyPrice));
     const sourceRow = merchantButton.closest("tr");
-    changeTradeDraftCount(sourceRow, -1);
-    changeTradeDraftCount(ensureMerchantPlayerRow(item, sourceRow), 1);
+    changeTradeDraftCount(sourceRow, -amount);
+    changeTradeDraftCount(ensureMerchantPlayerRow(item, sourceRow), amount);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
@@ -268,12 +353,16 @@ document.addEventListener("click", (event) => {
   const draft = window.partyTradeDraft ||= new Map();
   const entry = draft.get(key) || { from: button.dataset.from, to: button.dataset.to, quantity: 0 };
   if (entry.quantity >= Number(button.dataset.count)) return;
-  entry.quantity += 1;
-  draft.set(key, entry);
-  setTradeDraftCount(button.closest("tr"), -entry.quantity);
   const sourceSidebar = button.closest("aside");
   const targetSidebar = sourceSidebar.classList.contains("left-sidebar") ? document.querySelector(".right-sidebar") : document.querySelector(".left-sidebar");
   let targetRow = targetSidebar.querySelector(`tr[data-item-key="${CSS.escape(button.dataset.key)}"]`);
+  const current = Number(targetRow?.querySelector(".inventory-count")?.dataset.base || targetRow?.querySelector(".inventory-count")?.textContent.trim() || 0);
+  const available = Number(button.dataset.count); const mode=button.dataset.transferMode||"one";
+  const amount=Math.max(0,Math.min(available-entry.quantity,mode==="all"?available-entry.quantity:mode==="target"?Number(button.dataset.target)-current-entry.quantity:1));
+  if (!amount) return;
+  entry.quantity += amount;
+  draft.set(key, entry);
+  setTradeDraftCount(button.closest("tr"), -entry.quantity);
   if (!targetRow) {
     targetRow = button.closest("tr").cloneNode(true);
     targetRow.dataset.generatedOfferRow = "true";
@@ -292,3 +381,11 @@ document.addEventListener("click", (event) => {
   form.hidden = false;
   form.querySelector("[type='submit']").disabled = false;
 });
+
+document.addEventListener("wheel", (event) => {
+  const control = event.target.closest("[data-target-control]");
+  if (!control) return;
+  event.preventDefault();
+  const selector = event.deltaY < 0 ? '[data-target-step="1"]' : '[data-target-step="-1"]';
+  control.querySelector(selector)?.click();
+}, { passive: false });

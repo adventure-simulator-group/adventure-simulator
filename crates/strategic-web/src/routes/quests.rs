@@ -1,7 +1,7 @@
 //! Quest route handlers
 
 use axum::{
-    Json, Router,
+    Form, Json, Router,
     extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -15,8 +15,8 @@ use super::{
 };
 use crate::session::Session;
 use crate::spacetimedb::{
-    BattleLootItem, BattleResult, Character, ItemDefinition, Party, PartyInventoryItem, PartyStake,
-    Quest, Settlement,
+    BattleLootItem, BattleResult, Character, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Quest, Settlement,
 };
 use crate::templates::quest::{
     post_battle_page, quest_detail_page, quest_location_base_page, quest_location_map_page,
@@ -429,6 +429,7 @@ async fn post_battle_loot(
         .iter()
         .find(|stake| stake.character_id == character.id)
         .map_or(0, |stake| stake.value);
+    let targets = party_targets(&state, &result.party_id).await;
     Html(
         post_battle_page(
             quest,
@@ -437,16 +438,26 @@ async fn post_battle_loot(
             &pooled,
             stake,
             &items,
+            &targets,
             session.theme(),
         )
         .into_string(),
     )
 }
 
+#[derive(Default, serde::Deserialize)]
+struct StoreLootForm {
+    #[serde(default)]
+    item_ids: String,
+    #[serde(default)]
+    quantities: String,
+}
+
 async fn store_battle_loot(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
+    Form(form): Form<StoreLootForm>,
 ) -> Redirect {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
@@ -455,7 +466,22 @@ async fn store_battle_loot(
         .db
         .call(
             "store_battle_loot",
-            &[json!(character_id), json!(id.clone())],
+            &[
+                json!(character_id),
+                json!(id.clone()),
+                json!(
+                    form.item_ids
+                        .split(',')
+                        .filter_map(|v| v.parse::<u64>().ok())
+                        .collect::<Vec<_>>()
+                ),
+                json!(
+                    form.quantities
+                        .split(',')
+                        .filter_map(|v| v.parse::<u32>().ok())
+                        .collect::<Vec<_>>()
+                ),
+            ],
         )
         .await
     {
@@ -625,6 +651,11 @@ async fn render_quest_location(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let targets = if let Some(party) = party.as_ref() {
+        party_targets(&state, &party.id).await
+    } else {
+        Vec::new()
+    };
     let party_members = get_active_party_members(&state, character.as_ref()).await;
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let page = match tab {
@@ -659,11 +690,26 @@ async fn render_quest_location(
             &pooled,
             stake,
             &items,
+            &targets,
             logged_in_as,
             session.theme(),
         ),
     };
     Html(page.into_string())
+}
+
+async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
+    let party = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(party) = party else {
+        return Vec::new();
+    };
+    state.db.query(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true", party.leader_id)).await.unwrap_or_default()
 }
 
 async fn autoresolve_quest(

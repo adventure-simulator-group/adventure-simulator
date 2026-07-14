@@ -342,6 +342,75 @@ pub struct PartyInventoryItem {
     pub quantity: u32,
 }
 
+/// Desired retained quantity used by bulk inventory actions. Party targets are
+/// owned by the leader character so they survive party disbanding/recreation.
+#[derive(Clone, Debug)]
+#[table(
+    name = inventory_quantity_target, public,
+    index(name = owner_and_scope, btree(columns = [owner_character_id, party_scope])),
+)]
+pub struct InventoryQuantityTarget {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub party_scope: bool,
+    #[index(btree)]
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[reducer]
+pub fn set_inventory_quantity_target(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_scope: bool,
+    item_id: String,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if ctx.db.item().id().find(&item_id).is_none() {
+        return Err("Item not found".into());
+    }
+    let owner_character_id = if party_scope {
+        let party_id = character.party_id.ok_or("Character has no party")?;
+        let party = ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id)
+            .ok_or("Party not found")?;
+        if party.leader_id != character_id {
+            return Err("Only the party leader can change party quantity targets".into());
+        }
+        party.leader_id
+    } else {
+        character_id
+    };
+    let id = format!(
+        "{}:{owner_character_id}:{item_id}",
+        if party_scope { "party" } else { "player" }
+    );
+    let row = InventoryQuantityTarget {
+        id: id.clone(),
+        owner_character_id,
+        party_scope,
+        item_id,
+        quantity,
+    };
+    if ctx.db.inventory_quantity_target().id().find(&id).is_some() {
+        ctx.db.inventory_quantity_target().id().update(row);
+    } else {
+        ctx.db.inventory_quantity_target().insert(row);
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 #[table(name = party_stake, public)]
 pub struct PartyStake {
@@ -1381,7 +1450,12 @@ pub fn store_battle_loot(
     ctx: &ReducerContext,
     character_id: u64,
     quest_id: String,
+    loot_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
 ) -> Result<(), String> {
+    if loot_item_ids.len() != quantities.len() {
+        return Err("Loot entries must be aligned".into());
+    }
     let character = ctx
         .db
         .character()
@@ -1398,12 +1472,32 @@ pub fn store_battle_loot(
     if result.party_id != party_id {
         return Err("Battle loot belongs to another party".into());
     }
-    let loot: Vec<_> = ctx
+    let available: Vec<_> = ctx
         .db
         .battle_loot_item()
         .quest_id()
         .filter(&quest_id)
         .collect();
+    let loot: Vec<_> = if loot_item_ids.is_empty() {
+        available
+    } else {
+        loot_item_ids
+            .iter()
+            .zip(&quantities)
+            .map(|(id, quantity)| {
+                let mut entry = available
+                    .iter()
+                    .find(|entry| entry.id == *id)
+                    .cloned()
+                    .ok_or("Loot item not found")?;
+                if *quantity == 0 || *quantity > entry.quantity {
+                    return Err("Invalid loot quantity".into());
+                }
+                entry.quantity = *quantity;
+                Ok(entry)
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    };
     let mut total_value = 0_u64;
     for entry in &loot {
         total_value = total_value.saturating_add(
@@ -1421,7 +1515,14 @@ pub fn store_battle_loot(
     }
     for entry in loot {
         add_to_party_inventory(ctx, &party_id, &entry.item_id, entry.quantity);
-        ctx.db.battle_loot_item().id().delete(entry.id);
+        let original = ctx.db.battle_loot_item().id().find(entry.id).unwrap();
+        if original.quantity == entry.quantity {
+            ctx.db.battle_loot_item().id().delete(entry.id);
+        } else {
+            let mut original = original;
+            original.quantity -= entry.quantity;
+            ctx.db.battle_loot_item().id().update(original);
+        }
     }
     let participant_count = participants.len() as u64;
     let share = total_value / participant_count;
@@ -1732,6 +1833,7 @@ pub fn finalize_merchant_trade(
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
     sell_quantities: Vec<u32>,
+    party_scope: bool,
 ) -> Result<(), String> {
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
@@ -1744,15 +1846,28 @@ pub fn finalize_merchant_trade(
     if character.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Character must be at this settlement to trade".into());
     }
+    let party_id = character.party_id.clone();
     let mut net: HashMap<String, i64> = HashMap::new();
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         *net.entry(item_id.clone()).or_default() += *quantity as i64;
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let Some(inventory) = ctx.db.inventory_item().id().find(*inventory_id) else {
-            return Err("Inventory item not found".into());
+        let item_id = if party_scope {
+            ctx.db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Party inventory item not found")?
+                .item_id
+        } else {
+            ctx.db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item not found")?
+                .item_id
         };
-        *net.entry(inventory.item_id).or_default() -= *quantity as i64;
+        *net.entry(item_id).or_default() -= *quantity as i64;
     }
     let buy_item_ids: Vec<String> = net
         .iter()
@@ -1763,18 +1878,32 @@ pub fn finalize_merchant_trade(
     let sell_inventory_ids: Vec<u64> = sell_inventory_ids
         .into_iter()
         .filter(|id| {
-            ctx.db
-                .inventory_item()
-                .id()
-                .find(*id)
-                .is_some_and(|entry| net.get(&entry.item_id).copied().unwrap_or(0) < 0)
+            let item_id = if party_scope {
+                ctx.db
+                    .party_inventory_item()
+                    .id()
+                    .find(*id)
+                    .map(|v| v.item_id)
+            } else {
+                ctx.db.inventory_item().id().find(*id).map(|v| v.item_id)
+            };
+            item_id.is_some_and(|item_id| net.get(&item_id).copied().unwrap_or(0) < 0)
         })
         .collect();
     let sell_quantities: Vec<u32> = sell_inventory_ids
         .iter()
         .map(|id| {
-            let entry = ctx.db.inventory_item().id().find(*id).unwrap();
-            (-net[&entry.item_id]) as u32
+            let item_id = if party_scope {
+                ctx.db
+                    .party_inventory_item()
+                    .id()
+                    .find(*id)
+                    .unwrap()
+                    .item_id
+            } else {
+                ctx.db.inventory_item().id().find(*id).unwrap().item_id
+            };
+            (-net[&item_id]) as u32
         })
         .collect();
     let mut cost = 0_u32;
@@ -1793,25 +1922,42 @@ pub fn finalize_merchant_trade(
     }
     let mut proceeds = 0_u32;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let Some(inventory) = ctx.db.inventory_item().id().find(*inventory_id) else {
-            return Err("Inventory item not found".into());
+        let (item_id, available) = if party_scope {
+            let inventory = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Party inventory item not found")?;
+            if Some(&inventory.party_id) != party_id.as_ref() {
+                return Err("Invalid party inventory sale".into());
+            }
+            (inventory.item_id, inventory.quantity)
+        } else {
+            let inventory = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item not found")?;
+            if inventory.character_id != character_id {
+                return Err("Invalid merchant sale".into());
+            }
+            (inventory.item_id, inventory.quantity)
         };
-        let Some(item) = ctx.db.item().id().find(&inventory.item_id) else {
+        let Some(item) = ctx.db.item().id().find(&item_id) else {
             return Err("Item definition not found".into());
         };
-        if inventory.character_id != character_id
-            || inventory.quantity < *quantity
-            || *quantity == 0
-            || item.kind == crate::ItemKind::Currency
-        {
+        if available < *quantity || *quantity == 0 || item.kind == crate::ItemKind::Currency {
             return Err("Invalid merchant sale".into());
         }
-        if ctx
-            .db
-            .character_equip()
-            .character_id()
-            .find(character_id)
-            .is_some_and(|equip| equip.is_equiped(*inventory_id).is_some())
+        if !party_scope
+            && ctx
+                .db
+                .character_equip()
+                .character_id()
+                .find(character_id)
+                .is_some_and(|equip| equip.is_equiped(*inventory_id).is_some())
         {
             return Err("Unequip an item before selling it".into());
         }
@@ -1822,28 +1968,56 @@ pub fn finalize_merchant_trade(
                 * quantity,
         );
     }
-    let coins: u32 = ctx
-        .db
-        .inventory_item()
-        .character_and_item_id()
-        .filter((character_id, &"gold_coin".to_string()))
-        .map(|coin| coin.quantity)
-        .sum();
+    let coins: u32 = if party_scope {
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
+        ctx.db
+            .party_inventory_item()
+            .party_id()
+            .filter(party_id)
+            .filter(|v| v.item_id == "gold_coin")
+            .map(|v| v.quantity)
+            .sum()
+    } else {
+        ctx.db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((character_id, &"gold_coin".to_string()))
+            .map(|coin| coin.quantity)
+            .sum()
+    };
     if coins.saturating_add(proceeds) < cost {
         return Err("Not enough gold".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
-        if inventory.quantity == *quantity {
-            ctx.db.inventory_item().id().delete(*inventory_id);
+        if party_scope {
+            let mut inventory = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .unwrap();
+            if inventory.quantity == *quantity {
+                ctx.db.party_inventory_item().id().delete(*inventory_id);
+            } else {
+                inventory.quantity -= quantity;
+                ctx.db.party_inventory_item().id().update(inventory);
+            }
         } else {
-            let mut updated = inventory;
-            updated.quantity -= quantity;
-            ctx.db.inventory_item().id().update(updated);
+            let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
+            if inventory.quantity == *quantity {
+                ctx.db.inventory_item().id().delete(*inventory_id);
+            } else {
+                inventory.quantity -= quantity;
+                ctx.db.inventory_item().id().update(inventory);
+            }
         }
     }
     let equip = ctx.db.character_equip().character_id().find(character_id);
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
+        if party_scope {
+            add_to_party_inventory(ctx, party_id.as_ref().unwrap(), item_id, *quantity);
+            continue;
+        }
         // Never add purchases to an equipped stack. An equipped item must stay
         // independently sellable from an otherwise identical spare item.
         if let Some(mut stack) = ctx
@@ -1869,7 +2043,21 @@ pub fn finalize_merchant_trade(
         }
     }
     let net = proceeds as i64 - cost as i64;
-    if net != 0 {
+    if party_scope && net != 0 {
+        let party_id = party_id.as_ref().unwrap();
+        let mut coin = ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(party_id)
+            .find(|v| v.item_id == "gold_coin");
+        if let Some(ref mut coin) = coin {
+            coin.quantity = (coin.quantity as i64 + net) as u32;
+            ctx.db.party_inventory_item().id().update(coin.clone());
+        } else if net > 0 {
+            add_to_party_inventory(ctx, party_id, "gold_coin", net as u32);
+        }
+    } else if net != 0 {
         if let Some(mut coin) = ctx
             .db
             .inventory_item()

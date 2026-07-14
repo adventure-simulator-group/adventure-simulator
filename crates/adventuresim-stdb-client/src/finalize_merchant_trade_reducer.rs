@@ -13,6 +13,7 @@ pub(super) struct FinalizeMerchantTradeArgs {
     pub buy_quantities: Vec<u32>,
     pub sell_inventory_ids: Vec<u64>,
     pub sell_quantities: Vec<u32>,
+    pub party_scope: bool,
 }
 
 impl From<FinalizeMerchantTradeArgs> for super::Reducer {
@@ -24,6 +25,7 @@ impl From<FinalizeMerchantTradeArgs> for super::Reducer {
             buy_quantities: args.buy_quantities,
             sell_inventory_ids: args.sell_inventory_ids,
             sell_quantities: args.sell_quantities,
+            party_scope: args.party_scope,
         }
     }
 }
@@ -52,6 +54,7 @@ pub trait finalize_merchant_trade {
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
         sell_quantities: Vec<u32>,
+        party_scope: bool,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `finalize_merchant_trade`.
     ///
@@ -63,15 +66,16 @@ pub trait finalize_merchant_trade {
     fn on_finalize_merchant_trade(
         &self,
         callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &String,
-                &Vec<String>,
-                &Vec<u32>,
-                &Vec<u64>,
-                &Vec<u32>,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &String,
+            &Vec<String>,
+            &Vec<u32>,
+            &Vec<u64>,
+            &Vec<u32>,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> FinalizeMerchantTradeCallbackId;
     /// Cancel a callback previously registered by [`Self::on_finalize_merchant_trade`],
     /// causing it not to run in the future.
@@ -87,6 +91,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
         sell_quantities: Vec<u32>,
+        party_scope: bool,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "finalize_merchant_trade",
@@ -97,21 +102,23 @@ impl finalize_merchant_trade for super::RemoteReducers {
                 buy_quantities,
                 sell_inventory_ids,
                 sell_quantities,
+                party_scope,
             },
         )
     }
     fn on_finalize_merchant_trade(
         &self,
         mut callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &String,
-                &Vec<String>,
-                &Vec<u32>,
-                &Vec<u64>,
-                &Vec<u32>,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &String,
+            &Vec<String>,
+            &Vec<u32>,
+            &Vec<u64>,
+            &Vec<u32>,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> FinalizeMerchantTradeCallbackId {
         FinalizeMerchantTradeCallbackId(self.imp.on_reducer(
             "finalize_merchant_trade",
@@ -128,6 +135,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                                     buy_quantities,
                                     sell_inventory_ids,
                                     sell_quantities,
+                                    party_scope,
                                 },
                             ..
                         },
@@ -144,6 +152,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                     buy_quantities,
                     sell_inventory_ids,
                     sell_quantities,
+                    party_scope,
                 )
             }),
         ))

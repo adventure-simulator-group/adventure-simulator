@@ -7,7 +7,9 @@ use super::{
     panel, sidebar_section, status_badge,
 };
 use crate::routes::settlements::TravelDestination;
-use crate::spacetimedb::{BattleLootItem, ItemDefinition, PartyInventoryItem, Quest};
+use crate::spacetimedb::{
+    BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, Quest,
+};
 use crate::{
     spacetimedb::Character,
     templates::settlement::{
@@ -309,6 +311,7 @@ pub fn quest_location_page(
     pooled: &[PartyInventoryItem],
     stake: u64,
     items: &[ItemDefinition],
+    targets: &[InventoryQuantityTarget],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -327,13 +330,22 @@ pub fn quest_location_page(
                         tbody {
                             @for entry in loot {
                                 @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
-                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
+                                @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
+                                @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
+                                tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
+                                    td { (&entry.item_id) span class="inventory-row-actions" {
+                                        @for (mode, arrows) in [("one",1),("target",2),("all",3)] {
+                                            button type="button" class="trade-transfer trade-transfer-right" data-loot-stage=(entry.id) data-transfer-mode=(mode) aria-label=(format!("Move {} loot", entry.item_id)) { (super::settlement::transfer_glyph(arrows)) }
+                                        }
+                                    } }
+                                    td class="inventory-count" { (entry.quantity) }
+                                    td { (u64::from(value) * u64::from(entry.quantity)) }
+                                }
                             }
                         }
                     }
-                    form method="post" action=(format!("/quests/{}/loot/store", quest.id)) {
-                        button type="submit" class="btn btn-primary btn-block" { "Store all in party inventory" }
-                    }
+                    (loot_stage_form(&quest.id))
+                    (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
             }))
         }
@@ -385,6 +397,7 @@ pub fn post_battle_page(
     pooled: &[PartyInventoryItem],
     stake: u64,
     items: &[ItemDefinition],
+    targets: &[InventoryQuantityTarget],
     theme: &str,
 ) -> Markup {
     let loot_value: u64 = loot
@@ -409,14 +422,23 @@ pub fn post_battle_page(
                         tbody {
                             @for entry in loot {
                                 @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
-                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
+                                @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
+                                @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
+                                tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
+                                    td { (&entry.item_id) span class="inventory-row-actions" {
+                                        @for (mode, arrows) in [("one",1),("target",2),("all",3)] {
+                                            button type="button" class="trade-transfer trade-transfer-right" data-loot-stage=(entry.id) data-transfer-mode=(mode) aria-label=(format!("Move {} loot", entry.item_id)) { (super::settlement::transfer_glyph(arrows)) }
+                                        }
+                                    } }
+                                    td class="inventory-count" { (entry.quantity) }
+                                    td { (u64::from(value) * u64::from(entry.quantity)) }
+                                }
                             }
                         }
                     }
                     p class="party-stake-summary" { span { "Total objective value" } strong { (loot_value) " gold" } }
-                    form method="post" action=(format!("/quests/{}/loot/store", quest.id)) {
-                        button type="submit" class="btn btn-primary btn-block" { "Store all in party inventory" }
-                    }
+                    (loot_stage_form(&quest.id))
+                    (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
             }))
         }
@@ -456,4 +478,13 @@ pub fn post_battle_page(
         }
     };
     base_layout_with_session("Battle spoils", content, Some(&character.name), theme)
+}
+
+fn loot_stage_form(quest_id: &str) -> Markup {
+    html! {
+        form method="post" action=(format!("/quests/{quest_id}/loot/store")) id="loot-transfer-offer" class="party-offer" hidden {
+            button type="button" class="party-offer-cancel" data-cancel-loot { "Cancel" }
+            button type="submit" disabled { "Offer" }
+        }
+    }
 }

@@ -3,7 +3,7 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
-    response::{Html, Redirect},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -14,8 +14,9 @@ use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party,
-    PartyInventoryItem, PartyMember, PartyStake, Quest, QuestIssuer, Settlement, TravelEdge,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyStake, Quest, QuestIssuer,
+    Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
@@ -74,6 +75,7 @@ pub fn routes() -> Router<AppState> {
             "/locations/{kind}/{id}/party-inventory/liquidate",
             post(liquidate_party_assets),
         )
+        .route("/api/inventory-target", post(set_inventory_target))
         .route(
             "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
@@ -806,6 +808,8 @@ async fn party_member(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let selected_targets = personal_inventory_targets(&state, selected.id).await;
+    let active_targets = personal_inventory_targets(&state, active_character.id).await;
 
     if character_id == active_character.id {
         return Html(
@@ -833,6 +837,8 @@ async fn party_member(
             &party_members,
             selected_equip.first(),
             active_equip.first(),
+            &selected_targets,
+            &active_targets,
             session.theme(),
         )
         .into_string(),
@@ -892,6 +898,7 @@ async fn party_pool_inventory(
         .iter()
         .find(|stake| stake.character_id == character.id)
         .map_or(0, |stake| stake.value);
+    let (personal_targets, party_targets, _) = inventory_trade_context(&state, &character).await;
     Html(
         party_pool_page(
             &location,
@@ -902,6 +909,8 @@ async fn party_pool_inventory(
             &items,
             &members,
             equip.first(),
+            &personal_targets,
+            &party_targets,
             session.theme(),
         )
         .into_string(),
@@ -910,13 +919,46 @@ async fn party_pool_inventory(
 
 #[derive(Deserialize)]
 struct PartyPoolTransferForm {
-    item_id: u64,
-    #[serde(default = "one")]
-    quantity: u32,
+    item_id: String,
+    #[serde(default)]
+    quantity: String,
 }
 
-fn one() -> u32 {
-    1
+#[derive(Deserialize)]
+struct InventoryTargetForm {
+    item_id: String,
+    quantity: u32,
+    #[serde(default)]
+    party_scope: bool,
+}
+
+async fn set_inventory_target(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<InventoryTargetForm>,
+) -> impl IntoResponse {
+    let Some(character_id) = session.character_id_u64() else {
+        return (axum::http::StatusCode::UNAUTHORIZED, "Choose a character");
+    };
+    match state
+        .db
+        .call(
+            "set_inventory_quantity_target",
+            &[
+                json!(character_id),
+                json!(form.party_scope),
+                json!(form.item_id),
+                json!(form.quantity),
+            ],
+        )
+        .await
+    {
+        Ok(()) => (axum::http::StatusCode::NO_CONTENT, ""),
+        Err(error) => {
+            tracing::warn!("Failed to save inventory target: {error}");
+            (axum::http::StatusCode::BAD_REQUEST, "Could not save target")
+        }
+    }
 }
 
 async fn deposit_party_inventory(
@@ -926,17 +968,15 @@ async fn deposit_party_inventory(
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
     if let Some(character_id) = session.character_id_u64() {
-        let _ = state
-            .db
-            .call(
-                "deposit_party_inventory_item",
-                &[
-                    json!(character_id),
-                    json!(form.item_id),
-                    json!(form.quantity),
-                ],
-            )
-            .await;
+        for (item_id, quantity) in transfer_entries(&form) {
+            let _ = state
+                .db
+                .call(
+                    "deposit_party_inventory_item",
+                    &[json!(character_id), json!(item_id), json!(quantity)],
+                )
+                .await;
+        }
     }
     Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
 }
@@ -948,19 +988,25 @@ async fn withdraw_party_inventory(
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
     if let Some(character_id) = session.character_id_u64() {
-        let _ = state
-            .db
-            .call(
-                "withdraw_party_inventory_item",
-                &[
-                    json!(character_id),
-                    json!(form.item_id),
-                    json!(form.quantity),
-                ],
-            )
-            .await;
+        for (item_id, quantity) in transfer_entries(&form) {
+            let _ = state
+                .db
+                .call(
+                    "withdraw_party_inventory_item",
+                    &[json!(character_id), json!(item_id), json!(quantity)],
+                )
+                .await;
+        }
     }
     Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+}
+
+fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
+    form.item_id
+        .split(',')
+        .zip(form.quantity.split(','))
+        .filter_map(|(id, quantity)| Some((id.parse().ok()?, quantity.parse().ok()?)))
+        .collect()
 }
 
 async fn liquidate_party_assets(
@@ -972,6 +1018,7 @@ async fn liquidate_party_assets(
     if kind == "settlement"
         && let Some(character_id) = session.character_id_u64()
     {
+        let entries = transfer_entries(&form);
         let _ = state
             .db
             .call(
@@ -979,8 +1026,8 @@ async fn liquidate_party_assets(
                 &[
                     json!(character_id),
                     json!(id.clone()),
-                    json!(vec![form.item_id]),
-                    json!(vec![form.quantity]),
+                    json!(entries.iter().map(|entry| entry.0).collect::<Vec<_>>()),
+                    json!(entries.iter().map(|entry| entry.1).collect::<Vec<_>>()),
                 ],
             )
             .await;
@@ -1285,6 +1332,8 @@ async fn merchants(
         ))
         .await
         .unwrap_or_default();
+    let (personal_targets, party_targets, pooled) =
+        inventory_trade_context(&state, character).await;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -1293,6 +1342,9 @@ async fn merchants(
             &items,
             &party_members,
             equip.first(),
+            &personal_targets,
+            &party_targets,
+            &pooled,
             session.theme(),
             MerchantShop::General,
         )
@@ -1310,6 +1362,8 @@ struct MerchantOfferForm {
     sell_quantities: String,
     #[serde(default)]
     return_to: String,
+    #[serde(default)]
+    inventory_scope: String,
 }
 
 async fn finalize_merchant_offer(
@@ -1353,6 +1407,7 @@ async fn finalize_merchant_offer(
                             json!(quantities),
                             json!(sell_ids),
                             json!(sell_quantities),
+                            json!(form.inventory_scope == "party"),
                         ],
                     )
                     .await;
@@ -1753,6 +1808,8 @@ async fn merchant_shop(
         ))
         .await
         .unwrap_or_default();
+    let (personal_targets, party_targets, pooled) =
+        inventory_trade_context(&state, character).await;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -1761,11 +1818,61 @@ async fn merchant_shop(
             &items,
             &party_members,
             equip.first(),
+            &personal_targets,
+            &party_targets,
+            &pooled,
             session.theme(),
             shop,
         )
         .into_string(),
     )
+}
+
+async fn inventory_trade_context(
+    state: &AppState,
+    character: &Character,
+) -> (
+    Vec<InventoryQuantityTarget>,
+    Vec<InventoryQuantityTarget>,
+    Vec<PartyInventoryItem>,
+) {
+    let personal = state.db.query(&format!(
+        "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = false",
+        character.id
+    )).await.unwrap_or_default();
+    let Some(party_id) = character.party_id.as_ref() else {
+        return (personal, Vec::new(), Vec::new());
+    };
+    let party = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(party) = party else {
+        return (personal, Vec::new(), Vec::new());
+    };
+    let party_targets = state.db.query(&format!(
+        "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true",
+        party.leader_id
+    )).await.unwrap_or_default();
+    let pooled = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    (personal, party_targets, pooled)
+}
+
+async fn personal_inventory_targets(
+    state: &AppState,
+    character_id: u64,
+) -> Vec<InventoryQuantityTarget> {
+    state.db.query(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {character_id} AND party_scope = false")).await.unwrap_or_default()
 }
 
 async fn render_service_page(

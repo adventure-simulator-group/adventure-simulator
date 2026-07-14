@@ -136,6 +136,15 @@ pub struct PartyInventoryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryQuantityTarget {
+    pub id: String,
+    pub owner_character_id: u64,
+    pub party_scope: bool,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyStake {
     pub id: u64,
     pub party_id: String,

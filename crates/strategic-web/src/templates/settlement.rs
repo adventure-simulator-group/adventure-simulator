@@ -13,7 +13,8 @@ use super::{
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, PartyInventoryItem, Settlement,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    PartyInventoryItem, Settlement,
 };
 
 #[derive(Clone, Debug)]
@@ -444,11 +445,13 @@ pub fn party_inventory_page(
     party_members: &[Character],
     selected_equip: Option<&CharacterEquip>,
     active_equip: Option<&CharacterEquip>,
+    selected_targets: &[InventoryQuantityTarget],
+    active_targets: &[InventoryQuantityTarget],
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip))
+            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
@@ -460,7 +463,7 @@ pub fn party_inventory_page(
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip))
+            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
@@ -684,6 +687,7 @@ fn party_trade_inventory_rail(
     recipient_id: u64,
     direction: &str,
     equip: Option<&CharacterEquip>,
+    recipient_targets: &[InventoryQuantityTarget],
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
@@ -695,13 +699,11 @@ fn party_trade_inventory_rail(
                     @for item in inventory {
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let target = target_quantity(recipient_targets, &item.item_id);
                             tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                 td class="inventory-item-name" {
                                     (&item.item_id)
-                                    @if !is_equipped { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer"))
-                                        data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty)
-                                            aria-label=(format!("Transfer {}", item.item_id))
-                                            title="Stage one item for trade" {} }
+                                    @if !is_equipped { span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode=(mode) aria-label=(format!("Transfer {}", item.item_id)) title="Stage items for trade" { (transfer_glyph(arrows)) } } } }
                                 }
                                 td class="inventory-count" { (item.qty) }
                                 td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
@@ -710,6 +712,7 @@ fn party_trade_inventory_rail(
                             }
                     }
                 }))
+                (inventory_footer_controls(if direction == "left" { "party-left" } else { "party-right" }, "Transfer to targets", "Transfer everything"))
             }
         }))
     }
@@ -760,6 +763,9 @@ pub fn live_merchant_shop_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
+    personal_targets: &[InventoryQuantityTarget],
+    party_targets: &[InventoryQuantityTarget],
+    pooled: &[PartyInventoryItem],
     theme: &str,
     shop: MerchantShop,
 ) -> Markup {
@@ -767,20 +773,23 @@ pub fn live_merchant_shop_page(
     let service_id = shop.service_id();
     let content = html! {
         aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
-            a class="btn btn-secondary btn-block mb-1"
-                href=(format!("/locations/settlement/{}/party-inventory", settlement.id)) {
-                "Trade from party chest"
-            }
             (trade_inventory_table(false, html! {
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(&item.id) data-merchant-buy-price=(buy_price) aria-label=(format!("Buy {}", item.id)) title=(format!("Buy {}", item.id)) { "" } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    @let target = target_quantity(personal_targets, &item.id);
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
+            (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
         })) }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
-        aside class="right-sidebar" {
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
+            nav class="inventory-owner-tabs" aria-label="Trading inventory" {
+                button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
+                button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
+            }
+            div data-inventory-pane="player" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (trade_inventory_table(true, html! {
                     @for item in inventory {
@@ -788,12 +797,53 @@ pub fn live_merchant_shop_page(
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
-                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) {
-                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(item.id) data-item-name=(&item.item_id) data-merchant-sell-price=(sell_price) aria-label=(format!("Sell {}", item.item_id)) title=(format!("Sell {}", item.item_id)) {} } }
-                        td class="inventory-count" { (item.qty) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        @let target = target_quantity(personal_targets, &item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
+                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.qty, target)) } }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
+                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
+                        @let definition = items.iter().find(|definition| definition.id == target.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
+                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, false)) }
+                            td class="inventory-equipped" { input type="checkbox" disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
                 }))
+                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
             }))
+            }
+            div data-inventory-pane="party" hidden {
+            (sidebar_section("Party inventory", html! {
+                (trade_inventory_table(false, html! {
+                    @for item in pooled {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
+                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let target = target_quantity(party_targets, &item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
+                            td class="inventory-item-name" { (&item.item_id) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
+                            td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (sell_price) }
+                        }
+                    }
+                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id)) {
+                        @let definition = items.iter().find(|definition| definition.id == target.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
+                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, true)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+            }))
+            }
         }
     };
     settlement_layout_with_session(
@@ -817,6 +867,8 @@ pub fn party_pool_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
+    personal_targets: &[InventoryQuantityTarget],
+    party_targets: &[InventoryQuantityTarget],
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -827,24 +879,23 @@ pub fn party_pool_page(
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let target = target_quantity(party_targets, &item.item_id);
+                        @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
                                 (&item.item_id)
                                 @if !equipped {
-                                    form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) class="inline-form" {
-                                        input type="hidden" name="item_id" value=(item.id);
-                                        input type="hidden" name="quantity" value="1";
-                                        button type="submit" class="trade-transfer trade-transfer-right" title="Add one to party inventory" aria-label=(format!("Add {} to party inventory", item.item_id)) {}
-                                    }
+                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
                                 }
                             }
-                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
                             td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
                     }
                 }))
+                (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
             }))
         }
         main class="center-content settlement-main" {
@@ -863,36 +914,23 @@ pub fn party_pool_page(
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
+                        @let target = target_quantity(personal_targets, &item.item_id);
+                        @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
                                 (&item.item_id)
-                                form method="post" action=(format!("{}/party-inventory/withdraw", location.base_path())) class="inline-form" {
-                                    input type="hidden" name="item_id" value=(item.id);
-                                    input type="hidden" name="quantity" value="1";
-                                    button type="submit" class="trade-transfer trade-transfer-left"
-                                        title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() })
-                                        aria-label=(format!("Withdraw {}", item.item_id)) {}
-                                }
+                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
                             }
-                            td class="inventory-count" { (item.quantity) }
+                            td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
                     }
                 }))
-                @if location.kind == "settlement" && pooled.iter().any(|item| item.item_id != "gold_coin") {
-                    h4 class="mt-1" { "Liquidate at merchant" }
-                    p class="small-copy text-muted" { "Convert an item to party gold without changing anyone's stake." }
-                    @for item in pooled.iter().filter(|item| item.item_id != "gold_coin") {
-                        form method="post" action=(format!("{}/party-inventory/liquidate", location.base_path())) class="party-liquidate-row" {
-                            input type="hidden" name="item_id" value=(item.id);
-                            input type="hidden" name="quantity" value=(item.quantity);
-                            button type="submit" class="btn btn-secondary btn-small" { "Sell all " (&item.item_id) }
-                        }
-                    }
-                }
+                (inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"))
             }))
         }
+        form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
     };
     location.render_layout("Party inventory", content, Some(&character.name), theme)
 }
@@ -930,6 +968,60 @@ fn trade_inventory_table(show_equipped: bool, rows: Markup) -> Markup {
             tbody { (rows) }
         }
     }
+}
+
+fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
+    targets
+        .iter()
+        .find(|target| target.item_id == item_id)
+        .map_or(0, |target| target.quantity)
+}
+
+fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
+    html! {
+        span class="inventory-target-control" data-target-control data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
+            button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
+            span class="inventory-target-value" { (quantity) "/" span data-target-value { (target) } }
+            @if target > 0 { button type="button" class="inventory-target-step inventory-target-down" data-target-step="-1" aria-label=(format!("Decrease {} target", item_id)) { "⌄" } }
+        }
+    }
+}
+
+pub(crate) fn transfer_glyph(count: usize) -> Markup {
+    html! { span class=(format!("inventory-transfer-glyph arrows-{count}")) aria-hidden="true" { @for _ in 0..count { i {} } } }
+}
+
+fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
+    html! { span class="inventory-row-actions" {
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" aria-label=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="target" data-target=(target) data-count=(available) aria-label=(format!("Buy {item_id} to target")) { (transfer_glyph(2)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="all" data-count=(available) aria-label=(format!("Buy all {item_id}")) { (transfer_glyph(3)) }
+    } }
+}
+
+fn merchant_sell_controls(
+    id: u64,
+    item_id: &str,
+    price: u32,
+    quantity: u32,
+    target: u32,
+) -> Markup {
+    html! { span class="inventory-row-actions" {
+        @for (mode, arrows, label) in [("one", 1, "Sell one"), ("target", 2, "Sell surplus"), ("all", 3, "Sell all")] {
+            button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode=(mode) data-count=(quantity) data-target=(target) aria-label=(format!("{label} {item_id}")) { (transfer_glyph(arrows)) }
+        }
+    } }
+}
+
+pub(crate) fn inventory_footer_controls(
+    action: &str,
+    target_label: &str,
+    all_label: &str,
+) -> Markup {
+    html! { div class="inventory-footer-actions" {
+        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="target" aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
+        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="all" aria-label=(all_label) title=(all_label) { (transfer_glyph(3)) }
+    } }
 }
 
 fn trade_inventory_table_header(show_equipped: bool) -> Markup {
