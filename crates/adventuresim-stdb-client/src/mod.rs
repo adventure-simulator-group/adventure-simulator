@@ -57,6 +57,7 @@ pub mod define_clothing_reducer;
 pub mod define_item_reducer;
 pub mod define_shield_reducer;
 pub mod define_weapon_reducer;
+pub mod delete_recruitment_role_reducer;
 pub mod delete_saved_recruitment_role_reducer;
 pub mod deposit_party_inventory_item_reducer;
 pub mod disband_party_reducer;
@@ -149,6 +150,7 @@ pub mod travel_to_settlement_reducer;
 pub mod turn_in_quest_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
+pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
 pub mod vote_for_party_leader_reducer;
 pub mod withdraw_party_inventory_item_reducer;
@@ -259,6 +261,9 @@ pub use define_shield_reducer::{
 };
 pub use define_weapon_reducer::{
     define_weapon, set_flags_for_define_weapon, DefineWeaponCallbackId,
+};
+pub use delete_recruitment_role_reducer::{
+    delete_recruitment_role, set_flags_for_delete_recruitment_role, DeleteRecruitmentRoleCallbackId,
 };
 pub use delete_saved_recruitment_role_reducer::{
     delete_saved_recruitment_role, set_flags_for_delete_saved_recruitment_role,
@@ -452,6 +457,9 @@ pub use update_party_check_targets_reducer::{
     set_flags_for_update_party_check_targets, update_party_check_targets,
     UpdatePartyCheckTargetsCallbackId,
 };
+pub use update_recruitment_role_reducer::{
+    set_flags_for_update_recruitment_role, update_recruitment_role, UpdateRecruitmentRoleCallbackId,
+};
 pub use update_training_schedule_reducer::{
     set_flags_for_update_training_schedule, update_training_schedule,
     UpdateTrainingScheduleCallbackId,
@@ -585,6 +593,10 @@ pub enum Reducer {
         blunt: bool,
         slash: bool,
         pierce: bool,
+    },
+    DeleteRecruitmentRole {
+        leader_id: u64,
+        role_id: u64,
     },
     DeleteSavedRecruitmentRole {
         owner_id: u64,
@@ -785,6 +797,14 @@ pub enum Reducer {
         charisma: f32,
         faith: f32,
     },
+    UpdateRecruitmentRole {
+        leader_id: u64,
+        role_id: u64,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+    },
     UpdateTrainingSchedule {
         character_id: u64,
         melee_minutes: u16,
@@ -842,6 +862,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DefineItem { .. } => "define_item",
             Reducer::DefineShield { .. } => "define_shield",
             Reducer::DefineWeapon { .. } => "define_weapon",
+            Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DisbandParty { .. } => "disband_party",
@@ -888,6 +909,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
+            Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
             Reducer::VoteForPartyLeader { .. } => "vote_for_party_leader",
             Reducer::WithdrawPartyInventoryItem { .. } => "withdraw_party_inventory_item",
@@ -1013,6 +1035,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "define_weapon" => Ok(__sdk::parse_reducer_args::<
                 define_weapon_reducer::DefineWeaponArgs,
             >("define_weapon", &value.args)?
+            .into()),
+            "delete_recruitment_role" => Ok(__sdk::parse_reducer_args::<
+                delete_recruitment_role_reducer::DeleteRecruitmentRoleArgs,
+            >("delete_recruitment_role", &value.args)?
             .into()),
             "delete_saved_recruitment_role" => {
                 Ok(__sdk::parse_reducer_args::<
@@ -1235,6 +1261,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 >("update_party_check_targets", &value.args)?
                 .into())
             }
+            "update_recruitment_role" => Ok(__sdk::parse_reducer_args::<
+                update_recruitment_role_reducer::UpdateRecruitmentRoleArgs,
+            >("update_recruitment_role", &value.args)?
+            .into()),
             "update_training_schedule" => {
                 Ok(__sdk::parse_reducer_args::<
                     update_training_schedule_reducer::UpdateTrainingScheduleArgs,

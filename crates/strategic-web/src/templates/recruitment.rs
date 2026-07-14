@@ -97,8 +97,51 @@ pub fn recruitment_panel(
                         button class="dialog-close" aria-label="Close recruitment" { "×" }
                     }
                     header class="recruitment-dialog-header" {
-                        h2 { "Recruit party roles" }
+                        h2 data-role-builder-heading { "Recruit party roles" }
                         p { "Describe the adventurers you want to add to your party." }
+                    }
+                    section class="saved-role-section" aria-labelledby="current-role-heading" {
+                        div class="saved-role-heading" {
+                            h3 id="current-role-heading" { "Current roles" }
+                            span class="small-copy text-muted" { "Edit recommendations and slot counts, or remove a role." }
+                        }
+                        div class="saved-role-list current-role-list" {
+                            @if roles.is_empty() {
+                                span class="small-copy text-muted" { "No recruitment roles yet." }
+                            } @else {
+                                @for panel in roles {
+                                    div class="saved-role-item current-role-item" {
+                                        button type="button" class="saved-role-load"
+                                            data-edit-current-role
+                                            data-role-id=(panel.role.id)
+                                            data-role-name=(&panel.role.name)
+                                            data-role-quantity=(panel.role.quantity)
+                                            data-role-filled=(panel.filled.len())
+                                            data-role-requirements=(requirements_json(panel.role.requirements))
+                                            data-role-weapon-precision=(panel.role.effective_weapon_precision())
+                                        {
+                                            (&panel.role.name)
+                                            span class="small-copy text-muted" {
+                                                " " (panel.filled.len()) "/" (panel.role.quantity)
+                                            }
+                                        }
+                                        button type="button" class="saved-role-action saved-role-rename"
+                                            data-edit-current-role
+                                            data-role-id=(panel.role.id)
+                                            data-role-name=(&panel.role.name)
+                                            data-role-quantity=(panel.role.quantity)
+                                            data-role-filled=(panel.filled.len())
+                                            data-role-requirements=(requirements_json(panel.role.requirements))
+                                            data-role-weapon-precision=(panel.role.effective_weapon_precision())
+                                            aria-label=(format!("Edit {}", panel.role.name)) { "Edit" }
+                                        form action=(format!("/party-recruitment/roles/{}/delete", panel.role.id)) method="post" class="saved-role-delete-form" {
+                                            button type="submit" class="saved-role-action saved-role-delete"
+                                                aria-label=(format!("Delete {}", panel.role.name)) title=(format!("Delete {}", panel.role.name)) { "Ã—" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     section class="saved-role-section" aria-labelledby="saved-role-heading" {
                         div class="saved-role-heading" {
@@ -159,8 +202,8 @@ pub fn recruitment_panel(
                             }
                         }
                         footer class="role-builder-footer" {
-                            span class="small-copy text-muted" { "You can edit recruitment by removing and recreating a role." }
-                            button type="submit" class="btn btn-primary" { "Add role" }
+                            span class="small-copy text-muted" data-role-builder-help { "Create one visually grouped portrait per slot." }
+                            button type="submit" class="btn btn-primary" data-role-builder-submit { "Add role" }
                         }
                     }
                 }

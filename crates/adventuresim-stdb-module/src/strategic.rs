@@ -1034,6 +1034,127 @@ pub fn create_recruitment_role(
 }
 
 #[reducer]
+pub fn update_recruitment_role(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    role_id: u64,
+    name: String,
+    quantity: u32,
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if quantity > 8 {
+        return Err("Role quantity must be between 0 and 8".into());
+    }
+    validate_recruitment_requirements(requirements, weapon_precision)?;
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can edit roles".into());
+    }
+    let mut role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Recruitment role not found")?;
+    if role.party_id != party_id {
+        return Err("Cannot edit another party's role".into());
+    }
+    let filled = filled_role_slots(ctx, role_id);
+    if quantity < filled {
+        return Err(format!("This role already has {filled} filled slots"));
+    }
+    let role_name = if name.trim().is_empty() {
+        "Any adventurer".to_string()
+    } else {
+        name.trim().to_string()
+    };
+    role.name = role_name.clone();
+    role.quantity = quantity;
+    role.requirements = requirements;
+    role.weapon_precision = weapon_precision;
+    ctx.db.party_recruitment_role().id().update(role);
+    for mut member in ctx
+        .db
+        .party_member()
+        .iter()
+        .filter(|member| member.recruitment_role_id == Some(role_id))
+        .collect::<Vec<_>>()
+    {
+        member.role = Some(role_name.clone());
+        ctx.db.party_member().id().update(member);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn delete_recruitment_role(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    role_id: u64,
+) -> Result<(), String> {
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can delete roles".into());
+    }
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Recruitment role not found")?;
+    if role.party_id != party_id {
+        return Err("Cannot delete another party's role".into());
+    }
+    for request in ctx
+        .db
+        .party_join_request()
+        .recruitment_role_id()
+        .filter(role_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_join_request().id().delete(request.id);
+    }
+    for mut member in ctx
+        .db
+        .party_member()
+        .iter()
+        .filter(|member| member.recruitment_role_id == Some(role_id))
+        .collect::<Vec<_>>()
+    {
+        member.role = None;
+        member.recruitment_role_id = None;
+        ctx.db.party_member().id().update(member);
+    }
+    ctx.db.party_recruitment_role().id().delete(role_id);
+    Ok(())
+}
+
+#[reducer]
 pub fn save_recruitment_role(
     ctx: &ReducerContext,
     owner_id: u64,

@@ -135,6 +135,8 @@ pub(crate) async fn approve_party_action(
         "travel_to_quest",
         "remove_party_member",
         "create_recruitment_role",
+        "update_recruitment_role",
+        "delete_recruitment_role",
         "accept_party_join_request",
         "reject_party_join_request",
         "accept_quest",

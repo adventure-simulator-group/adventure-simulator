@@ -157,11 +157,10 @@
       const situation = quest.details.replace(/\s*Are you\s*$/, "");
       details.append(document.createTextNode(`${situation} `));
       const leader = document.createElement("a");
-      leader.href = "#";
+      leader.href = `/locations/settlement/${encodeURIComponent(settlementId)}/players/${encodeURIComponent(quest.recruitment.leader_id)}`;
       leader.className = "chat-quest-link";
       leader.textContent = quest.recruitment.leader_name;
       leader.title = `Leader of ${quest.recruitment.party_name}`;
-      leader.addEventListener("click", (event) => event.preventDefault());
       details.append(leader, document.createTextNode(" is looking for "));
       if (quest.recruitment.roles.length === 0) {
         details.replaceChildren();
@@ -246,6 +245,8 @@
       const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
       const badge = tab?.querySelector("[data-service-quest-badge]");
       if (badge) badge.hidden = true;
+      const settlementBadge = document.querySelector("[data-settlement-turn-in-badge]");
+      if (settlementBadge) settlementBadge.hidden = true;
     }));
     greeting.append(document.createTextNode("?"));
     line("npc", quest.npc_name, greeting);
@@ -264,14 +265,22 @@
         if (badge) {
           badge.hidden = !serviceQuests.some((quest) => quest.state !== "underway");
           badge.classList.toggle(
+            "service-turn-in-badge",
+            serviceQuests.some((quest) => quest.state === "ready"),
+          );
+          badge.classList.toggle(
             "service-recruitment-badge",
-            serviceQuests.some((quest) => quest.state === "recruiting"),
+            !serviceQuests.some((quest) => quest.state === "ready")
+              && serviceQuests.some((quest) => quest.state === "recruiting"),
           );
         }
       });
+      const settlementBadge = document.querySelector("[data-settlement-turn-in-badge]");
+      if (settlementBadge) settlementBadge.hidden = !quests.some((quest) => quest.state === "ready");
       if (!chat || chat.dataset.serviceQuestSettlement !== settlementId) return;
       const serviceQuests = quests.filter((entry) => entry.service_id === chat.dataset.serviceQuestId);
-      const quest = serviceQuests.find((entry) => entry.state === "recruiting")
+      const quest = serviceQuests.find((entry) => entry.state === "ready")
+        || serviceQuests.find((entry) => entry.state === "recruiting")
         || serviceQuests.find((entry) => entry.state === "available")
         || serviceQuests[0];
       const showConversation = () => {

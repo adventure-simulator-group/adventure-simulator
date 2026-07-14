@@ -95,6 +95,44 @@
       button.addEventListener("click", () => inspectRole(button.closest("[data-party-role-group]")));
     });
 
+    const dialog = panel.querySelector("[data-recruitment-dialog]");
+    const roleBuilder = panel.querySelector("[data-role-builder]");
+    const builderHeading = panel.querySelector("[data-role-builder-heading]");
+    const builderSubmit = panel.querySelector("[data-role-builder-submit]");
+    const builderHelp = panel.querySelector("[data-role-builder-help]");
+    const resetBuilderMode = () => {
+      if (!roleBuilder) return;
+      roleBuilder.reset();
+      roleBuilder.action = "/party-recruitment/roles";
+      roleBuilder.elements.quantity.min = "1";
+      roleBuilder.elements.quantity.value = "1";
+      if (builderHeading) builderHeading.textContent = "Recruit party roles";
+      if (builderSubmit) builderSubmit.textContent = "Add role";
+      if (builderHelp) builderHelp.textContent = "Create one visually grouped portrait per slot.";
+    };
+    const populateBuilder = (source) => {
+      if (!roleBuilder) return;
+      roleBuilder.elements.name.value = source.dataset.roleName || "";
+      const requirements = JSON.parse(source.dataset.roleRequirements || "{}");
+      Object.entries(requirements).forEach(([name, value]) => {
+        const field = roleBuilder.elements[name];
+        if (!field) return;
+        if (typeof value === "boolean") field.checked = value;
+        else field.value = String(value);
+      });
+      if (roleBuilder.elements.weapon_precision) {
+        roleBuilder.elements.weapon_precision.value = source.dataset.roleWeaponPrecision || "0";
+      }
+      const armor = roleBuilder.elements.armor_tier;
+      if (armor) {
+        armor.value = requirements.full_armor ? "4"
+          : requirements.three_quarter_armor ? "3"
+          : requirements.half_armor ? "2"
+          : requirements.quarter_armor ? "1" : "0";
+      }
+      roleBuilder.querySelectorAll("[data-discrete-slider]").forEach(syncSlider);
+    };
+
     if (panel.dataset.canManage === "true" && leaderPortrait) {
       const button = document.createElement("button");
       button.type = "button";
@@ -104,9 +142,10 @@
       button.setAttribute("aria-label", "Add a recruitment role");
       const firstRole = overlay.querySelector("[data-party-role-group]");
       if (firstRole) overlay.insertBefore(button, firstRole); else overlay.append(button);
-      const dialog = panel.querySelector("[data-recruitment-dialog]");
       button.addEventListener("click", (event) => {
         event.preventDefault();
+        resetBuilderMode();
+        roleBuilder?.querySelectorAll("[data-discrete-slider]").forEach(syncSlider);
         dialog?.showModal();
       });
     }
@@ -194,32 +233,26 @@
 
     panel.querySelectorAll("[data-load-saved-role]").forEach((button) => {
       button.addEventListener("click", () => {
-        const form = panel.querySelector("[data-role-builder]");
-        if (!form) return;
-        form.reset();
-        form.elements.name.value = button.dataset.roleName || "";
-        const requirements = JSON.parse(button.dataset.roleRequirements || "{}");
-        Object.entries(requirements).forEach(([name, value]) => {
-          const field = form.elements[name];
-          if (!field) return;
-          if (typeof value === "boolean") field.checked = value;
-          else field.value = String(value);
-        });
-        if (form.elements.weapon_precision) {
-          form.elements.weapon_precision.value = button.dataset.roleWeaponPrecision || "0";
-        }
-        const armor = form.elements.armor_tier;
-        if (armor) {
-          armor.value = requirements.full_armor ? "4"
-            : requirements.three_quarter_armor ? "3"
-            : requirements.half_armor ? "2"
-            : requirements.quarter_armor ? "1" : "0";
-        }
-        form.querySelectorAll("[data-discrete-slider]").forEach(syncSlider);
+        resetBuilderMode();
+        populateBuilder(button);
       });
     });
 
-    const roleBuilder = panel.querySelector("[data-role-builder]");
+    panel.querySelectorAll("[data-edit-current-role]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!roleBuilder) return;
+        roleBuilder.reset();
+        roleBuilder.action = `/party-recruitment/roles/${button.dataset.roleId}`;
+        roleBuilder.elements.quantity.min = button.dataset.roleFilled || "0";
+        roleBuilder.elements.quantity.value = button.dataset.roleQuantity || "0";
+        populateBuilder(button);
+        if (builderHeading) builderHeading.textContent = `Edit ${button.dataset.roleName || "role"}`;
+        if (builderSubmit) builderSubmit.textContent = "Save changes";
+        if (builderHelp) builderHelp.textContent = "Slot count cannot be reduced below the number already filled.";
+        dialog?.showModal();
+      });
+    });
+
     const saveRoleDialog = panel.querySelector("[data-save-role-dialog]");
     const saveRoleForm = panel.querySelector("[data-save-role-form]");
     panel.querySelector("[data-save-current-role]")?.addEventListener("click", () => {

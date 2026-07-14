@@ -201,6 +201,8 @@ fn settlement_top_bar(
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
+                span class="settlement-turn-in-badge" data-settlement-turn-in-badge hidden
+                    title="A quest is ready to turn in here" aria-label="Quest ready to turn in" { "!" }
                 span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
                 }

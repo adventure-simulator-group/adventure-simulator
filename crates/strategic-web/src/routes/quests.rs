@@ -533,6 +533,11 @@ async fn render_quest_location(
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
+    if quest.status.eq_ignore_ascii_case("completed") {
+        for destination in &mut nearby {
+            destination.turn_in_ready = destination.id == quest.settlement_id;
+        }
+    }
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
     let can_control = character.as_ref().zip(party.as_ref()).is_some();

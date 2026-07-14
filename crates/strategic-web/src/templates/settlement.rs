@@ -244,6 +244,10 @@ pub(crate) fn map_destination_list(
                             a href=(format!("{}?destination={}", base_path, destination.id))
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item active" } else { "list-item" }) {
                                 strong { (&destination.name) }
+                                @if destination.turn_in_ready {
+                                    span class="destination-turn-in-badge" title="Quest ready to turn in here"
+                                        aria-label="Quest ready to turn in here" { "!" }
+                                }
                                 span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
                             }
                         }

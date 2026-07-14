@@ -196,17 +196,23 @@ async fn settlement_map(
     } else {
         None
     };
-    if let Some(quest_id) = active_party
+    let active_quest = if let Some(quest_id) = active_party
         .as_ref()
         .and_then(|party| party.active_quest_id.as_ref())
-        && let Some(quest) = state
+    {
+        state
             .db
             .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
             .await
             .unwrap_or_default()
             .into_iter()
             .next()
-        && quest.status.eq_ignore_ascii_case("accepted")
+    } else {
+        None
+    };
+    if let Some(quest) = active_quest
+        .as_ref()
+        .filter(|quest| quest.status.eq_ignore_ascii_case("accepted"))
     {
         let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
         destinations.push(TravelDestination {
@@ -220,7 +226,16 @@ async fn settlement_map(
             travel_action: format!("/quests/{}/travel", quest.id),
             distance_m,
             journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
+            turn_in_ready: false,
         });
+    }
+    if let Some(quest) = active_quest
+        .as_ref()
+        .filter(|quest| quest.status.eq_ignore_ascii_case("completed"))
+    {
+        for destination in &mut destinations {
+            destination.turn_in_ready = destination.id == quest.settlement_id;
+        }
     }
     let party_members = get_active_party_members(
         &state,
@@ -269,6 +284,7 @@ struct ServiceQuestOffer {
 #[derive(Serialize)]
 struct ServiceQuestRecruitment {
     party_name: String,
+    leader_id: String,
     leader_name: String,
     roles: Vec<ServiceQuestRole>,
 }
@@ -452,6 +468,7 @@ async fn service_quest_offers(
                         .collect::<Vec<_>>();
                     Some(ServiceQuestRecruitment {
                         party_name: party.name.clone(),
+                        leader_id: leader.id.to_string(),
                         leader_name: leader.name.clone(),
                         roles,
                     })
@@ -677,6 +694,7 @@ pub struct TravelDestination {
     pub travel_action: String,
     pub distance_m: u64,
     pub journey_minutes: u64,
+    pub turn_in_ready: bool,
 }
 
 pub(crate) fn settlement_destination(
@@ -701,6 +719,7 @@ pub(crate) fn settlement_destination(
         travel_action: format!("/settlements/{}/travel", settlement.id),
         distance_m,
         journey_minutes,
+        turn_in_ready: false,
     }
 }
 

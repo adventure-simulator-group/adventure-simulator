@@ -26,6 +26,14 @@ pub fn routes() -> Router<AppState> {
         .route("/parties/{id}/join-general", post(join_general_party))
         .route("/party-recruitment/panel", get(recruitment_panel_fragment))
         .route("/party-recruitment/roles", post(create_recruitment_role))
+        .route(
+            "/party-recruitment/roles/{id}",
+            post(update_recruitment_role),
+        )
+        .route(
+            "/party-recruitment/roles/{id}/delete",
+            post(delete_recruitment_role),
+        )
         .route("/party-recruitment/saved", post(save_recruitment_role))
         .route(
             "/party-recruitment/check-targets",
@@ -196,6 +204,54 @@ async fn create_recruitment_role(
             }
         }
     }
+    Redirect::to("/")
+}
+
+async fn update_recruitment_role(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+    Form(form): Form<RecruitmentRoleForm>,
+) -> Redirect {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let _ = execute_or_request_party_action(
+        &state,
+        actor_id,
+        &format!("edit_role:{id}"),
+        &format!("Edit recruitment role {}", form.name),
+        "update_recruitment_role",
+        vec![
+            json!(actor_id),
+            json!(id),
+            json!(form.name),
+            json!(form.quantity),
+            json!(form.requirements()),
+            json!(form.weapon_precision()),
+        ],
+    )
+    .await;
+    Redirect::to("/")
+}
+
+async fn delete_recruitment_role(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Redirect {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let _ = execute_or_request_party_action(
+        &state,
+        actor_id,
+        &format!("delete_role:{id}"),
+        "Delete a recruitment role",
+        "delete_recruitment_role",
+        vec![json!(actor_id), json!(id)],
+    )
+    .await;
     Redirect::to("/")
 }
 
