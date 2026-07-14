@@ -1585,7 +1585,7 @@
 .party-portrait-overlay {
   position: absolute;
   z-index: 2;
-  top: 0.85rem;
+  top: 3rem;
   left: 50%;
   display: flex;
   max-width: calc(100% - 2rem);
@@ -1669,11 +1669,15 @@
 }
 
 .party-aggregate-checks {
+  position: absolute;
+  z-index: 6;
+  bottom: calc(100% + 0.65rem);
+  left: 50%;
   display: flex;
   flex-wrap: nowrap;
   gap: 0.65rem;
-  align-self: center;
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / 85%));
+  transform: translateX(-50%);
 }
 
 .party-aggregate-check {
