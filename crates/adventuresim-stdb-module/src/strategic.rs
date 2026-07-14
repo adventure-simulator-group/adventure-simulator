@@ -560,9 +560,9 @@ pub fn update_party_check_targets(
 ) -> Result<(), String> {
     if [medicine, surgery, charisma, faith]
         .into_iter()
-        .any(|value| !value.is_finite() || !(0.0..=8.0).contains(&value))
+        .any(|value| !value.is_finite() || !(0.0..=8.0).contains(&value) || value.fract() != 0.0)
     {
-        return Err("Party check targets must be between 0 and 8".into());
+        return Err("Party check targets must be whole numbers between 0 and 8".into());
     }
     let leader = ctx
         .db
@@ -1996,10 +1996,10 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         party.name = format!("{}'s company", leader_name);
         party.current_settlement_id = Some(settlement_id.to_string());
         party.active_quest_id = Some(quest.id.clone());
-        party.medicine_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
-        party.surgery_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
-        party.charisma_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
-        party.faith_target = 3.0 + (ctx.random::<u64>() % 5) as f32 * 0.5;
+        party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.surgery_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.charisma_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.faith_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party().id().update(party);
 
         let mut requirements = RecruitmentRequirements::default();

@@ -106,6 +106,71 @@
       });
     }
 
+    const setPartyCheckTarget = (track, value) => {
+      const target = Math.max(0, Math.min(8, Math.round(value)));
+      const name = track.dataset.checkName;
+      const label = track.dataset.checkLabel;
+      const current = Number(track.dataset.checkCurrent) || 0;
+      panel.querySelectorAll(`[data-party-check-target-form] input[name="${name}"]`).forEach((input) => {
+        input.value = String(target);
+      });
+      track.dataset.checkTarget = String(target);
+      track.title = `${label}: ${current.toFixed(2)}; target ${target}`;
+      const exact = track.querySelector(".party-check-exact");
+      if (exact) exact.textContent = `${label}: ${current.toFixed(2)} · target ${target}`;
+      const handle = track.querySelector("[data-party-check-target-handle]");
+      if (handle) {
+        handle.style.left = `${target / 8 * 100}%`;
+        handle.setAttribute("aria-valuenow", String(target));
+        handle.title = `${label} target: ${target}`;
+      }
+      track.closest("[data-party-check]")?.classList.toggle("deficient", target > 0 && current < target);
+      return target;
+    };
+    const savePartyCheckTarget = async (track) => {
+      const form = track.closest("[data-party-check-target-form]");
+      if (!form) return;
+      const body = new URLSearchParams(new FormData(form));
+      const response = await fetch(form.action, { method: "POST", body });
+      form.toggleAttribute("data-save-error", !response.ok);
+    };
+    const targetFromPointer = (track, event) => {
+      const rect = track.getBoundingClientRect();
+      return (event.clientX - rect.left) / rect.width * 8;
+    };
+    panel.querySelectorAll(".party-check-track-editable").forEach((track) => {
+      track.addEventListener("click", (event) => {
+        if (event.target.closest("[data-party-check-target-handle]")) return;
+        setPartyCheckTarget(track, targetFromPointer(track, event));
+        savePartyCheckTarget(track);
+      });
+      const handle = track.querySelector("[data-party-check-target-handle]");
+      if (!handle) return;
+      handle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        const move = (pointerEvent) => setPartyCheckTarget(track, targetFromPointer(track, pointerEvent));
+        const finish = () => {
+          handle.removeEventListener("pointermove", move);
+          handle.removeEventListener("pointerup", finish);
+          handle.removeEventListener("pointercancel", finish);
+          savePartyCheckTarget(track);
+        };
+        handle.setPointerCapture(event.pointerId);
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", finish);
+        handle.addEventListener("pointercancel", finish);
+        move(event);
+      });
+      handle.addEventListener("keydown", (event) => {
+        const steps = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
+        if (!(event.key in steps) && event.key !== "Home" && event.key !== "End") return;
+        event.preventDefault();
+        const current = Number(track.dataset.checkTarget) || 0;
+        setPartyCheckTarget(track, event.key === "Home" ? 0 : event.key === "End" ? 8 : current + steps[event.key]);
+        savePartyCheckTarget(track);
+      });
+    });
+
     const syncSlider = (slider) => {
       const labels = (slider.dataset.sliderLabels || "").split("|");
       const output = panel.querySelector(`[data-slider-output="${slider.name}"]`);

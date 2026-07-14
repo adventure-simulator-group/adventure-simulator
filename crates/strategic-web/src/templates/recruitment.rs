@@ -354,59 +354,56 @@ fn aggregate_check_control(
     target: f32,
     can_manage: bool,
 ) -> Markup {
+    let target = target.round().clamp(0.0, 8.0);
     let deficient = target > 0.0 && current + 0.001 < target;
+    let current_width = (current.clamp(0.0, 8.0) / 8.0) * 100.0;
+    let target_position = (target / 8.0) * 100.0;
     html! {
         div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
-            title=(format!("{label}: {current:.2} / target {target:.1}")) {
-            @if can_manage {
-                (party_check_adjust_form(party, field, (target + 0.5).min(8.0), label, true))
-            }
-            span class="party-aggregate-check-value" {
-                span class=(format!("stat-icon stat-icon-{icon}"))
-                    style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
-                    role="img" aria-label=(label) {}
-                strong { (format!("{current:.1}/{target:.1}")) }
-            }
-            @if can_manage {
-                (party_check_adjust_form(party, field, (target - 0.5).max(0.0), label, false))
-            }
+            data-party-check=(field) data-party-check-current=(current) {
+            span class=(format!("stat-icon stat-icon-{icon}"))
+                style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
+                role="img" aria-label=(label) {}
+            (party_check_target_form(
+                party, field, label, current, target, current_width, target_position, can_manage,
+            ))
         }
     }
 }
 
-fn party_check_adjust_form(
+#[allow(clippy::too_many_arguments)]
+fn party_check_target_form(
     party: &Party,
     field: &str,
-    adjusted_target: f32,
     label: &str,
-    increase: bool,
+    current: f32,
+    target: f32,
+    current_width: f32,
+    target_position: f32,
+    can_manage: bool,
 ) -> Markup {
-    let mut medicine = party.medicine_target;
-    let mut surgery = party.surgery_target;
-    let mut charisma = party.charisma_target;
-    let mut faith = party.faith_target;
-    match field {
-        "medicine" => medicine = adjusted_target,
-        "surgery" => surgery = adjusted_target,
-        "charisma" => charisma = adjusted_target,
-        "faith" => faith = adjusted_target,
-        _ => {}
-    }
-    let direction = if increase { "Increase" } else { "Decrease" };
-    let class = if increase {
-        "party-check-adjust party-check-adjust-up"
-    } else {
-        "party-check-adjust party-check-adjust-down"
-    };
     html! {
-        form action="/party-recruitment/check-targets" method="post" class="party-check-adjust-form" {
-            input type="hidden" name="medicine" value=(medicine);
-            input type="hidden" name="surgery" value=(surgery);
-            input type="hidden" name="charisma" value=(charisma);
-            input type="hidden" name="faith" value=(faith);
-            button type="submit" class=(class)
-                aria-label=(format!("{direction} {label} target"))
-                title=(format!("{direction} {label} target to {adjusted_target:.1}")) {}
+        form action="/party-recruitment/check-targets" method="post" class="party-check-target-form"
+            data-party-check-target-form data-check-name=(field) {
+            input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 8.0));
+            input type="hidden" name="surgery" value=(party.surgery_target.round().clamp(0.0, 8.0));
+            input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 8.0));
+            input type="hidden" name="faith" value=(party.faith_target.round().clamp(0.0, 8.0));
+            div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
+                data-party-check-track data-check-name=(field) data-check-label=(label)
+                data-check-current=(current) data-check-target=(target)
+                title=(format!("{label}: {current:.2}; target {target:.0}")) {
+                span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
+                span class="party-check-exact" { (format!("{label}: {current:.2} · target {target:.0}")) }
+                @if can_manage {
+                    button type="button" class="party-check-target-handle"
+                        data-party-check-target-handle data-check-name=(field)
+                        style=(format!("left:{target_position:.1}%"))
+                        role="slider" aria-label=(format!("{label} party target"))
+                        aria-valuemin="0" aria-valuemax="8" aria-valuenow=(target as u8)
+                        title=(format!("{label} target: {target:.0}")) {}
+                }
+            }
         }
     }
 }
