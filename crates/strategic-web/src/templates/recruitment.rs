@@ -101,7 +101,10 @@ pub fn recruitment_panel(
                     form method="dialog" class="dialog-close-form" {
                         button class="dialog-close" aria-label="Close recruitment" { "×" }
                     }
-                    h2 { "Recruit party roles" }
+                    header class="recruitment-dialog-header" {
+                        h2 { "Recruit party roles" }
+                        p { "Describe the adventurers you want to add to your party." }
+                    }
                     @if !saved_roles.is_empty() {
                         section class="saved-role-section" {
                             h3 { "Saved roles" }
@@ -123,21 +126,46 @@ pub fn recruitment_panel(
                         }
                     }
                     form action="/party-recruitment/roles" method="post" class="role-builder" data-role-builder {
-                        div class="role-builder-header" {
-                            label { "Role name" input type="text" name="name" placeholder="e.g. Armored melee"; }
-                            label { "Slots" input type="number" name="quantity" min="1" max="8" value="1" required; }
-                            label class="role-save-toggle" { input type="checkbox" name="save_role" value="true"; " Save this role" }
+                        section class="role-details-card" aria-labelledby="role-details-heading" {
+                            h3 id="role-details-heading" { "Role details" }
+                            div class="role-builder-header" {
+                                label class="role-name-field" {
+                                    span { "Role name" }
+                                    input type="text" name="name" placeholder="e.g. Armored melee";
+                                }
+                                label class="role-slots-field" {
+                                    span { "Slots" }
+                                    input type="number" name="quantity" min="1" max="8" value="1" required;
+                                }
+                                label class="role-save-toggle" {
+                                    input type="checkbox" name="save_role" value="true";
+                                    span {
+                                        strong { "Save as a template" }
+                                        small { "Reuse these recommendations later" }
+                                    }
+                                }
+                            }
+                        }
+                        div class="role-requirements-heading" {
+                            h3 { "Individual recommendations" }
+                            p { "Applicants may still request to join if they fall short." }
                         }
                         div class="role-requirement-columns role-requirement-columns-individual" {
                             (combat_requirements())
                             div class="role-requirement-group" {
-                                h3 { "Armor & mobility" }
+                                header class="role-requirement-heading" {
+                                    h3 { "Armor & mobility" }
+                                    p { "Protection and physical capability" }
+                                }
                                 (armor_requirement())
                                 (numeric_requirement("athletics", "Athletics"))
                                 (numeric_requirement("endurance", "Endurance"))
                             }
                         }
-                        button type="submit" class="btn btn-primary" { "Add role" }
+                        footer class="role-builder-footer" {
+                            span class="small-copy text-muted" { "You can edit recruitment by removing and recreating a role." }
+                            button type="submit" class="btn btn-primary" { "Add role" }
+                        }
                     }
                 }
             }
@@ -314,9 +342,15 @@ fn capability_tag_label(c: &CharacterCapability) -> String {
 }
 
 fn combat_requirements() -> Markup {
-    html! { div class="role-requirement-group" { h3 { "Combat" }
-        @for (name, label) in [("melee", "Melee"), ("ranged", "Ranged"), ("heavy", "Heavy")] {
-            label class="role-toggle" { input type="checkbox" name=(name) value="true"; span { (label) } }
+    html! { div class="role-requirement-group" {
+        header class="role-requirement-heading" {
+            h3 { "Combat" }
+            p { "Preferred fighting capabilities" }
+        }
+        div class="role-toggle-grid" {
+            @for (name, label) in [("melee", "Melee"), ("ranged", "Ranged"), ("heavy", "Heavy")] {
+                label class="role-toggle" { input type="checkbox" name=(name) value="true"; span { (label) } }
+            }
         }
         (weapon_precision_requirement())
     } }

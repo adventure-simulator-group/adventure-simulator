@@ -1850,28 +1850,73 @@
 .recruitment-dialog {
   position: fixed;
   inset: 0;
-  width: min(54rem, calc(100vw - 2rem));
+  width: min(58rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  padding: 1.25rem;
+  padding: 0;
   overflow-y: auto;
   border: 1px solid var(--border-accent);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) * 1.5);
   background: var(--bg-secondary);
   color: var(--text-primary);
   margin: auto;
+  box-shadow: 0 1.25rem 4rem rgb(0 0 0 / 55%);
 }
 
 .recruitment-dialog::backdrop { background: rgb(0 0 0 / 65%); }
-.dialog-close-form { position: absolute; top: 0.5rem; right: 0.65rem; }
-.dialog-close { border: 0; background: transparent; color: var(--text-muted); font-size: 1.65rem; }
-.role-builder-header, .role-requirement-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.recruitment-dialog-header {
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+.recruitment-dialog-header h2 { margin: 0; }
+.recruitment-dialog-header p { margin: 0.25rem 0 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+.dialog-close-form { position: absolute; z-index: 2; top: 0.8rem; right: 0.9rem; }
+.dialog-close {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.dialog-close:hover,
+.dialog-close:focus-visible { border-color: var(--border-accent); color: var(--text-primary); }
+.role-builder { display: flex; flex-direction: column; gap: 1.1rem; padding: 1.25rem 1.5rem 1.5rem; }
+.role-details-card,
+.role-requirement-group {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-bg) 48%, transparent);
+}
+.role-details-card { padding: 0.85rem 1rem 1rem; }
+.role-details-card > h3 { margin: 0 0 0.75rem; font-size: var(--font-size-md); }
+.role-builder-header { display: grid; grid-template-columns: minmax(0, 2fr) minmax(5rem, 0.55fr) minmax(12rem, 1.1fr); gap: 0.85rem; align-items: end; }
+.role-builder-header > label:not(.role-save-toggle) { display: flex; min-width: 0; flex-direction: column; gap: 0.35rem; color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 700; }
+.role-builder-header input[type="text"],
+.role-builder-header input[type="number"] { width: 100%; }
+.role-requirement-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
 .role-requirement-columns-individual { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.role-builder-header { margin: 1rem 0; }
-.role-builder-header label, .role-requirement-group { display: flex; flex-direction: column; gap: 0.45rem; }
-.role-save-toggle { justify-content: end; }
+.role-save-toggle { display: grid; grid-template-columns: auto 1fr; gap: 0.55rem; align-items: center; min-height: 2.7rem; padding: 0.45rem 0.65rem; border: 1px solid var(--border-light); border-radius: var(--radius); cursor: pointer; }
+.role-save-toggle:hover { border-color: var(--border-accent); }
+.role-save-toggle input { width: auto; margin: 0; }
+.role-save-toggle span { display: flex; flex-direction: column; gap: 0.1rem; }
+.role-save-toggle strong { font-size: var(--font-size-sm); }
+.role-save-toggle small { color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 400; }
+.role-requirements-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: -0.35rem; }
+.role-requirements-heading h3 { margin: 0; }
+.role-requirements-heading p { margin: 0; color: var(--text-muted); font-size: var(--font-size-xs); }
+.role-requirement-group { display: flex; min-width: 0; flex-direction: column; gap: 0.9rem; padding: 1rem; }
+.role-requirement-heading { padding-bottom: 0.65rem; border-bottom: 1px solid var(--border-light); }
+.role-requirement-heading h3 { margin: 0; }
+.role-requirement-heading p { margin: 0.2rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
+.role-toggle-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
 .role-toggle { display: grid; grid-template-columns: auto 1fr; align-items: center; justify-content: start; gap: 0.4rem; }
 .role-toggle input { width: auto; margin: 0; }
-.role-slider { display: flex; flex-direction: column; gap: 0.15rem; }
+.role-slider { display: flex; flex-direction: column; gap: 0.25rem; }
 .role-slider-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .role-slider-heading output { color: var(--accent-dark); font-weight: 700; }
 .role-slider input[type="range"] {
@@ -1883,6 +1928,10 @@
 .role-slider-ticks { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; }
 .role-slider-ticks-armor { font-size: 0.6rem; }
 .role-slider-ticks-precision { font-size: 0.6rem; }
+.role-builder-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 0.15rem; }
+.role-builder-footer .btn { min-width: 8rem; }
+.saved-role-section { margin: 1.1rem 1.5rem 0; padding: 0.85rem 1rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
+.saved-role-section h3 { margin: 0 0 0.65rem; font-size: var(--font-size-md); }
 .saved-role-list, .active-role-section { display: flex; flex-direction: column; gap: 0.65rem; }
 .saved-role-item, .role-applicant { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .active-role-card { padding: 0.7rem; border: 1px solid var(--border-light); border-radius: var(--radius); }
@@ -1896,6 +1945,14 @@
 .role-detail-miss strong { color: var(--warning, #d99b2b); }
 .role-request-detail-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .role-request-detail { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.65rem; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--panel-bg); }
+
+@media (max-width: 720px) {
+  .role-builder-header,
+  .role-requirement-columns-individual { grid-template-columns: 1fr; }
+  .role-requirements-heading,
+  .role-builder-footer { align-items: stretch; flex-direction: column; }
+  .role-builder-footer .btn { width: 100%; }
+}
 .role-applicant-portrait {
   position: relative;
   display: grid;
