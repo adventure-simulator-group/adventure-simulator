@@ -124,6 +124,8 @@ pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
 pub mod refresh_world_clock_reducer;
 pub mod reject_party_join_request_reducer;
+pub mod religious_demand_table;
+pub mod religious_demand_type;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod request_general_party_join_reducer;
@@ -131,6 +133,7 @@ pub mod request_party_action_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
+pub mod resolve_religious_demand_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod save_recruitment_role_reducer;
 pub mod saved_recruitment_role_table;
@@ -394,6 +397,8 @@ pub use reject_party_join_request_reducer::{
     reject_party_join_request, set_flags_for_reject_party_join_request,
     RejectPartyJoinRequestCallbackId,
 };
+pub use religious_demand_table::*;
+pub use religious_demand_type::ReligiousDemand;
 pub use remove_party_member_reducer::{
     remove_party_member, set_flags_for_remove_party_member, RemovePartyMemberCallbackId,
 };
@@ -417,6 +422,10 @@ pub use request_tactical_server_reducer::{
 };
 pub use request_to_join_party_reducer::{
     request_to_join_party, set_flags_for_request_to_join_party, RequestToJoinPartyCallbackId,
+};
+pub use resolve_religious_demand_reducer::{
+    resolve_religious_demand, set_flags_for_resolve_religious_demand,
+    ResolveReligiousDemandCallbackId,
 };
 pub use rest_at_settlement_reducer::{
     rest_at_settlement, set_flags_for_rest_at_settlement, RestAtSettlementCallbackId,
@@ -756,6 +765,10 @@ pub enum Reducer {
         character_id: u64,
         recruitment_role_id: u64,
     },
+    ResolveReligiousDemand {
+        demand_id: u64,
+        choice: String,
+    },
     RestAtSettlement {
         character_id: u64,
         requested_days: u16,
@@ -926,6 +939,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::RequestToJoinParty { .. } => "request_to_join_party",
+            Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
@@ -1228,6 +1242,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 request_to_join_party_reducer::RequestToJoinPartyArgs,
             >("request_to_join_party", &value.args)?
             .into()),
+            "resolve_religious_demand" => {
+                Ok(__sdk::parse_reducer_args::<
+                    resolve_religious_demand_reducer::ResolveReligiousDemandArgs,
+                >("resolve_religious_demand", &value.args)?
+                .into())
+            }
             "rest_at_settlement" => Ok(__sdk::parse_reducer_args::<
                 rest_at_settlement_reducer::RestAtSettlementArgs,
             >("rest_at_settlement", &value.args)?
@@ -1371,6 +1391,7 @@ pub struct DbUpdate {
     party_stake: __sdk::TableUpdate<PartyStake>,
     quest: __sdk::TableUpdate<Quest>,
     quest_issuer: __sdk::TableUpdate<QuestIssuer>,
+    religious_demand: __sdk::TableUpdate<ReligiousDemand>,
     saved_recruitment_role: __sdk::TableUpdate<SavedRecruitmentRole>,
     settlement: __sdk::TableUpdate<Settlement>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
@@ -1484,6 +1505,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "quest_issuer" => db_update
                     .quest_issuer
                     .append(quest_issuer_table::parse_table_update(table_update)?),
+                "religious_demand" => db_update
+                    .religious_demand
+                    .append(religious_demand_table::parse_table_update(table_update)?),
                 "saved_recruitment_role" => db_update.saved_recruitment_role.append(
                     saved_recruitment_role_table::parse_table_update(table_update)?,
                 ),
@@ -1660,6 +1684,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.quest_issuer = cache
             .apply_diff_to_table::<QuestIssuer>("quest_issuer", &self.quest_issuer)
             .with_updates_by_pk(|row| &row.quest_id);
+        diff.religious_demand = cache
+            .apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand)
+            .with_updates_by_pk(|row| &row.id);
         diff.saved_recruitment_role = cache
             .apply_diff_to_table::<SavedRecruitmentRole>(
                 "saved_recruitment_role",
@@ -1739,6 +1766,7 @@ pub struct AppliedDiff<'r> {
     party_stake: __sdk::TableAppliedDiff<'r, PartyStake>,
     quest: __sdk::TableAppliedDiff<'r, Quest>,
     quest_issuer: __sdk::TableAppliedDiff<'r, QuestIssuer>,
+    religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
     saved_recruitment_role: __sdk::TableAppliedDiff<'r, SavedRecruitmentRole>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
@@ -1899,6 +1927,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<QuestIssuer>(
             "quest_issuer",
             &self.quest_issuer,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ReligiousDemand>(
+            "religious_demand",
+            &self.religious_demand,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>(
@@ -2681,6 +2714,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_stake_table::register_table(client_cache);
         quest_table::register_table(client_cache);
         quest_issuer_table::register_table(client_cache);
+        religious_demand_table::register_table(client_cache);
         saved_recruitment_role_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);

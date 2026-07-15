@@ -21,7 +21,7 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterSkills, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemDefinition, Party,
     PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, Settlement, TravelEdge,
+    QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -99,6 +99,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
             post(renounce_religion),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/religious-demand/{demand_id}",
+            post(resolve_religious_demand),
         )
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
@@ -809,6 +813,15 @@ async fn party_personal(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
+    let religious_demand = state
+        .db
+        .query::<ReligiousDemand>(&format!(
+            "SELECT * FROM religious_demand WHERE character_id = {character_id} AND status = 'pending'"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
     Html(
         party_personal_page(
             &location,
@@ -822,10 +835,36 @@ async fn party_personal(
             &morale_sources,
             religion.as_deref(),
             schedule.first(),
+            religious_demand.as_ref(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct ReligiousDemandForm {
+    choice: String,
+}
+
+async fn resolve_religious_demand(
+    State(state): State<AppState>,
+    Path((kind, id, character_id, demand_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+    Form(form): Form<ReligiousDemandForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id)
+        && let Err(error) = state
+            .db
+            .call(
+                "resolve_religious_demand",
+                &[json!(demand_id), json!(form.choice)],
+            )
+            .await
+    {
+        tracing::warn!(%error, character_id, demand_id, "failed to resolve religious demand");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 #[derive(Deserialize)]

@@ -491,6 +491,7 @@ pub fn party_personal_page(
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
+    religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -507,10 +508,40 @@ pub fn party_personal_page(
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
+            @if let Some(demand) = religious_demand {
+                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+            }
             (character_bio_rail(active_character, religion_id, true, &location.base_path()))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
+}
+
+fn religious_demand_rail(
+    demand: &crate::spacetimedb::ReligiousDemand,
+    location_path: &str,
+    character_id: u64,
+) -> Markup {
+    let action = format!(
+        "{location_path}/party/{character_id}/religious-demand/{}",
+        demand.id
+    );
+    html! {
+        (sidebar_section("Conviction demands", html! {
+            article class="religious-demand" {
+                h3 { (&demand.title) }
+                p { (&demand.description) }
+                p class="text-muted small-copy" {
+                    "Comply and bear the practical cost, ask the party to restrain this impulse with Charisma, or refuse it and suffer a morale penalty."
+                }
+                form method="post" action=(action) class="religious-demand-actions" {
+                    button type="submit" name="choice" value="observe" class="btn btn-primary" { "Observe" }
+                    button type="submit" name="choice" value="restrain" class="btn" { "Restrain" }
+                    button type="submit" name="choice" value="refuse" class="btn btn-danger" { "Refuse" }
+                }
+            }
+        }))
+    }
 }
 
 /// Selected party member stats and biography.

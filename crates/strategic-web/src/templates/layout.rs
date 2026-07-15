@@ -131,7 +131,7 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=quest-status-2";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=fervor-meter-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=conviction-demand-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=typed-frontend-1";
 
                 // Datastar

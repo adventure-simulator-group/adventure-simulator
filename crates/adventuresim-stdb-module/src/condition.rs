@@ -8,7 +8,7 @@ use crate::strategic::quest;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
-    party_member,
+    character_training_schedule, party_member,
 };
 
 pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
@@ -92,6 +92,29 @@ pub struct CharacterMoraleSource {
     pub label: String,
     pub magnitude: f32,
 }
+
+/// A strategic choice created when conviction begins demanding costly action.
+#[derive(Clone, Debug)]
+#[table(name = religious_demand, public)]
+pub struct ReligiousDemand {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub character_id: u64,
+    pub kind: String,
+    pub title: String,
+    pub description: String,
+    pub fervor: f32,
+    pub status: String,
+    pub created_at_minute: u64,
+    pub resolved_at_minute: Option<u64>,
+    pub resolution: Option<String>,
+}
+
+const BASIC_DEMAND_FERVOR: f32 = 0.35;
+const RELIGIOUS_DEMAND_COOLDOWN_MINUTES: u64 = 2 * 24 * 60;
+const DEMANDED_PRAYER_MINUTES: u16 = 120;
 
 pub fn initialize_character_condition(
     ctx: &ReducerContext,
@@ -622,6 +645,81 @@ fn refresh_one_strategic_condition(
     Ok(row)
 }
 
+fn character_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
+    ctx.db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes)
+}
+
+fn ensure_basic_religious_demand(
+    ctx: &ReducerContext,
+    condition: &CharacterStrategicCondition,
+) -> Result<(), String> {
+    if condition.fervor < BASIC_DEMAND_FERVOR {
+        return Ok(());
+    }
+    let professes_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(condition.character_id)
+        .is_some_and(|condition| condition.religion_id.is_some());
+    if !professes_religion {
+        return Ok(());
+    }
+    let demands: Vec<_> = ctx
+        .db
+        .religious_demand()
+        .character_id()
+        .filter(condition.character_id)
+        .collect();
+    if demands.iter().any(|demand| demand.status == "pending") {
+        return Ok(());
+    }
+    let current_minute = character_minute(ctx, condition.character_id);
+    if demands.iter().any(|demand| {
+        current_minute.saturating_sub(demand.created_at_minute) < RELIGIOUS_DEMAND_COOLDOWN_MINUTES
+    }) {
+        return Ok(());
+    }
+    let at_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(condition.character_id)
+        .is_some_and(|character| character.current_settlement_id.is_some());
+    let holy_day =
+        at_settlement && (condition.character_id + current_minute / (24 * 60)).is_multiple_of(2);
+    let (kind, title, description) = if holy_day {
+        (
+            "holy_day",
+            "Keep the holy day",
+            "Conviction demands a full day away from the road and worldly business.",
+        )
+    } else {
+        (
+            "prayer_schedule",
+            "Order the day around prayer",
+            "Conviction demands that at least two hours of every day be reserved for prayer and devotion.",
+        )
+    };
+    ctx.db.religious_demand().insert(ReligiousDemand {
+        id: 0,
+        character_id: condition.character_id,
+        kind: kind.into(),
+        title: title.into(),
+        description: description.into(),
+        fervor: condition.fervor,
+        status: "pending".into(),
+        created_at_minute: current_minute,
+        resolved_at_minute: None,
+        resolution: None,
+    });
+    Ok(())
+}
+
 pub fn refresh_character_strategic_condition(
     ctx: &ReducerContext,
     character_id: u64,
@@ -640,7 +738,136 @@ pub fn refresh_character_strategic_condition(
             requested = Some(row);
         }
     }
-    requested.ok_or_else(|| "Character is not a member of their party".into())
+    let requested =
+        requested.ok_or_else(|| "Character is not a member of their party".to_string())?;
+    ensure_basic_religious_demand(ctx, &requested)?;
+    Ok(requested)
+}
+
+fn reserve_daily_prayer(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    crate::time::initialize_character_time(ctx, character_id)?;
+    let mut schedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character training schedule not found")?;
+    if schedule.faith_minutes >= DEMANDED_PRAYER_MINUTES {
+        return Ok(());
+    }
+    schedule.faith_minutes = DEMANDED_PRAYER_MINUTES;
+    let mut overflow = schedule.allocated_minutes().saturating_sub(24 * 60) as u16;
+    for minutes in [
+        &mut schedule.labor_minutes,
+        &mut schedule.surgeon_minutes,
+        &mut schedule.balance_minutes,
+        &mut schedule.stealth_minutes,
+        &mut schedule.medicine_minutes,
+        &mut schedule.charisma_minutes,
+        &mut schedule.will_minutes,
+        &mut schedule.ranged_minutes,
+        &mut schedule.block_minutes,
+        &mut schedule.dodge_minutes,
+        &mut schedule.melee_minutes,
+    ] {
+        let removed = (*minutes).min(overflow);
+        *minutes -= removed;
+        overflow -= removed;
+        if overflow == 0 {
+            break;
+        }
+    }
+    ctx.db
+        .character_training_schedule()
+        .character_id()
+        .update(schedule);
+    Ok(())
+}
+
+#[reducer]
+pub fn resolve_religious_demand(
+    ctx: &ReducerContext,
+    demand_id: u64,
+    choice: String,
+) -> Result<(), String> {
+    let mut demand = ctx
+        .db
+        .religious_demand()
+        .id()
+        .find(demand_id)
+        .ok_or("Religious demand not found")?;
+    if demand.status != "pending" {
+        return Err("Religious demand has already been resolved".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(demand.character_id)
+        .ok_or("Character not found")?;
+    if character.server != ctx.sender {
+        return Err("Only this character's player may answer the demand".into());
+    }
+    if !matches!(choice.as_str(), "observe" | "restrain" | "refuse") {
+        return Err("Unknown religious-demand choice".into());
+    }
+    demand.status = "resolved".into();
+    demand.resolved_at_minute = Some(character_minute(ctx, demand.character_id));
+    demand.resolution = Some(choice.clone());
+    ctx.db.religious_demand().id().update(demand.clone());
+
+    match choice.as_str() {
+        "observe" if demand.kind == "prayer_schedule" => {
+            reserve_daily_prayer(ctx, demand.character_id)?;
+            record_morale_event(
+                ctx,
+                demand.character_id,
+                "conviction_observed",
+                2.0,
+                Some(format!("religious-demand:{}", demand.id)),
+            )?;
+        }
+        "observe" if demand.kind == "holy_day" => {
+            crate::time::rest_at_settlement(ctx, demand.character_id, 1, false)?;
+            record_morale_event(
+                ctx,
+                demand.character_id,
+                "holy_day_observed",
+                2.0,
+                Some(format!("religious-demand:{}", demand.id)),
+            )?;
+        }
+        "restrain" => {
+            let party_ids = party_character_ids(ctx, demand.character_id)?;
+            let party_charisma = aggregate_party_charisma(
+                party_ids
+                    .into_iter()
+                    .map(|id| mental_check(ctx, id, Skill::Charisma))
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            let target = 1.5 + 3.5 * demand.fervor;
+            if party_charisma < target {
+                record_morale_event(
+                    ctx,
+                    demand.character_id,
+                    "conviction_restrained",
+                    -2.0,
+                    Some(format!("religious-demand:{}", demand.id)),
+                )?;
+            }
+        }
+        "refuse" => {
+            record_morale_event(
+                ctx,
+                demand.character_id,
+                "conviction_refused",
+                -(2.0 + 6.0 * demand.fervor),
+                Some(format!("religious-demand:{}", demand.id)),
+            )?;
+        }
+        _ => return Err("Religious demand kind cannot be observed".into()),
+    }
+    refresh_character_strategic_condition(ctx, demand.character_id).map(|_| ())
 }
 
 pub fn record_morale_event(

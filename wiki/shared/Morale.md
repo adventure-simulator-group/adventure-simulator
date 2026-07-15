@@ -76,4 +76,12 @@ let pressure = (individual_faith + cohort_check + positive_morale / 10.0
 let fervor = 1.0 - (-pressure / 5.0).exp();
 ```
 
-The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy. At this stage the meter is informational; subsequent conviction-demand mechanics consume the pressure rather than making characters take involuntary actions.
+The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy.
+
+At 35% Fervor or higher, conviction may create a personal demand after a two-day cooldown. The basic demands alternate between reserving at least two hours of every daily schedule for prayer and observing a full holy day. The player receives an explicit choice:
+
+- **Observe:** accept the practical cost. Prayer permanently adjusts the training schedule; a holy day spends one full day in settlement. The character receives a small positive morale event.
+- **Restrain:** make a party Charisma check against `1.5 + 3.5 × Fervor`. Success settles the impulse without a penalty; failure creates a small negative morale event.
+- **Refuse:** keep complete freedom of action but receive a negative morale event which scales from 2 to 8 with Fervor.
+
+Resolving one demand cannot recursively produce another because the two-day cooldown begins at creation. Demands are choices, not involuntary character actions.

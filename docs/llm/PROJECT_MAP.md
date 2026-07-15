@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (371)
+## Files (374)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -166,6 +166,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/refresh_strategic_condition_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/refresh_world_clock_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reject_party_join_request_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/religious_demand_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/religious_demand_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/remove_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rename_saved_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_general_party_join_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -173,6 +175,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_for_scene_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_to_join_party_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/resolve_religious_demand_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rest_at_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/save_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/saved_recruitment_role_table.rs` — Generated SpacetimeDB table interface.

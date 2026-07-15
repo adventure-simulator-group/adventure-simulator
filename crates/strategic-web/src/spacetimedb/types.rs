@@ -519,6 +519,20 @@ pub struct CharacterMoraleSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReligiousDemand {
+    pub id: u64,
+    pub character_id: u64,
+    pub kind: String,
+    pub title: String,
+    pub description: String,
+    pub fervor: f32,
+    pub status: String,
+    pub created_at_minute: u64,
+    pub resolved_at_minute: Option<u64>,
+    pub resolution: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TacticalServer {
     #[serde(default)]
     pub identity: Option<String>,
