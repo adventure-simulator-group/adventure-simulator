@@ -103,6 +103,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `character` | Character progression, location, and life state; no tactical tick state |
 | `character_limbs` | Final persistent body-part injury outcomes used by strategic recovery and checks |
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
+| `settlement` | Strategic settlement data, including the single fixed faith represented by its current church |
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_strategic_condition` | Refreshable derived morale/incapacitation projection for server-authoritative UI and action gating |
 | `inventory_item` | Persistent items |
@@ -135,7 +136,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
-| `set_character_religion` | Select or clear conviction used by party Faith relationships |
+| `set_character_religion` | Record church conversion or biography renunciation for party Faith relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |

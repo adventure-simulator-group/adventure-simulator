@@ -14,6 +14,7 @@ pub struct Settlement {
     pub population_level: i32,
     pub population_estimate: u32,
     pub scene_key: String,
+    pub religion_id: String,
     pub source_node_id: Option<u64>,
 }
 

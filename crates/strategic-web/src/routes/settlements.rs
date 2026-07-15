@@ -96,6 +96,10 @@ pub fn routes() -> Router<AppState> {
             "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
         )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
+            post(renounce_religion),
+        )
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
             "/settlements/{id}/merchants/offer",
@@ -801,6 +805,9 @@ async fn party_personal(
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let condition = get_strategic_condition(&state, character_id).await;
+    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+        .await
+        .and_then(|condition| condition.religion_id);
     Html(
         party_personal_page(
             &location,
@@ -811,6 +818,7 @@ async fn party_personal(
             skills.first(),
             limbs.first(),
             condition.as_ref(),
+            religion.as_deref(),
             schedule.first(),
             session.theme(),
         )
@@ -1300,6 +1308,9 @@ async fn party_stats(
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let condition = get_strategic_condition(&state, character_id).await;
+    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+        .await
+        .and_then(|condition| condition.religion_id);
     Html(
         party_stats_page(
             &location,
@@ -1311,6 +1322,7 @@ async fn party_stats(
             selected_skills.first(),
             selected_limbs.first(),
             condition.as_ref(),
+            religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
             session.theme(),
@@ -1798,6 +1810,7 @@ struct ReligionForm {
 #[derive(Serialize)]
 struct ReligionDialogue {
     religion_id: Option<String>,
+    priest_religion_id: String,
     can_choose: bool,
 }
 
@@ -1806,14 +1819,27 @@ async fn religion_dialogue(
     Path(id): Path<String>,
     session: Session,
 ) -> Json<ReligionDialogue> {
+    let settlement = state
+        .db
+        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let priest_religion_id = settlement
+        .as_ref()
+        .map(|settlement| settlement.religion_id.clone())
+        .unwrap_or_default();
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ReligionDialogue {
             religion_id: None,
+            priest_religion_id,
             can_choose: false,
         });
     };
-    let can_choose = character.current_settlement_id.as_deref() == Some(id.as_str());
+    let can_choose =
+        settlement.is_some() && character.current_settlement_id.as_deref() == Some(id.as_str());
     let condition = state
         .db
         .query::<CharacterCondition>(&format!(
@@ -1826,6 +1852,7 @@ async fn religion_dialogue(
         .next();
     Json(ReligionDialogue {
         religion_id: condition.and_then(|condition| condition.religion_id),
+        priest_religion_id,
         can_choose,
     })
 }
@@ -1844,14 +1871,25 @@ async fn set_religion(
     Form(form): Form<ReligionForm>,
 ) -> Json<ReligionChange> {
     let religion_id = form.religion_id.trim();
-    if !matches!(
-        religion_id,
-        "" | "western_church" | "reformed" | "old_faith"
-    ) {
+    let settlement = state
+        .db
+        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(settlement) = settlement else {
         return Json(ReligionChange {
             changed: false,
             religion_id: None,
-            message: "That profession is not available here.",
+            message: "There is no church here to receive your profession.",
+        });
+    };
+    if religion_id != settlement.religion_id {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "This priest can receive you only into his own faith.",
         });
     }
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
@@ -1891,6 +1929,23 @@ async fn set_religion(
             })
         }
     }
+}
+
+async fn renounce_religion(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        if let Err(error) = state
+            .db
+            .call("set_character_religion", &[json!(character_id), json!("")])
+            .await
+        {
+            tracing::warn!(%error, character_id, "failed to renounce character religion");
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 type ServiceRenderer = fn(

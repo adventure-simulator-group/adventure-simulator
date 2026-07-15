@@ -15,6 +15,7 @@ pub struct SettlementImport {
     pub population_level: i32,
     pub population_estimate: u32,
     pub scene_key: String,
+    pub religion_id: String,
 }
 
 impl __sdk::InModule for SettlementImport {

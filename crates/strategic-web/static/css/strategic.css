@@ -1352,6 +1352,34 @@ button.party-portrait-action {
   line-height: 1;
 }
 
+.character-religion dd {
+  position: relative;
+  min-height: 1.5rem;
+}
+
+.character-religion-action {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(0.25rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.character-religion:hover .character-religion-action,
+.character-religion:focus-within .character-religion-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
+.character-religion-action .btn {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.7rem;
+}
+
 .party-action-notifications {
   position: absolute;
   z-index: 5;

@@ -229,28 +229,32 @@
     line("npc", quest.npc_name, greeting);
   };
 
-  const faithChoices = [
-    {
-      id: "western_church",
-      label: "I seek communion with Holy Church",
+  const faithDetails = {
+    western_church: {
+      topic: "your place within Holy Church",
+      name: "the Western Church",
+      invitation: "This altar stands in communion with Holy Church. If you would enter her fellowship, speak freely and with a sincere conscience.",
+      label: "Receive me into communion with Holy Church",
       reply: "Then let your profession be sincere. Make confession, hear Mass, and receive the sacraments worthily; I shall count you among the faithful.",
+      already: "You are already in communion with Holy Church. Persevere in confession, the Mass, and works of mercy.",
     },
-    {
-      id: "reformed",
-      label: "I hold to the evangelical confession",
-      reply: "I cannot call the new teaching sound, yet an honest answer is better than a false oath. I shall pray that God restores you to the unity of the Church.",
+    reformed: {
+      topic: "the evangelical faith preached in this church",
+      name: "the Reformed faith",
+      invitation: "In this church we confess the evangelical faith and place our trust in God's grace. If you would join this congregation, speak plainly.",
+      label: "I would embrace the evangelical confession",
+      reply: "Then hear the Word faithfully, pray for steadfastness, and let your life bear witness to the faith you have confessed.",
+      already: "You already share the evangelical confession of this church. Remain steadfast in the Word and in charity toward your neighbors.",
     },
-    {
-      id: "old_faith",
-      label: "I keep the rites my forebears knew before the Church",
-      reply: "Custom without truth cannot save a soul. Still, an honest answer is better than sacrilege; I shall pray that grace leads you home.",
+    old_faith: {
+      topic: "the ancestral rites kept in this place",
+      name: "the Old Faith",
+      invitation: "We keep here the sacred customs handed down by our forebears. If you would bind yourself to them, make no idle promise.",
+      label: "I will keep the faith and rites of your forebears",
+      reply: "Then honor the old rites faithfully, keep your vows, and do not let hardship make your profession a hollow thing.",
+      already: "You already keep the faith of this church. Honor the old rites and the obligations you have accepted.",
     },
-    {
-      id: "",
-      label: "I make no profession of faith",
-      reply: "Then I shall not put sacred words falsely upon your lips. The church door remains open, and I shall pray that grace moves you in time.",
-    },
-  ];
+  };
 
   const openFaithTopic = (religion) => {
     line("player", "You", "I would speak of my place within the Church.");
@@ -258,47 +262,51 @@
       line("npc", "Priest", "I can receive such a profession only from one who stands before me in this church.");
       return;
     }
-    const choices = document.createDocumentFragment();
-    const alreadyCatholic = religion.religion_id === "western_church";
-    choices.append(document.createTextNode(alreadyCatholic
-      ? "You are already in communion with Holy Church. If you mean to profess otherwise, speak plainly; sacred things are not served by a false answer. "
-      : "Then speak plainly, and do not make a false profession before God. Where do you now stand? "));
+    const faith = faithDetails[religion.priest_religion_id];
+    if (!faith) {
+      line("npc", "Priest", "This church cannot receive a profession of faith just now.");
+      return;
+    }
+    if (religion.religion_id === religion.priest_religion_id) {
+      line("npc", "Priest", faith.already);
+      return;
+    }
+    const invitation = document.createDocumentFragment();
+    invitation.append(document.createTextNode(`${faith.invitation} `));
     let settled = false;
-    faithChoices.forEach((choice, index) => {
-      if (index > 0) choices.append(document.createTextNode(index + 1 === faithChoices.length ? "; or " : "; "));
-      choices.append(link(choice.label, async () => {
-        if (settled) return;
-        settled = true;
-        line("player", "You", `${choice.label}.`);
-        const form = new URLSearchParams({ religion_id: choice.id });
-        const response = await window.strategicFetch(`/api/settlements/${encodeURIComponent(settlementId)}/religion`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: form,
-        });
-        const result = await response.json();
-        if (!result.changed) {
-          settled = false;
-          line("npc", "Priest", result.message || "I cannot receive your profession just now.");
-          return;
-        }
-        religion.religion_id = result.religion_id;
-        line("npc", "Priest", choice.reply);
-      }));
-    });
-    choices.append(document.createTextNode("."));
-    line("npc", "Priest", choices);
+    invitation.append(link(faith.label, async () => {
+      if (settled) return;
+      settled = true;
+      line("player", "You", `${faith.label}.`);
+      const form = new URLSearchParams({ religion_id: religion.priest_religion_id });
+      const response = await window.strategicFetch(`/api/settlements/${encodeURIComponent(settlementId)}/religion`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: form,
+      });
+      const result = await response.json();
+      if (!result.changed) {
+        settled = false;
+        line("npc", "Priest", result.message || "I cannot receive your profession just now.");
+        return;
+      }
+      religion.religion_id = result.religion_id;
+      line("npc", "Priest", faith.reply);
+    }));
+    invitation.append(document.createTextNode("."));
+    line("npc", "Priest", invitation);
   };
 
   const beginReligionConversation = (quest, religion) => {
     const messages = chat.querySelector(".settlement-chat-messages");
     messages?.querySelector(".chat-npc-message")?.remove();
+    const faith = faithDetails[religion?.priest_religion_id];
     const greeting = document.createDocumentFragment();
     greeting.append(document.createTextNode("God give you peace, traveler. If your conscience is troubled, we may speak of "));
-    greeting.append(link("your place within Holy Church", () => openFaithTopic(religion)));
+    greeting.append(link(faith?.topic || "the faith of this church", () => openFaithTopic(religion)));
     greeting.append(document.createTextNode("."));
     if (quest?.state === "available" || quest?.state === "recruiting") {
       greeting.append(document.createTextNode(" I must also ask your aid concerning "));
@@ -326,7 +334,7 @@
       const religion = chat?.dataset.serviceQuestId === "religion"
         ? await window.strategicBackgroundFetch("religion-dialogue", `/api/settlements/${encodeURIComponent(settlementId)}/religion`, {
           headers: { Accept: "application/json" },
-        }).then((response) => (response.ok ? response.json() : { religion_id: null, can_choose: false }))
+        }).then((response) => (response.ok ? response.json() : { religion_id: null, priest_religion_id: "", can_choose: false }))
         : null;
       return [quests, religion];
     })

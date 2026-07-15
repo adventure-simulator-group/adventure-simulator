@@ -46,6 +46,8 @@ pub struct Settlement {
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
     pub scene_key: String,
+    /// The single faith represented by this settlement's church and priest.
+    pub religion_id: String,
     /// Viabundus node that supplies this settlement, if it was imported from
     /// the historical world dataset. Demo settlements deliberately leave this
     /// empty.
@@ -131,6 +133,7 @@ pub struct SettlementImport {
     /// Viabundus records this approximation in thousands of inhabitants; zero means absent.
     pub population_estimate: u32,
     pub scene_key: String,
+    pub religion_id: String,
 }
 
 /// Start a world import. This must be called before sending any import batch.
@@ -254,6 +257,7 @@ pub fn import_settlements(
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
             scene_key: settlement.scene_key,
+            religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -3344,12 +3348,36 @@ pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Resul
 #[reducer]
 pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
     let settlements = [
-        ("riverdale", "Riverdale", 0.0, 0.0, 3, "hills"),
-        ("ironforge", "Ironforge", 100.0, 50.0, 4, "desert"),
-        ("willowmere", "Willowmere", -50.0, 75.0, 2, "hills"),
+        (
+            "riverdale",
+            "Riverdale",
+            0.0,
+            0.0,
+            3,
+            "hills",
+            "western_church",
+        ),
+        (
+            "ironforge",
+            "Ironforge",
+            100.0,
+            50.0,
+            4,
+            "desert",
+            "reformed",
+        ),
+        (
+            "willowmere",
+            "Willowmere",
+            -50.0,
+            75.0,
+            2,
+            "hills",
+            "old_faith",
+        ),
     ];
 
-    for (id, name, x, y, pop, scene) in settlements {
+    for (id, name, x, y, pop, scene, religion_id) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
@@ -3359,6 +3387,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 population_level: pop,
                 population_estimate: 0,
                 scene_key: scene.into(),
+                religion_id: religion_id.into(),
                 source_node_id: None,
             });
         }

@@ -488,6 +488,7 @@ pub fn party_personal_page(
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
     condition: Option<&CharacterStrategicCondition>,
+    religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
     theme: &str,
 ) -> Markup {
@@ -505,7 +506,7 @@ pub fn party_personal_page(
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition))
-            (character_bio_rail(active_character))
+            (character_bio_rail(active_character, religion_id, true, &location.base_path()))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
@@ -522,6 +523,7 @@ pub fn party_stats_page(
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
     condition: Option<&CharacterStrategicCondition>,
+    religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
     theme: &str,
@@ -541,7 +543,12 @@ pub fn party_stats_page(
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition))
-            (character_bio_rail(selected))
+            (character_bio_rail(
+                selected,
+                religion_id,
+                selected.id == active_character.id,
+                &location.base_path(),
+            ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
                     @if active_party.is_some_and(|party| party.leader_id == selected.id) {
@@ -622,8 +629,9 @@ fn service_page(
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
+                            p { "Faith: " strong { (religion_name(Some(&settlement.religion_id))) } }
                             @if active_character.is_some() {
-                                p class="small-copy" { "Speak with the priest below to make or change a profession of faith." }
+                                p class="small-copy" { "Speak with the priest below to profess this church's faith. Renunciation is available only from your biography." }
                             }
                             p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
@@ -1265,11 +1273,37 @@ pub(crate) fn character_visual_preview(character: &Character) -> Markup {
     )
 }
 
-fn character_bio_rail(character: &Character) -> Markup {
+fn religion_name(religion_id: Option<&str>) -> &'static str {
+    match religion_id {
+        Some("western_church") => "Western Church",
+        Some("reformed") => "Reformed",
+        Some("old_faith") => "Old Faith",
+        Some(_) => "Unknown faith",
+        None => "None",
+    }
+}
+
+fn character_bio_rail(
+    character: &Character,
+    religion_id: Option<&str>,
+    can_renounce: bool,
+    location_path: &str,
+) -> Markup {
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
+                div class="character-religion" {
+                    dt { "Religion" }
+                    dd {
+                        (religion_name(religion_id))
+                        @if can_renounce && religion_id.is_some() {
+                            form method="post" action=(format!("{location_path}/party/{}/religion/renounce", character.id)) class="character-religion-action" {
+                                button type="submit" class="btn btn-danger" title="Renounce this faith" { "Renounce" }
+                            }
+                        }
+                    }
+                }
             }
         }))
     }
