@@ -20,14 +20,18 @@ use adventuresim_stdb_client::{
     battle_result_table::BattleResultTableAccess,
     character_attributes_table::CharacterAttributesTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
+    character_condition_table::CharacterConditionTableAccess,
     character_equip_table::CharacterEquipTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_skills_table::CharacterSkillsTableAccess,
-    character_stats_table::CharacterStatsTableAccess, character_table::CharacterTableAccess,
+    character_stats_table::CharacterStatsTableAccess,
+    character_strategic_condition_table::CharacterStrategicConditionTableAccess,
+    character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
+    morale_event_table::MoraleEventTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_inventory_state_table::PartyInventoryStateTableAccess,
@@ -133,6 +137,9 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_insert_or_delete!(state.0._connection.db.character_equip());
         invalidate_on_changes!(state.0._connection.db.character_capability());
+        invalidate_on_changes!(state.0._connection.db.character_condition());
+        invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
+        invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());

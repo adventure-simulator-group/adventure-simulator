@@ -27,7 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session, Theme, set_theme_cookie};
 use crate::spacetimedb::{
-    Character, CharacterTime, Party, PartyActionRequest, SpacetimeClient, WorldClock,
+    Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyMember,
+    SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -64,6 +65,37 @@ pub(crate) async fn execute_or_request_party_action(
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Party not found")?;
+    if action.requires_ready_party() {
+        let members = state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+        for member in members {
+            state
+                .db
+                .call("refresh_strategic_condition", &[json!(member.character_id)])
+                .await
+                .map_err(|error| error.to_string())?;
+            let condition = state
+                .db
+                .query_one::<CharacterStrategicCondition>(&format!(
+                    "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                    member.character_id
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Party member condition not found")?;
+            if condition.status == "incapacitated" {
+                return Err(
+                    "An incapacitated party member must recover before the party can act".into(),
+                );
+            }
+        }
+    }
     if party.leader_id == actor_id {
         let (reducer, args) = action.reducer_call(actor_id);
         state

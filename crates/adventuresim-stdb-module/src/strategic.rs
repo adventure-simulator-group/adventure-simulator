@@ -3286,16 +3286,9 @@ pub fn autoresolve_quest(
         .id()
         .find(&quest_id)
         .ok_or("Quest not found")?;
-    // The current enemy generator equips its placeholder enemies with clubs.
-    let dropped_item = "club";
-    record_battle_result(
-        ctx,
-        &party_id,
-        &quest_id,
-        &format!("autoresolve-{quest_id}"),
-        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
-        true,
-    )?;
+    if ctx.db.battle_result().quest_id().find(&quest_id).is_some() {
+        return Ok(());
+    }
 
     for member in ctx.db.party_member().party_id().filter(&party_id) {
         if let Some(mut limbs) = ctx
@@ -3304,7 +3297,10 @@ pub fn autoresolve_quest(
             .character_id()
             .find(member.character_id)
         {
-            let damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            let condition =
+                crate::condition::refresh_character_strategic_condition(ctx, member.character_id)?;
+            let base_damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            let damage = base_damage * (2.0 - condition.check_multiplier);
             match ctx.random::<u64>() % 7 {
                 0 => limbs.left_arm_health = (limbs.left_arm_health - damage).max(0.0),
                 1 => limbs.right_arm_health = (limbs.right_arm_health - damage).max(0.0),
@@ -3323,6 +3319,16 @@ pub fn autoresolve_quest(
             crate::capability::refresh_character_capability(ctx, member.character_id)?;
         }
     }
+    // The current enemy generator equips its placeholder enemies with clubs.
+    let dropped_item = "club";
+    record_battle_result(
+        ctx,
+        &party_id,
+        &quest_id,
+        &format!("autoresolve-{quest_id}"),
+        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        true,
+    )?;
     complete_quest(ctx, quest_id)
 }
 

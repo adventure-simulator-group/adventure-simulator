@@ -14,8 +14,8 @@ use super::{
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party,
-    PartyInventoryItem, Settlement,
+    CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
+    InventoryQuantityTarget, Party, PartyInventoryItem, Settlement,
 };
 
 #[derive(Clone, Debug)]
@@ -487,6 +487,7 @@ pub fn party_personal_page(
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
     schedule: Option<&CharacterTrainingSchedule>,
     theme: &str,
 ) -> Markup {
@@ -502,7 +503,10 @@ pub fn party_personal_page(
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
-        aside class="right-sidebar" { (character_bio_rail(active_character)) }
+        aside class="right-sidebar" {
+            (strategic_condition_rail(condition))
+            (character_bio_rail(active_character))
+        }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
 }
@@ -517,6 +521,7 @@ pub fn party_stats_page(
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
     theme: &str,
@@ -535,6 +540,7 @@ pub fn party_stats_page(
             (player_chat_area(selected, active_character))
         }
         aside class="right-sidebar" {
+            (strategic_condition_rail(condition))
             (character_bio_rail(selected))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -616,11 +622,19 @@ fn service_page(
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
-                            div class="service-placeholder-list" {
-                                span { "Sanctuary services" }
-                                span class="badge badge-warning" { "TODO" }
+                            @if active_character.is_some() {
+                                form method="post" action=(format!("/settlements/{}/religion", settlement.id)) {
+                                    label for="religion-id" { "Conviction" }
+                                    select id="religion-id" name="religion_id" {
+                                        option value="" { "No religious conviction" }
+                                        option value="western_church" { "Western Church" }
+                                        option value="reformed" { "Reformed Church" }
+                                        option value="old_faith" { "Old Faith" }
+                                    }
+                                    button type="submit" class="btn btn-primary btn-block mt-1" { "Set conviction" }
+                                }
                             }
-                            p class="text-muted small-copy" { (todo) }
+                            p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
                     }
                     (rest_service_menu("Temple", &settlement.id, "temple", healing_days, rest_summary))
@@ -1270,6 +1284,29 @@ fn character_bio_rail(character: &Character) -> Markup {
     }
 }
 
+fn strategic_condition_rail(condition: Option<&CharacterStrategicCondition>) -> Markup {
+    let Some(condition) = condition else {
+        return html! {};
+    };
+    let percent = |value: f32| format!("{:.0}%", value.max(0.0) * 100.0);
+    html! {
+        (sidebar_section("Condition", html! {
+            dl class="character-bio strategic-condition-summary" {
+                div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
+                div { dt { "Morale" } dd { (format!("{:.1}", condition.morale)) } }
+                div { dt { "Positive morale" } dd { (format!("+{:.1}", condition.positive_morale)) } }
+                div { dt { "Negative morale" } dd { (format!("-{:.1}", condition.negative_morale)) } }
+                div { dt { "Incapacitation" } dd { (percent(condition.incapacitation)) } }
+                div { dt { "Pain" } dd { (percent(condition.pain)) } }
+                div { dt { "Blood loss" } dd { (percent(condition.blood_loss)) } }
+                div { dt { "Fear" } dd { (percent(condition.fear)) } }
+                div { dt { "Fatigue" } dd { (percent(condition.fatigue)) } }
+                div { dt { "Check effectiveness" } dd { (percent(condition.check_multiplier)) } }
+            }
+        }))
+    }
+}
+
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1448,7 +1485,7 @@ pub(crate) fn party_portrait_overlay(
                                 format!("{}/party/{}/stats", location_path, member.id)
                             })
                             title=(format!("Inspect {}", member.name)) {
-                            (incapacitation_wheel_placeholder())
+                            (incapacitation_wheel(member.id))
                             span class="party-portrait-initial" {
                                 span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                                 span class="party-portrait-name" { (&member.name) }
@@ -1480,13 +1517,13 @@ pub(crate) fn party_portrait_overlay(
     }
 }
 
-/// Temporary presentation data until combat/incapacitation state is available to the strategic UI.
-fn incapacitation_wheel_placeholder() -> Markup {
+fn incapacitation_wheel(character_id: u64) -> Markup {
     html! {
         span class="incapacitation-wheel"
+            data-strategic-condition-wheel=(character_id)
             role="img"
-            aria-label="Incapacitation placeholder: 12% imbalance, 10% exhaustion, 8% pain, 14% blood loss, 9% fear, 11% fatigue"
-            title="Placeholder incapacitation: imbalance 12%, exhaustion 10%, pain 8%, blood loss 14%, fear 9%, fatigue 11%" {}
+            aria-label="Loading strategic condition"
+            title="Loading strategic condition" {}
     }
 }
 

@@ -3,6 +3,7 @@ use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
+use crate::strategic::quest;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -15,6 +16,17 @@ pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
 const TRAVEL_CALORIES_PER_DAY: f32 = 6_000.0;
+
+fn enemy_fear_multiplier(enemy_type: &str) -> f32 {
+    let enemy = enemy_type.to_ascii_lowercase();
+    if enemy.contains("demon") {
+        3.0
+    } else if enemy.contains("undead") || enemy.contains("skeleton") || enemy.contains("zombie") {
+        1.5
+    } else {
+        1.0
+    }
+}
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
@@ -46,7 +58,7 @@ pub struct MoraleEvent {
 }
 
 /// Refreshable server-authoritative projection used by strategic clients.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[table(name = character_strategic_condition, public)]
 pub struct CharacterStrategicCondition {
     #[primary_key]
@@ -227,6 +239,7 @@ pub fn evaluate_strategic_condition(
                 .collect()
         },
     );
+    let mut allied_power = 0.0;
     for member_id in party_members {
         initialize_character_condition(ctx, member_id)?;
         let member_condition = ctx
@@ -248,6 +261,36 @@ pub fn evaluate_strategic_condition(
             positive_effects.push(contribution);
         } else {
             negative_effects.push(-contribution);
+        }
+        let capability = crate::capability::refresh_character_capability(ctx, member_id)?;
+        allied_power += capability.athletics
+            + capability.endurance
+            + capability.weapon_precision
+            + if capability.melee || capability.ranged {
+                2.0
+            } else {
+                0.0
+            }
+            + if capability.full_armor {
+                2.0
+            } else if capability.half_armor || capability.three_quarter_armor {
+                1.0
+            } else if capability.quarter_armor {
+                0.5
+            } else {
+                0.0
+            };
+    }
+
+    if let Some(quest_id) = character.current_quest_location_id
+        && let Some(quest) = ctx.db.quest().id().find(&quest_id)
+    {
+        let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
+        if allied_power >= enemy_power {
+            positive_effects.push(allied_power - enemy_power);
+        } else {
+            negative_effects
+                .push((enemy_power - allied_power) * enemy_fear_multiplier(&quest.enemy_type));
         }
     }
 
@@ -302,17 +345,18 @@ pub fn refresh_character_strategic_condition(
     character_id: u64,
 ) -> Result<CharacterStrategicCondition, String> {
     let row = evaluate_strategic_condition(ctx, character_id)?;
-    if ctx
+    if let Some(existing) = ctx
         .db
         .character_strategic_condition()
         .character_id()
         .find(character_id)
-        .is_some()
     {
-        ctx.db
-            .character_strategic_condition()
-            .character_id()
-            .update(row.clone());
+        if existing != row {
+            ctx.db
+                .character_strategic_condition()
+                .character_id()
+                .update(row.clone());
+        }
     } else {
         ctx.db.character_strategic_condition().insert(row.clone());
     }

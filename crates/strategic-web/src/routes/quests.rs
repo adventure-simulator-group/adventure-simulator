@@ -404,11 +404,6 @@ async fn render_quest_location(
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
     let can_control = character.as_ref().zip(party.as_ref()).is_some();
-    let can_fight = can_control
-        && quest.status == QuestStatus::Accepted
-        && party
-            .as_ref()
-            .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
     let results: Vec<BattleResult> = state
         .db
         .query(&format!(
@@ -469,6 +464,13 @@ async fn render_quest_location(
         Vec::new()
     };
     let party_members = get_active_party_members(&state, character.as_ref()).await;
+    let party_ready = party_is_ready(&state, &party_members).await;
+    let can_fight = can_control
+        && party_ready
+        && quest.status == QuestStatus::Accepted
+        && party
+            .as_ref()
+            .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let page = match tab {
         QuestLocationTab::Base => quest_location_base_page(
@@ -508,6 +510,33 @@ async fn render_quest_location(
         ),
     };
     Html(page.into_string())
+}
+
+async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
+    for member in members {
+        if state
+            .db
+            .call(
+                "refresh_strategic_condition",
+                &[serde_json::json!(member.id)],
+            )
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        let condition = state
+            .db
+            .query_one::<crate::spacetimedb::CharacterStrategicCondition>(&format!(
+                "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                member.id
+            ))
+            .await;
+        if !matches!(condition, Ok(Some(condition)) if condition.status != "incapacitated") {
+            return false;
+        }
+    }
+    true
 }
 
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {

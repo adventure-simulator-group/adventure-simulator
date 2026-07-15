@@ -18,9 +18,10 @@ use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
-    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, Settlement, TravelEdge,
+    CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
+    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyMember,
+    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
+    Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -100,7 +101,10 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}/armor", get(armor))
         .route("/settlements/{id}/clothing", get(clothing))
         .route("/settlements/{id}/inn", get(inn))
-        .route("/settlements/{id}/religion", get(religion))
+        .route(
+            "/settlements/{id}/religion",
+            get(religion).post(set_religion),
+        )
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
 }
@@ -795,6 +799,7 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let condition = get_strategic_condition(&state, character_id).await;
     Html(
         party_personal_page(
             &location,
@@ -804,6 +809,7 @@ async fn party_personal(
             attributes.first(),
             skills.first(),
             limbs.first(),
+            condition.as_ref(),
             schedule.first(),
             session.theme(),
         )
@@ -1292,6 +1298,7 @@ async fn party_stats(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let condition = get_strategic_condition(&state, character_id).await;
     Html(
         party_stats_page(
             &location,
@@ -1302,12 +1309,28 @@ async fn party_stats(
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
+            condition.as_ref(),
             active_party.as_ref(),
             selected_party.as_ref(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+async fn get_strategic_condition(
+    state: &AppState,
+    character_id: u64,
+) -> Option<CharacterStrategicCondition> {
+    if let Err(error) = state
+        .db
+        .call("refresh_strategic_condition", &[json!(character_id)])
+        .await
+    {
+        tracing::warn!(%error, character_id, "failed to refresh strategic condition");
+        return None;
+    }
+    query_single(state, "character_strategic_condition", character_id).await
 }
 
 #[derive(Deserialize)]
@@ -1764,6 +1787,31 @@ async fn religion(
     session: Session,
 ) -> Html<String> {
     render_service_page(state, id, session, religion_page).await
+}
+
+#[derive(Deserialize)]
+struct ReligionForm {
+    religion_id: String,
+}
+
+async fn set_religion(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<ReligionForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call(
+                "set_character_religion",
+                &[json!(character_id), json!(form.religion_id)],
+            )
+            .await
+    {
+        tracing::warn!(%error, character_id, "failed to set character religion");
+    }
+    Redirect::to(&format!("/settlements/{id}/religion"))
 }
 
 type ServiceRenderer = fn(

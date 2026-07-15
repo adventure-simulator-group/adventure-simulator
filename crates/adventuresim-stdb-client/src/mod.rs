@@ -27,6 +27,8 @@ pub mod character_attributes_table;
 pub mod character_attributes_type;
 pub mod character_capability_table;
 pub mod character_capability_type;
+pub mod character_condition_table;
+pub mod character_condition_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
 pub mod character_limbs_table;
@@ -35,6 +37,8 @@ pub mod character_skills_table;
 pub mod character_skills_type;
 pub mod character_stats_table;
 pub mod character_stats_type;
+pub mod character_strategic_condition_table;
+pub mod character_strategic_condition_type;
 pub mod character_table;
 pub mod character_time_table;
 pub mod character_time_type;
@@ -87,6 +91,8 @@ pub mod leave_party_reducer;
 pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_table;
 pub mod local_chat_message_type;
+pub mod morale_event_table;
+pub mod morale_event_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
 pub mod party_inventory_item_table;
@@ -113,6 +119,7 @@ pub mod quest_type;
 pub mod record_local_npc_message_reducer;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
+pub mod refresh_strategic_condition_reducer;
 pub mod refresh_world_clock_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod remove_party_member_reducer;
@@ -131,6 +138,7 @@ pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
 pub mod send_local_chat_message_reducer;
+pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod settlement_import_type;
 pub mod settlement_table;
@@ -207,6 +215,8 @@ pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
 pub use character_capability_table::*;
 pub use character_capability_type::CharacterCapability;
+pub use character_condition_table::*;
+pub use character_condition_type::CharacterCondition;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
 pub use character_limbs_table::*;
@@ -215,6 +225,8 @@ pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
 pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
+pub use character_strategic_condition_table::*;
+pub use character_strategic_condition_type::CharacterStrategicCondition;
 pub use character_table::*;
 pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
@@ -334,6 +346,8 @@ pub use liquidate_party_inventory_reducer::{
 };
 pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
+pub use morale_event_table::*;
+pub use morale_event_type::MoraleEvent;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_inventory_item_table::*;
@@ -364,6 +378,10 @@ pub use record_local_npc_message_reducer::{
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::{
     refresh_capabilities, set_flags_for_refresh_capabilities, RefreshCapabilitiesCallbackId,
+};
+pub use refresh_strategic_condition_reducer::{
+    refresh_strategic_condition, set_flags_for_refresh_strategic_condition,
+    RefreshStrategicConditionCallbackId,
 };
 pub use refresh_world_clock_reducer::{
     refresh_world_clock, set_flags_for_refresh_world_clock, RefreshWorldClockCallbackId,
@@ -416,6 +434,9 @@ pub use seed_party_companions_reducer::{
 pub use seed_world_reducer::{seed_world, set_flags_for_seed_world, SeedWorldCallbackId};
 pub use send_local_chat_message_reducer::{
     send_local_chat_message, set_flags_for_send_local_chat_message, SendLocalChatMessageCallbackId,
+};
+pub use set_character_religion_reducer::{
+    set_character_religion, set_flags_for_set_character_religion, SetCharacterReligionCallbackId,
 };
 pub use set_inventory_quantity_target_reducer::{
     set_flags_for_set_inventory_quantity_target, set_inventory_quantity_target,
@@ -691,6 +712,9 @@ pub enum Reducer {
     RefreshCapabilities {
         character_id: u64,
     },
+    RefreshStrategicCondition {
+        character_id: u64,
+    },
     RefreshWorldClock {
         schedule: WorldClockSchedule,
     },
@@ -752,6 +776,10 @@ pub enum Reducer {
         subject_kind: String,
         subject_id: String,
         body: String,
+    },
+    SetCharacterReligion {
+        character_id: u64,
+        religion_id: String,
     },
     SetInventoryQuantityTarget {
         character_id: u64,
@@ -884,6 +912,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
             Reducer::RecordLocalNpcMessage { .. } => "record_local_npc_message",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
+            Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
             Reducer::RefreshWorldClock { .. } => "refresh_world_clock",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
@@ -900,6 +929,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
+            Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
@@ -1144,6 +1174,12 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 refresh_capabilities_reducer::RefreshCapabilitiesArgs,
             >("refresh_capabilities", &value.args)?
             .into()),
+            "refresh_strategic_condition" => {
+                Ok(__sdk::parse_reducer_args::<
+                    refresh_strategic_condition_reducer::RefreshStrategicConditionArgs,
+                >("refresh_strategic_condition", &value.args)?
+                .into())
+            }
             "refresh_world_clock" => Ok(__sdk::parse_reducer_args::<
                 refresh_world_clock_reducer::RefreshWorldClockArgs,
             >("refresh_world_clock", &value.args)?
@@ -1218,6 +1254,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "send_local_chat_message" => Ok(__sdk::parse_reducer_args::<
                 send_local_chat_message_reducer::SendLocalChatMessageArgs,
             >("send_local_chat_message", &value.args)?
+            .into()),
+            "set_character_religion" => Ok(__sdk::parse_reducer_args::<
+                set_character_religion_reducer::SetCharacterReligionArgs,
+            >("set_character_religion", &value.args)?
             .into()),
             "set_inventory_quantity_target" => {
                 Ok(__sdk::parse_reducer_args::<
@@ -1301,10 +1341,12 @@ pub struct DbUpdate {
     character: __sdk::TableUpdate<Character>,
     character_attributes: __sdk::TableUpdate<CharacterAttributes>,
     character_capability: __sdk::TableUpdate<CharacterCapability>,
+    character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
+    character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
@@ -1312,6 +1354,7 @@ pub struct DbUpdate {
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
     local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
+    morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
     party_inventory_item: __sdk::TableUpdate<PartyInventoryItem>,
@@ -1358,6 +1401,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character_capability" => db_update.character_capability.append(
                     character_capability_table::parse_table_update(table_update)?,
                 ),
+                "character_condition" => db_update
+                    .character_condition
+                    .append(character_condition_table::parse_table_update(table_update)?),
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
@@ -1370,6 +1416,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character_stats" => db_update
                     .character_stats
                     .append(character_stats_table::parse_table_update(table_update)?),
+                "character_strategic_condition" => db_update.character_strategic_condition.append(
+                    character_strategic_condition_table::parse_table_update(table_update)?,
+                ),
                 "character_time" => db_update
                     .character_time
                     .append(character_time_table::parse_table_update(table_update)?),
@@ -1391,6 +1440,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(local_chat_message_table::parse_table_update(table_update)?),
+                "morale_event" => db_update
+                    .morale_event
+                    .append(morale_event_table::parse_table_update(table_update)?),
                 "party" => db_update
                     .party
                     .append(party_table::parse_table_update(table_update)?),
@@ -1502,6 +1554,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_capability,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.character_condition = cache
+            .apply_diff_to_table::<CharacterCondition>(
+                "character_condition",
+                &self.character_condition,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_equip =
             cache.apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip);
         diff.character_limbs =
@@ -1510,6 +1568,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
         diff.character_stats =
             cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
+        diff.character_strategic_condition = cache
+            .apply_diff_to_table::<CharacterStrategicCondition>(
+                "character_strategic_condition",
+                &self.character_strategic_condition,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_time = cache
             .apply_diff_to_table::<CharacterTime>("character_time", &self.character_time)
             .with_updates_by_pk(|row| &row.character_id);
@@ -1533,6 +1597,9 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.id);
         diff.local_chat_message = cache
             .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
+            .with_updates_by_pk(|row| &row.id);
+        diff.morale_event = cache
+            .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
             .with_updates_by_pk(|row| &row.id);
         diff.party = cache
             .apply_diff_to_table::<Party>("party", &self.party)
@@ -1632,10 +1699,12 @@ pub struct AppliedDiff<'r> {
     character: __sdk::TableAppliedDiff<'r, Character>,
     character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
     character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
+    character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
+    character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
@@ -1643,6 +1712,7 @@ pub struct AppliedDiff<'r> {
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
+    morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
     party_inventory_item: __sdk::TableAppliedDiff<'r, PartyInventoryItem>,
@@ -1702,6 +1772,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_capability,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
+            "character_condition",
+            &self.character_condition,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
@@ -1720,6 +1795,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterStats>(
             "character_stats",
             &self.character_stats,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
+            "character_strategic_condition",
+            &self.character_strategic_condition,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterTime>(
@@ -1751,6 +1831,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
             "local_chat_message",
             &self.local_chat_message,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<MoraleEvent>(
+            "morale_event",
+            &self.morale_event,
             event,
         );
         callbacks.invoke_table_row_callbacks::<Party>("party", &self.party, event);
@@ -2550,10 +2635,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_table::register_table(client_cache);
         character_attributes_table::register_table(client_cache);
         character_capability_table::register_table(client_cache);
+        character_condition_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
+        character_strategic_condition_table::register_table(client_cache);
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
@@ -2561,6 +2648,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
         local_chat_message_table::register_table(client_cache);
+        morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_action_request_table::register_table(client_cache);
         party_inventory_item_table::register_table(client_cache);

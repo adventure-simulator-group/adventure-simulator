@@ -75,6 +75,16 @@ pub(crate) enum PartyAction {
 }
 
 impl PartyAction {
+    pub(super) fn requires_ready_party(&self) -> bool {
+        matches!(
+            self,
+            Self::TravelToSettlement { .. }
+                | Self::TravelToQuest { .. }
+                | Self::AutoresolveQuest { .. }
+                | Self::RequestTacticalServer { .. }
+        )
+    }
+
     pub(super) fn kind(&self) -> String {
         match self {
             Self::TravelToSettlement { .. } | Self::TravelToQuest { .. } => "travel".into(),

@@ -484,6 +484,21 @@ pub struct CharacterLimbs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterStrategicCondition {
+    pub character_id: u64,
+    pub positive_morale: f32,
+    pub negative_morale: f32,
+    pub morale: f32,
+    pub pain: f32,
+    pub blood_loss: f32,
+    pub fear: f32,
+    pub fatigue: f32,
+    pub incapacitation: f32,
+    pub check_multiplier: f32,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TacticalServer {
     #[serde(default)]
     pub identity: Option<String>,

@@ -1647,18 +1647,13 @@ button.party-portrait-action {
   z-index: 1;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(
-    from -90deg,
-    #f7f7f2 0deg 43deg,
-    #8b8b8b 43deg 79deg,
-    #d973a2 79deg 108deg,
-    #c84747 108deg 158deg,
-    #4f83cc 158deg 191deg,
-    #202020 191deg 230deg,
-    transparent 230deg 360deg
-  );
+  background: transparent;
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
   mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
+}
+
+.incapacitation-wheel[data-condition-status="incapacitated"] {
+  filter: drop-shadow(0 0 0.2rem #c84747);
 }
 
 /* Persistent, currently read-only chat area from the settlement UX prototype. */
@@ -2014,4 +2009,3 @@ body.chat-resizing {
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }
 .schedule-leisure-fill { display: block; height: 100%; background: var(--success, #69a86b); }
-
