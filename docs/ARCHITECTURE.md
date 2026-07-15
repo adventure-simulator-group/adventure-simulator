@@ -100,7 +100,11 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | Table | Description |
 |-------|-------------|
 | `player` | Maps SpacetimeDB identity to character |
-| `character` | Character progression (XP, level) - NO HP/damage! |
+| `character` | Character progression, location, and life state; no tactical tick state |
+| `character_limbs` | Final persistent body-part injury outcomes used by strategic recovery and checks |
+| `character_condition` | Durable strategic blood volume, body weight, and religion selection |
+| `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
+| `character_strategic_condition` | Refreshable derived morale/incapacitation projection for server-authoritative UI and action gating |
 | `inventory_item` | Persistent items |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
@@ -130,13 +134,15 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `request_general_party_join` | Submit a retained application through a shared zero-capacity Unassigned role |
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
+| `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
+| `set_character_religion` | Select or clear conviction used by party Faith relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
 | `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
-| `autoresolve_quest` | Apply a placeholder victory, rewards, and final persistent injury results |
+| `autoresolve_quest` | Apply a placeholder victory, rewards, final persistent injury/blood-loss results, and recent-success morale |
 
 ## adventuresim-tactical-server
 
@@ -147,6 +153,8 @@ The tactical server is a headless Bevy application that:
 - Parses GLB files for spawn markers
 - **Maintains ALL tactical state in game memory** (HP, damage, positions, enemies, loot)
 - **Commits only the final results** to SpacetimeDB when the mission ends
+
+Strategic incapacitation deliberately excludes tactical imbalance, breath exhaustion, animation state, and knockdown. Only durable inputs and final outcomes cross the boundary: body-part injuries, blood volume, fatigue accumulated by strategic travel, morale history, and encounter results.
 
 ### Command-Line Arguments
 

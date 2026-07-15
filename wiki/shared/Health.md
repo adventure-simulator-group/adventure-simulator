@@ -20,6 +20,8 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 For the current settlement-rest MVP, each body part recovers 5 percentage points of health per full game day. Resting characters convalesce before they train; the detailed wound, bandaging, and treatment model below will eventually replace this temporary rate.
 
+Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits final blood loss alongside final body-part injuries, and settlement rest recovers 1% of maximum blood volume per day. The open-wound and bandaging model below is not implemented yet, so blood does not continue draining after the final strategic result is committed. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
+
 ```rs
 const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70
 fn determine_max_blood(character):
