@@ -472,8 +472,12 @@ async fn recruitment_panel_fragment(
         .map(|value| value.faith)
         .collect();
     let checks = PartyCheckSummary {
-        medicine: adventuresim_core::capability::aggregate_party_check(medicine.iter().copied()),
-        surgery: adventuresim_core::capability::aggregate_party_check(surgery.iter().copied()),
+        medicine: adventuresim_core::capability::aggregate_bounded_party_check(
+            medicine.iter().copied(),
+        ),
+        surgery: adventuresim_core::capability::aggregate_bounded_party_check(
+            surgery.iter().copied(),
+        ),
         charisma: adventuresim_core::capability::aggregate_party_charisma(charisma.iter().copied()),
         faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
     };
@@ -540,14 +544,16 @@ async fn recruitment_panel_fragment(
                     .next();
                 let contribution = capability.as_ref().map_or_default(|candidate| {
                     PartyCheckSummary {
-                        medicine: adventuresim_core::capability::aggregate_party_contribution(
-                            &medicine,
-                            candidate.medicine,
-                        ),
-                        surgery: adventuresim_core::capability::aggregate_party_contribution(
-                            &surgery,
-                            candidate.surgery,
-                        ),
+                        medicine:
+                            adventuresim_core::capability::aggregate_bounded_party_contribution(
+                                &medicine,
+                                candidate.medicine,
+                            ),
+                        surgery:
+                            adventuresim_core::capability::aggregate_bounded_party_contribution(
+                                &surgery,
+                                candidate.surgery,
+                            ),
                         charisma:
                             adventuresim_core::capability::aggregate_party_charisma_contribution(
                                 &charisma,

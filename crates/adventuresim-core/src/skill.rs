@@ -47,7 +47,7 @@ pub enum Skill {
     /// Physical. Intuitive. Poise in melee, terrain speed. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Physical, is_trained = false)]
     Balance,
-    /// Physical. Trained. Bandage/splint speed, healing rate. (10000h)
+    /// Physical. Trained. Post-battle wound stabilization. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
     Surgeon,
 }

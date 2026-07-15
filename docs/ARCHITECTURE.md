@@ -144,7 +144,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
 | `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
-| `autoresolve_quest` | Apply a placeholder victory, rewards, final persistent injury/blood-loss results, and recent-success morale |
+| `autoresolve_quest` | Apply a placeholder victory, rewards, Surgery-based post-battle wound deterioration, final persistent injury/blood-loss results, and recent-success morale |
 
 ## adventuresim-tactical-server
 

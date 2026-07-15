@@ -1,9 +1,7 @@
-use adventuresim_core::prelude::*;
+use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, allocated_schedule_minutes,
-    convalescence_minutes as calculate_convalescence_minutes,
-    elapsed_official_minutes as calculate_elapsed_official_minutes, healed_health,
-    training_hours_increment,
+    elapsed_official_minutes as calculate_elapsed_official_minutes, training_hours_increment,
 };
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
 
@@ -11,9 +9,15 @@ use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
-    character_equip, character_limbs, character_skills, character_stats, settlement,
+    character_equip, character_limbs, character_skills, character_stats, party_member, settlement,
 };
 
+/// Natural recovery without useful medical support while taking full
+/// settlement downtime.
+pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
+/// Additional daily recovery supplied by each point of the party Medicine
+/// check. Checks are capped at the five-point scale used by the strategic UI.
+pub const HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY: f32 = 0.01;
 pub const INN_GOLD_PER_DAY: u32 = 1;
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
@@ -436,7 +440,41 @@ fn apply_activity_outcomes(
     })
 }
 
-fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64) {
+fn health_recovered_per_day(medicine_check: f32) -> f32 {
+    BASE_HEALTH_RECOVERED_PER_DAY
+        + medicine_check.clamp(0.0, 5.0) * HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY
+}
+
+fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or_else(|| "Character not found".to_string())?;
+    let member_ids: Vec<u64> = if let Some(party_id) = character.party_id {
+        ctx.db
+            .party_member()
+            .party_id()
+            .filter(&party_id)
+            .map(|member| member.character_id)
+            .collect()
+    } else {
+        vec![character_id]
+    };
+    let checks = member_ids
+        .into_iter()
+        .map(|member_id| {
+            crate::capability::evaluate_character(ctx, member_id)
+                .map(|capabilities| capabilities.medicine)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(aggregate_bounded_party_check(checks))
+}
+
+fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64, medicine_check: f32) {
+    let recovery =
+        elapsed as f32 / MINUTES_PER_DAY as f32 * health_recovered_per_day(medicine_check);
     for health in [
         &mut limbs.left_arm_health,
         &mut limbs.right_arm_health,
@@ -446,12 +484,12 @@ fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64) {
         &mut limbs.chest_health,
         &mut limbs.stomach_health,
     ] {
-        *health = healed_health(*health, elapsed);
+        *health = (*health + recovery).min(1.0);
     }
 }
 
-fn convalescence_minutes(limbs: &CharacterLimbs) -> u64 {
-    calculate_convalescence_minutes([
+fn convalescence_minutes(limbs: &CharacterLimbs, medicine_check: f32) -> u64 {
+    let lowest_health = [
         limbs.left_arm_health,
         limbs.right_arm_health,
         limbs.left_leg_health,
@@ -459,7 +497,15 @@ fn convalescence_minutes(limbs: &CharacterLimbs) -> u64 {
         limbs.head_health,
         limbs.chest_health,
         limbs.stomach_health,
-    ])
+    ]
+    .into_iter()
+    .fold(1.0_f32, f32::min);
+    if lowest_health >= 1.0 {
+        0
+    } else {
+        ((1.0 - lowest_health) / health_recovered_per_day(medicine_check) * MINUTES_PER_DAY as f32)
+            .ceil() as u64
+    }
 }
 
 /// Spend completed game days at a settlement. Injuries receive all selected
@@ -506,8 +552,9 @@ pub fn rest_at_settlement(
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character limb record not found".to_string())?;
-    let convalescing = convalescence_minutes(&limbs).min(elapsed);
-    heal_limbs(&mut limbs, elapsed);
+    let medicine_check = party_medicine_check(ctx, character_id)?;
+    let convalescing = convalescence_minutes(&limbs, medicine_check).min(elapsed);
+    heal_limbs(&mut limbs, elapsed, medicine_check);
     ctx.db.character_limbs().character_id().update(limbs);
 
     let training_elapsed = elapsed.saturating_sub(convalescing);
@@ -687,4 +734,93 @@ pub fn update_training_schedule(
         .character_id()
         .update(schedule);
     crate::condition::refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn training_uses_the_daily_minute_allocation() {
+        let mut skills = CharacterSkills {
+            character_id: 1,
+            melee_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            ranged_hours: 0.0,
+            will_hours: 0.0,
+            charisma_hours: 0.0,
+            medicine_hours: 0.0,
+            faith_hours: 0.0,
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            surgeon_hours: 0.0,
+        };
+        let allocation = ScheduleAllocation {
+            melee_minutes: 90,
+            dodge_minutes: 30,
+            block_minutes: 0,
+            ranged_minutes: 0,
+            will_minutes: 0,
+            charisma_minutes: 0,
+            medicine_minutes: 0,
+            faith_minutes: 0,
+            stealth_minutes: 0,
+            balance_minutes: 0,
+            surgeon_minutes: 0,
+            labor_minutes: 480,
+            prayer_minutes: 60,
+            thievery_minutes: 0,
+            raiding_minutes: 0,
+        };
+        apply_training(
+            &mut skills,
+            &allocation,
+            MINUTES_PER_DAY * 2,
+            ActivityTrainingProfile::default(),
+        );
+        assert_eq!(skills.melee_hours, 3.0);
+        assert_eq!(skills.dodge_hours, 1.0);
+        assert_eq!(skills.faith_hours, 0.5);
+        assert_eq!(skills.will_hours, 4.0);
+        assert_eq!(allocation.allocated_minutes(), 660);
+    }
+
+    #[test]
+    fn convalescence_blocks_training_until_the_slowest_limb_recovers() {
+        let limbs = CharacterLimbs {
+            character_id: 1,
+            left_arm_health: 0.9,
+            right_arm_health: 1.0,
+            left_leg_health: 1.0,
+            right_leg_health: 1.0,
+            head_health: 1.0,
+            chest_health: 1.0,
+            stomach_health: 1.0,
+        };
+        assert_eq!(convalescence_minutes(&limbs, 4.0), MINUTES_PER_DAY * 2);
+    }
+
+    #[test]
+    fn healing_is_capped_at_full_health() {
+        let mut limbs = CharacterLimbs {
+            character_id: 1,
+            left_arm_health: 0.98,
+            right_arm_health: 1.0,
+            left_leg_health: 1.0,
+            right_leg_health: 1.0,
+            head_health: 1.0,
+            chest_health: 1.0,
+            stomach_health: 1.0,
+        };
+        heal_limbs(&mut limbs, MINUTES_PER_DAY, 4.0);
+        assert_eq!(limbs.left_arm_health, 1.0);
+    }
+
+    #[test]
+    fn medicine_check_sets_the_daily_healing_rate() {
+        assert!((health_recovered_per_day(0.0) - 0.01).abs() < f32::EPSILON);
+        assert!((health_recovered_per_day(2.5) - 0.035).abs() < f32::EPSILON);
+        assert!((health_recovered_per_day(5.0) - 0.06).abs() < f32::EPSILON);
+        assert!((health_recovered_per_day(8.0) - 0.06).abs() < f32::EPSILON);
+    }
 }

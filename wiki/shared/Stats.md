@@ -210,7 +210,15 @@ Party Charisma is led by the strongest individual check. Additional members rece
 5. Professional bard
 
 ### Medicine (trained, 10000 hours)
-The MVP is not going to have a herbalism system or diseases, so whoever has the highest medicine skill simply gives a party-wide bonus to [health recovery speed](Health.md).
+The MVP is not going to have a herbalism system or diseases. The party's bounded aggregate Medicine check sets [health recovery speed](Health.md): natural recovery is 1% per day, plus 1% per day for each point of Medicine.
+
+Medicine and Surgery use the same bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
+
+\[
+P = 5\left(1-\prod_{i=1}^{n}\left(1-\frac{x_i}{5}\right)^{(1/2)^{i-1}}\right)
+\]
+
+A solo character retains their exact individual check. The result never exceeds 5 and needs no final clamp. Because all supporting weights together equal the leader's weight, arbitrarily many equally skilled supporters can add at most the influence of one additional copy of the leader: Medicine 1 approaches 1.8, Medicine 2 approaches 3.2, Medicine 3 approaches 4.2, and Medicine 4 approaches 4.8.
 
 0. Provides no help to anyone injured
 1. Knows to disinfect wounds with alcohol
@@ -291,7 +299,7 @@ Relevant both for poise in melee and speed in difficult terrain
 5. Graceful elf
 
 ### Surgeon (trained, 10000 hours)
-The speed at which you bandage/splint [wounds](Health.md) and the healing rate, once-bandaged
+The party's bounded aggregate Surgery check uses the same geometric-support equation as Medicine and stabilizes fresh [autoresolve wounds](Health.md) after battle. Every 5% of wound damage requires 1 point of Surgery; missing the target worsens the wound in proportion to the shortfall, while meeting it prevents deterioration without undoing the original damage.
 
 0. Cannot reliably apply a bandage
 1. Can dress a wound or apply a tourniquet

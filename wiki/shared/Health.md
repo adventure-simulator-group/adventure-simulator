@@ -18,7 +18,9 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 ## Current strategic implementation
 
-For the current settlement-rest MVP, each body part recovers 5 percentage points of health per full game day. Resting characters convalesce before they train; the detailed wound, bandaging, and treatment model below will eventually replace this temporary rate.
+For the current settlement-rest MVP, each body part recovers **1 percentage point plus 1 percentage point per point of the party Medicine check** per full game day. The bounded party check uses geometrically diminishing support and cannot exceed 5, so recovery ranges from 1% to 6% per day without clamping the aggregate. A character without a party uses their own Medicine check. The check is taken when the rest action begins and applies to the entire selected stay. Resting characters convalesce before they train.
+
+Autoresolve first determines its normal wound for each party member, then uses the party Surgery check to determine whether that fresh wound deteriorates during immediate post-battle treatment. Every 5 percentage points of wound damage require 1 point of Surgery to stabilize fully. A shortfall adds a proportional amount of deterioration, up to doubling the wound at Surgery 0; meeting or exceeding the target prevents deterioration but never erases the original autoresolve damage. The Surgery check is taken before autoresolve wounds are applied, so the battle's injuries do not retroactively weaken the treatment roll. Deterioration also contributes to the final committed blood loss.
 
 Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits final blood loss alongside final body-part injuries, and settlement rest recovers 1% of maximum blood volume per day. The open-wound and bandaging model below is not implemented yet, so blood does not continue draining after the final strategic result is committed. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
 
@@ -39,7 +41,7 @@ fn update_scarred_damage:
 	// also convert bandaged wounds to scarred wounds at faster rate(?)
 
 fn bandage_wounds:
-	// todo - use surgery skill check to convert open wounds into bandaged wounds
+	// todo - replace the current immediate post-battle Surgery check with detailed wound treatment
 
 const PERCENT_BLOOD_LOSS_UNCONSCIOUS = 0.3
 fn update_blood_loss_poise_factor(character):
