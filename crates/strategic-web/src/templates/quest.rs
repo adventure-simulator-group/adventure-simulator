@@ -2,7 +2,7 @@
 
 use maud::{Markup, html};
 
-use super::{base_layout_with_session, empty_state, sidebar_section};
+use super::{empty_state, sidebar_section};
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
     BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, Quest,
@@ -199,97 +199,6 @@ pub fn quest_location_page(
         logged_in_as,
         theme,
     )
-}
-
-/// Resolution screen shown before the party banks a battle's spoils.
-pub fn post_battle_page(
-    quest: &Quest,
-    character: &Character,
-    loot: &[BattleLootItem],
-    pooled: &[PartyInventoryItem],
-    stake: u64,
-    items: &[ItemDefinition],
-    targets: &[InventoryQuantityTarget],
-    theme: &str,
-) -> Markup {
-    let loot_value: u64 = loot
-        .iter()
-        .map(|entry| {
-            let value = items
-                .iter()
-                .find(|item| item.id == entry.item_id)
-                .and_then(|item| item.base_value)
-                .unwrap_or(0);
-            u64::from(value) * u64::from(entry.quantity)
-        })
-        .sum();
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Loot", html! {
-                @if loot.is_empty() {
-                    (empty_state("All loot has been moved to the party inventory.", None, None))
-                } @else {
-                    table class="trade-inventory-table" {
-                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
-                        tbody {
-                            @for entry in loot {
-                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
-                                @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
-                                @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
-                                tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
-                                    td { (&entry.item_id) span class="inventory-row-actions" {
-                                        @for (mode, arrows) in [("one",1),("target",2),("all",3)] {
-                                            button type="button" class="trade-transfer trade-transfer-right" data-loot-stage=(entry.id) data-transfer-mode=(mode) aria-label=(format!("Move {} loot", entry.item_id)) { (super::settlement::transfer_glyph(arrows)) }
-                                        }
-                                    } }
-                                    td class="inventory-count" { (entry.quantity) }
-                                    td { (u64::from(value) * u64::from(entry.quantity)) }
-                                }
-                            }
-                        }
-                    }
-                    p class="party-stake-summary" { span { "Total objective value" } strong { (loot_value) " gold" } }
-                    (loot_stage_form(&quest.id))
-                    (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
-                }
-            }))
-        }
-        main class="center-content settlement-main quest-location-main" {
-            (visual_stage("map", "Victory", "TODO: post-battle scene"))
-            div class="post-battle-summary" {
-                h2 { "Victory" }
-                p { "The party has defeated " (quest.enemy_count) " " (&quest.enemy_type) "." }
-            }
-            (settlement_chat_area(&quest.title, Some(character)))
-        }
-        aside class="right-sidebar" {
-            (sidebar_section("Party inventory", html! {
-                div class="party-stake-summary" { span { "Your available stake" } strong { (stake) " gold" } }
-                @if pooled.is_empty() {
-                    (empty_state("The party chest is empty.", None, None))
-                } @else {
-                    table class="trade-inventory-table" {
-                        thead { tr { th { "Item" } th { "#" } th { "Value" } } }
-                        tbody {
-                            @for entry in pooled {
-                                @let value = items.iter().find(|item| item.id == entry.item_id).and_then(|item| item.base_value).unwrap_or(0);
-                                tr { td { (&entry.item_id) } td { (entry.quantity) } td { (u64::from(value) * u64::from(entry.quantity)) } }
-                            }
-                        }
-                    }
-                }
-                @if loot.is_empty() {
-                    p class="small-copy text-muted" { "Your share of the new loot has been credited at its objective value." }
-                    @if let Some(settlement_id) = &character.current_settlement_id {
-                        a class="btn btn-primary btn-block" href=(format!("/locations/settlement/{}/party-inventory", settlement_id)) { "Open party inventory" }
-                    } @else {
-                        a class="btn btn-secondary btn-block" href=(format!("/locations/quest/{}", quest.id)) { "Return to location" }
-                    }
-                }
-            }))
-        }
-    };
-    base_layout_with_session("Battle spoils", content, Some(&character.name), theme)
 }
 
 fn loot_stage_form(quest_id: &str) -> Markup {

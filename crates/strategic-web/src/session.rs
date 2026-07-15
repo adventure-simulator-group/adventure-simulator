@@ -40,11 +40,6 @@ impl Session {
     pub fn theme(&self) -> &str {
         &self.theme
     }
-
-    /// Returns true if a character is selected
-    pub fn is_logged_in(&self) -> bool {
-        self.character_id.is_some()
-    }
 }
 
 /// Extractor for session from cookies

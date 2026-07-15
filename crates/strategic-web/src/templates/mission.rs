@@ -2,7 +2,7 @@
 
 use maud::{Markup, html};
 
-use super::{base_layout_with_session, panel, sidebar_section, status_badge};
+use super::{mission_layout, panel, sidebar_section, status_badge};
 use crate::spacetimedb::TacticalServer;
 
 /// Mission status page updated by the shared strategic SSE stream.
@@ -81,7 +81,7 @@ pub fn mission_status_page(
         }
     };
 
-    base_layout_with_session("Mission Status", content, logged_in_as, theme)
+    mission_layout("Mission Status", content, logged_in_as, theme)
 }
 
 fn effective_status(db_status: &str) -> String {

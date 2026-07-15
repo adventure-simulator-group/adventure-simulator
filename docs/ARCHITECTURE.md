@@ -198,7 +198,7 @@ spacetime publish adventuresim-stdb-module
 
 ### 4. Open the UI
 
-Open `crates/adventuresim-stdb-module/static/map.html` in a browser
+Run `just web`, then open `http://localhost:8080` in a browser.
 
 ### 5. Demo Flow
 

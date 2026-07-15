@@ -1,3 +1,5 @@
+const strategicTradeUi = window.strategicTradeUi ||= { state: {} };
+
 function changeTradeDraftCount(row, change) {
   const count = row.querySelector(".inventory-count");
   count.dataset.base ||= count.textContent.trim();
@@ -12,7 +14,7 @@ function mountInventoryBulkControls(root = document) {
     if (headerRow) headerRow.append(actions);
   });
 }
-window.mountInventoryBulkControls = mountInventoryBulkControls;
+strategicTradeUi.mountInventoryBulkControls = mountInventoryBulkControls;
 
 function changeInventoryTarget(control, change) {
   const value = control?.querySelector("[data-target-value]");
@@ -92,8 +94,8 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
 function updateMerchantOfferForm() {
   const form = document.querySelector("#merchant-offer");
   form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
-  const buys = window.merchantDraft || new Map();
-  const sells = window.merchantSells || new Map();
+  const buys = strategicTradeUi.state.merchantDraft || new Map();
+  const sells = strategicTradeUi.state.merchantSells || new Map();
   const fields = {
     buy_item_ids: [...buys.keys()],
     buy_quantities: [...buys.values()],
@@ -115,12 +117,14 @@ function updateMerchantOfferForm() {
 function resetTradeDraft(form) {
   document.querySelectorAll(".trade-inventory-row").forEach((row) => setTradeDraftCount(row, 0));
   document.querySelectorAll("tr[data-generated-merchant-row], tr[data-generated-offer-row]").forEach((row) => row.remove());
-  window.merchantDraft = new Map();
-  window.merchantSells = new Map();
-  window.merchantSaleDetails = new Map();
-  window.merchantBuyPrices = new Map();
-  window.partyTradeDraft = new Map();
-  window.inventoryDiscardDraft = new Map();
+  strategicTradeUi.state = {
+    merchantDraft: new Map(),
+    merchantSells: new Map(),
+    merchantSaleDetails: new Map(),
+    merchantBuyPrices: new Map(),
+    partyTradeDraft: new Map(),
+    inventoryDiscardDraft: new Map(),
+  };
   document.querySelectorAll("[data-generated-discard-row]").forEach((row) => row.remove());
   const discardTable = document.querySelector("[data-discard-table]");
   const discardEmpty = document.querySelector("[data-discard-empty]");
@@ -135,7 +139,7 @@ function updateDiscardForm() {
   const form = document.querySelector("#inventory-discard");
   if (!form) return;
   form.querySelectorAll("input").forEach((input) => input.remove());
-  const draft = window.inventoryDiscardDraft ||= new Map();
+  const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
   const fields = {
     inventory_item_ids: [...draft.keys()],
     quantities: [...draft.values()],
@@ -184,10 +188,10 @@ function ensureDiscardRow(sourceRow, inventoryId) {
 
 function updateMerchantGoldDraft() {
   const netQuantities = new Map();
-  const buys = window.merchantDraft || new Map();
-  const sales = window.merchantSells || new Map();
-  const saleDetails = window.merchantSaleDetails || new Map();
-  const buyPrices = window.merchantBuyPrices || new Map();
+  const buys = strategicTradeUi.state.merchantDraft || new Map();
+  const sales = strategicTradeUi.state.merchantSells || new Map();
+  const saleDetails = strategicTradeUi.state.merchantSaleDetails || new Map();
+  const buyPrices = strategicTradeUi.state.merchantBuyPrices || new Map();
   buys.forEach((quantity, itemId) => netQuantities.set(itemId, (netQuantities.get(itemId) || 0) + quantity));
   sales.forEach((quantity, inventoryId) => {
     const itemId = saleDetails.get(inventoryId).itemId;
@@ -229,7 +233,7 @@ document.addEventListener("click", (event) => {
   }
   const cancelLoot = event.target.closest("[data-cancel-loot]");
   if (cancelLoot) {
-    window.lootTransferDraft = new Map();
+    strategicTradeUi.state.lootTransferDraft = new Map();
     document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
     const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); form.hidden = true;
     const prompt = form.querySelector("[data-loot-transfer-prompt]");
@@ -240,7 +244,7 @@ document.addEventListener("click", (event) => {
   const lootStage = event.target.closest("[data-loot-stage]");
   if (lootStage) {
     const row = lootStage.closest("tr");
-    const draft = window.lootTransferDraft ||= new Map();
+    const draft = strategicTradeUi.state.lootTransferDraft ||= new Map();
     const id = lootStage.dataset.lootStage;
     const staged = draft.get(id) || 0;
     const available = Number(row.dataset.count);
@@ -258,14 +262,14 @@ document.addEventListener("click", (event) => {
     return;
   }
   const cancelPool = event.target.closest("[data-cancel-pool]");
-  if (cancelPool) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
+  if (cancelPool) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
   const poolStage = event.target.closest("[data-pool-stage]");
   if (poolStage) {
     const form = document.querySelector("#pool-transfer-offer");
-    if (form.dataset.direction && form.dataset.direction !== poolStage.dataset.poolDirection) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); }
+    if (form.dataset.direction && form.dataset.direction !== poolStage.dataset.poolDirection) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); }
     form.dataset.direction = poolStage.dataset.poolDirection;
     form.action = `${location.pathname}/${poolStage.dataset.poolDirection}`;
-    const draft = window.poolTransferDraft ||= new Map(); const id=poolStage.dataset.poolStage; const staged=draft.get(id)||0;
+    const draft = strategicTradeUi.state.poolTransferDraft ||= new Map(); const id=poolStage.dataset.poolStage; const staged=draft.get(id)||0;
     const available=Number(poolStage.dataset.count); const mode=poolStage.dataset.transferMode||"one";
     const amount=Math.max(0,Math.min(available-staged,mode==="all"?available-staged:mode==="target"?Number(poolStage.dataset.target)-Number(poolStage.dataset.current)-staged:1));
     if (!amount) return; draft.set(id,staged+amount); setTradeDraftCount(poolStage.closest("tr"),-(staged+amount));
@@ -282,7 +286,7 @@ document.addEventListener("click", (event) => {
   const unstageDiscard = event.target.closest("[data-unstage-discard]");
   if (unstageDiscard) {
     const id = unstageDiscard.dataset.unstageDiscard;
-    const draft = window.inventoryDiscardDraft ||= new Map();
+    const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
     const stagedRow = unstageDiscard.closest("tr");
     const quantity = draft.get(id) || Number(stagedRow.querySelector(".inventory-count").textContent) || 0;
     if (!quantity) return;
@@ -302,7 +306,7 @@ document.addEventListener("click", (event) => {
   if (discardItem) {
     const id = discardItem.dataset.discardItem;
     const sourceRow = discardItem.closest("tr");
-    const draft = window.inventoryDiscardDraft ||= new Map();
+    const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
     const quantity = draft.get(id) || 0;
     if (quantity >= Number(discardItem.dataset.count)) return;
     draft.set(id, quantity + 1);
@@ -314,7 +318,7 @@ document.addEventListener("click", (event) => {
   const cancelBuy = event.target.closest("[data-merchant-cancel-buy]");
   if (cancelBuy) {
     const itemId = cancelBuy.dataset.merchantCancelBuy;
-    const buys = window.merchantDraft ||= new Map();
+    const buys = strategicTradeUi.state.merchantDraft ||= new Map();
     const quantity = buys.get(itemId) || 0;
     if (quantity === 0) return;
     if (quantity === 1) buys.delete(itemId); else buys.set(itemId, quantity - 1);
@@ -329,7 +333,7 @@ document.addEventListener("click", (event) => {
   const merchantSell = event.target.closest("[data-merchant-sell]");
   if (merchantSell) {
     const itemId = merchantSell.dataset.itemName;
-    const buys = window.merchantDraft ||= new Map();
+    const buys = strategicTradeUi.state.merchantDraft ||= new Map();
     const pendingPurchase = buys.get(itemId) || 0;
     const sourceRow = merchantSell.closest("tr");
     if (pendingPurchase > 0) {
@@ -340,7 +344,7 @@ document.addEventListener("click", (event) => {
       updateMerchantOfferForm();
       return;
     }
-    const sells = window.merchantSells ||= new Map(); const id = merchantSell.dataset.merchantSell;
+    const sells = strategicTradeUi.state.merchantSells ||= new Map(); const id = merchantSell.dataset.merchantSell;
     const currentDraft = sells.get(id) || 0;
     const available = Number(merchantSell.dataset.count || sourceRow.dataset.inventoryQuantity || sourceRow.querySelector(".inventory-count").dataset.base || sourceRow.querySelector(".inventory-count").textContent.trim());
     const target = Number(sourceRow.dataset.target || merchantSell.dataset.target || 0);
@@ -348,7 +352,7 @@ document.addEventListener("click", (event) => {
     const amount = Math.max(0, Math.min(available - currentDraft, mode === "all" ? available - currentDraft : mode === "target" ? available - target - currentDraft : 1));
     if (!amount) return;
     sells.set(id, currentDraft + amount);
-    (window.merchantSaleDetails ||= new Map()).set(id, { itemId: merchantSell.dataset.itemName, price: Number(merchantSell.dataset.merchantSellPrice) });
+    (strategicTradeUi.state.merchantSaleDetails ||= new Map()).set(id, { itemId: merchantSell.dataset.itemName, price: Number(merchantSell.dataset.merchantSellPrice) });
     changeTradeDraftCount(sourceRow, -amount);
     changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
     updateMerchantGoldDraft();
@@ -357,7 +361,7 @@ document.addEventListener("click", (event) => {
   }
   const merchantButton = event.target.closest("[data-merchant-buy]");
   if (merchantButton) {
-    const draft = window.merchantDraft ||= new Map();
+    const draft = strategicTradeUi.state.merchantDraft ||= new Map();
     const item = merchantButton.dataset.merchantBuy;
     const currentDraft = draft.get(item) || 0;
     const activePane = document.querySelector('[data-inventory-pane]:not([hidden])');
@@ -369,7 +373,7 @@ document.addEventListener("click", (event) => {
     const amount = Math.max(0, Math.min(available - currentDraft, mode === "all" ? available - currentDraft : mode === "target" ? target - current - currentDraft : 1));
     if (!amount) return;
     draft.set(item, currentDraft + amount);
-    (window.merchantBuyPrices ||= new Map()).set(item, Number(merchantButton.dataset.merchantBuyPrice));
+    (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(item, Number(merchantButton.dataset.merchantBuyPrice));
     const sourceRow = merchantButton.closest("tr");
     changeTradeDraftCount(sourceRow, -amount);
     changeTradeDraftCount(ensureMerchantPlayerRow(item, sourceRow), amount);
@@ -380,7 +384,7 @@ document.addEventListener("click", (event) => {
   const button = event.target.closest(".party-draft-transfer");
   if (!button) return;
   const key = button.dataset.item;
-  const draft = window.partyTradeDraft ||= new Map();
+  const draft = strategicTradeUi.state.partyTradeDraft ||= new Map();
   const entry = draft.get(key) || { from: button.dataset.from, to: button.dataset.to, quantity: 0 };
   if (entry.quantity >= Number(button.dataset.count)) return;
   const sourceSidebar = button.closest("aside");

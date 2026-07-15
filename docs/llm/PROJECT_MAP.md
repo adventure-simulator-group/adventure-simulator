@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (368)
+## Files (352)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -214,8 +214,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/static/map.html` — Browser UI page.
-- `crates/adventuresim-stdb-module/static/serve.py` — Development or documentation automation script.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
 - `crates/adventuresim-tactical-client/.cargo/config.toml` — Tooling or build configuration.
 - `crates/adventuresim-tactical-client/Cargo.toml` — Cargo package/workspace manifest.
@@ -250,7 +248,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/strategic-web/Dockerfile` — Container build definition.
 - `crates/strategic-web/README.md` — Component overview and usage notes.
-- `crates/strategic-web/src/auth.rs` — Rust source module for this component.
 - `crates/strategic-web/src/config.rs` — Rust source module for this component.
 - `crates/strategic-web/src/live.rs` — Rust source module for this component.
 - `crates/strategic-web/src/main.rs` — Rust source module for this component.
@@ -268,7 +265,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/spacetimedb/types.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/home.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
@@ -276,14 +272,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
-- `crates/strategic-web/static/borders/border-horizontal.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/border-vertical.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/corner-ornament.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/divider.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/medallion-frame.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/renaissance-gold-corner.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/renaissance-gold-divider.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/borders/renaissance-gold-medallion.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
 - `crates/strategic-web/static/css/components.css` — Browser UI styling.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
@@ -298,7 +286,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/icons/character/inventory.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/character/repair.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/character/stats-sheet.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/endurance.png` — Binary game or UI asset.
@@ -326,7 +313,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/strategic/clothing.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/inn.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
@@ -336,8 +322,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
-- `crates/strategic-web/static/textures/parchment-noise.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/textures/parchment-stains.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.

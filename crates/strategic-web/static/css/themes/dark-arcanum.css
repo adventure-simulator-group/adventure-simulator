@@ -243,10 +243,6 @@ input:focus, select:focus, textarea:focus {
 /* ============================================
    QUEST CARD GLOW
    ============================================ */
-.quest-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
-  box-shadow: 0 0 12px rgba(124, 58, 237, 0.1);
-}
 
 /* ============================================
    SETTLEMENT CARD
@@ -259,10 +255,6 @@ input:focus, select:focus, textarea:focus {
 /* ============================================
    PROGRESS BAR GLOW
    ============================================ */
-.progress-fill {
-  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
-  box-shadow: 0 0 8px rgba(124, 58, 237, 0.3);
-}
 
 /* ============================================
    SCROLLBAR

@@ -11,6 +11,13 @@ const THEMES: &[(&str, &str)] = &[
     ("imperial-crimson", "Imperial Crimson"),
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScriptProfile {
+    Entry,
+    Live,
+    Strategic,
+}
+
 fn validated_theme(theme: &str) -> &str {
     if THEMES.iter().any(|(id, _)| *id == theme) {
         theme
@@ -19,28 +26,40 @@ fn validated_theme(theme: &str) -> &str {
     }
 }
 
-/// Base HTML layout with three-column grid
-pub fn base_layout(title: &str, content: Markup, theme: &str) -> Markup {
-    base_layout_with_session(title, content, None, theme)
+/// Minimal shell for selecting or creating a character. It intentionally omits
+/// strategic navigation: an adventurer must be selected before play begins.
+pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(
+        title,
+        entry_top_bar(theme),
+        content,
+        theme,
+        ScriptProfile::Entry,
+    )
 }
 
-/// Base HTML layout with session info and theme
-pub fn base_layout_with_session(
+/// Transitional shell shown while a tactical server is being allocated.
+pub fn mission_layout(
     title: &str,
     content: Markup,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
     let theme = validated_theme(theme);
-
-    page_shell(title, top_bar(logged_in_as, theme), content, theme, true)
-}
-
-/// Minimal shell for selecting or creating a character. It intentionally omits
-/// strategic navigation: an adventurer must be selected before play begins.
-pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
-    let theme = validated_theme(theme);
-    page_shell(title, entry_top_bar(theme), content, theme, false)
+    let header = html! {
+        header class="top-bar entry-top-bar" {
+            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="entry-message" { "Preparing tactical mission" }
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" { strong { (name) } }
+                }
+                (theme_switcher(theme))
+            }
+        }
+    };
+    page_shell(title, header, content, theme, ScriptProfile::Live)
 }
 
 /// Settlement-specific layout. Settlement services replace the global navigation
@@ -66,7 +85,7 @@ pub fn settlement_layout_with_session(
         ),
         content,
         theme,
-        true,
+        ScriptProfile::Strategic,
     )
 }
 
@@ -87,11 +106,17 @@ pub fn quest_location_layout_with_session(
         quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
         content,
         theme,
-        true,
+        ScriptProfile::Strategic,
     )
 }
 
-fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: bool) -> Markup {
+fn page_shell(
+    title: &str,
+    header: Markup,
+    content: Markup,
+    theme: &str,
+    scripts: ScriptProfile,
+) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -110,17 +135,21 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: b
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-1" {}
-                script src="/static/live-state.js?v=sse-2" defer {}
-                script src="/static/live-regions.js?v=live-regions-2" defer {}
-                script src="/static/party-trade.js?v=live-control-init-1" {}
-                script src="/static/party-notifications.js?v=party-requests-2" defer {}
-                script src="/static/party-recruitment.js?v=party-recruitment-live-2" defer {}
-                script src="/static/service-quests.js?v=quest-links-live-3" defer {}
-                script src="/static/chat-resize.js?v=chat-resize-1" defer {}
-                script src="/static/local-chat.js?v=quest-links-live-2" defer {}
+                @if scripts != ScriptProfile::Entry {
+                    script src="/static/live-state.js?v=sse-2" defer {}
+                    script src="/static/live-regions.js?v=live-regions-2" defer {}
+                }
+                @if scripts == ScriptProfile::Strategic {
+                    script src="/static/party-trade.js?v=live-control-init-1" {}
+                    script src="/static/party-notifications.js?v=party-requests-2" defer {}
+                    script src="/static/party-recruitment.js?v=party-recruitment-live-2" defer {}
+                    script src="/static/service-quests.js?v=quest-links-live-3" defer {}
+                    script src="/static/chat-resize.js?v=chat-resize-1" defer {}
+                    script src="/static/local-chat.js?v=quest-links-live-2" defer {}
+                }
             }
             body {
-                @if live {
+                @if scripts != ScriptProfile::Entry {
                     div id="strategic-live-stream" data-init="@get('/live')" {
                         span id="strategic-live-revision" data-live-revision="0" hidden {}
                     }
@@ -132,44 +161,6 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: b
                         (content)
                     }
                 }
-            }
-        }
-    }
-}
-
-/// Fragment layout for Datastar partial updates (no full page shell)
-pub fn fragment(content: Markup) -> Markup {
-    content
-}
-
-fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
-    html! {
-        header class="top-bar" {
-            div class="top-bar-left" {
-                h1 class="logo" {
-                    a href="/" { "Adventure Simulator" }
-                }
-            }
-
-            nav class="top-bar-center" {
-                a href="/" class="nav-tab" { "Home" }
-                a href="/settlements" class="nav-tab" { "Settlements" }
-                a href="/characters" class="nav-tab" { "Characters" }
-            }
-
-            div class="top-bar-right" {
-                @if let Some(name) = logged_in_as {
-                    span class="player-name" {
-                        "Playing as " strong { (name) }
-                    }
-                    (switch_character_button())
-                } @else {
-                    span class="player-name player-name-none" {
-                        "No character"
-                    }
-                }
-
-                (theme_switcher(current_theme))
             }
         }
     }
@@ -356,36 +347,6 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
                 h3 class="sidebar-header" { (title) }
             }
             (content)
-        }
-    }
-}
-
-/// Helper for settlement service menu
-pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
-    let items = [
-        ("merchants", "Merchants"),
-        ("weapons", "Weapons"),
-        ("armor", "Armour"),
-        ("clothing", "Clothing"),
-        ("inn", "Inn"),
-        ("religion", "Church"),
-    ];
-
-    html! {
-        nav class="service-menu" {
-            @for (path, label) in items {
-                @let href = if path.is_empty() {
-                    format!("/settlements/{}", settlement_id)
-                } else {
-                    format!("/settlements/{}/{}", settlement_id, path)
-                };
-                @let is_active = active == path;
-                a href=(href)
-                    class=(if is_active { "service-menu-item active" } else { "service-menu-item" })
-                {
-                    (label)
-                }
-            }
         }
     }
 }

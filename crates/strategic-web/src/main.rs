@@ -3,7 +3,6 @@
 //! An SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
 //! Uses Axum + Maud + Datastar with SpacetimeDB as the backend.
 
-mod auth;
 mod config;
 mod live;
 mod routes;

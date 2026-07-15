@@ -32,7 +32,7 @@ pub struct RecruitmentRolePanel {
 
 pub fn recruitment_panel(
     party: &Party,
-    active_character_id: u64,
+    _active_character_id: u64,
     roles: &[RecruitmentRolePanel],
     saved_roles: &[SavedRecruitmentRole],
     checks: PartyCheckSummary,

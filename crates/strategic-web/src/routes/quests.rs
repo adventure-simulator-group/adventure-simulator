@@ -19,23 +19,20 @@ use crate::spacetimedb::{
     PartyInventoryItem, PartyStake, Quest, Settlement,
 };
 use crate::templates::quest::{
-    post_battle_page, quest_location_base_page, quest_location_map_page, quest_location_page,
+    quest_location_base_page, quest_location_map_page, quest_location_page,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/current-quest", get(current_quest))
-        .route("/quests/{id}/accept", post(accept_quest))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
         .route("/quests/{id}/travel", post(travel_to_quest))
-        .route("/quests/{id}/location", get(quest_location_redirect))
         .route("/locations/quest/{id}", get(quest_location_base))
         .route("/locations/quest/{id}/map", get(quest_location_map))
         .route("/locations/quest/{id}/loot", get(quest_location_loot))
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
-        .route("/quests/{id}/loot", get(post_battle_loot))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
 }
 
@@ -99,32 +96,6 @@ async fn current_quest(
             && character.current_quest_location_id.is_none(),
         resolved: quest.status.eq_ignore_ascii_case("completed"),
     }))
-}
-
-async fn accept_quest(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Redirect {
-    let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters");
-    };
-
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
-    let outcome = accept_quest_for_character(&state, character_id, &id).await;
-
-    if matches!(outcome, Ok(PartyActionOutcome::Requested)) {
-        return Redirect::to("/?party-requested=accept_quest");
-    }
-    settlement_id.map_or_else(
-        || Redirect::to("/"),
-        |settlement_id| Redirect::to(&format!("/locations/settlement/{settlement_id}")),
-    )
 }
 
 #[derive(Serialize)]
@@ -290,95 +261,6 @@ async fn travel_to_quest(
     }
 }
 
-async fn post_battle_loot(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let Some(character_id) = session.character_id_u64() else {
-        return Html("<h1>Choose a character first</h1>".to_string());
-    };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(character) = characters.first() else {
-        return Html("<h1>Character not found</h1>".to_string());
-    };
-    let results: Vec<BattleResult> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM battle_result WHERE quest_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(result) = results.first() else {
-        return Html("<h1>Battle result not found</h1>".to_string());
-    };
-    if character.party_id.as_deref() != Some(&result.party_id) {
-        return Html("<h1>This battle belongs to another party</h1>".to_string());
-    }
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(quest) = quests.first() else {
-        return Html("<h1>Quest not found</h1>".to_string());
-    };
-    let loot: Vec<BattleLootItem> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM battle_loot_item WHERE quest_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-    let pooled: Vec<PartyInventoryItem> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-            result.party_id
-        ))
-        .await
-        .unwrap_or_default();
-    let stakes: Vec<PartyStake> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party_stake WHERE party_id = '{}'",
-            result.party_id
-        ))
-        .await
-        .unwrap_or_default();
-    let items: Vec<ItemDefinition> = state
-        .db
-        .query("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    let stake = stakes
-        .iter()
-        .find(|stake| stake.character_id == character.id)
-        .map_or(0, |stake| stake.value);
-    let targets = party_targets(&state, &result.party_id).await;
-    Html(
-        post_battle_page(
-            quest,
-            character,
-            &loot,
-            &pooled,
-            stake,
-            &items,
-            &targets,
-            session.theme(),
-        )
-        .into_string(),
-    )
-}
-
 #[derive(Default, serde::Deserialize)]
 struct StoreLootForm {
     #[serde(default)]
@@ -433,10 +315,6 @@ enum QuestLocationTab {
     Base,
     Map(Option<String>),
     Loot,
-}
-
-async fn quest_location_redirect(Path(id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/locations/quest/{id}"))
 }
 
 async fn quest_location_base(

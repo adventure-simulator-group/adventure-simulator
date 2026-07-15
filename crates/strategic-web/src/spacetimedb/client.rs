@@ -251,39 +251,6 @@ impl SpacetimeClient {
         }
     }
 
-    /// Run a SQL query and return raw JSON values
-    pub async fn query_raw(&self, sql: &str) -> Result<Vec<Value>> {
-        let url = format!("{}/v1/database/{}/sql", self.base_url, self.database);
-
-        let mut request = self.http.post(&url).body(sql.to_string());
-
-        if let Some(token) = &self.token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let started = Instant::now();
-        let response = request.send().await;
-        let elapsed = started.elapsed();
-        if elapsed >= Duration::from_millis(250) {
-            tracing::warn!(?elapsed, query = %sql, "slow SpacetimeDB query");
-        }
-        let response = response?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(SpacetimeError::Spacetime(error_text));
-        }
-
-        let text = response.text().await?;
-        let query_response: QueryResponse = serde_json::from_str(&text)?;
-
-        if let Some(first) = query_response.first() {
-            Ok(first.rows.clone())
-        } else {
-            Ok(vec![])
-        }
-    }
-
     /// Call a reducer with JSON arguments
     pub async fn call(&self, reducer: &str, args: &[Value]) -> Result<()> {
         let url = format!(

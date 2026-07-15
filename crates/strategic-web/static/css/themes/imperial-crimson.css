@@ -238,21 +238,10 @@ input, select, textarea {
 /* ============================================
    PROGRESS BAR
    ============================================ */
-.progress-fill {
-  background: var(--accent);
-}
-
-.progress-bar {
-  border-radius: 1px;
-}
 
 /* ============================================
    QUEST CARDS
    ============================================ */
-.quest-card {
-  border-top: 2px solid var(--accent);
-  border-radius: 0;
-}
 
 /* ============================================
    SETTLEMENT CARDS

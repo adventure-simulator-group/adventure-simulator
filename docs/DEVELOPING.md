@@ -24,23 +24,18 @@ The game uses a Mount & Blade style architecture:
 just dev
 ```
 
-Open http://localhost:8000/map.html
+Open http://localhost:8080
 
 ## Full Development (with Tactical Servers)
 
 To run the complete stack with automatic tactical server spawning:
 
-**Terminal 1:** Start SpacetimeDB and UI
+**Terminal 1:** Start SpacetimeDB, the strategic web server, and tactical spawner
 ```bash
 just dev
 ```
 
-**Terminal 2:** Run the tactical spawner (watches for missions)
-```bash
-just spawner
-```
-
-**Terminal 3:** (Optional) Build WASM client
+**Terminal 2:** (Optional) Rebuild the WASM client independently
 ```bash
 just build-wasm
 ```
@@ -61,8 +56,7 @@ Now when you click a location in the browser, a tactical server will automatical
 | Service | Port | Description |
 |---------|------|-------------|
 | SpacetimeDB | 3000 | Strategic database |
-| Strategic UI | 8000 | Browser UI (`map.html`) |
-| Strategic web backend | 8080 | Internal Axum HTTP service |
+| Strategic web | 8080 | Axum server-rendered browser UI |
 | Strategic web HTTPS | 8443 | Caddy HTTP/2 and HTTP/3 entry point |
 | Tactical Server | 6000+ | Game server (one per mission) |
 
@@ -70,7 +64,7 @@ Now when you click a location in the browser, a tactical server will automatical
 
 ```bash
 # Development
-just dev              # Start SpacetimeDB + UI server
+just dev              # Start the complete browser stack
 just web-secure       # Start strategic-web at https://localhost:8443
 just secure-web-trust # Trust Caddy's local development CA (normally once)
 just web-damaged      # Start a fresh stack with an injured demo character
@@ -123,8 +117,11 @@ untrusted clients to connect.
 
 ## Strategic UI
 
-The UI is served from `crates/adventuresim-stdb-module/static/`.
-`map.html` connects to SpacetimeDB at `http://localhost:3000`.
+The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
+receive live state through the web server rather than connecting directly to
+SpacetimeDB. The tactical WASM page remains under
+`crates/adventuresim-stdb-module/static/tactical.html` and is served by
+`strategic-web` at `/tactical/tactical.html`.
 
 Test the server-rendered strategic browser through `https://localhost:8443`
 using `just web-secure`. Caddy terminates TLS and negotiates HTTP/2 or HTTP/3

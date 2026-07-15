@@ -110,7 +110,8 @@ async fn mission_status(
             .first()
             .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
         {
-            return Redirect::to(&format!("/quests/{}/loot", result.quest_id)).into_response();
+            return Redirect::to(&format!("/locations/quest/{}/loot", result.quest_id))
+                .into_response();
         }
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
@@ -142,7 +143,7 @@ async fn cancel_mission(
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+    let Some(_server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
@@ -156,11 +157,7 @@ async fn cancel_mission(
     )
     .await;
 
-    if server.party_id.is_some() {
-        Redirect::to("/").into_response()
-    } else {
-        Redirect::to("/").into_response()
-    }
+    Redirect::to("/").into_response()
 }
 
 async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
@@ -224,24 +221,6 @@ fn can_view_mission(viewer: &Character, server: &TacticalServer) -> bool {
         (Some(viewer_party), Some(server_party)) => viewer_party == server_party,
         _ => false,
     }
-}
-
-async fn can_cancel_mission(state: &AppState, viewer: &Character, server: &TacticalServer) -> bool {
-    if let Some(party_id) = &server.party_id {
-        let parties: Vec<Party> = state
-            .db
-            .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-            .await
-            .unwrap_or_default();
-
-        if let Some(party) = parties.first() {
-            return party.leader_id == viewer.id;
-        }
-
-        return server.character_id == Some(viewer.id);
-    }
-
-    server.character_id == Some(viewer.id)
 }
 
 async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {
