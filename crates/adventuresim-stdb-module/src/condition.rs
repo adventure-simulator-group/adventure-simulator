@@ -69,6 +69,8 @@ pub struct CharacterStrategicCondition {
     pub morale_bonus: f32,
     /// Maximum party restoration fraction at the current aggregate Charisma check.
     pub morale_bonus_cap: f32,
+    /// Bounded strategic pressure toward inflexible religious behavior.
+    pub fervor: f32,
     pub pain: f32,
     pub blood_loss: f32,
     pub fear: f32,
@@ -488,6 +490,17 @@ fn evaluate_strategic_condition(
     let (attributes, limbs, stats, _) = load_character_parts(ctx, character_id)?;
     let will = mental_check(ctx, character_id, Skill::Will)?;
     let (listener_base_morale, mut sources) = base_morale(ctx, character_id)?;
+    let party_members = party_character_ids(ctx, character_id)?;
+    let fervor = if let Some((_, faith)) = party_faith_context(ctx, character_id, &party_members)? {
+        fervor_fraction(
+            mental_check(ctx, character_id, Skill::Faith)?,
+            faith.own_cohort,
+            listener_base_morale.max(0.0),
+            faith.party_charisma,
+        )
+    } else {
+        0.0
+    };
 
     if listener_base_morale < 0.0 {
         let deficit = -listener_base_morale;
@@ -549,6 +562,7 @@ fn evaluate_strategic_condition(
             morale,
             morale_bonus,
             morale_bonus_cap,
+            fervor,
             pain: incapacitation.pain,
             blood_loss: incapacitation.blood_loss,
             fear: incapacitation.fear,

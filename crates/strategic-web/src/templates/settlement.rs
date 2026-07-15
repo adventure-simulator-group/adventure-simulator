@@ -1365,6 +1365,21 @@ fn strategic_condition_rail(
                     }
                 }
             }
+            div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
+                div class="fervor-meter-heading" {
+                    strong { "Fervor" }
+                    span { (percent(condition.fervor)) }
+                }
+                div class="fervor-meter-track" aria-hidden="true" { span {} }
+                div class="fervor-meter-labels" {
+                    span { "Calm" }
+                    span { "Fervent" }
+                    span { "Frenzy" }
+                }
+                p class="fervor-help" role="tooltip" {
+                    "Faith, a strong same-faith cohort, and surplus morale raise Fervor. Party Charisma restrains it. High Fervor will create conviction demands."
+                }
+            }
             dl class="character-bio strategic-condition-summary" {
                 div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
                 div { dt { "Incapacitation" } dd { (percent(condition.incapacitation)) } }

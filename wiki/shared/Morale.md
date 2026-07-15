@@ -65,3 +65,15 @@ let discord = 3.0 * (foreign_pressure - party_charisma).max(0.0);
 ```
 
 The resulting `Religious discord` source then receives the same negative-source ranking and Will mitigation as other morale penalties. A unified party therefore gets the largest available conviction benefit without discord; a mixed party retains the conviction of each faith but generally pays a leadership-dependent cost.
+
+# Fervor
+
+Fervor is a bounded strategic pressure meter, not another morale source. It shows how close religious conviction is to becoming inflexible behavior. Individual Faith, the character's same-faith cohort check, and surplus morale raise pressure; aggregate party Charisma is subtracted as restraint. Faithless characters always have zero Fervor.
+
+```rs
+let pressure = (individual_faith + cohort_check + positive_morale / 10.0
+    - party_charisma - 2.5).max(0.0);
+let fervor = 1.0 - (-pressure / 5.0).exp();
+```
+
+The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy. At this stage the meter is informational; subsequent conviction-demand mechanics consume the pressure rather than making characters take involuntary actions.

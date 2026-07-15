@@ -499,6 +499,7 @@ pub struct CharacterStrategicCondition {
     pub morale: f32,
     pub morale_bonus: f32,
     pub morale_bonus_cap: f32,
+    pub fervor: f32,
     pub pain: f32,
     pub blood_loss: f32,
     pub fear: f32,

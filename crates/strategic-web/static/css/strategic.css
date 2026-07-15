@@ -1471,6 +1471,61 @@ button.party-portrait-action {
 .morale-source-popup .negative strong { color: var(--danger); }
 .morale-source-popup p { margin: 0.4rem 0 0; color: var(--text-muted); }
 
+.fervor-meter {
+  position: relative;
+  padding: 0.45rem 0 0.65rem;
+  outline: none;
+}
+
+.fervor-meter-heading,
+.fervor-meter-labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.fervor-meter-heading { margin-bottom: 0.35rem; }
+.fervor-meter-heading span { font-variant-numeric: tabular-nums; font-weight: 800; }
+.fervor-meter-track {
+  height: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+}
+.fervor-meter-track span {
+  display: block;
+  width: var(--fervor);
+  height: 100%;
+  background: linear-gradient(to right, #a48750, #d2612b 70%, var(--danger));
+  transition: width 160ms ease;
+}
+.fervor-meter-labels { margin-top: 0.25rem; color: var(--text-muted); font-size: 0.62rem; }
+.fervor-help {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 0.35rem);
+  right: 0;
+  left: 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  margin: 0;
+  opacity: 0;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+  color: var(--text-muted);
+  pointer-events: none;
+  transform: translateY(-0.2rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.fervor-meter:hover .fervor-help,
+.fervor-meter:focus-within .fervor-help {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .party-action-notifications {
   position: absolute;
   z-index: 5;

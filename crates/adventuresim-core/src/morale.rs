@@ -12,6 +12,10 @@ pub const MORALE_BONUS_PER_CHARISMA: f32 = 0.05;
 /// Raw mixed-faith discord created by each point of foreign faith pressure
 /// which the party's social leadership cannot absorb.
 pub const RELIGIOUS_DISCORD_SEVERITY: f32 = 3.0;
+/// Pressure above this baseline begins to register as visible fervor.
+pub const FERVOR_PRESSURE_BASELINE: f32 = 2.5;
+/// Pressure required to reach roughly 63% on the Fervor meter.
+pub const FERVOR_CURVE_SCALE: f32 = 5.0;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
 
@@ -91,6 +95,22 @@ pub fn religious_discord(foreign_faith_pressure: f32, party_charisma: f32) -> f3
         * (foreign_faith_pressure.max(0.0) - party_charisma.max(0.0)).max(0.0)
 }
 
+/// Bounded religious pressure used by the strategic Fervor meter.
+pub fn fervor_fraction(
+    individual_faith: f32,
+    same_faith_cohort: f32,
+    surplus_morale: f32,
+    party_charisma: f32,
+) -> f32 {
+    let pressure = (individual_faith.max(0.0)
+        + same_faith_cohort.max(0.0)
+        + surplus_morale.max(0.0) / MORALE_BONUS_CURVE_SCALE
+        - party_charisma.max(0.0)
+        - FERVOR_PRESSURE_BASELINE)
+        .max(0.0);
+    1.0 - (-pressure / FERVOR_CURVE_SCALE).exp()
+}
+
 /// Linear decay for recent morale events. `age` and `duration` use the same unit.
 pub fn morale_event_decay(age: u64, duration: u64) -> f32 {
     if duration == 0 || age >= duration {
@@ -164,6 +184,15 @@ mod tests {
         assert_eq!(religious_discord(4.0, 1.0), 9.0);
         assert_eq!(religious_discord(4.0, 4.0), 0.0);
         assert_eq!(religious_discord(4.0, 5.0), 0.0);
+    }
+
+    #[test]
+    fn fervor_is_bounded_and_charisma_mitigates_it() {
+        let unmitigated = fervor_fraction(5.0, 5.0, 10.0, 0.0);
+        let led = fervor_fraction(5.0, 5.0, 10.0, 5.0);
+        assert!(unmitigated > led);
+        assert!((0.0..1.0).contains(&unmitigated));
+        assert_eq!(fervor_fraction(1.0, 1.0, 0.0, 5.0), 0.0);
     }
 
     #[test]
