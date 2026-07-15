@@ -46,4 +46,6 @@ Strategic morale is derived on the server from injuries, party Charisma and Fait
 
 Recent morale events decay linearly to zero over seven days of the affected character's strategic time. A shared faith can increase an ally's Charisma contribution up to 2x at maximum mutual Faith. When both characters have different religions, conviction instead turns up to the full Charisma contribution into a negative source. A character with no selected religion receives the neutral Charisma contribution and causes no religious conflict.
 
+A character makes or changes their religious profession by speaking with a priest at a church. Religion choices are dialogue topics, including when the priest also has a quest to discuss; they are not selected from a service menu.
+
 The strategic condition projection records the positive and negative subtotals, final morale, and resulting fear. Negative morale converts to fear at one percentage point of incapacitation per morale point. The projection is a refreshable cache; the durable state is the character's condition and time-stamped morale events.

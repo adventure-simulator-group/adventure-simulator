@@ -623,16 +623,7 @@ fn service_page(
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
                             @if active_character.is_some() {
-                                form method="post" action=(format!("/settlements/{}/religion", settlement.id)) {
-                                    label for="religion-id" { "Conviction" }
-                                    select id="religion-id" name="religion_id" {
-                                        option value="" { "No religious conviction" }
-                                        option value="western_church" { "Western Church" }
-                                        option value="reformed" { "Reformed Church" }
-                                        option value="old_faith" { "Old Faith" }
-                                    }
-                                    button type="submit" class="btn btn-primary btn-block mt-1" { "Set conviction" }
-                                }
+                                p class="small-copy" { "Speak with the priest below to make or change a profession of faith." }
                             }
                             p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))

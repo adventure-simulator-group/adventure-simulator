@@ -484,6 +484,15 @@ pub struct CharacterLimbs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterCondition {
+    pub character_id: u64,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub religion_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStrategicCondition {
     pub character_id: u64,
     pub positive_morale: f32,

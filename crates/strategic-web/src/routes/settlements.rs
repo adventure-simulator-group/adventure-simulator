@@ -17,9 +17,9 @@ use super::inventory_forms::{
 use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
-    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyMember,
+    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterLimbs, CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule,
+    InventoryItem, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyMember,
     PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
     Settlement, TravelEdge,
 };
@@ -38,6 +38,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/settlements/{id}/service-quests",
             get(service_quest_offers),
+        )
+        .route(
+            "/api/settlements/{id}/religion",
+            get(religion_dialogue).post(set_religion),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
@@ -101,10 +105,7 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}/armor", get(armor))
         .route("/settlements/{id}/clothing", get(clothing))
         .route("/settlements/{id}/inn", get(inn))
-        .route(
-            "/settlements/{id}/religion",
-            get(religion).post(set_religion),
-        )
+        .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
 }
@@ -543,7 +544,7 @@ fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
         ),
         "religion" => (
             "Priest",
-            "Peace be with you. I fear our prayers alone cannot mend this:",
+            "God give you peace. I must ask your aid concerning",
         ),
         _ => (
             "Merchant",
@@ -1794,24 +1795,102 @@ struct ReligionForm {
     religion_id: String,
 }
 
+#[derive(Serialize)]
+struct ReligionDialogue {
+    religion_id: Option<String>,
+    can_choose: bool,
+}
+
+async fn religion_dialogue(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<ReligionDialogue> {
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Json(ReligionDialogue {
+            religion_id: None,
+            can_choose: false,
+        });
+    };
+    let can_choose = character.current_settlement_id.as_deref() == Some(id.as_str());
+    let condition = state
+        .db
+        .query::<CharacterCondition>(&format!(
+            "SELECT * FROM character_condition WHERE character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    Json(ReligionDialogue {
+        religion_id: condition.and_then(|condition| condition.religion_id),
+        can_choose,
+    })
+}
+
+#[derive(Serialize)]
+struct ReligionChange {
+    changed: bool,
+    religion_id: Option<String>,
+    message: &'static str,
+}
+
 async fn set_religion(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
     Form(form): Form<ReligionForm>,
-) -> Redirect {
-    if let Some(character_id) = session.character_id_u64()
-        && let Err(error) = state
-            .db
-            .call(
-                "set_character_religion",
-                &[json!(character_id), json!(form.religion_id)],
-            )
-            .await
-    {
-        tracing::warn!(%error, character_id, "failed to set character religion");
+) -> Json<ReligionChange> {
+    let religion_id = form.religion_id.trim();
+    if !matches!(
+        religion_id,
+        "" | "western_church" | "reformed" | "old_faith"
+    ) {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "That profession is not available here.",
+        });
     }
-    Redirect::to(&format!("/settlements/{id}/religion"))
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "Choose a character before speaking with the priest.",
+        });
+    };
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "You must be at this church to make a profession of faith.",
+        });
+    }
+    match state
+        .db
+        .call(
+            "set_character_religion",
+            &[json!(character.id), json!(religion_id)],
+        )
+        .await
+    {
+        Ok(()) => Json(ReligionChange {
+            changed: true,
+            religion_id: (!religion_id.is_empty()).then(|| religion_id.to_string()),
+            message: "Your profession has been recorded.",
+        }),
+        Err(error) => {
+            tracing::warn!(%error, character_id = character.id, "failed to set character religion");
+            Json(ReligionChange {
+                changed: false,
+                religion_id: None,
+                message: "The priest cannot receive your profession just now.",
+            })
+        }
+    }
 }
 
 type ServiceRenderer = fn(
