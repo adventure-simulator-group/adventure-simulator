@@ -605,7 +605,8 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.downtime, elapsed, activities);
     ctx.db.character_skills().character_id().update(skills);
-    let _ = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
+    let risks = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
+    crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     character_time.minutes = target_minutes;
     ctx.db
         .character_time()

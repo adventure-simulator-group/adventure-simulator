@@ -23,10 +23,14 @@ const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 
 fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
-    for membership in ctx.db.party_member().party_id().filter(party_id) {
-        crate::condition::require_character_ready(ctx, membership.character_id)?;
-    }
-    Ok(())
+    let character_ids: Vec<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .map(|membership| membership.character_id)
+        .collect();
+    crate::condition::require_characters_ready(ctx, &character_ids)
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -3306,22 +3310,30 @@ pub fn travel_to_settlement(
         return Err("Settlement not found".into());
     };
 
-    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
-    crate::condition::require_character_ready(ctx, character_id)?;
-    if let Some(party_id) = character.party_id.as_deref()
-        && ctx
-            .db
-            .party()
-            .id()
-            .find(&party_id.to_string())
-            .is_some_and(|party| party.leader_id == character_id)
-    {
-        require_party_ready(ctx, party_id)?;
+    let mut party = character
+        .party_id
+        .as_ref()
+        .map(|party_id| {
+            ctx.db
+                .party()
+                .id()
+                .find(party_id)
+                .ok_or_else(|| "Party not found".to_string())
+        })
+        .transpose()?;
+    if let Some(party) = party.as_ref() {
+        if party.leader_id != character_id {
+            return Err("Only the party leader can travel".into());
+        }
+        require_party_ready(ctx, &party.id)?;
+    } else {
+        crate::condition::require_character_ready(ctx, character_id)?;
     }
 
-    if let Some(origin_id) = &character.current_settlement_id {
+    let travel_minutes = if let Some(origin_id) = &character.current_settlement_id {
         let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
             return Err("Character's current settlement does not exist".into());
         };
@@ -3336,17 +3348,13 @@ pub fn travel_to_settlement(
             else {
                 return Err("That settlement is not directly connected by land or ferry".into());
             };
-            advance_character_time(ctx, character_id, journey_minutes(distance_m))?;
+            journey_minutes(distance_m)
         } else {
             let distance_km = ((origin.coord_x - destination.coord_x).powi(2)
                 + (origin.coord_y - destination.coord_y).powi(2))
             .sqrt()
             .ceil() as u64;
-            advance_character_time(
-                ctx,
-                character_id,
-                journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER)),
-            )?;
+            journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER))
         }
     } else if let Some(quest_id) = &character.current_quest_location_id {
         let Some(quest) = ctx.db.quest().id().find(quest_id) else {
@@ -3359,74 +3367,53 @@ pub fn travel_to_settlement(
             destination.coord_y,
             quest.coordinates_are_geographic && destination.source_node_id.is_some(),
         );
-        advance_character_time(ctx, character_id, quest_journey_minutes(distance_m))?;
+        quest_journey_minutes(distance_m)
     } else {
         return Err("Character is not at a known location".into());
-    }
+    };
 
     let departing_quest = character.current_quest_location_id.clone();
-    character.current_settlement_id = Some(settlement_id.clone());
-    character.current_quest_location_id = None;
-    let party_id = character.party_id.clone();
-    ctx.db.character().id().update(character);
+    let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
+        ctx.db
+            .party_member()
+            .party_id()
+            .filter(&party.id)
+            .map(|membership| membership.character_id)
+            .collect()
+    } else {
+        vec![character_id]
+    };
+    for traveler_id in traveler_ids {
+        advance_character_time(ctx, traveler_id, travel_minutes)?;
+        let mut traveler = ctx
+            .db
+            .character()
+            .id()
+            .find(traveler_id)
+            .ok_or("Party member not found")?;
+        traveler.current_settlement_id = Some(settlement_id.clone());
+        traveler.current_quest_location_id = None;
+        ctx.db.character().id().update(traveler);
+    }
 
-    if let Some(party_id) = party_id {
-        if let Some(mut party) = ctx.db.party().id().find(&party_id) {
-            if party.leader_id == character_id {
-                if departing_quest.is_some() {
-                    let members: Vec<_> =
-                        ctx.db.party_member().party_id().filter(&party_id).collect();
-                    for membership in members {
-                        if membership.character_id == character_id {
-                            continue;
-                        }
-                        if let Some(mut member) =
-                            ctx.db.character().id().find(membership.character_id)
-                        {
-                            let quest = ctx
-                                .db
-                                .quest()
-                                .id()
-                                .find(departing_quest.as_ref().unwrap())
-                                .ok_or("Party's quest location does not exist")?;
-                            let distance_m = straight_line_distance_m(
-                                quest.location_coord_x,
-                                quest.location_coord_y,
-                                destination.coord_x,
-                                destination.coord_y,
-                                quest.coordinates_are_geographic
-                                    && destination.source_node_id.is_some(),
-                            );
-                            advance_character_time(
-                                ctx,
-                                member.id,
-                                quest_journey_minutes(distance_m),
-                            )?;
-                            member.current_settlement_id = Some(settlement_id.clone());
-                            member.current_quest_location_id = None;
-                            ctx.db.character().id().update(member);
-                        }
-                    }
-                }
-                party.current_settlement_id = Some(settlement_id.clone());
-                party.current_quest_location_id = None;
-                ctx.db.party().id().update(party);
-                let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
-                    ctx.db
-                        .strategic_incident()
-                        .quest_id()
-                        .find(quest_id)
-                        .is_some()
-                });
-                if let Some(quest_id) = departing_quest.as_deref()
-                    && fled_incident
-                {
-                    finish_strategic_incident(ctx, quest_id, "avoided")?;
-                }
-                if !fled_incident {
-                    maybe_trigger_religious_incident(ctx, &party_id, &destination)?;
-                }
-            }
+    if let Some(ref mut party) = party {
+        party.current_settlement_id = Some(settlement_id.clone());
+        party.current_quest_location_id = None;
+        ctx.db.party().id().update(party.clone());
+        let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
+            ctx.db
+                .strategic_incident()
+                .quest_id()
+                .find(quest_id)
+                .is_some()
+        });
+        if let Some(quest_id) = departing_quest.as_deref()
+            && fled_incident
+        {
+            finish_strategic_incident(ctx, quest_id, "avoided")?;
+        }
+        if !fled_incident {
+            maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
         }
     }
 

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
-use crate::strategic::quest;
+use crate::strategic::{quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -743,29 +743,87 @@ fn refresh_character_strategic_condition_projection(
     character_id: u64,
 ) -> Result<CharacterStrategicCondition, String> {
     let party_members = party_character_ids(ctx, character_id)?;
-    let (morale_bonus_cap, morale_bonus_shares) = party_morale_support(ctx, &party_members)?;
-    let mut requested = None;
-    for member_id in party_members {
-        let row = refresh_one_strategic_condition(
-            ctx,
-            member_id,
-            morale_bonus_cap,
-            &morale_bonus_shares,
-        )?;
-        if member_id == character_id {
-            requested = Some(row);
-        }
-    }
-    requested.ok_or_else(|| "Character is not a member of their party".to_string())
+    let rows = refresh_party_strategic_condition_projection(ctx, &party_members)?;
+    rows.into_iter()
+        .find(|row| row.character_id == character_id)
+        .ok_or_else(|| "Character is not a member of their party".to_string())
+}
+
+fn refresh_party_strategic_condition_projection(
+    ctx: &ReducerContext,
+    party_members: &[u64],
+) -> Result<Vec<CharacterStrategicCondition>, String> {
+    let (morale_bonus_cap, morale_bonus_shares) = party_morale_support(ctx, party_members)?;
+    party_members
+        .iter()
+        .copied()
+        .map(|member_id| {
+            refresh_one_strategic_condition(ctx, member_id, morale_bonus_cap, &morale_bonus_shares)
+        })
+        .collect()
 }
 
 pub fn refresh_character_strategic_condition(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<CharacterStrategicCondition, String> {
-    let requested = refresh_character_strategic_condition_projection(ctx, character_id)?;
+    let mut requested = refresh_character_strategic_condition_projection(ctx, character_id)?;
+    if refuse_expired_holy_day_demands(ctx, character_id, false)? {
+        requested = refresh_character_strategic_condition_projection(ctx, character_id)?;
+    }
     ensure_holy_day_demand(ctx, &requested)?;
     Ok(requested)
+}
+
+fn holy_day_demand_has_expired(created_day: u64, current_day: u64, departing: bool) -> bool {
+    created_day < current_day || (departing && created_day == current_day)
+}
+
+fn refuse_expired_holy_day_demands(
+    ctx: &ReducerContext,
+    character_id: u64,
+    departing: bool,
+) -> Result<bool, String> {
+    let current_minute = character_minute(ctx, character_id);
+    let current_day = current_minute / MINUTES_PER_DAY;
+    let pending: Vec<_> = ctx
+        .db
+        .religious_demand()
+        .character_id()
+        .filter(character_id)
+        .filter(|demand| {
+            demand.kind == "holy_day"
+                && demand.status == "pending"
+                && holy_day_demand_has_expired(
+                    demand.created_at_minute / MINUTES_PER_DAY,
+                    current_day,
+                    departing,
+                )
+        })
+        .collect();
+    if pending.is_empty() {
+        return Ok(false);
+    }
+
+    let charisma = party_charisma(ctx, character_id)?;
+    for mut demand in pending {
+        demand.status = "resolved".into();
+        demand.resolved_at_minute = Some(current_minute);
+        demand.resolution = Some("refuse".into());
+        let penalty = religious_neglect_morale(demand.fervor, charisma);
+        let source_id = format!("religious-demand:{}", demand.id);
+        ctx.db.religious_demand().id().update(demand);
+        if penalty > 0.0 && !has_morale_source(ctx, character_id, &source_id) {
+            insert_morale_event_without_refresh(
+                ctx,
+                character_id,
+                "religious_observance_neglected",
+                -penalty,
+                source_id,
+            );
+        }
+    }
+    Ok(true)
 }
 
 #[reducer]
@@ -794,6 +852,15 @@ pub fn resolve_religious_demand(
     }
     if !matches!(choice.as_str(), "observe" | "refuse") {
         return Err("Unknown religious-demand choice".into());
+    }
+    if choice == "observe" && demand.kind == "holy_day" {
+        if character.current_settlement_id.is_none() {
+            return Err("A holy day can only be observed at a settlement".into());
+        }
+        let current_day = character_minute(ctx, demand.character_id) / MINUTES_PER_DAY;
+        if current_day != demand.created_at_minute / MINUTES_PER_DAY {
+            return Err("This holy day has already passed".into());
+        }
     }
     demand.status = "resolved".into();
     demand.resolved_at_minute = Some(character_minute(ctx, demand.character_id));
@@ -922,6 +989,7 @@ pub fn apply_travel_condition(
     stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
     ctx.db.character_stats().character_id().update(stats);
 
+    refuse_expired_holy_day_demands(ctx, character_id, true)?;
     let condition = refresh_character_strategic_condition_projection(ctx, character_id)?;
     let professes_religion = ctx
         .db
@@ -1047,6 +1115,17 @@ pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Resul
     }
 }
 
+pub fn require_characters_ready(ctx: &ReducerContext, character_ids: &[u64]) -> Result<(), String> {
+    let conditions = refresh_party_strategic_condition_projection(ctx, character_ids)?;
+    for condition in &conditions {
+        ensure_holy_day_demand(ctx, condition)?;
+        if condition.status == "incapacitated" {
+            return Err("A party member is incapacitated and must recover before acting".into());
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn refresh_strategic_condition(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
@@ -1059,16 +1138,50 @@ pub fn set_character_religion(
     religion_id: String,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
+    let religion_id = religion_id.trim();
+    if !religion_id.is_empty() {
+        let character = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Character not found")?;
+        let settlement_id = character
+            .current_settlement_id
+            .ok_or("A religion can only be professed at a settlement")?;
+        let settlement = ctx
+            .db
+            .settlement()
+            .id()
+            .find(&settlement_id)
+            .ok_or("Character's settlement not found")?;
+        if settlement.religion_id != religion_id {
+            return Err("This settlement's priest cannot receive that profession of faith".into());
+        }
+    }
     let mut condition = ctx
         .db
         .character_condition()
         .character_id()
         .find(character_id)
         .ok_or("Character condition not found")?;
-    condition.religion_id = (!religion_id.trim().is_empty()).then(|| religion_id.trim().into());
+    condition.religion_id = (!religion_id.is_empty()).then(|| religion_id.into());
     ctx.db
         .character_condition()
         .character_id()
         .update(condition);
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::holy_day_demand_has_expired;
+
+    #[test]
+    fn holy_day_demands_expire_after_their_day_or_on_departure() {
+        assert!(!holy_day_demand_has_expired(6, 6, false));
+        assert!(holy_day_demand_has_expired(6, 6, true));
+        assert!(holy_day_demand_has_expired(6, 7, false));
+        assert!(!holy_day_demand_has_expired(13, 12, true));
+    }
 }

@@ -19,7 +19,7 @@ Activities combine reduced-rate training with another strategic result:
 
 Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
 
-Thievery and Raiding discovery is resolved after explicit settlement downtime. The continuous exposure formulas are:
+Thievery and Raiding discovery is resolved whenever settlement downtime advances, including explicit rest and off-screen catch-up. The continuous exposure formulas are:
 
 ```rs
 thievery_discovery = 1 - exp(-0.12 * hours * population_scale / (1 + stealth));
