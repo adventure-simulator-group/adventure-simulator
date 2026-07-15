@@ -1665,6 +1665,10 @@
   transform: translateX(-50%);
 }
 
+.party-portrait-overlay > [data-party-portrait-members] {
+  display: contents;
+}
+
 .party-portrait {
   position: relative;
   display: grid;

@@ -1,20 +1,35 @@
 (() => {
+  let recruitmentSignature = "";
+  let refreshGeneration = 0;
+
   async function loadRecruitment() {
     const overlay = document.querySelector(".party-portrait-overlay");
     if (!overlay) return;
+    const portraitMembers = overlay.querySelector("[data-party-portrait-members]") || overlay;
 
-    const response = await fetch("/party-recruitment/panel", { headers: { Accept: "text/html" } });
+    const generation = ++refreshGeneration;
+    const response = await window.strategicBackgroundFetch("party-recruitment", "/party-recruitment/panel", {
+      headers: { Accept: "text/html" },
+    });
     if (!response.ok) return;
     const host = document.createElement("div");
     host.innerHTML = await response.text();
     const panel = host.firstElementChild;
-    if (!panel) return;
+    if (!panel || generation !== refreshGeneration) return;
+    const nextSignature = panel.outerHTML;
+    if (nextSignature === recruitmentSignature) return;
+    recruitmentSignature = nextSignature;
+
+    document.querySelectorAll("[data-role-inspection-panel], [data-applicant-inspection-preview]").forEach((element) => element.remove());
+    document.querySelectorAll(".role-inspection-hidden").forEach((element) => element.classList.remove("role-inspection-hidden"));
+    overlay.querySelectorAll("[data-party-role-group], [data-party-aggregate-checks], .party-recruitment-add, .party-leader-crown").forEach((element) => element.remove());
+    document.querySelector("[data-party-recruitment-panel]")?.remove();
     document.body.append(panel);
 
     const leaderId = panel.dataset.leaderId;
     const leaderPortrait = overlay.querySelector(`[data-character-id="${leaderId}"]`);
     if (leaderPortrait) {
-      overlay.prepend(leaderPortrait);
+      portraitMembers.prepend(leaderPortrait);
       const crown = document.createElement("span");
       crown.className = "party-leader-crown";
       crown.textContent = "♛";
@@ -24,10 +39,9 @@
 
     const aggregateChecks = panel.querySelector("[data-party-aggregate-checks]");
     const partyChest = overlay.querySelector(".party-inventory-portrait");
-    if (partyChest && leaderPortrait) overlay.insertBefore(partyChest, leaderPortrait);
+    if (partyChest && leaderPortrait) portraitMembers.insertBefore(partyChest, leaderPortrait);
     if (aggregateChecks) {
-      if (partyChest) overlay.insertBefore(aggregateChecks, partyChest);
-      else overlay.prepend(aggregateChecks);
+      overlay.insertBefore(aggregateChecks, portraitMembers);
     }
 
     panel.querySelectorAll("[data-party-role-group]").forEach((group) => {
@@ -293,16 +307,23 @@
       button.addEventListener("click", () => button.closest("dialog")?.close());
     });
 
-    document.addEventListener("submit", async (event) => {
-      const form = event.target.closest?.("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post'], [data-role-inspection-panel] form[method='post']");
-      if (!form) return;
-      event.preventDefault();
-      const body = new URLSearchParams(new FormData(form));
-      const response = await fetch(form.action, { method: "POST", body });
-      if (!response.ok) return;
-      window.location.reload();
-    });
   }
 
-  loadRecruitment().catch(() => {});
+  document.addEventListener("submit", async (event) => {
+    const form = event.target.closest?.("[data-party-recruitment-panel] form[method='post'], [data-party-role-group] form[method='post'], [data-role-inspection-panel] form[method='post']");
+    if (!form) return;
+    event.preventDefault();
+    const body = new URLSearchParams(new FormData(form));
+    const response = await fetch(form.action, { method: "POST", body });
+    if (!response.ok) return;
+    form.closest("dialog")?.close();
+    loadRecruitment().catch(() => {});
+  });
+
+  window.queueStrategicInitialLoad(loadRecruitment).catch(() => {});
+  document.addEventListener("strategic-live-update", () => loadRecruitment().catch(() => {}));
+  document.addEventListener("strategic-live-regions-refreshed", () => {
+    recruitmentSignature = "";
+    loadRecruitment().catch(() => {});
+  });
 })();

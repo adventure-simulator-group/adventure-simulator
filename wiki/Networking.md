@@ -7,6 +7,14 @@ Our network will facilitate the bare minimum of what can be considered a single-
 When ten thousand people are "in" a city, it just means that ten thousand people are viewing a HTML page for that city and on the database, their official character location is that city. They interact with each other by making posts in the city, as if each character was a user on a forum.
 ## HTMX or Data-star
 To keep the interface very simple, we will do everything via HTTP and would prefer to handle all of our interaction in the strategic layer between the client and server with HTMX or Data-star. These two will be very similar at this layer, but the value of Data-star is that it might allow us to *also* use it with different plugins for the tactical layer.
+
+The strategic implementation uses Data-star with server-sent events. The web
+server, rather than each browser, subscribes to SpacetimeDB. This keeps
+authorization and reducer identities at the trusted boundary, avoids one
+database subscription per browser, and lets the server send HTML fragments that
+remain consistent with its Maud-rendered request/response pages. Browser actions
+continue to use ordinary authenticated HTTP requests; database changes are
+pushed back through the shared SSE invalidation stream.
 ## Accounts
 It is not strictly necessary to have users manually make accounts before they start playing. Essentially, visiting the website first checks to see if there's a cookie for an existing account that you can login with. If not, it can automatically create a new one. This is not necessarily the same cookie that actually stores credentials (which presumably expire), its just "Has an account existed on this client?". If it hasn't, create a new account automatically, if it has and the credentials expired, prompt to sign-in again. Accounts do not *require* emails, Oauth IDs, or any additional information. You simply have the option to add those later once you decide if you actually like the game. We might also prompt the user to do this the *second* time they load the website, and they can also do it themselves in the settings.
 

@@ -1,11 +1,11 @@
 //! Mission status templates
 
-use maud::{html, Markup};
+use maud::{Markup, html};
 
 use super::{base_layout_with_session, panel, sidebar_section, status_badge};
 use crate::spacetimedb::TacticalServer;
 
-/// Mission status page with Datastar polling
+/// Mission status page updated by the shared strategic SSE stream.
 pub fn mission_status_page(
     server: &TacticalServer,
     logged_in_as: Option<&str>,
@@ -38,7 +38,9 @@ pub fn mission_status_page(
         main class="center-content" {
             h2 class="page-title" { "Mission Status" }
 
-            div # "mission-status" {
+            div # "mission-status"
+                data-live-refresh
+                "data-on:strategic-live-update"=(format!("@get('/missions/{}/status?fragment=true')", server.mission_id)) {
                 @match status.as_str() {
                     "Ready" => { (ready_state(server)) }
                     "Failed" => { (failed_state()) }
@@ -98,10 +100,9 @@ fn effective_status(db_status: &str) -> String {
 }
 
 fn pending_state(mission_id: &str) -> Markup {
-    let poll_url = format!("@get('/missions/{}/status?fragment=true')", mission_id);
     html! {
         (panel("Waiting", html! {
-            div data-on-load=(&poll_url) "data-on-interval__5000ms"=(&poll_url) {
+            div {
                 div class="status-message" {
                     div class="loading-spinner" { "Preparing server" }
                     p class="status-detail mt-1" {
@@ -186,7 +187,9 @@ pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
     let status = effective_status(&server.status);
 
     html! {
-        div # "mission-status" {
+        div # "mission-status"
+            data-live-refresh
+            "data-on:strategic-live-update"=(format!("@get('/missions/{}/status?fragment=true')", server.mission_id)) {
             @match status.as_str() {
                 "Ready" => { (ready_state(server)) }
                 "Failed" => { (failed_state()) }

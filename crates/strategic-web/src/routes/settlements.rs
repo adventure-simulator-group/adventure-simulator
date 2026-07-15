@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
+use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -127,15 +128,14 @@ async fn show_settlement_location(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query("SELECT * FROM settlement")
-        .await
-        .unwrap_or_default();
+    let (settlements, active_character) = tokio::join!(
+        state.db.query::<Settlement>("SELECT * FROM settlement"),
+        get_active_character(&state, session.character_id_u64()),
+    );
+    let settlements = settlements.unwrap_or_default();
     let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -1570,70 +1570,7 @@ async fn merchants(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    let Some((character, inventory)) = active_character.as_ref() else {
-        return Html(
-            merchants_page(
-                settlement,
-                None,
-                &[],
-                &party_members,
-                logged_in_as.as_deref(),
-                session.theme(),
-            )
-            .into_string(),
-        );
-    };
-    let items: Vec<ItemDefinition> = state
-        .db
-        .query("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    let equip: Vec<CharacterEquip> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_equip WHERE character_id = {}",
-            character.id
-        ))
-        .await
-        .unwrap_or_default();
-    let (personal_targets, party_targets, pooled) =
-        inventory_trade_context(&state, character).await;
-    Html(
-        live_merchant_shop_page(
-            settlement,
-            character,
-            inventory,
-            &items,
-            &party_members,
-            equip.first(),
-            &personal_targets,
-            &party_targets,
-            &pooled,
-            session.theme(),
-            MerchantShop::General,
-        )
-        .into_string(),
-    )
+    merchant_shop(state, id, session, MerchantShop::General).await
 }
 
 #[derive(Deserialize)]
@@ -2056,24 +1993,20 @@ async fn merchant_shop(
     session: Session,
     shop: MerchantShop,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
+    let settlement_sql = format!("SELECT * FROM settlement WHERE id = '{}'", id);
+    let (settlements, active_character) = tokio::join!(
+        state.db.query::<Settlement>(&settlement_sql),
+        get_active_character(&state, session.character_id_u64()),
+    );
+    let settlements = settlements.unwrap_or_default();
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
     let Some((character, inventory)) = active_character.as_ref() else {
+        let party_members = get_active_party_members(&state, None).await;
         return Html(
             merchants_page(
                 settlement,
@@ -2086,21 +2019,19 @@ async fn merchant_shop(
             .into_string(),
         );
     };
-    let items: Vec<ItemDefinition> = state
-        .db
-        .query("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    let equip: Vec<CharacterEquip> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_equip WHERE character_id = {}",
-            character.id
-        ))
-        .await
-        .unwrap_or_default();
-    let (personal_targets, party_targets, pooled) =
-        inventory_trade_context(&state, character).await;
+    let equip_sql = format!(
+        "SELECT * FROM character_equip WHERE character_id = {}",
+        character.id
+    );
+    let (party_members, items, equip, trade_context) = tokio::join!(
+        get_active_party_members(&state, Some(character)),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state.db.query::<CharacterEquip>(&equip_sql),
+        inventory_trade_context(&state, character),
+    );
+    let items = items.unwrap_or_default();
+    let equip = equip.unwrap_or_default();
+    let (personal_targets, party_targets, pooled) = trade_context;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -2127,36 +2058,41 @@ async fn inventory_trade_context(
     Vec<InventoryQuantityTarget>,
     Vec<PartyInventoryItem>,
 ) {
-    let personal = state.db.query(&format!(
+    let personal_sql = format!(
         "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = false",
         character.id
-    )).await.unwrap_or_default();
+    );
     let Some(party_id) = character.party_id.as_ref() else {
+        let personal = state.db.query(&personal_sql).await.unwrap_or_default();
         return (personal, Vec::new(), Vec::new());
     };
-    let party = state
-        .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next();
+    let party_sql = format!("SELECT * FROM party WHERE id = '{}'", party_id);
+    let (personal, party) = tokio::join!(
+        state.db.query(&personal_sql),
+        state.db.query::<Party>(&party_sql),
+    );
+    let personal = personal.unwrap_or_default();
+    let party = party.unwrap_or_default().into_iter().next();
     let Some(party) = party else {
         return (personal, Vec::new(), Vec::new());
     };
-    let party_targets = state.db.query(&format!(
+    let party_targets_sql = format!(
         "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true",
         party.leader_id
-    )).await.unwrap_or_default();
-    let pooled = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-            party_id
-        ))
-        .await
-        .unwrap_or_default();
-    (personal, party_targets, pooled)
+    );
+    let pooled_sql = format!(
+        "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+        party_id
+    );
+    let (party_targets, pooled) = tokio::join!(
+        state.db.query(&party_targets_sql),
+        state.db.query(&pooled_sql),
+    );
+    (
+        personal,
+        party_targets.unwrap_or_default(),
+        pooled.unwrap_or_default(),
+    )
 }
 
 async fn personal_inventory_targets(
@@ -2172,22 +2108,30 @@ async fn render_service_page(
     session: Session,
     render: ServiceRenderer,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
+    let settlement_sql = format!("SELECT * FROM settlement WHERE id = '{}'", id);
+    let (settlements, active_character) = tokio::join!(
+        state.db.query::<Settlement>(&settlement_sql),
+        get_active_character(&state, session.character_id_u64()),
+    );
+    let settlements = settlements.unwrap_or_default();
     let settlement = match settlements.first() {
         Some(settlement) => settlement,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
 
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
+    let active_character_ref = active_character.as_ref().map(|(character, _)| character);
+    let limbs_lookup = async {
+        match active_character_ref {
+            Some(character) => {
+                query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+            }
+            None => None,
+        }
+    };
+    let (party_members, limbs) = tokio::join!(
+        get_active_party_members(&state, active_character_ref),
+        limbs_lookup,
+    );
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -2195,13 +2139,6 @@ async fn render_service_page(
     let inventory = active_character
         .as_ref()
         .map_or_else(Vec::new, |(_, inventory)| inventory.clone());
-    let limbs = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
-        }
-        None => None,
-    };
-
     Html(
         render(
             settlement,
@@ -2221,21 +2158,15 @@ async fn get_active_character(
     character_id: Option<u64>,
 ) -> Option<(Character, Vec<InventoryItem>)> {
     let character_id = character_id?;
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
+    let character_sql = format!("SELECT * FROM character WHERE id = {character_id}");
+    let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
+    let (characters, inventory) = tokio::join!(
+        state.db.query::<Character>(&character_sql),
+        state.db.query::<InventoryItem>(&inventory_sql),
+    );
+    let characters = characters.unwrap_or_default();
     let character = characters.into_iter().next()?;
-    let inventory: Vec<InventoryItem> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM inventory_item WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
+    let inventory = inventory.unwrap_or_default();
     Some((character, inventory))
 }
 
@@ -2265,36 +2196,30 @@ pub(crate) async fn get_active_party_members(
     let Some(party_id) = active_character.and_then(|character| character.party_id.as_ref()) else {
         return Vec::new();
     };
-    let memberships: Vec<PartyMember> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party_member WHERE party_id = '{}'",
-            party_id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let leader_id = state
-        .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-        .await
+    let memberships_sql = format!("SELECT * FROM party_member WHERE party_id = '{}'", party_id);
+    let party_sql = format!("SELECT * FROM party WHERE id = '{}'", party_id);
+    let (memberships, party) = tokio::join!(
+        state.db.query::<PartyMember>(&memberships_sql),
+        state.db.query::<Party>(&party_sql),
+    );
+    let memberships = memberships.unwrap_or_default();
+    let leader_id = party
         .unwrap_or_default()
         .first()
         .map(|party| party.leader_id);
-    let mut members = Vec::new();
-    for membership in memberships {
-        let characters: Vec<Character> = state
+    let lookups = memberships.into_iter().map(|membership| async move {
+        state
             .db
-            .query(&format!(
+            .query::<Character>(&format!(
                 "SELECT * FROM character WHERE id = {}",
                 membership.character_id
             ))
             .await
-            .unwrap_or_default();
-        if let Some(character) = characters.into_iter().next() {
-            members.push(character);
-        }
-    }
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    });
+    let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
 }

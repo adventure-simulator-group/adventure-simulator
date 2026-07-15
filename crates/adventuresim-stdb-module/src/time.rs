@@ -9,8 +9,6 @@ pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
 /// rate until the wound and treatment systems supply more detailed healing.
 pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
 pub const INN_GOLD_PER_DAY: u32 = 1;
-const CLOCK_TICK_MICROS: u64 = 1_000_000;
-
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
 #[derive(Clone, Debug)]
@@ -22,8 +20,9 @@ pub struct WorldClock {
     pub epoch_micros: i64,
 }
 
-/// Keeps the clock fresh for readers. The value itself is derived from the
-/// timestamp, so delayed scheduled calls do not slow game time.
+/// Legacy scheduler row retained so existing databases can migrate without
+/// dropping a table. New clocks are derived on demand and no longer schedule
+/// a write every second.
 #[derive(Clone, Debug)]
 #[table(name = world_clock_schedule, scheduled(refresh_world_clock))]
 pub struct WorldClockSchedule {
@@ -90,18 +89,6 @@ pub fn initialize_time(ctx: &ReducerContext) {
             epoch_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     }
-    if ctx
-        .db
-        .world_clock_schedule()
-        .scheduled_id()
-        .find(0)
-        .is_none()
-    {
-        ctx.db.world_clock_schedule().insert(WorldClockSchedule {
-            scheduled_id: 0,
-            scheduled_at: std::time::Duration::from_micros(CLOCK_TICK_MICROS).into(),
-        });
-    }
 }
 
 fn elapsed_official_minutes(clock: &WorldClock, now: Timestamp) -> u64 {
@@ -135,8 +122,14 @@ fn refresh_world_clock(ctx: &ReducerContext, schedule: WorldClockSchedule) -> Re
     if ctx.sender != ctx.identity() {
         return Err("World clock may only be refreshed by its scheduler".into());
     }
-    let _ = schedule;
-    refresh_clock(ctx).map(|_| ())
+    // Remove scheduler rows created by older module versions. The authoritative
+    // value is calculated from `epoch_micros` whenever an action needs it, and
+    // browsers advance their initial snapshot locally.
+    ctx.db
+        .world_clock_schedule()
+        .scheduled_id()
+        .delete(schedule.scheduled_id);
+    Ok(())
 }
 
 pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {

@@ -7,6 +7,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 spacetime_port := "3000"
 ui_port := "8000"
 web_port := "8080"
+secure_web_port := "8443"
 tactical_port := "6000"
 tactical_web_port := "6001"
 public_bind := "0.0.0.0"
@@ -17,6 +18,8 @@ spacetime_module := "adventuresim-stdb-module"
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
 strategic_web_dir := "crates/strategic-web"
+caddy_config := "Caddyfile.dev"
+caddy_bin := env_var_or_default("CADDY_BIN", "caddy")
 
 run_dir := "/tmp/adventure-simulator-1"
 http_pid := run_dir + "/http.pid"
@@ -38,6 +41,13 @@ default:
 preflight:
     @command -v spacetime >/dev/null 2>&1 || { echo "Missing 'spacetime' CLI. Install it before running."; exit 1; }
     @command -v python3 >/dev/null 2>&1 || { echo "Missing python3. Install it before running."; exit 1; }
+
+[script("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")]
+caddy-preflight:
+    if (-not (Get-Command "{{caddy_bin}}" -ErrorAction SilentlyContinue)) {
+        Write-Error "Missing Caddy executable '{{caddy_bin}}'. Install it from https://caddyserver.com/docs/install or set CADDY_BIN to its full path."
+        exit 1
+    }
 
 # Start SpacetimeDB, publish module, and serve the strategic UI
 dev: preflight spacetime-start publish serve-ui
@@ -69,6 +79,35 @@ web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactic
      STATIC_DIR={{strategic_web_dir}}/static \
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
+
+# Start the browser stack behind locally trusted HTTPS. Caddy negotiates HTTP/2
+# (and HTTP/3 when available) while strategic-web remains internal on port 8080.
+web-secure: preflight caddy-preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _spawner-start
+    caddy start --config "{{caddy_config}}" --adapter caddyfile
+    cleanup() {
+        caddy stop --address 127.0.0.1:2020 >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT INT TERM
+    echo ""
+    echo "Starting strategic-web behind HTTPS..."
+    echo "Open: https://localhost:{{secure_web_port}}"
+    echo "Backend: http://127.0.0.1:{{web_port}}"
+    echo ""
+    SPACETIMEDB_HOST={{spacetime_url}} \
+    SPACETIMEDB_DATABASE={{spacetime_module}} \
+    BIND_ADDRESS=127.0.0.1:{{web_port}} \
+    STATIC_DIR={{strategic_web_dir}}/static \
+    TACTICAL_STATIC_DIR={{strategic_static}} \
+    cargo run -p strategic-web
+
+# Install Caddy's development root certificate in the host trust store.
+[script("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")]
+secure-web-trust: caddy-preflight
+    & "{{caddy_bin}}" trust --config "{{caddy_config}}" --adapter caddyfile
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Start a fresh local stack with an injured character for stat-bar UI verification.
 web-damaged: preflight build-wasm spacetime-start publish-reset _seed-world _seed-damaged-character build-tactical

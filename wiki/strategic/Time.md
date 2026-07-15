@@ -4,6 +4,8 @@ Time between players is kept *somewhat* in-sync. The idea is that generally, tim
 
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 
+The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks, then advances that display locally at the same 84/73-second ratio. It does not poll or receive SSE clock ticks. Authoritative reducers derive the current official minute from the epoch when gameplay needs it, so browser drift affects only presentation.
+
 Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters are not yet required to have matching times to join or remain in the same party.
 
 The only implemented downtime effect is skill training. A character has a 24-hour daily budget with integer-minute allocations for every skill and labor. Leisure is the unallocated remainder and includes sleep. Server-side progression applies each skill's saved daily minutes proportionally over elapsed game time. Labor and leisure have no gameplay effects yet.

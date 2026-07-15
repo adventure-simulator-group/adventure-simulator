@@ -18,7 +18,9 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session, set_theme_cookie};
 use crate::spacetimedb::{
     Character, CharacterTime, Party, PartyActionRequest, SpacetimeClient, WorldClock,
@@ -28,6 +30,7 @@ use crate::spacetimedb::{
 #[derive(Clone)]
 pub struct AppState {
     pub db: SpacetimeClient,
+    pub live: LiveState,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,6 +193,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(parties::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
+                .merge(crate::live::routes())
                 .route("/time", get(current_time))
                 .layer(middleware::from_fn(require_active_character)),
         )
@@ -209,23 +213,27 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Json<C
             official_minutes: 0,
         });
     };
-    let character_time: Vec<CharacterTime> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let world_clock: Vec<WorldClock> = state
-        .db
-        .query("SELECT * FROM world_clock WHERE id = 0")
-        .await
-        .unwrap_or_default();
+    let character_time_sql =
+        format!("SELECT * FROM character_time WHERE character_id = {character_id}");
+    let (character_time, world_clock) = tokio::join!(
+        state.db.query::<CharacterTime>(&character_time_sql),
+        state
+            .db
+            .query::<WorldClock>("SELECT * FROM world_clock WHERE id = 0"),
+    );
+    let character_time = character_time.unwrap_or_default();
+    let world_clock = world_clock.unwrap_or_default();
+    let official_minutes = world_clock.first().map_or(0, |clock| {
+        let now_micros = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros();
+        let elapsed_micros = now_micros.saturating_sub(clock.epoch_micros.max(0) as u128);
+        (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
+    });
     Json(CurrentTime {
         character_minutes: character_time.first().map_or(0, |time| time.minutes),
-        official_minutes: world_clock
-            .first()
-            .map_or(0, |clock| clock.official_minutes),
+        official_minutes,
     })
 }
 

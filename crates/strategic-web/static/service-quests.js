@@ -4,6 +4,8 @@
 
   const settlementId = services.dataset.settlementId;
   const chat = document.querySelector("[data-service-quest-settlement][data-service-quest-id]");
+  const dialogueActions = new Map();
+  let nextDialogueActionId = 0;
 
   const line = (kind, speaker, content) => {
     if (!chat) return null;
@@ -12,6 +14,8 @@
     const row = document.createElement("div");
     const body = typeof content === "string" ? content : content.textContent;
     row.className = kind === "player" ? "chat-player-message" : "chat-npc-message";
+    row.dataset.localChatBody = body || "";
+    row.dataset.localChatSpeaker = speaker || "";
     const timestamp = document.createElement("span");
     timestamp.className = "chat-timestamp";
     timestamp.textContent = "[--:--] ";
@@ -43,14 +47,23 @@
     anchor.href = "#";
     anchor.className = "chat-quest-link";
     anchor.textContent = label;
-    anchor.addEventListener("click", (event) => {
-      event.preventDefault();
-      if (anchor.dataset.used) return;
-      anchor.dataset.used = "true";
-      action();
-    });
+    const actionId = String(++nextDialogueActionId);
+    anchor.dataset.questDialogueAction = actionId;
+    dialogueActions.set(actionId, action);
     return anchor;
   };
+
+  document.addEventListener("click", (event) => {
+    const anchor = event.target.closest("[data-quest-dialogue-action]");
+    if (!anchor) return;
+    event.preventDefault();
+    if (anchor.dataset.used) return;
+    const action = dialogueActions.get(anchor.dataset.questDialogueAction);
+    if (!action) return;
+    anchor.dataset.used = "true";
+    dialogueActions.delete(anchor.dataset.questDialogueAction);
+    action();
+  });
 
   const updateTracker = (quest) => {
     const summary = document.querySelector("[data-current-quest]");
@@ -233,10 +246,6 @@
     greeting.append(document.createTextNode("Welcome back. Have you "));
     greeting.append(link("finished", async () => {
       line("player", "You", "I've finished.");
-      if (!quest.can_turn_in) {
-        line("npc", quest.npc_name, "Your party leader should report the result and receive the reward.");
-        return;
-      }
       const response = await fetch(`/api/quests/${encodeURIComponent(quest.id)}/turn-in`, {
         method: "POST",
         headers: { Accept: "application/json" },
@@ -258,11 +267,16 @@
     line("npc", quest.npc_name, greeting);
   };
 
-  fetch(`/api/settlements/${encodeURIComponent(settlementId)}/service-quests`, {
+  let conversationSignature = "";
+  const refreshServiceQuests = () => window.strategicBackgroundFetch("service-quests", `/api/settlements/${encodeURIComponent(settlementId)}/service-quests`, {
     headers: { Accept: "application/json" },
   })
     .then((response) => (response.ok ? response.json() : []))
     .then((quests) => {
+      services.querySelectorAll("[data-service-quest-badge]").forEach((badge) => {
+        badge.hidden = true;
+        badge.classList.remove("service-turn-in-badge", "service-recruitment-badge");
+      });
       const serviceIds = new Set(quests.map((quest) => quest.service_id));
       serviceIds.forEach((serviceId) => {
         const serviceQuests = quests.filter((quest) => quest.service_id === serviceId);
@@ -289,6 +303,15 @@
         || serviceQuests.find((entry) => entry.state === "recruiting")
         || serviceQuests.find((entry) => entry.state === "available")
         || serviceQuests[0];
+      const nextConversationSignature = JSON.stringify(quest ? {
+        id: quest.id,
+        state: quest.state,
+        can_accept: quest.can_accept,
+        can_turn_in: quest.can_turn_in,
+        recruitment: quest.recruitment,
+      } : null);
+      if (nextConversationSignature === conversationSignature) return;
+      conversationSignature = nextConversationSignature;
       const showConversation = () => {
         if (quest?.state === "available") beginConversation(quest);
         else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
@@ -298,4 +321,6 @@
       else chat.addEventListener("local-chat-ready", showConversation, { once: true });
     })
     .catch(() => {});
+  window.queueStrategicInitialLoad(refreshServiceQuests);
+  document.addEventListener("strategic-live-update", refreshServiceQuests);
 })();
