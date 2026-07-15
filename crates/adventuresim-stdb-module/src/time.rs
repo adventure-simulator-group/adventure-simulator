@@ -155,6 +155,8 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::apply_travel_condition(ctx, character_id, minutes)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -329,6 +331,8 @@ pub fn rest_at_settlement(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -373,6 +377,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(forced_catch_up)
 }
 

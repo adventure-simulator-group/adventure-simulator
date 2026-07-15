@@ -14,6 +14,7 @@ pub const BLOOD_ML_PER_KG: f32 = 70.0;
 pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
+const TRAVEL_CALORIES_PER_DAY: f32 = 6_000.0;
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
@@ -345,6 +346,88 @@ pub fn record_morale_event(
     });
     refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
+}
+
+/// Advance fatigue for strategic travel. The existing `calories_used` field is
+/// treated as a recoverable fatigue reservoir until food/day-boundary state is
+/// implemented.
+pub fn apply_travel_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
+    let mut stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
+    stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
+    ctx.db.character_stats().character_id().update(stats);
+    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+
+pub fn apply_rest_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let days = elapsed_minutes as f32 / (24.0 * 60.0);
+    let mut condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    condition.current_blood_ml = (condition.current_blood_ml
+        + condition.maximum_blood_ml * BLOOD_RECOVERY_FRACTION_PER_DAY * days)
+        .min(condition.maximum_blood_ml);
+    ctx.db
+        .character_condition()
+        .character_id()
+        .update(condition);
+
+    let mut stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
+    stats.calories_used = (stats.calories_used - TRAVEL_CALORIES_PER_DAY * days).max(0.0);
+    ctx.db.character_stats().character_id().update(stats);
+    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+
+pub fn apply_blood_loss(
+    ctx: &ReducerContext,
+    character_id: u64,
+    fraction_of_maximum: f32,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let mut condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    condition.current_blood_ml = (condition.current_blood_ml
+        - condition.maximum_blood_ml * fraction_of_maximum.max(0.0))
+    .max(0.0);
+    ctx.db
+        .character_condition()
+        .character_id()
+        .update(condition);
+    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+
+pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let condition = refresh_character_strategic_condition(ctx, character_id)?;
+    if condition.status == "incapacitated" {
+        Err("Character is incapacitated and must recover before acting".into())
+    } else {
+        Ok(())
+    }
 }
 
 #[reducer]

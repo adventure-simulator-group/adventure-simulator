@@ -18,6 +18,14 @@ const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
+const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+
+fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        crate::condition::require_character_ready(ctx, membership.character_id)?;
+    }
+    Ok(())
+}
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -1901,6 +1909,13 @@ pub(crate) fn record_battle_result(
             quest_id: quest_id.to_string(),
             character_id: member.character_id,
         });
+        crate::condition::record_morale_event(
+            ctx,
+            member.character_id,
+            "victory",
+            5.0 + quest.difficulty.max(0) as f32,
+            Some(quest_id.to_string()),
+        )?;
     }
     let mut combined: HashMap<String, u32> = HashMap::new();
     for (item_id, quantity) in dropped_items {
@@ -2994,6 +3009,7 @@ pub fn travel_to_quest(
     if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
         return Err("Travel to the quest must begin at its posting settlement".into());
     }
+    require_party_ready(ctx, &party_id)?;
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
     for membership in ctx.db.party_member().party_id().filter(&party_id) {
@@ -3023,6 +3039,17 @@ pub fn travel_to_settlement(
     let Some(mut character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
+    crate::condition::require_character_ready(ctx, character_id)?;
+    if let Some(party_id) = character.party_id.as_deref()
+        && ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id.to_string())
+            .is_some_and(|party| party.leader_id == character_id)
+    {
+        require_party_ready(ctx, party_id)?;
+    }
 
     if let Some(origin_id) = &character.current_settlement_id {
         let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
@@ -3251,6 +3278,7 @@ pub fn autoresolve_quest(
     {
         return Err("Party must be at its active quest location".into());
     }
+    require_party_ready(ctx, &party_id)?;
 
     let quest = ctx
         .db
@@ -3287,6 +3315,12 @@ pub fn autoresolve_quest(
                 _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
             }
             ctx.db.character_limbs().character_id().update(limbs);
+            crate::condition::apply_blood_loss(
+                ctx,
+                member.character_id,
+                damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
+            )?;
+            crate::capability::refresh_character_capability(ctx, member.character_id)?;
         }
     }
     complete_quest(ctx, quest_id)
