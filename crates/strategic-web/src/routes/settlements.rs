@@ -23,12 +23,11 @@ use crate::templates::settlement::{
     LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
     party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
     party_stats_page, religion_page, rest_result_page, settlement_map_page,
-    settlement_overview_page, settlements_list_page, smith_page,
+    settlement_overview_page,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
@@ -89,7 +88,6 @@ pub fn routes() -> Router<AppState> {
             "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
         )
-        .route("/settlements/{id}/tavern", get(redirect_to_inn))
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
             "/settlements/{id}/merchants/offer",
@@ -98,25 +96,10 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}/weapons", get(weapons))
         .route("/settlements/{id}/armor", get(armor))
         .route("/settlements/{id}/clothing", get(clothing))
-        .route("/settlements/{id}/consumables", get(redirect_to_inn))
-        .route("/settlements/{id}/smith", get(smith))
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
-}
-
-async fn list_settlements(State(state): State<AppState>, session: Session) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query("SELECT * FROM settlement")
-        .await
-        .unwrap_or_default();
-
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
-    Html(
-        settlements_list_page(&settlements, logged_in_as.as_deref(), session.theme()).into_string(),
-    )
 }
 
 async fn show_settlement(Path(id): Path<String>) -> Redirect {
@@ -809,10 +792,6 @@ fn journey_minutes(distance_m: u64) -> u64 {
         .saturating_mul(60)
         .div_ceil(WALKING_SPEED_KM_PER_HOUR * 1_000)
         .max(1)
-}
-
-async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/settlements/{id}/inn"))
 }
 
 async fn resolve_location(state: &AppState, kind: &str, id: &str) -> Option<LocationView> {
@@ -1642,46 +1621,6 @@ async fn finalize_merchant_offer(
     Redirect::to(&format!("/settlements/{id}/{return_to}"))
 }
 
-async fn smith(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    Html(
-        smith_page(
-            settlement,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &party_members,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
-}
-
 async fn inn(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1930,19 +1869,6 @@ async fn travel(
         Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
         Err(_) => Redirect::to("/"),
     }
-}
-
-/// Helper to get character name for session display
-async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Option<String> {
-    let Some(id) = character_id else {
-        return None;
-    };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!("SELECT * FROM character WHERE id = {}", id))
-        .await
-        .unwrap_or_default();
-    characters.first().map(|c| c.name.clone())
 }
 
 async fn weapons(

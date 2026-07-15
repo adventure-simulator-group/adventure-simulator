@@ -202,20 +202,10 @@ body {
 /* ============================================
    PROGRESS BAR
    ============================================ */
-.progress-fill {
-  background: linear-gradient(90deg, var(--border-accent), #7aaa4a);
-}
 
 /* ============================================
    QUEST CARDS
    ============================================ */
-.quest-card {
-  border-left: 3px solid var(--border-color);
-}
-
-.quest-card:hover {
-  border-left-color: var(--accent);
-}
 
 /* ============================================
    SETTLEMENT CARDS

@@ -7,7 +7,7 @@
 use maud::{Markup, html};
 
 use super::{
-    empty_state, list_item, population_description, quest_location_layout_with_session,
+    empty_state, population_description, quest_location_layout_with_session,
     settlement_layout_with_session, sidebar_section,
 };
 use crate::routes::settlements::TravelDestination;
@@ -107,50 +107,6 @@ impl MerchantShop {
             Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
         }
     }
-}
-
-/// List all settlements.
-pub fn settlements_list_page(
-    settlements: &[Settlement],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Settlements", html! {
-                @if settlements.is_empty() {
-                    (empty_state("No settlements discovered.", None, None))
-                } @else {
-                    @for settlement in settlements {
-                        (list_item(
-                            &format!("/locations/settlement/{}", settlement.id),
-                            &settlement.name,
-                            Some(population_description(settlement.population_level)),
-                        ))
-                    }
-                }
-            }))
-        }
-        main class="center-content" {
-            h2 class="page-title" { "World Map" }
-            div class="settlement-grid" {
-                @for settlement in settlements {
-                    a href=(format!("/locations/settlement/{}", settlement.id)) class="settlement-card" {
-                        h3 { (settlement.name) }
-                        p class="population" { (population_description(settlement.population_level)) }
-                        div class="coords" { "(" (settlement.coord_x as i32) ", " (settlement.coord_y as i32) ")" }
-                    }
-                }
-            }
-        }
-        aside class="right-sidebar" {
-            (sidebar_section("Travel", html! {
-                p class="text-muted small-copy" { "Select a settlement to view its services." }
-            }))
-        }
-    };
-
-    super::base_layout_with_session("Settlements", content, logged_in_as, theme)
 }
 
 /// Settlement information and the next destinations on the imported road and
@@ -354,31 +310,6 @@ pub fn merchants_page(
         "Market Square",
         "Market Steward",
         "Merchant stock and prices will appear here once the trade backend is available.",
-        active_character,
-        inventory,
-        party_members,
-        logged_in_as,
-        theme,
-        None,
-        None,
-    )
-}
-
-/// Smith interface placeholder.
-pub fn smith_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    service_page(
-        settlement,
-        "smith",
-        "The Smithy",
-        "Master Smith",
-        "Repair costs and crafting orders require inventory durability and smithing reducers.",
         active_character,
         inventory,
         party_members,
@@ -1554,7 +1485,7 @@ fn settlement_service_chat_area(
 
 fn chat_area(
     location: &str,
-    active_character: Option<&Character>,
+    _active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
     local_context: Option<(&str, String)>,
 ) -> Markup {
@@ -1767,29 +1698,6 @@ fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
     .fold(1.0_f32, f32::min);
     ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
 }
-fn rest_service_menu_placeholder(location: &str) -> Markup {
-    html! {
-        section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
-            div class="rest-service-heading" {
-                strong { "Rest" }
-                span class="badge badge-warning" { "TODO" }
-            }
-            p class="rest-service-copy" { "Choose how many days to rest. Recovery and time advancement are not implemented yet." }
-            div class="rest-days-control" {
-                button type="button" class="rest-days-step" disabled aria-label="Decrease rest days"
-                    title="TODO: resting requires strategic downtime support" { "−" }
-                input type="number" value="0" min="0" disabled aria-label="Rest days"
-                    title="Default: the number of days needed to fully heal once strategic recovery is implemented";
-                span class="rest-days-unit" { "days" }
-                button type="button" class="rest-days-step" disabled aria-label="Increase rest days"
-                    title="TODO: resting requires strategic downtime support" { "+" }
-            }
-            button type="button" class="btn btn-primary btn-small btn-block" disabled
-                title="TODO: resting requires strategic downtime support" { "Rest" }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,16 +4,12 @@
   let generation = 0;
   let refreshTimer;
 
-  const draftMaps = [
-    "merchantDraft",
-    "merchantSells",
-    "partyTradeDraft",
-    "inventoryDiscardDraft",
-    "lootTransferDraft",
-    "poolTransferDraft",
-  ];
+  const draftMaps = ["merchantDraft", "merchantSells", "partyTradeDraft",
+    "inventoryDiscardDraft", "lootTransferDraft", "poolTransferDraft"];
 
-  const hasStagedInventoryChanges = () => draftMaps.some((name) => window[name]?.size > 0)
+  const hasStagedInventoryChanges = () => draftMaps.some(
+    (name) => window.strategicTradeUi?.state?.[name]?.size > 0,
+  )
     || [...document.querySelectorAll("form.party-offer, #inventory-discard")]
       .some((form) => !form.hidden && !form.hasAttribute("hidden"));
 
@@ -61,7 +57,7 @@
     if (currentGeneration !== generation) return;
 
     // Match the post-mount table structure before comparing it with the live DOM.
-    window.mountInventoryBulkControls?.(nextDocument);
+    window.strategicTradeUi?.mountInventoryBulkControls?.(nextDocument);
     const inventoryTab = selectedInventoryTab();
     const replaced = [];
 

@@ -81,9 +81,7 @@ Environment variables:
 - `GET /settlements` - World map / settlement list
 - `GET /settlements/:id` - Settlement overview
 - `GET /api/settlements/:id/service-quests` - Available NPC quest offers
-- `GET /settlements/:id/tavern` - Party recruitment
 - `GET /settlements/:id/merchants` - Shop (placeholder)
-- `GET /settlements/:id/smith` - Smithy (placeholder)
 - `GET /settlements/:id/inn` - Rest (placeholder)
 - `POST /settlements/:id/travel` - Travel to settlement
 
@@ -126,7 +124,6 @@ strategic-web/
 ├── src/
 │   ├── main.rs              # Axum server entry
 │   ├── config.rs            # Environment config
-│   ├── auth.rs              # Auth middleware (TODO)
 │   ├── spacetimedb/
 │   │   ├── client.rs        # HTTP client wrapper
 │   │   └── types.rs         # Response types
@@ -142,7 +139,6 @@ strategic-web/
 │       └── *.rs             # Page templates
 └── static/
     ├── css/                 # Stylesheets
-    ├── borders/             # SVG ornaments
     └── textures/            # Background textures
 ```
 

@@ -4,7 +4,6 @@ mod components;
 mod layout;
 
 pub mod character;
-pub mod home;
 pub mod mission;
 pub mod quest;
 pub mod recruitment;

@@ -191,9 +191,6 @@ body {
 /* ============================================
    PROGRESS BAR
    ============================================ */
-.progress-fill {
-  background: linear-gradient(90deg, var(--accent), var(--accent-light));
-}
 
 /* ============================================
    FROST SETTLEMENT CARDS

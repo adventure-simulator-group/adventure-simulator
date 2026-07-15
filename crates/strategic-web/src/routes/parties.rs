@@ -47,7 +47,6 @@ pub fn routes() -> Router<AppState> {
             "/party-recruitment/saved/{id}/rename",
             post(rename_saved_role),
         )
-        .route("/characters/{id}/capabilities", get(character_capabilities))
         .route(
             "/parties/{id}/requests/{request_id}/accept",
             post(accept_join_request),
@@ -593,33 +592,6 @@ async fn recruitment_panel_fragment(
         });
     }
     Html(recruitment_panel(&party, character_id, &panels, &saved, checks).into_string())
-}
-
-#[derive(Serialize)]
-struct CapabilityResponse {
-    tags: Vec<String>,
-}
-
-async fn character_capabilities(
-    State(state): State<AppState>,
-    Path(id): Path<u64>,
-) -> Json<CapabilityResponse> {
-    let _ = state.db.call("refresh_capabilities", &[json!(id)]).await;
-    let capability = state
-        .db
-        .query::<CharacterCapability>(&format!(
-            "SELECT * FROM character_capability WHERE character_id = {id}"
-        ))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next();
-    Json(CapabilityResponse {
-        tags: capability
-            .as_ref()
-            .map(CharacterCapability::summary_tags)
-            .unwrap_or_default(),
-    })
 }
 
 async fn accept_join_request(

@@ -54,13 +54,13 @@ spacetime start
 cd crates/strategic-server/strategic-stdb-module
 spacetime publish strategic-stdb-module
 
-# Open UI
-open static/map.html
+# Start the server-rendered strategic UI from the workspace root
+just web
 ```
 
 ## Usage
 
-The HTML UI in `static/map.html` demonstrates:
+The strategic web UI demonstrates:
 
 1. Creating a character (gets starter items)
 2. Creating a party

@@ -16,44 +16,6 @@ pub fn panel(title: &str, content: Markup) -> Markup {
     }
 }
 
-/// A clickable list item
-pub fn list_item(href: &str, title: &str, subtitle: Option<&str>) -> Markup {
-    html! {
-        a href=(href) class="list-item" {
-            div class="list-item-content" {
-                span class="list-item-title" { (title) }
-                @if let Some(sub) = subtitle {
-                    span class="list-item-subtitle" { (sub) }
-                }
-            }
-            span class="list-item-arrow" { "\u{203A}" }
-        }
-    }
-}
-
-/// A button component
-pub fn button(label: &str, btn_type: &str, extra_class: Option<&str>) -> Markup {
-    let class = format!(
-        "btn btn-{}{}",
-        btn_type,
-        extra_class.map(|c| format!(" {}", c)).unwrap_or_default()
-    );
-    html! {
-        button type="submit" class=(class) {
-            (label)
-        }
-    }
-}
-
-/// A loading indicator
-pub fn loading_indicator(id: &str) -> Markup {
-    html! {
-        span id=(id) class="loading-spinner" hidden {
-            "Loading"
-        }
-    }
-}
-
 /// A form input field
 pub fn input_field(
     name: &str,
@@ -71,42 +33,6 @@ pub fn input_field(
                 name=(name)
                 required[required]
                 value=[value];
-        }
-    }
-}
-
-/// A select dropdown
-pub fn select_field(
-    name: &str,
-    label: &str,
-    options: &[(&str, &str)],
-    selected: Option<&str>,
-) -> Markup {
-    html! {
-        div class="form-group" {
-            label for=(name) class="form-label" { (label) }
-            select id=(name) name=(name) {
-                @for (value, text) in options {
-                    option value=(value) selected[Some(*value) == selected] {
-                        (text)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Difficulty stars display
-pub fn difficulty_stars(level: i32) -> Markup {
-    html! {
-        span class="difficulty" {
-            @for i in 1..=5 {
-                @if i <= level {
-                    span class="star filled" { "\u{2605}" }
-                } @else {
-                    span class="star empty" { "\u{2606}" }
-                }
-            }
         }
     }
 }
@@ -149,13 +75,6 @@ pub fn empty_state(message: &str, action_href: Option<&str>, action_label: Optio
                 }
             }
         }
-    }
-}
-
-/// Ornate divider
-pub fn divider() -> Markup {
-    html! {
-        div class="divider" {}
     }
 }
 
