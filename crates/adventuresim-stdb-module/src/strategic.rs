@@ -4,6 +4,7 @@ use crate::{
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
     },
+    condition::character_condition,
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
     time::advance_character_time,
@@ -19,6 +20,7 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+const RELIGIOUS_INCIDENT_FERVOR_THRESHOLD: f32 = 0.60;
 
 fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
     for membership in ctx.db.party_member().party_id().filter(party_id) {
@@ -304,6 +306,21 @@ pub struct QuestIssuer {
     pub settlement_id: String,
     #[index(btree)]
     pub service_id: String,
+}
+
+/// A single quest-backed combat interruption caused by excessive fervor on
+/// arrival at a settlement of another faith.
+#[derive(Clone, Debug)]
+#[table(name = religious_incident, public)]
+pub struct ReligiousIncident {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub settlement_id: String,
+    pub instigator_id: u64,
+    pub previous_active_quest_id: Option<String>,
+    pub status: String,
 }
 
 #[derive(Clone, Debug)]
@@ -2983,6 +3000,140 @@ fn straight_line_distance_m(
     }
 }
 
+fn maybe_trigger_religious_incident(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement: &Settlement,
+) -> Result<Option<String>, String> {
+    let Some(mut party) = ctx.db.party().id().find(&party_id.to_string()) else {
+        return Ok(None);
+    };
+    if party.current_settlement_id.as_deref() != Some(&settlement.id) {
+        return Ok(None);
+    }
+    if ctx
+        .db
+        .religious_incident()
+        .party_id()
+        .filter(party_id)
+        .any(|incident| incident.settlement_id == settlement.id)
+    {
+        return Ok(None);
+    }
+
+    let mut instigator = None;
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        crate::condition::initialize_character_condition(ctx, membership.character_id)?;
+        let religion = ctx
+            .db
+            .character_condition()
+            .character_id()
+            .find(membership.character_id)
+            .and_then(|condition| condition.religion_id);
+        if religion
+            .as_deref()
+            .is_none_or(|faith| faith == settlement.religion_id)
+        {
+            continue;
+        }
+        let condition =
+            crate::condition::refresh_character_strategic_condition(ctx, membership.character_id)?;
+        if condition.fervor >= RELIGIOUS_INCIDENT_FERVOR_THRESHOLD
+            && instigator
+                .as_ref()
+                .is_none_or(|(_, fervor)| condition.fervor > *fervor)
+        {
+            instigator = Some((membership.character_id, condition.fervor));
+        }
+    }
+    let Some((instigator_id, _)) = instigator else {
+        return Ok(None);
+    };
+
+    let quest_id = format!("religious-incident-{party_id}-{}", settlement.id);
+    if ctx.db.quest().id().find(&quest_id).is_none() {
+        ctx.db.quest().insert(Quest {
+            id: quest_id.clone(),
+            title: "A Quarrel at the Gate".into(),
+            description: "Religious fervor has turned an insult into a public challenge. The offended townsfolk are arming themselves; fight them or leave the settlement behind.".into(),
+            difficulty: 1,
+            gold_reward: 0,
+            xp_reward: 0,
+            settlement_id: settlement.id.clone(),
+            status: QuestStatus::Accepted,
+            accepted_by: Some(party_id.into()),
+            enemy_type: "angry townsfolk".into(),
+            enemy_count: ctx.db.party_member().party_id().filter(party_id).count().max(2) as i32,
+            location_description: format!(
+                "At the gate of {}, a loud insult against the local faith has drawn an angry crowd. Combat is imminent, but the party can still withdraw and travel away.",
+                settlement.name
+            ),
+            location_scene_key: settlement.scene_key.clone(),
+            location_coord_x: settlement.coord_x,
+            location_coord_y: settlement.coord_y,
+            coordinates_are_geographic: settlement.source_node_id.is_some(),
+            distance_m: 0,
+        });
+    }
+    ctx.db.religious_incident().insert(ReligiousIncident {
+        quest_id: quest_id.clone(),
+        party_id: party_id.into(),
+        settlement_id: settlement.id.clone(),
+        instigator_id,
+        previous_active_quest_id: party.active_quest_id.clone(),
+        status: "pending".into(),
+    });
+
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+            member.current_settlement_id = None;
+            member.current_quest_location_id = Some(quest_id.clone());
+            ctx.db.character().id().update(member);
+        }
+    }
+    party.current_settlement_id = None;
+    party.current_quest_location_id = Some(quest_id.clone());
+    party.active_quest_id = Some(quest_id.clone());
+    ctx.db.party().id().update(party);
+    Ok(Some(quest_id))
+}
+
+fn finish_religious_incident(
+    ctx: &ReducerContext,
+    quest_id: &str,
+    status: &str,
+) -> Result<(), String> {
+    let Some(mut incident) = ctx
+        .db
+        .religious_incident()
+        .quest_id()
+        .find(&quest_id.to_string())
+    else {
+        return Ok(());
+    };
+    if incident.status != "pending" {
+        return Ok(());
+    }
+    incident.status = status.into();
+    ctx.db
+        .religious_incident()
+        .quest_id()
+        .update(incident.clone());
+    if let Some(mut party) = ctx.db.party().id().find(&incident.party_id)
+        && party.active_quest_id.as_deref() == Some(quest_id)
+    {
+        party.active_quest_id = incident.previous_active_quest_id;
+        ctx.db.party().id().update(party);
+    }
+    if status == "avoided"
+        && let Some(mut quest) = ctx.db.quest().id().find(&quest_id.to_string())
+    {
+        quest.status = QuestStatus::Completed;
+        ctx.db.quest().id().update(quest);
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn travel_to_quest(
     ctx: &ReducerContext,
@@ -3142,9 +3293,24 @@ pub fn travel_to_settlement(
                         }
                     }
                 }
-                party.current_settlement_id = Some(settlement_id);
+                party.current_settlement_id = Some(settlement_id.clone());
                 party.current_quest_location_id = None;
                 ctx.db.party().id().update(party);
+                let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
+                    ctx.db
+                        .religious_incident()
+                        .quest_id()
+                        .find(quest_id)
+                        .is_some()
+                });
+                if let Some(quest_id) = departing_quest.as_deref()
+                    && fled_incident
+                {
+                    finish_religious_incident(ctx, quest_id, "avoided")?;
+                }
+                if !fled_incident {
+                    maybe_trigger_religious_incident(ctx, &party_id, &destination)?;
+                }
             }
         }
     }
@@ -3186,6 +3352,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
+    finish_religious_incident(ctx, &quest_id, "resolved")?;
     Ok(())
 }
 

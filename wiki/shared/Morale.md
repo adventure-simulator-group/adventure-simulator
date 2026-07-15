@@ -85,3 +85,15 @@ At 35% Fervor or higher, conviction may create a personal demand after a two-day
 - **Refuse:** keep complete freedom of action but receive a negative morale event which scales from 2 to 8 with Fervor.
 
 Resolving one demand cannot recursively produce another because the two-day cooldown begins at creation. Demands are choices, not involuntary character actions.
+
+## A Quarrel at the Gate
+
+The first severe Fervor incident is a single cross-faith settlement scenario. When a party arrives at a settlement, a member at 60% Fervor or higher who follows a different religion may insult the local faith and draw an armed crowd. Each party can trigger this incident only once per settlement.
+
+The incident deliberately reuses the quest-location combat flow. Arrival is interrupted at a zero-distance encounter named **A Quarrel at the Gate**. The party can:
+
+- Initiate tactical combat using the normal tactical-server request.
+- Autoresolve using the normal quest autoresolve damage and battle-result path.
+- Open the encounter map and travel away without fighting.
+
+The incident temporarily occupies the party's active-encounter slot while preserving any real active quest. Winning or leaving restores that quest. Leaving marks the incident avoided and does not immediately trigger another incident at the destination reached by that retreat. There are no religious quest-choice demands; quest dialogue consequences for mixed-faith parties remain future work.

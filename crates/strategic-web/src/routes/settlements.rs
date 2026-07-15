@@ -1818,7 +1818,15 @@ async fn travel(
     .await;
     match outcome {
         Ok(super::PartyActionOutcome::Executed) => {
-            Redirect::to(&format!("/locations/settlement/{id}"))
+            match super::data::character(&state, character_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|character| character.current_quest_location_id)
+            {
+                Some(quest_id) => Redirect::to(&format!("/locations/quest/{quest_id}")),
+                None => Redirect::to(&format!("/locations/settlement/{id}")),
+            }
         }
         Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
         Err(_) => Redirect::to("/"),
