@@ -44,8 +44,8 @@ use adventuresim_stdb_client::{
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
     religious_demand_table::ReligiousDemandTableAccess,
-    religious_incident_table::ReligiousIncidentTableAccess,
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
+    strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
 };
@@ -147,7 +147,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
-        invalidate_on_changes!(state.0._connection.db.religious_incident());
+        invalidate_on_changes!(state.0._connection.db.strategic_incident());
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());

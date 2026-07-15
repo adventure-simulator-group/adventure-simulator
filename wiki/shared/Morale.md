@@ -97,4 +97,4 @@ The incident deliberately reuses the quest-location combat flow. Arrival is inte
 - Autoresolve using the normal quest autoresolve damage and battle-result path.
 - Open the encounter map and travel away without fighting.
 
-The incident temporarily occupies the party's active-encounter slot while preserving any real active quest. Winning or leaving restores that quest. Leaving marks the incident avoided and does not immediately trigger another incident at the destination reached by that retreat. There are no religious quest-choice demands; quest dialogue consequences for mixed-faith parties remain future work.
+The incident temporarily occupies the party's active-encounter slot while preserving any real active quest. Winning or leaving restores that quest. Leaving marks the incident avoided and does not immediately trigger another incident at the destination reached by that retreat. The same shared encounter machinery also handles Thievery and Raiding discoveries, although those activities use their own scenario text and risk formulas. There are no religious quest-choice demands; quest dialogue consequences for mixed-faith parties remain future work.

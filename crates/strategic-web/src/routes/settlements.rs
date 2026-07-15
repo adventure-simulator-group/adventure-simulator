@@ -3,7 +3,7 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
-    response::{Html, IntoResponse, Redirect},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use futures_util::future::join_all;
@@ -18,10 +18,11 @@ use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterMoraleSource, CharacterSkills, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement, TravelEdge,
+    CharacterLimbs, CharacterMoraleSource, CharacterNotoriety, CharacterSkills,
+    CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
+    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -813,6 +814,9 @@ async fn party_personal(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
+    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+        .await
+        .map_or(0.0, |notoriety| notoriety.value);
     let religious_demand = state
         .db
         .query::<ReligiousDemand>(&format!(
@@ -836,6 +840,7 @@ async fn party_personal(
             religion.as_deref(),
             schedule.first(),
             religious_demand.as_ref(),
+            notoriety,
             session.theme(),
         )
         .into_string(),
@@ -1359,6 +1364,9 @@ async fn party_stats(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
+    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+        .await
+        .map_or(0.0, |notoriety| notoriety.value);
     Html(
         party_stats_page(
             &location,
@@ -1374,6 +1382,7 @@ async fn party_stats(
             religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
+            notoriety,
             session.theme(),
         )
         .into_string(),
@@ -1639,14 +1648,14 @@ async fn rest(
     Path((id, kind)): Path<(String, String)>,
     session: Session,
     Form(form): Form<RestForm>,
-) -> Html<String> {
+) -> Response {
     let at_inn = match kind.as_str() {
         "inn" => true,
         "temple" => false,
-        _ => return Html("<h1>Rest service not found</h1>".to_string()),
+        _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
     };
     let Some(character_id) = session.character_id_u64() else {
-        return Html("<h1>Choose a character first</h1>".to_string());
+        return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
@@ -1656,6 +1665,8 @@ async fn rest(
     let before_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
+    let before_notoriety =
+        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
     if let Err(error) = state
         .db
         .call(
@@ -1664,7 +1675,7 @@ async fn rest(
         )
         .await
     {
-        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>"));
+        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>")).into_response();
     }
 
     let settlements: Vec<Settlement> = state
@@ -1673,9 +1684,15 @@ async fn rest(
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
     };
     let active_character = get_active_character(&state, Some(character_id)).await;
+    if let Some(quest_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.current_quest_location_id.as_deref())
+    {
+        return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+    }
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -1687,6 +1704,8 @@ async fn rest(
     let after_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
+    let after_notoriety =
+        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
     let summary = rest_summary(
         before_character.as_ref().map(|(character, _)| character),
         active_character.as_ref().map(|(character, _)| character),
@@ -1696,6 +1715,8 @@ async fn rest(
         after_skills.as_ref(),
         before_time.as_ref(),
         after_time.as_ref(),
+        before_notoriety.as_ref(),
+        after_notoriety.as_ref(),
     );
     let logged_in_as = active_character
         .as_ref()
@@ -1715,6 +1736,7 @@ async fn rest(
         )
         .into_string(),
     )
+    .into_response()
 }
 
 async fn query_single<T: serde::de::DeserializeOwned>(
@@ -1742,6 +1764,8 @@ fn rest_summary(
     after_skills: Option<&CharacterSkills>,
     before_time: Option<&crate::spacetimedb::CharacterTime>,
     after_time: Option<&crate::spacetimedb::CharacterTime>,
+    before_notoriety: Option<&CharacterNotoriety>,
+    after_notoriety: Option<&CharacterNotoriety>,
 ) -> RestSummary {
     let days = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes) / 1_440
@@ -1749,6 +1773,12 @@ fn rest_summary(
     let gold_spent = before_character
         .zip(after_character)
         .map_or(0, |(before, after)| before.gold.saturating_sub(after.gold));
+    let gold_earned = before_character
+        .zip(after_character)
+        .map_or(0, |(before, after)| after.gold.saturating_sub(before.gold));
+    let notoriety_gained = after_notoriety.map_or(0.0, |after| {
+        after.value - before_notoriety.map_or(0.0, |before| before.value)
+    });
     let healed = match (before_limbs, after_limbs) {
         (Some(before), Some(after)) => limb_deltas(before, after),
         _ => vec![],
@@ -1760,6 +1790,8 @@ fn rest_summary(
     RestSummary {
         days,
         gold_spent,
+        gold_earned,
+        notoriety_gained,
         healed,
         trained,
     }

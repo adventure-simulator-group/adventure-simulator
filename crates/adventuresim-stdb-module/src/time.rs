@@ -535,7 +535,8 @@ pub fn rest_at_settlement(
         let activities = activity_training_profile(ctx, character_id)?;
         apply_training(&mut skills, &schedule, training_elapsed, activities);
         ctx.db.character_skills().character_id().update(skills);
-        let _ = apply_activity_outcomes(ctx, character_id, &schedule, training_elapsed)?;
+        let risks = apply_activity_outcomes(ctx, character_id, &schedule, training_elapsed)?;
+        crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
     character_time.minutes += elapsed;

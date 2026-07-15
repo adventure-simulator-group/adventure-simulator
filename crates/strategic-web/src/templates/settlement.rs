@@ -106,6 +106,8 @@ pub enum MerchantShop {
 pub struct RestSummary {
     pub days: u64,
     pub gold_spent: u32,
+    pub gold_earned: u32,
+    pub notoriety_gained: f32,
     pub healed: Vec<(String, f32)>,
     pub trained: Vec<(String, f32)>,
 }
@@ -492,6 +494,7 @@ pub fn party_personal_page(
     religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
+    notoriety: f32,
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -511,7 +514,7 @@ pub fn party_personal_page(
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
             }
-            (character_bio_rail(active_character, religion_id, true, &location.base_path()))
+            (character_bio_rail(active_character, religion_id, notoriety, true, &location.base_path()))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
@@ -558,6 +561,7 @@ pub fn party_stats_page(
     religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
+    notoriety: f32,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -578,6 +582,7 @@ pub fn party_stats_page(
             (character_bio_rail(
                 selected,
                 religion_id,
+                notoriety,
                 selected.id == active_character.id,
                 &location.base_path(),
             ))
@@ -1323,6 +1328,7 @@ fn religion_name(religion_id: Option<&str>) -> &'static str {
 fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
+    notoriety: f32,
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
@@ -1330,6 +1336,7 @@ fn character_bio_rail(
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
+                div { dt { "Notoriety" } dd title="Tracked now; consequences will be added later." { (format!("{notoriety:.1}")) } }
                 div class="character-religion" {
                     dt { "Religion" }
                     dd {
@@ -1860,6 +1867,8 @@ fn rest_service_menu(
                     }
                     p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
+                    @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
+                    @if summary.notoriety_gained > 0.0 { p { "+" (format!("{:.1}", summary.notoriety_gained)) " notoriety gained." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }

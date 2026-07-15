@@ -19,6 +19,15 @@ Activities combine reduced-rate training with another strategic result:
 
 Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
 
+Thievery and Raiding discovery is resolved after explicit settlement downtime. The continuous exposure formulas are:
+
+```rs
+thievery_discovery = 1 - exp(-0.12 * hours * population_scale / (1 + stealth));
+raiding_retaliation = 1 - exp(-0.35 * hours);
+```
+
+Raiding is checked first because an organized retaliation supersedes a watch patrol. On discovery, the activity reuses the same temporary quest-backed combat interruption as the religious settlement incident. **Caught Red-Handed** pits the party against the town watch; **Retaliation at Dawn** pits it against armed retainers. Both offer tactical combat, autoresolve, or retreat through the encounter map. The party's real active quest is restored after victory or retreat.
+
 At a settlement, a player may spend whole days resting at an inn or temple, moving that character's personal time forward even if it passes official time. Rest first convalesces every injured body part at 5 percentage points per day, restores 1% of maximum blood volume per day, and reduces the current fatigue reservoir; only the days left after the slowest injury has fully recovered apply the saved training schedule. Inn rest costs 1 gold per completed day. Temple rest is free sanctuary intended for characters down on their luck; a future karma system will account for taking undue advantage of it.
 
 Strategic travel adds calories to the fatigue reservoir at the current marching calibration of 6,000 calories per full day. This is intentionally an interim energy model: food consumption and day-boundary metabolism will eventually replace the reservoir. Recent morale events decay against each character's absolute strategic minute, so resting and travel both move them toward expiry.

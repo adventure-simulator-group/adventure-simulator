@@ -128,8 +128,6 @@ pub mod refresh_world_clock_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religious_demand_table;
 pub mod religious_demand_type;
-pub mod religious_incident_table;
-pub mod religious_incident_type;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod request_general_party_join_reducer;
@@ -153,6 +151,8 @@ pub mod settlement_import_type;
 pub mod settlement_table;
 pub mod settlement_type;
 pub mod store_battle_loot_reducer;
+pub mod strategic_incident_table;
+pub mod strategic_incident_type;
 pub mod synchronize_character_time_reducer;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
@@ -405,8 +405,6 @@ pub use reject_party_join_request_reducer::{
 };
 pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
-pub use religious_incident_table::*;
-pub use religious_incident_type::ReligiousIncident;
 pub use remove_party_member_reducer::{
     remove_party_member, set_flags_for_remove_party_member, RemovePartyMemberCallbackId,
 };
@@ -469,6 +467,8 @@ pub use settlement_type::Settlement;
 pub use store_battle_loot_reducer::{
     set_flags_for_store_battle_loot, store_battle_loot, StoreBattleLootCallbackId,
 };
+pub use strategic_incident_table::*;
+pub use strategic_incident_type::StrategicIncident;
 pub use synchronize_character_time_reducer::{
     set_flags_for_synchronize_character_time, synchronize_character_time,
     SynchronizeCharacterTimeCallbackId,
@@ -1404,9 +1404,9 @@ pub struct DbUpdate {
     quest: __sdk::TableUpdate<Quest>,
     quest_issuer: __sdk::TableUpdate<QuestIssuer>,
     religious_demand: __sdk::TableUpdate<ReligiousDemand>,
-    religious_incident: __sdk::TableUpdate<ReligiousIncident>,
     saved_recruitment_role: __sdk::TableUpdate<SavedRecruitmentRole>,
     settlement: __sdk::TableUpdate<Settlement>,
+    strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
     travel_edge: __sdk::TableUpdate<TravelEdge>,
@@ -1524,15 +1524,15 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "religious_demand" => db_update
                     .religious_demand
                     .append(religious_demand_table::parse_table_update(table_update)?),
-                "religious_incident" => db_update
-                    .religious_incident
-                    .append(religious_incident_table::parse_table_update(table_update)?),
                 "saved_recruitment_role" => db_update.saved_recruitment_role.append(
                     saved_recruitment_role_table::parse_table_update(table_update)?,
                 ),
                 "settlement" => db_update
                     .settlement
                     .append(settlement_table::parse_table_update(table_update)?),
+                "strategic_incident" => db_update
+                    .strategic_incident
+                    .append(strategic_incident_table::parse_table_update(table_update)?),
                 "tactical_server" => db_update
                     .tactical_server
                     .append(tactical_server_table::parse_table_update(table_update)?),
@@ -1712,12 +1712,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.religious_demand = cache
             .apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand)
             .with_updates_by_pk(|row| &row.id);
-        diff.religious_incident = cache
-            .apply_diff_to_table::<ReligiousIncident>(
-                "religious_incident",
-                &self.religious_incident,
-            )
-            .with_updates_by_pk(|row| &row.quest_id);
         diff.saved_recruitment_role = cache
             .apply_diff_to_table::<SavedRecruitmentRole>(
                 "saved_recruitment_role",
@@ -1727,6 +1721,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.settlement = cache
             .apply_diff_to_table::<Settlement>("settlement", &self.settlement)
             .with_updates_by_pk(|row| &row.id);
+        diff.strategic_incident = cache
+            .apply_diff_to_table::<StrategicIncident>(
+                "strategic_incident",
+                &self.strategic_incident,
+            )
+            .with_updates_by_pk(|row| &row.quest_id);
         diff.tactical_server = cache
             .apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server)
             .with_updates_by_pk(|row| &row.identity);
@@ -1799,9 +1799,9 @@ pub struct AppliedDiff<'r> {
     quest: __sdk::TableAppliedDiff<'r, Quest>,
     quest_issuer: __sdk::TableAppliedDiff<'r, QuestIssuer>,
     religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
-    religious_incident: __sdk::TableAppliedDiff<'r, ReligiousIncident>,
     saved_recruitment_role: __sdk::TableAppliedDiff<'r, SavedRecruitmentRole>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
+    strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
     travel_edge: __sdk::TableAppliedDiff<'r, TravelEdge>,
@@ -1972,17 +1972,17 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.religious_demand,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<ReligiousIncident>(
-            "religious_incident",
-            &self.religious_incident,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>(
             "saved_recruitment_role",
             &self.saved_recruitment_role,
             event,
         );
         callbacks.invoke_table_row_callbacks::<Settlement>("settlement", &self.settlement, event);
+        callbacks.invoke_table_row_callbacks::<StrategicIncident>(
+            "strategic_incident",
+            &self.strategic_incident,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<TacticalServer>(
             "tactical_server",
             &self.tactical_server,
@@ -2759,9 +2759,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
         quest_table::register_table(client_cache);
         quest_issuer_table::register_table(client_cache);
         religious_demand_table::register_table(client_cache);
-        religious_incident_table::register_table(client_cache);
         saved_recruitment_role_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
+        strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
         travel_edge_table::register_table(client_cache);

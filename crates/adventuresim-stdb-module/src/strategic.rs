@@ -308,11 +308,11 @@ pub struct QuestIssuer {
     pub service_id: String,
 }
 
-/// A single quest-backed combat interruption caused by excessive fervor on
-/// arrival at a settlement of another faith.
+/// A quest-backed strategic interruption which offers tactical combat,
+/// autoresolve, or retreat through the normal encounter flow.
 #[derive(Clone, Debug)]
-#[table(name = religious_incident, public)]
-pub struct ReligiousIncident {
+#[table(name = strategic_incident, public)]
+pub struct StrategicIncident {
     #[primary_key]
     pub quest_id: String,
     #[index(btree)]
@@ -320,6 +320,7 @@ pub struct ReligiousIncident {
     pub settlement_id: String,
     pub instigator_id: u64,
     pub previous_active_quest_id: Option<String>,
+    pub kind: String,
     pub status: String,
 }
 
@@ -3000,10 +3001,21 @@ fn straight_line_distance_m(
     }
 }
 
-fn maybe_trigger_religious_incident(
+struct IncidentSpec<'a> {
+    kind: &'a str,
+    title: &'a str,
+    description: String,
+    enemy_type: &'a str,
+    difficulty: i32,
+}
+
+fn create_strategic_incident(
     ctx: &ReducerContext,
     party_id: &str,
     settlement: &Settlement,
+    instigator_id: u64,
+    quest_id: String,
+    spec: IncidentSpec<'_>,
 ) -> Result<Option<String>, String> {
     let Some(mut party) = ctx.db.party().id().find(&party_id.to_string()) else {
         return Ok(None);
@@ -3013,14 +3025,76 @@ fn maybe_trigger_religious_incident(
     }
     if ctx
         .db
-        .religious_incident()
+        .strategic_incident()
         .party_id()
         .filter(party_id)
-        .any(|incident| incident.settlement_id == settlement.id)
+        .any(|incident| incident.status == "pending")
     {
         return Ok(None);
     }
+    ctx.db.quest().insert(Quest {
+        id: quest_id.clone(),
+        title: spec.title.into(),
+        description: spec.description.clone(),
+        difficulty: spec.difficulty,
+        gold_reward: 0,
+        xp_reward: 0,
+        settlement_id: settlement.id.clone(),
+        status: QuestStatus::Accepted,
+        accepted_by: Some(party_id.into()),
+        enemy_type: spec.enemy_type.into(),
+        enemy_count: ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(party_id)
+            .count()
+            .max(2) as i32,
+        location_description: spec.description,
+        location_scene_key: settlement.scene_key.clone(),
+        location_coord_x: settlement.coord_x,
+        location_coord_y: settlement.coord_y,
+        coordinates_are_geographic: settlement.source_node_id.is_some(),
+        distance_m: 0,
+    });
+    ctx.db.strategic_incident().insert(StrategicIncident {
+        quest_id: quest_id.clone(),
+        party_id: party_id.into(),
+        settlement_id: settlement.id.clone(),
+        instigator_id,
+        previous_active_quest_id: party.active_quest_id.clone(),
+        kind: spec.kind.into(),
+        status: "pending".into(),
+    });
 
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+            member.current_settlement_id = None;
+            member.current_quest_location_id = Some(quest_id.clone());
+            ctx.db.character().id().update(member);
+        }
+    }
+    party.current_settlement_id = None;
+    party.current_quest_location_id = Some(quest_id.clone());
+    party.active_quest_id = Some(quest_id.clone());
+    ctx.db.party().id().update(party);
+    Ok(Some(quest_id))
+}
+
+fn maybe_trigger_religious_incident(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement: &Settlement,
+) -> Result<Option<String>, String> {
+    if ctx
+        .db
+        .strategic_incident()
+        .party_id()
+        .filter(party_id)
+        .any(|incident| incident.kind == "religious" && incident.settlement_id == settlement.id)
+    {
+        return Ok(None);
+    }
     let mut instigator = None;
     for membership in ctx.db.party_member().party_id().filter(party_id) {
         crate::condition::initialize_character_condition(ctx, membership.character_id)?;
@@ -3052,63 +3126,101 @@ fn maybe_trigger_religious_incident(
     if !fervor_event_occurs(instigator_fervor, roll) {
         return Ok(None);
     }
-
     let quest_id = format!("religious-incident-{party_id}-{}", settlement.id);
-    if ctx.db.quest().id().find(&quest_id).is_none() {
-        ctx.db.quest().insert(Quest {
-            id: quest_id.clone(),
-            title: "A Quarrel at the Gate".into(),
-            description: "Religious fervor has turned an insult into a public challenge. The offended townsfolk are arming themselves; fight them or leave the settlement behind.".into(),
-            difficulty: 1,
-            gold_reward: 0,
-            xp_reward: 0,
-            settlement_id: settlement.id.clone(),
-            status: QuestStatus::Accepted,
-            accepted_by: Some(party_id.into()),
-            enemy_type: "angry townsfolk".into(),
-            enemy_count: ctx.db.party_member().party_id().filter(party_id).count().max(2) as i32,
-            location_description: format!(
+    create_strategic_incident(
+        ctx,
+        party_id,
+        settlement,
+        instigator_id,
+        quest_id,
+        IncidentSpec {
+            kind: "religious",
+            title: "A Quarrel at the Gate",
+            description: format!(
                 "At the gate of {}, a loud insult against the local faith has drawn an angry crowd. Combat is imminent, but the party can still withdraw and travel away.",
                 settlement.name
             ),
-            location_scene_key: settlement.scene_key.clone(),
-            location_coord_x: settlement.coord_x,
-            location_coord_y: settlement.coord_y,
-            coordinates_are_geographic: settlement.source_node_id.is_some(),
-            distance_m: 0,
-        });
-    }
-    ctx.db.religious_incident().insert(ReligiousIncident {
-        quest_id: quest_id.clone(),
-        party_id: party_id.into(),
-        settlement_id: settlement.id.clone(),
-        instigator_id,
-        previous_active_quest_id: party.active_quest_id.clone(),
-        status: "pending".into(),
-    });
-
-    for membership in ctx.db.party_member().party_id().filter(party_id) {
-        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
-            member.current_settlement_id = None;
-            member.current_quest_location_id = Some(quest_id.clone());
-            ctx.db.character().id().update(member);
-        }
-    }
-    party.current_settlement_id = None;
-    party.current_quest_location_id = Some(quest_id.clone());
-    party.active_quest_id = Some(quest_id.clone());
-    ctx.db.party().id().update(party);
-    Ok(Some(quest_id))
+            enemy_type: "angry townsfolk",
+            difficulty: 1,
+        },
+    )
 }
 
-fn finish_religious_incident(
+pub(crate) fn maybe_trigger_activity_incident(
+    ctx: &ReducerContext,
+    character_id: u64,
+    risks: crate::time::ActivityRisks,
+) -> Result<Option<String>, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let Some(party_id) = character.party_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(settlement_id) = character.current_settlement_id.as_ref() else {
+        return Ok(None);
+    };
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id)
+        .ok_or("Character's settlement not found")?;
+    let roll = |ctx: &ReducerContext| (ctx.random::<u64>() >> 40) as f32 / ((1_u32 << 24) as f32);
+    let outcome = if fervor_event_occurs(risks.raiding_retaliation, roll(ctx)) {
+        Some((
+            "raiding",
+            "Retaliation at Dawn",
+            "The people raided from the surrounding countryside have tracked the party back to town. An armed band closes in; fight them or flee by road.",
+            "armed retainers",
+            2,
+        ))
+    } else if fervor_event_occurs(risks.thievery_discovery, roll(ctx)) {
+        Some((
+            "thievery",
+            "Caught Red-Handed",
+            "A theft has been discovered and the watch has cornered the party near the market. Fight through them or abandon the settlement.",
+            "town watch",
+            1,
+        ))
+    } else {
+        None
+    };
+    let Some((kind, title, description, enemy_type, difficulty)) = outcome else {
+        return Ok(None);
+    };
+    let quest_id = format!(
+        "{kind}-incident-{party_id}-{}-{}",
+        settlement.id,
+        ctx.random::<u64>()
+    );
+    create_strategic_incident(
+        ctx,
+        party_id,
+        &settlement,
+        character_id,
+        quest_id,
+        IncidentSpec {
+            kind,
+            title,
+            description: description.into(),
+            enemy_type,
+            difficulty,
+        },
+    )
+}
+
+fn finish_strategic_incident(
     ctx: &ReducerContext,
     quest_id: &str,
     status: &str,
 ) -> Result<(), String> {
     let Some(mut incident) = ctx
         .db
-        .religious_incident()
+        .strategic_incident()
         .quest_id()
         .find(&quest_id.to_string())
     else {
@@ -3119,7 +3231,7 @@ fn finish_religious_incident(
     }
     incident.status = status.into();
     ctx.db
-        .religious_incident()
+        .strategic_incident()
         .quest_id()
         .update(incident.clone());
     if let Some(mut party) = ctx.db.party().id().find(&incident.party_id)
@@ -3301,7 +3413,7 @@ pub fn travel_to_settlement(
                 ctx.db.party().id().update(party);
                 let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
                     ctx.db
-                        .religious_incident()
+                        .strategic_incident()
                         .quest_id()
                         .find(quest_id)
                         .is_some()
@@ -3309,7 +3421,7 @@ pub fn travel_to_settlement(
                 if let Some(quest_id) = departing_quest.as_deref()
                     && fled_incident
                 {
-                    finish_religious_incident(ctx, quest_id, "avoided")?;
+                    finish_strategic_incident(ctx, quest_id, "avoided")?;
                 }
                 if !fled_incident {
                     maybe_trigger_religious_incident(ctx, &party_id, &destination)?;
@@ -3355,7 +3467,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
-    finish_religious_incident(ctx, &quest_id, "resolved")?;
+    finish_strategic_incident(ctx, &quest_id, "resolved")?;
     Ok(())
 }
 
