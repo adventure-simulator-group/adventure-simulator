@@ -140,6 +140,7 @@ pub mod rest_at_settlement_reducer;
 pub mod save_recruitment_role_reducer;
 pub mod saved_recruitment_role_table;
 pub mod saved_recruitment_role_type;
+pub mod schedule_allocation_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
@@ -441,6 +442,7 @@ pub use save_recruitment_role_reducer::{
 };
 pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
+pub use schedule_allocation_type::ScheduleAllocation;
 pub use seed_bot_join_requests_reducer::{
     seed_bot_join_requests, set_flags_for_seed_bot_join_requests, SeedBotJoinRequestsCallbackId,
 };
@@ -875,6 +877,21 @@ pub enum Reducer {
         prayer_minutes: u16,
         thievery_minutes: u16,
         raiding_minutes: u16,
+        travel_melee_minutes: u16,
+        travel_dodge_minutes: u16,
+        travel_block_minutes: u16,
+        travel_ranged_minutes: u16,
+        travel_will_minutes: u16,
+        travel_charisma_minutes: u16,
+        travel_medicine_minutes: u16,
+        travel_faith_minutes: u16,
+        travel_stealth_minutes: u16,
+        travel_balance_minutes: u16,
+        travel_surgeon_minutes: u16,
+        travel_labor_minutes: u16,
+        travel_prayer_minutes: u16,
+        travel_thievery_minutes: u16,
+        travel_raiding_minutes: u16,
     },
     VoteForPartyLeader {
         voter_id: u64,

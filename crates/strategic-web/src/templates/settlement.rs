@@ -1110,7 +1110,7 @@ fn party_skills_rail(
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
                     }
-                    script src="/static/training-schedule.js?v=hourglass-handle-1" {}
+                    script src="/static/training-schedule.js?v=dual-context-1" {}
                 } @else {
                     (skills_table(skills, head_health, upper_health, lower_health, None))
                 }
@@ -1136,28 +1136,36 @@ fn skills_table(
                     col class="party-skill-meter-column";
                     @if schedule.is_some() {
                         col class="party-skill-time-column";
+                        col class="party-skill-time-column";
                     }
                 }
+                @if schedule.is_some() {
+                    thead { tr class="schedule-context-heading" {
+                        th colspan="3" { }
+                        th scope="col" title="Daily plan used while resting or waiting in a settlement" { "Downtime" }
+                        th scope="col" title="Daily plan used while traveling between locations" { "Travel" }
+                    } }
+                }
                 tbody {
-                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
-                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
-                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
-                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
-                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
-                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
-                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
-                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
-                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
-                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
-                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
+                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
+                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
+                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
+                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
+                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
+                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
+                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
+                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
+                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
+                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
                     @if let Some(schedule) = schedule {
-                        tr class="schedule-divider" { td colspan="4" {} }
-                        tr class="schedule-section-heading" { td colspan="4" { "Activities" } }
-                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven prayer needs."))
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true, "Earn gold from Strength and Endurance checks and train Will at 25% speed."))
-                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.thievery_minutes, true, "Steal for gold. Larger settlements are richer; Stealth reduces discovery and notoriety."))
-                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.raiding_minutes, true, "Raid for gold and equipment-based combat training, with high retaliation and notoriety."))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, "Unallocated time for sleep and personal needs."))
+                        tr class="schedule-divider" { td colspan="5" {} }
+                        tr class="schedule-section-heading" { td colspan="5" { "Activities" } }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, "travel_prayer_minutes", schedule.travel.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, "travel_labor_minutes", schedule.travel.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed in either plan."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, "travel_thievery_minutes", schedule.travel.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery; either plan trains Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, "travel_raiding_minutes", schedule.travel.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation; either plan trains with equipped weapons and armor."))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, "travel_leisure_minutes", 0, false, "Unallocated time in each plan for sleep and personal needs."))
                     }
             }
         }
@@ -1170,7 +1178,7 @@ fn party_skill_row(
     hours: f32,
     half_hours: f32,
     health: f32,
-    schedule_minutes: Option<u16>,
+    schedule_minutes: Option<(u16, u16)>,
 ) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
@@ -1186,16 +1194,22 @@ fn party_skill_row(
                     span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                     span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
                     span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
-                    @if let Some(minutes) = schedule_minutes {
-                        (schedule_handle(name, &format!("{}_minutes", icon), minutes))
+                    @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
+                        (schedule_handle(name, &format!("{}_minutes", icon), downtime_minutes, "downtime"))
+                        (schedule_handle(name, &format!("travel_{}_minutes", icon), travel_minutes, "travel"))
                     }
                 }
             }
-            @if let Some(minutes) = schedule_minutes {
+            @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
                 td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
                     (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
                     (schedule_step_button("Increase daily allocation", 15))
+                }
+                td class="party-skill-allocation travel-allocation" data-schedule-value=(format!("travel_{}_minutes", icon)) {
+                    (schedule_step_button("Decrease travel allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
+                    (schedule_step_button("Increase travel allocation", 15))
                 }
             }
         }
@@ -1205,8 +1219,10 @@ fn party_skill_row(
 fn schedule_special_row(
     label: &str,
     icon: &str,
-    name: &str,
-    minutes: u16,
+    downtime_name: &str,
+    downtime_minutes: u16,
+    travel_name: &str,
+    travel_minutes: u16,
     editable: bool,
     description: &str,
 ) -> Markup {
@@ -1217,17 +1233,26 @@ fn schedule_special_row(
             td class="party-skill-meter" {
                 div class="skill-rank-bar schedule-special-track" {
                 @if editable {
-                    (schedule_handle(label, name, minutes))
+                    (schedule_handle(label, downtime_name, downtime_minutes, "downtime"))
+                    (schedule_handle(label, travel_name, travel_minutes, "travel"))
                 } @else {
-                    span class="schedule-leisure-fill" data-leisure-fill {}
+                    span class="schedule-leisure-fill" data-leisure-fill="downtime" {}
+                    span class="schedule-leisure-fill travel-leisure-fill" data-leisure-fill="travel" {}
                 }
                 }
             }
-            td class="party-skill-allocation" data-schedule-value=(name) {
+            td class="party-skill-allocation" data-schedule-value=(downtime_name) {
                 @if editable {
                     (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
                     (schedule_step_button("Increase daily allocation", 15))
+                } @else { span data-schedule-display { "0h" } }
+            }
+            td class="party-skill-allocation travel-allocation" data-schedule-value=(travel_name) {
+                @if editable {
+                    (schedule_step_button("Decrease travel allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
+                    (schedule_step_button("Increase travel allocation", 15))
                 } @else { span data-schedule-display { "0h" } }
             }
         }
@@ -1253,12 +1278,12 @@ fn schedule_icon(label: &str, icon: &str) -> Markup {
     }
 }
 
-fn schedule_handle(label: &str, name: &str, minutes: u16) -> Markup {
+fn schedule_handle(label: &str, name: &str, minutes: u16, context: &str) -> Markup {
     html! {
         input type="hidden" name=(name) value=(minutes) data-schedule-input;
-        button type="button" class="schedule-handle" data-schedule-handle data-schedule-name=(name)
-            aria-label=(format!("{} daily allocation", label)) aria-valuemin="0" aria-valuemax="1440"
-            aria-valuenow=(minutes) title=(format!("{} per day", format_schedule_hours(minutes)))
+        button type="button" class=(format!("schedule-handle schedule-handle-{context}")) data-schedule-handle data-schedule-name=(name)
+            aria-label=(format!("{} {} allocation", label, context)) aria-valuemin="0" aria-valuemax="1440"
+            aria-valuenow=(minutes) title=(format!("{} per {} day", format_schedule_hours(minutes), context))
             data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
 }

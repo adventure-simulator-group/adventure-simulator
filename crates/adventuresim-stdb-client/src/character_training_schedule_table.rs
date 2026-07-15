@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::character_training_schedule_type::CharacterTrainingSchedule;
+use super::schedule_allocation_type::ScheduleAllocation;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_training_schedule`.

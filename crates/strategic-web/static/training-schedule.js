@@ -61,9 +61,16 @@
     return Object.fromEntries(Object.entries(state.inputs).map(([name, input]) => [name, Number(input.value)]));
   }
 
+  function contextFor(name) {
+    return name.startsWith('travel_') ? 'travel' : 'downtime';
+  }
+
+  function contextValues(allocation, context) {
+    return Object.fromEntries(Object.entries(allocation).filter(([name]) => contextFor(name) === context));
+  }
+
   function render(root, state) {
     const allocations = values(state);
-    const leisure = Math.max(0, DAY - Object.values(allocations).reduce((sum, value) => sum + value, 0));
     Object.entries(state.handles).forEach(([name, handle]) => {
       const minutes = allocations[name];
       handle.style.left = `${minutes / DAY * 100}%`;
@@ -72,32 +79,40 @@
       handle.setAttribute('aria-valuetext', format(minutes));
       root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(minutes); });
     });
-    root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => { output.textContent = format(leisure); });
-    root.querySelectorAll('[data-leisure-fill]').forEach((fill) => {
-      fill.style.width = `${leisure / DAY * 100}%`;
-      fill.style.backgroundColor = leisureColor(leisure);
-      fill.parentElement.title = leisureTip;
+    ['downtime', 'travel'].forEach((context) => {
+      const plan = contextValues(allocations, context);
+      const leisure = Math.max(0, DAY - Object.values(plan).reduce((sum, value) => sum + value, 0));
+      const leisureName = context === 'travel' ? 'travel_leisure_minutes' : 'leisure_minutes';
+      root.querySelectorAll(`[data-schedule-value="${leisureName}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(leisure); });
+      root.querySelectorAll(`[data-leisure-fill="${context}"]`).forEach((fill) => {
+        fill.style.width = `${leisure / DAY * 100}%`;
+        fill.style.backgroundColor = leisureColor(leisure);
+        fill.parentElement.title = leisureTip;
+      });
     });
   }
 
   function setValue(root, state, target, wanted) {
     const allocation = values(state);
+    const context = contextFor(target);
+    const planNames = Object.keys(allocation).filter((name) => contextFor(name) === context);
     const current = allocation[target];
     const next = Math.max(0, Math.min(DAY, Math.round(wanted / STEP) * STEP));
     const delta = next - current;
     if (delta > 0) {
-      const leisure = DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0);
-      const otherSkills = Object.keys(allocation).filter((name) => name !== target && name !== 'labor_minutes');
-      const donors = target === 'labor_minutes'
+      const leisure = DAY - planNames.reduce((sum, name) => sum + allocation[name], 0);
+      const laborName = context === 'travel' ? 'travel_labor_minutes' : 'labor_minutes';
+      const otherSkills = planNames.filter((name) => name !== target && name !== laborName);
+      const donors = target === laborName
         ? otherSkills
-        : ['labor_minutes', ...otherSkills.filter((name) => name !== 'labor_minutes')];
+        : [laborName, ...otherSkills.filter((name) => name !== laborName)];
       const capacity = Math.max(0, leisure) + donors.reduce((sum, name) => sum + allocation[name], 0);
       const accepted = Math.min(delta, capacity);
       allocation[target] += accepted;
       let remaining = Math.max(0, accepted - Math.max(0, leisure));
-      if (target !== 'labor_minutes') {
-        const fromLabor = Math.min(allocation.labor_minutes, remaining);
-        allocation.labor_minutes -= fromLabor;
+      if (target !== laborName) {
+        const fromLabor = Math.min(allocation[laborName], remaining);
+        allocation[laborName] -= fromLabor;
         remaining -= fromLabor;
       }
       if (remaining) drainFromBottom(allocation, otherSkills, remaining);
@@ -122,7 +137,7 @@
   }
 
   function bindEditing(root, state) {
-    root.querySelectorAll('.skill-rank-bar, .party-skill-allocation').forEach((element) => {
+    root.querySelectorAll('.party-skill-allocation').forEach((element) => {
       element.addEventListener('wheel', (evt) => {
         const name = nameFor(element);
         if (!name) return;

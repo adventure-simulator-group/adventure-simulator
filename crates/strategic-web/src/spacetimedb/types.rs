@@ -449,8 +449,7 @@ pub struct CharacterTime {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterTrainingSchedule {
-    pub character_id: u64,
+pub struct ScheduleAllocation {
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,
@@ -466,6 +465,13 @@ pub struct CharacterTrainingSchedule {
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
     pub raiding_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterTrainingSchedule {
+    pub character_id: u64,
+    pub downtime: ScheduleAllocation,
+    pub travel: ScheduleAllocation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1627,7 +1627,7 @@ button.party-portrait-action {
 
 .party-skill-icon-column { width: 1.55rem; }
 .party-skill-name-column { width: 5.75rem; }
-.party-skill-time-column { width: 3.25rem; }
+.party-skill-time-column { width: 3.65rem; }
 
 .party-skills-table td {
   padding: 0.42rem 0;
@@ -2133,6 +2133,7 @@ body.chat-resizing {
 .skill-schedule { display: grid; gap: 0.55rem; }
 .skill-schedule .skill-rank-bar { overflow: visible; cursor: crosshair; }
 .schedule-handle {
+  --schedule-handle-color: var(--text-primary);
   position: absolute;
   z-index: 2;
   top: 50%;
@@ -2140,7 +2141,7 @@ body.chat-resizing {
   height: 0.78rem;
   padding: 0;
   border: 0;
-  background: linear-gradient(to right, transparent calc(50% - 0.5px), var(--text-primary) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+  background: linear-gradient(to right, transparent calc(50% - 0.5px), var(--schedule-handle-color) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
   cursor: ew-resize;
   touch-action: none;
   transform: translate(-50%, -50%);
@@ -2158,9 +2159,21 @@ body.chat-resizing {
   transform: translateX(-50%);
 }
 
-.schedule-handle::before { top: 0; border-top: 0.21rem solid var(--text-primary); }
-.schedule-handle::after { bottom: 0; border-bottom: 0.21rem solid var(--text-primary); }
+.schedule-handle::before { top: 0; border-top: 0.21rem solid var(--schedule-handle-color); }
+.schedule-handle::after { bottom: 0; border-bottom: 0.21rem solid var(--schedule-handle-color); }
 .schedule-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.schedule-handle-downtime { top: 28%; }
+.schedule-handle-travel { --schedule-handle-color: var(--accent); top: 72%; }
+
+.schedule-context-heading th {
+  padding: 0 0.15rem 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.travel-allocation [data-schedule-display] { color: var(--accent); }
 
 .schedule-divider td {
   height: 0.8rem;
@@ -2196,4 +2209,5 @@ body.chat-resizing {
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
 .schedule-extra-track .schedule-handle { top: 50%; }
-.schedule-leisure-fill { display: block; height: 100%; background: var(--success, #69a86b); }
+.schedule-leisure-fill { position: absolute; top: 0; left: 0; display: block; height: 50%; background: var(--success, #69a86b); }
+.schedule-leisure-fill.travel-leisure-fill { top: 50%; }

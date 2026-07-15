@@ -4,6 +4,27 @@ pub const ACTIVITY_TRAINING_RATE: f32 = 0.25;
 pub const PRAYER_MORALE_LIMIT: f32 = 4.0;
 pub const PRAYER_MORALE_SCALE_MINUTES: f32 = 60.0;
 pub const MAX_DAILY_PRAYER_OBLIGATION_MINUTES: f32 = 120.0;
+pub const MINUTES_PER_DAY: u64 = 24 * 60;
+pub const DAYS_PER_WEEK: u64 = 7;
+pub const SUNDAY_INDEX: u64 = 6;
+
+pub fn is_sunday(day: u64) -> bool {
+    day % DAYS_PER_WEEK == SUNDAY_INDEX
+}
+
+pub fn sundays_overlapping(start_minute: u64, elapsed_minutes: u64) -> Vec<u64> {
+    if elapsed_minutes == 0 {
+        return Vec::new();
+    }
+    let first_day = start_minute / MINUTES_PER_DAY;
+    let last_day = start_minute
+        .saturating_add(elapsed_minutes)
+        .saturating_sub(1)
+        / MINUTES_PER_DAY;
+    (first_day..=last_day)
+        .filter(|day| is_sunday(*day))
+        .collect()
+}
 
 pub fn prayer_morale(prayer_minutes: u16) -> f32 {
     PRAYER_MORALE_LIMIT * (1.0 - (-f32::from(prayer_minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
@@ -75,5 +96,24 @@ mod tests {
     fn raiding_is_conspicuous() {
         assert!(raiding_retaliation_chance(8.0) > 0.9);
         assert_eq!(raiding_notoriety(8.0), 12.0);
+    }
+
+    #[test]
+    fn sunday_is_every_seventh_calendar_day() {
+        assert!(!is_sunday(0));
+        assert!(!is_sunday(5));
+        assert!(is_sunday(6));
+        assert!(is_sunday(13));
+    }
+
+    #[test]
+    fn travel_detects_each_sunday_it_overlaps() {
+        let saturday_evening = 5 * MINUTES_PER_DAY + 20 * 60;
+        assert_eq!(sundays_overlapping(saturday_evening, 32 * 60), vec![6]);
+        assert_eq!(
+            sundays_overlapping(saturday_evening, 8 * MINUTES_PER_DAY),
+            vec![6, 13]
+        );
+        assert!(sundays_overlapping(0, 0).is_empty());
     }
 }

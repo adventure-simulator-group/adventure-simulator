@@ -112,8 +112,6 @@ pub struct ReligiousDemand {
     pub resolution: Option<String>,
 }
 
-const RELIGIOUS_DEMAND_COOLDOWN_MINUTES: u64 = 2 * 24 * 60;
-
 pub fn initialize_character_condition(
     ctx: &ReducerContext,
     character_id: u64,
@@ -388,7 +386,7 @@ fn base_morale(
             .character_training_schedule()
             .character_id()
             .find(character_id)
-            .map_or(0, |schedule| schedule.prayer_minutes);
+            .map_or(0, |schedule| schedule.downtime.prayer_minutes);
         if prayer_minutes > 0 {
             raw_sources.push(ProjectedMoraleSource {
                 key: "daily-prayer".into(),
@@ -681,15 +679,6 @@ fn character_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
         .map_or(0, |time| time.minutes)
 }
 
-fn deterministic_daily_roll(character_id: u64, day: u64) -> f32 {
-    // SplitMix64 gives each character/day pair a stable, well-distributed roll.
-    let mut value = character_id ^ day.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    value ^= value >> 31;
-    ((value >> 40) as f32) / ((1_u32 << 24) as f32)
-}
-
 fn ensure_holy_day_demand(
     ctx: &ReducerContext,
     condition: &CharacterStrategicCondition,
@@ -706,6 +695,11 @@ fn ensure_holy_day_demand(
     if !professes_religion {
         return Ok(());
     }
+    let current_minute = character_minute(ctx, condition.character_id);
+    let current_day = current_minute / MINUTES_PER_DAY;
+    if !is_sunday(current_day) {
+        return Ok(());
+    }
     let demands: Vec<_> = ctx
         .db
         .religious_demand()
@@ -715,17 +709,9 @@ fn ensure_holy_day_demand(
     if demands.iter().any(|demand| demand.status == "pending") {
         return Ok(());
     }
-    let current_minute = character_minute(ctx, condition.character_id);
     if demands.iter().any(|demand| {
-        current_minute.saturating_sub(demand.created_at_minute) < RELIGIOUS_DEMAND_COOLDOWN_MINUTES
+        demand.kind == "holy_day" && demand.created_at_minute / MINUTES_PER_DAY == current_day
     }) {
-        return Ok(());
-    }
-    let day = current_minute / (24 * 60);
-    if !fervor_event_occurs(
-        condition.fervor,
-        deterministic_daily_roll(condition.character_id, day),
-    ) {
         return Ok(());
     }
     let at_settlement = ctx
@@ -742,7 +728,7 @@ fn ensure_holy_day_demand(
         character_id: condition.character_id,
         kind: "holy_day".into(),
         title: "Keep the holy day".into(),
-        description: "Conviction demands a full day away from the road and worldly business. Daily prayer is managed through the activity schedule instead.".into(),
+        description: "Sunday is a day of worship and rest. Conviction demands a full day away from the road and worldly business; daily prayer is managed through the activity schedule.".into(),
         fervor: condition.fervor,
         status: "pending".into(),
         created_at_minute: current_minute,
@@ -752,7 +738,7 @@ fn ensure_holy_day_demand(
     Ok(())
 }
 
-pub fn refresh_character_strategic_condition(
+fn refresh_character_strategic_condition_projection(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<CharacterStrategicCondition, String> {
@@ -770,8 +756,14 @@ pub fn refresh_character_strategic_condition(
             requested = Some(row);
         }
     }
-    let requested =
-        requested.ok_or_else(|| "Character is not a member of their party".to_string())?;
+    requested.ok_or_else(|| "Character is not a member of their party".to_string())
+}
+
+pub fn refresh_character_strategic_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<CharacterStrategicCondition, String> {
+    let requested = refresh_character_strategic_condition_projection(ctx, character_id)?;
     ensure_holy_day_demand(ctx, &requested)?;
     Ok(requested)
 }
@@ -872,13 +864,54 @@ pub fn record_morale_event(
     Ok(())
 }
 
+fn insert_morale_event_without_refresh(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    magnitude: f32,
+    source_id: String,
+) {
+    if magnitude == 0.0 || !magnitude.is_finite() {
+        return;
+    }
+    let occurred_at_minute = character_minute(ctx, character_id);
+    ctx.db.morale_event().insert(MoraleEvent {
+        id: 0,
+        character_id,
+        kind: kind.into(),
+        magnitude,
+        occurred_at_minute,
+        expires_at_minute: occurred_at_minute + RECENT_MORALE_DURATION_MINUTES,
+        source_id: Some(source_id),
+    });
+}
+
+fn party_charisma(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+    Ok(aggregate_party_charisma(
+        party_character_ids(ctx, character_id)?
+            .into_iter()
+            .map(|id| mental_check(ctx, id, Skill::Charisma))
+            .collect::<Result<Vec<_>, _>>()?,
+    ))
+}
+
+fn has_morale_source(ctx: &ReducerContext, character_id: u64, source_id: &str) -> bool {
+    ctx.db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .any(|event| event.source_id.as_deref() == Some(source_id))
+}
+
 /// Advance fatigue for strategic travel. The existing `calories_used` field is
 /// treated as a recoverable fatigue reservoir until food/day-boundary state is
 /// implemented.
 pub fn apply_travel_condition(
     ctx: &ReducerContext,
     character_id: u64,
+    starting_minute: u64,
     elapsed_minutes: u64,
+    prayer_minutes: u16,
 ) -> Result<(), String> {
     let mut stats = ctx
         .db
@@ -888,7 +921,67 @@ pub fn apply_travel_condition(
         .ok_or("Character stats not found")?;
     stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
     ctx.db.character_stats().character_id().update(stats);
-    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+
+    let condition = refresh_character_strategic_condition_projection(ctx, character_id)?;
+    let professes_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .is_some_and(|row| row.religion_id.is_some());
+    if professes_religion && condition.fervor > 0.0 {
+        let charisma = party_charisma(ctx, character_id)?;
+        let daily_penalty = religious_neglect_morale(condition.fervor, charisma);
+        let missed_prayer = 1.0 - prayer_observance(condition.fervor, prayer_minutes);
+        let elapsed_days = elapsed_minutes as f32 / MINUTES_PER_DAY as f32;
+        let prayer_penalty = daily_penalty * missed_prayer * elapsed_days;
+        if prayer_penalty > 0.0 {
+            insert_morale_event_without_refresh(
+                ctx,
+                character_id,
+                "travel_prayer_neglected",
+                -prayer_penalty,
+                format!(
+                    "travel-prayer:{starting_minute}:{}",
+                    starting_minute.saturating_add(elapsed_minutes)
+                ),
+            );
+        }
+        for sunday in sundays_overlapping(starting_minute, elapsed_minutes) {
+            let existing_demand = ctx
+                .db
+                .religious_demand()
+                .character_id()
+                .filter(character_id)
+                .find(|demand| {
+                    demand.kind == "holy_day"
+                        && demand.created_at_minute / MINUTES_PER_DAY == sunday
+                });
+            let source_id = if let Some(mut demand) = existing_demand {
+                if demand.status != "pending" {
+                    continue;
+                }
+                demand.status = "resolved".into();
+                demand.resolved_at_minute = Some(character_minute(ctx, character_id));
+                demand.resolution = Some("refuse".into());
+                let id = demand.id;
+                ctx.db.religious_demand().id().update(demand);
+                format!("religious-demand:{id}")
+            } else {
+                format!("missed-sunday:{sunday}")
+            };
+            if daily_penalty > 0.0 && !has_morale_source(ctx, character_id, &source_id) {
+                insert_morale_event_without_refresh(
+                    ctx,
+                    character_id,
+                    "religious_observance_neglected",
+                    -daily_penalty,
+                    source_id,
+                );
+            }
+        }
+    }
+    refresh_character_strategic_condition_projection(ctx, character_id).map(|_| ())
 }
 
 pub fn apply_rest_condition(

@@ -1,5 +1,5 @@
 use adventuresim_core::prelude::*;
-use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp, reducer, table};
+use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp, reducer, table};
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
@@ -44,12 +44,9 @@ pub struct CharacterTime {
     pub minutes: u64,
 }
 
-/// A 24-hour daily budget. Leisure is always the unallocated remainder.
-#[derive(Clone, Debug)]
-#[table(name = character_training_schedule, public)]
-pub struct CharacterTrainingSchedule {
-    #[primary_key]
-    pub character_id: u64,
+/// One 24-hour daily budget. Leisure is always the unallocated remainder.
+#[derive(Clone, Debug, Default, SpacetimeType)]
+pub struct ScheduleAllocation {
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,
@@ -63,12 +60,19 @@ pub struct CharacterTrainingSchedule {
     pub surgeon_minutes: u16,
     /// Paid physical work; also trains Will at reduced speed.
     pub labor_minutes: u16,
-    #[default(0)]
     pub prayer_minutes: u16,
-    #[default(0)]
     pub thievery_minutes: u16,
-    #[default(0)]
     pub raiding_minutes: u16,
+}
+
+/// Separate daily plans for settlement downtime and strategic travel.
+#[derive(Clone, Debug)]
+#[table(name = character_training_schedule, public)]
+pub struct CharacterTrainingSchedule {
+    #[primary_key]
+    pub character_id: u64,
+    pub downtime: ScheduleAllocation,
+    pub travel: ScheduleAllocation,
 }
 
 #[derive(Clone, Debug)]
@@ -79,7 +83,7 @@ pub struct CharacterNotoriety {
     pub value: f32,
 }
 
-impl CharacterTrainingSchedule {
+impl ScheduleAllocation {
     pub fn allocated_minutes(&self) -> u64 {
         [
             self.melee_minutes,
@@ -173,12 +177,34 @@ pub fn advance_character_time(
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
+    let starting_minute = character_time.minutes;
     character_time.minutes = character_time.minutes.saturating_add(minutes);
     ctx.db
         .character_time()
         .character_id()
         .update(character_time);
-    crate::condition::apply_travel_condition(ctx, character_id, minutes)?;
+    let schedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character training schedule not found".to_string())?;
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character skill record not found".to_string())?;
+    let activities = activity_training_profile(ctx, character_id)?;
+    apply_training(&mut skills, &schedule.travel, minutes, activities);
+    ctx.db.character_skills().character_id().update(skills);
+    crate::condition::apply_travel_condition(
+        ctx,
+        character_id,
+        starting_minute,
+        minutes,
+        schedule.travel.prayer_minutes,
+    )?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
@@ -186,21 +212,8 @@ pub fn advance_character_time(
 fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
-        melee_minutes: 0,
-        dodge_minutes: 0,
-        block_minutes: 0,
-        ranged_minutes: 0,
-        will_minutes: 0,
-        charisma_minutes: 0,
-        medicine_minutes: 0,
-        faith_minutes: 0,
-        stealth_minutes: 0,
-        balance_minutes: 0,
-        surgeon_minutes: 0,
-        labor_minutes: 0,
-        prayer_minutes: 0,
-        thievery_minutes: 0,
-        raiding_minutes: 0,
+        downtime: ScheduleAllocation::default(),
+        travel: ScheduleAllocation::default(),
     }
 }
 
@@ -257,7 +270,7 @@ fn activity_training_profile(
 
 fn apply_training(
     skills: &mut CharacterSkills,
-    schedule: &CharacterTrainingSchedule,
+    schedule: &ScheduleAllocation,
     elapsed: u64,
     activities: ActivityTrainingProfile,
 ) {
@@ -331,7 +344,7 @@ pub(crate) struct ActivityRisks {
 fn apply_activity_outcomes(
     ctx: &ReducerContext,
     character_id: u64,
-    schedule: &CharacterTrainingSchedule,
+    schedule: &ScheduleAllocation,
     elapsed: u64,
 ) -> Result<ActivityRisks, String> {
     let character = ctx
@@ -533,9 +546,15 @@ pub fn rest_at_settlement(
             .find(character_id)
             .ok_or_else(|| "Character skill record not found".to_string())?;
         let activities = activity_training_profile(ctx, character_id)?;
-        apply_training(&mut skills, &schedule, training_elapsed, activities);
+        apply_training(
+            &mut skills,
+            &schedule.downtime,
+            training_elapsed,
+            activities,
+        );
         ctx.db.character_skills().character_id().update(skills);
-        let risks = apply_activity_outcomes(ctx, character_id, &schedule, training_elapsed)?;
+        let risks =
+            apply_activity_outcomes(ctx, character_id, &schedule.downtime, training_elapsed)?;
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
@@ -584,9 +603,9 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
-    apply_training(&mut skills, &schedule, elapsed, activities);
+    apply_training(&mut skills, &schedule.downtime, elapsed, activities);
     ctx.db.character_skills().character_id().update(skills);
-    let _ = apply_activity_outcomes(ctx, character_id, &schedule, elapsed)?;
+    let _ = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
     character_time.minutes = target_minutes;
     ctx.db
         .character_time()
@@ -622,36 +641,72 @@ pub fn update_training_schedule(
     prayer_minutes: u16,
     thievery_minutes: u16,
     raiding_minutes: u16,
+    travel_melee_minutes: u16,
+    travel_dodge_minutes: u16,
+    travel_block_minutes: u16,
+    travel_ranged_minutes: u16,
+    travel_will_minutes: u16,
+    travel_charisma_minutes: u16,
+    travel_medicine_minutes: u16,
+    travel_faith_minutes: u16,
+    travel_stealth_minutes: u16,
+    travel_balance_minutes: u16,
+    travel_surgeon_minutes: u16,
+    travel_labor_minutes: u16,
+    travel_prayer_minutes: u16,
+    travel_thievery_minutes: u16,
+    travel_raiding_minutes: u16,
 ) -> Result<(), String> {
     if synchronize_character(ctx, character_id)? {
         return Ok(());
     }
     let schedule = CharacterTrainingSchedule {
         character_id,
-        melee_minutes,
-        dodge_minutes,
-        block_minutes,
-        ranged_minutes,
-        will_minutes,
-        charisma_minutes,
-        medicine_minutes,
-        faith_minutes,
-        stealth_minutes,
-        balance_minutes,
-        surgeon_minutes,
-        labor_minutes,
-        prayer_minutes,
-        thievery_minutes,
-        raiding_minutes,
+        downtime: ScheduleAllocation {
+            melee_minutes,
+            dodge_minutes,
+            block_minutes,
+            ranged_minutes,
+            will_minutes,
+            charisma_minutes,
+            medicine_minutes,
+            faith_minutes,
+            stealth_minutes,
+            balance_minutes,
+            surgeon_minutes,
+            labor_minutes,
+            prayer_minutes,
+            thievery_minutes,
+            raiding_minutes,
+        },
+        travel: ScheduleAllocation {
+            melee_minutes: travel_melee_minutes,
+            dodge_minutes: travel_dodge_minutes,
+            block_minutes: travel_block_minutes,
+            ranged_minutes: travel_ranged_minutes,
+            will_minutes: travel_will_minutes,
+            charisma_minutes: travel_charisma_minutes,
+            medicine_minutes: travel_medicine_minutes,
+            faith_minutes: travel_faith_minutes,
+            stealth_minutes: travel_stealth_minutes,
+            balance_minutes: travel_balance_minutes,
+            surgeon_minutes: travel_surgeon_minutes,
+            labor_minutes: travel_labor_minutes,
+            prayer_minutes: travel_prayer_minutes,
+            thievery_minutes: travel_thievery_minutes,
+            raiding_minutes: travel_raiding_minutes,
+        },
     };
-    if schedule.allocated_minutes() > MINUTES_PER_DAY {
-        return Err("Training, activities, and leisure must fit within 24 hours".into());
+    if schedule.downtime.allocated_minutes() > MINUTES_PER_DAY
+        || schedule.travel.allocated_minutes() > MINUTES_PER_DAY
+    {
+        return Err("Each downtime and travel plan must fit within 24 hours".into());
     }
     ctx.db
         .character_training_schedule()
         .character_id()
         .update(schedule);
-    Ok(())
+    crate::condition::refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
 #[cfg(test)]
@@ -695,8 +750,7 @@ mod tests {
             balance_hours: 0.0,
             surgeon_hours: 0.0,
         };
-        let schedule = CharacterTrainingSchedule {
-            character_id: 1,
+        let allocation = ScheduleAllocation {
             melee_minutes: 90,
             dodge_minutes: 30,
             block_minutes: 0,
@@ -715,7 +769,7 @@ mod tests {
         };
         apply_training(
             &mut skills,
-            &schedule,
+            &allocation,
             MINUTES_PER_DAY * 2,
             ActivityTrainingProfile::default(),
         );
@@ -723,7 +777,7 @@ mod tests {
         assert_eq!(skills.dodge_hours, 1.0);
         assert_eq!(skills.faith_hours, 0.5);
         assert_eq!(skills.will_hours, 4.0);
-        assert_eq!(schedule.allocated_minutes(), 660);
+        assert_eq!(allocation.allocated_minutes(), 660);
     }
 
     #[test]
