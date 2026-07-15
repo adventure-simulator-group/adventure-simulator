@@ -8,9 +8,8 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use serde_json::json;
 
-use super::{AppState, PartyActionOutcome, execute_or_request_party_action};
+use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{BattleResult, Character, Party, TacticalServer, TacticalServerRequest};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
@@ -33,8 +32,13 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/characters");
     };
 
-    let Some(character) = get_character(&state, character_id).await else {
-        return Redirect::to("/characters");
+    let character = match super::data::character(&state, character_id).await {
+        Ok(Some(character)) => character,
+        Ok(None) => return Redirect::to("/characters"),
+        Err(error) => {
+            tracing::error!(%error, "failed to load mission character");
+            return Redirect::to("/");
+        }
     };
 
     let Some(party_id) = &character.party_id else {
@@ -61,15 +65,15 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     let scene_key = quest_scene_key(&state, quest_id)
         .await
         .unwrap_or_else(|| "hills".to_string());
-    let mission_id = format!("party-{}-{}", party_id, chrono_id());
+    let mission_id = format!("party-{}-{}", party_id, super::data::new_id());
 
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
-        "initiate_combat",
-        "Initiate tactical combat",
-        "request_tactical_server",
-        vec![json!(mission_id.clone()), json!(scene_key.clone())],
+        PartyAction::RequestTacticalServer {
+            mission_id: mission_id.clone(),
+            scene_key: scene_key.clone(),
+        },
     )
     .await;
     if let Err(ref error) = outcome {
@@ -93,8 +97,17 @@ async fn mission_status(
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(viewer) = get_character(&state, character_id).await else {
-        return Redirect::to("/characters").into_response();
+    let viewer = match super::data::character(&state, character_id).await {
+        Ok(Some(viewer)) => viewer,
+        Ok(None) => return Redirect::to("/characters").into_response(),
+        Err(error) => {
+            tracing::error!(%error, "failed to load mission viewer");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
     };
 
     let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
@@ -139,8 +152,17 @@ async fn cancel_mission(
         return Redirect::to("/characters").into_response();
     };
 
-    let Some(viewer) = get_character(&state, character_id).await else {
-        return Redirect::to("/characters").into_response();
+    let viewer = match super::data::character(&state, character_id).await {
+        Ok(Some(viewer)) => viewer,
+        Ok(None) => return Redirect::to("/characters").into_response(),
+        Err(error) => {
+            tracing::error!(%error, "failed to load mission viewer");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
     };
 
     let Some(_server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
@@ -150,10 +172,7 @@ async fn cancel_mission(
     let _ = execute_or_request_party_action(
         &state,
         character_id,
-        "cancel_mission",
-        "Cancel tactical combat",
-        "cancel_mission_request",
-        vec![json!(mission_id)],
+        PartyAction::CancelMission { mission_id },
     )
     .await;
 
@@ -221,24 +240,4 @@ fn can_view_mission(viewer: &Character, server: &TacticalServer) -> bool {
         (Some(viewer_party), Some(server_party)) => viewer_party == server_party,
         _ => false,
     }
-}
-
-async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {}",
-            character_id
-        ))
-        .await
-        .ok()?;
-    characters.into_iter().next()
-}
-
-fn chrono_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
 }

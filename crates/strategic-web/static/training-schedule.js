@@ -112,7 +112,7 @@
     clearTimeout(root._scheduleSaveTimer);
     root._scheduleSaveTimer = setTimeout(() => {
       const body = new URLSearchParams(new FormData(root));
-      fetch(root.action, { method: 'POST', body, headers: { Accept: 'text/plain' } })
+      window.strategicFetch(root.action, { method: 'POST', body, headers: { Accept: 'text/plain' } })
         .catch(() => { root.dataset.scheduleSaveError = 'true'; });
     }, delay);
   }

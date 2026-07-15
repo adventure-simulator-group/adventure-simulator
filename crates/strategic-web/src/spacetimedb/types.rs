@@ -69,11 +69,19 @@ pub struct TravelEdge {
     pub id: u64,
     pub from_node_id: u64,
     pub to_node_id: u64,
-    pub kind: String,
+    pub kind: TravelKind,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,
     pub section: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TravelKind {
+    #[serde(alias = "land", alias = "Land")]
+    Land,
+    #[serde(alias = "ferry", alias = "Ferry")]
+    Ferry,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +93,7 @@ pub struct Quest {
     pub gold_reward: i32,
     pub xp_reward: i32,
     pub settlement_id: String,
-    pub status: String,
+    pub status: QuestStatus,
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
@@ -95,6 +103,16 @@ pub struct Quest {
     pub location_coord_y: f64,
     pub coordinates_are_geographic: bool,
     pub distance_m: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QuestStatus {
+    #[serde(alias = "available")]
+    Available,
+    #[serde(alias = "accepted")]
+    Accepted,
+    #[serde(alias = "completed")]
+    Completed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,7 +223,7 @@ pub struct PartyJoinRequest {
     pub meets_requirements: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct RecruitmentRequirements {
     pub melee: bool,
     pub ranged: bool,
@@ -346,7 +364,8 @@ pub struct InventoryItem {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CharacterEquip {
-    pub character_id: u64,
+    #[serde(rename = "character_id")]
+    pub _character_id: u64,
     pub left_hand_item_id: Option<u64>,
     pub right_hand_item_id: Option<u64>,
     pub left_arm_armor_id: Option<u64>,
@@ -453,13 +472,6 @@ pub struct WorldClock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterStats {
-    pub character_id: u64,
-    pub calories_used: f32,
-    pub focus: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterLimbs {
     pub character_id: u64,
     pub left_arm_health: f32,
@@ -477,8 +489,8 @@ pub struct TacticalServer {
     pub identity: Option<String>,
     pub mission_id: String,
     pub scene_key: String,
-    #[serde(default = "ready_status")]
-    pub status: String,
+    #[serde(default)]
+    pub status: MissionStatus,
     #[serde(default)]
     pub addr: String,
     #[serde(default)]
@@ -500,7 +512,7 @@ impl TacticalServer {
             identity: None,
             mission_id,
             scene_key,
-            status: "Pending".to_string(),
+            status: MissionStatus::Pending,
             addr: String::new(),
             cert_digest: String::new(),
             character_id: Some(character_id),
@@ -509,12 +521,66 @@ impl TacticalServer {
     }
 }
 
-fn ready_status() -> String {
-    "Ready".to_string()
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum MissionStatus {
+    #[default]
+    #[serde(alias = "Ready", alias = "ready")]
+    Ready,
+    #[serde(
+        alias = "Pending",
+        alias = "pending",
+        alias = "Requested",
+        alias = "requested",
+        alias = "Starting",
+        alias = "starting"
+    )]
+    Pending,
+    #[serde(alias = "Failed", alias = "failed", alias = "Error", alias = "error")]
+    Failed,
+    #[serde(alias = "Ended", alias = "ended", alias = "Stopped", alias = "stopped")]
+    Ended,
+}
+
+impl MissionStatus {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::Pending => "Pending",
+            Self::Failed => "Failed",
+            Self::Ended => "Ended",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TacticalServerRequest {
     pub mission_id: String,
     pub scene_key: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strategic_statuses_reject_unknown_values() {
+        assert_eq!(
+            serde_json::from_str::<QuestStatus>("\"accepted\"").unwrap(),
+            QuestStatus::Accepted
+        );
+        assert!(serde_json::from_str::<QuestStatus>("\"mystery\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
+            MissionStatus::Pending
+        );
+    }
+
+    #[test]
+    fn travel_kind_is_a_closed_set() {
+        assert_eq!(
+            serde_json::from_str::<TravelKind>("\"land\"").unwrap(),
+            TravelKind::Land
+        );
+        assert!(serde_json::from_str::<TravelKind>("\"teleport\"").is_err());
+    }
 }

@@ -86,7 +86,10 @@
       baselineReceived = true;
       return;
     }
-    synchronize().catch(() => { synchronizing = false; });
+    synchronize().catch((error) => {
+      synchronizing = false;
+      window.reportStrategicError(error, "live navigation");
+    });
   }).observe(host, {
     attributes: true,
     childList: true,

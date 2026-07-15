@@ -33,11 +33,11 @@
     if (subject) {
       const form = new URLSearchParams({ body: body || "", speaker: speaker || "" });
       const suffix = kind === "player" ? "" : "/npc";
-      fetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
+      window.strategicFetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form,
-      }).catch(() => {});
+      }).catch((error) => window.reportStrategicError(error, "record quest dialogue"));
     }
     return row;
   };
@@ -107,55 +107,12 @@
       Array.from(sidebar.children).forEach((child) => child.classList.add("service-role-inspection-hidden"));
     });
 
-    const leftPanel = document.createElement("section");
-    leftPanel.dataset.serviceRoleInspection = "true";
-    leftPanel.className = "role-inspection-panel role-inspection-content";
-    const leftHeading = document.createElement("h3");
-    leftHeading.className = "sidebar-header";
-    leftHeading.textContent = role.name;
-    leftPanel.append(leftHeading);
-    const list = document.createElement("div");
-    list.className = "role-detail-list";
-    const requirements = role.requirements.length ? role.requirements : ["No minimum recommendations"];
-    requirements.forEach((requirement) => {
-      const row = document.createElement("div");
-      row.className = "role-detail-row";
-      row.append(document.createTextNode(requirement));
-      list.append(row);
-    });
-    leftPanel.append(list);
-
-    const rightPanel = document.createElement("section");
-    rightPanel.dataset.serviceRoleInspection = "true";
-    rightPanel.className = "role-inspection-panel role-inspection-content";
-    const rightHeading = document.createElement("h3");
-    rightHeading.className = "sidebar-header";
-    rightHeading.textContent = quest.recruitment.party_name;
-    rightPanel.append(rightHeading);
-    const leader = document.createElement("p");
-    leader.textContent = `Led by ${quest.recruitment.leader_name}`;
-    rightPanel.append(leader);
-    const match = document.createElement("p");
-    match.className = `small-copy service-role-match service-role-match-${role.match_level}`;
-    match.textContent = role.match_summary;
-    rightPanel.append(match);
-    const availability = document.createElement("p");
-    availability.className = "small-copy text-muted";
-    availability.textContent = `${role.remaining} opening${role.remaining === 1 ? "" : "s"}`;
-    rightPanel.append(availability);
-    const form = document.createElement("form");
-    form.method = "post";
-    form.action = `/party-roles/${encodeURIComponent(role.id)}/join`;
-    const button = document.createElement("button");
-    button.type = "submit";
-    button.className = "btn btn-primary btn-block mt-1";
-    button.textContent = "Send request to join";
-    button.disabled = !quest.can_accept;
-    if (!quest.can_accept) button.title = "Only a free party leader at this settlement can request a merge";
-    form.append(button);
-    rightPanel.append(form);
-    left.append(leftPanel);
-    right.append(rightPanel);
+    const leftTemplate = document.createElement("template");
+    const rightTemplate = document.createElement("template");
+    leftTemplate.innerHTML = role.left_html;
+    rightTemplate.innerHTML = role.right_html;
+    left.append(leftTemplate.content);
+    right.append(rightTemplate.content);
   };
 
   const recruitmentLink = (quest, role) => {
@@ -213,7 +170,7 @@
           line("npc", quest.npc_name, "I can only entrust this to a party leader who is free to take the work.");
           return;
         }
-        const response = await fetch(`/api/quests/${encodeURIComponent(quest.id)}/accept`, {
+        const response = await window.strategicFetch(`/api/quests/${encodeURIComponent(quest.id)}/accept`, {
           method: "POST",
           headers: { Accept: "application/json" },
         });
@@ -246,7 +203,7 @@
     greeting.append(document.createTextNode("Welcome back. Have you "));
     greeting.append(link("finished", async () => {
       line("player", "You", "I've finished.");
-      const response = await fetch(`/api/quests/${encodeURIComponent(quest.id)}/turn-in`, {
+      const response = await window.strategicFetch(`/api/quests/${encodeURIComponent(quest.id)}/turn-in`, {
         method: "POST",
         headers: { Accept: "application/json" },
       });
@@ -320,7 +277,7 @@
       if (chat.dataset.localChatReady === "true") showConversation();
       else chat.addEventListener("local-chat-ready", showConversation, { once: true });
     })
-    .catch(() => {});
+    .catch((error) => window.reportStrategicError(error, "service quests"));
   window.queueStrategicInitialLoad(refreshServiceQuests);
   document.addEventListener("strategic-live-update", refreshServiceQuests);
 })();

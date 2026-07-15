@@ -1,12 +1,16 @@
 //! Route handlers
 
 pub mod characters;
+mod data;
 pub mod home;
+mod inventory_forms;
 pub mod local_chat;
 pub mod missions;
 pub mod parties;
+mod party_actions;
 pub mod quests;
 pub mod settlements;
+pub(crate) mod travel;
 
 use axum::{
     Router,
@@ -16,12 +20,12 @@ use axum::{
     routing::get,
 };
 use axum_extra::extract::CookieJar;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::live::LiveState;
-use crate::session::{CHARACTER_COOKIE, Session, set_theme_cookie};
+use crate::session::{CHARACTER_COOKIE, Session, Theme, set_theme_cookie};
 use crate::spacetimedb::{
     Character, CharacterTime, Party, PartyActionRequest, SpacetimeClient, WorldClock,
 };
@@ -33,11 +37,7 @@ pub struct AppState {
     pub live: LiveState,
 }
 
-#[derive(Serialize, Deserialize)]
-struct RequestedActionPayload {
-    reducer: String,
-    args: Vec<Value>,
-}
+pub(crate) use party_actions::PartyAction;
 
 pub(crate) enum PartyActionOutcome {
     Executed,
@@ -49,29 +49,23 @@ pub(crate) enum PartyActionOutcome {
 pub(crate) async fn execute_or_request_party_action(
     state: &AppState,
     actor_id: u64,
-    kind: &str,
-    summary: &str,
-    reducer: &str,
-    args: Vec<Value>,
+    action: PartyAction,
 ) -> Result<PartyActionOutcome, String> {
     let character = state
         .db
-        .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
         .await
         .map_err(|e| e.to_string())?
-        .into_iter()
-        .next()
         .ok_or("Character not found")?;
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = state
         .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
         .await
         .map_err(|e| e.to_string())?
-        .into_iter()
-        .next()
         .ok_or("Party not found")?;
     if party.leader_id == actor_id {
+        let (reducer, args) = action.reducer_call(actor_id);
         state
             .db
             .call(reducer, &args)
@@ -79,32 +73,34 @@ pub(crate) async fn execute_or_request_party_action(
             .map_err(|e| e.to_string())?;
         return Ok(PartyActionOutcome::Executed);
     }
-    let payload = serde_json::to_string(&RequestedActionPayload {
-        reducer: reducer.into(),
-        args,
-    })
-    .map_err(|e| e.to_string())?;
+    let kind = action.kind();
+    let summary = action.summary();
+    let payload = serde_json::to_string(&action).map_err(|e| e.to_string())?;
     state
         .db
         .call(
             "request_party_action",
-            &[json!(actor_id), json!(kind), json!(summary), json!(payload)],
+            &[
+                json!(actor_id),
+                json!(&kind),
+                json!(summary),
+                json!(payload),
+            ],
         )
         .await
         .map_err(|e| e.to_string())?;
 
     // Temporary NPC captains always approve after a short, visible delay.
-    let leaders = state
+    let leader = state
         .db
-        .query::<Character>(&format!(
+        .query_one::<Character>(&format!(
             "SELECT * FROM character WHERE id = {}",
             party.leader_id
         ))
         .await
-        .unwrap_or_default();
-    if leaders.first().is_some_and(|leader| leader.temporary) {
+        .map_err(|e| e.to_string())?;
+    if leader.is_some_and(|leader| leader.temporary) {
         let state = state.clone();
-        let kind = kind.to_string();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let requests = state
@@ -119,7 +115,9 @@ pub(crate) async fn execute_or_request_party_action(
                 .into_iter()
                 .filter(|request| request.requester_id == actor_id && request.action_kind == kind)
             {
-                let _ = approve_party_action(&state, party.leader_id, &request).await;
+                if let Err(error) = approve_party_action(&state, party.leader_id, &request).await {
+                    tracing::warn!(%error, "temporary captain could not approve party action");
+                }
             }
         });
     }
@@ -131,42 +129,12 @@ pub(crate) async fn approve_party_action(
     leader_id: u64,
     request: &PartyActionRequest,
 ) -> Result<(), String> {
-    let payload: RequestedActionPayload =
-        serde_json::from_str(&request.payload).map_err(|e| e.to_string())?;
-    const ALLOWED: &[&str] = &[
-        "travel_to_settlement",
-        "travel_to_quest",
-        "remove_party_member",
-        "create_recruitment_role",
-        "update_recruitment_role",
-        "delete_recruitment_role",
-        "accept_party_join_request",
-        "reject_party_join_request",
-        "accept_quest",
-        "abandon_quest",
-        "turn_in_quest",
-        "autoresolve_quest",
-        "update_party_check_targets",
-        "set_inventory_quantity_target",
-        "disband_party",
-        "request_tactical_server",
-        "cancel_mission_request",
-    ];
-    if !ALLOWED.contains(&payload.reducer.as_str()) {
-        return Err("Requested reducer is not approvable".into());
-    }
-    let mut args = payload.args;
-    if !matches!(
-        payload.reducer.as_str(),
-        "request_tactical_server" | "cancel_mission_request"
-    ) {
-        if let Some(first) = args.first_mut() {
-            *first = json!(leader_id);
-        }
-    }
+    let action: PartyAction = serde_json::from_str(&request.payload)
+        .map_err(|e| format!("Invalid party action payload: {e}"))?;
+    let (reducer, args) = action.reducer_call(leader_id);
     state
         .db
-        .call(&payload.reducer, &args)
+        .call(reducer, &args)
         .await
         .map_err(|e| e.to_string())?;
     state
@@ -206,12 +174,13 @@ struct CurrentTime {
     official_minutes: u64,
 }
 
-async fn current_time(State(state): State<AppState>, session: Session) -> Json<CurrentTime> {
+async fn current_time(State(state): State<AppState>, session: Session) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Json(CurrentTime {
             character_minutes: 0,
             official_minutes: 0,
-        });
+        })
+        .into_response();
     };
     let character_time_sql =
         format!("SELECT * FROM character_time WHERE character_id = {character_id}");
@@ -221,8 +190,28 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Json<C
             .db
             .query::<WorldClock>("SELECT * FROM world_clock WHERE id = 0"),
     );
-    let character_time = character_time.unwrap_or_default();
-    let world_clock = world_clock.unwrap_or_default();
+    let character_time = match character_time {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to load character time");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic time is unavailable",
+            )
+                .into_response();
+        }
+    };
+    let world_clock = match world_clock {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to load world clock");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic time is unavailable",
+            )
+                .into_response();
+        }
+    };
     let official_minutes = world_clock.first().map_or(0, |clock| {
         let now_micros = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -235,10 +224,14 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Json<C
         character_minutes: character_time.first().map_or(0, |time| time.minutes),
         official_minutes,
     })
+    .into_response()
 }
 
 async fn set_theme(Path(name): Path<String>) -> Response {
-    set_theme_cookie(&name, "/")
+    match name.parse::<Theme>() {
+        Ok(theme) => set_theme_cookie(theme, "/"),
+        Err(()) => (axum::http::StatusCode::BAD_REQUEST, "Unknown theme").into_response(),
+    }
 }
 
 /// Strategic screens have no anonymous mode. Character creation and selection

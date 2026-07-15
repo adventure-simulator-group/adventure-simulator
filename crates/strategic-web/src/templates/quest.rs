@@ -3,7 +3,7 @@
 use maud::{Markup, html};
 
 use super::{empty_state, sidebar_section};
-use crate::routes::settlements::TravelDestination;
+use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, Quest,
 };

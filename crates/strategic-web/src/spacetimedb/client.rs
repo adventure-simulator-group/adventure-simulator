@@ -227,10 +227,10 @@ impl SpacetimeClient {
                 .collect();
 
             // Convert array rows to objects using column names
-            let rows: Vec<T> = first
+            let rows: Result<Vec<T>> = first
                 .rows
                 .iter()
-                .filter_map(|row| {
+                .map(|row| {
                     if let Value::Array(values) = row {
                         let mut obj = serde_json::Map::new();
                         for (i, value) in values.iter().enumerate() {
@@ -239,16 +239,31 @@ impl SpacetimeClient {
                                 obj.insert(name.to_string(), converted);
                             }
                         }
-                        serde_json::from_value(Value::Object(obj)).ok()
+                        serde_json::from_value(Value::Object(obj)).map_err(Into::into)
                     } else {
-                        None
+                        Err(SpacetimeError::Spacetime(
+                            "SpacetimeDB returned a non-array SQL row".into(),
+                        ))
                     }
                 })
                 .collect();
-            Ok(rows)
+            rows
         } else {
             Ok(vec![])
         }
+    }
+
+    /// Run a query that should return at most one row without conflating an
+    /// empty result with a transport or decoding failure.
+    pub async fn query_one<T: DeserializeOwned>(&self, sql: &str) -> Result<Option<T>> {
+        let mut rows = self.query(sql).await?;
+        if rows.len() > 1 {
+            return Err(SpacetimeError::Spacetime(format!(
+                "query expected at most one row but returned {}: {sql}",
+                rows.len()
+            )));
+        }
+        Ok(rows.pop())
     }
 
     /// Call a reducer with JSON arguments

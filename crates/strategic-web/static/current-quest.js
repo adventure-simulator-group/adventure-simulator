@@ -23,7 +23,7 @@
       abandon.hidden = !quest.can_abandon;
       summary.hidden = false;
     })
-    .catch(() => {});
+    .catch((error) => window.reportStrategicError(error, "current quest"));
   window.queueStrategicInitialLoad(refreshCurrentQuest);
   document.addEventListener("strategic-live-update", refreshCurrentQuest);
 })();

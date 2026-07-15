@@ -3,5 +3,5 @@
 mod client;
 mod types;
 
-pub use client::SpacetimeClient;
+pub use client::{Result, SpacetimeClient};
 pub use types::*;

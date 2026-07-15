@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (352)
+## Files (358)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -252,13 +252,17 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/live.rs` — Rust source module for this component.
 - `crates/strategic-web/src/main.rs` — Rust source module for this component.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/data.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/inventory_forms.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/local_chat.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/missions.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/mod.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/parties.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/party_actions.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/session.rs` — Rust source module for this component.
 - `crates/strategic-web/src/spacetimedb/client.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/mod.rs` — Strategic web SpacetimeDB integration module.
@@ -276,6 +280,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/components.css` — Browser UI styling.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
+- `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/dark-arcanum.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/fraktur-nocturne.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/fraktur-texturina.css` — Browser UI styling.
@@ -283,6 +288,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/themes/northern-frost.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/renaissance-gold.css` — Browser UI styling.
 - `crates/strategic-web/static/css/themes/verdant-chronicle.css` — Browser UI styling.
+- `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/icons/character/inventory.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/character/repair.png` — Binary game or UI asset.

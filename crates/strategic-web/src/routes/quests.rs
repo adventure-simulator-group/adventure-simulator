@@ -10,13 +10,14 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::{
-    AppState, PartyActionOutcome, execute_or_request_party_action,
-    settlements::{TravelDestination, get_active_party_members, settlement_destination},
+    AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
+    settlements::get_active_party_members,
+    travel::{TravelDestination, settlement_destination},
 };
 use crate::session::Session;
 use crate::spacetimedb::{
     BattleLootItem, BattleResult, Character, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Quest, Settlement,
+    PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
 };
 use crate::templates::quest::{
     quest_location_base_page, quest_location_map_page, quest_location_page,
@@ -92,9 +93,9 @@ async fn current_quest(
     Json(quest.map(|quest| CurrentQuestSummary {
         id: quest.id,
         title: quest.title,
-        can_abandon: quest.status.eq_ignore_ascii_case("accepted")
+        can_abandon: quest.status == QuestStatus::Accepted
             && character.current_quest_location_id.is_none(),
-        resolved: quest.status.eq_ignore_ascii_case("completed"),
+        resolved: quest.status == QuestStatus::Completed,
     }))
 }
 
@@ -153,10 +154,9 @@ async fn accept_quest_for_character(
     execute_or_request_party_action(
         state,
         character_id,
-        "accept_quest",
-        &format!("Accept quest {quest_id}"),
-        "accept_quest",
-        vec![json!(character_id), json!(quest_id)],
+        PartyAction::AcceptQuest {
+            quest_id: quest_id.into(),
+        },
     )
     .await
 }
@@ -221,10 +221,9 @@ async fn abandon_quest(
     let _ = execute_or_request_party_action(
         &state,
         character_id,
-        "abandon_quest",
-        &format!("Abandon quest {id}"),
-        "abandon_quest",
-        vec![json!(character_id), json!(id.clone())],
+        PartyAction::AbandonQuest {
+            quest_id: id.clone(),
+        },
     )
     .await;
 
@@ -245,10 +244,9 @@ async fn travel_to_quest(
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
-        "travel",
-        &format!("Travel to quest {id}"),
-        "travel_to_quest",
-        vec![json!(character_id), json!(id.clone())],
+        PartyAction::TravelToQuest {
+            quest_id: id.clone(),
+        },
     )
     .await;
     if let Err(ref error) = outcome {
@@ -398,7 +396,7 @@ async fn render_quest_location(
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
-    if quest.status.eq_ignore_ascii_case("completed") {
+    if quest.status == QuestStatus::Completed {
         for destination in &mut nearby {
             destination.turn_in_ready = destination.id == quest.settlement_id;
         }
@@ -407,7 +405,7 @@ async fn render_quest_location(
     nearby.truncate(5);
     let can_control = character.as_ref().zip(party.as_ref()).is_some();
     let can_fight = can_control
-        && quest.status.eq_ignore_ascii_case("accepted")
+        && quest.status == QuestStatus::Accepted
         && party
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
@@ -537,10 +535,9 @@ async fn autoresolve_quest(
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
-        "autoresolve",
-        &format!("Autoresolve quest {id}"),
-        "autoresolve_quest",
-        vec![json!(character_id), json!(id.clone())],
+        PartyAction::AutoresolveQuest {
+            quest_id: id.clone(),
+        },
     )
     .await;
     if let Err(ref error) = outcome {
