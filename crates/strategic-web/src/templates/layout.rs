@@ -112,7 +112,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: b
                 script src="/static/live-state.js?v=sse-1" defer {}
                 script src="/static/party-trade.js?v=inventory-target-controls-1" {}
                 script src="/static/party-notifications.js?v=party-requests-1" defer {}
-                script src="/static/party-recruitment.js?v=party-checks-leftmost-1" defer {}
+                script src="/static/party-recruitment.js?v=party-recruitment-live-1" defer {}
                 script src="/static/service-quests.js?v=quest-party-recruitment-3" defer {}
                 script src="/static/chat-resize.js?v=chat-resize-1" defer {}
                 script src="/static/local-chat.js?v=local-chat-1" defer {}

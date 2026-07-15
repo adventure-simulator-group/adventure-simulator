@@ -20,8 +20,9 @@ server-sent events.
 The SSE stream patches a stable, server-rendered revision marker. Strategic UI
 components subscribe to that marker and refresh only their relevant state. This
 currently drives canonical-location navigation, party requests and
-notifications, the active quest indicator, incoming local-chat portraits, and
-local conversation history. New strategic live UI should extend this stream
+notifications, recruitment roles and applicants, the active quest indicator,
+incoming local-chat portraits, and local conversation history. New strategic
+live UI should extend this stream
 with stable Maud fragment roots rather than add polling timers or expose module
 credentials to browsers.
 
