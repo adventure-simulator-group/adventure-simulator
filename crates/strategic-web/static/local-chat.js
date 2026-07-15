@@ -95,7 +95,7 @@
     const body = input.value.trim();
     if (!body) return;
     const form = new URLSearchParams({ body });
-    const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
+    const response = await window.strategicFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
     if (response.ok) { input.value = ""; await refresh(); }
   };
   send?.addEventListener("click", submit);

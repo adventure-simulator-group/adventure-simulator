@@ -9,7 +9,6 @@ use axum::{
 
 use super::AppState;
 use crate::session::Session;
-use crate::spacetimedb::Character;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
@@ -19,15 +18,17 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(character) = characters.first() else {
-        return Redirect::to("/characters").into_response();
+    let character = match super::data::character(&state, character_id).await {
+        Ok(Some(character)) => character,
+        Ok(None) => return Redirect::to("/characters").into_response(),
+        Err(error) => {
+            tracing::error!(%error, "failed to load home character");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
     };
     match (
         &character.current_settlement_id,

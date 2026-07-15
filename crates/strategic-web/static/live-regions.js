@@ -78,7 +78,7 @@
 
   const scheduleRefresh = () => {
     window.clearTimeout(refreshTimer);
-    refreshTimer = window.setTimeout(() => refresh().catch(() => {}), 40);
+    refreshTimer = window.setTimeout(() => refresh().catch((error) => window.reportStrategicError(error, "live regions")), 40);
   };
 
   document.addEventListener("strategic-live-update", scheduleRefresh);

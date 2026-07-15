@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{AppState, approve_party_action, execute_or_request_party_action};
+use super::{AppState, PartyAction, approve_party_action, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
@@ -138,16 +138,12 @@ async fn update_party_check_targets(
         let _ = execute_or_request_party_action(
             &state,
             actor_id,
-            "party_checks",
-            "Change party skill targets",
-            "update_party_check_targets",
-            vec![
-                json!(actor_id),
-                json!(form.medicine),
-                json!(form.surgery),
-                json!(form.charisma),
-                json!(form.faith),
-            ],
+            PartyAction::UpdatePartyCheckTargets {
+                medicine: form.medicine,
+                surgery: form.surgery,
+                charisma: form.charisma,
+                faith: form.faith,
+            },
         )
         .await;
     }
@@ -166,17 +162,13 @@ async fn create_recruitment_role(
     let outcome = execute_or_request_party_action(
         &state,
         actor_id,
-        "add_role",
-        &format!("Add {} {} slot(s)", form.quantity, form.name),
-        "create_recruitment_role",
-        vec![
-            json!(actor_id),
-            json!(form.name),
-            json!(form.quantity),
-            json!(requirements),
-            json!(form.weapon_precision()),
-            json!(form.save_role),
-        ],
+        PartyAction::CreateRecruitmentRole {
+            name: form.name.clone(),
+            quantity: form.quantity,
+            requirements,
+            weapon_precision: form.weapon_precision(),
+            save_role: form.save_role,
+        },
     )
     .await;
     if let Err(error) = outcome {
@@ -218,17 +210,13 @@ async fn update_recruitment_role(
     let _ = execute_or_request_party_action(
         &state,
         actor_id,
-        &format!("edit_role:{id}"),
-        &format!("Edit recruitment role {}", form.name),
-        "update_recruitment_role",
-        vec![
-            json!(actor_id),
-            json!(id),
-            json!(form.name),
-            json!(form.quantity),
-            json!(form.requirements()),
-            json!(form.weapon_precision()),
-        ],
+        PartyAction::UpdateRecruitmentRole {
+            role_id: id,
+            name: form.name.clone(),
+            quantity: form.quantity,
+            requirements: form.requirements(),
+            weapon_precision: form.weapon_precision(),
+        },
     )
     .await;
     Redirect::to("/")
@@ -245,10 +233,7 @@ async fn delete_recruitment_role(
     let _ = execute_or_request_party_action(
         &state,
         actor_id,
-        &format!("delete_role:{id}"),
-        "Delete a recruitment role",
-        "delete_recruitment_role",
-        vec![json!(actor_id), json!(id)],
+        PartyAction::DeleteRecruitmentRole { role_id: id },
     )
     .await;
     Redirect::to("/")
@@ -605,10 +590,7 @@ async fn accept_join_request(
     let _ = execute_or_request_party_action(
         &state,
         actor_id,
-        "accept_join",
-        &format!("Accept join request {request_id}"),
-        "accept_party_join_request",
-        vec![json!(actor_id), json!(request_id)],
+        PartyAction::AcceptJoinRequest { request_id },
     )
     .await;
     Redirect::to(&party_location_url(&state, &id).await)
@@ -625,10 +607,7 @@ async fn reject_join_request(
     let _ = execute_or_request_party_action(
         &state,
         actor_id,
-        "reject_join",
-        &format!("Reject join request {request_id}"),
-        "reject_party_join_request",
-        vec![json!(actor_id), json!(request_id)],
+        PartyAction::RejectJoinRequest { request_id },
     )
     .await;
     Redirect::to(&party_location_url(&state, &id).await)
@@ -833,10 +812,7 @@ async fn disband_party(
         let _ = execute_or_request_party_action(
             &state,
             actor_id,
-            "disband_party",
-            "Disband the party",
-            "disband_party",
-            vec![json!(actor_id), json!(id)],
+            PartyAction::DisbandParty { party_id: id },
         )
         .await;
     }
@@ -845,12 +821,11 @@ async fn disband_party(
 }
 
 async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    characters.into_iter().next()
+    match super::data::character(state, character_id).await {
+        Ok(character) => character,
+        Err(error) => {
+            tracing::error!(%error, "failed to load character");
+            None
+        }
+    }
 }

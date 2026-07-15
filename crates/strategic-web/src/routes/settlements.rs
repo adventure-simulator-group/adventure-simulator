@@ -9,19 +9,22 @@ use axum::{
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use super::AppState;
+use super::inventory_forms::{
+    DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
+};
+use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
     ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
-    Quest, QuestIssuer, RecruitmentRequirements, Settlement, TravelEdge,
+    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
-    LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
-    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
+    LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
+    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
     party_stats_page, religion_page, rest_result_page, settlement_map_page,
     settlement_overview_page,
 };
@@ -195,7 +198,7 @@ async fn settlement_map(
     };
     if let Some(quest) = active_quest
         .as_ref()
-        .filter(|quest| quest.status.eq_ignore_ascii_case("accepted"))
+        .filter(|quest| quest.status == QuestStatus::Accepted)
     {
         let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
         destinations.push(TravelDestination {
@@ -215,7 +218,7 @@ async fn settlement_map(
     }
     if let Some(quest) = active_quest
         .as_ref()
-        .filter(|quest| quest.status.eq_ignore_ascii_case("completed"))
+        .filter(|quest| quest.status == QuestStatus::Completed)
     {
         for destination in &mut destinations {
             destination.turn_in_ready = destination.id == quest.settlement_id;
@@ -282,6 +285,8 @@ struct ServiceQuestRole {
     requirements_summary: String,
     match_level: &'static str,
     match_summary: String,
+    left_html: String,
+    right_html: String,
 }
 
 async fn service_quest_offers(
@@ -435,6 +440,17 @@ async fn service_quest_offers(
                             let requirements = role_requirement_labels(role);
                             let (match_level, match_summary) =
                                 party_role_match(&viewer_capabilities, role);
+                            let (left_html, right_html) = crate::templates::recruitment::service_role_inspection(
+                                &role.name,
+                                &requirements,
+                                &party.name,
+                                &leader.name,
+                                remaining,
+                                match_level,
+                                &match_summary,
+                                &format!("/party-roles/{}/join", role.id),
+                                can_accept,
+                            );
                             Some(ServiceQuestRole {
                                 id: role.id,
                                 name: role.name.clone(),
@@ -447,6 +463,8 @@ async fn service_quest_offers(
                                 requirements,
                                 match_level,
                                 match_summary,
+                                left_html,
+                                right_html,
                             })
                         })
                         .collect::<Vec<_>>();
@@ -457,9 +475,9 @@ async fn service_quest_offers(
                         roles,
                     })
                 });
-                let state = if quest.status.eq_ignore_ascii_case("available") {
+                let state = if quest.status == QuestStatus::Available {
                     "available"
-                } else if is_current && quest.status.eq_ignore_ascii_case("completed") {
+                } else if is_current && quest.status == QuestStatus::Completed {
                     "ready"
                 } else if is_current {
                     "underway"
@@ -667,165 +685,51 @@ fn matched_role_requirements(
     matched
 }
 
-const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
-
-#[derive(Clone)]
-pub struct TravelDestination {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub summary: Option<String>,
-    pub travel_action: String,
-    pub distance_m: u64,
-    pub journey_minutes: u64,
-    pub quest_in_progress: bool,
-    pub turn_in_ready: bool,
+enum LocationLookup {
+    Found(LocationView),
+    NotFound,
+    Unavailable,
 }
 
-pub(crate) fn settlement_destination(
-    settlement: Settlement,
-    distance_m: u64,
-    journey_minutes: u64,
-) -> TravelDestination {
-    let summary = (settlement.population_estimate > 0).then(|| {
-        format!(
-            "Population approximately {}",
-            settlement.population_estimate
-        )
-    });
-    TravelDestination {
-        id: settlement.id.clone(),
-        name: settlement.name.clone(),
-        description: crate::templates::settlement::settlement_description(
-            settlement.population_level,
-        )
-        .to_string(),
-        summary,
-        travel_action: format!("/settlements/{}/travel", settlement.id),
-        distance_m,
-        journey_minutes,
-        quest_in_progress: false,
-        turn_in_ready: false,
-    }
-}
-
-fn connected_destinations(
-    origin: &Settlement,
-    settlements: &[Settlement],
-    edges: &[TravelEdge],
-) -> Vec<TravelDestination> {
-    let Some(origin_node) = origin.source_node_id else {
-        return settlements
-            .iter()
-            .filter(|settlement| settlement.id != origin.id)
-            .cloned()
-            .map(|settlement| {
-                let distance_km = ((origin.coord_x - settlement.coord_x).powi(2)
-                    + (origin.coord_y - settlement.coord_y).powi(2))
-                .sqrt()
-                .ceil() as u64;
-                let distance_m = distance_km.saturating_mul(1_000);
-                settlement_destination(settlement, distance_m, journey_minutes(distance_m))
-            })
-            .collect();
+async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLookup {
+    let Ok(kind) = kind.parse::<LocationKind>() else {
+        return LocationLookup::NotFound;
     };
-
-    let settlement_nodes: HashSet<u64> = settlements
-        .iter()
-        .filter_map(|settlement| settlement.source_node_id)
-        .collect();
-    let settlements_by_node: HashMap<u64, &Settlement> = settlements
-        .iter()
-        .filter_map(|settlement| settlement.source_node_id.map(|node| (node, settlement)))
-        .collect();
-    let mut adjacency: HashMap<u64, Vec<(u64, u32)>> = HashMap::new();
-    for edge in edges
-        .iter()
-        .filter(|edge| matches!(edge.kind.as_str(), "land" | "ferry"))
-    {
-        adjacency
-            .entry(edge.from_node_id)
-            .or_default()
-            .push((edge.to_node_id, edge.length_m));
-        adjacency
-            .entry(edge.to_node_id)
-            .or_default()
-            .push((edge.from_node_id, edge.length_m));
-    }
-    let mut distances = HashMap::from([(origin_node, 0_u64)]);
-    let mut pending = BinaryHeap::from([std::cmp::Reverse((0_u64, origin_node))]);
-    let mut destinations = Vec::new();
-    while let Some(std::cmp::Reverse((distance_m, node))) = pending.pop() {
-        if distances
-            .get(&node)
-            .is_some_and(|known| *known != distance_m)
-        {
-            continue;
-        }
-        if node != origin_node && settlement_nodes.contains(&node) {
-            if let Some(settlement) = settlements_by_node.get(&node) {
-                destinations.push(settlement_destination(
-                    (*settlement).clone(),
-                    distance_m,
-                    journey_minutes(distance_m),
-                ));
-            }
-            continue;
-        }
-        for (neighbor, edge_length_m) in adjacency.get(&node).into_iter().flatten() {
-            let next_distance = distance_m.saturating_add(u64::from(*edge_length_m));
-            if distances
-                .get(neighbor)
-                .is_none_or(|known| next_distance < *known)
-            {
-                distances.insert(*neighbor, next_distance);
-                pending.push(std::cmp::Reverse((next_distance, *neighbor)));
-            }
-        }
-    }
-    destinations.sort_by_key(|destination| destination.distance_m);
-    destinations
-}
-
-fn journey_minutes(distance_m: u64) -> u64 {
-    distance_m
-        .saturating_mul(60)
-        .div_ceil(WALKING_SPEED_KM_PER_HOUR * 1_000)
-        .max(1)
-}
-
-async fn resolve_location(state: &AppState, kind: &str, id: &str) -> Option<LocationView> {
     let name = match kind {
-        "settlement" => state
+        LocationKind::Settlement => state
             .db
-            .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+            .query_one::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
             .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-            .map(|settlement| settlement.name),
-        "quest" => state
+            .map(|row| row.map(|settlement| settlement.name)),
+        LocationKind::Quest => state
             .db
-            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+            .query_one::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
             .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-            .map(|quest| quest.title),
-        _ => None,
-    }?;
-    Some(LocationView {
-        kind: kind.to_string(),
+            .map(|row| row.map(|quest| quest.title)),
+    };
+    let name = match name {
+        Ok(Some(name)) => name,
+        Ok(None) => return LocationLookup::NotFound,
+        Err(error) => {
+            tracing::error!(%error, "failed to resolve location");
+            return LocationLookup::Unavailable;
+        }
+    };
+    LocationLookup::Found(LocationView {
+        kind,
         id: id.to_string(),
         name,
     })
 }
 
 fn character_is_at_location(character: &Character, location: &LocationView) -> bool {
-    match location.kind.as_str() {
-        "settlement" => character.current_settlement_id.as_deref() == Some(location.id.as_str()),
-        "quest" => character.current_quest_location_id.as_deref() == Some(location.id.as_str()),
-        _ => false,
+    match location.kind {
+        LocationKind::Settlement => {
+            character.current_settlement_id.as_deref() == Some(location.id.as_str())
+        }
+        LocationKind::Quest => {
+            character.current_quest_location_id.as_deref() == Some(location.id.as_str())
+        }
     }
 }
 
@@ -843,8 +747,12 @@ async fn party_personal(
             tracing::error!("Failed to liquidate party inventory: {error:?}");
         }
     }
-    let Some(location) = resolve_location(&state, &kind, &id).await else {
-        return Html("<h1>Location not found</h1>".to_string());
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".to_string());
+        }
     };
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -956,8 +864,12 @@ async fn party_member(
     Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
-    let Some(location) = resolve_location(&state, &kind, &id).await else {
-        return Html("<h1>Location not found</h1>".to_string());
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".to_string());
+        }
     };
 
     let Some((active_character, active_inventory)) =
@@ -1068,8 +980,12 @@ async fn party_pool_inventory(
     Path((kind, id)): Path<(String, String)>,
     session: Session,
 ) -> Html<String> {
-    let Some(location) = resolve_location(&state, &kind, &id).await else {
-        return Html("<h1>Location not found</h1>".into());
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".into());
+        }
     };
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -1136,13 +1052,6 @@ async fn party_pool_inventory(
 }
 
 #[derive(Deserialize)]
-struct PartyPoolTransferForm {
-    item_id: String,
-    #[serde(default)]
-    quantity: String,
-}
-
-#[derive(Deserialize)]
 struct InventoryTargetForm {
     item_id: String,
     quantity: u32,
@@ -1168,10 +1077,10 @@ async fn set_inventory_target(
         super::execute_or_request_party_action(
             &state,
             character_id,
-            "party_inventory",
-            "Manage party inventory targets",
-            "set_inventory_quantity_target",
-            args,
+            super::PartyAction::SetInventoryQuantityTarget {
+                item_id: form.item_id,
+                quantity: form.quantity,
+            },
         )
         .await
         .map(|_| ())
@@ -1232,11 +1141,16 @@ async fn withdraw_party_inventory(
 }
 
 fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
-    form.item_id
-        .split(',')
-        .zip(form.quantity.split(','))
-        .filter_map(|(id, quantity)| Some((id.parse().ok()?, quantity.parse().ok()?)))
-        .collect()
+    match form.entries() {
+        Ok(entries) => entries
+            .into_iter()
+            .map(|entry| (entry.id, entry.quantity))
+            .collect(),
+        Err(error) => {
+            tracing::warn!(error, "invalid party inventory transfer form");
+            Vec::new()
+        }
+    }
 }
 
 async fn liquidate_party_assets(
@@ -1281,10 +1195,9 @@ async fn remove_party_member(
             super::execute_or_request_party_action(
                 &state,
                 actor_character_id,
-                "kick",
-                &format!("Remove party member {member_character_id}"),
-                "remove_party_member",
-                vec![json!(actor_character_id), json!(member_character_id)],
+                super::PartyAction::RemovePartyMember {
+                    character_id: member_character_id,
+                },
             )
             .await
             .map(|_| ())
@@ -1301,8 +1214,12 @@ async fn party_stats(
     Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
-    let Some(location) = resolve_location(&state, &kind, &id).await else {
-        return Html("<h1>Location not found</h1>".to_string());
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".to_string());
+        }
     };
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -1400,20 +1317,6 @@ struct PartyTransferForm {
     quantity: u32,
 }
 
-#[derive(Deserialize)]
-struct PartyOfferForm {
-    from_character_ids: String,
-    to_character_ids: String,
-    inventory_item_ids: String,
-    quantities: String,
-}
-
-#[derive(Deserialize)]
-struct DiscardInventoryForm {
-    inventory_item_ids: String,
-    quantities: String,
-}
-
 async fn discard_inventory_items(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
@@ -1421,17 +1324,11 @@ async fn discard_inventory_items(
     Form(form): Form<DiscardInventoryForm>,
 ) -> Redirect {
     if session.character_id_u64() == Some(character_id) {
-        let item_ids = form
-            .inventory_item_ids
-            .split(',')
-            .map(str::parse::<u64>)
-            .collect::<Result<Vec<_>, _>>();
-        let quantities = form
-            .quantities
-            .split(',')
-            .map(str::parse::<u32>)
-            .collect::<Result<Vec<_>, _>>();
-        if let (Ok(item_ids), Ok(quantities)) = (item_ids, quantities) {
+        if let Ok(entries) = form.entries() {
+            let (item_ids, quantities): (Vec<_>, Vec<_>) = entries
+                .into_iter()
+                .map(|entry| (entry.id, entry.quantity))
+                .unzip();
             if let Err(error) = state
                 .db
                 .call(
@@ -1456,23 +1353,17 @@ async fn finalize_party_offer(
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
     if let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await {
-        let parse = |value: &str| {
-            value
-                .split(',')
-                .map(str::parse::<u64>)
-                .collect::<Result<Vec<_>, _>>()
-        };
-        let quantities = form
-            .quantities
-            .split(',')
-            .map(str::parse::<u32>)
-            .collect::<Result<Vec<_>, _>>();
-        if let (Ok(from_ids), Ok(to_ids), Ok(item_ids), Ok(quantities)) = (
-            parse(&form.from_character_ids),
-            parse(&form.to_character_ids),
-            parse(&form.inventory_item_ids),
-            quantities,
-        ) {
+        if let Ok(entries) = form.entries() {
+            let from_ids = entries.iter().map(|entry| entry.from).collect::<Vec<_>>();
+            let to_ids = entries.iter().map(|entry| entry.to).collect::<Vec<_>>();
+            let item_ids = entries
+                .iter()
+                .map(|entry| entry.inventory_id)
+                .collect::<Vec<_>>();
+            let quantities = entries
+                .iter()
+                .map(|entry| entry.quantity)
+                .collect::<Vec<_>>();
             if from_ids
                 .iter()
                 .all(|id| *id == active.id || *id == character_id)
@@ -1552,20 +1443,6 @@ async fn merchants(
     merchant_shop(state, id, session, MerchantShop::General).await
 }
 
-#[derive(Deserialize)]
-struct MerchantOfferForm {
-    buy_item_ids: String,
-    buy_quantities: String,
-    #[serde(default)]
-    sell_inventory_ids: String,
-    #[serde(default)]
-    sell_quantities: String,
-    #[serde(default)]
-    return_to: String,
-    #[serde(default)]
-    inventory_scope: String,
-}
-
 async fn finalize_merchant_offer(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1573,28 +1450,15 @@ async fn finalize_merchant_offer(
     Form(form): Form<MerchantOfferForm>,
 ) -> Redirect {
     if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
-        let items = form
-            .buy_item_ids
-            .split(',')
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        let quantities = form
-            .buy_quantities
-            .split(',')
-            .filter_map(|value| value.parse::<u32>().ok())
-            .collect::<Vec<_>>();
-        if items.len() == quantities.len() {
-            let sell_ids = form
-                .sell_inventory_ids
-                .split(',')
-                .filter_map(|value| value.parse::<u64>().ok())
-                .collect::<Vec<_>>();
-            let sell_quantities = form
-                .sell_quantities
-                .split(',')
-                .filter_map(|value| value.parse::<u32>().ok())
-                .collect::<Vec<_>>();
+        if let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
+            let (items, quantities): (Vec<_>, Vec<_>) = buys
+                .into_iter()
+                .map(|entry| (entry.id, entry.quantity))
+                .unzip();
+            let (sell_ids, sell_quantities): (Vec<_>, Vec<_>) = sells
+                .into_iter()
+                .map(|entry| (entry.id, entry.quantity))
+                .unzip();
             if !items.is_empty() || !sell_ids.is_empty() {
                 let _ = state
                     .db
@@ -1856,10 +1720,9 @@ async fn travel(
     let outcome = super::execute_or_request_party_action(
         &state,
         character_id,
-        "travel",
-        &format!("Travel to settlement {id}"),
-        "travel_to_settlement",
-        vec![json!(character_id), json!(id.clone())],
+        super::PartyAction::TravelToSettlement {
+            settlement_id: id.clone(),
+        },
     )
     .await;
     match outcome {

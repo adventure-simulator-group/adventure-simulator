@@ -189,7 +189,7 @@
       const form = track.closest("[data-party-check-target-form]");
       if (!form) return;
       const body = new URLSearchParams(new FormData(form));
-      const response = await fetch(form.action, { method: "POST", body });
+      const response = await window.strategicFetch(form.action, { method: "POST", body });
       form.toggleAttribute("data-save-error", !response.ok);
     };
     const targetFromPointer = (track, event) => {
@@ -314,16 +314,16 @@
     if (!form) return;
     event.preventDefault();
     const body = new URLSearchParams(new FormData(form));
-    const response = await fetch(form.action, { method: "POST", body });
+    const response = await window.strategicFetch(form.action, { method: "POST", body });
     if (!response.ok) return;
     form.closest("dialog")?.close();
-    loadRecruitment().catch(() => {});
+    loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment"));
   });
 
-  window.queueStrategicInitialLoad(loadRecruitment).catch(() => {});
-  document.addEventListener("strategic-live-update", () => loadRecruitment().catch(() => {}));
+  window.queueStrategicInitialLoad(loadRecruitment).catch((error) => window.reportStrategicError(error, "party recruitment"));
+  document.addEventListener("strategic-live-update", () => loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment")));
   document.addEventListener("strategic-live-regions-refreshed", () => {
     recruitmentSignature = "";
-    loadRecruitment().catch(() => {});
+    loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment"));
   });
 })();

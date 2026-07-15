@@ -1,0 +1,104 @@
+﻿/* ============================================
+   ANIMATIONS
+   ============================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Staggered children animation */
+.panel:nth-child(1) { animation-delay: 0s; }
+.panel:nth-child(2) { animation-delay: 0.05s; }
+.panel:nth-child(3) { animation-delay: 0.1s; }
+.panel:nth-child(4) { animation-delay: 0.15s; }
+.panel:nth-child(5) { animation-delay: 0.2s; }
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-danger { color: var(--danger); }
+.font-display { font-family: var(--font-display), serif; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+.hidden { display: none; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-sm { gap: 0.5rem; }
+.gap-md { gap: 0.75rem; }
+.gap-lg { gap: 1.25rem; }
+.w-full { width: 100%; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 0.75rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 0.75rem; }
+.inventory-owner-tabs { display:flex; height:2.46rem; box-sizing:border-box; align-items:stretch; gap:.25rem; padding:0 .75rem; border-bottom:1px solid var(--border-light); }
+.inventory-owner-tab { flex:1; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--color-text-muted); padding:.45rem; cursor:pointer; }
+.inventory-owner-tab.active { color:var(--color-text); border-bottom-color:var(--color-accent); }
+.inventory-owner-panel [data-inventory-pane] .sidebar-header { display:none; }
+.left-sidebar:has(.trade-inventory-table) .sidebar-section,
+.right-sidebar:has(.trade-inventory-table) .sidebar-section { position:relative; }
+.inventory-row-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; opacity:0; transform:translateY(-50%); transition:opacity .12s; }
+.left-sidebar .inventory-row-actions { right:-4.55rem; }
+.right-sidebar .inventory-row-actions { left:-4.55rem; }
+.trade-inventory-row:hover .inventory-row-actions, .inventory-row-actions:focus-within { opacity:1; }
+.inventory-row-actions .trade-transfer { position:static; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
+.inventory-row-actions .trade-transfer::before, .inventory-footer-transfer::before { display:none; }
+.trade-inventory-row:hover .inventory-row-actions .trade-transfer, .trade-inventory-row:focus-within .inventory-row-actions .trade-transfer { opacity:1; transform:none; }
+.inventory-target-control { display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
+.inventory-target-denominator { display:inline-grid; grid-template-rows:.7rem 1.1rem .7rem; justify-items:center; align-items:center; min-width:1.4rem; }
+.inventory-target-step { opacity:0; border:0; background:transparent; color:var(--color-accent); line-height:.65rem; padding:0 .25rem; cursor:pointer; transition:opacity .12s; }
+.inventory-count:hover .inventory-target-step:not([hidden]) { opacity:1; }
+.inventory-target-value { grid-row:2; }
+.inventory-transfer-glyph { display:inline-flex; align-items:center; }
+.inventory-transfer-glyph i { display:block; width:.48rem; height:.48rem; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); margin-left:-.16rem; }
+.inventory-transfer-glyph i:first-child { margin-left:0; }
+.trade-transfer-left .inventory-transfer-glyph { transform:rotate(180deg); }
+.trade-inventory-table thead tr { position:relative; }
+.inventory-footer-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; padding:0; transform:translateY(-50%); }
+.left-sidebar .inventory-footer-actions { right:-4.55rem; }
+.right-sidebar .inventory-footer-actions { left:-4.55rem; }
+.inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
+.inventory-footer-transfer:first-child { grid-column:2; }
+.right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
+.right-sidebar .inventory-row-actions [data-transfer-mode="all"],
+.right-sidebar .inventory-footer-actions [data-transfer-mode="all"] { order:1; }
+.right-sidebar .inventory-row-actions [data-transfer-mode="target"],
+.right-sidebar .inventory-footer-actions [data-transfer-mode="target"] { order:2; }
+.right-sidebar .inventory-row-actions [data-transfer-mode="one"] { order:3; }
+
+.party-portrait-overlay > .party-aggregate-checks {
+  position:static;
+  order:-2;
+  flex:0 0 5.25rem;
+  align-self:center;
+  margin-right:-0.35rem;
+  filter:drop-shadow(0 1px 2px rgb(0 0 0 / 85%));
+}

@@ -28,7 +28,7 @@ function changeInventoryTarget(control, change) {
   const down = control.querySelector('[data-target-step="-1"]');
   if (down) down.hidden = quantity === 0;
 
-  fetch("/api/inventory-target", {
+  window.strategicFetch("/api/inventory-target", {
     method: "POST",
     body: new URLSearchParams({
       item_id: control.dataset.itemId,

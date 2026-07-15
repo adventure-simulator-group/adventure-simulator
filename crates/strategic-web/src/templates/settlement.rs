@@ -5,12 +5,13 @@
 //! and the active player's party on the right.
 
 use maud::{Markup, html};
+use std::{fmt, str::FromStr};
 
 use super::{
     empty_state, population_description, quest_location_layout_with_session,
     settlement_layout_with_session, sidebar_section,
 };
-use crate::routes::settlements::TravelDestination;
+use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party,
@@ -19,9 +20,41 @@ use crate::spacetimedb::{
 
 #[derive(Clone, Debug)]
 pub struct LocationView {
-    pub kind: String,
+    pub kind: LocationKind,
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationKind {
+    Settlement,
+    Quest,
+}
+
+impl LocationKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Settlement => "settlement",
+            Self::Quest => "quest",
+        }
+    }
+}
+
+impl fmt::Display for LocationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for LocationKind {
+    type Err = ();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "settlement" => Ok(Self::Settlement),
+            "quest" => Ok(Self::Quest),
+            _ => Err(()),
+        }
+    }
 }
 
 impl LocationView {
@@ -36,7 +69,7 @@ impl LocationView {
         logged_in_as: Option<&str>,
         theme: &str,
     ) -> Markup {
-        if self.kind == "settlement" {
+        if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
                 title,
                 &self.name,
@@ -1700,6 +1733,13 @@ fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
 }
 #[cfg(test)]
 mod tests {
+    use super::LocationKind;
+
+    #[test]
+    fn location_kind_rejects_unknown_path_segments() {
+        assert_eq!("quest".parse(), Ok(LocationKind::Quest));
+        assert!("merchant".parse::<LocationKind>().is_err());
+    }
     use super::*;
 
     #[test]

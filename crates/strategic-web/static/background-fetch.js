@@ -3,6 +3,24 @@
   let leavingPage = false;
   let initialQueue = Promise.resolve();
 
+  const reportError = (error, context) => {
+    if (error?.name === "AbortError") return;
+    console.error(`Strategic request failed (${context})`, error);
+    document.dispatchEvent(new CustomEvent("strategic-request-error", { detail: { error, context } }));
+  };
+  window.reportStrategicError = reportError;
+
+  window.strategicFetch = async (input, init = {}) => {
+    try {
+      const response = await fetch(input, init);
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response;
+    } catch (error) {
+      reportError(error, typeof input === "string" ? input : input.url);
+      throw error;
+    }
+  };
+
   const abortAll = () => {
     if (leavingPage) return;
     leavingPage = true;
@@ -20,14 +38,14 @@
       else init.signal.addEventListener("abort", () => controller.abort(), { once: true });
     }
 
-    return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+    return window.strategicFetch(input, { ...init, signal: controller.signal }).finally(() => {
       if (active.get(key) === controller) active.delete(key);
     });
   };
 
   window.queueStrategicInitialLoad = (task) => {
     const result = initialQueue.then(() => (leavingPage ? undefined : task()));
-    initialQueue = result.catch(() => {});
+    initialQueue = result.catch((error) => reportError(error, "initial load"));
     return result;
   };
 

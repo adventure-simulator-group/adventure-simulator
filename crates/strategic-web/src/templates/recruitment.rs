@@ -30,6 +30,45 @@ pub struct RecruitmentRolePanel {
     pub requests: Vec<RecruitmentApplicant>,
 }
 
+/// Server-rendered role inspection panels used by the service-quest fragment.
+/// Keeping this markup here prevents the browser from maintaining a second
+/// component renderer alongside Maud.
+pub fn service_role_inspection(
+    role_name: &str,
+    requirements: &[String],
+    party_name: &str,
+    leader_name: &str,
+    remaining: u32,
+    match_level: &str,
+    match_summary: &str,
+    join_path: &str,
+    can_accept: bool,
+) -> (String, String) {
+    let left = html! {
+        section class="role-inspection-panel role-inspection-content" data-service-role-inspection {
+            h3 class="sidebar-header" { (role_name) }
+            div class="role-detail-list" {
+                @if requirements.is_empty() { div class="role-detail-row" { "No minimum recommendations" } }
+                @for requirement in requirements { div class="role-detail-row" { (requirement) } }
+            }
+        }
+    };
+    let right = html! {
+        section class="role-inspection-panel role-inspection-content" data-service-role-inspection {
+            h3 class="sidebar-header" { (party_name) }
+            p { "Led by " (leader_name) }
+            p class=(format!("small-copy service-role-match service-role-match-{match_level}")) { (match_summary) }
+            p class="small-copy text-muted" { (remaining) " opening" @if remaining != 1 { "s" } }
+            form method="post" action=(join_path) {
+                button type="submit" class="btn btn-primary btn-block mt-1" disabled[!can_accept] {
+                    "Send request to join"
+                }
+            }
+        }
+    };
+    (left.into_string(), right.into_string())
+}
+
 pub fn recruitment_panel(
     party: &Party,
     _active_character_id: u64,

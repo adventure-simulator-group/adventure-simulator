@@ -28,21 +28,28 @@ struct CreateCharacterForm {
     name: String,
 }
 
-async fn list_characters(State(state): State<AppState>, session: Session) -> Html<String> {
-    let characters: Vec<Character> = state
-        .db
-        .query("SELECT * FROM character")
-        .await
-        .unwrap_or_default();
+async fn list_characters(State(state): State<AppState>, session: Session) -> Response {
+    let characters: Vec<Character> = match state.db.query("SELECT * FROM character").await {
+        Ok(characters) => characters,
+        Err(error) => {
+            tracing::error!(%error, "failed to list characters");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
+    };
 
     Html(
         characters_list_page(&characters, session.character_id_u64(), session.theme())
             .into_string(),
     )
+    .into_response()
 }
 
 async fn new_character_form(State(state): State<AppState>, session: Session) -> Html<String> {
-    let logged_in_as = get_character_name(&state, session.character_id()).await;
+    let logged_in_as = get_character_name(&state, session.character_id_u64()).await;
     Html(character_new_page(logged_in_as.as_deref(), session.theme()).into_string())
 }
 
@@ -50,7 +57,7 @@ async fn create_character(
     State(state): State<AppState>,
     Form(form): Form<CreateCharacterForm>,
 ) -> Response {
-    let id = chrono_id();
+    let id = super::data::new_id();
 
     if let Err(error) = state
         .db
@@ -76,24 +83,16 @@ async fn switch_character() -> Response {
     clear_character_cookie("/characters")
 }
 
-/// Generate a simple timestamp-based ID
-fn chrono_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
-}
-
 /// Helper to get character name for session display
-async fn get_character_name(state: &AppState, character_id: Option<&str>) -> Option<String> {
+async fn get_character_name(state: &AppState, character_id: Option<u64>) -> Option<String> {
     let Some(id) = character_id else {
         return None;
     };
-    let characters: Vec<Character> = state
-        .db
-        .query(&format!("SELECT * FROM character WHERE id = {}", id))
-        .await
-        .unwrap_or_default();
-    characters.first().map(|c| c.name.clone())
+    match super::data::character(state, id).await {
+        Ok(character) => character.map(|character| character.name),
+        Err(error) => {
+            tracing::error!(%error, "failed to load selected character");
+            None
+        }
+    }
 }

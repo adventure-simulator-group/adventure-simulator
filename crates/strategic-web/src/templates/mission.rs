@@ -3,7 +3,7 @@
 use maud::{Markup, html};
 
 use super::{mission_layout, panel, sidebar_section, status_badge};
-use crate::spacetimedb::TacticalServer;
+use crate::spacetimedb::{MissionStatus, TacticalServer};
 
 /// Mission status page updated by the shared strategic SSE stream.
 pub fn mission_status_page(
@@ -11,7 +11,7 @@ pub fn mission_status_page(
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
-    let status = effective_status(&server.status);
+    let status = server.status;
 
     let content = html! {
         aside class="left-sidebar" {
@@ -29,7 +29,7 @@ pub fn mission_status_page(
                     }
                     div {
                         span class="detail-label" { "Status" }
-                        div { (status_badge(&status)) }
+                        div { (status_badge(status.label())) }
                     }
                 }
             }))
@@ -41,17 +41,17 @@ pub fn mission_status_page(
             div # "mission-status"
                 data-live-refresh
                 "data-on:strategic-live-update"=(format!("@get('/missions/{}/status?fragment=true')", server.mission_id)) {
-                @match status.as_str() {
-                    "Ready" => { (ready_state(server)) }
-                    "Failed" => { (failed_state()) }
-                    "Ended" => { (ended_state()) }
-                    _ => { (pending_state(&server.mission_id)) }
+                @match status {
+                    MissionStatus::Ready => { (ready_state(server)) }
+                    MissionStatus::Failed => { (failed_state()) }
+                    MissionStatus::Ended => { (ended_state()) }
+                    MissionStatus::Pending => { (pending_state(&server.mission_id)) }
                 }
             }
         }
 
         aside class="right-sidebar" {
-            @if status == "Ready" {
+            @if status == MissionStatus::Ready {
                 (sidebar_section("Connection", html! {
                     (panel("", html! {
                         div class="flex flex-col gap-sm" {
@@ -82,21 +82,6 @@ pub fn mission_status_page(
     };
 
     mission_layout("Mission Status", content, logged_in_as, theme)
-}
-
-fn effective_status(db_status: &str) -> String {
-    let normalized = db_status.to_lowercase();
-    if normalized.contains("ready") {
-        return "Ready".to_string();
-    }
-    if normalized.contains("failed") {
-        return "Failed".to_string();
-    }
-    if normalized.contains("ended") {
-        return "Ended".to_string();
-    }
-
-    "Pending".to_string()
 }
 
 fn pending_state(mission_id: &str) -> Markup {
@@ -184,17 +169,17 @@ fn cancel_button(mission_id: &str) -> Markup {
 
 /// Fragment for Datastar polling updates
 pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
-    let status = effective_status(&server.status);
+    let status = server.status;
 
     html! {
         div # "mission-status"
             data-live-refresh
             "data-on:strategic-live-update"=(format!("@get('/missions/{}/status?fragment=true')", server.mission_id)) {
-            @match status.as_str() {
-                "Ready" => { (ready_state(server)) }
-                "Failed" => { (failed_state()) }
-                "Ended" => { (ended_state()) }
-                _ => { (pending_state(&server.mission_id)) }
+            @match status {
+                MissionStatus::Ready => { (ready_state(server)) }
+                MissionStatus::Failed => { (failed_state()) }
+                MissionStatus::Ended => { (ended_state()) }
+                MissionStatus::Pending => { (pending_state(&server.mission_id)) }
             }
         }
     }

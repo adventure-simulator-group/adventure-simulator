@@ -28,5 +28,5 @@
       render();
       window.setInterval(render, 1_000);
     })
-    .catch(() => {});
+    .catch((error) => window.reportStrategicError(error, "strategic time"));
 })();

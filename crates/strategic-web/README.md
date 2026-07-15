@@ -154,3 +154,20 @@ Forms use Datastar attributes for AJAX-style submissions:
 ```
 
 Server returns HTML fragments that get merged into the page.
+
+## Frontend type boundaries
+
+Route inputs are parsed into closed Rust types before strategic logic runs.
+Themes, character-session IDs, location kinds, quest and mission states, queued
+party actions, and inventory transfer entries do not remain arbitrary strings.
+Queued party actions serialize a tagged `PartyAction` enum; approval reconstructs
+the reducer call from that variant instead of replaying an arbitrary reducer name
+and positional JSON arguments.
+
+Cross-feature route support is organized under `routes/data.rs`,
+`routes/inventory_forms.rs`, `routes/party_actions.rs`, and `routes/travel.rs`.
+Shared component CSS, strategic-location CSS, and final utility overrides live
+in separate files while preserving their cascade order.
+Database transport or row-decoding failures must remain distinct from a
+successful empty query and should produce an explicit unavailable response or
+logged error state.
