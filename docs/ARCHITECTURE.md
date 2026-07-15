@@ -18,6 +18,8 @@ The database stores ONLY:
 
 When a mission ends, the tactical server sends the **results** (XP gained, items earned) to SpacetimeDB via the `commit_mission` reducer.
 
+Finalized loot is strategic state. The tactical server derives drops from the temporary enemies' equipped inventory and records only the resulting item identifiers and quantities. The strategic layer owns the post-battle result, shared party inventory, and per-character value stakes; no enemy, damage, position, or other tactical tick state is persisted.
+
 ## Architecture
 
 ```
@@ -49,19 +51,25 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 
 ## SpacetimeDB Module
 
-### Tables (9 total)
+### Strategic tables
 
 | Table | Description |
 |-------|-------------|
 | `player` | Maps SpacetimeDB identity to character |
 | `character` | Character progression (XP, level) - NO HP/damage! |
 | `inventory_item` | Persistent items |
-| `party` | Party groups |
-| `party_member` | Party membership |
+| `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
+| `party_member` | Party membership, including the recruitment role that filled a slot |
+| `party_recruitment_role` | Named party-independent role requirements and slot quantities |
+| `saved_recruitment_role` | Reusable named role requirement presets owned by a character |
+| `party_join_request` | Pending applications to a recruitment role |
+| `party_action_request` / `party_leader_vote` | Persistent member suggestions and dead-leader succession votes |
+| `local_chat_message` | Party-scoped NPC and face-to-face player conversation history |
+| `character_capability` | Cached automatic equipment, attribute, skill, and mobility tags |
 | `mission` | Active and completed missions |
 | `mission_commit` | Idempotent mission result tracking |
-| `quest_def` | Quest definitions |
-| `character_quest` | Per-character quest progress |
+| `quest` | Settlement-owned generated postings, off-road locations, and acceptance state |
+| `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
 ### Key Reducers
@@ -70,11 +78,21 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 |---------|-------------|
 | `upsert_character` | Create/update character (gives starter items) |
 | `add_item_to_inventory` | Add items |
-| `create_party` / `join_party` / `leave_party` | Party management |
+| `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party |
+| `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
+| `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
+| `update_party_check_targets` | Configure non-filtering Medicine, Surgery, Charisma, and Faith aggregate goals |
+| `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |
+| `request_general_party_join` | Submit a retained application through a shared zero-capacity Unassigned role |
+| `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
+| `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
+| `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
+| `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
+| `autoresolve_quest` | Apply a placeholder victory, rewards, and final persistent injury results |
 
 ## adventuresim-tactical-server
 
@@ -141,7 +159,7 @@ Open `crates/adventuresim-stdb-module/static/map.html` in a browser
 ### 5. Demo Flow
 
 1. Enter a Character ID and Name, click "Create Character"
-2. Enter a Party Name, click "Create Party"
+2. Use the plus button to the right of the filled party portraits to add recruitment roles and slots
 3. Click "Town A" or "Town B" to start a mission
 4. Click "Simulate Victory" or "Simulate Defeat"
 5. Observe XP and items update in real-time
@@ -182,3 +200,4 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Scene allowlist**: Never accept arbitrary paths from clients
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
+- **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.

@@ -14,6 +14,11 @@ pub(super) struct DefineWeaponArgs {
     pub reach: f32,
     pub balance: f32,
     pub precise: bool,
+    pub melee: bool,
+    pub ranged: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
 }
 
 impl From<DefineWeaponArgs> for super::Reducer {
@@ -26,6 +31,11 @@ impl From<DefineWeaponArgs> for super::Reducer {
             reach: args.reach,
             balance: args.balance,
             precise: args.precise,
+            melee: args.melee,
+            ranged: args.ranged,
+            blunt: args.blunt,
+            slash: args.slash,
+            pierce: args.pierce,
         }
     }
 }
@@ -55,6 +65,11 @@ pub trait define_weapon {
         reach: f32,
         balance: f32,
         precise: bool,
+        melee: bool,
+        ranged: bool,
+        blunt: bool,
+        slash: bool,
+        pierce: bool,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `define_weapon`.
     ///
@@ -65,8 +80,21 @@ pub trait define_weapon {
     /// to cancel the callback.
     fn on_define_weapon(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32, &f32, &bool)
-            + Send
+        callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+            ) + Send
             + 'static,
     ) -> DefineWeaponCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_weapon`],
@@ -84,6 +112,11 @@ impl define_weapon for super::RemoteReducers {
         reach: f32,
         balance: f32,
         precise: bool,
+        melee: bool,
+        ranged: bool,
+        blunt: bool,
+        slash: bool,
+        pierce: bool,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "define_weapon",
@@ -95,13 +128,31 @@ impl define_weapon for super::RemoteReducers {
                 reach,
                 balance,
                 precise,
+                melee,
+                ranged,
+                blunt,
+                slash,
+                pierce,
             },
         )
     }
     fn on_define_weapon(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32, &f32, &f32, &f32, &bool)
-            + Send
+        mut callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &f32,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+                &bool,
+            ) + Send
             + 'static,
     ) -> DefineWeaponCallbackId {
         DefineWeaponCallbackId(self.imp.on_reducer(
@@ -120,6 +171,11 @@ impl define_weapon for super::RemoteReducers {
                                     reach,
                                     balance,
                                     precise,
+                                    melee,
+                                    ranged,
+                                    blunt,
+                                    slash,
+                                    pierce,
                                 },
                             ..
                         },
@@ -137,6 +193,11 @@ impl define_weapon for super::RemoteReducers {
                     reach,
                     balance,
                     precise,
+                    melee,
+                    ranged,
+                    blunt,
+                    slash,
+                    pierce,
                 )
             }),
         ))

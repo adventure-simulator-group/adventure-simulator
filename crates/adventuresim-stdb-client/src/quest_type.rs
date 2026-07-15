@@ -20,6 +20,12 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub location_description: String,
+    pub location_scene_key: String,
+    pub location_coord_x: f64,
+    pub location_coord_y: f64,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
 }
 
 impl __sdk::InModule for Quest {

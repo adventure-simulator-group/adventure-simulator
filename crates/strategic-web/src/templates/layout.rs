@@ -1,6 +1,6 @@
 //! Base layout template - Three-column design with theme support
 
-use maud::{html, Markup, DOCTYPE};
+use maud::{DOCTYPE, Markup, html};
 
 const THEMES: &[(&str, &str)] = &[
     ("fraktur-texturina", "Fraktura"),
@@ -69,6 +69,26 @@ pub fn settlement_layout_with_session(
     )
 }
 
+/// Off-road location layout. It keeps the strategic identity, time, and party
+/// controls without exposing settlement-only services.
+pub fn quest_location_layout_with_session(
+    title: &str,
+    location_name: &str,
+    location_id: &str,
+    active_tab: &str,
+    content: Markup,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let theme = validated_theme(theme);
+    page_shell(
+        title,
+        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
+        content,
+        theme,
+    )
+}
+
 fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Markup {
     html! {
         (DOCTYPE)
@@ -82,12 +102,17 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str) -> Mark
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=theme-dropdown-1";
-                link rel="stylesheet" href="/static/css/components.css?v=semantic-stat-icons-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=quest-status-2";
+                link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
-                script src="/static/party-trade.js?v=unified-trade-1" {}
+                script src="/static/party-trade.js?v=inventory-target-controls-1" {}
+                script src="/static/party-notifications.js?v=party-requests-1" defer {}
+                script src="/static/party-recruitment.js?v=party-checks-leftmost-1" defer {}
+                script src="/static/service-quests.js?v=quest-party-recruitment-3" defer {}
+                script src="/static/chat-resize.js?v=chat-resize-1" defer {}
+                script src="/static/local-chat.js?v=local-chat-1" defer {}
             }
             body {
                 div class="app" {
@@ -119,8 +144,6 @@ fn top_bar(logged_in_as: Option<&str>, current_theme: &str) -> Markup {
             nav class="top-bar-center" {
                 a href="/" class="nav-tab" { "Home" }
                 a href="/settlements" class="nav-tab" { "Settlements" }
-                a href="/quests" class="nav-tab" { "Quests" }
-                a href="/parties" class="nav-tab" { "Parties" }
                 a href="/characters" class="nav-tab" { "Characters" }
             }
 
@@ -162,7 +185,7 @@ fn settlement_top_bar(
     current_theme: &str,
 ) -> Markup {
     let services = [
-        ("noticeboard", "Notice Board", "noticeboard"),
+        ("map", "Map", "map"),
         ("merchants", "General Market", "market"),
         ("weapons", "Weapons", "weapons"),
         ("armor", "Armour", "armor"),
@@ -174,27 +197,39 @@ fn settlement_top_bar(
     html! {
         header class="top-bar settlement-top-bar" {
             div class="top-bar-left settlement-location" {
-                a href=(format!("/settlements/{}", settlement_id)) class="settlement-name" {
+                div class="settlement-identity" {
+                a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
+                span class="settlement-turn-in-badge" data-settlement-turn-in-badge hidden
+                    title="A quest is ready to turn in here" aria-label="Quest ready to turn in" { "!" }
                 span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
                 }
+                }
+                (current_quest_summary())
             }
 
-            nav class="top-bar-center settlement-services" aria-label="Settlement services" {
+            nav class="top-bar-center settlement-services" aria-label="Settlement services"
+                data-settlement-id=(settlement_id) {
                 @for (path, label, icon) in services {
-                    @let href = if path.is_empty() {
-                        format!("/settlements/{}", settlement_id)
+                    @let href = if path == "map" {
+                        format!("/locations/settlement/{}/map", settlement_id)
+                    } else if path.is_empty() {
+                        format!("/locations/settlement/{}", settlement_id)
                     } else {
                         format!("/settlements/{}/{}", settlement_id, path)
                     };
                     a href=(href)
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                        data-service-id=(path)
                         aria-label=(label)
                         title=(label)
                     {
                         span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
+                        @if path != "map" {
+                            span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
+                        }
                     }
                 }
             }
@@ -210,6 +245,63 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=player-time-1" {}
+        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
+    }
+}
+
+fn quest_location_top_bar(
+    location_name: &str,
+    location_id: &str,
+    active_tab: &str,
+    logged_in_as: Option<&str>,
+    current_theme: &str,
+) -> Markup {
+    html! {
+        header class="top-bar settlement-top-bar quest-location-top-bar" {
+            div class="top-bar-left settlement-location" {
+                div class="settlement-identity" {
+                    a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
+                    span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
+                }
+                (current_quest_summary())
+            }
+            nav class="top-bar-center settlement-services" aria-label="Location views" {
+                a href=(format!("/locations/quest/{}/map", location_id))
+                    class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
+                    aria-label="Map" title="Map" {
+                    span class="service-tab-icon service-tab-icon-map" aria-hidden="true" {}
+                }
+                a href=(format!("/locations/quest/{}/loot", location_id))
+                    class=(if active_tab == "loot" { "nav-tab active" } else { "nav-tab" })
+                    aria-label="Loot" title="Loot" {
+                    span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
+                }
+            }
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as {
+                    span class="player-name" { "Party: " strong { (name) } }
+                    (switch_character_button())
+                } @else {
+                    span class="player-name player-name-none" { "No active party" }
+                }
+                (theme_switcher(current_theme))
+            }
+        }
+        script src="/static/strategic-time.js?v=player-time-1" {}
+        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
+    }
+}
+
+fn current_quest_summary() -> Markup {
+    html! {
+        div class="current-quest-summary" data-current-quest hidden {
+            span class="current-quest-status" data-current-quest-status
+                title="Quest in progress" aria-label="Quest in progress" { "!" }
+            span class="current-quest-name" data-current-quest-name {}
+            form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
+                button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
+            }
+        }
     }
 }
 
@@ -261,7 +353,6 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 /// Helper for settlement service menu
 pub fn service_menu(settlement_id: &str, active: &str) -> Markup {
     let items = [
-        ("noticeboard", "Notice Board"),
         ("merchants", "Merchants"),
         ("weapons", "Weapons"),
         ("armor", "Armour"),

@@ -45,6 +45,19 @@ average walking pace of 5 km/h. Confirming advances the character's strategic
 time by that duration and moves them to the destination. Route cost, party
 speed, terrain, rest stops, and encounters are subsequent layers on this
 graph.
+
+Quest travel is deliberately separate from this road graph. A generated quest
+stores an off-road point near its posting settlement. The trip to that point and
+trips from it to the five nearest settlements use straight-line distance, require
+no road connection, and advance strategic time at 1.25 km/h (one quarter of the
+MVP's normal walking speed). Both settlement and quest-destination travel use the
+shared Map tab: destinations are selected in the left rail and their description,
+distance, journey time, and travel action appear in the right rail. A party's
+active quest destination is added to the settlement Map list alongside the
+road-connected settlements and carries the same red exclamation used by the
+active quest tracker. Once resolved, the issuing settlement instead carries a
+gold turn-in exclamation. Quest-offer dialogue itself never presents a separate
+travel action.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.

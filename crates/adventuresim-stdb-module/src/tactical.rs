@@ -1,13 +1,15 @@
 use spacetimedb::{
-    reducer, table, view, Identity, ReducerContext, SpacetimeType, Table, ViewContext,
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
 
 use crate::{
-    change_inventory_item, character::character, character__view, character_attributes__view,
+    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
+    ItemSlot, character::character, character__view, character_attributes__view, character_equip,
     character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
-    inventory_item__view, item__view, Character, CharacterAttributes, CharacterLimbs,
-    CharacterSkills, CharacterStats, Item, ItemSlot,
+    complete_quest, inventory_item, inventory_item__view, item__view, party, record_battle_result,
 };
+use std::collections::{HashMap, HashSet};
+use strum::VariantArray;
 
 /// Request to start a new [`TacticalServer`]
 #[derive(Clone, Debug)]
@@ -318,16 +320,59 @@ fn end_tactical_server_by_instance(
         ));
     }
 
-    // Apply rewards
-    for mut character in ctx.db.character().server().filter(server.identity) {
+    let connected: Vec<_> = ctx
+        .db
+        .character()
+        .server()
+        .filter(server.identity)
+        .collect();
+    if success {
+        if let Some(adventurer) = connected.iter().find(|character| !character.temporary) {
+            if let Some(party_id) = adventurer.party_id.as_ref() {
+                if let Some(party) = ctx.db.party().id().find(party_id) {
+                    if let Some(quest_id) = party.active_quest_id.as_ref() {
+                        let mut drops: HashMap<String, u32> = HashMap::new();
+                        for enemy in connected.iter().filter(|character| character.temporary) {
+                            let Some(equip) =
+                                ctx.db.character_equip().character_id().find(enemy.id)
+                            else {
+                                continue;
+                            };
+                            let mut seen = HashSet::new();
+                            for slot in ItemSlot::VARIANTS {
+                                let Some(inventory_id) = equip.get(*slot) else {
+                                    continue;
+                                };
+                                if !seen.insert(inventory_id) {
+                                    continue;
+                                }
+                                if let Some(inventory) =
+                                    ctx.db.inventory_item().id().find(inventory_id)
+                                {
+                                    *drops.entry(inventory.item_id).or_default() += 1;
+                                }
+                            }
+                        }
+                        record_battle_result(
+                            ctx,
+                            party_id,
+                            quest_id,
+                            &server.mission_id,
+                            drops.into_iter().collect(),
+                            true,
+                        )?;
+                        complete_quest(ctx, quest_id.clone())?;
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply persistent character progression. Loot is handled by the battle result.
+    for mut character in connected {
         if xp_gained > 0 {
             character.xp = character.xp.saturating_add_signed(xp_gained);
             character.level = 1 + character.xp / 100;
-        }
-        if success {
-            // Victory loot
-            change_inventory_item(ctx, character.id, "gold_coin", 10);
-            change_inventory_item(ctx, character.id, "health_potion", 2);
         }
 
         let id = character.id;

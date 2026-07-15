@@ -17,11 +17,19 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    /// The quest location occupied by this character, mutually exclusive with a settlement.
+    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     #[index(btree)]
     pub server: Identity,
     pub in_server: bool,
     pub temporary: bool,
+    #[default(25)]
+    pub age_years: u16,
+    /// Strategic life state. Death transitions are intentionally deferred to the
+    /// future death system, but parties already use this to govern succession.
+    #[default(true)]
+    pub alive: bool,
 }
 
 /// [`Character`] attributes
@@ -240,10 +248,13 @@ pub(crate) fn insert_new_character(
         level: 1,
         gold: 100,
         current_settlement_id: Some(start_settlement.id.clone()),
+        current_quest_location_id: None,
         party_id: None,
         server: Identity::ZERO,
         in_server: false,
         temporary,
+        age_years: 25,
+        alive: true,
     });
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,
@@ -322,6 +333,9 @@ pub(crate) fn insert_new_character(
     add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Stomach)?;
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::LeftLeg)?;
     add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::RightLeg)?;
+
+    crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    crate::capability::refresh_character_capability(ctx, character.id)?;
 
     Ok(())
 }

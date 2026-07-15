@@ -13,6 +13,7 @@ pub(super) struct FinalizeMerchantTradeArgs {
     pub buy_quantities: Vec<u32>,
     pub sell_inventory_ids: Vec<u64>,
     pub sell_quantities: Vec<u32>,
+    pub party_scope: bool,
 }
 
 impl From<FinalizeMerchantTradeArgs> for super::Reducer {
@@ -24,6 +25,7 @@ impl From<FinalizeMerchantTradeArgs> for super::Reducer {
             buy_quantities: args.buy_quantities,
             sell_inventory_ids: args.sell_inventory_ids,
             sell_quantities: args.sell_quantities,
+            party_scope: args.party_scope,
         }
     }
 }
@@ -52,6 +54,7 @@ pub trait finalize_merchant_trade {
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
         sell_quantities: Vec<u32>,
+        party_scope: bool,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `finalize_merchant_trade`.
     ///
@@ -70,6 +73,7 @@ pub trait finalize_merchant_trade {
                 &Vec<u32>,
                 &Vec<u64>,
                 &Vec<u32>,
+                &bool,
             ) + Send
             + 'static,
     ) -> FinalizeMerchantTradeCallbackId;
@@ -87,6 +91,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
         sell_quantities: Vec<u32>,
+        party_scope: bool,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "finalize_merchant_trade",
@@ -97,6 +102,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                 buy_quantities,
                 sell_inventory_ids,
                 sell_quantities,
+                party_scope,
             },
         )
     }
@@ -110,6 +116,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                 &Vec<u32>,
                 &Vec<u64>,
                 &Vec<u32>,
+                &bool,
             ) + Send
             + 'static,
     ) -> FinalizeMerchantTradeCallbackId {
@@ -128,6 +135,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                                     buy_quantities,
                                     sell_inventory_ids,
                                     sell_quantities,
+                                    party_scope,
                                 },
                             ..
                         },
@@ -144,6 +152,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                     buy_quantities,
                     sell_inventory_ids,
                     sell_quantities,
+                    party_scope,
                 )
             }),
         ))

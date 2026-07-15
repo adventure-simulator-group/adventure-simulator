@@ -1,9 +1,11 @@
+pub mod capability;
 pub mod character;
 pub mod item;
 pub mod strategic;
 pub mod tactical;
 pub mod time;
 
+pub use capability::*;
 pub use character::*;
 pub use item::*;
 pub use strategic::*;

@@ -1,7 +1,9 @@
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
-    character::{character, character_equip},
+    character::{
+        character, character_attributes, character_equip, character_limbs, character_skills,
+    },
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
     time::advance_character_time,
@@ -11,8 +13,11 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 const MERCHANT_MARGIN: f32 = 1.25;
 const SALES_TAX: f32 = 0.10;
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
 const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
+const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
+const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -243,11 +248,13 @@ pub fn import_settlements(
             scene_key: settlement.scene_key,
             source_node_id: Some(settlement.source_node_id),
         };
+        let settlement_id = row.id.clone();
         if ctx.db.settlement().id().find(&row.id).is_some() {
             ctx.db.settlement().id().update(row);
         } else {
             ctx.db.settlement().insert(row);
         }
+        ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
     Ok(())
 }
@@ -268,6 +275,23 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub location_description: String,
+    pub location_scene_key: String,
+    pub location_coord_x: f64,
+    pub location_coord_y: f64,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = quest_issuer, public)]
+pub struct QuestIssuer {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    #[index(btree)]
+    pub service_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -278,7 +302,17 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
+    pub is_solo: bool,
+    #[default(0.0)]
+    pub medicine_target: f32,
+    #[default(0.0)]
+    pub surgery_target: f32,
+    #[default(0.0)]
+    pub charisma_target: f32,
+    #[default(0.0)]
+    pub faith_target: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -292,6 +326,571 @@ pub struct PartyMember {
     #[index(btree)]
     pub character_id: u64,
     pub role: Option<String>,
+    pub recruitment_role_id: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_inventory_item, public)]
+pub struct PartyInventoryItem {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+/// Desired retained quantity used by bulk inventory actions. Party targets are
+/// owned by the leader character so they survive party disbanding/recreation.
+#[derive(Clone, Debug)]
+#[table(
+    name = inventory_quantity_target, public,
+    index(name = owner_and_scope, btree(columns = [owner_character_id, party_scope])),
+)]
+pub struct InventoryQuantityTarget {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub party_scope: bool,
+    #[index(btree)]
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[reducer]
+pub fn set_inventory_quantity_target(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_scope: bool,
+    item_id: String,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if ctx.db.item().id().find(&item_id).is_none() {
+        return Err("Item not found".into());
+    }
+    let owner_character_id = if party_scope {
+        let party_id = character.party_id.ok_or("Character has no party")?;
+        let party = ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id)
+            .ok_or("Party not found")?;
+        if party.leader_id != character_id {
+            return Err("Only the party leader can change party quantity targets".into());
+        }
+        party.leader_id
+    } else {
+        character_id
+    };
+    let id = format!(
+        "{}:{owner_character_id}:{item_id}",
+        if party_scope { "party" } else { "player" }
+    );
+    let row = InventoryQuantityTarget {
+        id: id.clone(),
+        owner_character_id,
+        party_scope,
+        item_id,
+        quantity,
+    };
+    if ctx.db.inventory_quantity_target().id().find(&id).is_some() {
+        ctx.db.inventory_quantity_target().id().update(row);
+    } else {
+        ctx.db.inventory_quantity_target().insert(row);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_stake, public)]
+pub struct PartyStake {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub value: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_inventory_state, public)]
+pub struct PartyInventoryState {
+    #[primary_key]
+    pub party_id: String,
+    pub reserve_value: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_result, public)]
+pub struct BattleResult {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_loot_item, public)]
+pub struct BattleLootItem {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub quest_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = battle_participant, public)]
+pub struct BattleParticipant {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub quest_id: String,
+    pub character_id: u64,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecruitmentRequirements {
+    pub melee: bool,
+    pub ranged: bool,
+    pub precise: bool,
+    pub heavy: bool,
+    pub quarter_armor: bool,
+    pub half_armor: bool,
+    pub three_quarter_armor: bool,
+    pub full_armor: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub athletics: u8,
+    pub endurance: u8,
+    pub medicine: u8,
+    pub surgery: u8,
+    pub charisma: u8,
+    pub faith: u8,
+}
+
+impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequirements {
+    fn from(value: RecruitmentRequirements) -> Self {
+        Self {
+            melee: value.melee,
+            ranged: value.ranged,
+            weapon_precision: adventuresim_core::capability::legacy_weapon_precision(
+                value.precise,
+                value.blunt,
+                value.slash,
+                value.pierce,
+            ),
+            heavy: value.heavy,
+            quarter_armor: value.quarter_armor,
+            half_armor: value.half_armor,
+            three_quarter_armor: value.three_quarter_armor,
+            full_armor: value.full_armor,
+            athletics: value.athletics,
+            endurance: value.endurance,
+            medicine: value.medicine,
+            surgery: value.surgery,
+            charisma: value.charisma,
+            faith: value.faith,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_recruitment_role, public)]
+pub struct PartyRecruitmentRole {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    pub quantity: u32,
+    #[default(0.0)]
+    pub weapon_precision: f32,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = saved_recruitment_role, public)]
+pub struct SavedRecruitmentRole {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    #[default(0.0)]
+    pub weapon_precision: f32,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_join_request, public)]
+pub struct PartyJoinRequest {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub recruitment_role_id: u64,
+    #[index(btree)]
+    pub character_id: u64,
+    pub meets_requirements: bool,
+}
+
+/// A party member's proposed use of authority normally reserved for the leader.
+/// `payload` is JSON so approval can replay the original typed reducer call.
+#[derive(Clone, Debug)]
+#[table(name = party_action_request, public)]
+pub struct PartyActionRequest {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = party_leader_vote, public)]
+pub struct PartyLeaderVote {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub party_id: String,
+    #[index(btree)]
+    pub voter_id: u64,
+    pub candidate_id: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(name = local_chat_message, public)]
+pub struct LocalChatMessage {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub conversation_key: String,
+    pub sender_id: u64,
+    pub sender_name: String,
+    pub body: String,
+    pub created_micros: i64,
+}
+
+fn same_location(left: &crate::Character, right: &crate::Character) -> bool {
+    left.current_settlement_id == right.current_settlement_id
+        && left.current_quest_location_id == right.current_quest_location_id
+        && (left.current_settlement_id.is_some() || left.current_quest_location_id.is_some())
+}
+
+fn player_conversation_key(
+    ctx: &ReducerContext,
+    sender: &crate::Character,
+    subject_id: u64,
+) -> Result<String, String> {
+    let subject = ctx
+        .db
+        .character()
+        .id()
+        .find(subject_id)
+        .ok_or("Conversation subject not found")?;
+    if !same_location(sender, &subject) {
+        return Err("Local conversations require a shared location".into());
+    }
+    let sender_party = sender.party_id.as_deref().ok_or("Sender has no party")?;
+    let subject_party = subject.party_id.as_deref().ok_or("Subject has no party")?;
+    let (first, second) = if sender_party <= subject_party {
+        (sender_party, subject_party)
+    } else {
+        (subject_party, sender_party)
+    };
+    Ok(format!("players:{first}:{second}"))
+}
+
+fn npc_conversation_key(sender: &crate::Character, subject_id: &str) -> Result<String, String> {
+    let party_id = sender.party_id.as_deref().ok_or("Sender has no party")?;
+    let settlement_id = sender
+        .current_settlement_id
+        .as_deref()
+        .ok_or("NPC conversations require a settlement")?;
+    if !subject_id.starts_with(&format!("{settlement_id}:")) {
+        return Err("NPC is not at the sender's settlement".into());
+    }
+    Ok(format!("npc:{party_id}:{subject_id}"))
+}
+
+#[reducer]
+pub fn send_local_chat_message(
+    ctx: &ReducerContext,
+    sender_id: u64,
+    subject_kind: String,
+    subject_id: String,
+    body: String,
+) -> Result<(), String> {
+    let sender = ctx
+        .db
+        .character()
+        .id()
+        .find(sender_id)
+        .ok_or("Sender not found")?;
+    let body = body.trim();
+    if body.is_empty() || body.chars().count() > 500 {
+        return Err("Messages must contain 1 to 500 characters".into());
+    }
+    let conversation_key = match subject_kind.as_str() {
+        "player" => player_conversation_key(
+            ctx,
+            &sender,
+            subject_id.parse().map_err(|_| "Invalid player subject")?,
+        )?,
+        "npc" => npc_conversation_key(&sender, &subject_id)?,
+        _ => return Err("Unknown Local conversation subject".into()),
+    };
+    ctx.db.local_chat_message().insert(LocalChatMessage {
+        id: 0,
+        conversation_key,
+        sender_id,
+        sender_name: sender.name,
+        body: body.to_string(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn record_local_npc_message(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    subject_id: String,
+    npc_name: String,
+    body: String,
+) -> Result<(), String> {
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Character not found")?;
+    let body = body.trim();
+    if body.is_empty() || body.chars().count() > 1000 {
+        return Err("NPC messages must contain 1 to 1000 characters".into());
+    }
+    let conversation_key = npc_conversation_key(&actor, &subject_id)?;
+    ctx.db.local_chat_message().insert(LocalChatMessage {
+        id: 0,
+        conversation_key,
+        sender_id: 0,
+        sender_name: npc_name.trim().to_string(),
+        body: body.to_string(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn request_party_action(
+    ctx: &ReducerContext,
+    requester_id: u64,
+    action_kind: String,
+    summary: String,
+    payload: String,
+) -> Result<(), String> {
+    let requester = ctx
+        .db
+        .character()
+        .id()
+        .find(requester_id)
+        .ok_or("Character not found")?;
+    let party_id = requester.party_id.ok_or("Character has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id == requester_id {
+        return Err("The party leader does not need to request permission".into());
+    }
+    let allowed = [
+        "travel",
+        "kick",
+        "add_role",
+        "accept_join",
+        "reject_join",
+        "accept_quest",
+        "abandon_quest",
+        "turn_in_quest",
+        "autoresolve",
+        "party_checks",
+        "party_inventory",
+        "disband_party",
+        "initiate_combat",
+        "cancel_mission",
+    ];
+    if !allowed.contains(&action_kind.as_str()) {
+        return Err("Unknown party action request".into());
+    }
+    // Travel destinations supersede one another. Inventory target/staging edits
+    // are intentionally coalesced to one notification per requesting member.
+    if action_kind == "travel" || action_kind == "party_inventory" {
+        let old: Vec<_> = ctx
+            .db
+            .party_action_request()
+            .requester_id()
+            .filter(requester_id)
+            .filter(|request| request.party_id == party_id && request.action_kind == action_kind)
+            .map(|request| request.id)
+            .collect();
+        for id in old {
+            ctx.db.party_action_request().id().delete(id);
+        }
+    }
+    ctx.db.party_action_request().insert(PartyActionRequest {
+        id: 0,
+        party_id,
+        requester_id,
+        action_kind,
+        summary: summary.trim().to_string(),
+        payload,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn dismiss_party_action_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let request = ctx
+        .db
+        .party_action_request()
+        .id()
+        .find(request_id)
+        .ok_or("Request not found")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&request.party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can resolve requests".into());
+    }
+    ctx.db.party_action_request().id().delete(request_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn vote_for_party_leader(
+    ctx: &ReducerContext,
+    voter_id: u64,
+    candidate_id: u64,
+) -> Result<(), String> {
+    let voter = ctx
+        .db
+        .character()
+        .id()
+        .find(voter_id)
+        .ok_or("Voter not found")?;
+    if !voter.alive {
+        return Err("Dead characters cannot vote".into());
+    }
+    let party_id = voter.party_id.ok_or("Voter has no party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(party.leader_id)
+        .ok_or("Leader not found")?;
+    if leader.alive {
+        return Err("Succession voting begins only after the leader dies".into());
+    }
+    let candidate = ctx
+        .db
+        .character()
+        .id()
+        .find(candidate_id)
+        .ok_or("Candidate not found")?;
+    if !candidate.alive || candidate.party_id.as_deref() != Some(&party_id) {
+        return Err("Candidate must be a living member of this party".into());
+    }
+    let id = format!("{party_id}:{voter_id}");
+    let vote = PartyLeaderVote {
+        id: id.clone(),
+        party_id: party_id.clone(),
+        voter_id,
+        candidate_id,
+    };
+    if ctx.db.party_leader_vote().id().find(&id).is_some() {
+        ctx.db.party_leader_vote().id().update(vote);
+    } else {
+        ctx.db.party_leader_vote().insert(vote);
+    }
+    let living = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .filter(|member| {
+            ctx.db
+                .character()
+                .id()
+                .find(member.character_id)
+                .is_some_and(|c| c.alive)
+        })
+        .count();
+    let votes = ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(&party_id)
+        .filter(|vote| vote.candidate_id == candidate_id)
+        .count();
+    if votes * 2 > living {
+        party.leader_id = candidate_id;
+        party.is_solo = living == 1;
+        ctx.db.party().id().update(party);
+        let ids: Vec<_> = ctx
+            .db
+            .party_leader_vote()
+            .party_id()
+            .filter(&party_id)
+            .map(|v| v.id)
+            .collect();
+        for id in ids {
+            ctx.db.party_leader_vote().id().delete(&id);
+        }
+    }
+    Ok(())
 }
 
 #[reducer]
@@ -305,68 +904,825 @@ pub fn update_character(ctx: &ReducerContext, id: u64, name: String) -> Result<(
     Ok(())
 }
 
-#[reducer]
-pub fn create_party(
+pub(crate) fn create_solo_party_for_character(
     ctx: &ReducerContext,
-    id: String,
-    name: String,
-    leader_id: u64,
-) -> Result<(), String> {
-    let Some(mut leader) = ctx.db.character().id().find(leader_id) else {
-        return Err("Leader character not found".into());
+    character_id: u64,
+) -> Result<String, String> {
+    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
     };
-
-    if leader.party_id.is_some() {
-        return Err("Leader is already in a party".into());
+    let party_id = format!("solo-{character_id}");
+    if ctx.db.party().id().find(&party_id).is_none() {
+        ctx.db.party().insert(Party {
+            id: party_id.clone(),
+            name: format!("{}'s party", character.name),
+            leader_id: character_id,
+            current_settlement_id: character.current_settlement_id.clone(),
+            current_quest_location_id: character.current_quest_location_id.clone(),
+            active_quest_id: None,
+            is_solo: true,
+            medicine_target: 0.0,
+            surgery_target: 0.0,
+            charisma_target: 0.0,
+            faith_target: 0.0,
+        });
+        ctx.db.party_member().insert(PartyMember {
+            id: 0,
+            party_id: party_id.clone(),
+            character_id,
+            role: Some("Leader".into()),
+            recruitment_role_id: None,
+        });
     }
+    character.party_id = Some(party_id.clone());
+    ctx.db.character().id().update(character);
+    Ok(party_id)
+}
 
-    ctx.db.party().insert(Party {
-        id: id.clone(),
-        name,
-        leader_id,
-        current_settlement_id: leader.current_settlement_id.clone(),
-        active_quest_id: None,
-    });
-
-    ctx.db.party_member().insert(PartyMember {
-        id: 0,
-        party_id: id.clone(),
-        character_id: leader_id,
-        role: Some("Leader".into()),
-    });
-
-    leader.party_id = Some(id);
-    ctx.db.character().id().update(leader);
+#[reducer]
+pub fn backfill_solo_parties(ctx: &ReducerContext) -> Result<(), String> {
+    let ids: Vec<_> = ctx
+        .db
+        .character()
+        .iter()
+        .filter(|c| c.party_id.is_none())
+        .map(|c| c.id)
+        .collect();
+    for id in ids {
+        create_solo_party_for_character(ctx, id)?;
+    }
     Ok(())
 }
 
 #[reducer]
-pub fn join_party(ctx: &ReducerContext, character_id: u64, party_id: String) -> Result<(), String> {
-    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+pub fn create_recruitment_role(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    name: String,
+    quantity: u32,
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+    save_role: bool,
+) -> Result<(), String> {
+    if quantity == 0 || quantity > 8 {
+        return Err("Role quantity must be between 1 and 8".into());
+    }
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
+        || (weapon_precision * 2.0).fract() != 0.0
+    {
+        return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
+    }
+    if [
+        requirements.athletics,
+        requirements.endurance,
+        requirements.medicine,
+        requirements.surgery,
+        requirements.charisma,
+        requirements.faith,
+    ]
+    .iter()
+    .any(|v| *v > 5)
+    {
+        return Err("Role ratings must be between 0 and 5".into());
+    }
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can create roles".into());
+    }
+    let role_name = if name.trim().is_empty() {
+        "Any adventurer".to_string()
+    } else {
+        name.trim().to_string()
+    };
+    ctx.db
+        .party_recruitment_role()
+        .insert(PartyRecruitmentRole {
+            id: 0,
+            party_id,
+            name: role_name.clone(),
+            requirements,
+            quantity,
+            weapon_precision,
+        });
+    if save_role {
+        if name.trim().is_empty() {
+            return Err("Name a role before saving it".into());
+        }
+        ctx.db
+            .saved_recruitment_role()
+            .insert(SavedRecruitmentRole {
+                id: 0,
+                owner_character_id: leader_id,
+                name: role_name,
+                requirements,
+                weapon_precision,
+            });
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn update_recruitment_role(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    role_id: u64,
+    name: String,
+    quantity: u32,
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if quantity > 8 {
+        return Err("Role quantity must be between 0 and 8".into());
+    }
+    validate_recruitment_requirements(requirements, weapon_precision)?;
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can edit roles".into());
+    }
+    let mut role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Recruitment role not found")?;
+    if role.party_id != party_id {
+        return Err("Cannot edit another party's role".into());
+    }
+    let filled = filled_role_slots(ctx, role_id);
+    if quantity < filled {
+        return Err(format!("This role already has {filled} filled slots"));
+    }
+    let role_name = if name.trim().is_empty() {
+        "Any adventurer".to_string()
+    } else {
+        name.trim().to_string()
+    };
+    role.name = role_name.clone();
+    role.quantity = quantity;
+    role.requirements = requirements;
+    role.weapon_precision = weapon_precision;
+    ctx.db.party_recruitment_role().id().update(role);
+    for mut member in ctx
+        .db
+        .party_member()
+        .iter()
+        .filter(|member| member.recruitment_role_id == Some(role_id))
+        .collect::<Vec<_>>()
+    {
+        member.role = Some(role_name.clone());
+        ctx.db.party_member().id().update(member);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn delete_recruitment_role(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    role_id: u64,
+) -> Result<(), String> {
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can delete roles".into());
+    }
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Recruitment role not found")?;
+    if role.party_id != party_id {
+        return Err("Cannot delete another party's role".into());
+    }
+    for request in ctx
+        .db
+        .party_join_request()
+        .recruitment_role_id()
+        .filter(role_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_join_request().id().delete(request.id);
+    }
+    for mut member in ctx
+        .db
+        .party_member()
+        .iter()
+        .filter(|member| member.recruitment_role_id == Some(role_id))
+        .collect::<Vec<_>>()
+    {
+        member.role = None;
+        member.recruitment_role_id = None;
+        ctx.db.party_member().id().update(member);
+    }
+    ctx.db.party_recruitment_role().id().delete(role_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn save_recruitment_role(
+    ctx: &ReducerContext,
+    owner_id: u64,
+    name: String,
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if ctx.db.character().id().find(owner_id).is_none() {
+        return Err("Character not found".into());
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Saved roles must have a name".into());
+    }
+    validate_recruitment_requirements(requirements, weapon_precision)?;
+    ctx.db
+        .saved_recruitment_role()
+        .insert(SavedRecruitmentRole {
+            id: 0,
+            owner_character_id: owner_id,
+            name: name.to_string(),
+            requirements,
+            weapon_precision,
+        });
+    Ok(())
+}
+
+#[reducer]
+pub fn rename_saved_recruitment_role(
+    ctx: &ReducerContext,
+    owner_id: u64,
+    role_id: u64,
+    name: String,
+) -> Result<(), String> {
+    let mut role = ctx
+        .db
+        .saved_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Saved role not found")?;
+    if role.owner_character_id != owner_id {
+        return Err("Cannot rename another character's saved role".into());
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Saved roles must have a name".into());
+    }
+    role.name = name.to_string();
+    ctx.db.saved_recruitment_role().id().update(role);
+    Ok(())
+}
+
+fn validate_recruitment_requirements(
+    requirements: RecruitmentRequirements,
+    weapon_precision: f32,
+) -> Result<(), String> {
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
+        || (weapon_precision * 2.0).fract() != 0.0
+    {
+        return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
+    }
+    if [requirements.athletics, requirements.endurance]
+        .iter()
+        .any(|value| *value > 5)
+    {
+        return Err("Role ratings must be between 0 and 5".into());
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn update_party_check_targets(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    medicine: f32,
+    surgery: f32,
+    charisma: f32,
+    faith: f32,
+) -> Result<(), String> {
+    if [medicine, surgery, charisma, faith]
+        .into_iter()
+        .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
+    {
+        return Err("Party check targets must be whole numbers between 0 and 5".into());
+    }
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.ok_or("Leader has no party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can configure party checks".into());
+    }
+    party.medicine_target = medicine;
+    party.surgery_target = surgery;
+    party.charisma_target = charisma;
+    party.faith_target = faith;
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
+#[reducer]
+pub fn delete_saved_recruitment_role(
+    ctx: &ReducerContext,
+    owner_id: u64,
+    role_id: u64,
+) -> Result<(), String> {
+    let role = ctx
+        .db
+        .saved_recruitment_role()
+        .id()
+        .find(role_id)
+        .ok_or("Saved role not found")?;
+    if role.owner_character_id != owner_id {
+        return Err("Cannot delete another character's saved role".into());
+    }
+    ctx.db.saved_recruitment_role().id().delete(role_id);
+    Ok(())
+}
+
+fn filled_role_slots(ctx: &ReducerContext, role_id: u64) -> u32 {
+    ctx.db
+        .party_member()
+        .iter()
+        .filter(|member| member.recruitment_role_id == Some(role_id))
+        .count() as u32
+}
+
+fn role_requirements(
+    role: &PartyRecruitmentRole,
+) -> adventuresim_core::capability::RoleRequirements {
+    let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
+    requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
+    requirements.medicine = 0;
+    requirements.surgery = 0;
+    requirements.charisma = 0;
+    requirements.faith = 0;
+    requirements
+}
+
+#[reducer]
+pub fn request_to_join_party(
+    ctx: &ReducerContext,
+    character_id: u64,
+    recruitment_role_id: u64,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
-
-    if character.party_id.is_some() {
-        return Err("Character is already in a party".into());
+    let current_party_id = character.party_id.clone().ok_or("Character has no party")?;
+    let current_party = ctx
+        .db
+        .party()
+        .id()
+        .find(&current_party_id)
+        .ok_or("Current party not found")?;
+    if current_party.leader_id != character_id {
+        return Err("Only a party leader may request a party merge".into());
     }
-
+    if current_party.active_quest_id.is_some() {
+        return Err("Abandon the current quest before joining another party".into());
+    }
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(recruitment_role_id)
+        .ok_or("Recruitment role not found")?;
+    let party_id = role.party_id.clone();
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if current_party_id == party_id {
+        return Err("Cannot join your own party".into());
+    }
+    if current_party.current_settlement_id != party.current_settlement_id
+        || current_party.current_quest_location_id != party.current_quest_location_id
+    {
+        return Err("Parties must be in the same location to merge".into());
+    }
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
+        return Err("Recruitment role is full".into());
+    }
+    if ctx
+        .db
+        .party_join_request()
+        .character_id()
+        .filter(character_id)
+        .any(|request| request.recruitment_role_id == recruitment_role_id)
+    {
+        return Err("A join request is already pending".into());
+    }
+    let capabilities = crate::capability::refresh_character_capability(ctx, character_id)?;
+    ctx.db.party_join_request().insert(PartyJoinRequest {
+        id: 0,
+        party_id,
+        recruitment_role_id,
+        character_id,
+        meets_requirements: capabilities.meets(role_requirements(&role)),
+    });
+    Ok(())
+}
 
-    if character.current_settlement_id != party.current_settlement_id {
-        return Err("Must be in the same settlement as the party".into());
+#[reducer]
+pub fn request_general_party_join(
+    ctx: &ReducerContext,
+    character_id: u64,
+    target_party_id: String,
+) -> Result<(), String> {
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(&target_party_id)
+        .find(|role| role.quantity == 0 && role.name == "Unassigned")
+        .unwrap_or_else(|| {
+            ctx.db
+                .party_recruitment_role()
+                .insert(PartyRecruitmentRole {
+                    id: 0,
+                    party_id: target_party_id.clone(),
+                    name: "Unassigned".into(),
+                    requirements: RecruitmentRequirements::default(),
+                    quantity: 0,
+                    weapon_precision: 0.0,
+                })
+        });
+    request_to_join_party(ctx, character_id, role.id)
+}
+
+#[reducer]
+pub fn accept_party_join_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
+        return Err("Join request not found".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can accept join requests".into());
+    }
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(request.recruitment_role_id)
+        .ok_or("Recruitment role not found")?;
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
+        return Err("Recruitment role is full".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(request.character_id)
+        .ok_or("Applicant not found")?;
+    let source_party_id = character.party_id.clone().ok_or("Applicant has no party")?;
+    let source_party = ctx
+        .db
+        .party()
+        .id()
+        .find(&source_party_id)
+        .ok_or("Applicant party not found")?;
+    if source_party.leader_id != request.character_id {
+        return Err("Applicant is no longer their party leader".into());
+    }
+    if source_party.active_quest_id.is_some() {
+        return Err("Applicant's party must abandon its current quest first".into());
+    }
+    if source_party.current_settlement_id != party.current_settlement_id
+        || source_party.current_quest_location_id != party.current_quest_location_id
+    {
+        return Err("Parties must be in the same location to merge".into());
     }
 
-    ctx.db.party_member().insert(PartyMember {
-        id: 0,
-        party_id: party_id.clone(),
-        character_id,
-        role: None,
-    });
+    // Preserve the source party's jointly-owned assets and each member's absolute
+    // stake. Combining the ledgers does not dilute either party; only future loot
+    // is shared among the newly combined membership.
+    for entry in ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        add_to_party_inventory(ctx, &request.party_id, &entry.item_id, entry.quantity);
+        ctx.db.party_inventory_item().id().delete(entry.id);
+    }
+    for stake in ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        credit_party_stake(ctx, &request.party_id, stake.character_id, stake.value);
+        ctx.db.party_stake().id().delete(stake.id);
+    }
+    if let Some(state) = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&source_party_id)
+    {
+        credit_party_reserve(ctx, &request.party_id, state.reserve_value);
+        ctx.db
+            .party_inventory_state()
+            .party_id()
+            .delete(&source_party_id);
+    }
 
-    character.party_id = Some(party_id);
-    ctx.db.character().id().update(character);
+    let source_members: Vec<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&source_party_id)
+        .collect();
+    let source_member_ids: Vec<_> = source_members
+        .iter()
+        .map(|member| member.character_id)
+        .collect();
+    for member in source_members {
+        ctx.db.party_member().id().delete(member.id);
+        ctx.db.party_member().insert(PartyMember {
+            id: 0,
+            party_id: request.party_id.clone(),
+            character_id: member.character_id,
+            role: if member.character_id == request.character_id {
+                Some(role.name.clone())
+            } else {
+                member.role
+            },
+            recruitment_role_id: (member.character_id == request.character_id).then_some(role.id),
+        });
+        if let Some(mut source_character) = ctx.db.character().id().find(member.character_id) {
+            source_character.party_id = Some(request.party_id.clone());
+            source_character.current_settlement_id = party.current_settlement_id.clone();
+            source_character.current_quest_location_id = party.current_quest_location_id.clone();
+            ctx.db.character().id().update(source_character);
+        }
+    }
+
+    // Incoming applications and recruitment roles belonged to the source party,
+    // so they cannot survive after its leader relinquishes command.
+    for source_role in ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        for pending in ctx
+            .db
+            .party_join_request()
+            .recruitment_role_id()
+            .filter(source_role.id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_join_request().id().delete(pending.id);
+        }
+        ctx.db.party_recruitment_role().id().delete(source_role.id);
+    }
+    for member_id in source_member_ids {
+        for pending in ctx
+            .db
+            .party_join_request()
+            .character_id()
+            .filter(member_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_join_request().id().delete(pending.id);
+        }
+    }
+    ctx.db.party().id().delete(&source_party_id);
+    if party.is_solo {
+        let mut party = party;
+        party.is_solo = false;
+        ctx.db.party().id().update(party);
+    }
+    let requests: Vec<_> = ctx
+        .db
+        .party_join_request()
+        .character_id()
+        .filter(request.character_id)
+        .collect();
+    for pending in requests {
+        ctx.db.party_join_request().id().delete(pending.id);
+    }
+    if role.quantity > 0 && filled_role_slots(ctx, role.id) >= role.quantity {
+        for pending in ctx
+            .db
+            .party_join_request()
+            .recruitment_role_id()
+            .filter(role.id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_join_request().id().delete(pending.id);
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn reject_party_join_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
+        return Err("Join request not found".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can reject join requests".into());
+    }
+    ctx.db.party_join_request().id().delete(request_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn seed_bot_join_requests(
+    ctx: &ReducerContext,
+    recruitment_role_id: u64,
+) -> Result<(), String> {
+    use petname::Generator;
+
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .id()
+        .find(recruitment_role_id)
+        .ok_or("Recruitment role not found")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&role.party_id)
+        .ok_or("Party not found")?;
+    for index in 0..role.quantity.saturating_mul(2).min(16) {
+        let name = petname::Petnames::default()
+            .generate(&mut ctx.rng(), 2, " ")
+            .ok_or("Could not generate bot applicant name")?;
+        let mut id = ctx.random::<u64>() | (1_u64 << 63);
+        while ctx.db.character().id().find(id).is_some() {
+            id = ctx.random::<u64>() | (1_u64 << 63);
+        }
+        crate::character::insert_new_character(ctx, name, id, true)?;
+        let mut bot = ctx.db.character().id().find(id).unwrap();
+        bot.current_settlement_id = party.current_settlement_id.clone();
+        bot.current_quest_location_id = party.current_quest_location_id.clone();
+        ctx.db.character().id().update(bot);
+        let mut attrs = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(id)
+            .unwrap();
+        attrs.endurance = 10.0;
+        attrs.left_arm_strength = 10.0;
+        attrs.right_arm_strength = 10.0;
+        attrs.left_arm_agility = 10.0;
+        attrs.right_arm_agility = 10.0;
+        attrs.left_leg_agility = 10.0;
+        attrs.right_leg_agility = 10.0;
+        attrs.intelligence = 10.0;
+        attrs.instinct = 10.0;
+        let mut skills = ctx.db.character_skills().character_id().find(id).unwrap();
+        skills.medicine_hours = 1_000_000.0;
+        skills.surgeon_hours = 1_000_000.0;
+        skills.charisma_hours = 1_000_000.0;
+        skills.faith_hours = 1_000_000.0;
+        crate::character::add_and_equip_item(
+            ctx,
+            id,
+            "bot_multirole_weapon",
+            crate::ItemSlot::RightHolding,
+        )?;
+        if role.requirements.full_armor {
+            for (item, slot) in [
+                ("bot_plate_arm", crate::ItemSlot::LeftArm),
+                ("bot_plate_arm", crate::ItemSlot::RightArm),
+                ("bot_plate_leg", crate::ItemSlot::LeftLeg),
+                ("bot_plate_leg", crate::ItemSlot::RightLeg),
+                ("bot_plate_chest", crate::ItemSlot::Chest),
+                ("bot_plate_stomach", crate::ItemSlot::Stomach),
+                ("bot_plate_helmet", crate::ItemSlot::Head),
+            ] {
+                crate::character::add_and_equip_item(ctx, id, item, slot)?;
+            }
+        }
+
+        if index % 2 == 1 {
+            let requirements = role.requirements;
+            if requirements.endurance > 0 {
+                attrs.endurance = 0.0;
+            } else if requirements.athletics > 0 || requirements.heavy {
+                attrs.left_arm_strength = 0.0;
+                attrs.right_arm_strength = 0.0;
+                if requirements.athletics > 0 {
+                    attrs.left_arm_agility = 0.0;
+                    attrs.right_arm_agility = 0.0;
+                    attrs.left_leg_agility = 0.0;
+                    attrs.right_leg_agility = 0.0;
+                    attrs.endurance = 0.0;
+                }
+            } else if requirements.medicine > 0 {
+                skills.medicine_hours = 0.0;
+            } else if requirements.surgery > 0 {
+                skills.surgeon_hours = 0.0;
+            } else if requirements.charisma > 0 {
+                skills.charisma_hours = 0.0;
+                attrs.intelligence = 0.0;
+                attrs.instinct = 0.0;
+            } else if requirements.faith > 0 {
+                skills.faith_hours = 0.0;
+            } else if requirements.quarter_armor
+                || requirements.half_armor
+                || requirements.three_quarter_armor
+                || requirements.full_armor
+            {
+                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
+                equip.left_arm_armor_id = None;
+                equip.right_arm_armor_id = None;
+                equip.left_leg_armor_id = None;
+                equip.right_leg_armor_id = None;
+                equip.chest_armor_id = None;
+                equip.stomach_armor_id = None;
+                equip.head_armor_id = None;
+                ctx.db.character_equip().character_id().update(equip);
+            } else if requirements.melee {
+                crate::character::add_and_equip_item(
+                    ctx,
+                    id,
+                    "short_bow",
+                    crate::ItemSlot::RightHolding,
+                )?;
+            } else if requirements.ranged {
+                crate::character::add_and_equip_item(
+                    ctx,
+                    id,
+                    "club",
+                    crate::ItemSlot::RightHolding,
+                )?;
+            } else if role.weapon_precision > 0.0 {
+                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
+                equip.left_hand_item_id = None;
+                equip.right_hand_item_id = None;
+                ctx.db.character_equip().character_id().update(equip);
+            }
+        }
+        ctx.db.character_attributes().character_id().update(attrs);
+        ctx.db.character_skills().character_id().update(skills);
+        request_to_join_party(ctx, id, recruitment_role_id)?;
+    }
     Ok(())
 }
 
@@ -430,6 +1786,466 @@ pub fn transfer_party_item(
             item_id: source_item.item_id,
             quantity,
         });
+    }
+    Ok(())
+}
+
+/// Permanently removes staged quantities from a character's unequipped inventory.
+fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, String> {
+    ctx.db
+        .item()
+        .id()
+        .find(&item_id.to_string())
+        .and_then(|item| item.base_value)
+        .map(u64::from)
+        .ok_or_else(|| format!("Item {item_id} has no objective value"))
+}
+
+fn add_to_party_inventory(ctx: &ReducerContext, party_id: &str, item_id: &str, quantity: u32) {
+    if quantity == 0 {
+        return;
+    }
+    if let Some(mut stack) = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .find(|stack| stack.item_id == item_id)
+    {
+        stack.quantity = stack.quantity.saturating_add(quantity);
+        ctx.db.party_inventory_item().id().update(stack);
+    } else {
+        ctx.db.party_inventory_item().insert(PartyInventoryItem {
+            id: 0,
+            party_id: party_id.to_string(),
+            item_id: item_id.to_string(),
+            quantity,
+        });
+    }
+}
+
+fn credit_party_stake(ctx: &ReducerContext, party_id: &str, character_id: u64, value: u64) {
+    if value == 0 {
+        return;
+    }
+    if let Some(mut stake) = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(party_id)
+        .find(|stake| stake.character_id == character_id)
+    {
+        stake.value = stake.value.saturating_add(value);
+        ctx.db.party_stake().id().update(stake);
+    } else {
+        ctx.db.party_stake().insert(PartyStake {
+            id: 0,
+            party_id: party_id.to_string(),
+            character_id,
+            value,
+        });
+    }
+}
+
+fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) {
+    if value == 0 {
+        return;
+    }
+    if let Some(mut state) = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id.to_string())
+    {
+        state.reserve_value = state.reserve_value.saturating_add(value);
+        ctx.db.party_inventory_state().party_id().update(state);
+    } else {
+        ctx.db.party_inventory_state().insert(PartyInventoryState {
+            party_id: party_id.to_string(),
+            reserve_value: value,
+        });
+    }
+}
+
+pub(crate) fn record_battle_result(
+    ctx: &ReducerContext,
+    party_id: &str,
+    quest_id: &str,
+    mission_id: &str,
+    dropped_items: Vec<(String, u32)>,
+    include_random_quest_gold: bool,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .battle_result()
+        .quest_id()
+        .find(&quest_id.to_string())
+        .is_some()
+    {
+        return Ok(());
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id.to_string())
+        .ok_or("Quest not found")?;
+    ctx.db.battle_result().insert(BattleResult {
+        quest_id: quest_id.to_string(),
+        party_id: party_id.to_string(),
+        mission_id: mission_id.to_string(),
+    });
+    for member in ctx.db.party_member().party_id().filter(party_id) {
+        ctx.db.battle_participant().insert(BattleParticipant {
+            id: 0,
+            quest_id: quest_id.to_string(),
+            character_id: member.character_id,
+        });
+    }
+    let mut combined: HashMap<String, u32> = HashMap::new();
+    for (item_id, quantity) in dropped_items {
+        if quantity > 0 && ctx.db.item().id().find(&item_id).is_some() {
+            *combined.entry(item_id).or_default() = combined
+                .get(&item_id)
+                .copied()
+                .unwrap_or_default()
+                .saturating_add(quantity);
+        }
+    }
+    if include_random_quest_gold && ctx.random::<u64>().is_multiple_of(2) {
+        let maximum_gold = quest.difficulty.max(1) as u32 * 10;
+        let gold = 1 + (ctx.random::<u64>() % u64::from(maximum_gold)) as u32;
+        if gold > 0 {
+            *combined.entry("gold_coin".into()).or_default() += gold;
+        }
+    }
+    for (item_id, quantity) in combined {
+        ctx.db.battle_loot_item().insert(BattleLootItem {
+            id: 0,
+            quest_id: quest_id.to_string(),
+            item_id,
+            quantity,
+        });
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn store_battle_loot(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+    loot_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if loot_item_ids.len() != quantities.len() {
+        return Err("Loot entries must be aligned".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let result = ctx
+        .db
+        .battle_result()
+        .quest_id()
+        .find(&quest_id)
+        .ok_or("Battle result not found")?;
+    if result.party_id != party_id {
+        return Err("Battle loot belongs to another party".into());
+    }
+    let available: Vec<_> = ctx
+        .db
+        .battle_loot_item()
+        .quest_id()
+        .filter(&quest_id)
+        .collect();
+    let loot: Vec<_> = if loot_item_ids.is_empty() {
+        available
+    } else {
+        loot_item_ids
+            .iter()
+            .zip(&quantities)
+            .map(|(id, quantity)| {
+                let mut entry = available
+                    .iter()
+                    .find(|entry| entry.id == *id)
+                    .cloned()
+                    .ok_or("Loot item not found")?;
+                if *quantity == 0 || *quantity > entry.quantity {
+                    return Err("Invalid loot quantity".into());
+                }
+                entry.quantity = *quantity;
+                Ok(entry)
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    };
+    let mut total_value = 0_u64;
+    for entry in &loot {
+        total_value = total_value.saturating_add(
+            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(entry.quantity)),
+        );
+    }
+    let participants: Vec<_> = ctx
+        .db
+        .battle_participant()
+        .quest_id()
+        .filter(&quest_id)
+        .collect();
+    if participants.is_empty() {
+        return Err("Battle has no eligible participants".into());
+    }
+    for entry in loot {
+        add_to_party_inventory(ctx, &party_id, &entry.item_id, entry.quantity);
+        let original = ctx.db.battle_loot_item().id().find(entry.id).unwrap();
+        if original.quantity == entry.quantity {
+            ctx.db.battle_loot_item().id().delete(entry.id);
+        } else {
+            let mut original = original;
+            original.quantity -= entry.quantity;
+            ctx.db.battle_loot_item().id().update(original);
+        }
+    }
+    let participant_count = participants.len() as u64;
+    let share = total_value / participant_count;
+    for participant in participants {
+        credit_party_stake(ctx, &party_id, participant.character_id, share);
+    }
+    credit_party_reserve(ctx, &party_id, total_value % participant_count);
+    Ok(())
+}
+
+#[reducer]
+pub fn deposit_party_inventory_item(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or("Inventory item not found")?;
+    if quantity == 0 || inventory.character_id != character_id || inventory.quantity < quantity {
+        return Err("Invalid party inventory deposit".into());
+    }
+    if ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(character_id)
+        .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
+    {
+        return Err("Unequip an item before depositing it".into());
+    }
+    let value = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    credit_party_stake(ctx, &party_id, character_id, value);
+    if inventory.quantity == quantity {
+        ctx.db.inventory_item().id().delete(inventory.id);
+    } else {
+        inventory.quantity -= quantity;
+        ctx.db.inventory_item().id().update(inventory);
+    }
+    Ok(())
+}
+
+fn consume_personal_gold(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut amount: u64,
+) -> Result<(), String> {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, &"gold_coin".to_string()))
+        .collect();
+    let available: u64 = stacks.iter().map(|stack| u64::from(stack.quantity)).sum();
+    if available < amount {
+        return Err("Not enough personal gold to cover this withdrawal".into());
+    }
+    for mut stack in stacks {
+        let taken = amount.min(u64::from(stack.quantity)) as u32;
+        stack.quantity -= taken;
+        amount -= u64::from(taken);
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+        if amount == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn withdraw_party_inventory_item(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_inventory_item_id: u64,
+    quantity: u32,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut inventory = ctx
+        .db
+        .party_inventory_item()
+        .id()
+        .find(party_inventory_item_id)
+        .ok_or("Party inventory item not found")?;
+    if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
+        return Err("Invalid party inventory withdrawal".into());
+    }
+    let cost = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    let mut stake = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .find(|stake| stake.character_id == character_id);
+    let stake_value = stake.as_ref().map_or(0, |stake| stake.value);
+    if cost > stake_value {
+        let top_up = cost - stake_value;
+        consume_personal_gold(ctx, character_id, top_up)?;
+        add_to_party_inventory(ctx, &party_id, "gold_coin", top_up as u32);
+    }
+    if let Some(ref mut stake) = stake {
+        stake.value = stake.value.saturating_sub(cost);
+        ctx.db.party_stake().id().update(stake.clone());
+    }
+    crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    if inventory.quantity == quantity {
+        ctx.db.party_inventory_item().id().delete(inventory.id);
+    } else {
+        inventory.quantity -= quantity;
+        ctx.db.party_inventory_item().id().update(inventory);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn liquidate_party_inventory(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    party_inventory_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if party_inventory_item_ids.is_empty() || party_inventory_item_ids.len() != quantities.len() {
+        return Err("Liquidation entries must be non-empty and aligned".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if character.current_settlement_id.as_deref() != Some(&settlement_id) {
+        return Err("Character must be at this settlement to liquidate party assets".into());
+    }
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let mut staged = Vec::new();
+    let mut proceeds = 0_u64;
+    let mut seen = HashSet::new();
+    for (&id, &quantity) in party_inventory_item_ids.iter().zip(&quantities) {
+        if !seen.insert(id) {
+            return Err("Party liquidation item IDs must be unique".into());
+        }
+        let entry = ctx
+            .db
+            .party_inventory_item()
+            .id()
+            .find(id)
+            .ok_or("Party inventory item not found")?;
+        if quantity == 0
+            || entry.party_id != party_id
+            || entry.quantity < quantity
+            || entry.item_id == "gold_coin"
+        {
+            return Err("Invalid party asset liquidation".into());
+        }
+        proceeds = proceeds.saturating_add(
+            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(quantity)),
+        );
+        staged.push((entry, quantity));
+    }
+    for (mut entry, quantity) in staged {
+        if entry.quantity == quantity {
+            ctx.db.party_inventory_item().id().delete(entry.id);
+        } else {
+            entry.quantity -= quantity;
+            ctx.db.party_inventory_item().id().update(entry);
+        }
+    }
+    add_to_party_inventory(ctx, &party_id, "gold_coin", proceeds as u32);
+    Ok(())
+}
+
+#[reducer]
+pub fn discard_inventory_items(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_ids: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    if inventory_item_ids.is_empty() || inventory_item_ids.len() != quantities.len() {
+        return Err("Discarded item IDs and quantities must be non-empty and aligned".into());
+    }
+    if ctx.db.character().id().find(character_id).is_none() {
+        return Err("Character not found".into());
+    }
+    let equip = ctx.db.character_equip().character_id().find(character_id);
+    let mut seen = HashSet::new();
+    let mut staged = Vec::with_capacity(inventory_item_ids.len());
+    for (&inventory_item_id, &quantity) in inventory_item_ids.iter().zip(&quantities) {
+        if quantity == 0 || !seen.insert(inventory_item_id) {
+            return Err("Discard quantities must be positive and item IDs unique".into());
+        }
+        let item = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(inventory_item_id)
+            .ok_or("Inventory item not found")?;
+        if item.character_id != character_id || item.quantity < quantity {
+            return Err("Character does not have the staged quantity".into());
+        }
+        if equip
+            .as_ref()
+            .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
+        {
+            return Err("Unequip an item before discarding it".into());
+        }
+        staged.push((item, quantity));
+    }
+
+    for (mut item, quantity) in staged {
+        if item.quantity == quantity {
+            ctx.db.inventory_item().id().delete(item.id);
+        } else {
+            item.quantity -= quantity;
+            ctx.db.inventory_item().id().update(item);
+        }
     }
     Ok(())
 }
@@ -502,6 +2318,7 @@ pub fn finalize_merchant_trade(
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
     sell_quantities: Vec<u32>,
+    party_scope: bool,
 ) -> Result<(), String> {
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
@@ -514,15 +2331,28 @@ pub fn finalize_merchant_trade(
     if character.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Character must be at this settlement to trade".into());
     }
+    let party_id = character.party_id.clone();
     let mut net: HashMap<String, i64> = HashMap::new();
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         *net.entry(item_id.clone()).or_default() += *quantity as i64;
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let Some(inventory) = ctx.db.inventory_item().id().find(*inventory_id) else {
-            return Err("Inventory item not found".into());
+        let item_id = if party_scope {
+            ctx.db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Party inventory item not found")?
+                .item_id
+        } else {
+            ctx.db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item not found")?
+                .item_id
         };
-        *net.entry(inventory.item_id).or_default() -= *quantity as i64;
+        *net.entry(item_id).or_default() -= *quantity as i64;
     }
     let buy_item_ids: Vec<String> = net
         .iter()
@@ -533,18 +2363,32 @@ pub fn finalize_merchant_trade(
     let sell_inventory_ids: Vec<u64> = sell_inventory_ids
         .into_iter()
         .filter(|id| {
-            ctx.db
-                .inventory_item()
-                .id()
-                .find(*id)
-                .is_some_and(|entry| net.get(&entry.item_id).copied().unwrap_or(0) < 0)
+            let item_id = if party_scope {
+                ctx.db
+                    .party_inventory_item()
+                    .id()
+                    .find(*id)
+                    .map(|v| v.item_id)
+            } else {
+                ctx.db.inventory_item().id().find(*id).map(|v| v.item_id)
+            };
+            item_id.is_some_and(|item_id| net.get(&item_id).copied().unwrap_or(0) < 0)
         })
         .collect();
     let sell_quantities: Vec<u32> = sell_inventory_ids
         .iter()
         .map(|id| {
-            let entry = ctx.db.inventory_item().id().find(*id).unwrap();
-            (-net[&entry.item_id]) as u32
+            let item_id = if party_scope {
+                ctx.db
+                    .party_inventory_item()
+                    .id()
+                    .find(*id)
+                    .unwrap()
+                    .item_id
+            } else {
+                ctx.db.inventory_item().id().find(*id).unwrap().item_id
+            };
+            (-net[&item_id]) as u32
         })
         .collect();
     let mut cost = 0_u32;
@@ -563,25 +2407,42 @@ pub fn finalize_merchant_trade(
     }
     let mut proceeds = 0_u32;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let Some(inventory) = ctx.db.inventory_item().id().find(*inventory_id) else {
-            return Err("Inventory item not found".into());
+        let (item_id, available) = if party_scope {
+            let inventory = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Party inventory item not found")?;
+            if Some(&inventory.party_id) != party_id.as_ref() {
+                return Err("Invalid party inventory sale".into());
+            }
+            (inventory.item_id, inventory.quantity)
+        } else {
+            let inventory = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item not found")?;
+            if inventory.character_id != character_id {
+                return Err("Invalid merchant sale".into());
+            }
+            (inventory.item_id, inventory.quantity)
         };
-        let Some(item) = ctx.db.item().id().find(&inventory.item_id) else {
+        let Some(item) = ctx.db.item().id().find(&item_id) else {
             return Err("Item definition not found".into());
         };
-        if inventory.character_id != character_id
-            || inventory.quantity < *quantity
-            || *quantity == 0
-            || item.kind == crate::ItemKind::Currency
-        {
+        if available < *quantity || *quantity == 0 || item.kind == crate::ItemKind::Currency {
             return Err("Invalid merchant sale".into());
         }
-        if ctx
-            .db
-            .character_equip()
-            .character_id()
-            .find(character_id)
-            .is_some_and(|equip| equip.is_equiped(*inventory_id).is_some())
+        if !party_scope
+            && ctx
+                .db
+                .character_equip()
+                .character_id()
+                .find(character_id)
+                .is_some_and(|equip| equip.is_equiped(*inventory_id).is_some())
         {
             return Err("Unequip an item before selling it".into());
         }
@@ -592,28 +2453,56 @@ pub fn finalize_merchant_trade(
                 * quantity,
         );
     }
-    let coins: u32 = ctx
-        .db
-        .inventory_item()
-        .character_and_item_id()
-        .filter((character_id, &"gold_coin".to_string()))
-        .map(|coin| coin.quantity)
-        .sum();
+    let coins: u32 = if party_scope {
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
+        ctx.db
+            .party_inventory_item()
+            .party_id()
+            .filter(party_id)
+            .filter(|v| v.item_id == "gold_coin")
+            .map(|v| v.quantity)
+            .sum()
+    } else {
+        ctx.db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((character_id, &"gold_coin".to_string()))
+            .map(|coin| coin.quantity)
+            .sum()
+    };
     if coins.saturating_add(proceeds) < cost {
         return Err("Not enough gold".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
-        if inventory.quantity == *quantity {
-            ctx.db.inventory_item().id().delete(*inventory_id);
+        if party_scope {
+            let mut inventory = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(*inventory_id)
+                .unwrap();
+            if inventory.quantity == *quantity {
+                ctx.db.party_inventory_item().id().delete(*inventory_id);
+            } else {
+                inventory.quantity -= quantity;
+                ctx.db.party_inventory_item().id().update(inventory);
+            }
         } else {
-            let mut updated = inventory;
-            updated.quantity -= quantity;
-            ctx.db.inventory_item().id().update(updated);
+            let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
+            if inventory.quantity == *quantity {
+                ctx.db.inventory_item().id().delete(*inventory_id);
+            } else {
+                inventory.quantity -= quantity;
+                ctx.db.inventory_item().id().update(inventory);
+            }
         }
     }
     let equip = ctx.db.character_equip().character_id().find(character_id);
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
+        if party_scope {
+            add_to_party_inventory(ctx, party_id.as_ref().unwrap(), item_id, *quantity);
+            continue;
+        }
         // Never add purchases to an equipped stack. An equipped item must stay
         // independently sellable from an otherwise identical spare item.
         if let Some(mut stack) = ctx
@@ -639,7 +2528,21 @@ pub fn finalize_merchant_trade(
         }
     }
     let net = proceeds as i64 - cost as i64;
-    if net != 0 {
+    if party_scope && net != 0 {
+        let party_id = party_id.as_ref().unwrap();
+        let mut coin = ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(party_id)
+            .find(|v| v.item_id == "gold_coin");
+        if let Some(ref mut coin) = coin {
+            coin.quantity = (coin.quantity as i64 + net) as u32;
+            ctx.db.party_inventory_item().id().update(coin.clone());
+        } else if net > 0 {
+            add_to_party_inventory(ctx, party_id, "gold_coin", net as u32);
+        }
+    } else if net != 0 {
         if let Some(mut coin) = ctx
             .db
             .inventory_item()
@@ -665,32 +2568,66 @@ pub fn finalize_merchant_trade(
 /// strategic UI development. Safe to call repeatedly.
 #[reducer]
 pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
-    let party_id = "demo-party".to_string();
-    if ctx.db.party().id().find(&party_id).is_none() {
-        create_party(ctx, party_id.clone(), "Riverdale Company".into(), leader_id)?;
-    }
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Leader not found")?;
+    let party_id = leader.party_id.clone().ok_or("Leader has no party")?;
+    let role = ctx
+        .db
+        .party_recruitment_role()
+        .insert(PartyRecruitmentRole {
+            id: 0,
+            party_id: party_id.clone(),
+            name: "Companion".into(),
+            requirements: RecruitmentRequirements::default(),
+            quantity: 2,
+            weapon_precision: 0.0,
+        });
 
     for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {
         if ctx.db.character().id().find(id).is_none() {
             crate::character::insert_new_character(ctx, name.into(), id, false)?;
         }
-        if ctx
-            .db
-            .character()
-            .id()
-            .find(id)
-            .and_then(|character| character.party_id)
-            .is_none()
-        {
-            join_party(ctx, id, party_id.clone())?;
+        let mut companion = ctx.db.character().id().find(id).unwrap();
+        if companion.party_id.as_deref() == Some(&party_id) {
+            continue;
         }
+        companion.current_settlement_id = leader.current_settlement_id.clone();
+        companion.current_quest_location_id = leader.current_quest_location_id.clone();
+        ctx.db.character().id().update(companion);
+        request_to_join_party(ctx, id, role.id)?;
+        let request = ctx
+            .db
+            .party_join_request()
+            .character_id()
+            .filter(id)
+            .find(|request| request.recruitment_role_id == role.id)
+            .unwrap();
+        accept_party_join_request(ctx, leader_id, request.id)?;
     }
     Ok(())
 }
 
 #[reducer]
 pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+    remove_party_member(ctx, character_id, character_id)
+}
+
+/// Removes a non-leader member. Leaders may remove their members and non-leaders
+/// may remove themselves; a leader must disband rather than remove themselves.
+#[reducer]
+pub fn remove_party_member(
+    ctx: &ReducerContext,
+    actor_character_id: u64,
+    member_character_id: u64,
+) -> Result<(), String> {
+    let Some(actor) = ctx.db.character().id().find(actor_character_id) else {
+        return Err("Acting character not found".into());
+    };
+    let Some(mut character) = ctx.db.character().id().find(member_character_id) else {
         return Err("Character not found".into());
     };
 
@@ -702,15 +2639,30 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
         return Err("Party not found".into());
     };
 
-    if party.leader_id == character_id {
+    if actor.party_id.as_deref() != Some(&party_id) {
+        return Err("Characters are not in the same party".into());
+    }
+    if party.leader_id == member_character_id {
         return Err("Party leader cannot leave. Use disband_party instead.".into());
+    }
+    if actor_character_id != member_character_id && party.leader_id != actor_character_id {
+        return Err("Only the party leader may remove another member".into());
+    }
+    if ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .any(|stake| stake.character_id == member_character_id && stake.value > 0)
+    {
+        return Err("Withdraw this character's party stake before leaving".into());
     }
 
     if let Some(membership) = ctx
         .db
         .party_member()
         .character_id()
-        .filter(character_id)
+        .filter(member_character_id)
         .find(|m| m.party_id == party_id)
     {
         ctx.db.party_member().id().delete(membership.id);
@@ -718,16 +2670,80 @@ pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String
 
     character.party_id = None;
     ctx.db.character().id().update(character);
+    create_solo_party_for_character(ctx, member_character_id)?;
     Ok(())
 }
 
 #[reducer]
-pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), String> {
+pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> Result<(), String> {
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can disband the party".into());
+    }
+    if party.current_quest_location_id.is_some() {
+        return Err("Travel to a settlement before disbanding the party".into());
+    }
+    if ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .any(|stake| stake.value > 0)
+    {
+        return Err("Settle every member's party stake before disbanding".into());
+    }
+    let pooled_items: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(&party_id)
+        .collect();
+    let reserve = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id)
+        .map_or(0, |state| state.reserve_value);
+    if pooled_items
+        .iter()
+        .any(|entry| entry.item_id != "gold_coin")
+        || pooled_items
+            .iter()
+            .map(|entry| u64::from(entry.quantity))
+            .sum::<u64>()
+            != reserve
+    {
+        return Err("Liquidate and distribute the party inventory before disbanding".into());
+    }
+    if reserve > 0 {
+        crate::add_inventory_item(ctx, party.leader_id, "gold_coin", reserve as u32);
+    }
+    for entry in pooled_items {
+        ctx.db.party_inventory_item().id().delete(entry.id);
+    }
+    if ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.party_inventory_state().party_id().delete(&party_id);
+    }
+    for stake in ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_stake().id().delete(stake.id);
+    }
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
+    let member_ids: Vec<_> = members.iter().map(|member| member.character_id).collect();
     for member in members {
         if let Some(mut character) = ctx.db.character().id().find(member.character_id) {
             character.party_id = None;
@@ -736,15 +2752,33 @@ pub fn disband_party(ctx: &ReducerContext, party_id: String) -> Result<(), Strin
         ctx.db.party_member().id().delete(member.id);
     }
 
+    let requests: Vec<_> = ctx
+        .db
+        .party_join_request()
+        .party_id()
+        .filter(&party_id)
+        .collect();
+    for request in requests {
+        ctx.db.party_join_request().id().delete(request.id);
+    }
+    for role in ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_recruitment_role().id().delete(role.id);
+    }
+
     if let Some(quest_id) = party.active_quest_id {
-        if let Some(mut quest) = ctx.db.quest().id().find(&quest_id) {
-            quest.status = QuestStatus::Available;
-            quest.accepted_by = None;
-            ctx.db.quest().id().update(quest);
-        }
+        ctx.db.quest().id().delete(&quest_id);
     }
 
     ctx.db.party().id().delete(&party_id);
+    for character_id in member_ids {
+        create_solo_party_for_character(ctx, character_id)?;
+    }
     Ok(())
 }
 
@@ -816,18 +2850,22 @@ pub fn abandon_quest(
     if party.leader_id != character_id {
         return Err("Only the party leader can abandon quests".into());
     }
+    if character.current_quest_location_id.is_some() {
+        return Err("Travel to a settlement before abandoning the quest".into());
+    }
 
-    let Some(mut quest) = ctx.db.quest().id().find(&quest_id) else {
+    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
         return Err("Quest not found".into());
     };
 
     if quest.accepted_by.as_ref() != Some(&party_id) {
         return Err("This quest is not accepted by your party".into());
     }
+    if quest.status == QuestStatus::Completed {
+        return Err("A completed quest must be returned to its questgiver".into());
+    }
 
-    quest.status = QuestStatus::Available;
-    quest.accepted_by = None;
-    ctx.db.quest().id().update(quest);
+    ctx.db.quest().id().delete(&quest.id);
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
@@ -900,6 +2938,78 @@ fn journey_minutes(distance_m: u64) -> u64 {
         .max(1)
 }
 
+fn quest_journey_minutes(distance_m: u64) -> u64 {
+    journey_minutes(distance_m).saturating_mul(QUEST_TRAVEL_SPEED_DIVISOR)
+}
+
+fn straight_line_distance_m(
+    from_x: f64,
+    from_y: f64,
+    to_x: f64,
+    to_y: f64,
+    geographic: bool,
+) -> u64 {
+    if geographic {
+        let earth_radius_m = 6_371_000.0_f64;
+        let lat1 = from_y.to_radians();
+        let lat2 = to_y.to_radians();
+        let delta_lat = (to_y - from_y).to_radians();
+        let delta_lon = (to_x - from_x).to_radians();
+        let a = (delta_lat / 2.0).sin().powi(2)
+            + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
+        (earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
+    } else {
+        (((from_x - to_x).powi(2) + (from_y - to_y).powi(2)).sqrt() * METERS_PER_KILOMETER as f64)
+            .round() as u64
+    }
+}
+
+#[reducer]
+pub fn travel_to_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
+    };
+    let Some(party_id) = character.party_id.clone() else {
+        return Err("Must be in a party to travel to a quest".into());
+    };
+    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != character_id {
+        return Err("Only the party leader can travel".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
+    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
+        return Err("Quest not found".into());
+    };
+    if quest.status != QuestStatus::Accepted || quest.accepted_by.as_ref() != Some(&party_id) {
+        return Err("Quest is not accepted by this party".into());
+    }
+    if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
+        return Err("Travel to the quest must begin at its posting settlement".into());
+    }
+
+    let travel_minutes = quest_journey_minutes(quest.distance_m);
+    for membership in ctx.db.party_member().party_id().filter(&party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+            advance_character_time(ctx, member.id, travel_minutes)?;
+            member.current_settlement_id = None;
+            member.current_quest_location_id = Some(quest_id.clone());
+            ctx.db.character().id().update(member);
+        }
+    }
+    party.current_settlement_id = None;
+    party.current_quest_location_id = Some(quest_id);
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
 #[reducer]
 pub fn travel_to_settlement(
     ctx: &ReducerContext,
@@ -941,16 +3051,68 @@ pub fn travel_to_settlement(
                 journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER)),
             )?;
         }
+    } else if let Some(quest_id) = &character.current_quest_location_id {
+        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+            return Err("Character's current quest location does not exist".into());
+        };
+        let distance_m = straight_line_distance_m(
+            quest.location_coord_x,
+            quest.location_coord_y,
+            destination.coord_x,
+            destination.coord_y,
+            quest.coordinates_are_geographic && destination.source_node_id.is_some(),
+        );
+        advance_character_time(ctx, character_id, quest_journey_minutes(distance_m))?;
+    } else {
+        return Err("Character is not at a known location".into());
     }
 
+    let departing_quest = character.current_quest_location_id.clone();
     character.current_settlement_id = Some(settlement_id.clone());
+    character.current_quest_location_id = None;
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
 
     if let Some(party_id) = party_id {
         if let Some(mut party) = ctx.db.party().id().find(&party_id) {
             if party.leader_id == character_id {
+                if departing_quest.is_some() {
+                    let members: Vec<_> =
+                        ctx.db.party_member().party_id().filter(&party_id).collect();
+                    for membership in members {
+                        if membership.character_id == character_id {
+                            continue;
+                        }
+                        if let Some(mut member) =
+                            ctx.db.character().id().find(membership.character_id)
+                        {
+                            let quest = ctx
+                                .db
+                                .quest()
+                                .id()
+                                .find(departing_quest.as_ref().unwrap())
+                                .ok_or("Party's quest location does not exist")?;
+                            let distance_m = straight_line_distance_m(
+                                quest.location_coord_x,
+                                quest.location_coord_y,
+                                destination.coord_x,
+                                destination.coord_y,
+                                quest.coordinates_are_geographic
+                                    && destination.source_node_id.is_some(),
+                            );
+                            advance_character_time(
+                                ctx,
+                                member.id,
+                                quest_journey_minutes(distance_m),
+                            )?;
+                            member.current_settlement_id = Some(settlement_id.clone());
+                            member.current_quest_location_id = None;
+                            ctx.db.character().id().update(member);
+                        }
+                    }
+                }
                 party.current_settlement_id = Some(settlement_id);
+                party.current_quest_location_id = None;
                 ctx.db.party().id().update(party);
             }
         }
@@ -973,17 +3135,18 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         return Err("Quest has no party assigned".into());
     };
 
-    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
 
     let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
-    let gold_per_member = quest.gold_reward.max(0) as u32 / members.len().max(1) as u32;
     let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
 
     for member in members {
         if let Some(mut character) = ctx.db.character().id().find(member.character_id) {
-            character.gold += gold_per_member;
             character.xp += xp_per_member;
             character.level = 1 + character.xp / 100;
             ctx.db.character().id().update(character);
@@ -992,10 +3155,133 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
+    Ok(())
+}
+
+#[reducer]
+pub fn turn_in_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Must be in a party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can turn in quests".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
+        return Err("This is not the party's active quest".into());
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .ok_or("Quest not found")?;
+    if quest.status != QuestStatus::Completed || quest.accepted_by.as_ref() != Some(&party_id) {
+        return Err("The quest has not been completed by this party".into());
+    }
+    if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
+        return Err("Return to the questgiver's settlement to claim the reward".into());
+    }
+
+    let reward = quest.gold_reward.max(0) as u64;
+    if reward > 0 {
+        add_to_party_inventory(ctx, &party_id, "gold_coin", reward as u32);
+        let recipients: Vec<u64> = ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(&party_id)
+            .map(|member| member.character_id)
+            .collect();
+        let recipient_count = recipients.len().max(1) as u64;
+        let share = reward / recipient_count;
+        for recipient in recipients {
+            credit_party_stake(ctx, &party_id, recipient, share);
+        }
+        credit_party_reserve(ctx, &party_id, reward % recipient_count);
+    }
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
+    ensure_settlement_activity_inner(ctx, &quest.settlement_id)?;
     Ok(())
+}
+
+#[reducer]
+pub fn autoresolve_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Err("Character not found".into());
+    };
+    let Some(party_id) = character.party_id else {
+        return Err("Must be in a party".into());
+    };
+    let Some(party) = ctx.db.party().id().find(&party_id) else {
+        return Err("Party not found".into());
+    };
+    if party.leader_id != character_id {
+        return Err("Only the party leader can autoresolve".into());
+    }
+    if party.active_quest_id.as_deref() != Some(&quest_id)
+        || party.current_quest_location_id.as_deref() != Some(&quest_id)
+    {
+        return Err("Party must be at its active quest location".into());
+    }
+
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .ok_or("Quest not found")?;
+    // The current enemy generator equips its placeholder enemies with clubs.
+    let dropped_item = "club";
+    record_battle_result(
+        ctx,
+        &party_id,
+        &quest_id,
+        &format!("autoresolve-{quest_id}"),
+        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        true,
+    )?;
+
+    for member in ctx.db.party_member().party_id().filter(&party_id) {
+        if let Some(mut limbs) = ctx
+            .db
+            .character_limbs()
+            .character_id()
+            .find(member.character_id)
+        {
+            let damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            match ctx.random::<u64>() % 7 {
+                0 => limbs.left_arm_health = (limbs.left_arm_health - damage).max(0.0),
+                1 => limbs.right_arm_health = (limbs.right_arm_health - damage).max(0.0),
+                2 => limbs.left_leg_health = (limbs.left_leg_health - damage).max(0.0),
+                3 => limbs.right_leg_health = (limbs.right_leg_health - damage).max(0.0),
+                4 => limbs.head_health = (limbs.head_health - damage).max(0.0),
+                5 => limbs.chest_health = (limbs.chest_health - damage).max(0.0),
+                _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
+            }
+            ctx.db.character_limbs().character_id().update(limbs);
+        }
+    }
+    complete_quest(ctx, quest_id)
 }
 
 #[reducer]
@@ -1030,98 +3316,334 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         }
     }
 
-    seed_quest(
-        ctx,
-        "goblin-cave-1",
-        "Clear the Goblin Cave",
-        "A band of goblins has taken up residence nearby.",
-        2,
-        50,
-        25,
-        "riverdale",
-        "goblins",
-        5,
-    )?;
-    seed_quest(
-        ctx,
-        "bandit-camp-1",
-        "Bandit Troubles",
-        "Bandits have been raiding merchant caravans.",
-        3,
-        100,
-        50,
-        "riverdale",
-        "bandits",
-        8,
-    )?;
-    seed_quest(
-        ctx,
-        "wolf-hunt-1",
-        "Wolf Pack",
-        "A pack of wolves has been attacking livestock.",
-        1,
-        25,
-        15,
-        "riverdale",
-        "wolves",
-        4,
-    )?;
-    seed_quest(
-        ctx,
-        "mine-infestation-1",
-        "Mine Infestation",
-        "Giant spiders have infested the old mine.",
-        3,
-        75,
-        40,
-        "ironforge",
-        "spiders",
-        6,
-    )?;
-    seed_quest(
-        ctx,
-        "ore-thieves-1",
-        "Ore Thieves",
-        "Thieves have been stealing ore shipments.",
-        2,
-        60,
-        30,
-        "ironforge",
-        "thieves",
-        4,
-    )?;
+    let settlement_ids: Vec<_> = ctx
+        .db
+        .settlement()
+        .iter()
+        .map(|settlement| settlement.id)
+        .collect();
+    for settlement_id in settlement_ids {
+        ensure_settlement_activity_inner(ctx, &settlement_id)?;
+    }
 
     Ok(())
 }
 
-fn seed_quest(
+#[reducer]
+pub fn ensure_settlement_activity(
     ctx: &ReducerContext,
-    id: &str,
-    title: &str,
-    description: &str,
-    difficulty: i32,
-    gold_reward: i32,
-    xp_reward: i32,
-    settlement_id: &str,
-    enemy_type: &str,
-    enemy_count: i32,
+    settlement_id: String,
 ) -> Result<(), String> {
-    if ctx.db.quest().id().find(&id.to_string()).is_some() {
-        return Ok(());
-    }
+    ensure_settlement_activity_inner(ctx, &settlement_id)
+}
 
+fn settlement_activity_target(settlement_id: &str) -> usize {
+    MIN_QUESTS_PER_SETTLEMENT
+        + settlement_id.bytes().map(usize::from).sum::<usize>()
+            % (MAX_QUESTS_PER_SETTLEMENT - MIN_QUESTS_PER_SETTLEMENT + 1)
+}
+
+fn ensure_settlement_activity_inner(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<(), String> {
+    let tracked_quests: HashSet<String> = ctx
+        .db
+        .party()
+        .iter()
+        .filter_map(|party| party.active_quest_id)
+        .collect();
+    let active = ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+        .filter(|quest| {
+            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+        })
+        .count();
+    for _ in active..settlement_activity_target(settlement_id) {
+        generate_quest_for_settlement(ctx, settlement_id)?;
+    }
+    ensure_quest_issuers(ctx, settlement_id);
+    ensure_npc_quest_parties(ctx, settlement_id)?;
+    Ok(())
+}
+
+fn ensure_quest_issuers(ctx: &ReducerContext, settlement_id: &str) {
+    for quest in ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+    {
+        if ctx.db.quest_issuer().quest_id().find(&quest.id).is_none() {
+            ctx.db.quest_issuer().insert(QuestIssuer {
+                quest_id: quest.id,
+                settlement_id: settlement_id.to_string(),
+                service_id: quest_service_for_title(&quest.title).to_string(),
+            });
+        }
+    }
+}
+
+fn quest_service_for_title(title: &str) -> &'static str {
+    if title.starts_with("Break Up the Bandit Camp") {
+        "merchants"
+    } else if title.starts_with("Recover the Stolen Ore")
+        || title.starts_with("Recover the Stolen Arms")
+    {
+        "weapons"
+    } else if title.starts_with("Purge the Old Mine") {
+        "armor"
+    } else if title.starts_with("Hunt the Wolf Pack") {
+        "clothing"
+    } else if title.starts_with("Quiet the Restless Dead") {
+        "religion"
+    } else {
+        "inn"
+    }
+}
+
+fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    let target = 1 + settlement_id.bytes().map(usize::from).sum::<usize>() % 2;
+    for mut party in ctx.db.party().iter().collect::<Vec<_>>() {
+        let Some(quest_id) = party.active_quest_id.as_ref() else {
+            continue;
+        };
+        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+            continue;
+        };
+        let Some(leader) = ctx.db.character().id().find(party.leader_id) else {
+            continue;
+        };
+        if !leader.temporary || quest.settlement_id != settlement_id {
+            continue;
+        }
+        party.current_settlement_id = Some(settlement_id.to_string());
+        if party.name.ends_with("'s party") {
+            party.name = format!("{}'s company", leader.name);
+        }
+        if party.medicine_target == 0.0
+            && party.surgery_target == 0.0
+            && party.charisma_target == 0.0
+            && party.faith_target == 0.0
+        {
+            party.medicine_target = 4.0;
+            party.surgery_target = 4.0;
+            party.charisma_target = 5.0;
+            party.faith_target = 4.0;
+        }
+        party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
+        party.surgery_target = party.surgery_target.round().clamp(0.0, 5.0);
+        party.charisma_target = party.charisma_target.round().clamp(0.0, 5.0);
+        party.faith_target = party.faith_target.round().clamp(0.0, 5.0);
+        ctx.db.party().id().update(party);
+    }
+    let existing = ctx
+        .db
+        .party()
+        .iter()
+        .filter(|party| party.current_settlement_id.as_deref() == Some(settlement_id))
+        .filter(|party| party.active_quest_id.is_some())
+        .filter(|party| {
+            ctx.db
+                .character()
+                .id()
+                .find(party.leader_id)
+                .is_some_and(|leader| leader.temporary)
+        })
+        .count();
+    for _ in existing..target {
+        let Some(mut quest) = ctx
+            .db
+            .quest()
+            .settlement_id()
+            .filter(&settlement_id.to_string())
+            .find(|quest| quest.status == QuestStatus::Available)
+        else {
+            break;
+        };
+        use petname::Generator;
+        let leader_name = petname::Petnames::default()
+            .generate(&mut ctx.rng(), 2, " ")
+            .unwrap_or_else(|| "quest captain".into());
+        let mut leader_id = ctx.random::<u64>() | (1_u64 << 63);
+        while ctx.db.character().id().find(leader_id).is_some() {
+            leader_id = ctx.random::<u64>() | (1_u64 << 63);
+        }
+        crate::character::insert_new_character(ctx, leader_name.clone(), leader_id, true)?;
+        let mut leader = ctx.db.character().id().find(leader_id).unwrap();
+        leader.current_settlement_id = Some(settlement_id.to_string());
+        ctx.db.character().id().update(leader.clone());
+        let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
+        let mut party = ctx.db.party().id().find(&party_id).unwrap();
+        party.name = format!("{}'s company", leader_name);
+        party.current_settlement_id = Some(settlement_id.to_string());
+        party.active_quest_id = Some(quest.id.clone());
+        party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.surgery_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.charisma_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.faith_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        ctx.db.party().id().update(party);
+
+        let mut requirements = RecruitmentRequirements::default();
+        if ctx.random::<u64>() % 2 == 0 {
+            requirements.melee = true;
+        } else {
+            requirements.ranged = true;
+        }
+        requirements.athletics = (ctx.random::<u64>() % 4) as u8;
+        requirements.endurance = (ctx.random::<u64>() % 4) as u8;
+        let armor = ctx.random::<u64>() % 3;
+        requirements.quarter_armor = armor == 1;
+        requirements.half_armor = armor == 2;
+        ctx.db
+            .party_recruitment_role()
+            .insert(PartyRecruitmentRole {
+                id: 0,
+                party_id: party_id.clone(),
+                name: if requirements.ranged {
+                    "Ranged support".into()
+                } else {
+                    "Vanguard".into()
+                },
+                requirements,
+                quantity: 3,
+                weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
+            });
+        quest.status = QuestStatus::Accepted;
+        quest.accepted_by = Some(party_id);
+        ctx.db.quest().id().update(quest);
+    }
+    Ok(())
+}
+
+fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    let Some(settlement) = ctx.db.settlement().id().find(&settlement_id.to_string()) else {
+        return Err("Settlement not found".into());
+    };
+    let archetypes = [
+        (
+            "Clear the Goblin Cave",
+            "Goblins have been attacking travelers on the road after dark.",
+            "goblins",
+            "cave",
+            "You arrive at a cave.",
+            2,
+            "inn",
+        ),
+        (
+            "Break Up the Bandit Camp",
+            "Bandits have been raiding merchant caravans.",
+            "bandits",
+            "camp",
+            "You arrive at a rough camp.",
+            3,
+            "merchants",
+        ),
+        (
+            "Hunt the Wolf Pack",
+            "Wolves have been attacking the flocks that supply wool and hides.",
+            "wolves",
+            "woods",
+            "You arrive at a wooded hollow.",
+            1,
+            "clothing",
+        ),
+        (
+            "Purge the Old Mine",
+            "Giant spiders have cut off the armourer's supply of ore.",
+            "spiders",
+            "mine",
+            "You arrive at an old mine.",
+            3,
+            "armor",
+        ),
+        (
+            "Recover the Stolen Arms",
+            "Thieves are hiding with a stolen shipment of weapons.",
+            "thieves",
+            "camp",
+            "You arrive at a hidden camp.",
+            2,
+            "weapons",
+        ),
+        (
+            "Quiet the Restless Dead",
+            "A necromancer has raised skeletons in a nearby crypt.",
+            "skeletons",
+            "ruins",
+            "You arrive at ruined chapel.",
+            4,
+            "religion",
+        ),
+    ];
+    let tracked_quests: HashSet<String> = ctx
+        .db
+        .party()
+        .iter()
+        .filter_map(|party| party.active_quest_id)
+        .collect();
+    let occupied: HashSet<String> = ctx
+        .db
+        .quest()
+        .settlement_id()
+        .filter(&settlement.id)
+        .filter(|quest| {
+            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+        })
+        .map(|quest| quest.title)
+        .collect();
+    let start = ctx.random::<u64>() as usize % archetypes.len();
+    let Some((title, description, enemy, scene, arrival, difficulty, service_id)) = (0..archetypes
+        .len())
+        .map(|offset| archetypes[(start + offset) % archetypes.len()])
+        .find(|archetype| !occupied.contains(&format!("{} near {}", archetype.0, settlement.name)))
+    else {
+        return Err("No distinct quest archetype is available".into());
+    };
+    let distance_m = 4_000 + ctx.random::<u64>() % 17_000;
+    let angle = (ctx.random::<u64>() as f64 / u64::MAX as f64) * std::f64::consts::TAU;
+    let geographic = settlement.source_node_id.is_some();
+    let (offset_x, offset_y) = if geographic {
+        let distance_km = distance_m as f64 / 1_000.0;
+        let latitude_scale = 111.0;
+        let longitude_scale = latitude_scale * settlement.coord_y.to_radians().cos().abs().max(0.1);
+        (
+            angle.cos() * distance_km / longitude_scale,
+            angle.sin() * distance_km / latitude_scale,
+        )
+    } else {
+        let distance_km = distance_m as f64 / 1_000.0;
+        (angle.cos() * distance_km, angle.sin() * distance_km)
+    };
+    let enemy_count = difficulty * 2 + (ctx.random::<u64>() % 4) as i32;
+    let nonce = ctx.random::<u64>();
+    let quest_id = format!("{}-{nonce:016x}", settlement.id);
     ctx.db.quest().insert(Quest {
-        id: id.into(),
-        title: title.into(),
+        id: quest_id.clone(),
+        title: format!("{title} near {}", settlement.name),
         description: description.into(),
         difficulty,
-        gold_reward,
-        xp_reward,
-        settlement_id: settlement_id.into(),
+        gold_reward: difficulty * 35 + distance_m.div_ceil(1_000) as i32 * 2,
+        xp_reward: difficulty * 20,
+        settlement_id: settlement.id.clone(),
         status: QuestStatus::Available,
         accepted_by: None,
-        enemy_type: enemy_type.into(),
+        enemy_type: enemy.into(),
         enemy_count,
+        location_description: arrival.into(),
+        location_scene_key: scene.into(),
+        location_coord_x: settlement.coord_x + offset_x,
+        location_coord_y: settlement.coord_y + offset_y,
+        coordinates_are_geographic: geographic,
+        distance_m,
+    });
+    ctx.db.quest_issuer().insert(QuestIssuer {
+        quest_id,
+        settlement_id: settlement.id,
+        service_id: service_id.into(),
     });
     Ok(())
 }

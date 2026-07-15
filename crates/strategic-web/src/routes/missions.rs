@@ -1,18 +1,18 @@
 //! Mission route handlers.
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
-    Router,
 };
 use serde::Deserialize;
 use serde_json::json;
 
-use super::AppState;
+use super::{AppState, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
-use crate::spacetimedb::{Character, Party, TacticalServer, TacticalServerRequest};
+use crate::spacetimedb::{BattleResult, Character, Party, TacticalServer, TacticalServerRequest};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
 pub fn routes() -> Router<AppState> {
@@ -38,7 +38,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     };
 
     let Some(party_id) = &character.party_id else {
-        return Redirect::to("/parties");
+        return Redirect::to("/");
     };
 
     let parties: Vec<Party> = state
@@ -48,35 +48,39 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         .unwrap_or_default();
 
     let Some(party) = parties.first() else {
-        return Redirect::to("/parties");
+        return Redirect::to("/");
     };
-
-    if party.leader_id != character_id {
-        return Redirect::to(&format!("/parties/{}", party_id));
-    }
 
     let Some(quest_id) = &party.active_quest_id else {
-        return Redirect::to(&format!("/parties/{}", party_id));
+        return Redirect::to("/");
     };
+    if character.current_quest_location_id.as_ref() != Some(quest_id) {
+        return Redirect::to("/");
+    }
 
     let scene_key = quest_scene_key(&state, quest_id)
         .await
         .unwrap_or_else(|| "hills".to_string());
     let mission_id = format!("party-{}-{}", party_id, chrono_id());
 
-    if let Err(error) = state
-        .db
-        .call(
-            "request_tactical_server",
-            &[json!(mission_id.clone()), json!(scene_key.clone())],
-        )
-        .await
-    {
+    let outcome = execute_or_request_party_action(
+        &state,
+        character_id,
+        "initiate_combat",
+        "Initiate tactical combat",
+        "request_tactical_server",
+        vec![json!(mission_id.clone()), json!(scene_key.clone())],
+    )
+    .await;
+    if let Err(ref error) = outcome {
         tracing::error!("Failed to request mission: {:?}", error);
-        return Redirect::to(&format!("/parties/{}", party_id));
+        return Redirect::to("/");
     }
 
-    Redirect::to(&format!("/missions/{}/status", mission_id))
+    match outcome.unwrap() {
+        PartyActionOutcome::Executed => Redirect::to(&format!("/missions/{mission_id}/status")),
+        PartyActionOutcome::Requested => Redirect::to("/?party-requested=initiate_combat"),
+    }
 }
 
 async fn mission_status(
@@ -94,6 +98,20 @@ async fn mission_status(
     };
 
     let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+        let results: Vec<BattleResult> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM battle_result WHERE mission_id = '{}'",
+                mission_id
+            ))
+            .await
+            .unwrap_or_default();
+        if let Some(result) = results
+            .first()
+            .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
+        {
+            return Redirect::to(&format!("/quests/{}/loot", result.quest_id)).into_response();
+        }
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
@@ -128,21 +146,18 @@ async fn cancel_mission(
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
 
-    if !can_cancel_mission(&state, &viewer, &server).await {
-        return (
-            StatusCode::FORBIDDEN,
-            "Not authorized to cancel this mission",
-        )
-            .into_response();
-    }
+    let _ = execute_or_request_party_action(
+        &state,
+        character_id,
+        "cancel_mission",
+        "Cancel tactical combat",
+        "cancel_mission_request",
+        vec![json!(mission_id)],
+    )
+    .await;
 
-    let _ = state
-        .db
-        .call("cancel_mission_request", &[json!(mission_id)])
-        .await;
-
-    if let Some(party_id) = server.party_id {
-        Redirect::to(&format!("/parties/{}", party_id)).into_response()
+    if server.party_id.is_some() {
+        Redirect::to("/").into_response()
     } else {
         Redirect::to("/").into_response()
     }
@@ -155,15 +170,7 @@ async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
         .await
         .ok()?;
     let quest = quests.first()?;
-    let settlements: Vec<crate::spacetimedb::Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = '{}'",
-            quest.settlement_id
-        ))
-        .await
-        .ok()?;
-    settlements.first().map(|s| s.scene_key.clone())
+    Some(quest.location_scene_key.clone())
 }
 
 async fn get_mission_for_viewer(

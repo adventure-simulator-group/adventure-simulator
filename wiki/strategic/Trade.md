@@ -18,9 +18,21 @@ Trades are bound to the settlement where the character is currently located;
 visiting another settlement's URL does not allow remote trading.
 Removing a staged purchase before offering it simply cancels that purchase;
 it does not create a sale or apply a merchant fee.
-The centered action bar above chat appears only for a pending exchange and
-includes **Offer** and **Cancel** controls; Cancel discards the entire draft.
+The confirmation popup appears in the center of the view only while an
+exchange is pending and includes **Offer** and **Cancel** controls; Cancel
+discards the entire draft. Loot, discard, character trade, merchant trade, and
+party-inventory transfers all use this same centered confirmation pattern.
+
+Transfer arrows always progress from one to two to three as they point inward
+from the source rail. The right rail therefore mirrors their visual order to
+three, two, one when read from left to right.
 
 Equipped inventory stacks remain separate from unequipped stacks. Merchant
 purchases are always added to an unequipped stack (or a new stack), and the UI
 does not offer transfer or sale controls for an equipped stack.
+
+The backpack action beneath the active character portrait opens the inventory
+discard view. Discarding follows the same draft-first interaction as trading:
+the player stages quantities into the left-side **Discard** list, may cancel the
+draft, and must press **Discard** before the server removes anything. Equipped
+items are never eligible for deletion.

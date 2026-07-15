@@ -45,7 +45,11 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
+    pub age_years: u16,
+    pub alive: bool,
+    pub temporary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +89,19 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub location_description: String,
+    pub location_scene_key: String,
+    pub location_coord_x: f64,
+    pub location_coord_y: f64,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestIssuer {
+    pub quest_id: String,
+    pub settlement_id: String,
+    pub service_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,7 +110,13 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
+    pub is_solo: bool,
+    pub medicine_target: f32,
+    pub surgery_target: f32,
+    pub charisma_target: f32,
+    pub faith_target: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +125,214 @@ pub struct PartyMember {
     pub party_id: String,
     pub character_id: u64,
     pub role: Option<String>,
+    pub recruitment_role_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyActionRequest {
+    pub id: u64,
+    pub party_id: String,
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyLeaderVote {
+    pub id: String,
+    pub party_id: String,
+    pub voter_id: u64,
+    pub candidate_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalChatMessage {
+    pub id: u64,
+    pub conversation_key: String,
+    pub sender_id: u64,
+    pub sender_name: String,
+    pub body: String,
+    pub created_micros: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyInventoryItem {
+    pub id: u64,
+    pub party_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryQuantityTarget {
+    pub id: String,
+    pub owner_character_id: u64,
+    pub party_scope: bool,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyStake {
+    pub id: u64,
+    pub party_id: String,
+    pub character_id: u64,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleResult {
+    pub quest_id: String,
+    pub party_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleLootItem {
+    pub id: u64,
+    pub quest_id: String,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJoinRequest {
+    pub id: u64,
+    pub party_id: String,
+    pub recruitment_role_id: u64,
+    pub character_id: u64,
+    pub meets_requirements: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct RecruitmentRequirements {
+    pub melee: bool,
+    pub ranged: bool,
+    pub precise: bool,
+    pub heavy: bool,
+    pub quarter_armor: bool,
+    pub half_armor: bool,
+    pub three_quarter_armor: bool,
+    pub full_armor: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub athletics: u8,
+    pub endurance: u8,
+    pub medicine: u8,
+    pub surgery: u8,
+    pub charisma: u8,
+    pub faith: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRecruitmentRole {
+    pub id: u64,
+    pub party_id: String,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    pub quantity: u32,
+    pub weapon_precision: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedRecruitmentRole {
+    pub id: u64,
+    pub owner_character_id: u64,
+    pub name: String,
+    pub requirements: RecruitmentRequirements,
+    pub weapon_precision: f32,
+}
+
+impl PartyRecruitmentRole {
+    pub fn effective_weapon_precision(&self) -> f32 {
+        self.weapon_precision
+            .max(legacy_weapon_precision(self.requirements))
+    }
+}
+
+impl SavedRecruitmentRole {
+    pub fn effective_weapon_precision(&self) -> f32 {
+        self.weapon_precision
+            .max(legacy_weapon_precision(self.requirements))
+    }
+}
+
+fn legacy_weapon_precision(requirements: RecruitmentRequirements) -> f32 {
+    adventuresim_core::capability::legacy_weapon_precision(
+        requirements.precise,
+        requirements.blunt,
+        requirements.slash,
+        requirements.pierce,
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterCapability {
+    pub character_id: u64,
+    pub melee: bool,
+    pub ranged: bool,
+    pub precise: bool,
+    pub heavy: bool,
+    pub quarter_armor: bool,
+    pub half_armor: bool,
+    pub three_quarter_armor: bool,
+    pub full_armor: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub athletics: f32,
+    pub endurance: f32,
+    pub medicine: f32,
+    pub surgery: f32,
+    pub charisma: f32,
+    pub faith: f32,
+    pub weapon_precision: f32,
+}
+
+impl CharacterCapability {
+    pub fn summary_tags(&self) -> Vec<String> {
+        let mut tags = Vec::new();
+        for (enabled, label) in [
+            (self.melee, "Melee"),
+            (self.ranged, "Ranged"),
+            (self.heavy, "Heavy"),
+        ] {
+            if enabled {
+                tags.push(label.into());
+            }
+        }
+        if let Some(label) =
+            adventuresim_core::capability::weapon_precision_tier_label(self.weapon_precision)
+        {
+            tags.push(label.into());
+        }
+        if self.full_armor {
+            tags.push("Full armor".into());
+        } else if self.three_quarter_armor {
+            tags.push("3/4 armor".into());
+        } else if self.half_armor {
+            tags.push("1/2 armor".into());
+        } else if self.quarter_armor {
+            tags.push("1/4 armor".into());
+        }
+        for (value, label) in [
+            (self.athletics, "Athletics"),
+            (self.endurance, "Endurance"),
+            (self.medicine, "Medicine"),
+            (self.surgery, "Surgery"),
+            (self.charisma, "Charisma"),
+            (self.faith, "Faith"),
+        ] {
+            if adventuresim_core::capability::rating(value)
+                >= adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT
+            {
+                tags.push(label.into());
+            }
+        }
+        tags
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

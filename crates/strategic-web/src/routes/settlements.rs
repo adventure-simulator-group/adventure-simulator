@@ -1,25 +1,27 @@
 //! Settlement route handlers
 
 use axum::{
-    Form, Router,
-    extract::{Path, State},
-    response::{Html, Redirect},
+    Form, Json, Router,
+    extract::{Path, Query, State},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use super::AppState;
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, ItemDefinition, Party, PartyMember, Quest,
-    Settlement, TravelEdge,
+    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
+    Quest, QuestIssuer, RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
-    MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page, noticeboard_page,
-    party_inventory_page, party_personal_page, party_stats_page, religion_page, rest_result_page,
+    LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page, merchants_page,
+    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
+    party_stats_page, religion_page, rest_result_page, settlement_map_page,
     settlement_overview_page, settlements_list_page, smith_page,
 };
 
@@ -27,29 +29,63 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/settlements", get(list_settlements))
         .route("/settlements/{id}", get(show_settlement))
-        .route("/settlements/{id}/noticeboard", get(noticeboard))
+        .route("/locations/settlement/{id}", get(show_settlement_location))
+        .route("/locations/settlement/{id}/map", get(settlement_map))
         .route(
-            "/settlements/{id}/party/{character_id}",
+            "/api/settlements/{id}/service-quests",
+            get(service_quest_offers),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory",
+            "/locations/{kind}/{id}/party/{character_id}/inventory",
             get(party_member),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory/transfer",
+            "/locations/{kind}/{id}/party/{character_id}/inventory/transfer",
             post(transfer_party_item),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/inventory/offer",
+            "/locations/{kind}/{id}/party/{character_id}/remove",
+            post(remove_party_member),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/inventory/offer",
             post(finalize_party_offer),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/stats",
+            "/locations/{kind}/{id}/party/{character_id}/inventory/discard",
+            post(discard_inventory_items),
+        )
+        .route(
+            "/locations/{kind}/{id}/party-inventory",
+            get(party_pool_inventory),
+        )
+        .route(
+            "/locations/{kind}/{id}/party-inventory/deposit",
+            post(deposit_party_inventory),
+        )
+        .route(
+            "/locations/{kind}/{id}/party-inventory/withdraw",
+            post(withdraw_party_inventory),
+        )
+        .route(
+            "/locations/{kind}/{id}/party-inventory/liquidate",
+            post(liquidate_party_assets),
+        )
+        .route("/api/inventory-target", post(set_inventory_target))
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
         )
         .route(
-            "/settlements/{id}/party/{character_id}/schedule",
+            "/locations/{kind}/{id}/players/{character_id}",
+            get(party_stats),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
         )
         .route("/settlements/{id}/tavern", get(redirect_to_inn))
@@ -82,9 +118,53 @@ async fn list_settlements(State(state): State<AppState>, session: Session) -> Ht
     )
 }
 
-async fn show_settlement(
+async fn show_settlement(Path(id): Path<String>) -> Redirect {
+    Redirect::to(&format!("/locations/settlement/{id}"))
+}
+
+async fn show_settlement_location(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    let settlements: Vec<Settlement> = state
+        .db
+        .query("SELECT * FROM settlement")
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
+        return Html("<h1>Settlement not found</h1>".to_string());
+    };
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let party_members = get_active_party_members(
+        &state,
+        active_character.as_ref().map(|(character, _)| character),
+    )
+    .await;
+    let logged_in_as = active_character
+        .as_ref()
+        .map(|(character, _)| character.name.clone());
+    Html(
+        settlement_overview_page(
+            settlement,
+            active_character.as_ref().map(|(character, _)| character),
+            &party_members,
+            logged_in_as.as_deref(),
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Default, Deserialize)]
+struct LocationMapQuery {
+    destination: Option<String>,
+}
+
+async fn settlement_map(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<LocationMapQuery>,
     session: Session,
 ) -> Html<String> {
     let settlements: Vec<Settlement> = state
@@ -100,40 +180,550 @@ async fn show_settlement(
         .query("SELECT * FROM travel_edge")
         .await
         .unwrap_or_default();
-    let destinations = connected_destinations(settlement, &settlements, &edges);
+    let mut destinations = connected_destinations(settlement, &settlements, &edges);
     let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let active_party = if let Some(party_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.party_id.as_ref())
+    {
+        state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let active_quest = if let Some(quest_id) = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_ref())
+    {
+        state
+            .db
+            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    if let Some(quest) = active_quest
+        .as_ref()
+        .filter(|quest| quest.status.eq_ignore_ascii_case("accepted"))
+    {
+        let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
+        destinations.push(TravelDestination {
+            id: quest.id.clone(),
+            name: quest.title.clone(),
+            description: quest.description.clone(),
+            summary: Some(format!(
+                "Active quest · {} {}",
+                quest.enemy_count, quest.enemy_type
+            )),
+            travel_action: format!("/quests/{}/travel", quest.id),
+            distance_m,
+            journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
+            quest_in_progress: true,
+            turn_in_ready: false,
+        });
+    }
+    if let Some(quest) = active_quest
+        .as_ref()
+        .filter(|quest| quest.status.eq_ignore_ascii_case("completed"))
+    {
+        for destination in &mut destinations {
+            destination.turn_in_ready = destination.id == quest.settlement_id;
+        }
+    }
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
     let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
-        character.current_settlement_id.as_deref() == Some(&settlement.id)
+        character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
     });
     Html(
-        settlement_overview_page(
+        settlement_map_page(
             settlement,
             &destinations,
+            query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             can_travel,
-            logged_in_as.as_deref(),
+            active_character
+                .as_ref()
+                .map(|(character, _)| character.name.as_str()),
             session.theme(),
         )
         .into_string(),
     )
 }
 
+#[derive(Serialize)]
+struct ServiceQuestOffer {
+    id: String,
+    title: String,
+    service_id: String,
+    npc_name: &'static str,
+    greeting: String,
+    problem: String,
+    follow_up: String,
+    details: String,
+    acceptance: &'static str,
+    state: &'static str,
+    waiting: &'static str,
+    turn_in_response: String,
+    can_accept: bool,
+    can_turn_in: bool,
+    recruitment: Option<ServiceQuestRecruitment>,
+}
+
+#[derive(Serialize)]
+struct ServiceQuestRecruitment {
+    party_name: String,
+    leader_id: String,
+    leader_name: String,
+    roles: Vec<ServiceQuestRole>,
+}
+
+#[derive(Serialize)]
+struct ServiceQuestRole {
+    id: u64,
+    name: String,
+    remaining: u32,
+    requirements: Vec<String>,
+    requirements_summary: String,
+    match_level: &'static str,
+    match_summary: String,
+}
+
+async fn service_quest_offers(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<Vec<ServiceQuestOffer>> {
+    if state.db.is_local() {
+        let _ = state
+            .db
+            .call("ensure_settlement_activity", &[json!(id.clone())])
+            .await;
+    }
+    let settlements: Vec<Settlement> = state
+        .db
+        .query("SELECT * FROM settlement")
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
+        return Json(Vec::new());
+    };
+    let issuers: Vec<QuestIssuer> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM quest_issuer WHERE settlement_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let quests: Vec<Quest> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM quest WHERE settlement_id = '{}'",
+            id
+        ))
+        .await
+        .unwrap_or_default();
+    let edges: Vec<TravelEdge> = state
+        .db
+        .query("SELECT * FROM travel_edge")
+        .await
+        .unwrap_or_default();
+    let neighboring_name = connected_destinations(settlement, &settlements, &edges)
+        .first()
+        .map(|destination| destination.name.clone())
+        .unwrap_or_else(|| "the next settlement".to_string());
+    let active_character = get_active_character(&state, session.character_id_u64()).await;
+    let active_party = if let Some(party_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.party_id.as_ref())
+    {
+        state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let can_accept = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(id.as_str())
+            && active_party
+                .as_ref()
+                .is_some_and(|party| party.active_quest_id.is_none())
+    });
+    let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(id.as_str()) && active_party.is_some()
+    });
+    let parties: Vec<Party> = state
+        .db
+        .query("SELECT * FROM party")
+        .await
+        .unwrap_or_default();
+    let party_memberships: Vec<PartyMember> = state
+        .db
+        .query("SELECT * FROM party_member")
+        .await
+        .unwrap_or_default();
+    let recruitment_roles: Vec<PartyRecruitmentRole> = state
+        .db
+        .query("SELECT * FROM party_recruitment_role")
+        .await
+        .unwrap_or_default();
+    let characters: Vec<Character> = state
+        .db
+        .query("SELECT * FROM character")
+        .await
+        .unwrap_or_default();
+    let viewer_party_id = active_party.as_ref().map(|party| party.id.as_str());
+    let viewer_member_ids: Vec<u64> = viewer_party_id
+        .map(|party_id| {
+            party_memberships
+                .iter()
+                .filter(|member| member.party_id == party_id)
+                .map(|member| member.character_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut viewer_capabilities = Vec::new();
+    for character_id in viewer_member_ids {
+        let _ = state
+            .db
+            .call("refresh_capabilities", &[json!(character_id)])
+            .await;
+        if let Some(capability) = state
+            .db
+            .query::<CharacterCapability>(&format!(
+                "SELECT * FROM character_capability WHERE character_id = {character_id}"
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            viewer_capabilities.push(capability);
+        }
+    }
+
+    Json(
+        issuers
+            .into_iter()
+            .filter_map(|issuer| {
+                let quest = quests.iter().find(|quest| quest.id == issuer.quest_id)?;
+                let is_current = active_party.as_ref().is_some_and(|party| {
+                    party.active_quest_id.as_deref() == Some(quest.id.as_str())
+                        && quest.accepted_by.as_deref() == Some(party.id.as_str())
+                });
+                let recruitment = quest.accepted_by.as_deref().and_then(|party_id| {
+                    if viewer_party_id == Some(party_id) {
+                        return None;
+                    }
+                    let party = parties.iter().find(|party| party.id == party_id)?;
+                    if party.current_settlement_id.as_deref() != Some(id.as_str()) {
+                        return None;
+                    }
+                    let leader = characters.iter().find(|character| character.id == party.leader_id)?;
+                    let roles = recruitment_roles
+                        .iter()
+                        .filter(|role| role.party_id == party.id)
+                        .filter_map(|role| {
+                            let filled = party_memberships
+                                .iter()
+                                .filter(|member| member.recruitment_role_id == Some(role.id))
+                                .count() as u32;
+                            let remaining = role.quantity.saturating_sub(filled);
+                            if remaining == 0 {
+                                return None;
+                            }
+                            let requirements = role_requirement_labels(role);
+                            let (match_level, match_summary) =
+                                party_role_match(&viewer_capabilities, role);
+                            Some(ServiceQuestRole {
+                                id: role.id,
+                                name: role.name.clone(),
+                                remaining,
+                                requirements_summary: if requirements.is_empty() {
+                                    "No minimum recommendations".to_string()
+                                } else {
+                                    requirements.join(" · ")
+                                },
+                                requirements,
+                                match_level,
+                                match_summary,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    Some(ServiceQuestRecruitment {
+                        party_name: party.name.clone(),
+                        leader_id: leader.id.to_string(),
+                        leader_name: leader.name.clone(),
+                        roles,
+                    })
+                });
+                let state = if quest.status.eq_ignore_ascii_case("available") {
+                    "available"
+                } else if is_current && quest.status.eq_ignore_ascii_case("completed") {
+                    "ready"
+                } else if is_current {
+                    "underway"
+                } else if recruitment.is_some() {
+                    "recruiting"
+                } else {
+                    return None;
+                };
+                let problem = quest.description.trim_end_matches('.').to_lowercase();
+                let low = (quest.enemy_count - 2).max(1);
+                let high = quest.enemy_count + 2;
+                let (npc_name, greeting) = service_quest_greeting(&issuer.service_id);
+                Some(ServiceQuestOffer {
+                    id: quest.id.clone(),
+                    title: quest.title.clone(),
+                    service_id: issuer.service_id.clone(),
+                    npc_name,
+                    greeting: greeting.to_string(),
+                    follow_up: format!("{problem}?"),
+                    problem,
+                    details: service_quest_details(
+                        &issuer.service_id,
+                        quest,
+                        &settlement.name,
+                        &neighboring_name,
+                        low,
+                        high,
+                    ),
+                    acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
+                    state,
+                    waiting: "Hello again, I eagerly await the results of your efforts.",
+                    turn_in_response: format!(
+                        "Excellent work. Here is the promised {} gold. You've earned it.",
+                        quest.gold_reward
+                    ),
+                    can_accept,
+                    can_turn_in: can_turn_in && state == "ready",
+                    recruitment,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
+    match service_id {
+        "weapons" => (
+            "Weaponsmith",
+            "Welcome. Business would be better, were it not for how",
+        ),
+        "armor" => ("Armourer", "Welcome. Production has nearly stopped because"),
+        "clothing" => (
+            "Clothier",
+            "Welcome, traveler. Cloth is scarce of late because",
+        ),
+        "inn" => (
+            "Innkeeper",
+            "Welcome. Travelers have been avoiding this road because",
+        ),
+        "religion" => (
+            "Priest",
+            "Peace be with you. I fear our prayers alone cannot mend this:",
+        ),
+        _ => (
+            "Merchant",
+            "Welcome, traveler. You'll have to excuse the sorry state of my inventory;",
+        ),
+    }
+}
+
+fn service_quest_details(
+    service_id: &str,
+    quest: &Quest,
+    settlement_name: &str,
+    neighboring_name: &str,
+    low: i32,
+    high: i32,
+) -> String {
+    let situation = match service_id {
+        "weapons" => format!(
+            "the thieves are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
+        ),
+        "armor" => format!(
+            "the old mine between {settlement_name} and {neighboring_name} is choked with giant spiders, and no miner will go near it"
+        ),
+        "clothing" => format!(
+            "the wolves are ranging through the grazing land between {settlement_name} and {neighboring_name}, where our shepherds cannot avoid them"
+        ),
+        "inn" => format!(
+            "the goblins are lairing in a cave near the road between {settlement_name} and {neighboring_name} and attacking travelers after dark"
+        ),
+        "religion" => format!(
+            "a necromancer has occupied an old crypt outside {settlement_name} and raised its dead"
+        ),
+        _ => format!(
+            "a handful of bandits are camped in the forest near the road between {settlement_name} and {neighboring_name} and have been laying ambushes for my caravans"
+        ),
+    };
+    format!(
+        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} gold to anyone who clears them out. Are you",
+        quest.enemy_type, quest.gold_reward,
+    )
+}
+
+fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String> {
+    let requirements = role.requirements;
+    let mut labels = Vec::new();
+    for (required, label) in [
+        (requirements.melee, "Melee"),
+        (requirements.ranged, "Ranged"),
+        (requirements.heavy, "Heavy"),
+        (requirements.quarter_armor, "1/4 armor"),
+        (requirements.half_armor, "1/2 armor"),
+        (requirements.three_quarter_armor, "3/4 armor"),
+        (requirements.full_armor, "Full armor"),
+    ] {
+        if required {
+            labels.push(label.to_string());
+        }
+    }
+    let precision = role.effective_weapon_precision();
+    if precision > 0.0 {
+        labels.push(format!("Weapon precision {precision:.1}+"));
+    }
+    for (minimum, label) in [
+        (requirements.athletics, "Athletics"),
+        (requirements.endurance, "Endurance"),
+    ] {
+        if minimum > 0 {
+            labels.push(format!("{label} {minimum}+"));
+        }
+    }
+    labels
+}
+
+fn party_role_match(
+    capabilities: &[CharacterCapability],
+    role: &PartyRecruitmentRole,
+) -> (&'static str, String) {
+    let total = role_requirement_labels(role).len();
+    if total == 0 {
+        return (
+            "none",
+            "This role has no minimum recommendations.".to_string(),
+        );
+    }
+    let best = capabilities
+        .iter()
+        .map(|capability| matched_role_requirements(capability, role))
+        .max()
+        .unwrap_or(0);
+    if best == total {
+        (
+            "all",
+            "Someone in your party meets every recommendation.".to_string(),
+        )
+    } else if best > 0 {
+        (
+            "some",
+            format!("Your best candidate meets {best} of {total} recommendations."),
+        )
+    } else {
+        (
+            "none-met",
+            "No one in your party meets any recommendation.".to_string(),
+        )
+    }
+}
+
+fn matched_role_requirements(
+    capability: &CharacterCapability,
+    role: &PartyRecruitmentRole,
+) -> usize {
+    let requirements: RecruitmentRequirements = role.requirements;
+    let mut matched = 0;
+    for (required, present) in [
+        (requirements.melee, capability.melee),
+        (requirements.ranged, capability.ranged),
+        (requirements.heavy, capability.heavy),
+        (requirements.quarter_armor, capability.quarter_armor),
+        (requirements.half_armor, capability.half_armor),
+        (
+            requirements.three_quarter_armor,
+            capability.three_quarter_armor,
+        ),
+        (requirements.full_armor, capability.full_armor),
+    ] {
+        if required && present {
+            matched += 1;
+        }
+    }
+    if role.effective_weapon_precision() > 0.0
+        && capability.weapon_precision >= role.effective_weapon_precision()
+    {
+        matched += 1;
+    }
+    for (minimum, value) in [
+        (requirements.athletics, capability.athletics),
+        (requirements.endurance, capability.endurance),
+    ] {
+        if minimum > 0 && adventuresim_core::capability::rating(value) >= minimum {
+            matched += 1;
+        }
+    }
+    matched
+}
+
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 
 #[derive(Clone)]
 pub struct TravelDestination {
-    pub settlement: Settlement,
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub summary: Option<String>,
+    pub travel_action: String,
     pub distance_m: u64,
     pub journey_minutes: u64,
+    pub quest_in_progress: bool,
+    pub turn_in_ready: bool,
+}
+
+pub(crate) fn settlement_destination(
+    settlement: Settlement,
+    distance_m: u64,
+    journey_minutes: u64,
+) -> TravelDestination {
+    let summary = (settlement.population_estimate > 0).then(|| {
+        format!(
+            "Population approximately {}",
+            settlement.population_estimate
+        )
+    });
+    TravelDestination {
+        id: settlement.id.clone(),
+        name: settlement.name.clone(),
+        description: crate::templates::settlement::settlement_description(
+            settlement.population_level,
+        )
+        .to_string(),
+        summary,
+        travel_action: format!("/settlements/{}/travel", settlement.id),
+        distance_m,
+        journey_minutes,
+        quest_in_progress: false,
+        turn_in_ready: false,
+    }
 }
 
 fn connected_destinations(
@@ -152,11 +742,7 @@ fn connected_destinations(
                 .sqrt()
                 .ceil() as u64;
                 let distance_m = distance_km.saturating_mul(1_000);
-                TravelDestination {
-                    settlement,
-                    distance_m,
-                    journey_minutes: journey_minutes(distance_m),
-                }
+                settlement_destination(settlement, distance_m, journey_minutes(distance_m))
             })
             .collect();
     };
@@ -195,11 +781,11 @@ fn connected_destinations(
         }
         if node != origin_node && settlement_nodes.contains(&node) {
             if let Some(settlement) = settlements_by_node.get(&node) {
-                destinations.push(TravelDestination {
-                    settlement: (*settlement).clone(),
+                destinations.push(settlement_destination(
+                    (*settlement).clone(),
                     distance_m,
-                    journey_minutes: journey_minutes(distance_m),
-                });
+                    journey_minutes(distance_m),
+                ));
             }
             continue;
         }
@@ -229,90 +815,66 @@ async fn redirect_to_inn(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/settlements/{id}/inn"))
 }
 
-async fn noticeboard(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    session: Session,
-) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
+async fn resolve_location(state: &AppState, kind: &str, id: &str) -> Option<LocationView> {
+    let name = match kind {
+        "settlement" => state
+            .db
+            .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .map(|settlement| settlement.name),
+        "quest" => state
+            .db
+            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .map(|quest| quest.title),
+        _ => None,
+    }?;
+    Some(LocationView {
+        kind: kind.to_string(),
+        id: id.to_string(),
+        name,
+    })
+}
 
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let parties: Vec<Party> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM party WHERE current_settlement_id = '{}'",
-            id
-        ))
-        .await
-        .unwrap_or_default();
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    Html(
-        noticeboard_page(
-            settlement,
-            &quests,
-            &parties,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &party_members,
-            logged_in_as.as_deref(),
-            session.theme(),
-        )
-        .into_string(),
-    )
+fn character_is_at_location(character: &Character, location: &LocationView) -> bool {
+    match location.kind.as_str() {
+        "settlement" => character.current_settlement_id.as_deref() == Some(location.id.as_str()),
+        "quest" => character.current_quest_location_id.as_deref() == Some(location.id.as_str()),
+        _ => false,
+    }
 }
 
 async fn party_personal(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
     if let Some(character_id) = session.character_id_u64() {
-        let _ = state
+        if let Err(error) = state
             .db
             .call("synchronize_character_time", &[json!(character_id)])
-            .await;
+            .await
+        {
+            tracing::error!("Failed to liquidate party inventory: {error:?}");
+        }
     }
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
-    let Some((active_character, active_inventory)) =
+    let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
+    }
     if character_id != active_character.id {
         return Html("<h1>Party member not found</h1>".to_string());
     }
@@ -345,12 +907,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let capability = get_character_capability(&state, character_id).await;
     Html(
         party_personal_page(
-            settlement,
+            &location,
             &active_character,
-            &active_inventory,
             &party_members,
+            capability.as_ref(),
             attributes.first(),
             skills.first(),
             limbs.first(),
@@ -379,7 +942,7 @@ struct TrainingScheduleForm {
 
 async fn update_training_schedule(
     State(state): State<AppState>,
-    Path((settlement_id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<TrainingScheduleForm>,
 ) -> Redirect {
@@ -406,23 +969,16 @@ async fn update_training_schedule(
             )
             .await;
     }
-    Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{character_id}"
-    ))
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 async fn party_member(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
 
     let Some((active_character, active_inventory)) =
@@ -430,12 +986,10 @@ async fn party_member(
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
-    let party_members = get_active_party_members(&state, Some(&active_character)).await;
-    if character_id != active_character.id
-        && !party_members.iter().any(|member| member.id == character_id)
-    {
-        return Html("<h1>Party member not found</h1>".to_string());
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
     }
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
 
     let selected = if character_id == active_character.id {
         active_character.clone()
@@ -452,6 +1006,11 @@ async fn party_member(
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
     };
+    if selected.current_settlement_id != active_character.current_settlement_id
+        || selected.current_quest_location_id != active_character.current_quest_location_id
+    {
+        return Html("<h1>Character is not at this location</h1>".to_string());
+    }
     let selected_inventory: Vec<InventoryItem> = if character_id == active_character.id {
         active_inventory.clone()
     } else {
@@ -488,10 +1047,27 @@ async fn party_member(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let selected_targets = personal_inventory_targets(&state, selected.id).await;
+    let active_targets = personal_inventory_targets(&state, active_character.id).await;
+
+    if character_id == active_character.id {
+        return Html(
+            party_discard_page(
+                &location,
+                &active_character,
+                &active_inventory,
+                &items,
+                &party_members,
+                active_equip.first(),
+                session.theme(),
+            )
+            .into_string(),
+        );
+    }
 
     Html(
         party_inventory_page(
-            settlement,
+            &location,
             &selected,
             &selected_inventory,
             &active_character,
@@ -500,36 +1076,264 @@ async fn party_member(
             &party_members,
             selected_equip.first(),
             active_equip.first(),
+            &selected_targets,
+            &active_targets,
             session.theme(),
         )
         .into_string(),
     )
 }
 
-async fn party_stats(
+async fn party_pool_inventory(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((kind, id)): Path<(String, String)>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".into());
+    };
+    let Some((character, inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    if !character_is_at_location(&character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".into());
+    }
+    let Some(party_id) = character.party_id.as_ref() else {
+        return Html("<h1>Character has no party</h1>".into());
+    };
+    let pooled: Vec<PartyInventoryItem> = state
         .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .query(&format!(
+            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+            party_id
+        ))
         .await
         .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+    let stakes: Vec<PartyStake> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_stake WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    let items: Vec<ItemDefinition> = state
+        .db
+        .query("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
+    let equip: Vec<CharacterEquip> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_equip WHERE character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default();
+    let members = get_active_party_members(&state, Some(&character)).await;
+    let stake = stakes
+        .iter()
+        .find(|stake| stake.character_id == character.id)
+        .map_or(0, |stake| stake.value);
+    let (personal_targets, party_targets, _) = inventory_trade_context(&state, &character).await;
+    Html(
+        party_pool_page(
+            &location,
+            &character,
+            &inventory,
+            &pooled,
+            stake,
+            &items,
+            &members,
+            equip.first(),
+            &personal_targets,
+            &party_targets,
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Deserialize)]
+struct PartyPoolTransferForm {
+    item_id: String,
+    #[serde(default)]
+    quantity: String,
+}
+
+#[derive(Deserialize)]
+struct InventoryTargetForm {
+    item_id: String,
+    quantity: u32,
+    #[serde(default)]
+    party_scope: bool,
+}
+
+async fn set_inventory_target(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<InventoryTargetForm>,
+) -> impl IntoResponse {
+    let Some(character_id) = session.character_id_u64() else {
+        return (axum::http::StatusCode::UNAUTHORIZED, "Choose a character");
+    };
+    let args = vec![
+        json!(character_id),
+        json!(form.party_scope),
+        json!(form.item_id),
+        json!(form.quantity),
+    ];
+    let result = if form.party_scope {
+        super::execute_or_request_party_action(
+            &state,
+            character_id,
+            "party_inventory",
+            "Manage party inventory targets",
+            "set_inventory_quantity_target",
+            args,
+        )
+        .await
+        .map(|_| ())
+    } else {
+        state
+            .db
+            .call("set_inventory_quantity_target", &args)
+            .await
+            .map_err(|error| error.to_string())
+    };
+    match result {
+        Ok(()) => (axum::http::StatusCode::NO_CONTENT, ""),
+        Err(error) => {
+            tracing::warn!("Failed to save inventory target: {error}");
+            (axum::http::StatusCode::BAD_REQUEST, "Could not save target")
+        }
+    }
+}
+
+async fn deposit_party_inventory(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        for (item_id, quantity) in transfer_entries(&form) {
+            let _ = state
+                .db
+                .call(
+                    "deposit_party_inventory_item",
+                    &[json!(character_id), json!(item_id), json!(quantity)],
+                )
+                .await;
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+}
+
+async fn withdraw_party_inventory(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64() {
+        for (item_id, quantity) in transfer_entries(&form) {
+            let _ = state
+                .db
+                .call(
+                    "withdraw_party_inventory_item",
+                    &[json!(character_id), json!(item_id), json!(quantity)],
+                )
+                .await;
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+}
+
+fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
+    form.item_id
+        .split(',')
+        .zip(form.quantity.split(','))
+        .filter_map(|(id, quantity)| Some((id.parse().ok()?, quantity.parse().ok()?)))
+        .collect()
+}
+
+async fn liquidate_party_assets(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<PartyPoolTransferForm>,
+) -> Redirect {
+    if kind == "settlement"
+        && let Some(character_id) = session.character_id_u64()
+    {
+        let entries = transfer_entries(&form);
+        let _ = state
+            .db
+            .call(
+                "liquidate_party_inventory",
+                &[
+                    json!(character_id),
+                    json!(id.clone()),
+                    json!(entries.iter().map(|entry| entry.0).collect::<Vec<_>>()),
+                    json!(entries.iter().map(|entry| entry.1).collect::<Vec<_>>()),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+}
+
+async fn remove_party_member(
+    State(state): State<AppState>,
+    Path((kind, id, member_character_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(actor_character_id) = session.character_id_u64() {
+        let result = if actor_character_id == member_character_id {
+            state
+                .db
+                .call("leave_party", &[json!(actor_character_id)])
+                .await
+                .map_err(|error| error.to_string())
+        } else {
+            super::execute_or_request_party_action(
+                &state,
+                actor_character_id,
+                "kick",
+                &format!("Remove party member {member_character_id}"),
+                "remove_party_member",
+                vec![json!(actor_character_id), json!(member_character_id)],
+            )
+            .await
+            .map(|_| ())
+        };
+        if let Err(error) = result {
+            tracing::error!("Failed to remove party member: {error:?}");
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}"))
+}
+
+async fn party_stats(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Html<String> {
+    let Some(location) = resolve_location(&state, &kind, &id).await else {
+        return Html("<h1>Location not found</h1>".to_string());
     };
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
-    let party_members = get_active_party_members(&state, Some(&active_character)).await;
-    if character_id != active_character.id
-        && !party_members.iter().any(|member| member.id == character_id)
-    {
-        return Html("<h1>Party member not found</h1>".to_string());
+    if !character_is_at_location(&active_character, &location) {
+        return Html("<h1>Your party is not at this location</h1>".to_string());
     }
+    let party_members = get_active_party_members(&state, Some(&active_character)).await;
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
@@ -544,6 +1348,31 @@ async fn party_stats(
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
+    };
+    if selected.current_settlement_id != active_character.current_settlement_id
+        || selected.current_quest_location_id != active_character.current_quest_location_id
+    {
+        return Html("<h1>Character is not at this location</h1>".to_string());
+    }
+    let active_party = match active_character.party_id.as_deref() {
+        Some(party_id) => state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next(),
+        None => None,
+    };
+    let selected_party = match selected.party_id.as_deref() {
+        Some(party_id) => state
+            .db
+            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next(),
+        None => None,
     };
     let selected_attributes: Vec<CharacterAttributes> = state
         .db
@@ -566,40 +1395,19 @@ async fn party_stats(
         ))
         .await
         .unwrap_or_default();
-    let active_id = active_character.id;
-    let active_attributes: Vec<CharacterAttributes> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let active_skills: Vec<CharacterSkills> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let active_limbs: Vec<CharacterLimbs> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {active_id}"
-        ))
-        .await
-        .unwrap_or_default();
+    let capability = get_character_capability(&state, character_id).await;
     Html(
         party_stats_page(
-            settlement,
+            &location,
             &selected,
             &active_character,
             &party_members,
+            capability.as_ref(),
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
-            active_attributes.first(),
-            active_skills.first(),
-            active_limbs.first(),
+            active_party.as_ref(),
+            selected_party.as_ref(),
             session.theme(),
         )
         .into_string(),
@@ -621,9 +1429,50 @@ struct PartyOfferForm {
     quantities: String,
 }
 
+#[derive(Deserialize)]
+struct DiscardInventoryForm {
+    inventory_item_ids: String,
+    quantities: String,
+}
+
+async fn discard_inventory_items(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+    Form(form): Form<DiscardInventoryForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        let item_ids = form
+            .inventory_item_ids
+            .split(',')
+            .map(str::parse::<u64>)
+            .collect::<Result<Vec<_>, _>>();
+        let quantities = form
+            .quantities
+            .split(',')
+            .map(str::parse::<u32>)
+            .collect::<Result<Vec<_>, _>>();
+        if let (Ok(item_ids), Ok(quantities)) = (item_ids, quantities) {
+            if let Err(error) = state
+                .db
+                .call(
+                    "discard_inventory_items",
+                    &[json!(character_id), json!(item_ids), json!(quantities)],
+                )
+                .await
+            {
+                tracing::warn!("Inventory discard failed: {error}");
+            }
+        }
+    }
+    Redirect::to(&format!(
+        "/locations/{kind}/{id}/party/{character_id}/inventory"
+    ))
+}
+
 async fn finalize_party_offer(
     State(state): State<AppState>,
-    Path((settlement_id, character_id)): Path<(String, u64)>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
@@ -668,13 +1517,13 @@ async fn finalize_party_offer(
         }
     }
     Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{character_id}/inventory"
+        "/locations/{kind}/{id}/party/{character_id}/inventory"
     ))
 }
 
 async fn transfer_party_item(
     State(state): State<AppState>,
-    Path((settlement_id, recipient_id)): Path<(String, u64)>,
+    Path((kind, id, recipient_id)): Path<(String, String, u64)>,
     session: Session,
     Form(form): Form<PartyTransferForm>,
 ) -> Redirect {
@@ -684,7 +1533,7 @@ async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&format!("/settlements/{settlement_id}"));
+        return Redirect::to(&format!("/locations/{kind}/{id}"));
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -712,7 +1561,7 @@ async fn transfer_party_item(
         form.from_character_id
     };
     Redirect::to(&format!(
-        "/settlements/{settlement_id}/party/{comparison_character_id}/inventory"
+        "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
     ))
 }
 
@@ -767,6 +1616,8 @@ async fn merchants(
         ))
         .await
         .unwrap_or_default();
+    let (personal_targets, party_targets, pooled) =
+        inventory_trade_context(&state, character).await;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -775,6 +1626,9 @@ async fn merchants(
             &items,
             &party_members,
             equip.first(),
+            &personal_targets,
+            &party_targets,
+            &pooled,
             session.theme(),
             MerchantShop::General,
         )
@@ -792,6 +1646,8 @@ struct MerchantOfferForm {
     sell_quantities: String,
     #[serde(default)]
     return_to: String,
+    #[serde(default)]
+    inventory_scope: String,
 }
 
 async fn finalize_merchant_offer(
@@ -835,6 +1691,7 @@ async fn finalize_merchant_offer(
                             json!(quantities),
                             json!(sell_ids),
                             json!(sell_quantities),
+                            json!(form.inventory_scope == "party"),
                         ],
                     )
                     .await;
@@ -1120,15 +1977,22 @@ async fn travel(
         return Redirect::to("/characters");
     };
 
-    let _ = state
-        .db
-        .call(
-            "travel_to_settlement",
-            &[json!(character_id), json!(id.clone())],
-        )
-        .await;
-
-    Redirect::to(&format!("/settlements/{}", id))
+    let outcome = super::execute_or_request_party_action(
+        &state,
+        character_id,
+        "travel",
+        &format!("Travel to settlement {id}"),
+        "travel_to_settlement",
+        vec![json!(character_id), json!(id.clone())],
+    )
+    .await;
+    match outcome {
+        Ok(super::PartyActionOutcome::Executed) => {
+            Redirect::to(&format!("/locations/settlement/{id}"))
+        }
+        Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
+        Err(_) => Redirect::to("/"),
+    }
 }
 
 /// Helper to get character name for session display
@@ -1235,6 +2099,8 @@ async fn merchant_shop(
         ))
         .await
         .unwrap_or_default();
+    let (personal_targets, party_targets, pooled) =
+        inventory_trade_context(&state, character).await;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -1243,11 +2109,61 @@ async fn merchant_shop(
             &items,
             &party_members,
             equip.first(),
+            &personal_targets,
+            &party_targets,
+            &pooled,
             session.theme(),
             shop,
         )
         .into_string(),
     )
+}
+
+async fn inventory_trade_context(
+    state: &AppState,
+    character: &Character,
+) -> (
+    Vec<InventoryQuantityTarget>,
+    Vec<InventoryQuantityTarget>,
+    Vec<PartyInventoryItem>,
+) {
+    let personal = state.db.query(&format!(
+        "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = false",
+        character.id
+    )).await.unwrap_or_default();
+    let Some(party_id) = character.party_id.as_ref() else {
+        return (personal, Vec::new(), Vec::new());
+    };
+    let party = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(party) = party else {
+        return (personal, Vec::new(), Vec::new());
+    };
+    let party_targets = state.db.query(&format!(
+        "SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true",
+        party.leader_id
+    )).await.unwrap_or_default();
+    let pooled = state
+        .db
+        .query(&format!(
+            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+            party_id
+        ))
+        .await
+        .unwrap_or_default();
+    (personal, party_targets, pooled)
+}
+
+async fn personal_inventory_targets(
+    state: &AppState,
+    character_id: u64,
+) -> Vec<InventoryQuantityTarget> {
+    state.db.query(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {character_id} AND party_scope = false")).await.unwrap_or_default()
 }
 
 async fn render_service_page(
@@ -1323,7 +2239,26 @@ async fn get_active_character(
     Some((character, inventory))
 }
 
-async fn get_active_party_members(
+async fn get_character_capability(
+    state: &AppState,
+    character_id: u64,
+) -> Option<CharacterCapability> {
+    let _ = state
+        .db
+        .call("refresh_capabilities", &[json!(character_id)])
+        .await;
+    state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_capability WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+}
+
+pub(crate) async fn get_active_party_members(
     state: &AppState,
     active_character: Option<&Character>,
 ) -> Vec<Character> {
@@ -1339,6 +2274,13 @@ async fn get_active_party_members(
         .await
         .unwrap_or_default();
 
+    let leader_id = state
+        .db
+        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .await
+        .unwrap_or_default()
+        .first()
+        .map(|party| party.leader_id);
     let mut members = Vec::new();
     for membership in memberships {
         let characters: Vec<Character> = state
@@ -1353,5 +2295,6 @@ async fn get_active_party_members(
             members.push(character);
         }
     }
+    members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
 }

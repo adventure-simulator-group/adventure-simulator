@@ -13,10 +13,13 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     pub server: __sdk::Identity,
     pub in_server: bool,
     pub temporary: bool,
+    pub age_years: u16,
+    pub alive: bool,
 }
 
 impl __sdk::InModule for Character {

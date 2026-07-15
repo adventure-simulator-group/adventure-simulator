@@ -71,6 +71,11 @@ pub struct Item {
     pub range_of_motion: f32,
     pub precise: bool,
     pub balance: f32,
+    pub melee: bool,
+    pub ranged: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
     pub base_value: Option<u32>,
 }
 
@@ -92,10 +97,93 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 
     define_shield(ctx, "buckler", 1.0, 1.0);
 
-    define_weapon(ctx, "short_sword", 1.5, 1.5, 1.0, 1.0, 0.5, true);
-    define_weapon(ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, true);
-    define_weapon(ctx, "zweihander", 6.0, 0.6, 1.0, 2.0, 0.3, false);
-    define_weapon(ctx, "club", 2.0, 1.0, 0.5, 1.0, 0.3, false);
+    define_weapon(
+        ctx,
+        "short_sword",
+        1.5,
+        1.5,
+        1.0,
+        1.0,
+        0.5,
+        false,
+        true,
+        false,
+        false,
+        true,
+        true,
+    );
+    define_weapon(
+        ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, false, true, false, false, true, true,
+    );
+    define_weapon(
+        ctx,
+        "zweihander",
+        6.0,
+        0.6,
+        1.0,
+        2.0,
+        0.3,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+    );
+    define_weapon(
+        ctx, "club", 2.0, 0.5, 0.5, 1.0, 0.3, false, true, false, true, false, false,
+    );
+    define_weapon(
+        ctx,
+        "short_bow",
+        1.0,
+        1.2,
+        1.0,
+        20.0,
+        0.4,
+        false,
+        false,
+        true,
+        false,
+        false,
+        true,
+    );
+    define_weapon(
+        ctx,
+        "bot_multirole_weapon",
+        4.0,
+        2.0,
+        1.0,
+        2.0,
+        0.5,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+    );
+    define_weapon(
+        ctx, "rapier", 1.2, 2.0, 1.2, 1.8, 0.7, true, true, false, false, false, true,
+    );
+    define_weapon(
+        ctx, "rondel", 0.5, 2.0, 1.0, 0.6, 0.8, true, true, false, false, false, true,
+    );
+    define_weapon(
+        ctx,
+        "misericorde",
+        0.5,
+        2.0,
+        1.0,
+        0.7,
+        0.8,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+    );
 
     define_armor(
         ctx,
@@ -163,8 +251,75 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         0.4,
         0.3,
     );
+    define_armor(
+        ctx,
+        "bot_plate_arm",
+        1.5,
+        ItemSlot::AnyArm,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_leg",
+        2.0,
+        ItemSlot::AnyLeg,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_chest",
+        3.0,
+        ItemSlot::Chest,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_stomach",
+        2.0,
+        ItemSlot::Stomach,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
+    define_armor(
+        ctx,
+        "bot_plate_helmet",
+        2.0,
+        ItemSlot::Head,
+        0.9,
+        80.0,
+        60.0,
+        0.4,
+        0.4,
+    );
 
     Ok(())
+}
+
+/// Applies recruitment precision calibration to databases created before the
+/// numeric weapon-precision scale was introduced.
+#[reducer]
+pub fn calibrate_weapon_precision(ctx: &ReducerContext) {
+    for (item_id, accuracy) in [("club", 0.5), ("bot_multirole_weapon", 2.0)] {
+        if let Some(mut item) = ctx.db.item().id().find(item_id.to_string()) {
+            item.accuracy = accuracy;
+            ctx.db.item().id().update(item);
+        }
+    }
 }
 
 #[reducer]
@@ -211,6 +366,11 @@ pub fn define_weapon(
     reach: f32,
     balance: f32,
     precise: bool,
+    melee: bool,
+    ranged: bool,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
 ) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -221,6 +381,11 @@ pub fn define_weapon(
         reach,
         balance,
         precise,
+        melee,
+        ranged,
+        blunt,
+        slash,
+        pierce,
         kind: ItemKind::Weapon,
         ..Item::default()
     });

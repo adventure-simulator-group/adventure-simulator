@@ -7,14 +7,58 @@
 use maud::{Markup, html};
 
 use super::{
-    difficulty_stars, empty_state, gold_display, list_item, population_description,
-    settlement_layout_with_session, sidebar_section, status_badge,
+    empty_state, list_item, population_description, quest_location_layout_with_session,
+    settlement_layout_with_session, sidebar_section,
 };
 use crate::routes::settlements::TravelDestination;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills,
-    CharacterTrainingSchedule, InventoryItem, Party, Quest, Settlement,
+    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
+    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party,
+    PartyInventoryItem, Settlement,
 };
+
+#[derive(Clone, Debug)]
+pub struct LocationView {
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+}
+
+impl LocationView {
+    pub fn base_path(&self) -> String {
+        format!("/locations/{}/{}", self.kind, self.id)
+    }
+
+    fn render_layout(
+        &self,
+        title: &str,
+        content: Markup,
+        logged_in_as: Option<&str>,
+        theme: &str,
+    ) -> Markup {
+        if self.kind == "settlement" {
+            settlement_layout_with_session(
+                title,
+                &self.name,
+                &self.id,
+                "",
+                content,
+                logged_in_as,
+                theme,
+            )
+        } else {
+            quest_location_layout_with_session(
+                title,
+                &self.name,
+                &self.id,
+                "",
+                content,
+                logged_in_as,
+                theme,
+            )
+        }
+    }
+}
 
 /// The currently available merchant storefronts. They share trade mechanics,
 /// but each storefront limits the stock shown on its left-hand side.
@@ -79,7 +123,7 @@ pub fn settlements_list_page(
                 } @else {
                     @for settlement in settlements {
                         (list_item(
-                            &format!("/settlements/{}", settlement.id),
+                            &format!("/locations/settlement/{}", settlement.id),
                             &settlement.name,
                             Some(population_description(settlement.population_level)),
                         ))
@@ -91,7 +135,7 @@ pub fn settlements_list_page(
             h2 class="page-title" { "World Map" }
             div class="settlement-grid" {
                 @for settlement in settlements {
-                    a href=(format!("/settlements/{}", settlement.id)) class="settlement-card" {
+                    a href=(format!("/locations/settlement/{}", settlement.id)) class="settlement-card" {
                         h3 { (settlement.name) }
                         p class="population" { (population_description(settlement.population_level)) }
                         div class="coords" { "(" (settlement.coord_x as i32) ", " (settlement.coord_y as i32) ")" }
@@ -113,10 +157,8 @@ pub fn settlements_list_page(
 /// ferry network.
 pub fn settlement_overview_page(
     settlement: &Settlement,
-    destinations: &[TravelDestination],
     active_character: Option<&Character>,
     party_members: &[Character],
-    can_travel: bool,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -124,45 +166,22 @@ pub fn settlement_overview_page(
         aside class="left-sidebar" {
             (sidebar_section("Settlement", html! {
                 div class="settlement-summary" {
-                    strong { (&settlement.name) }
-                    span class="text-muted small-copy" { "Population: " (format_population(settlement)) }
+                    dl class="location-stat-list" {
+                        div { dt { "Population" } dd { (format_population(settlement)) } }
+                        div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
+                        div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
+                    }
                 }
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("map", &settlement.name, "TODO: settlement image"))
             (settlement_chat_area(&settlement.name, active_character))
         }
         aside class="right-sidebar" {
-            (sidebar_section("Connected destinations", html! {
-                @if destinations.is_empty() {
-                    (empty_state("No land or ferry destination is currently connected to this settlement.", None, None))
-                } @else {
-                    @for destination in destinations {
-                        article class="travel-destination" {
-                            div {
-                                strong { (&destination.settlement.name) }
-                                p class="text-muted small-copy" {
-                                    (format_population(&destination.settlement))
-                                    " · " (format_distance(destination.distance_m))
-                                    " · " (format_journey_time(destination.journey_minutes))
-                                }
-                            }
-                            @if can_travel {
-                                form method="post" action={ "/settlements/" (&destination.settlement.id) "/travel" } {
-                                    button type="submit" class="btn btn-primary btn-small" { "Travel" }
-                                }
-                            } @else {
-                                span class="text-muted small-copy" { "Travel from your current settlement" }
-                            }
-                        }
-                    }
-                }
-            }))
-            (sidebar_section("Travel", html! {
-                p class="small-copy" { "Journeys use an average walking pace of 5 km/h." }
-                p class="text-muted small-copy" { "Travel time advances your strategic clock." }
+            (sidebar_section("Description", html! {
+                p { (settlement_description(settlement.population_level)) }
             }))
         }
     };
@@ -170,11 +189,116 @@ pub fn settlement_overview_page(
         &settlement.name,
         &settlement.name,
         &settlement.id,
-        "overview",
+        "",
         content,
         logged_in_as,
         theme,
     )
+}
+
+pub fn settlement_map_page(
+    settlement: &Settlement,
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    can_travel: bool,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
+    let base_path = format!("/locations/settlement/{}/map", settlement.id);
+    let content = html! {
+        (map_destination_list(destinations, selected_id, &base_path))
+        main class="center-content settlement-main settlement-overview" {
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
+            (visual_stage("map", &settlement.name, "TODO: settlement map"))
+            (settlement_chat_area(&settlement.name, active_character))
+        }
+        (map_destination_detail(selected, can_travel))
+    };
+    settlement_layout_with_session(
+        &format!("{} map", settlement.name),
+        &settlement.name,
+        &settlement.id,
+        "map",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+pub(crate) fn map_destination_list(
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    base_path: &str,
+) -> Markup {
+    html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Destinations", html! {
+                @if destinations.is_empty() {
+                    (empty_state("No destinations are available from this location.", None, None))
+                } @else {
+                    nav class="location-destination-list" aria-label="Travel destinations" {
+                        @for destination in destinations {
+                            a href=(format!("{}?destination={}", base_path, destination.id))
+                                class=(if selected_id == Some(destination.id.as_str()) { "list-item active" } else { "list-item" }) {
+                                strong { (&destination.name) }
+                                @if destination.quest_in_progress {
+                                    span class="destination-quest-badge" title="Active quest destination"
+                                        aria-label="Active quest destination" { "!" }
+                                } @else if destination.turn_in_ready {
+                                    span class="destination-turn-in-badge" title="Quest ready to turn in here"
+                                        aria-label="Quest ready to turn in here" { "!" }
+                                }
+                                span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
+                            }
+                        }
+                    }
+                }
+            }))
+        }
+    }
+}
+
+pub(crate) fn map_destination_detail(
+    selected: Option<&TravelDestination>,
+    can_travel: bool,
+) -> Markup {
+    html! {
+        aside class="right-sidebar" {
+            @if let Some(destination) = selected {
+                (sidebar_section(&destination.name, html! {
+                    @if can_travel {
+                        form method="post" action=(&destination.travel_action) {
+                            button type="submit" class="btn btn-primary btn-block" { "Travel" }
+                        }
+                    }
+                    p { (&destination.description) }
+                    p class="text-muted small-copy" {
+                        @if let Some(summary) = &destination.summary { (summary) " · " }
+                        (format_distance(destination.distance_m))
+                        " · " (format_journey_time(destination.journey_minutes))
+                    }
+                }))
+            } @else {
+                (sidebar_section("Destination", html! {
+                    p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
+                }))
+            }
+        }
+    }
+}
+
+pub(crate) fn settlement_description(population_level: i32) -> &'static str {
+    match population_level {
+        i32::MIN..=1 => "A quiet cluster of farmsteads and cottages.",
+        2 => "A quaint hamlet gathered around a well-worn road.",
+        3 => "A modest village serving the surrounding countryside.",
+        4 => "A busy market town with a steady flow of travelers.",
+        5 => "A prosperous town enclosed by crowded streets.",
+        _ => "A large and bustling city whose streets rarely fall silent.",
+    }
 }
 
 fn format_distance(distance_m: u64) -> String {
@@ -212,78 +336,6 @@ fn format_journey_time(minutes: u64) -> String {
     } else {
         format!("{hours} h {minutes} min")
     }
-}
-
-/// Notice board page.
-pub fn noticeboard_page(
-    settlement: &Settlement,
-    quests: &[Quest],
-    parties: &[Party],
-    active_character: Option<&Character>,
-    _inventory: &[InventoryItem],
-    party_members: &[Character],
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Posted quests", html! {
-                @if quests.is_empty() {
-                    p class="text-muted small-copy" { "No notices have been posted." }
-                } @else {
-                    div class="notice-quest-list" {
-                        @for quest in quests {
-                            article class="notice-quest" {
-                                strong { (quest.title) }
-                                div class="notice-quest-meta" {
-                                    (difficulty_stars(quest.difficulty))
-                                    (gold_display(quest.gold_reward))
-                                }
-                                p class="small-copy" { (quest.enemy_count) " " (quest.enemy_type) }
-                                @if quest.status.to_lowercase().contains("available") {
-                                    form action=(format!("/quests/{}/accept", quest.id)) method="post" {
-                                        button type="submit" class="btn btn-primary btn-small btn-block" { "Accept" }
-                                    }
-                                } @else {
-                                    (status_badge(&quest.status))
-                                }
-                            }
-                        }
-                    }
-                }
-            }))
-            (sidebar_section("Party formation", html! {
-                @if parties.is_empty() {
-                    p class="text-muted small-copy" { "No parties currently recruiting." }
-                } @else {
-                    @for party in parties {
-                        div class="member-item" {
-                            span class="member-name" { (party.name) }
-                            form action=(format!("/parties/{}/join", party.id)) method="post" {
-                                button type="submit" class="btn btn-secondary btn-small" { "Join" }
-                            }
-                        }
-                    }
-                }
-                a href="/parties/new" class="btn btn-primary btn-small btn-block mt-1" { "Create party" }
-            }))
-        }
-        main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
-            (visual_stage("map", "Settlement map", "TODO: settlement map image"))
-            (settlement_chat_area("Notice Board", active_character))
-        }
-        aside class="right-sidebar" { (quest_detail_rail()) }
-    };
-    settlement_layout_with_session(
-        "Notice Board",
-        &settlement.name,
-        &settlement.id,
-        "noticeboard",
-        content,
-        logged_in_as,
-        theme,
-    )
 }
 
 /// Market interface. Inventory and prices are intentionally UI-only placeholders
@@ -391,7 +443,7 @@ pub fn religion_page(
 
 /// Party inventory comparison.
 pub fn party_inventory_page(
-    settlement: &Settlement,
+    location: &LocationView,
     selected: &Character,
     selected_inventory: &[InventoryItem],
     active_character: &Character,
@@ -400,42 +452,74 @@ pub fn party_inventory_page(
     party_members: &[Character],
     selected_equip: Option<&CharacterEquip>,
     active_equip: Option<&CharacterEquip>,
+    selected_targets: &[InventoryQuantityTarget],
+    active_targets: &[InventoryQuantityTarget],
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip))
+            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
-            (settlement_chat_area(&selected.name, Some(active_character)))
-            form id="party-offer" class="party-offer" action=(format!("/settlements/{}/party/{}/inventory/offer", settlement.id, selected.id)) method="post" hidden {
+            (player_chat_area(selected, active_character))
+            form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden {
                 button type="button" class="party-offer-cancel" data-cancel-trade="party" { "Cancel" }
                 button type="submit" disabled { "Offer" }
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip))
+            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
         }
     };
-    settlement_layout_with_session(
-        "Party",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party", content, Some(&active_character.name), theme)
+}
+
+/// The active character's inventory with a staged discard list.
+pub fn party_discard_page(
+    location: &LocationView,
+    active_character: &Character,
+    inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    party_members: &[Character],
+    equip: Option<&CharacterEquip>,
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Discard", html! {
+                p class="text-muted small-copy" data-discard-empty { "Stage carried items here before discarding them." }
+                table class="trade-inventory-table" data-discard-table hidden {
+                    (trade_inventory_table_header(false))
+                    tbody data-discard-list {}
+                }
+            }))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
+            (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
+            (settlement_chat_area(&active_character.name, Some(active_character)))
+            form id="inventory-discard" class="party-offer"
+                action=(format!("{}/party/{}/inventory/discard", location.base_path(), active_character.id))
+                method="post" hidden {
+                button type="button" class="party-offer-cancel" data-cancel-trade="discard" { "Cancel" }
+                button type="submit" disabled { "Discard" }
+            }
+        }
+        aside class="right-sidebar" {
+            (discard_inventory_rail(active_character, inventory, items, equip))
+        }
+    };
+    location.render_layout("Inventory", content, Some(&active_character.name), theme)
 }
 
 /// Active character's combined strategic view.
 pub fn party_personal_page(
-    settlement: &Settlement,
+    location: &LocationView,
     active_character: &Character,
-    active_inventory: &[InventoryItem],
     party_members: &[Character],
+    capability: Option<&CharacterCapability>,
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
@@ -444,69 +528,80 @@ pub fn party_personal_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
+            (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs))
-            @let schedule_action = format!("/settlements/{}/party/{}/schedule", settlement.id, active_character.id);
+            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
             (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(active_character.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
-        aside class="right-sidebar" { (inventory_rail(Some(active_character), active_inventory, None, false)) }
+        aside class="right-sidebar" { (character_bio_rail(active_character)) }
     };
-    settlement_layout_with_session(
-        "Party",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party", content, Some(&active_character.name), theme)
 }
 
-/// Party stat comparison, with the selected member on the left and the active
-/// character on the right.
+/// Selected party member stats and biography.
 pub fn party_stats_page(
-    settlement: &Settlement,
+    location: &LocationView,
     selected: &Character,
     active_character: &Character,
     party_members: &[Character],
+    capability: Option<&CharacterCapability>,
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
-    active_attributes: Option<&CharacterAttributes>,
-    active_skills: Option<&CharacterSkills>,
-    active_limbs: Option<&CharacterLimbs>,
+    active_party: Option<&Party>,
+    selected_party: Option<&Party>,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
+            (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
             (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &settlement.id, Some(selected.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
-            (settlement_chat_area(&selected.name, Some(active_character)))
+            (player_chat_area(selected, active_character))
         }
         aside class="right-sidebar" {
-            (party_attributes_rail("Your attributes", active_attributes, active_limbs))
-            (party_skills_rail("Your skills", active_skills, active_limbs, None, None))
+            (character_bio_rail(selected))
+            @if selected.id != active_character.id {
+                @if active_character.party_id == selected.party_id {
+                    @if active_party.is_some_and(|party| party.leader_id == selected.id) {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), active_character.id)) {
+                                button type="submit" class="btn btn-danger btn-block" { "Leave party" }
+                            }
+                        }))
+                    } @else {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), selected.id)) {
+                                button type="submit" class="btn btn-danger btn-block" {
+                                    @if active_party.is_some_and(|party| party.leader_id == active_character.id) { "Kick from party" }
+                                    @else { "Request kick" }
+                                }
+                            }
+                        }))
+                    }
+                } @else if let Some(party) = selected_party {
+                    (sidebar_section("Party", html! {
+                        p { (&party.name) }
+                        form method="post" action=(format!("/parties/{}/join-general", party.id)) {
+                            button type="submit" class="btn btn-primary btn-block" { "Request to join party" }
+                        }
+                    }))
+                }
+            }
         }
     };
-    settlement_layout_with_session(
-        "Party stats",
-        &settlement.name,
-        &settlement.id,
-        "",
-        content,
-        Some(&active_character.name),
-        theme,
-    )
+    location.render_layout("Party stats", content, Some(&active_character.name), theme)
 }
 
 fn service_page(
@@ -579,9 +674,14 @@ fn service_page(
             }
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &settlement.id, None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
-            (settlement_chat_area(title, active_character))
+            (settlement_service_chat_area(
+                title,
+                active_character,
+                &settlement.id,
+                service_id,
+            ))
         }
         aside class="right-sidebar" {
             @if trade_offers.is_some() {
@@ -625,6 +725,7 @@ fn party_trade_inventory_rail(
     recipient_id: u64,
     direction: &str,
     equip: Option<&CharacterEquip>,
+    recipient_targets: &[InventoryQuantityTarget],
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
@@ -636,19 +737,56 @@ fn party_trade_inventory_rail(
                     @for item in inventory {
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let target = target_quantity(recipient_targets, &item.item_id);
                             tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                 td class="inventory-item-name" {
                                     (&item.item_id)
-                                    @if !is_equipped { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer"))
-                                        data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty)
-                                            aria-label=(format!("Transfer {}", item.item_id))
-                                            title="Stage one item for trade" {} }
+                                    @if !is_equipped { span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode=(mode) aria-label=(format!("Transfer {}", item.item_id)) title="Stage items for trade" { (transfer_glyph(arrows)) } } } }
                                 }
                                 td class="inventory-count" { (item.qty) }
                                 td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
+                    }
+                }))
+                (inventory_footer_controls(if direction == "left" { "party-left" } else { "party-right" }, "Transfer to targets", "Transfer everything"))
+            }
+        }))
+    }
+}
+
+fn discard_inventory_rail(
+    character: &Character,
+    inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    equip: Option<&CharacterEquip>,
+) -> Markup {
+    let title = format!("{}'s inventory", character.name);
+    html! {
+        (sidebar_section(&title, html! {
+            @if inventory.is_empty() {
+                p class="text-muted small-copy" { "No items carried." }
+            } @else {
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if !is_equipped {
+                                    button type="button" class="trade-transfer trade-transfer-left"
+                                        data-discard-item=(item.id) data-count=(item.qty)
+                                        aria-label=(format!("Discard {}", item.item_id))
+                                        title="Stage one item for discarding" {}
+                                }
+                            }
+                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
                     }
                 }))
             }
@@ -663,6 +801,9 @@ pub fn live_merchant_shop_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
+    personal_targets: &[InventoryQuantityTarget],
+    party_targets: &[InventoryQuantityTarget],
+    pooled: &[PartyInventoryItem],
     theme: &str,
     shop: MerchantShop,
 ) -> Markup {
@@ -674,25 +815,73 @@ pub fn live_merchant_shop_page(
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(&item.id) data-merchant-buy-price=(buy_price) aria-label=(format!("Buy {}", item.id)) title=(format!("Buy {}", item.id)) { "" } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    @let target = target_quantity(personal_targets, &item.id);
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
+            (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
         })) }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &settlement.id, None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_chat_area(title, Some(character))) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
-        aside class="right-sidebar" {
-            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
+            nav class="inventory-owner-tabs" aria-label="Trading inventory" {
+                button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
+                button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
+            }
+            div data-inventory-pane="player" {
+            div class="sidebar-section" {
                 (trade_inventory_table(true, html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
-                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) {
-                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(item.id) data-item-name=(&item.item_id) data-merchant-sell-price=(sell_price) aria-label=(format!("Sell {}", item.item_id)) title=(format!("Sell {}", item.item_id)) {} } }
-                        td class="inventory-count" { (item.qty) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        @let target = target_quantity(personal_targets, &item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
+                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.qty, target)) } }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
+                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
+                        @let definition = items.iter().find(|definition| definition.id == target.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
+                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, false)) }
+                            td class="inventory-equipped" { input type="checkbox" disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
                 }))
-            }))
+                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+            }
+            }
+            div data-inventory-pane="party" hidden {
+            div class="sidebar-section" {
+                (trade_inventory_table(false, html! {
+                    @for item in pooled {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
+                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let target = target_quantity(party_targets, &item.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
+                            td class="inventory-item-name" { (&item.item_id) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
+                            td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (sell_price) }
+                        }
+                    }
+                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id)) {
+                        @let definition = items.iter().find(|definition| definition.id == target.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
+                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, true)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+            }
+            }
         }
     };
     settlement_layout_with_session(
@@ -704,6 +893,84 @@ pub fn live_merchant_shop_page(
         Some(&character.name),
         theme,
     )
+}
+
+/// Two-sided transfer view for the equally owned party chest.
+pub fn party_pool_page(
+    location: &LocationView,
+    character: &Character,
+    inventory: &[InventoryItem],
+    pooled: &[PartyInventoryItem],
+    stake: u64,
+    items: &[crate::spacetimedb::ItemDefinition],
+    party_members: &[Character],
+    equip: Option<&CharacterEquip>,
+    personal_targets: &[InventoryQuantityTarget],
+    party_targets: &[InventoryQuantityTarget],
+    theme: &str,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Party inventory", html! {
+                div class="party-stake-summary" {
+                    span { "Your available stake" }
+                    strong { (stake) " gold" }
+                }
+                p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
+                (trade_inventory_table(false, html! {
+                    @for item in pooled {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
+                        @let target = target_quantity(personal_targets, &item.item_id);
+                        @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
+                        tr class="trade-inventory-row" {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
+                            }
+                            td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                (inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"))
+            }))
+        }
+        main class="center-content settlement-main" {
+            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
+            (visual_stage("npc", "Party chest", "Shared party inventory chest"))
+            (settlement_chat_area("Party inventory", Some(character)))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section(&format!("{}'s inventory", character.name), html! {
+                p class="small-copy text-muted" { "Add items at their objective gold value." }
+                (trade_inventory_table(true, html! {
+                    @for item in inventory {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let target = target_quantity(party_targets, &item.item_id);
+                        @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
+                        tr class="trade-inventory-row" {
+                            td class="inventory-item-name" {
+                                (&item.item_id)
+                                @if !equipped {
+                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                }
+                            }
+                            td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
+                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
+                        }
+                    }
+                }))
+                (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
+            }))
+        }
+        form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
+    };
+    location.render_layout("Party inventory", content, Some(&character.name), theme)
 }
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
@@ -739,6 +1006,63 @@ fn trade_inventory_table(show_equipped: bool, rows: Markup) -> Markup {
             tbody { (rows) }
         }
     }
+}
+
+fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
+    targets
+        .iter()
+        .find(|target| target.item_id == item_id)
+        .map_or(0, |target| target.quantity)
+}
+
+fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
+    html! {
+        span class="inventory-target-control" data-target-control data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
+            span class="inventory-target-prefix" { (quantity) "/" }
+            span class="inventory-target-denominator" {
+                button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
+                span class="inventory-target-value" data-target-value { (target) }
+                button type="button" class="inventory-target-step inventory-target-down" data-target-step="-1" aria-label=(format!("Decrease {} target", item_id)) hidden[target == 0] { "⌄" }
+            }
+        }
+    }
+}
+
+pub(crate) fn transfer_glyph(count: usize) -> Markup {
+    html! { span class=(format!("inventory-transfer-glyph arrows-{count}")) aria-hidden="true" { @for _ in 0..count { i {} } } }
+}
+
+fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
+    html! { span class="inventory-row-actions" {
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" aria-label=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="target" data-target=(target) data-count=(available) aria-label=(format!("Buy {item_id} to target")) { (transfer_glyph(2)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="all" data-count=(available) aria-label=(format!("Buy all {item_id}")) { (transfer_glyph(3)) }
+    } }
+}
+
+fn merchant_sell_controls(
+    id: u64,
+    item_id: &str,
+    price: u32,
+    quantity: u32,
+    target: u32,
+) -> Markup {
+    html! { span class="inventory-row-actions" {
+        @for (mode, arrows, label) in [("one", 1, "Sell one"), ("target", 2, "Sell surplus"), ("all", 3, "Sell all")] {
+            button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode=(mode) data-count=(quantity) data-target=(target) aria-label=(format!("{label} {item_id}")) { (transfer_glyph(arrows)) }
+        }
+    } }
+}
+
+pub(crate) fn inventory_footer_controls(
+    action: &str,
+    target_label: &str,
+    all_label: &str,
+) -> Markup {
+    html! { div class="inventory-footer-actions" {
+        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="target" aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
+        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="all" aria-label=(all_label) title=(all_label) { (transfer_glyph(3)) }
+    } }
 }
 
 fn trade_inventory_table_header(show_equipped: bool) -> Markup {
@@ -933,6 +1257,55 @@ fn format_schedule_hours(minutes: u16) -> String {
     format!("{hours}{fraction}h")
 }
 
+fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
+    let tags = capability
+        .map(CharacterCapability::summary_tags)
+        .unwrap_or_default();
+    html! {
+        (sidebar_section("Summary", html! {
+            @if tags.is_empty() {
+                p class="text-muted small-copy" { "No notable capabilities." }
+            } @else {
+                div class="character-summary-tags" aria-label="Character capability summary" {
+                    @for tag in tags { span class="character-summary-tag" { (tag) } }
+                }
+            }
+        }))
+    }
+}
+
+pub(crate) fn character_stats_panel(
+    character: &Character,
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+) -> Markup {
+    html! {
+        (character_summary_rail(capability))
+        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
+        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None))
+    }
+}
+
+pub(crate) fn character_visual_preview(character: &Character) -> Markup {
+    visual_stage(
+        "npc",
+        &character.name,
+        &format!("TODO: {} portrait", character.name.to_lowercase()),
+    )
+}
+
+fn character_bio_rail(character: &Character) -> Markup {
+    html! {
+        (sidebar_section("Bio", html! {
+            dl class="character-bio" {
+                div { dt { "Age" } dd { (character.age_years) " years" } }
+            }
+        }))
+    }
+}
+
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1057,7 +1430,7 @@ fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
     }
 }
 
-fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
+pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     html! {
         figure class=(format!("service-visual service-visual-{}", kind)) {
             div class="service-visual-placeholder" role="img" aria-label=(placeholder) {
@@ -1073,10 +1446,10 @@ fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
     }
 }
 
-fn party_portrait_overlay(
+pub(crate) fn party_portrait_overlay(
     party_members: &[Character],
     active_character: Option<&Character>,
-    settlement_id: &str,
+    location_path: &str,
     selected_character_id: Option<u64>,
 ) -> Markup {
     let members: Vec<&Character> = if party_members.is_empty() {
@@ -1084,45 +1457,56 @@ fn party_portrait_overlay(
     } else {
         party_members.iter().collect()
     };
+    let leader_id = members.first().map(|member| member.id);
 
     html! {
         @if !members.is_empty() {
             div class="party-portrait-overlay" aria-label="Active party" {
-                @for member in members {
-                    @let is_active = active_character.is_some_and(|character| character.id == member.id);
-                    @if is_active {
-                    a href=(format!("/settlements/{}/party/{}", settlement_id, member.id))
-                        class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
-                        title=(format!("Open {}'s inventory and stats", member.name)) {
-                        (incapacitation_wheel_placeholder())
-                        span class="party-portrait-initial" {
-                            span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                            span class="party-portrait-name" { (&member.name) }
+                @if active_character.is_some() {
+                    div class="party-portrait party-inventory-portrait" title="Party inventory" {
+                        a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
+                            span class="party-portrait-initial party-chest-face" role="img" aria-label="Party inventory" { "▣" }
                         }
                     }
-                    } @else {
+                }
+                @for member in members {
+                    @let is_active = active_character.is_some_and(|character| character.id == member.id);
+                    @let can_remove = Some(member.id) != leader_id;
                     div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
+                        data-character-id=(member.id)
+                        data-active-character[is_active]
                         title=(&member.name) {
-                        (incapacitation_wheel_placeholder())
-                        span class="party-portrait-initial" {
-                            span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                            span class="party-portrait-name" { (&member.name) }
+                        a class="party-portrait-select"
+                            href=(if is_active {
+                                format!("{}/party/{}", location_path, member.id)
+                            } else {
+                                format!("{}/party/{}/stats", location_path, member.id)
+                            })
+                            title=(format!("Inspect {}", member.name)) {
+                            (incapacitation_wheel_placeholder())
+                            span class="party-portrait-initial" {
+                                span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
+                                span class="party-portrait-name" { (&member.name) }
+                            }
                         }
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
-                            a href=(format!("/settlements/{}/party/{}/stats", settlement_id, member.id))
-                                class="party-portrait-action" title=(format!("Compare stats with {}", member.name)) {
-                                span class="party-action-icon"
-                                    style="--party-action-icon: url('/static/icons/character/stats-sheet.png')"
-                                    role="img" aria-label="Stats" {}
-                            }
-                            a href=(format!("/settlements/{}/party/{}/inventory", settlement_id, member.id))
-                                class="party-portrait-action" title=(format!("Compare inventory with {}", member.name)) {
+                            a href=(format!("{}/party/{}/inventory", location_path, member.id))
+                                class="party-portrait-action"
+                                title=(if is_active { "Open inventory and discard items".to_string() } else { format!("Compare inventory with {}", member.name) }) {
                                 span class="party-action-icon"
                                     style="--party-action-icon: url('/static/icons/character/inventory.png')"
                                     role="img" aria-label="Inventory" {}
                             }
+                            @if can_remove {
+                                form method="post" action=(format!("{}/party/{}/remove", location_path, member.id)) {
+                                    button type="submit" class=(if is_active { "party-portrait-action party-member-remove party-member-leave" } else { "party-portrait-action party-member-remove party-member-kick-request" })
+                                        title=(if is_active { "Leave party".to_string() } else { format!("Request to remove {} from the party", member.name) })
+                                        aria-label=(if is_active { "Leave party".to_string() } else { format!("Request to remove {} from the party", member.name) }) {
+                                        span aria-hidden="true" { "×" }
+                                    }
+                                }
+                            }
                         }
-                    }
                     }
                 }
             }
@@ -1142,17 +1526,50 @@ fn incapacitation_wheel_placeholder() -> Markup {
 
 /// Layout-only chat panel matching the UX prototype. Channels, message history,
 /// and sending are deliberately disabled until the strategic chat backend exists.
-fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    let party_label = active_character
-        .map(|character| format!("{}'s party", character.name))
-        .unwrap_or_else(|| "Party".to_string());
+pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
+    chat_area(location, active_character, None, None)
+}
 
+fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
+    let context = ("player", subject.id.to_string());
+    chat_area(&subject.name, Some(active_character), None, Some(context))
+}
+
+fn settlement_service_chat_area(
+    location: &str,
+    active_character: Option<&Character>,
+    settlement_id: &str,
+    service_id: &str,
+) -> Markup {
+    let subject_id = format!("{settlement_id}:{service_id}");
+    chat_area(
+        location,
+        active_character,
+        Some((settlement_id, service_id)),
+        Some(("npc", subject_id)),
+    )
+}
+
+fn chat_area(
+    location: &str,
+    active_character: Option<&Character>,
+    service_context: Option<(&str, &str)>,
+    local_context: Option<(&str, String)>,
+) -> Markup {
     html! {
-        section class="settlement-chat" aria-label="Settlement chat" {
+        section class="settlement-chat" aria-label="Settlement chat"
+            data-service-quest-settlement=[service_context.map(|context| context.0)]
+            data-service-quest-id=[service_context.map(|context| context.1)]
+            data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
+            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())] {
+            div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
+                aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
+                aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
+                span aria-hidden="true" {}
+            }
             div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
-                button type="button" class="settlement-chat-tab active" disabled
-                    title="TODO: party chat requires real-time message delivery" {
-                    (party_label)
+                button type="button" class="settlement-chat-tab active" {
+                    "Local"
                 }
                 button type="button" class="settlement-chat-tab" disabled
                     title="TODO: settlement chat requires real-time message delivery" {
@@ -1164,20 +1581,15 @@ fn settlement_chat_area(location: &str, active_character: Option<&Character>) ->
                 }
             }
             div class="settlement-chat-messages" aria-live="polite" {
-                div class="chat-system-message" {
+                @if local_context.is_none() { div class="chat-system-message" {
                     span class="chat-timestamp" { "[--:--]" }
-                    " Chat is not connected yet. Message history and live delivery are TODO."
-                }
-                div class="chat-npc-message" {
-                    span class="chat-timestamp" { "[--:--]" }
-                    (location) " chat will appear here when the strategic chat service is available."
-                }
+                    " Select a local character or settlement service to begin talking."
+                } }
             }
             div class="settlement-chat-composer" {
-                input type="text" disabled placeholder="Chat is not implemented yet"
-                    title="TODO: sending messages requires the strategic chat backend";
-                button type="button" class="btn btn-primary btn-icon" disabled
-                    title="TODO: sending messages requires the strategic chat backend" aria-label="Send message" {
+                input type="text" name="body" disabled[local_context.is_none()] placeholder=(format!("Message {location}"));
+                button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
+                    aria-label="Send message" {
                     "➤"
                 }
             }
@@ -1376,13 +1788,29 @@ fn rest_service_menu_placeholder(location: &str) -> Markup {
     }
 }
 
-fn quest_detail_rail() -> Markup {
-    html! {
-        (sidebar_section("Quest details", html! {
-            div class="context-placeholder" {
-                p { "Select a quest to inspect its full details." }
-                p class="text-muted small-copy" { "TODO: quest selection and detail rendering are not connected yet." }
-            }
-        }))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_quest_destination_has_red_status_badge() {
+        let destination = TravelDestination {
+            id: "quest-location".to_string(),
+            name: "Bandit camp".to_string(),
+            description: "A camp beside the road.".to_string(),
+            summary: Some("Active quest".to_string()),
+            travel_action: "/quests/quest-location/travel".to_string(),
+            distance_m: 1_000,
+            journey_minutes: 48,
+            quest_in_progress: true,
+            turn_in_ready: false,
+        };
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("destination-quest-badge"));
+        assert!(markup.contains("Active quest destination"));
+        assert!(!markup.contains("destination-turn-in-badge"));
     }
 }

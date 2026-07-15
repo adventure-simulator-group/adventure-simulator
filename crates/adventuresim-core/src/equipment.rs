@@ -10,6 +10,21 @@ const ARMOR_PENALTY_EXPONENT: i32 = 3;
 #[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
 #[ambassador::delegatable_trait]
 pub trait PlayerEquipment {
+    fn weapon_is_melee(&self) -> bool {
+        false
+    }
+    fn weapon_is_ranged(&self) -> bool {
+        false
+    }
+    fn weapon_does_blunt(&self) -> bool {
+        false
+    }
+    fn weapon_does_slash(&self) -> bool {
+        false
+    }
+    fn weapon_does_pierce(&self) -> bool {
+        false
+    }
     fn weapon_accuracy(&self) -> f32;
     fn weapon_weight(&self) -> f32;
     fn weapon_penetration(&self) -> f32;

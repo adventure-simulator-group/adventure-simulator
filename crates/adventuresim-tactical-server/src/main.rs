@@ -277,7 +277,7 @@ fn on_stdb_insert_connected_players(
         ));
 
         match item.item.kind {
-            ItemKind::Simple => {}
+            ItemKind::Simple | ItemKind::Clothing | ItemKind::Currency => {}
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,

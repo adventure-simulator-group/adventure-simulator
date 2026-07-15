@@ -2,8 +2,8 @@
 
 use reqwest::Client;
 use serde::de::DeserializeOwned;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::time::Duration;
 
 use super::types::{AlgebraicType, QueryResponse};
@@ -59,6 +59,32 @@ fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Val
                 .and_then(Value::as_str)
             {
                 return Value::String(identity.to_string());
+            }
+        }
+
+        if let Value::Array(values) = value {
+            let mut object = serde_json::Map::new();
+            for (element, value) in elements.iter().zip(values) {
+                let Some(name) = element
+                    .get("name")
+                    .and_then(|name| name.get("some"))
+                    .and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let nested_type = AlgebraicType::Value(
+                    element
+                        .get("algebraic_type")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                object.insert(
+                    name.to_string(),
+                    convert_spacetime_value(value, &nested_type),
+                );
+            }
+            if !object.is_empty() {
+                return Value::Object(object);
             }
         }
     }
@@ -152,6 +178,12 @@ impl SpacetimeClient {
     pub fn with_token(mut self, token: Option<String>) -> Self {
         self.token = token;
         self
+    }
+
+    /// Whether this client points at the local development database.
+    pub fn is_local(&self) -> bool {
+        let base = self.base_url.to_ascii_lowercase();
+        base.contains("localhost") || base.contains("127.0.0.1") || base.contains("[::1]")
     }
 
     /// Run a SQL query and return typed rows
@@ -261,5 +293,24 @@ impl SpacetimeClient {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_named_nested_products_to_objects() {
+        let ty = AlgebraicType::Value(json!({
+            "Product": { "elements": [
+                { "name": { "some": "melee" }, "algebraic_type": { "Bool": [] } },
+                { "name": { "some": "endurance" }, "algebraic_type": { "U8": [] } }
+            ] }
+        }));
+        assert_eq!(
+            convert_spacetime_value(&json!([true, 3]), &ty),
+            json!({ "melee": true, "endurance": 3 })
+        );
     }
 }
