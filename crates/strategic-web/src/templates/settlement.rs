@@ -488,6 +488,7 @@ pub fn party_personal_page(
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
     condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
     theme: &str,
@@ -505,7 +506,7 @@ pub fn party_personal_page(
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition))
+            (strategic_condition_rail(condition, morale_sources))
             (character_bio_rail(active_character, religion_id, true, &location.base_path()))
         }
     };
@@ -523,6 +524,7 @@ pub fn party_stats_page(
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
     condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
@@ -542,7 +544,7 @@ pub fn party_stats_page(
             (player_chat_area(selected, active_character))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition))
+            (strategic_condition_rail(condition, morale_sources))
             (character_bio_rail(
                 selected,
                 religion_id,
@@ -1309,18 +1311,62 @@ fn character_bio_rail(
     }
 }
 
-fn strategic_condition_rail(condition: Option<&CharacterStrategicCondition>) -> Markup {
+fn strategic_condition_rail(
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+) -> Markup {
     let Some(condition) = condition else {
         return html! {};
     };
     let percent = |value: f32| format!("{:.0}%", value.max(0.0) * 100.0);
+    let fear_fill = (condition.fear.clamp(0.0, 1.0) * 100.0).round();
+    let bonus_fill = if condition.morale_bonus_cap > 0.0 {
+        (condition.morale_bonus / condition.morale_bonus_cap * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+    .round();
+    let meter_style = format!("--morale-fear: {fear_fill}%; --morale-bonus: {bonus_fill}%");
     html! {
         (sidebar_section("Condition", html! {
+            div class="morale-meter" tabindex="0" style=(meter_style) aria-label=(format!(
+                "Morale {:.1}; fear {}; personal share of party morale restoration {:.1}%",
+                condition.morale,
+                percent(condition.fear),
+                condition.morale_bonus * 100.0,
+            )) {
+                div class="morale-meter-heading" {
+                    strong { "Morale" }
+                    span { (format!("{:+.1}", condition.morale)) }
+                }
+                div class="morale-meter-track" aria-hidden="true" {
+                    span class="morale-meter-fear" {}
+                    span class="morale-meter-neutral" {}
+                    span class="morale-meter-bonus" {}
+                }
+                div class="morale-meter-labels" {
+                    span { "100% fear" }
+                    span { "Neutral" }
+                    span { (format!("{:.1}% ally lift", condition.morale_bonus * 100.0)) }
+                }
+                div class="morale-source-popup" role="tooltip" {
+                    strong { "Morale sources" }
+                    @if morale_sources.is_empty() {
+                        p { "No current morale effects." }
+                    } @else {
+                        ul {
+                            @for source in morale_sources {
+                                li class=(if source.magnitude >= 0.0 { "positive" } else { "negative" }) {
+                                    span { (&source.label) }
+                                    strong { (format!("{:+.1}", source.magnitude)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             dl class="character-bio strategic-condition-summary" {
                 div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
-                div { dt { "Morale" } dd { (format!("{:.1}", condition.morale)) } }
-                div { dt { "Positive morale" } dd { (format!("+{:.1}", condition.positive_morale)) } }
-                div { dt { "Negative morale" } dd { (format!("-{:.1}", condition.negative_morale)) } }
                 div { dt { "Incapacitation" } dd { (percent(condition.incapacitation)) } }
                 div { dt { "Pain" } dd { (percent(condition.pain)) } }
                 div { dt { "Blood loss" } dd { (percent(condition.blood_loss)) } }

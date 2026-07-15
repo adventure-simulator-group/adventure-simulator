@@ -105,7 +105,8 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
 | `settlement` | Strategic settlement data, including the single fixed faith represented by its current church |
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
-| `character_strategic_condition` | Refreshable derived morale/incapacitation projection for server-authoritative UI and action gating |
+| `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
+| `character_strategic_condition` | Refreshable derived morale, ally-restoration percentage, and incapacitation projection for server-authoritative UI and action gating |
 | `inventory_item` | Persistent items |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |

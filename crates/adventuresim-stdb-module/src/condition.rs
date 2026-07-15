@@ -63,9 +63,11 @@ pub struct MoraleEvent {
 pub struct CharacterStrategicCondition {
     #[primary_key]
     pub character_id: u64,
-    pub positive_morale: f32,
-    pub negative_morale: f32,
     pub morale: f32,
+    /// This character's allocated share of the party's ally-restoration fraction.
+    pub morale_bonus: f32,
+    /// Maximum party restoration fraction at the current aggregate Charisma check.
+    pub morale_bonus_cap: f32,
     pub pain: f32,
     pub blood_loss: f32,
     pub fear: f32,
@@ -73,6 +75,19 @@ pub struct CharacterStrategicCondition {
     pub incapacitation: f32,
     pub check_multiplier: f32,
     pub status: String,
+}
+
+/// A signed contribution to the character's current projected morale.
+#[derive(Clone, Debug)]
+#[table(name = character_morale_source, public)]
+pub struct CharacterMoraleSource {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub kind: String,
+    pub label: String,
+    pub magnitude: f32,
 }
 
 pub fn initialize_character_condition(
@@ -155,14 +170,6 @@ fn mental_check(ctx: &ReducerContext, character_id: u64, skill: Skill) -> Result
     ))
 }
 
-fn faith_relation(listener: &CharacterCondition, speaker: &CharacterCondition) -> FaithRelation {
-    match (&listener.religion_id, &speaker.religion_id) {
-        (Some(listener), Some(speaker)) if listener == speaker => FaithRelation::Shared,
-        (Some(_), Some(_)) => FaithRelation::Conflicting,
-        _ => FaithRelation::Neutral,
-    }
-}
-
 fn load_character_parts(
     ctx: &ReducerContext,
     character_id: u64,
@@ -199,36 +206,22 @@ fn load_character_parts(
     ))
 }
 
-pub fn evaluate_strategic_condition(
-    ctx: &ReducerContext,
-    character_id: u64,
-) -> Result<CharacterStrategicCondition, String> {
-    initialize_character_condition(ctx, character_id)?;
+#[derive(Clone, Debug)]
+struct ProjectedMoraleSource {
+    key: String,
+    kind: String,
+    label: String,
+    magnitude: f32,
+}
+
+fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u64>, String> {
     let character = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let condition = ctx
-        .db
-        .character_condition()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character condition not found")?;
-    let current_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .map_or(0, |time| time.minutes);
-    let (attributes, limbs, stats, _) = load_character_parts(ctx, character_id)?;
-    let will = mental_check(ctx, character_id, Skill::Will)?;
-
-    let mut positive_effects = Vec::new();
-    let mut negative_effects = vec![total_damage(&limbs) * INJURY_MORALE_PER_HEALTH_DEFICIT];
-
-    let party_members: Vec<u64> = character.party_id.as_ref().map_or_else(
+    Ok(character.party_id.as_ref().map_or_else(
         || vec![character_id],
         |party_id| {
             ctx.db
@@ -238,30 +231,42 @@ pub fn evaluate_strategic_condition(
                 .map(|member| member.character_id)
                 .collect()
         },
-    );
+    ))
+}
+
+fn base_morale(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(f32, Vec<ProjectedMoraleSource>), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let current_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let (_, limbs, _, _) = load_character_parts(ctx, character_id)?;
+    let will = mental_check(ctx, character_id, Skill::Will)?.max(MINIMUM_WILL_CHECK);
+    let mut raw_sources = Vec::new();
+
+    let injury = total_damage(&limbs) * INJURY_MORALE_PER_HEALTH_DEFICIT;
+    if injury > 0.0 {
+        raw_sources.push(ProjectedMoraleSource {
+            key: "injuries".into(),
+            kind: "injury".into(),
+            label: "Injuries".into(),
+            magnitude: -injury,
+        });
+    }
+
+    let party_members = party_character_ids(ctx, character_id)?;
     let mut allied_power = 0.0;
     for member_id in party_members {
-        initialize_character_condition(ctx, member_id)?;
-        let member_condition = ctx
-            .db
-            .character_condition()
-            .character_id()
-            .find(member_id)
-            .ok_or("Party member condition not found")?;
-        let charisma = mental_check(ctx, member_id, Skill::Charisma)?;
-        let speaker_faith = mental_check(ctx, member_id, Skill::Faith)?;
-        let listener_faith = mental_check(ctx, character_id, Skill::Faith)?;
-        let contribution = faith_adjusted_charisma(
-            charisma,
-            speaker_faith,
-            listener_faith,
-            faith_relation(&condition, &member_condition),
-        );
-        if contribution >= 0.0 {
-            positive_effects.push(contribution);
-        } else {
-            negative_effects.push(-contribution);
-        }
         let capability = crate::capability::refresh_character_capability(ctx, member_id)?;
         allied_power += capability.athletics
             + capability.endurance
@@ -286,11 +291,22 @@ pub fn evaluate_strategic_condition(
         && let Some(quest) = ctx.db.quest().id().find(&quest_id)
     {
         let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
-        if allied_power >= enemy_power {
-            positive_effects.push(allied_power - enemy_power);
-        } else {
-            negative_effects
-                .push((enemy_power - allied_power) * enemy_fear_multiplier(&quest.enemy_type));
+        let difference = allied_power - enemy_power;
+        if difference != 0.0 {
+            raw_sources.push(ProjectedMoraleSource {
+                key: format!("power-{quest_id}"),
+                kind: "power".into(),
+                label: if difference > 0.0 {
+                    "Superior allied strength".into()
+                } else {
+                    format!("Outmatched by {}", quest.enemy_type)
+                },
+                magnitude: if difference > 0.0 {
+                    difference
+                } else {
+                    difference.abs() * -enemy_fear_multiplier(&quest.enemy_type)
+                },
+            });
         }
     }
 
@@ -300,16 +316,122 @@ pub fn evaluate_strategic_condition(
             .saturating_sub(event.occurred_at_minute);
         let age = current_minute.saturating_sub(event.occurred_at_minute);
         let effect = event.magnitude * morale_event_decay(age, duration);
-        if effect > 0.0 {
-            positive_effects.push(effect);
-        } else if effect < 0.0 {
-            negative_effects.push(-effect);
+        if effect != 0.0 {
+            raw_sources.push(ProjectedMoraleSource {
+                key: format!("event-{}", event.id),
+                kind: "event".into(),
+                label: match event.kind.as_str() {
+                    "victory" => "Recent victory".into(),
+                    "defeat" => "Recent defeat".into(),
+                    other => other.replace('_', " "),
+                },
+                magnitude: effect,
+            });
         }
     }
 
-    let positive_morale = cumulative_morale(positive_effects.iter().copied());
-    let negative_morale = cumulative_morale(negative_effects.iter().copied());
-    let morale = resolve_morale(positive_effects, negative_effects, will);
+    let mut positive: Vec<_> = raw_sources
+        .iter_mut()
+        .filter(|source| source.magnitude > 0.0)
+        .collect();
+    positive.sort_by(|left, right| right.magnitude.total_cmp(&left.magnitude));
+    for (index, source) in positive.into_iter().enumerate() {
+        source.magnitude /= (index + 1) as f32;
+    }
+    let mut negative: Vec<_> = raw_sources
+        .iter_mut()
+        .filter(|source| source.magnitude < 0.0)
+        .collect();
+    negative.sort_by(|left, right| left.magnitude.total_cmp(&right.magnitude));
+    for (index, source) in negative.into_iter().enumerate() {
+        source.magnitude /= (index + 1) as f32 * will;
+    }
+    let morale = raw_sources.iter().map(|source| source.magnitude).sum();
+    Ok((morale, raw_sources))
+}
+
+fn party_morale_support(
+    ctx: &ReducerContext,
+    party_members: &[u64],
+) -> Result<(f32, Vec<(u64, f32)>), String> {
+    let mut charismas = Vec::new();
+    let mut surplus_weights = Vec::new();
+    for member_id in party_members.iter().copied() {
+        charismas.push(mental_check(ctx, member_id, Skill::Charisma)?);
+        let (member_base_morale, _) = base_morale(ctx, member_id)?;
+        let surplus = member_base_morale.max(0.0);
+        if surplus > 0.0 {
+            surplus_weights.push((member_id, surplus));
+        }
+    }
+    let party_charisma = aggregate_party_check(charismas);
+    let bonus_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
+    let combined_surplus = cumulative_morale(surplus_weights.iter().map(|(_, surplus)| *surplus));
+    let total_bonus = morale_bonus_fraction(combined_surplus, party_charisma);
+    let total_weight: f32 = surplus_weights.iter().map(|(_, surplus)| *surplus).sum();
+    let shares = surplus_weights
+        .into_iter()
+        .map(|(member_id, surplus)| (member_id, total_bonus * surplus / total_weight))
+        .collect();
+    Ok((bonus_cap, shares))
+}
+
+fn evaluate_strategic_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    morale_bonus_cap: f32,
+    morale_bonus_shares: &[(u64, f32)],
+) -> Result<(CharacterStrategicCondition, Vec<ProjectedMoraleSource>), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    let (attributes, limbs, stats, _) = load_character_parts(ctx, character_id)?;
+    let will = mental_check(ctx, character_id, Skill::Will)?;
+    let (listener_base_morale, mut sources) = base_morale(ctx, character_id)?;
+
+    if listener_base_morale < 0.0 {
+        let deficit = -listener_base_morale;
+        let mut ally_lifts = Vec::new();
+        for (member_id, fraction) in morale_bonus_shares.iter().copied() {
+            if member_id != character_id && fraction > 0.0 {
+                let ally = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(member_id)
+                    .ok_or("Party member not found")?;
+                ally_lifts.push((member_id, ally.name, deficit * fraction));
+            }
+        }
+        let total_lift: f32 = ally_lifts.iter().map(|(_, _, lift)| *lift).sum();
+        let scale = if total_lift > deficit {
+            deficit / total_lift
+        } else {
+            1.0
+        };
+        for (member_id, name, lift) in ally_lifts {
+            sources.push(ProjectedMoraleSource {
+                key: format!("ally-{member_id}"),
+                kind: "ally".into(),
+                label: format!("Encouraged by {name}"),
+                magnitude: lift * scale,
+            });
+        }
+    }
+
+    let morale = sources
+        .iter()
+        .map(|source| source.magnitude)
+        .sum::<f32>()
+        .min(listener_base_morale.max(0.0));
+    let morale_bonus = morale_bonus_shares
+        .iter()
+        .find_map(|(member_id, bonus)| (*member_id == character_id).then_some(*bonus))
+        .unwrap_or(0.0);
     let pain = pain_incapacitation(total_damage(&limbs), will);
     let blood_loss =
         blood_loss_incapacitation(condition.current_blood_ml, condition.maximum_blood_ml);
@@ -325,26 +447,32 @@ pub fn evaluate_strategic_condition(
         IncapacitationStatus::Staggered => "staggered",
         IncapacitationStatus::Incapacitated => "incapacitated",
     };
-    Ok(CharacterStrategicCondition {
-        character_id,
-        positive_morale,
-        negative_morale,
-        morale,
-        pain: incapacitation.pain,
-        blood_loss: incapacitation.blood_loss,
-        fear: incapacitation.fear,
-        fatigue: incapacitation.fatigue,
-        incapacitation: incapacitation.total(),
-        check_multiplier: incapacitation.check_multiplier(),
-        status: status.into(),
-    })
+    Ok((
+        CharacterStrategicCondition {
+            character_id,
+            morale,
+            morale_bonus,
+            morale_bonus_cap,
+            pain: incapacitation.pain,
+            blood_loss: incapacitation.blood_loss,
+            fear: incapacitation.fear,
+            fatigue: incapacitation.fatigue,
+            incapacitation: incapacitation.total(),
+            check_multiplier: incapacitation.check_multiplier(),
+            status: status.into(),
+        },
+        sources,
+    ))
 }
 
-pub fn refresh_character_strategic_condition(
+fn refresh_one_strategic_condition(
     ctx: &ReducerContext,
     character_id: u64,
+    morale_bonus_cap: f32,
+    morale_bonus_shares: &[(u64, f32)],
 ) -> Result<CharacterStrategicCondition, String> {
-    let row = evaluate_strategic_condition(ctx, character_id)?;
+    let (row, sources) =
+        evaluate_strategic_condition(ctx, character_id, morale_bonus_cap, morale_bonus_shares)?;
     if let Some(existing) = ctx
         .db
         .character_strategic_condition()
@@ -360,7 +488,49 @@ pub fn refresh_character_strategic_condition(
     } else {
         ctx.db.character_strategic_condition().insert(row.clone());
     }
+    let old_source_ids: Vec<String> = ctx
+        .db
+        .character_morale_source()
+        .character_id()
+        .filter(character_id)
+        .map(|source| source.id)
+        .collect();
+    for id in old_source_ids {
+        ctx.db.character_morale_source().id().delete(&id);
+    }
+    for source in sources {
+        ctx.db
+            .character_morale_source()
+            .insert(CharacterMoraleSource {
+                id: format!("{character_id}:{}", source.key),
+                character_id,
+                kind: source.kind,
+                label: source.label,
+                magnitude: source.magnitude,
+            });
+    }
     Ok(row)
+}
+
+pub fn refresh_character_strategic_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<CharacterStrategicCondition, String> {
+    let party_members = party_character_ids(ctx, character_id)?;
+    let (morale_bonus_cap, morale_bonus_shares) = party_morale_support(ctx, &party_members)?;
+    let mut requested = None;
+    for member_id in party_members {
+        let row = refresh_one_strategic_condition(
+            ctx,
+            member_id,
+            morale_bonus_cap,
+            &morale_bonus_shares,
+        )?;
+        if member_id == character_id {
+            requested = Some(row);
+        }
+    }
+    requested.ok_or_else(|| "Character is not a member of their party".into())
 }
 
 pub fn record_morale_event(

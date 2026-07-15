@@ -1380,6 +1380,96 @@ button.party-portrait-action {
   font-size: 0.7rem;
 }
 
+.morale-meter {
+  position: relative;
+  padding: 0.15rem 0 0.65rem;
+  outline: none;
+}
+
+.morale-meter-heading,
+.morale-meter-labels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.morale-meter-heading { margin-bottom: 0.35rem; }
+.morale-meter-heading span { grid-column: 2; font-variant-numeric: tabular-nums; font-weight: 800; }
+
+.morale-meter-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+}
+
+.morale-meter-fear {
+  background: linear-gradient(
+    to left,
+    var(--danger) 0 var(--morale-fear),
+    transparent var(--morale-fear) 100%
+  );
+}
+
+.morale-meter-bonus {
+  background: linear-gradient(
+    to right,
+    var(--success) 0 var(--morale-bonus),
+    transparent var(--morale-bonus) 100%
+  );
+}
+
+.morale-meter-neutral {
+  position: absolute;
+  z-index: 1;
+  top: -0.2rem;
+  bottom: -0.2rem;
+  left: 50%;
+  width: 2px;
+  background: var(--text-primary);
+  transform: translateX(-1px);
+}
+
+.morale-meter-labels { margin-top: 0.25rem; color: var(--text-muted); font-size: 0.62rem; }
+.morale-meter-labels span:nth-child(2) { text-align: center; }
+.morale-meter-labels span:last-child { text-align: right; }
+
+.morale-source-popup {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 0.35rem);
+  right: 0;
+  left: 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  opacity: 0;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  transform: translateY(-0.2rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.morale-meter:hover .morale-source-popup,
+.morale-meter:focus-within .morale-source-popup {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.morale-source-popup ul { display: grid; gap: 0.25rem; padding: 0; margin: 0.4rem 0 0; list-style: none; }
+.morale-source-popup li { display: flex; justify-content: space-between; gap: 0.75rem; }
+.morale-source-popup li strong { font-variant-numeric: tabular-nums; }
+.morale-source-popup .positive strong { color: var(--success); }
+.morale-source-popup .negative strong { color: var(--danger); }
+.morale-source-popup p { margin: 0.4rem 0 0; color: var(--text-muted); }
+
 .party-action-notifications {
   position: absolute;
   z-index: 5;

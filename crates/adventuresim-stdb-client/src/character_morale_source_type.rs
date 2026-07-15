@@ -6,20 +6,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct CharacterStrategicCondition {
+pub struct CharacterMoraleSource {
+    pub id: String,
     pub character_id: u64,
-    pub morale: f32,
-    pub morale_bonus: f32,
-    pub morale_bonus_cap: f32,
-    pub pain: f32,
-    pub blood_loss: f32,
-    pub fear: f32,
-    pub fatigue: f32,
-    pub incapacitation: f32,
-    pub check_multiplier: f32,
-    pub status: String,
+    pub kind: String,
+    pub label: String,
+    pub magnitude: f32,
 }
 
-impl __sdk::InModule for CharacterStrategicCondition {
+impl __sdk::InModule for CharacterMoraleSource {
     type Module = super::RemoteModule;
 }

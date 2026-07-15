@@ -5,15 +5,12 @@
 
 /// Minimum Will check used as a divisor for negative morale.
 pub const MINIMUM_WILL_CHECK: f32 = 0.25;
+/// Surplus morale which produces roughly 63% of a character's maximum ally bonus.
+pub const MORALE_BONUS_CURVE_SCALE: f32 = 10.0;
+/// Maximum ally morale restored per point of the speaker's Charisma check.
+pub const MORALE_BONUS_PER_CHARISMA: f32 = 0.05;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FaithRelation {
-    Neutral,
-    Shared,
-    Conflicting,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncapacitationStatus {
@@ -72,25 +69,15 @@ pub fn resolve_morale(
         - cumulative_morale(negative_effects) / will_check.max(MINIMUM_WILL_CHECK)
 }
 
-/// Turn a party member's Charisma check into a signed morale effect.
+/// Fraction of an ally's negative morale that this character can restore.
 ///
-/// Shared faith can double the effect at maximum mutual conviction. Conflicting
-/// faith turns conviction into a negative source; faithless characters retain
-/// the unmodified Charisma contribution and avoid religious conflict.
-pub fn faith_adjusted_charisma(
-    charisma_check: f32,
-    speaker_faith_check: f32,
-    listener_faith_check: f32,
-    relation: FaithRelation,
-) -> f32 {
+/// The bonus is based only on the speaker's pre-bonus surplus, which prevents
+/// two positive characters from recursively increasing one another's output.
+pub fn morale_bonus_fraction(surplus_morale: f32, charisma_check: f32) -> f32 {
+    let surplus = surplus_morale.max(0.0);
     let charisma = charisma_check.max(0.0);
-    let speaker_faith = speaker_faith_check.clamp(0.0, 5.0);
-    let listener_faith = listener_faith_check.clamp(0.0, 5.0);
-    match relation {
-        FaithRelation::Neutral => charisma,
-        FaithRelation::Shared => charisma * (1.0 + speaker_faith.min(listener_faith) / 5.0),
-        FaithRelation::Conflicting => -charisma * ((speaker_faith + listener_faith) / 10.0),
-    }
+    let saturation = 1.0 - (-surplus / MORALE_BONUS_CURVE_SCALE).exp();
+    saturation * MORALE_BONUS_PER_CHARISMA * charisma
 }
 
 /// Linear decay for recent morale events. `age` and `duration` use the same unit.
@@ -145,19 +132,20 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_faith_becomes_a_negative_source() {
-        assert_eq!(
-            faith_adjusted_charisma(4.0, 5.0, 5.0, FaithRelation::Shared),
-            8.0
-        );
-        assert_eq!(
-            faith_adjusted_charisma(4.0, 5.0, 5.0, FaithRelation::Conflicting),
-            -4.0
-        );
-        assert_eq!(
-            faith_adjusted_charisma(4.0, 0.0, 0.0, FaithRelation::Neutral),
-            4.0
-        );
+    fn morale_bonus_approaches_five_percent_per_charisma() {
+        let at_scale = morale_bonus_fraction(MORALE_BONUS_CURVE_SCALE, 4.0);
+        assert!((at_scale - 0.126_424).abs() < 0.000_01);
+        assert_eq!(morale_bonus_fraction(0.0, 5.0), 0.0);
+        assert!((morale_bonus_fraction(1_000.0, 5.0) - 0.25).abs() < 0.000_01);
+    }
+
+    #[test]
+    fn party_charisma_prevents_independent_bonus_stacking() {
+        let party_charisma = crate::capability::aggregate_party_check([4.0; 5]);
+        assert!((party_charisma - 9.133_333).abs() < 0.000_01);
+        let shared_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
+        assert!((shared_cap - 0.456_666_65).abs() < 0.000_01);
+        assert!(shared_cap < 5.0 * (MORALE_BONUS_PER_CHARISMA * 4.0));
     }
 
     #[test]

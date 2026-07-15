@@ -18,10 +18,10 @@ use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule,
-    InventoryItem, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyMember,
-    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
-    Settlement, TravelEdge,
+    CharacterLimbs, CharacterMoraleSource, CharacterSkills, CharacterStrategicCondition,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
+    QuestStatus, RecruitmentRequirements, Settlement, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -805,6 +805,7 @@ async fn party_personal(
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let condition = get_strategic_condition(&state, character_id).await;
+    let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
@@ -818,6 +819,7 @@ async fn party_personal(
             skills.first(),
             limbs.first(),
             condition.as_ref(),
+            &morale_sources,
             religion.as_deref(),
             schedule.first(),
             session.theme(),
@@ -1308,6 +1310,7 @@ async fn party_stats(
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let condition = get_strategic_condition(&state, character_id).await;
+    let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
@@ -1322,6 +1325,7 @@ async fn party_stats(
             selected_skills.first(),
             selected_limbs.first(),
             condition.as_ref(),
+            &morale_sources,
             religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
@@ -1344,6 +1348,18 @@ async fn get_strategic_condition(
         return None;
     }
     query_single(state, "character_strategic_condition", character_id).await
+}
+
+async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<CharacterMoraleSource> {
+    let mut sources: Vec<CharacterMoraleSource> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_morale_source WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    sources.sort_by(|left, right| right.magnitude.abs().total_cmp(&left.magnitude.abs()));
+    sources
 }
 
 #[derive(Deserialize)]

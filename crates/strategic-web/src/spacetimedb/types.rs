@@ -496,9 +496,9 @@ pub struct CharacterCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStrategicCondition {
     pub character_id: u64,
-    pub positive_morale: f32,
-    pub negative_morale: f32,
     pub morale: f32,
+    pub morale_bonus: f32,
+    pub morale_bonus_cap: f32,
     pub pain: f32,
     pub blood_loss: f32,
     pub fear: f32,
@@ -506,6 +506,15 @@ pub struct CharacterStrategicCondition {
     pub incapacitation: f32,
     pub check_multiplier: f32,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterMoraleSource {
+    pub id: String,
+    pub character_id: u64,
+    pub kind: String,
+    pub label: String,
+    pub magnitude: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
