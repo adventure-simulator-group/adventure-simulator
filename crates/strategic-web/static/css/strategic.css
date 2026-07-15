@@ -1529,7 +1529,6 @@ button.party-portrait-action {
 .religious-demand h3 { margin: 0 0 0.45rem; font-family: var(--font-heading); }
 .religious-demand p { margin: 0 0 0.55rem; }
 .religious-demand-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-.religious-demand-actions .btn-primary { grid-column: 1 / -1; }
 
 .party-action-notifications {
   position: absolute;

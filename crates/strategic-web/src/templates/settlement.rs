@@ -532,12 +532,11 @@ fn religious_demand_rail(
                 h3 { (&demand.title) }
                 p { (&demand.description) }
                 p class="text-muted small-copy" {
-                    "Comply and bear the practical cost, ask the party to restrain this impulse with Charisma, or refuse it and suffer a morale penalty."
+                    "Observe and bear the practical cost, or decline. Party Charisma automatically reduces the morale cost of neglect and can remove it entirely."
                 }
                 form method="post" action=(action) class="religious-demand-actions" {
                     button type="submit" name="choice" value="observe" class="btn btn-primary" { "Observe" }
-                    button type="submit" name="choice" value="restrain" class="btn" { "Restrain" }
-                    button type="submit" name="choice" value="refuse" class="btn btn-danger" { "Refuse" }
+                    button type="submit" name="choice" value="refuse" class="btn btn-danger" { "Do not observe" }
                 }
             }
         }))
@@ -1408,7 +1407,7 @@ fn strategic_condition_rail(
                     span { "Frenzy" }
                 }
                 p class="fervor-help" role="tooltip" {
-                    "Faith, a strong same-faith cohort, and surplus morale raise Fervor. Party Charisma restrains it. High Fervor will create conviction demands."
+                    "Faith, a strong same-faith cohort, and surplus morale raise Fervor. Party Charisma restrains it. Higher Fervor makes conviction demands and settlement incidents more likely."
                 }
             }
             dl class="character-bio strategic-condition-summary" {

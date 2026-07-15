@@ -112,7 +112,6 @@ pub struct ReligiousDemand {
     pub resolution: Option<String>,
 }
 
-const BASIC_DEMAND_FERVOR: f32 = 0.35;
 const RELIGIOUS_DEMAND_COOLDOWN_MINUTES: u64 = 2 * 24 * 60;
 const DEMANDED_PRAYER_MINUTES: u16 = 120;
 
@@ -653,11 +652,20 @@ fn character_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
         .map_or(0, |time| time.minutes)
 }
 
+fn deterministic_daily_roll(character_id: u64, day: u64) -> f32 {
+    // SplitMix64 gives each character/day pair a stable, well-distributed roll.
+    let mut value = character_id ^ day.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^= value >> 31;
+    ((value >> 40) as f32) / ((1_u32 << 24) as f32)
+}
+
 fn ensure_basic_religious_demand(
     ctx: &ReducerContext,
     condition: &CharacterStrategicCondition,
 ) -> Result<(), String> {
-    if condition.fervor < BASIC_DEMAND_FERVOR {
+    if condition.fervor <= 0.0 {
         return Ok(());
     }
     let professes_religion = ctx
@@ -684,14 +692,20 @@ fn ensure_basic_religious_demand(
     }) {
         return Ok(());
     }
+    let day = current_minute / (24 * 60);
+    if !fervor_event_occurs(
+        condition.fervor,
+        deterministic_daily_roll(condition.character_id, day),
+    ) {
+        return Ok(());
+    }
     let at_settlement = ctx
         .db
         .character()
         .id()
         .find(condition.character_id)
         .is_some_and(|character| character.current_settlement_id.is_some());
-    let holy_day =
-        at_settlement && (condition.character_id + current_minute / (24 * 60)).is_multiple_of(2);
+    let holy_day = at_settlement && (condition.character_id + day).is_multiple_of(2);
     let (kind, title, description) = if holy_day {
         (
             "holy_day",
@@ -808,7 +822,7 @@ pub fn resolve_religious_demand(
     if character.server != ctx.sender {
         return Err("Only this character's player may answer the demand".into());
     }
-    if !matches!(choice.as_str(), "observe" | "restrain" | "refuse") {
+    if !matches!(choice.as_str(), "observe" | "refuse") {
         return Err("Unknown religious-demand choice".into());
     }
     demand.status = "resolved".into();
@@ -837,7 +851,7 @@ pub fn resolve_religious_demand(
                 Some(format!("religious-demand:{}", demand.id)),
             )?;
         }
-        "restrain" => {
+        "refuse" => {
             let party_ids = party_character_ids(ctx, demand.character_id)?;
             let party_charisma = aggregate_party_charisma(
                 party_ids
@@ -845,25 +859,16 @@ pub fn resolve_religious_demand(
                     .map(|id| mental_check(ctx, id, Skill::Charisma))
                     .collect::<Result<Vec<_>, _>>()?,
             );
-            let target = 1.5 + 3.5 * demand.fervor;
-            if party_charisma < target {
+            let penalty = religious_neglect_morale(demand.fervor, party_charisma);
+            if penalty > 0.0 {
                 record_morale_event(
                     ctx,
                     demand.character_id,
-                    "conviction_restrained",
-                    -2.0,
+                    "religious_observance_neglected",
+                    -penalty,
                     Some(format!("religious-demand:{}", demand.id)),
                 )?;
             }
-        }
-        "refuse" => {
-            record_morale_event(
-                ctx,
-                demand.character_id,
-                "conviction_refused",
-                -(2.0 + 6.0 * demand.fervor),
-                Some(format!("religious-demand:{}", demand.id)),
-            )?;
         }
         _ => return Err("Religious demand kind cannot be observed".into()),
     }

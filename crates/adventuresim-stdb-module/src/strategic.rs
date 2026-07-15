@@ -1,3 +1,4 @@
+use adventuresim_core::morale::fervor_event_occurs;
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
@@ -20,7 +21,6 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
-const RELIGIOUS_INCIDENT_FERVOR_THRESHOLD: f32 = 0.60;
 
 fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
     for membership in ctx.db.party_member().party_id().filter(party_id) {
@@ -3038,17 +3038,20 @@ fn maybe_trigger_religious_incident(
         }
         let condition =
             crate::condition::refresh_character_strategic_condition(ctx, membership.character_id)?;
-        if condition.fervor >= RELIGIOUS_INCIDENT_FERVOR_THRESHOLD
-            && instigator
-                .as_ref()
-                .is_none_or(|(_, fervor)| condition.fervor > *fervor)
+        if instigator
+            .as_ref()
+            .is_none_or(|(_, fervor)| condition.fervor > *fervor)
         {
             instigator = Some((membership.character_id, condition.fervor));
         }
     }
-    let Some((instigator_id, _)) = instigator else {
+    let Some((instigator_id, instigator_fervor)) = instigator else {
         return Ok(None);
     };
+    let roll = (ctx.random::<u64>() >> 40) as f32 / ((1_u32 << 24) as f32);
+    if !fervor_event_occurs(instigator_fervor, roll) {
+        return Ok(None);
+    }
 
     let quest_id = format!("religious-incident-{party_id}-{}", settlement.id);
     if ctx.db.quest().id().find(&quest_id).is_none() {

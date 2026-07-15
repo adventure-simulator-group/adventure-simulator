@@ -78,17 +78,16 @@ let fervor = 1.0 - (-pressure / 5.0).exp();
 
 The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy.
 
-At 35% Fervor or higher, conviction may create a personal demand after a two-day cooldown. The basic demands alternate between reserving at least two hours of every daily schedule for prayer and observing a full holy day. The player receives an explicit choice:
+Once per strategic day, each character gets a stable roll against their current Fervor. A roll below Fervor can create a personal demand, subject to a two-day cooldown. Thus 20% Fervor creates a 20% daily chance and 80% creates an 80% chance, with no unlock threshold. The basic demands alternate between reserving at least two hours of every daily schedule for prayer and observing a full holy day. The player receives an explicit choice:
 
 - **Observe:** accept the practical cost. Prayer permanently adjusts the training schedule; a holy day spends one full day in settlement. The character receives a small positive morale event.
-- **Restrain:** make a party Charisma check against `1.5 + 3.5 × Fervor`. Success settles the impulse without a penalty; failure creates a small negative morale event.
-- **Refuse:** keep complete freedom of action but receive a negative morale event which scales from 2 to 8 with Fervor.
+- **Do not observe:** keep complete freedom of action. The raw morale penalty is `max(0, 8 × Fervor − 1.6 × party Charisma)`, so both Fervor and Charisma change the result continuously and a Charisma check of 5 eliminates even the maximum penalty.
 
 Resolving one demand cannot recursively produce another because the two-day cooldown begins at creation. Demands are choices, not involuntary character actions.
 
 ## A Quarrel at the Gate
 
-The first severe Fervor incident is a single cross-faith settlement scenario. When a party arrives at a settlement, a member at 60% Fervor or higher who follows a different religion may insult the local faith and draw an armed crowd. Each party can trigger this incident only once per settlement.
+The first severe Fervor incident is a single cross-faith settlement scenario. When a party arrives at a settlement, the highest-Fervor member who follows a different religion rolls against their current Fervor. On success they insult the local faith and draw an armed crowd. A character at 20% therefore has a 20% arrival chance and one at 80% has an 80% chance, with no unlock threshold. Each party can trigger this incident only once per settlement.
 
 The incident deliberately reuses the quest-location combat flow. Arrival is interrupted at a zero-distance encounter named **A Quarrel at the Gate**. The party can:
 

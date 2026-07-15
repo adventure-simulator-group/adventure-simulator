@@ -16,6 +16,10 @@ pub const RELIGIOUS_DISCORD_SEVERITY: f32 = 3.0;
 pub const FERVOR_PRESSURE_BASELINE: f32 = 2.5;
 /// Pressure required to reach roughly 63% on the Fervor meter.
 pub const FERVOR_CURVE_SCALE: f32 = 5.0;
+/// Maximum raw morale cost of neglecting a conviction demand.
+pub const MAX_RELIGIOUS_NEGLECT_MORALE: f32 = 8.0;
+/// Raw neglect morale removed per point of aggregate party Charisma.
+pub const RELIGIOUS_NEGLECT_CHARISMA_RELIEF: f32 = 1.6;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
 
@@ -111,6 +115,19 @@ pub fn fervor_fraction(
     1.0 - (-pressure / FERVOR_CURVE_SCALE).exp()
 }
 
+/// Whether a continuous Fervor probability succeeds for a normalized roll.
+pub fn fervor_event_occurs(fervor: f32, roll: f32) -> bool {
+    roll.clamp(0.0, 1.0) < fervor.clamp(0.0, 1.0)
+}
+
+/// Raw morale cost of declining prayer or holy-day observance. Charisma is
+/// subtractive and can eliminate the cost entirely.
+pub fn religious_neglect_morale(fervor: f32, party_charisma: f32) -> f32 {
+    (MAX_RELIGIOUS_NEGLECT_MORALE * fervor.clamp(0.0, 1.0)
+        - RELIGIOUS_NEGLECT_CHARISMA_RELIEF * party_charisma.clamp(0.0, 5.0))
+    .max(0.0)
+}
+
 /// Linear decay for recent morale events. `age` and `duration` use the same unit.
 pub fn morale_event_decay(age: u64, duration: u64) -> f32 {
     if duration == 0 || age >= duration {
@@ -193,6 +210,21 @@ mod tests {
         assert!(unmitigated > led);
         assert!((0.0..1.0).contains(&unmitigated));
         assert_eq!(fervor_fraction(1.0, 1.0, 0.0, 5.0), 0.0);
+    }
+
+    #[test]
+    fn fervor_events_scale_continuously() {
+        assert!(!fervor_event_occurs(0.25, 0.25));
+        assert!(fervor_event_occurs(0.26, 0.25));
+        assert!(!fervor_event_occurs(0.0, 0.0));
+        assert!(fervor_event_occurs(1.0, 0.999));
+    }
+
+    #[test]
+    fn charisma_can_eliminate_religious_neglect() {
+        assert!((religious_neglect_morale(0.75, 1.0) - 4.4).abs() < 0.001);
+        assert_eq!(religious_neglect_morale(0.75, 3.75), 0.0);
+        assert_eq!(religious_neglect_morale(1.0, 5.0), 0.0);
     }
 
     #[test]
