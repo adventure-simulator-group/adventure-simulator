@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use serde_json::json;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::types::{AlgebraicType, QueryResponse};
 
@@ -196,7 +196,13 @@ impl SpacetimeClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request.send().await?;
+        let started = Instant::now();
+        let response = request.send().await;
+        let elapsed = started.elapsed();
+        if elapsed >= Duration::from_millis(250) {
+            tracing::warn!(?elapsed, query = %sql, "slow SpacetimeDB query");
+        }
+        let response = response?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -255,7 +261,13 @@ impl SpacetimeClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request.send().await?;
+        let started = Instant::now();
+        let response = request.send().await;
+        let elapsed = started.elapsed();
+        if elapsed >= Duration::from_millis(250) {
+            tracing::warn!(?elapsed, query = %sql, "slow SpacetimeDB query");
+        }
+        let response = response?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -285,7 +297,13 @@ impl SpacetimeClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request.send().await?;
+        let started = Instant::now();
+        let response = request.send().await;
+        let elapsed = started.elapsed();
+        if elapsed >= Duration::from_millis(250) {
+            tracing::warn!(?elapsed, reducer, "slow SpacetimeDB reducer call");
+        }
+        let response = response?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();

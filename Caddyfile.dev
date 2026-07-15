@@ -1,0 +1,10 @@
+{
+	admin 127.0.0.1:2020
+	skip_install_trust
+}
+
+https://localhost:8443 {
+	bind 127.0.0.1 ::1
+	tls internal
+	reverse_proxy 127.0.0.1:8080
+}

@@ -7,7 +7,7 @@ use crate::{
     character_attributes, character_equip, character_skills, inventory_item,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[table(name = character_capability, public)]
 pub struct CharacterCapability {
     #[primary_key]
@@ -98,14 +98,19 @@ pub fn refresh_character_capability(
 ) -> Result<CharacterCapabilities, String> {
     let capabilities = evaluate_character(ctx, character_id)?;
     let row = CharacterCapability::from((character_id, capabilities));
-    if ctx
+    if let Some(existing) = ctx
         .db
         .character_capability()
         .character_id()
         .find(character_id)
-        .is_some()
     {
-        ctx.db.character_capability().character_id().update(row);
+        // Capability reads are currently refreshed lazily by the web layer. Avoid
+        // emitting a table update when the derived value has not changed: that
+        // update invalidates the SSE UI, which otherwise refreshes the same
+        // capability again and creates a feedback loop.
+        if existing != row {
+            ctx.db.character_capability().character_id().update(row);
+        }
     } else {
         ctx.db.character_capability().insert(row);
     }

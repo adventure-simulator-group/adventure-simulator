@@ -3177,9 +3177,6 @@ pub fn turn_in_quest(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
-        return Err("Only the party leader can turn in quests".into());
-    }
     if party.active_quest_id.as_deref() != Some(&quest_id) {
         return Err("This is not the party's active quest".into());
     }
@@ -3216,6 +3213,17 @@ pub fn turn_in_quest(
 
     party.active_quest_id = None;
     ctx.db.party().id().update(party);
+    let obsolete_requests: Vec<u64> = ctx
+        .db
+        .party_action_request()
+        .party_id()
+        .filter(&party_id)
+        .filter(|request| request.action_kind == "turn_in_quest")
+        .map(|request| request.id)
+        .collect();
+    for request_id in obsolete_requests {
+        ctx.db.party_action_request().id().delete(request_id);
+    }
     ensure_settlement_activity_inner(ctx, &quest.settlement_id)?;
     Ok(())
 }

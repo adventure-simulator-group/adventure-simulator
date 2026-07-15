@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (365)
+## Files (368)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -20,6 +20,7 @@ development, or wiki document before changing a subsystem.
 - `.gitignore` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
+- `Caddyfile.dev` — Repository support file.
 - `Cargo.lock` — Locked Rust dependency versions.
 - `Cargo.toml` — Cargo package/workspace manifest.
 - `LICENSE` — Repository support file.
@@ -274,6 +275,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/borders/border-horizontal.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/borders/border-vertical.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/borders/corner-ornament.svg` — Vector UI or texture asset.
@@ -326,6 +328,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/tavern.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.

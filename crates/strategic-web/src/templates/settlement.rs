@@ -1462,6 +1462,7 @@ pub(crate) fn party_portrait_overlay(
     html! {
         @if !members.is_empty() {
             div class="party-portrait-overlay" aria-label="Active party" {
+                div data-party-portrait-members {
                 @if active_character.is_some() {
                     div class="party-portrait party-inventory-portrait" title="Party inventory" {
                         a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
@@ -1508,6 +1509,7 @@ pub(crate) fn party_portrait_overlay(
                             }
                         }
                     }
+                }
                 }
             }
         }

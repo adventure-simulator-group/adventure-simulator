@@ -17,14 +17,41 @@ directly. `strategic-web` owns a single generated-client WebSocket subscription
 to SpacetimeDB and fans database changes out to authenticated pages as Datastar
 server-sent events.
 
+Browser-facing deployments terminate HTTPS at a reverse proxy and negotiate
+HTTP/2 or HTTP/3. Multiplexing prevents the long-lived Datastar SSE stream from
+consuming one of the browser's small HTTP/1.1 per-origin connection pool while
+navigation and component refresh requests are pending. The Rust web process
+remains an internal HTTP service; local development uses `Caddyfile.dev` to
+expose it at `https://localhost:8443`.
+
 The SSE stream patches a stable, server-rendered revision marker. Strategic UI
 components subscribe to that marker and refresh only their relevant state. This
-currently drives canonical-location navigation, party requests and
-notifications, recruitment roles and applicants, the active quest indicator,
-incoming local-chat portraits, and local conversation history. New strategic
-live UI should extend this stream
+drives canonical-location navigation, party portraits, party requests and
+notifications, recruitment roles and applicants, inventories and loot, map and
+quest rails, selected-character details, the active quest indicator, service
+quest badges and conversations, mission readiness, incoming
+local-chat portraits, and local conversation history. Shared page regions are
+refetched from their canonical server-rendered URL and replaced only when their
+markup changes. A region with a staged inventory operation, focused control, or
+open role editor is deliberately left untouched until that local interaction is
+finished. The stream's initial revision establishes a baseline and does not
+refetch the page that was just rendered. Later revisions are coalesced, and the
+client checks canonical navigation before refreshing regions so travel does not
+refetch the location being left. New strategic live UI should extend this stream
 with stable Maud fragment roots rather than add polling timers or expose module
 credentials to browsers.
+
+Background component GETs are keyed and replace older requests for the same
+region. They are canceled when navigation begins or the page is discarded, and
+initial component hydration is serialized to avoid a request burst before the
+live stream is established. Hidden pages use Datastar's default behavior of
+closing the SSE stream and reopening it when visible.
+
+Displayed strategic time is the exception to SSE invalidation. The browser
+fetches one character/official-time snapshot when a page initializes, then
+advances both clocks locally at the configured game-time ratio. SpacetimeDB
+derives authoritative time from the stored epoch when an action needs it; it
+does not write a world-clock row every second.
 
 The database stores ONLY:
 - Character progression (XP, level)

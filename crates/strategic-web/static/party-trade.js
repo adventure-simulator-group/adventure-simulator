@@ -4,13 +4,15 @@ function changeTradeDraftCount(row, change) {
   setTradeDraftCount(row, Number(count.dataset.tradeDraftChange || 0) + change);
 }
 
-function mountInventoryBulkControls() {
-  document.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
+function mountInventoryBulkControls(root = document) {
+  if (!root?.querySelectorAll) root = document;
+  root.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
     const section = actions.closest(".sidebar-section");
     const headerRow = section?.querySelector(".trade-inventory-table thead tr");
     if (headerRow) headerRow.append(actions);
   });
 }
+window.mountInventoryBulkControls = mountInventoryBulkControls;
 
 function changeInventoryTarget(control, change) {
   const value = control?.querySelector("[data-target-value]");
@@ -232,6 +234,7 @@ document.addEventListener("click", (event) => {
     const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); form.hidden = true;
     const prompt = form.querySelector("[data-loot-transfer-prompt]");
     if (prompt) prompt.textContent = "Apply staged loot to the party inventory?";
+    document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
   const lootStage = event.target.closest("[data-loot-stage]");
@@ -255,7 +258,7 @@ document.addEventListener("click", (event) => {
     return;
   }
   const cancelPool = event.target.closest("[data-cancel-pool]");
-  if (cancelPool) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; return; }
+  if (cancelPool) { window.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
   const poolStage = event.target.closest("[data-pool-stage]");
   if (poolStage) {
     const form = document.querySelector("#pool-transfer-offer");
@@ -273,6 +276,7 @@ document.addEventListener("click", (event) => {
   const cancelTrade = event.target.closest("[data-cancel-trade]");
   if (cancelTrade) {
     resetTradeDraft(cancelTrade.closest("form"));
+    document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
   const unstageDiscard = event.target.closest("[data-unstage-discard]");
@@ -417,7 +421,8 @@ document.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", mountInventoryBulkControls, { once: true });
+  document.addEventListener("DOMContentLoaded", () => mountInventoryBulkControls(), { once: true });
 } else {
   mountInventoryBulkControls();
 }
+document.addEventListener("strategic-live-regions-refreshed", () => mountInventoryBulkControls());

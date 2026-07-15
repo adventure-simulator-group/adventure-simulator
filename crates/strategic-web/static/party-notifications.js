@@ -3,7 +3,7 @@
 
   async function refreshPartyNotifications() {
     try {
-      const response = await fetch("/party-notifications", {
+      const response = await window.strategicBackgroundFetch("party-notifications", "/party-notifications", {
         headers: { Accept: "application/json" },
       });
       if (!response.ok) return;
@@ -63,7 +63,7 @@
     }
   }
 
-  refreshPartyNotifications();
+  window.queueStrategicInitialLoad(refreshPartyNotifications);
   const requested = new URLSearchParams(location.search).get("party-requested");
   if (requested) {
     const notice = document.createElement("div");

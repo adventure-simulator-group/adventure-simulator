@@ -2,7 +2,9 @@
   const summary = document.querySelector("[data-current-quest]");
   if (!summary) return;
 
-  const refreshCurrentQuest = () => fetch("/api/current-quest", { headers: { Accept: "application/json" } })
+  const refreshCurrentQuest = () => window.strategicBackgroundFetch("current-quest", "/api/current-quest", {
+    headers: { Accept: "application/json" },
+  })
     .then((response) => (response.ok ? response.json() : null))
     .then((quest) => {
       if (!quest) {
@@ -22,6 +24,6 @@
       summary.hidden = false;
     })
     .catch(() => {});
-  refreshCurrentQuest();
+  window.queueStrategicInitialLoad(refreshCurrentQuest);
   document.addEventListener("strategic-live-update", refreshCurrentQuest);
 })();

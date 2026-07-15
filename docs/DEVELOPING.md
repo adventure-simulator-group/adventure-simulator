@@ -54,6 +54,7 @@ Now when you click a location in the browser, a tactical server will automatical
 - SpacetimeDB CLI (`curl -sSf https://install.spacetimedb.com | bash`)
 - Python 3
 - wasm-bindgen (`cargo install wasm-bindgen-cli`) - for WASM builds
+- Caddy (for the HTTPS HTTP/2 development entry point)
 
 ## Services and Ports
 
@@ -61,6 +62,8 @@ Now when you click a location in the browser, a tactical server will automatical
 |---------|------|-------------|
 | SpacetimeDB | 3000 | Strategic database |
 | Strategic UI | 8000 | Browser UI (`map.html`) |
+| Strategic web backend | 8080 | Internal Axum HTTP service |
+| Strategic web HTTPS | 8443 | Caddy HTTP/2 and HTTP/3 entry point |
 | Tactical Server | 6000+ | Game server (one per mission) |
 
 ## Core Commands
@@ -68,6 +71,8 @@ Now when you click a location in the browser, a tactical server will automatical
 ```bash
 # Development
 just dev              # Start SpacetimeDB + UI server
+just web-secure       # Start strategic-web at https://localhost:8443
+just secure-web-trust # Trust Caddy's local development CA (normally once)
 just web-damaged      # Start a fresh stack with an injured demo character
 just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
@@ -121,6 +126,22 @@ untrusted clients to connect.
 The UI is served from `crates/adventuresim-stdb-module/static/`.
 `map.html` connects to SpacetimeDB at `http://localhost:3000`.
 
+Test the server-rendered strategic browser through `https://localhost:8443`
+using `just web-secure`. Caddy terminates TLS and negotiates HTTP/2 or HTTP/3
+with the browser, then proxies to `strategic-web` on `127.0.0.1:8080`. Run
+`just secure-web-trust` once if the browser does not yet trust Caddy's local
+certificate authority. Port 8080 remains available for backend diagnostics but
+does not exercise multiplexed browser transport.
+
+The certificate-trust recipe runs with PowerShell on Windows even though most
+of the development stack currently expects Bash. If Caddy is not on `PATH`, set
+`CADDY_BIN` to the executable's full path before invoking it, for example:
+
+```powershell
+$env:CADDY_BIN = "C:\tools\caddy.exe"
+just secure-web-trust
+```
+
 ## Tactical Spawner
 
 The spawner polls SpacetimeDB for "pending" missions and starts adventuresim-tactical-server processes:
@@ -150,3 +171,11 @@ just tactical mission_id="test-123" scene_key="town_a"
 - **SpacetimeDB failed to start:** check `/tmp/adventure-simulator-1/spacetime.log`
 - **Tactical spawner can't find binary:** run `just build-tactical` first
 - **Mission stuck on "pending":** spawner not running or binary not found
+
+`strategic-web` logs every HTTP request at `info` level with a request ID,
+method, URI, response status, and elapsed milliseconds. The same request ID is
+returned in the `X-Request-Id` response header for correlation with the browser
+network panel. Requests abandoned by a navigating browser are logged as
+canceled rather than silently disappearing. Set
+`RUST_LOG=strategic_web=info` if a shell-level log filter suppresses these
+diagnostics.

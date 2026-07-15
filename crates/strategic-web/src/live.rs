@@ -16,9 +16,15 @@ use std::{
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey};
 use adventuresim_stdb_client::{
     DbConnection, battle_loot_item_table::BattleLootItemTableAccess,
+    battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
+    character_attributes_table::CharacterAttributesTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
-    character_equip_table::CharacterEquipTableAccess, character_table::CharacterTableAccess,
+    character_equip_table::CharacterEquipTableAccess,
+    character_limbs_table::CharacterLimbsTableAccess,
+    character_skills_table::CharacterSkillsTableAccess,
+    character_stats_table::CharacterStatsTableAccess, character_table::CharacterTableAccess,
+    character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
@@ -30,7 +36,10 @@ use adventuresim_stdb_client::{
     party_member_table::PartyMemberTableAccess,
     party_recruitment_role_table::PartyRecruitmentRoleTableAccess,
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
-    quest_table::QuestTableAccess, tactical_server_table::TacticalServerTableAccess,
+    quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
+    saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
+    tactical_server_request_table::TacticalServerRequestTableAccess,
+    tactical_server_table::TacticalServerTableAccess,
 };
 use axum::{
     Json, Router,
@@ -105,12 +114,18 @@ impl LiveState {
         // These tables cover location/navigation, party state and requests,
         // recruitment, quest state, local conversations, and mission readiness.
         invalidate_on_changes!(state.0._connection.db.character());
+        invalidate_on_insert_or_delete!(state.0._connection.db.character_attributes());
+        invalidate_on_insert_or_delete!(state.0._connection.db.character_stats());
+        invalidate_on_insert_or_delete!(state.0._connection.db.character_skills());
+        invalidate_on_insert_or_delete!(state.0._connection.db.character_limbs());
+        invalidate_on_changes!(state.0._connection.db.character_training_schedule());
         invalidate_on_changes!(state.0._connection.db.party());
         invalidate_on_changes!(state.0._connection.db.party_member());
         invalidate_on_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());
         invalidate_on_changes!(state.0._connection.db.party_leader_vote());
         invalidate_on_changes!(state.0._connection.db.party_recruitment_role());
+        invalidate_on_changes!(state.0._connection.db.saved_recruitment_role());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
         invalidate_on_changes!(state.0._connection.db.inventory_quantity_target());
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
@@ -119,9 +134,12 @@ impl LiveState {
         invalidate_on_insert_or_delete!(state.0._connection.db.character_equip());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.quest());
+        invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
         invalidate_on_changes!(state.0._connection.db.battle_result());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
+        invalidate_on_changes!(state.0._connection.db.battle_participant());
+        invalidate_on_changes!(state.0._connection.db.tactical_server_request());
         invalidate_on_changes!(state.0._connection.db.tactical_server());
 
         state
@@ -147,7 +165,7 @@ impl LiveState {
         }
         let live = self.clone();
         self.0.runtime.spawn(async move {
-            tokio::time::sleep(Duration::from_millis(25)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
             let revision = live.0.revision.fetch_add(1, Ordering::Relaxed) + 1;
             live.0.invalidation_pending.store(false, Ordering::Release);
             let _ = live.0.changes.send(revision);
@@ -183,7 +201,7 @@ async fn stream(
     _session: Session,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let revision = state.live.revision();
-    let initial = stream::once(async move { Ok(revision_patch(revision)) });
+    let initial = stream::iter([Ok(revision_patch(revision))]);
     let updates = stream::unfold(state.live.subscribe(), |mut receiver| async move {
         loop {
             match receiver.recv().await {

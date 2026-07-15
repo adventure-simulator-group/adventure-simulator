@@ -109,17 +109,19 @@ fn page_shell(title: &str, header: Markup, content: Markup, theme: &str, live: b
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
-                script src="/static/live-state.js?v=sse-1" defer {}
-                script src="/static/party-trade.js?v=inventory-target-controls-1" {}
-                script src="/static/party-notifications.js?v=party-requests-1" defer {}
-                script src="/static/party-recruitment.js?v=party-recruitment-live-1" defer {}
-                script src="/static/service-quests.js?v=quest-party-recruitment-3" defer {}
+                script src="/static/background-fetch.js?v=background-fetch-1" {}
+                script src="/static/live-state.js?v=sse-2" defer {}
+                script src="/static/live-regions.js?v=live-regions-2" defer {}
+                script src="/static/party-trade.js?v=live-control-init-1" {}
+                script src="/static/party-notifications.js?v=party-requests-2" defer {}
+                script src="/static/party-recruitment.js?v=party-recruitment-live-2" defer {}
+                script src="/static/service-quests.js?v=quest-links-live-3" defer {}
                 script src="/static/chat-resize.js?v=chat-resize-1" defer {}
-                script src="/static/local-chat.js?v=local-chat-1" defer {}
+                script src="/static/local-chat.js?v=quest-links-live-2" defer {}
             }
             body {
                 @if live {
-                    div id="strategic-live-stream" data-init="@get('/live', {openWhenHidden: true})" {
+                    div id="strategic-live-stream" data-init="@get('/live')" {
                         span id="strategic-live-revision" data-live-revision="0" hidden {}
                     }
                 }
@@ -252,8 +254,8 @@ fn settlement_top_bar(
                 (theme_switcher(current_theme))
             }
         }
-        script src="/static/strategic-time.js?v=player-time-1" {}
-        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
+        script src="/static/strategic-time.js?v=client-clock-2" {}
+        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
 
@@ -295,8 +297,8 @@ fn quest_location_top_bar(
                 (theme_switcher(current_theme))
             }
         }
-        script src="/static/strategic-time.js?v=player-time-1" {}
-        script src="/static/current-quest.js?v=current-quest-status-1" defer {}
+        script src="/static/strategic-time.js?v=client-clock-2" {}
+        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
 
