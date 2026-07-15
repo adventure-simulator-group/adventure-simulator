@@ -7,6 +7,10 @@ use crate::prelude::*;
 pub const HEAVY_WEAPON_MIN_WEIGHT: f32 = 4.0;
 pub const HEAVY_WEAPON_MIN_ARM_STRENGTH: f32 = 3.0;
 pub const DEFAULT_NUMERIC_REQUIREMENT: u8 = 3;
+pub const PARTY_CHARISMA_BASELINE: f32 = 2.5;
+pub const PARTY_CHARISMA_SUPPORT_WEIGHT: f32 = 0.5;
+pub const PARTY_CHARISMA_COORDINATION_LIMIT: f32 = 1.125;
+pub const PARTY_CHARISMA_COORDINATION_DECAY: f32 = 1.0 / 3.0;
 
 /// Combines party-wide skill checks with diminishing returns. The strongest
 /// contributor counts fully, the next at half value, the third at one third,
@@ -28,6 +32,38 @@ pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
     let before = aggregate_party_check(current.iter().copied());
     let after = aggregate_party_check(current.iter().copied().chain([candidate]));
     (after - before).max(0.0)
+}
+
+/// Aggregate Charisma as a lead speaker supported (or burdened) by the party.
+///
+/// The strongest member establishes the base check. Additional members provide
+/// a rapidly saturating coordination benefit, then help or hinder according to
+/// how far their individual check is above or below the neutral 2.5 baseline.
+pub fn aggregate_party_charisma(values: impl IntoIterator<Item = f32>) -> f32 {
+    let mut values: Vec<f32> = values
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(0.0, 5.0))
+        .collect();
+    values.sort_by(|left, right| right.total_cmp(left));
+    let Some((&leader, supporters)) = values.split_first() else {
+        return 0.0;
+    };
+    if supporters.is_empty() {
+        return leader;
+    }
+    let coordination = PARTY_CHARISMA_COORDINATION_LIMIT
+        * (1.0 - PARTY_CHARISMA_COORDINATION_DECAY.powi(supporters.len() as i32));
+    let support: f32 = supporters
+        .iter()
+        .map(|value| PARTY_CHARISMA_SUPPORT_WEIGHT * (value - PARTY_CHARISMA_BASELINE))
+        .sum();
+    (leader + coordination + support).clamp(0.0, 5.0)
+}
+
+pub fn aggregate_party_charisma_contribution(current: &[f32], candidate: f32) -> f32 {
+    aggregate_party_charisma(current.iter().copied().chain([candidate]))
+        - aggregate_party_charisma(current.iter().copied())
 }
 pub const FULL_ARMOR_MIN_REGION_COVERAGE: f32 = 0.75;
 pub const WEAPON_PRECISION_CLUB: f32 = 0.5;
@@ -377,5 +413,23 @@ mod tests {
         let current = [2.0, 4.0, 3.0];
         assert!((aggregate_party_check(current) - (4.0 + 1.5 + 2.0 / 3.0)).abs() < 0.001);
         assert!((aggregate_party_contribution(&current, 5.0) - 7.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn party_charisma_matches_target_compositions() {
+        for (party, expected) in [
+            (vec![4.5], 4.5),
+            (vec![3.0, 3.0, 3.0], 4.5),
+            (vec![4.0, 2.0], 4.5),
+        ] {
+            assert!((aggregate_party_charisma(party) - expected).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn low_charisma_party_size_cannot_brute_force_a_high_check() {
+        assert!(aggregate_party_charisma([1.0; 100]) < 1.0);
+        assert!(aggregate_party_charisma([2.0; 100]) < 1.0);
+        assert!(aggregate_party_charisma([4.0; 1].into_iter().chain([2.0; 10])) < 3.0);
     }
 }

@@ -364,7 +364,7 @@ fn party_morale_support(
             surplus_weights.push((member_id, surplus));
         }
     }
-    let party_charisma = aggregate_party_check(charismas);
+    let party_charisma = aggregate_party_charisma(charismas);
     let bonus_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
     let combined_surplus = cumulative_morale(surplus_weights.iter().map(|(_, surplus)| *surplus));
     let total_bonus = morale_bonus_fraction(combined_surplus, party_charisma);

@@ -141,10 +141,10 @@ mod tests {
 
     #[test]
     fn party_charisma_prevents_independent_bonus_stacking() {
-        let party_charisma = crate::capability::aggregate_party_check([4.0; 5]);
-        assert!((party_charisma - 9.133_333).abs() < 0.000_01);
+        let party_charisma = crate::capability::aggregate_party_charisma([4.0; 5]);
+        assert_eq!(party_charisma, 5.0);
         let shared_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
-        assert!((shared_cap - 0.456_666_65).abs() < 0.000_01);
+        assert!((shared_cap - 0.25).abs() < 0.000_01);
         assert!(shared_cap < 5.0 * (MORALE_BONUS_PER_CHARISMA * 4.0));
     }
 

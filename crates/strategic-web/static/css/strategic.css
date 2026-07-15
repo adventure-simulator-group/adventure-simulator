@@ -853,6 +853,7 @@
   inset-block: 0;
   background: var(--success);
 }
+.party-check-contribution-negative { background: var(--danger); }
 .party-check-exact {
   position: absolute;
   z-index: 5;

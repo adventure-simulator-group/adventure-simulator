@@ -200,6 +200,8 @@ Ability to resist [pain](../tactical/Combat.md) or avoid [morale](Morale.md) pen
 ### Charisma (intuitive, 20000 hours)
 There's no persuasion system or anything for the MVP, this is just a [morale](Morale.md) buff for the party. You lose focus during combat, so instinct gives you tactical morale while intelligence gives you traveling morale.
 
+Party Charisma is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5. One 4.5, three 3s, and a 4 paired with a 2 each produce approximately 4.5; adding arbitrarily many low-Charisma members cannot manufacture a high result.
+
 0. Autistic
 1. Cold and aloof
 2. Boring
@@ -218,7 +220,7 @@ The MVP is not going to have a herbalism system or diseases, so whoever has the 
 5. Can treat all organ damage and all diseases
 
 ### Faith (trained, 5000 hours)
-This is a special skill with an associated religion, and a character can profess only one religion at a time. Faith represents knowledge, practice, and conviction. It does not currently modify the strategic [morale](Morale.md) projection; surplus-morale support uses the diminishing-returns aggregate Charisma check of the whole party instead.
+This is a special skill with an associated religion, and a character can profess only one religion at a time. Faith represents knowledge, practice, and conviction. It does not currently modify the strategic [morale](Morale.md) projection; surplus-morale support uses the separate party Charisma aggregation instead. The eventual party Faith calculation will use a different model.
 
 > Halbe: After the MVP we may want to move this into a separate system from skills called "Personality" which is more immutable and balanced via tradeoffs. "Religion" could stay as a skill, representing one's knowledge of a given religion, and is a requirement for the charisma-multiplier morale bonus from faith. Faith might also be renamed to "Conviction" and come with more downsides to balance out its huge upside, like one's unwillingness to compromise could make it difficult to deal with "morally flexible" characters. 
 

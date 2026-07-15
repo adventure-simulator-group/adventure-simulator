@@ -21,18 +21,26 @@ Food quality and disease will become additional named sources when those systems
 
 # Lifting allies
 
-Party Charisma no longer contributes a permanent flat morale source. Instead, positive-morale party members share one party-wide restoration budget. Individual Charisma checks are first combined with the normal diminishing-returns party aggregation: the strongest check counts fully, the second at one half, the third at one third, and so on. This prevents a group of similar charismatic characters from stacking independent full-strength bonuses.
+Party Charisma no longer contributes a permanent flat morale source. Instead, positive-morale party members share one party-wide restoration budget. Charisma uses its own social-coverage aggregation rather than the generic party skill formula. The strongest member supplies the base check. Additional members provide a rapidly saturating coordination bonus, then help or hinder according to how far their individual check is above or below the neutral 2.5 baseline:
+
+```rs
+let coordination = 1.125 * (1.0 - (1.0 / 3.0).powi(supporter_count));
+let support = supporters.map(|check| 0.5 * (check - 2.5)).sum();
+let party_charisma = (best_check + coordination + support).clamp(0.0, 5.0);
+```
+
+This produces approximately 4.5 from one character at 4.5, three characters at 3, or a 4 and a 2. Adding large numbers of characters at 1 or 2 lowers the result once their limited coordination benefit is exhausted.
 
 The party's positive base-morale values are aggregated with the same ranked diminishing returns. The resulting restoration percentage approaches, but never reaches, a limit of 5% per point of the aggregate party Charisma check:
 
 ```rs
-let party_charisma = aggregate_party_check(member_charisma_checks);
+let party_charisma = aggregate_party_charisma(member_charisma_checks);
 let party_surplus = cumulative_morale(member_positive_base_morale);
 let saturation = 1.0 - (-party_surplus / 10.0).exp();
 let party_restoration = saturation * 0.05 * party_charisma;
 ```
 
-Ten aggregated surplus morale reaches about 63% of the party's limit, 20 reaches about 86%, and 30 reaches about 95%. Five party members with Charisma 4, for example, aggregate to about 9.13 rather than producing five separate 20% bonuses; their shared limit is about 45.7%.
+Ten aggregated surplus morale reaches about 63% of the party's limit, 20 reaches about 86%, and 30 reaches about 95%. Party Charisma is capped at 5, so the shared restoration limit cannot exceed 25% regardless of party size.
 
 The party budget is divided among positive-morale members in proportion to their individual surplus, allowing the UI to show who is doing the encouraging without applying the party bonus more than once. All surplus values are calculated before receiving help from allies. This makes the relationship acyclic: two high-morale characters cannot recursively increase one another's output. If support would restore more than the listener's entire deficit, the named contributions are reduced proportionally. Ally support can lift a character only to zero and can never create surplus morale.
 
