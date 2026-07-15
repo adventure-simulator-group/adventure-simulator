@@ -9,6 +9,9 @@ pub const MINIMUM_WILL_CHECK: f32 = 0.25;
 pub const MORALE_BONUS_CURVE_SCALE: f32 = 10.0;
 /// Maximum ally morale restored per point of the speaker's Charisma check.
 pub const MORALE_BONUS_PER_CHARISMA: f32 = 0.05;
+/// Raw mixed-faith discord created by each point of foreign faith pressure
+/// which the party's social leadership cannot absorb.
+pub const RELIGIOUS_DISCORD_SEVERITY: f32 = 3.0;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
 
@@ -80,6 +83,14 @@ pub fn morale_bonus_fraction(surplus_morale: f32, charisma_check: f32) -> f32 {
     saturation * MORALE_BONUS_PER_CHARISMA * charisma
 }
 
+/// Raw negative morale from mixed-faith tension. Party Charisma is subtracted
+/// from foreign faith pressure so sufficiently capable leadership removes the
+/// penalty entirely instead of merely reducing it proportionally.
+pub fn religious_discord(foreign_faith_pressure: f32, party_charisma: f32) -> f32 {
+    RELIGIOUS_DISCORD_SEVERITY
+        * (foreign_faith_pressure.max(0.0) - party_charisma.max(0.0)).max(0.0)
+}
+
 /// Linear decay for recent morale events. `age` and `duration` use the same unit.
 pub fn morale_event_decay(age: u64, duration: u64) -> f32 {
     if duration == 0 || age >= duration {
@@ -146,6 +157,13 @@ mod tests {
         let shared_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
         assert!((shared_cap - 0.25).abs() < 0.000_01);
         assert!(shared_cap < 5.0 * (MORALE_BONUS_PER_CHARISMA * 4.0));
+    }
+
+    #[test]
+    fn charisma_subtracts_from_mixed_faith_pressure() {
+        assert_eq!(religious_discord(4.0, 1.0), 9.0);
+        assert_eq!(religious_discord(4.0, 4.0), 0.0);
+        assert_eq!(religious_discord(4.0, 5.0), 0.0);
     }
 
     #[test]

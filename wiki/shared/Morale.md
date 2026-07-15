@@ -15,6 +15,7 @@ The current strategic sources are:
 - Injuries.
 - Recent victories and setbacks, which decay linearly over seven days of the affected character's strategic time.
 - The difference between allied and enemy power at a quest location. Undead use a 1.5 fear multiplier and demons use 3.0; other enemies use 1.0.
+- Religious conviction and mixed-faith discord.
 - Morale restored by individual allies.
 
 Food quality and disease will become additional named sources when those systems are implemented.
@@ -53,3 +54,14 @@ The strategic condition and morale-source tables are refreshable projections. Du
 # Religion
 
 A character makes or changes their religious profession by speaking with a priest at a church. Each settlement currently has one church and one fixed faith; its priest can convert a character only to that faith. Religion is a dialogue topic even when the priest also has a quest to discuss, rather than a service-menu choice. A priest cannot make a character faithless. Characters renounce their current faith from the Religion entry on their own biography instead. Large cities may eventually support multiple churches, but that is outside the current settlement model.
+
+Each professed character receives a conviction source from their same-faith party cohort. The generic ranked party check combines the Faith checks in that cohort, with a minimum cohort check of 1 so a lone believer still draws strength from personal conviction. The cohort check is capped at 5. Faithless characters receive no conviction source and do not form a cohort that pressures believers.
+
+For each believer, the other religious cohorts are combined into foreign faith pressure. Mixed-faith tension is deliberately subtractive: party Charisma is subtracted from that pressure, and only the uncovered remainder becomes raw negative morale. This means capable social leadership can remove discord entirely rather than merely dividing it down:
+
+```rs
+let foreign_pressure = aggregate_party_check(other_cohort_checks).clamp(0.0, 5.0);
+let discord = 3.0 * (foreign_pressure - party_charisma).max(0.0);
+```
+
+The resulting `Religious discord` source then receives the same negative-source ranking and Will mitigation as other morale penalties. A unified party therefore gets the largest available conviction benefit without discord; a mixed party retains the conviction of each faith but generally pays a leadership-dependent cost.

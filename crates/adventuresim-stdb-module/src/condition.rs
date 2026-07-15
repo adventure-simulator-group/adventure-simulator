@@ -1,5 +1,6 @@
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
+use std::collections::BTreeMap;
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
@@ -214,6 +215,27 @@ struct ProjectedMoraleSource {
     magnitude: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct PartyFaithContext {
+    own_cohort: f32,
+    foreign_pressure: f32,
+    party_charisma: f32,
+}
+
+fn religion_label(religion_id: &str) -> String {
+    religion_id
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + chars.as_str()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u64>, String> {
     let character = ctx
         .db
@@ -232,6 +254,60 @@ fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u6
                 .collect()
         },
     ))
+}
+
+fn party_faith_context(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_members: &[u64],
+) -> Result<Option<(String, PartyFaithContext)>, String> {
+    let mut cohorts: BTreeMap<String, Vec<f32>> = BTreeMap::new();
+    let mut charismas = Vec::with_capacity(party_members.len());
+    for member_id in party_members.iter().copied() {
+        initialize_character_condition(ctx, member_id)?;
+        charismas.push(mental_check(ctx, member_id, Skill::Charisma)?);
+        if let Some(religion_id) = ctx
+            .db
+            .character_condition()
+            .character_id()
+            .find(member_id)
+            .and_then(|condition| condition.religion_id)
+        {
+            cohorts.entry(religion_id).or_default().push(mental_check(
+                ctx,
+                member_id,
+                Skill::Faith,
+            )?);
+        }
+    }
+    let own_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .and_then(|condition| condition.religion_id);
+    let Some(own_religion) = own_religion else {
+        return Ok(None);
+    };
+    let cohort_checks: BTreeMap<_, _> = cohorts
+        .into_iter()
+        .map(|(religion, checks)| (religion, aggregate_party_check(checks).clamp(1.0, 5.0)))
+        .collect();
+    let own_cohort = cohort_checks.get(&own_religion).copied().unwrap_or(1.0);
+    let foreign_pressure = aggregate_party_check(
+        cohort_checks
+            .iter()
+            .filter_map(|(religion, check)| (religion != &own_religion).then_some(*check)),
+    )
+    .clamp(0.0, 5.0);
+    Ok(Some((
+        own_religion,
+        PartyFaithContext {
+            own_cohort,
+            foreign_pressure,
+            party_charisma: aggregate_party_charisma(charismas),
+        },
+    )))
 }
 
 fn base_morale(
@@ -265,6 +341,26 @@ fn base_morale(
     }
 
     let party_members = party_character_ids(ctx, character_id)?;
+    if let Some((religion_id, faith)) = party_faith_context(ctx, character_id, &party_members)? {
+        raw_sources.push(ProjectedMoraleSource {
+            key: format!("faith-{religion_id}"),
+            kind: "faith".into(),
+            label: format!(
+                "Conviction among the {} faithful",
+                religion_label(&religion_id)
+            ),
+            magnitude: faith.own_cohort,
+        });
+        let discord = religious_discord(faith.foreign_pressure, faith.party_charisma);
+        if discord > 0.0 {
+            raw_sources.push(ProjectedMoraleSource {
+                key: "religious-discord".into(),
+                kind: "religious_discord".into(),
+                label: "Religious discord".into(),
+                magnitude: -discord,
+            });
+        }
+    }
     let mut allied_power = 0.0;
     for member_id in party_members {
         let capability = crate::capability::refresh_character_capability(ctx, member_id)?;

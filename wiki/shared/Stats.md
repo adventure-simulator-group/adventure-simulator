@@ -220,7 +220,7 @@ The MVP is not going to have a herbalism system or diseases, so whoever has the 
 5. Can treat all organ damage and all diseases
 
 ### Faith (trained, 5000 hours)
-This is a special skill with an associated religion, and a character can profess only one religion at a time. Faith represents knowledge, practice, and conviction. It does not currently modify the strategic [morale](Morale.md) projection; surplus-morale support uses the separate party Charisma aggregation instead. The eventual party Faith calculation will use a different model.
+This is a special skill with an associated religion, and a character can profess only one religion at a time. Faith represents knowledge, practice, and conviction. Same-faith party members use the generic ranked party-check formula to form a religious cohort, capped at 5 and floored at 1 for a lone believer. That cohort supplies a positive [morale](Morale.md) source. Other faith cohorts create foreign pressure; aggregate party Charisma is subtracted from that pressure before the remainder becomes religious discord. Faithless characters receive no cohort benefit and exert no religious pressure.
 
 > Halbe: After the MVP we may want to move this into a separate system from skills called "Personality" which is more immutable and balanced via tradeoffs. "Religion" could stay as a skill, representing one's knowledge of a given religion, and is a requirement for the charisma-multiplier morale bonus from faith. Faith might also be renamed to "Conviction" and come with more downsides to balance out its huge upside, like one's unwillingness to compromise could make it difficult to deal with "morally flexible" characters. 
 
