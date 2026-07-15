@@ -24,6 +24,7 @@ use adventuresim_stdb_client::{
     character_equip_table::CharacterEquipTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_morale_source_table::CharacterMoraleSourceTableAccess,
+    character_notoriety_table::CharacterNotorietyTableAccess,
     character_skills_table::CharacterSkillsTableAccess,
     character_stats_table::CharacterStatsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
@@ -143,6 +144,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
         invalidate_on_changes!(state.0._connection.db.character_morale_source());
+        invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.religious_incident());

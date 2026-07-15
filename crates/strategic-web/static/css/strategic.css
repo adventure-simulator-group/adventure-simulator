@@ -2169,6 +2169,16 @@ body.chat-resizing {
   border-top: 3px double var(--border-light);
 }
 
+.schedule-section-heading td {
+  padding: 0.25rem 0 0.15rem !important;
+  border-bottom: 0 !important;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .schedule-special-row .party-skill-name { font-weight: 700; }
 .schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
 .schedule-special-track { overflow: visible; }

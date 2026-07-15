@@ -35,6 +35,8 @@ pub mod character_limbs_table;
 pub mod character_limbs_type;
 pub mod character_morale_source_table;
 pub mod character_morale_source_type;
+pub mod character_notoriety_table;
+pub mod character_notoriety_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
 pub mod character_stats_table;
@@ -230,6 +232,8 @@ pub use character_limbs_table::*;
 pub use character_limbs_type::CharacterLimbs;
 pub use character_morale_source_table::*;
 pub use character_morale_source_type::CharacterMoraleSource;
+pub use character_notoriety_table::*;
+pub use character_notoriety_type::CharacterNotoriety;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
 pub use character_stats_table::*;
@@ -868,6 +872,9 @@ pub enum Reducer {
         balance_minutes: u16,
         surgeon_minutes: u16,
         labor_minutes: u16,
+        prayer_minutes: u16,
+        thievery_minutes: u16,
+        raiding_minutes: u16,
     },
     VoteForPartyLeader {
         voter_id: u64,
@@ -1373,6 +1380,7 @@ pub struct DbUpdate {
     character_equip: __sdk::TableUpdate<CharacterEquip>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
+    character_notoriety: __sdk::TableUpdate<CharacterNotoriety>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
@@ -1444,6 +1452,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "character_morale_source" => db_update.character_morale_source.append(
                     character_morale_source_table::parse_table_update(table_update)?,
                 ),
+                "character_notoriety" => db_update
+                    .character_notoriety
+                    .append(character_notoriety_table::parse_table_update(table_update)?),
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
@@ -1610,6 +1621,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_morale_source,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.character_notoriety = cache
+            .apply_diff_to_table::<CharacterNotoriety>(
+                "character_notoriety",
+                &self.character_notoriety,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_skills = cache
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
         diff.character_stats =
@@ -1758,6 +1775,7 @@ pub struct AppliedDiff<'r> {
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
+    character_notoriety: __sdk::TableAppliedDiff<'r, CharacterNotoriety>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
@@ -1848,6 +1866,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>(
             "character_morale_source",
             &self.character_morale_source,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
+            "character_notoriety",
+            &self.character_notoriety,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
@@ -2712,6 +2735,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_equip_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
+        character_notoriety_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         character_strategic_condition_table::register_table(client_cache);

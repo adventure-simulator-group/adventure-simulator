@@ -78,9 +78,11 @@ let fervor = 1.0 - (-pressure / 5.0).exp();
 
 The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy.
 
-Once per strategic day, each character gets a stable roll against their current Fervor. A roll below Fervor can create a personal demand, subject to a two-day cooldown. Thus 20% Fervor creates a 20% daily chance and 80% creates an 80% chance, with no unlock threshold. The basic demands alternate between reserving at least two hours of every daily schedule for prayer and observing a full holy day. The player receives an explicit choice:
+Daily prayer is an activity in the character schedule rather than a dialogue-style demand. Prayer adds a positive morale source with diminishing returns and trains Faith at 25% of the explicit study rate. Fervor creates a continuous desired prayer allocation of up to two hours per day. Meeting that allocation removes the prayer-neglect penalty; partial observance reduces it proportionally.
 
-- **Observe:** accept the practical cost. Prayer permanently adjusts the training schedule; a holy day spends one full day in settlement. The character receives a small positive morale event.
+Holy days remain explicit demands. Once per strategic day, each character gets a stable roll against their current Fervor. A roll below Fervor can create a holy-day demand while at a settlement, subject to a two-day cooldown. Thus 20% Fervor creates a 20% daily chance and 80% creates an 80% chance, with no unlock threshold. The player receives an explicit choice:
+
+- **Observe:** spend one full day in settlement. The character receives a small positive morale event.
 - **Do not observe:** keep complete freedom of action. The raw morale penalty is `max(0, 8 × Fervor − 1.6 × party Charisma)`, so both Fervor and Charisma change the result continuously and a Charisma check of 5 eliminates even the maximum penalty.
 
 Resolving one demand cannot recursively produce another because the two-day cooldown begins at creation. Demands are choices, not involuntary character actions.

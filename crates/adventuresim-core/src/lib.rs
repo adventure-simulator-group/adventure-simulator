@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod attribute;
 pub mod body;
 pub mod capability;
@@ -11,6 +12,7 @@ pub mod skill;
 pub mod stub;
 
 pub mod prelude {
+    pub use crate::activity::*;
     pub use crate::attribute::*;
     pub use crate::body::*;
     pub use crate::capability::*;

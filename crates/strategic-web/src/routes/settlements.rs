@@ -881,6 +881,9 @@ struct TrainingScheduleForm {
     balance_minutes: u16,
     surgeon_minutes: u16,
     labor_minutes: u16,
+    prayer_minutes: u16,
+    thievery_minutes: u16,
+    raiding_minutes: u16,
 }
 
 async fn update_training_schedule(
@@ -908,6 +911,9 @@ async fn update_training_schedule(
                     json!(form.balance_minutes),
                     json!(form.surgeon_minutes),
                     json!(form.labor_minutes),
+                    json!(form.prayer_minutes),
+                    json!(form.thievery_minutes),
+                    json!(form.raiding_minutes),
                 ],
             )
             .await;

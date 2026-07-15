@@ -1147,8 +1147,12 @@ fn skills_table(
                     (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
                     @if let Some(schedule) = schedule {
                         tr class="schedule-divider" { td colspan="4" {} }
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
+                        tr class="schedule-section-heading" { td colspan="4" { "Activities" } }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true, "Earn gold from Strength and Endurance checks and train Will at 25% speed."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.thievery_minutes, true, "Steal for gold. Larger settlements are richer; Stealth reduces discovery and notoriety."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.raiding_minutes, true, "Raid for gold and equipment-based combat training, with high retaliation and notoriety."))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, "Unallocated time for sleep and personal needs."))
                     }
             }
         }
@@ -1199,9 +1203,10 @@ fn schedule_special_row(
     name: &str,
     minutes: u16,
     editable: bool,
+    description: &str,
 ) -> Markup {
     html! {
-        tr class="party-skill-row schedule-special-row" {
+        tr class="party-skill-row schedule-special-row" title=(description) {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
             td class="party-skill-name" { strong { (label) } }
             td class="party-skill-meter" {

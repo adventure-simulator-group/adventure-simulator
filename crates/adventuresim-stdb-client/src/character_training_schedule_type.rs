@@ -20,6 +20,9 @@ pub struct CharacterTrainingSchedule {
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
     pub labor_minutes: u16,
+    pub prayer_minutes: u16,
+    pub thievery_minutes: u16,
+    pub raiding_minutes: u16,
 }
 
 impl __sdk::InModule for CharacterTrainingSchedule {

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (376)
+## Files (379)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -33,6 +33,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-character-creator/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-character-creator/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-core/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-core/src/activity.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/attribute.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/body.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
@@ -75,6 +76,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_limbs_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_morale_source_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_morale_source_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_notoriety_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_notoriety_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_skills_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_skills_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_stats_table.rs` — Generated SpacetimeDB table interface.

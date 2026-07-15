@@ -8,7 +8,16 @@ The server stores an epoch rather than updating the clock table continuously. Wh
 
 Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters are not yet required to have matching times to join or remain in the same party.
 
-Implemented downtime effects include skill training and strategic-condition recovery. A character has a 24-hour daily budget with integer-minute allocations for every skill and labor. Leisure is the unallocated remainder and includes sleep. Server-side progression applies each skill's saved daily minutes proportionally over elapsed game time. Labor has no gameplay effect yet.
+Implemented downtime effects include skill training, scheduled activities, and strategic-condition recovery. A character has a 24-hour daily budget with integer-minute allocations for every skill plus Prayer, Labor, Thievery, and Raiding. Leisure is the unallocated remainder and includes sleep. Server-side progression applies saved daily minutes proportionally over elapsed game time.
+
+Activities combine reduced-rate training with another strategic result:
+
+- **Prayer** recites and practices prayers rather than studying doctrine. It trains Faith at 25% speed, adds a saturating daily-prayer morale source, and covers a Fervor-scaled prayer obligation. Insufficient prayer creates a continuous negative morale source.
+- **Labor** earns personal gold from effective Strength and Endurance checks and trains Will at 25% speed.
+- **Thievery** earns more gold in more populous settlements and trains Stealth at 25% speed. Stealth improves the take while reducing both notoriety and the continuous chance of discovery.
+- **Raiding** earns gold and trains weapon-appropriate combat skills at 25% speed. Equipped ranged weapons train Ranged; other weapons train Melee; heavier armor adds Block practice while lighter armor adds Dodge practice. Raiding produces high notoriety and a high retaliation chance.
+
+Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
 
 At a settlement, a player may spend whole days resting at an inn or temple, moving that character's personal time forward even if it passes official time. Rest first convalesces every injured body part at 5 percentage points per day, restores 1% of maximum blood volume per day, and reduces the current fatigue reservoir; only the days left after the slowest injury has fully recovered apply the saved training schedule. Inn rest costs 1 gold per completed day. Temple rest is free sanctuary intended for characters down on their luck; a future karma system will account for taking undue advantage of it.
 

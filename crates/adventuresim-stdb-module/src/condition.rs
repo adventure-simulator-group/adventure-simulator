@@ -113,7 +113,6 @@ pub struct ReligiousDemand {
 }
 
 const RELIGIOUS_DEMAND_COOLDOWN_MINUTES: u64 = 2 * 24 * 60;
-const DEMANDED_PRAYER_MINUTES: u16 = 120;
 
 pub fn initialize_character_condition(
     ctx: &ReducerContext,
@@ -382,6 +381,36 @@ fn base_morale(
                 kind: "religious_discord".into(),
                 label: "Religious discord".into(),
                 magnitude: -discord,
+            });
+        }
+        let prayer_minutes = ctx
+            .db
+            .character_training_schedule()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |schedule| schedule.prayer_minutes);
+        if prayer_minutes > 0 {
+            raw_sources.push(ProjectedMoraleSource {
+                key: "daily-prayer".into(),
+                kind: "prayer".into(),
+                label: "Daily prayer".into(),
+                magnitude: prayer_morale(prayer_minutes),
+            });
+        }
+        let prayer_fervor = fervor_fraction(
+            mental_check(ctx, character_id, Skill::Faith)?,
+            faith.own_cohort,
+            0.0,
+            faith.party_charisma,
+        );
+        let neglect = religious_neglect_morale(prayer_fervor, faith.party_charisma)
+            * (1.0 - prayer_observance(prayer_fervor, prayer_minutes));
+        if neglect > 0.0 {
+            raw_sources.push(ProjectedMoraleSource {
+                key: "neglected-prayer".into(),
+                kind: "prayer".into(),
+                label: "Insufficient daily prayer".into(),
+                magnitude: -neglect,
             });
         }
     }
@@ -705,26 +734,15 @@ fn ensure_basic_religious_demand(
         .id()
         .find(condition.character_id)
         .is_some_and(|character| character.current_settlement_id.is_some());
-    let holy_day = at_settlement && (condition.character_id + day).is_multiple_of(2);
-    let (kind, title, description) = if holy_day {
-        (
-            "holy_day",
-            "Keep the holy day",
-            "Conviction demands a full day away from the road and worldly business.",
-        )
-    } else {
-        (
-            "prayer_schedule",
-            "Order the day around prayer",
-            "Conviction demands that at least two hours of every day be reserved for prayer and devotion.",
-        )
-    };
+    if !at_settlement {
+        return Ok(());
+    }
     ctx.db.religious_demand().insert(ReligiousDemand {
         id: 0,
         character_id: condition.character_id,
-        kind: kind.into(),
-        title: title.into(),
-        description: description.into(),
+        kind: "holy_day".into(),
+        title: "Keep the holy day".into(),
+        description: "Conviction demands a full day away from the road and worldly business. Daily prayer is managed through the activity schedule instead.".into(),
         fervor: condition.fervor,
         status: "pending".into(),
         created_at_minute: current_minute,
@@ -756,46 +774,6 @@ pub fn refresh_character_strategic_condition(
         requested.ok_or_else(|| "Character is not a member of their party".to_string())?;
     ensure_basic_religious_demand(ctx, &requested)?;
     Ok(requested)
-}
-
-fn reserve_daily_prayer(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    crate::time::initialize_character_time(ctx, character_id)?;
-    let mut schedule = ctx
-        .db
-        .character_training_schedule()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character training schedule not found")?;
-    if schedule.faith_minutes >= DEMANDED_PRAYER_MINUTES {
-        return Ok(());
-    }
-    schedule.faith_minutes = DEMANDED_PRAYER_MINUTES;
-    let mut overflow = schedule.allocated_minutes().saturating_sub(24 * 60) as u16;
-    for minutes in [
-        &mut schedule.labor_minutes,
-        &mut schedule.surgeon_minutes,
-        &mut schedule.balance_minutes,
-        &mut schedule.stealth_minutes,
-        &mut schedule.medicine_minutes,
-        &mut schedule.charisma_minutes,
-        &mut schedule.will_minutes,
-        &mut schedule.ranged_minutes,
-        &mut schedule.block_minutes,
-        &mut schedule.dodge_minutes,
-        &mut schedule.melee_minutes,
-    ] {
-        let removed = (*minutes).min(overflow);
-        *minutes -= removed;
-        overflow -= removed;
-        if overflow == 0 {
-            break;
-        }
-    }
-    ctx.db
-        .character_training_schedule()
-        .character_id()
-        .update(schedule);
-    Ok(())
 }
 
 #[reducer]
@@ -831,16 +809,6 @@ pub fn resolve_religious_demand(
     ctx.db.religious_demand().id().update(demand.clone());
 
     match choice.as_str() {
-        "observe" if demand.kind == "prayer_schedule" => {
-            reserve_daily_prayer(ctx, demand.character_id)?;
-            record_morale_event(
-                ctx,
-                demand.character_id,
-                "conviction_observed",
-                2.0,
-                Some(format!("religious-demand:{}", demand.id)),
-            )?;
-        }
         "observe" if demand.kind == "holy_day" => {
             crate::time::rest_at_settlement(ctx, demand.character_id, 1, false)?;
             record_morale_event(

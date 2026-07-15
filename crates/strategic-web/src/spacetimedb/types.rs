@@ -463,6 +463,15 @@ pub struct CharacterTrainingSchedule {
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
     pub labor_minutes: u16,
+    pub prayer_minutes: u16,
+    pub thievery_minutes: u16,
+    pub raiding_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterNotoriety {
+    pub character_id: u64,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

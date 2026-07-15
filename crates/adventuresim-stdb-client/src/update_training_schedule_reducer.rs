@@ -20,6 +20,9 @@ pub(super) struct UpdateTrainingScheduleArgs {
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
     pub labor_minutes: u16,
+    pub prayer_minutes: u16,
+    pub thievery_minutes: u16,
+    pub raiding_minutes: u16,
 }
 
 impl From<UpdateTrainingScheduleArgs> for super::Reducer {
@@ -38,6 +41,9 @@ impl From<UpdateTrainingScheduleArgs> for super::Reducer {
             balance_minutes: args.balance_minutes,
             surgeon_minutes: args.surgeon_minutes,
             labor_minutes: args.labor_minutes,
+            prayer_minutes: args.prayer_minutes,
+            thievery_minutes: args.thievery_minutes,
+            raiding_minutes: args.raiding_minutes,
         }
     }
 }
@@ -73,6 +79,9 @@ pub trait update_training_schedule {
         balance_minutes: u16,
         surgeon_minutes: u16,
         labor_minutes: u16,
+        prayer_minutes: u16,
+        thievery_minutes: u16,
+        raiding_minutes: u16,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_training_schedule`.
     ///
@@ -86,6 +95,9 @@ pub trait update_training_schedule {
         callback: impl FnMut(
                 &super::ReducerEventContext,
                 &u64,
+                &u16,
+                &u16,
+                &u16,
                 &u16,
                 &u16,
                 &u16,
@@ -122,6 +134,9 @@ impl update_training_schedule for super::RemoteReducers {
         balance_minutes: u16,
         surgeon_minutes: u16,
         labor_minutes: u16,
+        prayer_minutes: u16,
+        thievery_minutes: u16,
+        raiding_minutes: u16,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "update_training_schedule",
@@ -139,6 +154,9 @@ impl update_training_schedule for super::RemoteReducers {
                 balance_minutes,
                 surgeon_minutes,
                 labor_minutes,
+                prayer_minutes,
+                thievery_minutes,
+                raiding_minutes,
             },
         )
     }
@@ -147,6 +165,9 @@ impl update_training_schedule for super::RemoteReducers {
         mut callback: impl FnMut(
                 &super::ReducerEventContext,
                 &u64,
+                &u16,
+                &u16,
+                &u16,
                 &u16,
                 &u16,
                 &u16,
@@ -184,6 +205,9 @@ impl update_training_schedule for super::RemoteReducers {
                                     balance_minutes,
                                     surgeon_minutes,
                                     labor_minutes,
+                                    prayer_minutes,
+                                    thievery_minutes,
+                                    raiding_minutes,
                                 },
                             ..
                         },
@@ -207,6 +231,9 @@ impl update_training_schedule for super::RemoteReducers {
                     balance_minutes,
                     surgeon_minutes,
                     labor_minutes,
+                    prayer_minutes,
+                    thievery_minutes,
+                    raiding_minutes,
                 )
             }),
         ))
