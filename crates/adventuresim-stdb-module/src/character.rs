@@ -336,6 +336,8 @@ pub(crate) fn insert_new_character(
 
     crate::strategic::create_solo_party_for_character(ctx, character.id)?;
     crate::capability::refresh_character_capability(ctx, character.id)?;
+    crate::condition::initialize_character_condition(ctx, character.id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character.id)?;
 
     Ok(())
 }
