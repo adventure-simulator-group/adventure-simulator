@@ -690,7 +690,7 @@ fn deterministic_daily_roll(character_id: u64, day: u64) -> f32 {
     ((value >> 40) as f32) / ((1_u32 << 24) as f32)
 }
 
-fn ensure_basic_religious_demand(
+fn ensure_holy_day_demand(
     ctx: &ReducerContext,
     condition: &CharacterStrategicCondition,
 ) -> Result<(), String> {
@@ -772,7 +772,7 @@ pub fn refresh_character_strategic_condition(
     }
     let requested =
         requested.ok_or_else(|| "Character is not a member of their party".to_string())?;
-    ensure_basic_religious_demand(ctx, &requested)?;
+    ensure_holy_day_demand(ctx, &requested)?;
     Ok(requested)
 }
 
