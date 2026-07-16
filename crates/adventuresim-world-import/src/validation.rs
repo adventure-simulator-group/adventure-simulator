@@ -70,17 +70,16 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
-        if let TravelRoute::Land(route) = &edge.route {
-            if route
+        if let TravelRoute::Land(route) = &edge.route
+            && route
                 .water_crossings
                 .windows(2)
                 .any(|pair| pair[0].position > pair[1].position)
-            {
-                return Err(Error::Validation(format!(
-                    "travel edge {} has unsorted water crossings",
-                    edge.id
-                )));
-            }
+        {
+            return Err(Error::Validation(format!(
+                "travel edge {} has unsorted water crossings",
+                edge.id
+            )));
         }
     }
 
@@ -236,7 +235,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.report.hydrology_files_read,
             world.report.hydrology_features_read,
             world.report.hydrology_settlement_samples,
-            world.report.hydrology_settlement_fallback_samples,
+            world.report.hydrology_landlocked_settlements,
             world.report.hydrology_edge_crossings,
             world.report.hydrology_inferred_ferry_waterways,
             world
@@ -272,10 +271,10 @@ fn hydrology_counts_are_consistent(
     files: usize,
     features: usize,
     samples: usize,
-    fallbacks: usize,
+    landlocked: usize,
     crossings: usize,
     inferred_ferries: usize,
-    actual_fallbacks: usize,
+    actual_landlocked: usize,
     actual_crossings: usize,
     ferries: usize,
     settlements: usize,
@@ -283,7 +282,7 @@ fn hydrology_counts_are_consistent(
     files > 0
         && features > 0
         && samples == settlements
-        && fallbacks == actual_fallbacks
+        && landlocked == actual_landlocked
         && crossings == actual_crossings
         && inferred_ferries <= ferries
 }
