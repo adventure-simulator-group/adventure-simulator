@@ -65,15 +65,15 @@ pub trait update_recruitment_role {
     fn on_update_recruitment_role(
         &self,
         callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &u64,
-                &String,
-                &u32,
-                &RecruitmentRequirements,
-                &f32,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &u64,
+            &String,
+            &u32,
+            &RecruitmentRequirements,
+            &f32,
+        ) + Send
+        + 'static,
     ) -> UpdateRecruitmentRoleCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_recruitment_role`],
     /// causing it not to run in the future.
@@ -105,15 +105,15 @@ impl update_recruitment_role for super::RemoteReducers {
     fn on_update_recruitment_role(
         &self,
         mut callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &u64,
-                &String,
-                &u32,
-                &RecruitmentRequirements,
-                &f32,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &u64,
+            &String,
+            &u32,
+            &RecruitmentRequirements,
+            &f32,
+        ) + Send
+        + 'static,
     ) -> UpdateRecruitmentRoleCallbackId {
         UpdateRecruitmentRoleCallbackId(self.imp.on_reducer(
             "update_recruitment_role",

@@ -65,15 +65,15 @@ pub trait create_recruitment_role {
     fn on_create_recruitment_role(
         &self,
         callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &String,
-                &u32,
-                &RecruitmentRequirements,
-                &f32,
-                &bool,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &String,
+            &u32,
+            &RecruitmentRequirements,
+            &f32,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> CreateRecruitmentRoleCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_recruitment_role`],
     /// causing it not to run in the future.
@@ -105,15 +105,15 @@ impl create_recruitment_role for super::RemoteReducers {
     fn on_create_recruitment_role(
         &self,
         mut callback: impl FnMut(
-                &super::ReducerEventContext,
-                &u64,
-                &String,
-                &u32,
-                &RecruitmentRequirements,
-                &f32,
-                &bool,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &u64,
+            &String,
+            &u32,
+            &RecruitmentRequirements,
+            &f32,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> CreateRecruitmentRoleCallbackId {
         CreateRecruitmentRoleCallbackId(self.imp.on_reducer(
             "create_recruitment_role",

@@ -57,8 +57,8 @@ pub trait store_battle_loot {
     fn on_store_battle_loot(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> StoreBattleLootCallbackId;
     /// Cancel a callback previously registered by [`Self::on_store_battle_loot`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl store_battle_loot for super::RemoteReducers {
     fn on_store_battle_loot(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> StoreBattleLootCallbackId {
         StoreBattleLootCallbackId(self.imp.on_reducer(
             "store_battle_loot",

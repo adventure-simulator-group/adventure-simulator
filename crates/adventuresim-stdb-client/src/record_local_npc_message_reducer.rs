@@ -57,8 +57,8 @@ pub trait record_local_npc_message {
     fn on_record_local_npc_message(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> RecordLocalNpcMessageCallbackId;
     /// Cancel a callback previously registered by [`Self::on_record_local_npc_message`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl record_local_npc_message for super::RemoteReducers {
     fn on_record_local_npc_message(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> RecordLocalNpcMessageCallbackId {
         RecordLocalNpcMessageCallbackId(self.imp.on_reducer(
             "record_local_npc_message",
