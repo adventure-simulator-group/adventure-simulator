@@ -156,6 +156,9 @@ compiler writes a deterministic, schema-versioned artifact to
 build report. `just load-world` sends that same compiled
 data in bounded batches to a published local module. Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
+Interrupted loads can be resumed with the identical compiled artifact. The
+module rejects a different artifact or any additional batches after completion;
+use `just publish-reset` before loading changed source data or a different year.
 
 The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing

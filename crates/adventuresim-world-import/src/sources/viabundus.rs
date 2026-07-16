@@ -7,7 +7,7 @@ use adventuresim_world_schema::{
     CompiledWorld, SettlementImport, SourceProvenance, TravelEdgeImport, TravelEdgeKind,
     WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata, WorldNodeImport,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 
 use crate::{Error, Result};
 
@@ -25,13 +25,13 @@ struct RawNode {
     longitude: String,
     latitude: String,
     #[serde(rename = "Is_Settlement", default)]
-    is_settlement: String,
+    is_settlement: SourceFlag,
     #[serde(rename = "Is_Town", default)]
-    is_town: String,
+    is_town: SourceFlag,
     #[serde(rename = "Is_Ferry", default)]
-    is_ferry: String,
+    is_ferry: SourceFlag,
     #[serde(rename = "Is_Harbour", default)]
-    is_harbour: String,
+    is_harbour: SourceFlag,
     #[serde(rename = "Settlement_From", default)]
     settlement_from: String,
     #[serde(rename = "Settlement_To", default)]
@@ -78,10 +78,10 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             name: raw.name,
             longitude: required_number(&nodes_path, "longitude", &raw.longitude)?,
             latitude: required_number(&nodes_path, "latitude", &raw.latitude)?,
-            is_settlement: raw.is_settlement == "y",
-            is_town: raw.is_town == "y",
-            is_ferry: raw.is_ferry == "y",
-            is_harbour: raw.is_harbour == "y",
+            is_settlement: raw.is_settlement.is_set(),
+            is_town: raw.is_town.is_set(),
+            is_ferry: raw.is_ferry.is_set(),
+            is_harbour: raw.is_harbour.is_set(),
             settlement_from: optional_number(&nodes_path, "Settlement_From", &raw.settlement_from)?,
             settlement_to: optional_number(&nodes_path, "Settlement_To", &raw.settlement_to)?,
         };
@@ -171,9 +171,7 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             longitude: node.longitude,
             latitude: node.latitude,
             population_level: population_level(estimate),
-            population_estimate: estimate
-                .and_then(|value| value.checked_mul(1_000))
-                .unwrap_or(0),
+            population_estimate: population_estimate(&population_path, estimate)?,
             scene_key: "hills".into(),
             religion_id: ["western_church", "reformed", "old_faith"][(node.id % 3) as usize].into(),
         });
@@ -253,6 +251,29 @@ struct SourceNode {
     settlement_to: Option<i32>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct SourceFlag(bool);
+
+impl SourceFlag {
+    const fn is_set(self) -> bool {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceFlag {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        match value.trim() {
+            "y" => Ok(Self(true)),
+            "" | "n" | "null" => Ok(Self(false)),
+            other => Err(de::Error::unknown_variant(other, &["y", "n", "null", ""])),
+        }
+    }
+}
+
 fn require(directory: &Path, name: &str) -> Result<PathBuf> {
     let path = directory.join(name);
     path.is_file()
@@ -327,13 +348,29 @@ fn population_level(thousands: Option<u32>) -> i32 {
     }
 }
 
+fn population_estimate(path: &Path, thousands: Option<u32>) -> Result<u32> {
+    let Some(thousands) = thousands else {
+        return Ok(0);
+    };
+    thousands
+        .checked_mul(1_000)
+        .ok_or_else(|| Error::InvalidField {
+            path: path.into(),
+            field: "inhabitants",
+            value: thousands.to_string(),
+            message: "population in thousands exceeds the supported u32 inhabitant count".into(),
+        })
+}
+
 fn increment(counts: &mut BTreeMap<String, usize>, key: String) {
     *counts.entry(key).or_default() += 1;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{active_in_year, population_level};
+    use serde::Deserialize;
+
+    use super::{SourceFlag, active_in_year, population_estimate, population_level};
 
     #[test]
     fn end_year_is_exclusive() {
@@ -349,5 +386,41 @@ mod tests {
         assert_eq!(population_level(Some(10)), 3);
         assert_eq!(population_level(Some(50)), 4);
         assert_eq!(population_level(Some(51)), 5);
+    }
+
+    #[test]
+    fn source_flags_reject_unknown_values() {
+        #[derive(Deserialize)]
+        struct Row {
+            flag: SourceFlag,
+        }
+
+        let yes = csv::Reader::from_reader("flag\ny\n".as_bytes())
+            .deserialize::<Row>()
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(yes.flag.is_set());
+
+        let unset = csv::Reader::from_reader("flag\nnull\n".as_bytes())
+            .deserialize::<Row>()
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(!unset.flag.is_set());
+
+        let invalid = csv::Reader::from_reader("flag\nyes\n".as_bytes())
+            .deserialize::<Row>()
+            .next()
+            .unwrap();
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn population_overflow_is_an_error() {
+        assert!(population_estimate(std::path::Path::new("population.csv"), None).is_ok());
+        assert!(
+            population_estimate(std::path::Path::new("population.csv"), Some(u32::MAX)).is_err()
+        );
     }
 }

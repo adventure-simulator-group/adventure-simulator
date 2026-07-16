@@ -19,6 +19,11 @@ import types shared by the compiler and strategic module. The strategic module
 accepts those records through reducers but never parses raw datasets or depends
 on native geospatial libraries.
 
+Each compiled artifact is identified by a content hash. An interrupted load may
+resume only with the same artifact; a different artifact requires a database
+reset. Successful loads explicitly complete their import session so later
+batches cannot mutate an already-loaded world.
+
 ## Strategic browser updates
 
 The strategic browser is server-authoritative. Browsers submit discrete commands

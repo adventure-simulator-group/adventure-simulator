@@ -10,6 +10,8 @@ pub struct WorldDataImport {
     pub id: u8,
     pub owner: __sdk::Identity,
     pub schema_version: u32,
+    pub artifact_id: String,
+    pub completed: bool,
 }
 
 impl __sdk::InModule for WorldDataImport {
