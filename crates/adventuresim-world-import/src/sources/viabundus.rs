@@ -285,6 +285,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             land_use_rasters_read: 0,
             land_use_samples: 0,
             land_use_fallback_samples: 0,
+            land_use_normalized_samples: 0,
             excluded_edges,
         },
         nodes,
