@@ -219,7 +219,7 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
         ..CombatSkills::default()
     };
     combatant.body.weight_kg = profile.weight_kg;
-    combatant.equipment.weapon = Some(CombatWeapon {
+    let weapon = CombatWeapon {
         melee: !profile.ranged,
         ranged: profile.ranged,
         blunt: profile.blunt,
@@ -228,11 +228,33 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
         accuracy: profile.accuracy,
         weight: profile.weapon_weight_kg,
         penetration: profile.penetration,
-        reach: profile.reach,
+        melee_reach: if profile.ranged { 0.0 } else { profile.reach },
+        ranged_range: if profile.ranged { profile.reach } else { 0.0 },
+        attack_interval_seconds: if profile.ranged { 1.0 } else { 0.75 },
         precise: profile.precise,
         balance: 0.3,
         ranged_force_joules: profile.ranged_force_joules,
-    });
+    };
+    combatant.equipment.weapon = Some(weapon);
+    if profile.ranged {
+        combatant.equipment.ranged_weapon = Some(weapon);
+        combatant.equipment.melee_weapon = Some(CombatWeapon {
+            melee: true,
+            slash: true,
+            pierce: true,
+            accuracy: 1.0,
+            weight: 0.5,
+            penetration: 0.5,
+            melee_reach: 0.5,
+            attack_interval_seconds: 0.6,
+            balance: 0.5,
+            ..CombatWeapon::default()
+        });
+        combatant.equipment.ammunition = 12;
+        combatant.initial_ammunition = 12;
+    } else {
+        combatant.equipment.melee_weapon = Some(weapon);
+    }
     if profile.armored {
         combatant.equipment.shield_block_bonus = 1.0;
         combatant.equipment.armor.fill(CombatArmor {
@@ -248,6 +270,83 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
 
 fn autoresolve_drop(enemy_type: &str) -> Option<&'static str> {
     EnemyArchetype::from_label(enemy_type).profile().drop
+}
+
+fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut quantity: u32) {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, "arrow"))
+        .collect();
+    for mut stack in stacks {
+        if quantity == 0 {
+            break;
+        }
+        let consumed = quantity.min(stack.quantity);
+        quantity -= consumed;
+        stack.quantity -= consumed;
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+    }
+}
+
+fn record_autoresolve_report(
+    ctx: &ReducerContext,
+    quest_id: &str,
+    party_id: &str,
+    outcome: &BattleOutcome,
+) {
+    ctx.db
+        .autoresolve_report()
+        .quest_id()
+        .delete(quest_id.to_string());
+    let summary = format!(
+        "{} rounds; {} stealth successes from {} attempts; {} opening shots; {} ranged attacks; {} melee attacks; {} hits; {:.3} health damage; {} ammunition used",
+        outcome.rounds,
+        outcome.summary.stealth_successes,
+        outcome.summary.stealth_attempts,
+        outcome.summary.opening_ranged_attacks,
+        outcome.summary.ranged_attacks,
+        outcome.summary.melee_attacks,
+        outcome.summary.hits,
+        outcome.summary.total_health_damage,
+        outcome.summary.ammunition_used,
+    );
+    let log = outcome
+        .log
+        .iter()
+        .map(|entry| {
+            format!(
+                "#{} {} round {}: {} used {} against {}'s {:?}: {}",
+                entry.sequence + 1,
+                entry.phase,
+                entry.round,
+                entry.attacker_id,
+                entry.attack_kind,
+                entry.defender_id,
+                entry.body_part,
+                entry.outcome,
+            )
+        })
+        .collect();
+    ctx.db.autoresolve_report().insert(AutoresolveReport {
+        quest_id: quest_id.to_string(),
+        party_id: party_id.to_string(),
+        seed: outcome.seed,
+        victor: match outcome.victor {
+            BattleVictor::Allies => "allies",
+            BattleVictor::Enemies => "enemies",
+            BattleVictor::Stalemate => "stalemate",
+        }
+        .to_string(),
+        rounds: outcome.rounds as u32,
+        summary,
+        log,
+    });
 }
 
 #[cfg(test)]
@@ -1244,6 +1343,22 @@ pub struct BattleResult {
     #[index(btree)]
     pub party_id: String,
     pub mission_id: String,
+}
+
+/// Reproducible strategic-combat diagnostics retained whether the party wins
+/// or loses. Clients can show `summary` immediately and expand `log` on demand.
+#[derive(Clone, Debug)]
+#[table(name = autoresolve_report, public)]
+pub struct AutoresolveReport {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub seed: u64,
+    pub victor: String,
+    pub rounds: u32,
+    pub summary: String,
+    pub log: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -4386,9 +4501,12 @@ pub fn autoresolve_quest(
             )
         })
         .collect();
-    let outcome = resolve_battle(allies, enemies, ctx.random());
+    let seed = ctx.random();
+    let outcome = resolve_battle(allies, enemies, seed);
+    record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
 
     for member in &outcome.allies {
+        consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
         let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member.id) else {
             continue;
         };

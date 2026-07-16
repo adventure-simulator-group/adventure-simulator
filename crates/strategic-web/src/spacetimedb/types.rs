@@ -226,6 +226,17 @@ pub struct BattleResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoresolveReport {
+    pub quest_id: String,
+    pub party_id: String,
+    pub seed: u64,
+    pub victor: String,
+    pub rounds: u32,
+    pub summary: String,
+    pub log: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BattleLootItem {
     pub id: u64,
     pub quest_id: String,
