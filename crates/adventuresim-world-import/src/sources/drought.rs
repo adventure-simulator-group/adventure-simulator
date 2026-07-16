@@ -9,7 +9,7 @@ use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
 use crate::{
     Error, Result,
-    draft::{DroughtSettlementDraft, ReligionSettlementDraft, WorldDraft},
+    draft::{DroughtSettlementDraft, ReligionSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "NOAA Old World Drought Atlas v1.0";
@@ -24,7 +24,7 @@ const FIRST_LATITUDE: f64 = 27.25;
 const MAX_NEIGHBOR_DISTANCE_DEGREES: f64 = 1.5;
 
 pub(crate) fn enrich(
-    draft: WorldDraft<ReligionSettlementDraft>,
+    mut draft: WorldDraft<ReligionSettlementDraft>,
     netcdf_path: &Path,
 ) -> Result<WorldDraft<DroughtSettlementDraft>> {
     let grid = OwdaGrid::open(netcdf_path, draft.year)?;
@@ -35,7 +35,7 @@ pub(crate) fn enrich(
     let mut fallbacks = 0;
     let profiles = draft
         .settlements
-        .iter()
+        .iter_mut()
         .map(|religious| {
             let settlement = &religious
                 .geologic
@@ -49,10 +49,22 @@ pub(crate) fn enrich(
             match grid.sample(settlement.latitude, settlement.longitude) {
                 Some(sample) => {
                     neighbor_samples += usize::from(sample.used_neighbor);
+                    push_source_note(
+                        religious,
+                        if sample.used_neighbor {
+                            "**[NOAA Old World Drought Atlas](https://doi.org/10.25921/rjm6-mq74):** The containing cell lacked a complete reconstruction, so the 1525–1544 profile uses the nearest complete OWDA grid point within 1.5 degrees."
+                        } else {
+                            "**[NOAA Old World Drought Atlas](https://doi.org/10.25921/rjm6-mq74):** The 1544 summer PDSI and 1525–1544 summary are reconstructed directly from the containing OWDA grid point."
+                        },
+                    );
                     DroughtProfile::Reconstructed(sample.history)
                 }
                 None => {
                     fallbacks += 1;
+                    push_source_note(
+                        religious,
+                        "**OWDA drought fallback:** No complete reconstruction was available within 1.5 degrees, so the canonical twenty-year profile is the documented neutral deterministic fallback.",
+                    );
                     DroughtProfile::Inferred(neutral_history())
                 }
             }
