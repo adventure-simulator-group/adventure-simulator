@@ -18,7 +18,7 @@ Minimal SpacetimeDB module for Adventure Simulator's strategic layer.
 - ❌ Alive/dead status
 - ❌ Enemy positions
 - ❌ Player positions
-- ❌ Damage/combat
+- ❌ Tactical tick-by-tick damage/combat state (strategic autoresolve stores only final wounds)
 - ❌ Loot drops
 
 Tactical state lives in the `tactical-server` game state and is discarded when missions end.
