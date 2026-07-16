@@ -14,6 +14,8 @@ use adventuresim_world_schema::{
     SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
     TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
     WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
+    CompiledWorld, EdgeEndpoint, SettlementAliasImport, SettlementDescriptionImport,
+    SettlementDescriptionKind, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -148,6 +150,24 @@ fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<(
             "settlements",
             "import_settlements",
             serialize_batches(&world.settlements, args.batch_size, encode_settlement)?,
+        ),
+        (
+            "settlement aliases",
+            "import_settlement_aliases",
+            serialize_batches(
+                &world.settlement_aliases,
+                args.batch_size,
+                encode_settlement_alias,
+            )?,
+        ),
+        (
+            "settlement descriptions",
+            "import_settlement_descriptions",
+            serialize_batches(
+                &world.settlement_descriptions,
+                args.batch_size,
+                encode_settlement_description,
+            )?,
         ),
     ] {
         let total = batches.iter().map(Vec::len).sum::<usize>();
@@ -724,6 +744,37 @@ fn encode_forest_cover(cover: ForestCover) -> Value {
     }
 }
 
+fn encode_optional<T: serde::Serialize>(value: &Option<T>) -> Value {
+    match value {
+        Some(value) => json!({ "some": value }),
+        None => json!({ "none": [] }),
+    }
+}
+
+fn encode_settlement_alias(alias: &SettlementAliasImport) -> Result<Value> {
+    Ok(json!({
+        "id": alias.id,
+        "settlement_id": alias.settlement_id,
+        "name": alias.name,
+        "prefix": encode_optional(&alias.prefix),
+        "language": encode_optional(&alias.language.as_ref().map(|code| code.as_str())),
+    }))
+}
+
+fn encode_settlement_description(description: &SettlementDescriptionImport) -> Result<Value> {
+    let kind = match description.kind {
+        SettlementDescriptionKind::Settlement => json!({ "Settlement": [] }),
+        SettlementDescriptionKind::City => json!({ "City": [] }),
+    };
+    Ok(json!({
+        "id": description.id,
+        "settlement_id": description.settlement_id,
+        "kind": kind,
+        "language": encode_optional(&description.language.as_ref().map(|code| code.as_str())),
+        "body": description.body,
+    }))
+}
+
 fn call_reducer(args: &Args, reducer: &str, arguments: &[Value]) -> Result<()> {
     let status = Command::new(&args.spacetime)
         .args(["call", "--server", &args.server, &args.database, reducer])
@@ -816,6 +867,13 @@ mod tests {
     use super::{
         MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement, encode_travel_edge,
         serialize_batches,
+        EdgeEndpoint, LanguageCode, SettlementDescriptionImport, SettlementDescriptionKind,
+        TravelEdgeImport, TravelRoute,
+    };
+
+    use super::{
+        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement_description,
+        encode_travel_edge, serialize_batches,
     };
 
     #[test]
@@ -1111,5 +1169,19 @@ mod tests {
     #[test]
     fn default_output_names_the_selected_world_year() {
         assert!(default_output(1600).ends_with("target/world-1600.json"));
+    }
+
+    #[test]
+    fn encodes_description_domain_types_for_sats_json() {
+        let description = SettlementDescriptionImport {
+            id: "description-1".into(),
+            settlement_id: "settlement-1".into(),
+            kind: SettlementDescriptionKind::City,
+            language: Some("deu".parse::<LanguageCode>().unwrap()),
+            body: "Beschreibung".into(),
+        };
+        let encoded = encode_settlement_description(&description).unwrap();
+        assert_eq!(encoded["kind"], serde_json::json!({ "City": [] }));
+        assert_eq!(encoded["language"], serde_json::json!({ "some": "deu" }));
     }
 }

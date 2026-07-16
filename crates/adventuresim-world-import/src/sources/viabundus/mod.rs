@@ -13,6 +13,9 @@ use crate::{
     draft::{SettlementDraft, TravelEdgeDraft, TravelRouteDraft, WorldDraft},
 };
 
+mod descriptions;
+mod names;
+
 const SOURCE_NAME: &str = "Viabundus Pre-modern Street Map 2";
 const SOURCE_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const SOURCE_LICENSE: &str = "CC-BY-SA-4.0";
@@ -82,6 +85,8 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
     let population_path = require(directory, "population.csv")?;
+    let alternative_names_path = require(directory, "alternativenames.csv")?;
+    let descriptions_path = require(directory, "descriptions.csv")?;
 
     let mut nodes_by_id = BTreeMap::new();
     for raw in read_csv::<RawNode>(&nodes_path)? {
@@ -237,6 +242,12 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
         });
     }
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
+    let settlement_ids: HashMap<_, _> = settlements
+        .iter()
+        .map(|settlement| (settlement.source_node_id, settlement.id.clone()))
+        .collect();
+    let settlement_aliases = names::compile(&alternative_names_path, year, &settlement_ids)?;
+    let settlement_descriptions = descriptions::compile(&descriptions_path, &settlement_ids)?;
 
     let mut required_nodes: HashSet<_> =
         endpoint_ids.union(&settlement_node_ids).copied().collect();
@@ -298,6 +309,8 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             nodes: nodes.len(),
             edges: edges.len(),
             settlements: settlements.len(),
+            settlement_aliases: settlement_aliases.len(),
+            settlement_descriptions: settlement_descriptions.len(),
             settlements_connected_to_road_network: connected_settlements.len(),
             route_crossings,
             toll_edges,
@@ -344,6 +357,8 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
         nodes,
         edges,
         settlements,
+        settlement_aliases,
+        settlement_descriptions,
     })
 }
 
@@ -492,6 +507,11 @@ where
             value: value.into(),
             message: error.to_string(),
         })
+}
+
+fn optional_text(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty() && value != "null").then(|| value.to_owned())
 }
 
 fn required_number<T>(path: &Path, field: &'static str, value: &str) -> Result<T>

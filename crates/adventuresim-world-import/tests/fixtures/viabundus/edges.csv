@@ -1,0 +1,2 @@
+id,type,fromnode,tonode,length,slopemultiplier,certainty,section,fromyear,toyear
+10,land,1,2,1000,1.0,1,A,1200,null
