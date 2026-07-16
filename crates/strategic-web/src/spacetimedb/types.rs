@@ -363,6 +363,14 @@ pub struct InventoryItem {
     pub qty: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterNeeds {
+    pub character_id: u64,
+    pub food_balance_kcal: f32,
+    pub water_balance_ml: f32,
+    pub carried_water_ml: f32,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct CharacterEquip {
     #[serde(rename = "character_id")]
@@ -385,6 +393,10 @@ pub struct ItemDefinition {
     pub kind: ItemKind,
     #[serde(default)]
     pub base_value: Option<u32>,
+    #[serde(default)]
+    pub nutrition_kcal: f32,
+    #[serde(default)]
+    pub water_capacity_ml: u32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]

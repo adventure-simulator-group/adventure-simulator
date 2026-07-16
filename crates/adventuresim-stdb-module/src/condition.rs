@@ -17,13 +17,13 @@ pub const BLOOD_ML_PER_KG: f32 = 70.0;
 pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
-pub const TRAVEL_CALORIES_PER_DAY: f32 = 6_000.0;
-pub const TRAVEL_WATER_ML_PER_DAY: f32 = 4_000.0;
+pub const TRAVEL_CALORIES_PER_DAY: f32 = STRATEGIC_TRAVEL_KCAL_PER_DAY;
+pub const TRAVEL_WATER_ML_PER_DAY: f32 = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
 pub const FOOD_RESERVE_KCAL: f32 = TRAVEL_CALORIES_PER_DAY;
 pub const HYDRATION_RESERVE_ML: f32 = TRAVEL_WATER_ML_PER_DAY;
-pub const PROVISION_BUFFER_PERCENT: u64 = 30;
-pub const TRAVEL_RATION_ID: &str = "travel_ration";
-pub const WATERSKIN_ID: &str = "waterskin";
+pub const PROVISION_BUFFER_PERCENT: u64 = STRATEGIC_PROVISION_BUFFER_PERCENT;
+pub const TRAVEL_RATION_ID: &str = STANDARD_TRAVEL_RATION_ID;
+pub const WATERSKIN_ID: &str = STANDARD_WATERSKIN_ID;
 
 fn enemy_fear_multiplier(enemy_type: &str) -> f32 {
     let enemy = enemy_type.to_ascii_lowercase();
@@ -228,23 +228,18 @@ fn provision_units(
     ration_kcal: f32,
     waterskin_capacity_ml: u32,
 ) -> (u32, u32) {
-    let buffered_minutes = planning_minutes
-        .saturating_mul(100 + PROVISION_BUFFER_PERCENT)
-        .div_ceil(100);
-    let travel_days = buffered_minutes as f32 / (24.0 * 60.0);
-    let food_needed = (travel_days * TRAVEL_CALORIES_PER_DAY - food_balance_kcal.max(0.0)).max(0.0);
-    let water_needed = (travel_days * TRAVEL_WATER_ML_PER_DAY - water_balance_ml.max(0.0)).max(0.0);
-    let rations = if ration_kcal > 0.0 {
-        (food_needed / ration_kcal).ceil() as u32
-    } else {
-        0
-    };
-    let waterskins = if waterskin_capacity_ml > 0 {
-        (water_needed / waterskin_capacity_ml as f32).ceil() as u32
-    } else {
-        0
-    };
-    (rations, waterskins)
+    let units = ProvisioningInputs {
+        planning_minutes,
+        buffer_percent: PROVISION_BUFFER_PERCENT,
+        food_balance_kcal,
+        water_balance_ml,
+        travel_kcal_per_day: TRAVEL_CALORIES_PER_DAY,
+        travel_water_ml_per_day: TRAVEL_WATER_ML_PER_DAY,
+        ration_kcal,
+        waterskin_capacity_ml,
+    }
+    .required_units();
+    (units.rations, units.waterskins)
 }
 
 pub fn replenish_needs_at_settlement(
@@ -1439,9 +1434,7 @@ pub fn set_character_religion(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        FOOD_RESERVE_KCAL, HYDRATION_RESERVE_ML, holy_day_demand_has_expired, provision_units,
-    };
+    use super::holy_day_demand_has_expired;
 
     #[test]
     fn holy_day_demands_expire_after_their_day_or_on_departure() {
@@ -1449,29 +1442,5 @@ mod tests {
         assert!(holy_day_demand_has_expired(6, 6, true));
         assert!(holy_day_demand_has_expired(6, 7, false));
         assert!(!holy_day_demand_has_expired(13, 12, true));
-    }
-
-    #[test]
-    fn provisioning_includes_return_and_thirty_percent_reserve() {
-        let (rations, waterskins) = provision_units(
-            2 * 24 * 60,
-            FOOD_RESERVE_KCAL,
-            HYDRATION_RESERVE_ML,
-            6_000.0,
-            4_000,
-        );
-        assert_eq!((rations, waterskins), (2, 2));
-    }
-
-    #[test]
-    fn short_trips_fit_within_physiological_reserves() {
-        let (rations, waterskins) = provision_units(
-            12 * 60,
-            FOOD_RESERVE_KCAL,
-            HYDRATION_RESERVE_ML,
-            6_000.0,
-            4_000,
-        );
-        assert_eq!((rations, waterskins), (0, 0));
     }
 }

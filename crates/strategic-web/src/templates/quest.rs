@@ -62,7 +62,7 @@ pub fn quest_location_map_page(
             &format!("/locations/quest/{}/map", quest.id),
         ))
         (quest_location_center(quest, active_character, party_members, can_fight, resolved))
-        (map_destination_detail(selected, can_travel))
+        (map_destination_detail(selected, can_travel, false, None))
     };
     super::quest_location_layout_with_session(
         &format!("{} map", quest.title),
