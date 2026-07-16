@@ -5,15 +5,15 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::parent_material_code_type::ParentMaterialCode;
-use super::soil_classification_code_type::SoilClassificationCode;
 use super::soil_mapping_unit_type::SoilMappingUnit;
 use super::soil_properties_type::SoilProperties;
+use super::wrb_reference_group_type::WrbReferenceGroup;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct MappedSoilProfile {
     pub mapping_unit: SoilMappingUnit,
-    pub wrb_code: SoilClassificationCode,
+    pub wrb_group: WrbReferenceGroup,
     pub parent_material: ParentMaterialCode,
     pub properties: SoilProperties,
 }

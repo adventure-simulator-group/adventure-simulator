@@ -7,11 +7,12 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, MappedSoilProfile,
-    MineralSoilTexture, ParentMaterialCode, PotentialVegetationFormation, SettlementImport,
-    SoilClassificationCode, SoilDepth, SoilMappingUnit, SoilMaterial, SoilProfile, SoilProperties,
-    SoilWaterRegime, SourceProvenance, StoneContentPercent, TopsoilOrganicCarbon,
-    WORLD_SCHEMA_VERSION, WorldMetadata,
+    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, MappedSoilProfile, MineralSoil,
+    MineralSoilTexture, OrganicSoil, OtherNonTexturedSoil, ParentMaterialCode,
+    PotentialVegetationFormation, RockOutcropSoil, SettlementImport, SoilDepth, SoilMappingUnit,
+    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, SourceProvenance,
+    StoneContentPercent, TopsoilOrganicCarbon, WORLD_SCHEMA_VERSION, WorldMetadata,
+    WrbReferenceGroup,
 };
 use dbase::{FieldValue, Record};
 use geo::{BoundingRect, Intersects, MultiPolygon, Point, Rect};
@@ -134,62 +135,60 @@ fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
         adventuresim_world_schema::PotentialVegetation::Inferred(formation) => *formation,
     };
     let elevation = settlement.vegetated.forest.land.elevated.elevation.get();
-    let (material, depth, available_water, organic_carbon, water_regime, stones, limitation) =
-        match formation {
-            V::Mire | V::SwampAndFenForest => (
-                SoilMaterial::Organic,
-                SoilDepth::Deep,
-                AvailableWaterCapacity::VeryHigh,
-                TopsoilOrganicCarbon::High,
-                SoilWaterRegime::PermanentlyWet,
-                0,
-                AgriculturalLimitation::ShallowWaterTable,
-            ),
-            V::AquaticAndReed | V::FloodplainAndWetland => (
-                SoilMaterial::Mineral(MineralSoilTexture::MediumFine),
-                SoilDepth::VeryDeep,
-                AvailableWaterCapacity::High,
-                TopsoilOrganicCarbon::Medium,
-                SoilWaterRegime::LongSeasonWet,
-                0,
-                AgriculturalLimitation::Flooded,
-            ),
-            V::TundraAndAlpine | V::Oroxerophytic | V::PolarDesertAndNival if elevation >= 900 => (
-                SoilMaterial::RockOutcrop,
-                SoilDepth::Shallow,
-                AvailableWaterCapacity::VeryLow,
-                TopsoilOrganicCarbon::VeryLow,
-                SoilWaterRegime::UsuallyDry,
-                20,
-                AgriculturalLimitation::ShallowRock,
-            ),
-            V::MediterraneanSclerophyll | V::XerophyticConiferAndScrub | V::Steppe | V::Desert => (
-                SoilMaterial::Mineral(MineralSoilTexture::Coarse),
-                SoilDepth::Moderate,
-                AvailableWaterCapacity::Low,
-                TopsoilOrganicCarbon::Low,
-                SoilWaterRegime::UsuallyDry,
-                10,
-                AgriculturalLimitation::None,
-            ),
-            _ => (
-                SoilMaterial::Mineral(MineralSoilTexture::Medium),
-                SoilDepth::Deep,
-                AvailableWaterCapacity::Medium,
-                TopsoilOrganicCarbon::Medium,
-                SoilWaterRegime::SeasonallyWet,
-                10,
-                AgriculturalLimitation::None,
-            ),
-        };
-    SoilProperties {
-        material,
-        depth,
-        available_water,
-        organic_carbon,
-        water_regime,
-        stones: StoneContentPercent::new(stones).expect("fallback percentage is bounded"),
-        agricultural_limitation: limitation,
+    let stones =
+        |percent| StoneContentPercent::new(percent).expect("fallback percentage is bounded");
+    match formation {
+        V::Mire | V::SwampAndFenForest => SoilProperties {
+            substrate: SoilSubstrate::Organic(OrganicSoil {
+                depth: SoilDepth::Deep,
+                available_water: AvailableWaterCapacity::VeryHigh,
+                stones: stones(0),
+            }),
+            water_regime: SoilWaterRegime::PermanentlyWet,
+            agricultural_limitation: AgriculturalLimitation::ShallowWaterTable,
+        },
+        V::AquaticAndReed | V::FloodplainAndWetland => SoilProperties {
+            substrate: SoilSubstrate::Mineral(MineralSoil {
+                texture: MineralSoilTexture::MediumFine,
+                depth: SoilDepth::VeryDeep,
+                available_water: AvailableWaterCapacity::High,
+                organic_carbon: TopsoilOrganicCarbon::Medium,
+                stones: stones(0),
+            }),
+            water_regime: SoilWaterRegime::LongSeasonWet,
+            agricultural_limitation: AgriculturalLimitation::Flooded,
+        },
+        V::TundraAndAlpine | V::Oroxerophytic | V::PolarDesertAndNival if elevation >= 900 => {
+            SoilProperties {
+                substrate: SoilSubstrate::RockOutcrop(RockOutcropSoil { stones: stones(20) }),
+                water_regime: SoilWaterRegime::UsuallyDry,
+                agricultural_limitation: AgriculturalLimitation::ShallowRock,
+            }
+        }
+        V::MediterraneanSclerophyll | V::XerophyticConiferAndScrub | V::Steppe | V::Desert => {
+            SoilProperties {
+                substrate: SoilSubstrate::Mineral(MineralSoil {
+                    texture: MineralSoilTexture::Coarse,
+                    depth: SoilDepth::Moderate,
+                    available_water: AvailableWaterCapacity::Low,
+                    organic_carbon: TopsoilOrganicCarbon::Low,
+                    stones: stones(10),
+                }),
+                water_regime: SoilWaterRegime::UsuallyDry,
+                agricultural_limitation: AgriculturalLimitation::None,
+            }
+        }
+        _ => SoilProperties {
+            substrate: SoilSubstrate::Mineral(MineralSoil {
+                texture: MineralSoilTexture::Medium,
+                depth: SoilDepth::Deep,
+                available_water: AvailableWaterCapacity::Medium,
+                organic_carbon: TopsoilOrganicCarbon::Medium,
+                stones: stones(10),
+            }),
+            water_regime: SoilWaterRegime::SeasonallyWet,
+            agricultural_limitation: AgriculturalLimitation::None,
+        },
     }
 }
 
@@ -311,7 +310,7 @@ impl SoilMap {
                     .map(|profile| {
                         SoilProfile::Mapped(MappedSoilProfile {
                             mapping_unit: feature.mapping,
-                            wrb_code: profile.wrb_code,
+                            wrb_group: profile.wrb_group,
                             parent_material: profile.parent_material,
                             properties: profile.properties,
                         })
@@ -342,7 +341,7 @@ fn parse_mapping_unit(record: &Record, path: &Path) -> Result<SoilMappingUnit> {
 
 #[derive(Clone)]
 struct SgdbeRow {
-    wrb: SoilClassificationCode,
+    wrb: WrbReferenceGroup,
     parent: ParentMaterialCode,
     water_regime: SoilWaterRegime,
 }
@@ -350,21 +349,22 @@ struct SgdbeRow {
 fn read_sgdbe(path: &Path) -> Result<TableRows<SgdbeRow>> {
     read_dbf(path, |record| {
         let stu = required_u32(record, "STU", path)?;
-        let Some(wrb_value) = source_token(record, "WRB_LEV1", path)? else {
+        let Some(wrb_value) = source_token(record, "WRBLV1", path)? else {
             return Ok((stu, None));
         };
-        let Some(parent_value) = source_token(record, "PAR_MAT_DOM", path)? else {
+        let Some(wrb) = parse_wrb_group(&wrb_value, path)? else {
+            return Ok((stu, None));
+        };
+        let Some(parent_value) = source_token(record, "PARMADO", path)? else {
             return Ok((stu, None));
         };
         let Some(water_value) = source_token(record, "WR", path)? else {
             return Ok((stu, None));
         };
-        let wrb = SoilClassificationCode::new(wrb_value.clone())
-            .ok_or_else(|| invalid_field(path, "WRB_LEV1", &wrb_value, "invalid WRB code"))?;
         let parent = ParentMaterialCode::new(parent_value.clone()).ok_or_else(|| {
             invalid_field(
                 path,
-                "PAR_MAT_DOM",
+                "PARMADO",
                 &parent_value,
                 "invalid parent-material code",
             )
@@ -383,18 +383,14 @@ fn read_sgdbe(path: &Path) -> Result<TableRows<SgdbeRow>> {
 
 #[derive(Clone, Copy)]
 struct PtrdbRow {
-    material: SoilMaterial,
-    depth: SoilDepth,
-    available_water: AvailableWaterCapacity,
-    organic_carbon: TopsoilOrganicCarbon,
-    stones: StoneContentPercent,
+    substrate: SoilSubstrate,
     agricultural_limitation: AgriculturalLimitation,
 }
 
 fn read_ptrdb(path: &Path) -> Result<TableRows<PtrdbRow>> {
     read_dbf(path, |record| {
         let stu = required_u32(record, "STU", path)?;
-        let fields = ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLIM1NNI"]
+        let fields = ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"]
             .into_iter()
             .map(|field| source_token(record, field, path))
             .collect::<Result<Vec<_>>>()?;
@@ -431,20 +427,40 @@ fn read_ptrdb(path: &Path) -> Result<TableRows<PtrdbRow>> {
         };
         let texture = parse_texture(&texture_value, path)?;
         let peat = parse_peat(&peat_value, path)?;
-        let material = if peat { SoilMaterial::Organic } else { texture };
         let depth = parse_depth(&depth_value, path)?;
         let available_water = parse_water(&water_value, path)?;
         let organic_carbon = parse_carbon(&carbon_value, path)?;
         let stones = parse_stones(&stones_value, path)?;
         let agricultural_limitation = parse_limitation(&limitation_value, path)?;
-        Ok((
-            stu,
-            Some(PtrdbRow {
-                material,
+        let substrate = match (peat, texture) {
+            (true, _) | (false, SourceTexture::Organic) => SoilSubstrate::Organic(OrganicSoil {
+                depth,
+                available_water,
+                stones,
+            }),
+            (false, SourceTexture::Mineral(texture)) => SoilSubstrate::Mineral(MineralSoil {
+                texture,
                 depth,
                 available_water,
                 organic_carbon,
                 stones,
+            }),
+            (false, SourceTexture::RockOutcrop) => {
+                SoilSubstrate::RockOutcrop(RockOutcropSoil { stones })
+            }
+            (false, SourceTexture::OtherNonTextured) => {
+                SoilSubstrate::OtherNonTextured(OtherNonTexturedSoil {
+                    depth,
+                    available_water,
+                    organic_carbon,
+                    stones,
+                })
+            }
+        };
+        Ok((
+            stu,
+            Some(PtrdbRow {
+                substrate,
                 agricultural_limitation,
             }),
         ))
@@ -453,7 +469,7 @@ fn read_ptrdb(path: &Path) -> Result<TableRows<PtrdbRow>> {
 
 #[derive(Clone)]
 struct SoilAttributeProfile {
-    wrb_code: SoilClassificationCode,
+    wrb_group: WrbReferenceGroup,
     parent_material: ParentMaterialCode,
     properties: SoilProperties,
 }
@@ -468,15 +484,11 @@ fn join_profiles(
             profiles.insert(
                 stu,
                 SoilAttributeProfile {
-                    wrb_code: geography.wrb,
+                    wrb_group: geography.wrb,
                     parent_material: geography.parent,
                     properties: SoilProperties {
-                        material: properties.material,
-                        depth: properties.depth,
-                        available_water: properties.available_water,
-                        organic_carbon: properties.organic_carbon,
+                        substrate: properties.substrate,
                         water_regime: geography.water_regime,
-                        stones: properties.stones,
                         agricultural_limitation: properties.agricultural_limitation,
                     },
                 },
@@ -536,16 +548,24 @@ fn read_dbf<T>(
     })
 }
 
-fn parse_texture(value: &str, path: &Path) -> Result<SoilMaterial> {
+#[derive(Clone, Copy)]
+enum SourceTexture {
+    Mineral(MineralSoilTexture),
+    Organic,
+    RockOutcrop,
+    OtherNonTextured,
+}
+
+fn parse_texture(value: &str, path: &Path) -> Result<SourceTexture> {
     Ok(match value {
-        "1" => SoilMaterial::Mineral(MineralSoilTexture::Coarse),
-        "2" => SoilMaterial::Mineral(MineralSoilTexture::Medium),
-        "3" => SoilMaterial::Mineral(MineralSoilTexture::MediumFine),
-        "4" => SoilMaterial::Mineral(MineralSoilTexture::Fine),
-        "5" => SoilMaterial::Mineral(MineralSoilTexture::VeryFine),
-        "6" => SoilMaterial::OtherNonTextured,
-        "7" => SoilMaterial::RockOutcrop,
-        "8" => SoilMaterial::Organic,
+        "1" => SourceTexture::Mineral(MineralSoilTexture::Coarse),
+        "2" => SourceTexture::Mineral(MineralSoilTexture::Medium),
+        "3" => SourceTexture::Mineral(MineralSoilTexture::MediumFine),
+        "4" => SourceTexture::Mineral(MineralSoilTexture::Fine),
+        "5" => SourceTexture::Mineral(MineralSoilTexture::VeryFine),
+        "6" => SourceTexture::OtherNonTextured,
+        "7" => SourceTexture::RockOutcrop,
+        "8" => SourceTexture::Organic,
         _ => {
             return Err(invalid_field(
                 path,
@@ -555,6 +575,51 @@ fn parse_texture(value: &str, path: &Path) -> Result<SoilMaterial> {
             ));
         }
     })
+}
+
+fn parse_wrb_group(value: &str, path: &Path) -> Result<Option<WrbReferenceGroup>> {
+    use WrbReferenceGroup as W;
+    Ok(Some(match value {
+        "AB" => W::Albeluvisol,
+        "AC" => W::Acrisol,
+        "AL" => W::Alisol,
+        "AN" => W::Andosol,
+        "AR" => W::Arenosol,
+        "AT" => W::Anthrosol,
+        "CH" => W::Chernozem,
+        "CL" => W::Calcisol,
+        "CM" => W::Cambisol,
+        "CR" => W::Cryosol,
+        "DU" => W::Durisol,
+        "FL" => W::Fluvisol,
+        "FR" => W::Ferralsol,
+        "GL" => W::Gleysol,
+        "GY" => W::Gypsisol,
+        "HS" => W::Histosol,
+        "KS" => W::Kastanozem,
+        "LP" => W::Leptosol,
+        "LV" => W::Luvisol,
+        "LX" => W::Lixisol,
+        "NT" => W::Nitisol,
+        "PH" => W::Phaeozem,
+        "PL" => W::Planosol,
+        "PT" => W::Plinthosol,
+        "PZ" => W::Podzol,
+        "RG" => W::Regosol,
+        "SC" => W::Solonchak,
+        "SN" => W::Solonetz,
+        "UM" => W::Umbrisol,
+        "VR" => W::Vertisol,
+        "1" | "2" | "3" | "4" | "5" | "6" => return Ok(None),
+        _ => {
+            return Err(invalid_field(
+                path,
+                "WRBLV1",
+                value,
+                "unrecognized WRB reference group",
+            ));
+        }
+    }))
 }
 
 fn parse_peat(value: &str, path: &Path) -> Result<bool> {
@@ -580,7 +645,6 @@ fn parse_depth(value: &str, path: &Path) -> Result<SoilDepth> {
 }
 fn parse_water(value: &str, path: &Path) -> Result<AvailableWaterCapacity> {
     match value {
-        "VL" => Ok(AvailableWaterCapacity::VeryLow),
         "L" => Ok(AvailableWaterCapacity::Low),
         "M" => Ok(AvailableWaterCapacity::Medium),
         "H" => Ok(AvailableWaterCapacity::High),
@@ -658,7 +722,7 @@ fn parse_limitation(value: &str, path: &Path) -> Result<AgriculturalLimitation> 
         _ => {
             return Err(invalid_field(
                 path,
-                "AGLIM1NNI",
+                "AGLI1NNI",
                 value,
                 "unrecognized agricultural limitation",
             ));
@@ -801,6 +865,13 @@ mod tests {
         }
         assert!(parse_texture("0", path).is_err());
         assert!(parse_limitation("future", path).is_err());
+        assert!(parse_water("VL", path).is_err());
+        assert_eq!(
+            parse_wrb_group("CM", path).unwrap(),
+            Some(WrbReferenceGroup::Cambisol)
+        );
+        assert_eq!(parse_wrb_group("3", path).unwrap(), None);
+        assert!(parse_wrb_group("FUTURE", path).is_err());
     }
 
     #[test]
@@ -828,12 +899,15 @@ mod tests {
         assert_eq!(profile.mapping_unit.smu(), 10);
         assert_eq!(profile.mapping_unit.dominant_stu(), 100);
         assert_eq!(profile.mapping_unit.dominance_percent(), 75);
-        assert_eq!(profile.wrb_code.as_str(), "CM");
+        assert_eq!(profile.wrb_group, WrbReferenceGroup::Cambisol);
         assert_eq!(profile.parent_material.as_str(), "110");
-        assert_eq!(
-            profile.properties.material,
-            SoilMaterial::Mineral(MineralSoilTexture::Medium)
-        );
+        assert!(matches!(
+            profile.properties.substrate,
+            SoilSubstrate::Mineral(MineralSoil {
+                texture: MineralSoilTexture::Medium,
+                ..
+            })
+        ));
         assert_eq!(
             profile.properties.water_regime,
             SoilWaterRegime::LongSeasonWet
@@ -875,19 +949,16 @@ mod tests {
     fn write_sgdbe(directory: &Path) {
         let mut writer = TableWriterBuilder::new()
             .add_numeric_field(FieldName::try_from("STU").unwrap(), 10, 0)
-            .add_character_field(FieldName::try_from("WRB_LEV1").unwrap(), 8)
-            .add_character_field(FieldName::try_from("PAR_MAT_DOM").unwrap(), 12)
+            .add_character_field(FieldName::try_from("WRBLV1").unwrap(), 8)
+            .add_character_field(FieldName::try_from("PARMADO").unwrap(), 12)
             .add_character_field(FieldName::try_from("WR").unwrap(), 1)
             .build_with_file_dest(directory.join(SGDBE_ATTRIBUTES))
             .unwrap();
         for (stu, wrb, parent, water) in [(100, "CM", "110", "3"), (200, "#", "0", "0")] {
             let mut record = Record::default();
             record.insert("STU".into(), FieldValue::Numeric(Some(f64::from(stu))));
-            record.insert("WRB_LEV1".into(), FieldValue::Character(Some(wrb.into())));
-            record.insert(
-                "PAR_MAT_DOM".into(),
-                FieldValue::Character(Some(parent.into())),
-            );
+            record.insert("WRBLV1".into(), FieldValue::Character(Some(wrb.into())));
+            record.insert("PARMADO".into(), FieldValue::Character(Some(parent.into())));
             record.insert("WR".into(), FieldValue::Character(Some(water.into())));
             writer.write_record(&record).unwrap();
         }
@@ -897,7 +968,7 @@ mod tests {
     fn write_ptrdb(directory: &Path) {
         let mut table =
             TableWriterBuilder::new().add_numeric_field(FieldName::try_from("STU").unwrap(), 10, 0);
-        for field in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLIM1NNI"] {
+        for field in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"] {
             table = table.add_character_field(FieldName::try_from(field).unwrap(), 4);
         }
         let mut writer = table
@@ -909,7 +980,7 @@ mod tests {
         ] {
             let mut record = Record::default();
             record.insert("STU".into(), FieldValue::Numeric(Some(f64::from(stu))));
-            for (field, value) in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLIM1NNI"]
+            for (field, value) in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"]
                 .into_iter()
                 .zip(values)
             {
