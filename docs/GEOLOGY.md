@@ -19,7 +19,9 @@ Place the exported `GeologicUnitView.gpkg` at
 compiler reads it directly; `--geology-geopackage` overrides the path. The
 checked source boundary requires the `GeologicUnitView` feature table, its
 `geom` polygonal geometry column, EPSG:3034 metadata, and the
-`rtree_GeologicUnitView_geom` spatial index.
+`rtree_GeologicUnitView_geom` spatial index. The boundary verifies the EPSG
+authority mapping and requires every non-empty GeoPackage geometry (but not an
+OGC empty geometry) to have exactly one usable index entry.
 
 The official WFS can return GeoJSON samples, but the full layer contains more
 than 240,000 features. Preparing a local indexed GeoPackage avoids repeatedly
@@ -41,11 +43,14 @@ identifier and reduces the source codelists to typed gameplay categories:
 - metamorphic rock such as slate, schist, gneiss, quartzite, and marble;
 - mixed rock, breccia, and mélange.
 
-Geologic age is reduced to broad eras from Quaternary through Precambrian.
-Lithology and age each independently record whether they came from the EGDI
-attribute or from a deterministic inference. Consequently an EGDI polygon
-whose age is the source marker `unknown` remains a mapped unit with an inferred
-age; canonical data never stores an `Unknown` variant.
+Geologic age is reduced to typed intervals from Quaternary through Precambrian,
+including broader Cenozoic, Mesozoic, Paleozoic, and Phanerozoic source terms.
+Within a mapped EGDI unit, lithology and age each independently record whether
+they came from the source attribute or from a deterministic inference. An EGDI
+polygon whose age is the source marker `unknown` therefore remains a mapped
+unit with an inferred age. A wholly inferred profile is a different canonical
+type containing bare values, so it cannot falsely contain mapped evidence;
+canonical data never stores an `Unknown` variant.
 
 Unrecognized but present lithology terms become typed mixed rock. A missing
 lithology becomes plausible sandstone. Missing ages are inferred from
