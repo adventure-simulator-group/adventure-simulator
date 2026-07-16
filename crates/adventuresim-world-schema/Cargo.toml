@@ -1,0 +1,17 @@
+[package]
+name = "adventuresim-world-schema"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+spacetimedb = ["dep:spacetimedb"]
+
+[dependencies]
+serde.workspace = true
+spacetimedb = { workspace = true, optional = true }
+
+[lints]
+workspace = true

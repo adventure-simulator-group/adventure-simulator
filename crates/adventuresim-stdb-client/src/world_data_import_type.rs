@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct WorldDataImport {
     pub id: u8,
     pub owner: __sdk::Identity,
+    pub schema_version: u32,
 }
 
 impl __sdk::InModule for WorldDataImport {
