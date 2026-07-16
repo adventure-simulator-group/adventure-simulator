@@ -1,10 +1,10 @@
 # Historical land-use world data
 
-The world compiler has a source boundary for **HYDE 3.2** (History Database of
+The world compiler has a source boundary for corrected **HYDE 3.2.1** (History Database of
 the Global Environment), using the 1500 and 1600 CE slices around the game's
 1544 date.
 
-- Dataset record: <https://doi.org/10.17026/dans-znk-cfy3>
+- Dataset record: <https://doi.org/10.17026/dans-25g-gez3>
 - Method paper: <https://doi.org/10.5194/essd-9-927-2017>
 - Terms recorded by the repository: CC0 1.0
 
@@ -31,7 +31,8 @@ The 1500 and 1600 values are linearly interpolated to 1544.
 Canonical land use is stored as bounded basis-point fractions for cropland,
 grazing land, built-up land, and natural/seminatural land. The four fractions
 must sum to exactly 10,000, making incomplete and overfull profiles
-unrepresentable. Overlapping source areas are proportionally normalized. A
+unrepresentable. Finite source overlap of at most 5% is proportionally
+normalized and counted; larger overfill is rejected as malformed data. A
 nodata source cell receives a deterministic plausible profile based on the
 settlement's stable source ID and population level; the build report counts
 every such fallback. Human-use intensity is derived from the profile rather

@@ -278,6 +278,7 @@ pub struct WorldBuildReport {
     pub land_use_rasters_read: usize,
     pub land_use_samples: usize,
     pub land_use_fallback_samples: usize,
+    pub land_use_normalized_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
