@@ -8,10 +8,10 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType, EdgeEndpoint,
     ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, IgneousRock,
     MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SoilDepth, SoilProfile,
-    SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-    TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WorldNodeImport,
-    WrbReferenceGroup,
+    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SettlementReligiousStatus,
+    SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
+    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
+    WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -40,6 +40,8 @@ struct Args {
     soil_dir: PathBuf,
     #[arg(long, default_value_os_t = default_geology_geopackage())]
     geology_geopackage: PathBuf,
+    #[arg(long, default_value_os_t = default_religion_regions())]
+    religion_regions: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -79,6 +81,7 @@ fn run(args: Args) -> Result<()> {
         &args.tree_species_archive,
         &args.soil_dir,
         &args.geology_geopackage,
+        &args.religion_regions,
     )?;
     let output = args
         .output
@@ -227,9 +230,59 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "tree_species": encode_tree_species(&settlement.tree_species),
         "soil": encode_soil(&settlement.soil),
         "geology": encode_geology(&settlement.geology),
+        "religious_status": encode_religious_status(settlement.religious_status),
         "scene_key": settlement.scene_key,
-        "religion_id": settlement.religion_id,
     }))
+}
+
+fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
+    let religion = |value| {
+        enum_unit(match value {
+            adventuresim_world_schema::OfficialReligion::RomanCatholic => "RomanCatholic",
+            adventuresim_world_schema::OfficialReligion::Lutheran => "Lutheran",
+            adventuresim_world_schema::OfficialReligion::Reformed => "Reformed",
+            adventuresim_world_schema::OfficialReligion::Anglican => "Anglican",
+            adventuresim_world_schema::OfficialReligion::ProtestantUnspecified => {
+                "ProtestantUnspecified"
+            }
+            adventuresim_world_schema::OfficialReligion::EasternOrthodox => "EasternOrthodox",
+            adventuresim_world_schema::OfficialReligion::Islamic => "Islamic",
+        })
+    };
+    let arrangement = |value| match value {
+        WesternChristianArrangement::CatholicLutheran { church } => json!({
+            "CatholicLutheran": { "church": enum_unit(match church {
+                adventuresim_world_schema::CatholicLutheranChurch::RomanCatholic => "RomanCatholic",
+                adventuresim_world_schema::CatholicLutheranChurch::Lutheran => "Lutheran",
+            }) }
+        }),
+        WesternChristianArrangement::CatholicReformed { church } => json!({
+            "CatholicReformed": { "church": enum_unit(match church {
+                adventuresim_world_schema::CatholicReformedChurch::RomanCatholic => "RomanCatholic",
+                adventuresim_world_schema::CatholicReformedChurch::Reformed => "Reformed",
+            }) }
+        }),
+        WesternChristianArrangement::LutheranReformed { church } => json!({
+            "LutheranReformed": { "church": enum_unit(match church {
+                adventuresim_world_schema::LutheranReformedChurch::Lutheran => "Lutheran",
+                adventuresim_world_schema::LutheranReformedChurch::Reformed => "Reformed",
+            }) }
+        }),
+    };
+    match status {
+        SettlementReligiousStatus::Established { religion: value } => {
+            json!({ "Established": { "religion": religion(value) } })
+        }
+        SettlementReligiousStatus::Parity { arrangement: value } => {
+            json!({ "Parity": { "arrangement": arrangement(value) } })
+        }
+        SettlementReligiousStatus::MultiConfessional { arrangement: value } => {
+            json!({ "MultiConfessional": { "arrangement": arrangement(value) } })
+        }
+        SettlementReligiousStatus::LocallyDetermined { church } => {
+            json!({ "LocallyDetermined": { "church": religion(church) } })
+        }
+    }
 }
 
 fn encode_geology(profile: &SurfaceGeology) -> Value {
@@ -612,6 +665,10 @@ fn default_geology_geopackage() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/geology/GeologicUnitView.gpkg")
 }
 
+fn default_religion_regions() -> PathBuf {
+    repository_root().join("assets/world-data/ieg-religion-1544.csv")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -625,11 +682,12 @@ mod tests {
         HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
         LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile,
         MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
-        ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode, PotentialVegetation,
-        PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
-        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
-        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion, ParentMaterialCode,
+        PotentialVegetation, PotentialVegetationFormation, SettlementImport,
+        SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties,
+        SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
+        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+        UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
     };
 
     use super::{
@@ -803,6 +861,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_religious_status_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["religious_status"],
+            serde_json::json!({
+                "Established": { "religion": { "RomanCatholic": [] } }
+            })
+        );
+        settlement.religious_status = SettlementReligiousStatus::MultiConfessional {
+            arrangement: adventuresim_world_schema::WesternChristianArrangement::CatholicLutheran {
+                church: adventuresim_world_schema::CatholicLutheranChurch::Lutheran,
+            },
+        };
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["religious_status"],
+            serde_json::json!({
+                "MultiConfessional": {
+                    "arrangement": {
+                        "CatholicLutheran": { "church": { "Lutheran": [] } }
+                    }
+                }
+            })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -843,8 +927,10 @@ mod tests {
                 lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
                 age: GeologicEra::Quaternary,
             }),
+            religious_status: SettlementReligiousStatus::Established {
+                religion: OfficialReligion::RomanCatholic,
+            },
             scene_key: "village".into(),
-            religion_id: "catholic".into(),
         }
     }
 
