@@ -25,7 +25,6 @@ pub(crate) struct SettlementDraft {
     pub(crate) population_level: i32,
     pub(crate) population_estimate: u32,
     pub(crate) scene_key: String,
-    pub(crate) religion_id: String,
 }
 
 #[derive(Debug)]
@@ -62,4 +61,10 @@ pub(crate) struct TreeSpeciesSettlementDraft {
 pub(crate) struct SoilSettlementDraft {
     pub(crate) trees: TreeSpeciesSettlementDraft,
     pub(crate) soil: SoilProfile,
+}
+
+#[derive(Debug)]
+pub(crate) struct GeologySettlementDraft {
+    pub(crate) soil: SoilSettlementDraft,
+    pub(crate) geology: adventuresim_world_schema::SurfaceGeology,
 }

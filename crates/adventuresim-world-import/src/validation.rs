@@ -201,12 +201,29 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .count(),
             world.settlements.len(),
         )
+        || !religion_counts_are_consistent(
+            world.report.religion_regions_read,
+            world.report.religion_samples,
+            world.report.religion_fallback_samples,
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn religion_counts_are_consistent(
+    regions: usize,
+    samples: usize,
+    fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks <= samples
+        && ((settlements == 0 && regions == 0) || (settlements > 0 && regions > 0))
 }
 
 fn geology_counts_are_consistent(
@@ -307,7 +324,7 @@ mod tests {
     use super::land_use_counts_are_consistent;
     use super::potential_vegetation_counts_are_consistent;
     use super::{
-        geology_counts_are_consistent, soil_counts_are_consistent,
+        geology_counts_are_consistent, religion_counts_are_consistent, soil_counts_are_consistent,
         tree_species_counts_are_consistent,
     };
 
@@ -375,5 +392,13 @@ mod tests {
         assert!(geology_counts_are_consistent(0, 0, 0, 0, 0));
         assert!(!geology_counts_are_consistent(0, 3, 1, 1, 3));
         assert!(!geology_counts_are_consistent(243_092, 3, 2, 1, 3));
+    }
+
+    #[test]
+    fn religion_report_requires_regions_and_bounded_fallbacks() {
+        assert!(religion_counts_are_consistent(14, 3, 2, 3));
+        assert!(religion_counts_are_consistent(0, 0, 0, 0));
+        assert!(!religion_counts_are_consistent(0, 3, 2, 3));
+        assert!(!religion_counts_are_consistent(14, 3, 4, 3));
     }
 }

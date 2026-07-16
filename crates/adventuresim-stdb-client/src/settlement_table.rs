@@ -6,6 +6,7 @@ use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::settlement_type::Settlement;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
