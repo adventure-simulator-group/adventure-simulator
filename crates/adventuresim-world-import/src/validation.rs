@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SoilProfile, SurfaceGeology, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    CompiledWorld, DroughtProfile, SoilProfile, SurfaceGeology, TreeSpeciesProfile,
+    WORLD_SCHEMA_VERSION,
 };
 
 use crate::{Error, Result};
@@ -207,12 +208,40 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.report.religion_fallback_samples,
             world.settlements.len(),
         )
+        || !drought_counts_are_consistent(
+            world.report.drought_grid_cells_read,
+            world.report.drought_samples,
+            world.report.drought_neighbor_samples,
+            world.report.drought_fallback_samples,
+            world
+                .settlements
+                .iter()
+                .filter(|settlement| matches!(settlement.drought, DroughtProfile::Inferred(_)))
+                .count(),
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn drought_counts_are_consistent(
+    cells: usize,
+    samples: usize,
+    neighbors: usize,
+    fallbacks: usize,
+    actual_fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks == actual_fallbacks
+        && neighbors
+            .checked_add(fallbacks)
+            .is_some_and(|classified| classified <= samples)
+        && ((settlements == 0 && cells == 0) || (settlements > 0 && cells > 0))
 }
 
 fn religion_counts_are_consistent(
@@ -324,7 +353,8 @@ mod tests {
     use super::land_use_counts_are_consistent;
     use super::potential_vegetation_counts_are_consistent;
     use super::{
-        geology_counts_are_consistent, religion_counts_are_consistent, soil_counts_are_consistent,
+        drought_counts_are_consistent, geology_counts_are_consistent,
+        religion_counts_are_consistent, soil_counts_are_consistent,
         tree_species_counts_are_consistent,
     };
 
@@ -400,5 +430,14 @@ mod tests {
         assert!(religion_counts_are_consistent(0, 0, 0, 0));
         assert!(!religion_counts_are_consistent(0, 3, 2, 3));
         assert!(!religion_counts_are_consistent(14, 3, 4, 3));
+    }
+
+    #[test]
+    fn drought_report_requires_cells_and_exact_fallbacks() {
+        assert!(drought_counts_are_consistent(5_414, 3, 1, 1, 1, 3));
+        assert!(drought_counts_are_consistent(0, 0, 0, 0, 0, 0));
+        assert!(!drought_counts_are_consistent(0, 3, 1, 1, 1, 3));
+        assert!(!drought_counts_are_consistent(5_414, 3, 2, 2, 2, 3));
+        assert!(!drought_counts_are_consistent(5_414, 3, 1, 1, 0, 3));
     }
 }

@@ -35,6 +35,11 @@ pub enum Error {
         path: PathBuf,
         source: serde_json::Error,
     },
+    #[error("failed to read NetCDF source {path}: {source}")]
+    Netcdf {
+        path: PathBuf,
+        source: Box<netcdf_reader::Error>,
+    },
     #[error("invalid {field} value {value:?} in {path}: {message}")]
     InvalidField {
         path: PathBuf,

@@ -1,12 +1,13 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType, EdgeEndpoint,
-    ElevationMeters, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
-    InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
-    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, ParentMaterialCode,
-    PotentialVegetation, PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus,
-    SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
+    DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, GeologicEra,
+    GeologicUnitId, HabitatSuitability, InferredGeologicSetting, InferredTreeSpeciesProfile,
+    LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil,
+    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
+    PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
+    SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
     StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
     TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
     Woodland, WorldNodeImport,
@@ -103,6 +104,7 @@ pub struct Settlement {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub drought: DroughtProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -418,6 +420,7 @@ pub fn import_settlements(
         };
         let soil = reconstruct_soil_profile(&settlement.id, settlement.soil)?;
         let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
+        let drought = reconstruct_drought_profile(&settlement.id, settlement.drought)?;
         if ctx
             .db
             .world_node()
@@ -447,6 +450,7 @@ pub fn import_settlements(
             scene_key: settlement.scene_key,
             religion_id: settlement.religious_status.church().faith_id().into(),
             religious_status: settlement.religious_status,
+            drought,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -458,6 +462,31 @@ pub fn import_settlements(
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
     Ok(())
+}
+
+fn reconstruct_drought_profile(
+    settlement_id: &str,
+    profile: DroughtProfile,
+) -> Result<DroughtProfile, String> {
+    let reconstruct = |history: DroughtHistory| {
+        let current = PalmerDroughtSeverityIndex::new(history.current_summer().milli_units())
+            .ok_or_else(|| format!("Settlement {settlement_id} has invalid current PDSI"))?;
+        let mean = PalmerDroughtSeverityIndex::new(history.twenty_year_mean().milli_units())
+            .ok_or_else(|| format!("Settlement {settlement_id} has invalid mean PDSI"))?;
+        DroughtHistory::new(
+            current,
+            mean,
+            history.drought_summers(),
+            history.wet_summers(),
+        )
+        .ok_or_else(|| format!("Settlement {settlement_id} has invalid drought history counts"))
+    };
+    match profile {
+        DroughtProfile::Reconstructed(history) => {
+            reconstruct(history).map(DroughtProfile::Reconstructed)
+        }
+        DroughtProfile::Inferred(history) => reconstruct(history).map(DroughtProfile::Inferred),
+    }
 }
 
 fn reconstruct_soil_profile(
@@ -3986,6 +4015,15 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     age: GeologicEra::Quaternary,
                 }),
                 religious_status,
+                drought: DroughtProfile::Inferred(
+                    DroughtHistory::new(
+                        PalmerDroughtSeverityIndex::new(0).unwrap(),
+                        PalmerDroughtSeverityIndex::new(0).unwrap(),
+                        0,
+                        0,
+                    )
+                    .unwrap(),
+                ),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,

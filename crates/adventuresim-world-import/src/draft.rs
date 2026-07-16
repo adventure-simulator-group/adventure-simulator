@@ -68,3 +68,9 @@ pub(crate) struct GeologySettlementDraft {
     pub(crate) soil: SoilSettlementDraft,
     pub(crate) geology: adventuresim_world_schema::SurfaceGeology,
 }
+
+#[derive(Debug)]
+pub(crate) struct ReligionSettlementDraft {
+    pub(crate) geologic: GeologySettlementDraft,
+    pub(crate) religious_status: adventuresim_world_schema::SettlementReligiousStatus,
+}

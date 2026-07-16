@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 10;
+pub const WORLD_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -131,6 +131,158 @@ impl SettlementReligiousStatus {
             Self::LocallyDetermined { church } => church,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct PalmerDroughtSeverityIndex {
+    milli_units: i16,
+}
+
+impl PalmerDroughtSeverityIndex {
+    pub const MIN: i16 = -15_000;
+    pub const MAX: i16 = 15_000;
+
+    pub const fn new(milli_units: i16) -> Option<Self> {
+        if milli_units >= Self::MIN && milli_units <= Self::MAX {
+            Some(Self { milli_units })
+        } else {
+            None
+        }
+    }
+
+    pub const fn milli_units(self) -> i16 {
+        self.milli_units
+    }
+
+    pub const fn condition(self) -> SummerHydroclimate {
+        match self.milli_units {
+            ..=-4_000 => SummerHydroclimate::ExtremeDrought,
+            -3_999..=-3_000 => SummerHydroclimate::SevereDrought,
+            -2_999..=-2_000 => SummerHydroclimate::ModerateDrought,
+            -1_999..=-1_000 => SummerHydroclimate::MildDrought,
+            -999..=999 => SummerHydroclimate::NearNormal,
+            1_000..=1_999 => SummerHydroclimate::MildlyWet,
+            2_000..=2_999 => SummerHydroclimate::ModeratelyWet,
+            3_000..=3_999 => SummerHydroclimate::VeryWet,
+            _ => SummerHydroclimate::ExtremelyWet,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PalmerDroughtSeverityIndex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            milli_units: i16,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.milli_units).ok_or_else(|| {
+            serde::de::Error::custom(format_args!(
+                "PDSI {} is outside {}..={}",
+                wire.milli_units,
+                Self::MIN,
+                Self::MAX
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SummerHydroclimate {
+    ExtremeDrought,
+    SevereDrought,
+    ModerateDrought,
+    MildDrought,
+    NearNormal,
+    MildlyWet,
+    ModeratelyWet,
+    VeryWet,
+    ExtremelyWet,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct DroughtHistory {
+    current_summer: PalmerDroughtSeverityIndex,
+    twenty_year_mean: PalmerDroughtSeverityIndex,
+    drought_summers: u8,
+    wet_summers: u8,
+}
+
+impl DroughtHistory {
+    pub const WINDOW_YEARS: u8 = 20;
+
+    pub const fn new(
+        current_summer: PalmerDroughtSeverityIndex,
+        twenty_year_mean: PalmerDroughtSeverityIndex,
+        drought_summers: u8,
+        wet_summers: u8,
+    ) -> Option<Self> {
+        if drought_summers <= Self::WINDOW_YEARS
+            && wet_summers <= Self::WINDOW_YEARS
+            && drought_summers + wet_summers <= Self::WINDOW_YEARS
+        {
+            Some(Self {
+                current_summer,
+                twenty_year_mean,
+                drought_summers,
+                wet_summers,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub const fn current_summer(self) -> PalmerDroughtSeverityIndex {
+        self.current_summer
+    }
+
+    pub const fn twenty_year_mean(self) -> PalmerDroughtSeverityIndex {
+        self.twenty_year_mean
+    }
+
+    pub const fn drought_summers(self) -> u8 {
+        self.drought_summers
+    }
+
+    pub const fn wet_summers(self) -> u8 {
+        self.wet_summers
+    }
+}
+
+impl<'de> Deserialize<'de> for DroughtHistory {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            current_summer: PalmerDroughtSeverityIndex,
+            twenty_year_mean: PalmerDroughtSeverityIndex,
+            drought_summers: u8,
+            wet_summers: u8,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.current_summer,
+            wire.twenty_year_mean,
+            wire.drought_summers,
+            wire.wet_summers,
+        )
+        .ok_or_else(|| serde::de::Error::custom("invalid twenty-year drought/wet summer counts"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DroughtProfile {
+    Reconstructed(DroughtHistory),
+    Inferred(DroughtHistory),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -1291,6 +1443,10 @@ pub struct WorldBuildReport {
     pub religion_regions_read: usize,
     pub religion_samples: usize,
     pub religion_fallback_samples: usize,
+    pub drought_grid_cells_read: usize,
+    pub drought_samples: usize,
+    pub drought_neighbor_samples: usize,
+    pub drought_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -1348,18 +1504,20 @@ pub struct SettlementImport {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub drought: DroughtProfile,
     pub scene_key: String,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
-        GeologicUnitId, HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile,
-        LandUseFraction, LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies,
-        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion, ParentMaterialCode,
-        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
-        StoneContentPercent, TreeSpeciesId,
+        CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, EuroVegMapUnitCode,
+        ForestCover, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
+        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetationFormation,
+        SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SummerHydroclimate,
+        TreeSpeciesId,
     };
 
     #[test]
@@ -1371,6 +1529,31 @@ mod tests {
         };
         assert_eq!(status.church(), OfficialReligion::Lutheran);
         assert_eq!(status.church().faith_id(), "lutheran");
+    }
+
+    #[test]
+    fn pdsi_is_bounded_and_classifies_hydroclimate() {
+        assert!(PalmerDroughtSeverityIndex::new(-15_001).is_none());
+        assert_eq!(
+            PalmerDroughtSeverityIndex::new(-4_000).unwrap().condition(),
+            SummerHydroclimate::ExtremeDrought
+        );
+        assert_eq!(
+            PalmerDroughtSeverityIndex::new(0).unwrap().condition(),
+            SummerHydroclimate::NearNormal
+        );
+        assert_eq!(
+            PalmerDroughtSeverityIndex::new(4_000).unwrap().condition(),
+            SummerHydroclimate::ExtremelyWet
+        );
+    }
+
+    #[test]
+    fn drought_history_rejects_impossible_twenty_year_counts() {
+        let normal = PalmerDroughtSeverityIndex::new(0).unwrap();
+        assert!(DroughtHistory::new(normal, normal, 10, 10).is_some());
+        assert!(DroughtHistory::new(normal, normal, 11, 10).is_none());
+        assert!(DroughtHistory::new(normal, normal, 21, 0).is_none());
     }
 
     #[test]
