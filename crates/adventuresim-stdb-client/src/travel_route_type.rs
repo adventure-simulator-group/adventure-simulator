@@ -4,15 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::edge_endpoint_type::EdgeEndpoint;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum TravelCrossing {
-    Bridge,
+pub enum TravelRoute {
+    Land(Option<EdgeEndpoint>),
 
     Ferry,
 }
 
-impl __sdk::InModule for TravelCrossing {
+impl __sdk::InModule for TravelRoute {
     type Module = super::RemoteModule;
 }
