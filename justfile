@@ -234,13 +234,20 @@ generate-db-client: spacetime-version-check
 init-viabundus:
 	@python3 scripts/init_viabundus.py
 
-# Normalise the local Viabundus v2 source CSVs for the 1544 strategic world.
-normalise-viabundus:
-	@python3 scripts/import_viabundus.py
+# Compile all initialized sources into the 1544 strategic world artifact.
+compile-world:
+	@cargo run --package adventuresim-world-import --
 
-# Load the normalised Viabundus road graph into the published local module.
+# Compatibility name for the former Python normalizer.
+normalise-viabundus: compile-world
+
+# Compile and load the world into the published local module.
+load-world server=spacetime_url: spacetime-version-check
+	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+
+# Compatibility name for the former Viabundus-only loader.
 load-viabundus-world server=spacetime_url: spacetime-version-check
-	@python3 scripts/import_viabundus.py --load --server {{server}} --database {{spacetime_module}}
+	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
 build-tactical: generate-db-client

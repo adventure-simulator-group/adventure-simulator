@@ -115,6 +115,7 @@ name = "adventuresim-stdb-module"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-world-schema",
  "log",
  "petname",
  "spacetimedb",
@@ -187,6 +188,26 @@ dependencies = [
  "clap",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "adventuresim-world-import"
+version = "0.1.0"
+dependencies = [
+ "adventuresim-world-schema",
+ "clap",
+ "csv",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "adventuresim-world-schema"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "spacetimedb",
 ]
 
 [[package]]
@@ -3190,6 +3211,27 @@ checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "csv"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde_core",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

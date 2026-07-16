@@ -8,7 +8,10 @@ version 2 (released 25 April 2025), edited by Bart Holterman et al.
 - License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 
 The upstream CSVs are downloaded locally into the Git-ignored `viabundus/`
-directory with `just init-viabundus`. The generated strategic graph contains
+directory with `just init-viabundus`. The native Rust world compiler reads them
+from its source-specific `sources::viabundus` module. `just compile-world`
+writes the validated, schema-versioned artifact to
+`target/world-1544.json`. The generated strategic graph contains
 only the source attributes required to route between settlements in 1544:
 nodes, active land/ferry edges, and settlement metadata, including each
 settlement's approximate population estimate. It is an adapted
@@ -21,3 +24,9 @@ newly created characters start at a random loaded settlement.
 The import does not claim that every represented line is an exact historical
 road. Viabundus' `certainty` value is preserved on each travel edge so gameplay
 and presentation can account for uncertain reconstructions later.
+
+The source parser and world-building orchestration live in
+`adventuresim-world-import`. Source-independent import records live in the
+lightweight `adventuresim-world-schema` crate shared with the strategic
+SpacetimeDB module. Heavy source readers must remain in the native importer so
+they cannot add filesystem or geospatial dependencies to the database module.
