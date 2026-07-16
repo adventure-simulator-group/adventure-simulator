@@ -23,7 +23,7 @@ Or manually:
 spacetime generate \
   --lang rust \
   --out-dir crates/adventuresim-stdb-client/src \
-  --project-path crates/adventuresim-stdb-module
+  --project-path crates/adventuresim-stdb-module && \
 cargo fmt --package adventuresim-stdb-client
 ```
 

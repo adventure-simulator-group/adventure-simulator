@@ -181,7 +181,7 @@ just tactical mission_id="test-123" scene_key="town_a"
   workspace-local directory, for example:
 
   ```powershell
-  $env:CARGO_TARGET_DIR = "$PWD\.cargo-target"
+  $env:CARGO_TARGET_DIR = "$PWD\target\verification"
   just test
   ```
 
