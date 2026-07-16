@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use adventuresim_world_schema::{
-    CompiledWorld, DroughtProfile, SoilProfile, SurfaceGeology, TreeSpeciesProfile,
-    WORLD_SCHEMA_VERSION,
+    CompiledWorld, DroughtProfile, SettlementHydrology, SoilProfile, SurfaceGeology, TravelRoute,
+    TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
 };
 
 use crate::{Error, Result};
@@ -69,6 +69,18 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 "travel edge {} has an invalid slope multiplier",
                 edge.id
             )));
+        }
+        if let TravelRoute::Land(route) = &edge.route {
+            if route
+                .water_crossings
+                .windows(2)
+                .any(|pair| pair[0].position > pair[1].position)
+            {
+                return Err(Error::Validation(format!(
+                    "travel edge {} has unsorted water crossings",
+                    edge.id
+                )));
+            }
         }
     }
 
@@ -220,12 +232,60 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .count(),
             world.settlements.len(),
         )
+        || !hydrology_counts_are_consistent(
+            world.report.hydrology_files_read,
+            world.report.hydrology_features_read,
+            world.report.hydrology_settlement_samples,
+            world.report.hydrology_settlement_fallback_samples,
+            world.report.hydrology_edge_crossings,
+            world.report.hydrology_inferred_ferry_waterways,
+            world
+                .settlements
+                .iter()
+                .filter(|settlement| settlement.hydrology == SettlementHydrology::default())
+                .count(),
+            world
+                .edges
+                .iter()
+                .map(|edge| match &edge.route {
+                    TravelRoute::Land(route) => route.water_crossings.len(),
+                    TravelRoute::Ferry(_) => 0,
+                })
+                .sum(),
+            world
+                .edges
+                .iter()
+                .filter(|edge| matches!(edge.route, TravelRoute::Ferry(_)))
+                .count(),
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hydrology_counts_are_consistent(
+    files: usize,
+    features: usize,
+    samples: usize,
+    fallbacks: usize,
+    crossings: usize,
+    inferred_ferries: usize,
+    actual_fallbacks: usize,
+    actual_crossings: usize,
+    ferries: usize,
+    settlements: usize,
+) -> bool {
+    files > 0
+        && features > 0
+        && samples == settlements
+        && fallbacks == actual_fallbacks
+        && crossings == actual_crossings
+        && inferred_ferries <= ferries
 }
 
 fn drought_counts_are_consistent(
@@ -354,8 +414,8 @@ mod tests {
     use super::potential_vegetation_counts_are_consistent;
     use super::{
         drought_counts_are_consistent, geology_counts_are_consistent,
-        religion_counts_are_consistent, soil_counts_are_consistent,
-        tree_species_counts_are_consistent,
+        hydrology_counts_are_consistent, religion_counts_are_consistent,
+        soil_counts_are_consistent, tree_species_counts_are_consistent,
     };
 
     #[test]
@@ -440,5 +500,21 @@ mod tests {
         assert!(!drought_counts_are_consistent(0, 0, 0, 0, 0, 0));
         assert!(!drought_counts_are_consistent(5_414, 3, 2, 2, 2, 3));
         assert!(!drought_counts_are_consistent(5_414, 3, 1, 1, 0, 3));
+    }
+
+    #[test]
+    fn hydrology_report_requires_source_and_exact_classifications() {
+        assert!(hydrology_counts_are_consistent(
+            2, 30, 3, 1, 4, 1, 1, 4, 2, 3
+        ));
+        assert!(!hydrology_counts_are_consistent(
+            0, 30, 3, 1, 4, 1, 1, 4, 2, 3
+        ));
+        assert!(!hydrology_counts_are_consistent(
+            2, 30, 3, 1, 4, 1, 0, 4, 2, 3
+        ));
+        assert!(!hydrology_counts_are_consistent(
+            2, 30, 3, 1, 4, 3, 1, 4, 2, 3
+        ));
     }
 }

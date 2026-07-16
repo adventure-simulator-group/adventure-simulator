@@ -5,14 +5,15 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType,
-    DroughtHistory, DroughtProfile, EdgeEndpoint, ForestCover, GeologicAgeEvidence, GeologicEra,
-    GeologicLithologyEvidence, IgneousRock, MetamorphicRock, MineralSoilTexture, MixedLithology,
-    NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SedimentaryRock,
-    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate,
-    SoilWaterRegime, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement,
-    WorldNodeImport, WrbReferenceGroup,
+    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, CrossingTraversal,
+    CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
+    FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover, GeologicAgeEvidence,
+    GeologicEra, GeologicLithologyEvidence, IgneousRock, InlandWaterSize, MarineWaterAccess,
+    MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
+    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SettlementReligiousStatus,
+    SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
+    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
+    WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -45,6 +46,8 @@ struct Args {
     religion_regions: PathBuf,
     #[arg(long, default_value_os_t = default_drought_netcdf())]
     drought_netcdf: PathBuf,
+    #[arg(long, default_value_os_t = default_hydrology_directory())]
+    hydrology_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -86,6 +89,7 @@ fn run(args: Args) -> Result<()> {
         &args.geology_geopackage,
         &args.religion_regions,
         &args.drought_netcdf,
+        &args.hydrology_dir,
     )?;
     let output = args
         .output
@@ -190,11 +194,18 @@ fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
 }
 
 fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
-    let route = match edge.route {
-        TravelRoute::Land { bridge } => {
-            json!({ "Land": encode_endpoint(bridge) })
-        }
-        TravelRoute::Ferry => json!({ "Ferry": [] }),
+    let route = match &edge.route {
+        TravelRoute::Land(route) => json!({ "Land": {
+            "bridge": encode_endpoint(route.bridge),
+            "water_crossings": route.water_crossings.iter().map(|crossing| json!({
+                "position": { "permille": crossing.position.get() },
+                "watercourse": encode_crossing_watercourse(crossing.watercourse),
+                "traversal": enum_unit(match crossing.traversal { CrossingTraversal::Bridge => "Bridge", CrossingTraversal::Ford => "Ford" }),
+            })).collect::<Vec<_>>()
+        }}),
+        TravelRoute::Ferry(route) => json!({ "Ferry": {
+            "waterway": encode_ferry_waterway(route.waterway)
+        }}),
     };
     Ok(json!({
         "id": edge.id,
@@ -207,6 +218,37 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "certainty": edge.certainty,
         "section": edge.section,
     }))
+}
+
+fn encode_crossing_watercourse(watercourse: CrossingWatercourse) -> Value {
+    match watercourse {
+        CrossingWatercourse::River(river) => json!({ "River": {
+            "order": { "order": river.order.get() },
+            "persistence": encode_flow_persistence(river.persistence),
+        }}),
+        CrossingWatercourse::Canal(canal) => json!({ "Canal": { "navigable": canal.navigable } }),
+        CrossingWatercourse::Ditch => json!({ "Ditch": [] }),
+    }
+}
+
+fn encode_ferry_waterway(waterway: FerryWaterway) -> Value {
+    match waterway {
+        FerryWaterway::River(river) => json!({ "River": {
+            "order": { "order": river.order.get() },
+            "persistence": encode_flow_persistence(river.persistence),
+        }}),
+        FerryWaterway::InlandWater => json!({ "InlandWater": [] }),
+        FerryWaterway::TidalWater => json!({ "TidalWater": [] }),
+        FerryWaterway::CoastalWater => json!({ "CoastalWater": [] }),
+    }
+}
+
+fn encode_flow_persistence(persistence: FlowPersistence) -> Value {
+    enum_unit(match persistence {
+        FlowPersistence::Perennial => "Perennial",
+        FlowPersistence::Intermittent => "Intermittent",
+        FlowPersistence::Ephemeral => "Ephemeral",
+    })
 }
 
 fn encode_endpoint(endpoint: Option<EdgeEndpoint>) -> Value {
@@ -236,8 +278,41 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "geology": encode_geology(&settlement.geology),
         "religious_status": encode_religious_status(settlement.religious_status),
         "drought": encode_drought(settlement.drought),
+        "hydrology": encode_hydrology(settlement.hydrology),
         "scene_key": settlement.scene_key,
     }))
+}
+
+fn encode_hydrology(hydrology: adventuresim_world_schema::SettlementHydrology) -> Value {
+    let distance =
+        |value: adventuresim_world_schema::WaterDistanceMeters| json!({ "meters": value.get() });
+    let flowing = match hydrology.flowing {
+        Some(FlowingWaterAccess::River(river)) => json!({ "some": { "River": {
+            "distance": distance(river.distance), "order": { "order": river.order.get() },
+            "persistence": encode_flow_persistence(river.persistence)
+        }}}),
+        Some(FlowingWaterAccess::RiverAndCanal(access)) => json!({ "some": { "RiverAndCanal": {
+            "river": { "distance": distance(access.river.distance), "order": { "order": access.river.order.get() }, "persistence": encode_flow_persistence(access.river.persistence) },
+            "canal_distance": distance(access.canal_distance), "canal_navigable": access.canal_navigable
+        }}}),
+        None => json!({ "none": [] }),
+    };
+    let inland = match hydrology.inland {
+        Some(inland) => {
+            json!({ "some": { "distance": distance(inland.distance), "size": enum_unit(match inland.size {
+                InlandWaterSize::Pond => "Pond", InlandWaterSize::Lake => "Lake", InlandWaterSize::GreatLake => "GreatLake"
+            })}})
+        }
+        None => json!({ "none": [] }),
+    };
+    let marine = match hydrology.marine {
+        Some(MarineWaterAccess::Tidal(value)) => json!({ "some": { "Tidal": distance(value) }}),
+        Some(MarineWaterAccess::OpenCoast(value)) => {
+            json!({ "some": { "OpenCoast": distance(value) }})
+        }
+        None => json!({ "none": [] }),
+    };
+    json!({ "flowing": flowing, "inland": inland, "marine": marine })
 }
 
 fn encode_drought(profile: DroughtProfile) -> Value {
@@ -693,6 +768,10 @@ fn default_drought_netcdf() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/climate/owda.nc")
 }
 
+fn default_hydrology_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/hydrology")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -704,10 +783,10 @@ mod tests {
         DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
         ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
         GeologicUnitId, HabitatSuitability, IgneousRock, InferredGeologicSetting,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        MappedSoilProfile, MappedSurfaceGeology, MineralSoil, MineralSoilTexture,
-        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
-        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
+        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile,
+        MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology, MineralSoil,
+        MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
+        OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
         PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
         SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
         StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
@@ -726,9 +805,10 @@ mod tests {
             id: 1,
             from_node_id: 2,
             to_node_id: 3,
-            route: TravelRoute::Land {
+            route: TravelRoute::Land(LandRoute {
                 bridge: Some(EdgeEndpoint::To),
-            },
+                water_crossings: Vec::new(),
+            }),
             toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,
@@ -738,7 +818,7 @@ mod tests {
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(
             batches[0][0]["route"],
-            serde_json::json!({ "Land": { "some": { "To": [] } } })
+            serde_json::json!({ "Land": { "bridge": { "some": { "To": [] } }, "water_crossings": [] } })
         );
         assert_eq!(
             batches[0][0]["toll"],
@@ -980,6 +1060,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            hydrology: adventuresim_world_schema::SettlementHydrology::default(),
             scene_key: "village".into(),
         }
     }

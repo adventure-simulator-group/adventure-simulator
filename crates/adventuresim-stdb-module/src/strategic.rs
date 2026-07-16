@@ -1,16 +1,16 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
-    DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, GeologicEra,
-    GeologicUnitId, HabitatSuitability, InferredGeologicSetting, InferredTreeSpeciesProfile,
-    LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil,
-    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
-    PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
-    SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport,
+    DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway, ForestCover,
+    GeologicEra, GeologicUnitId, HabitatSuitability, InferredGeologicSetting,
+    InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LandWaterCrossing,
+    MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
+    ParentMaterialCode, PotentialVegetation, PotentialVegetationFormation, SettlementHydrology,
+    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -105,6 +105,7 @@ pub struct Settlement {
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
+    pub hydrology: SettlementHydrology,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -143,6 +144,8 @@ pub struct TravelEdge {
     pub to_node_id: u64,
     pub kind: String,
     pub bridge_at: Option<EdgeEndpoint>,
+    pub water_crossings: Vec<LandWaterCrossing>,
+    pub ferry_waterway: Option<FerryWaterway>,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -280,9 +283,9 @@ pub fn import_travel_edges(
                 edge.id
             ));
         }
-        let (kind, bridge_at) = match edge.route {
-            TravelRoute::Land { bridge } => ("land", bridge),
-            TravelRoute::Ferry => ("ferry", None),
+        let (kind, bridge_at, water_crossings, ferry_waterway) = match edge.route {
+            TravelRoute::Land(route) => ("land", route.bridge, route.water_crossings, None),
+            TravelRoute::Ferry(route) => ("ferry", None, Vec::new(), Some(route.waterway)),
         };
         let row = TravelEdge {
             id: edge.id,
@@ -290,6 +293,8 @@ pub fn import_travel_edges(
             to_node_id: edge.to_node_id,
             kind: kind.into(),
             bridge_at,
+            water_crossings,
+            ferry_waterway,
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
@@ -451,6 +456,7 @@ pub fn import_settlements(
             religion_id: settlement.religious_status.church().faith_id().into(),
             religious_status: settlement.religious_status,
             drought,
+            hydrology: settlement.hydrology,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -4024,6 +4030,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     )
                     .unwrap(),
                 ),
+                hydrology: SettlementHydrology::default(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,

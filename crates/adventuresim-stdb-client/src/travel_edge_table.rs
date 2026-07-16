@@ -3,6 +3,8 @@
 
 #![allow(unused, clippy::all)]
 use super::edge_endpoint_type::EdgeEndpoint;
+use super::ferry_waterway_type::FerryWaterway;
+use super::land_water_crossing_type::LandWaterCrossing;
 use super::travel_edge_type::TravelEdge;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

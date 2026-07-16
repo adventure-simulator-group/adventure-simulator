@@ -4,17 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::ferry_route_type::FerryRoute;
-use super::land_route_type::LandRoute;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum TravelRoute {
-    Land(LandRoute),
+#[derive(Copy, Eq, Hash)]
+pub enum FlowPersistence {
+    Perennial,
 
-    Ferry(FerryRoute),
+    Intermittent,
+
+    Ephemeral,
 }
 
-impl __sdk::InModule for TravelRoute {
+impl __sdk::InModule for FlowPersistence {
     type Module = super::RemoteModule;
 }

@@ -4,17 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::ferry_route_type::FerryRoute;
-use super::land_route_type::LandRoute;
+use super::flowing_water_access_type::FlowingWaterAccess;
+use super::inland_water_access_type::InlandWaterAccess;
+use super::marine_water_access_type::MarineWaterAccess;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum TravelRoute {
-    Land(LandRoute),
-
-    Ferry(FerryRoute),
+pub struct SettlementHydrology {
+    pub flowing: Option<FlowingWaterAccess>,
+    pub inland: Option<InlandWaterAccess>,
+    pub marine: Option<MarineWaterAccess>,
 }
 
-impl __sdk::InModule for TravelRoute {
+impl __sdk::InModule for SettlementHydrology {
     type Module = super::RemoteModule;
 }
