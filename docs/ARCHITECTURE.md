@@ -61,8 +61,10 @@ batches cannot mutate an already-loaded world.
 The strategic browser is server-authoritative. Browsers submit discrete commands
 to `strategic-web` over authenticated HTTP and never connect to SpacetimeDB
 directly. `strategic-web` owns a single generated-client WebSocket subscription
-to SpacetimeDB and fans database changes out to authenticated pages as Datastar
-server-sent events.
+to the mutable tables that invalidate strategic UI fragments and fans those
+database changes out to authenticated pages as Datastar server-sent events.
+Large static world tables, including settlements, routes, aliases, and source
+descriptions, stay out of this subscription and are queried on demand.
 
 Browser-facing deployments terminate HTTPS at a reverse proxy and negotiate
 HTTP/2 or HTTP/3. Multiplexing prevents the long-lived Datastar SSE stream from

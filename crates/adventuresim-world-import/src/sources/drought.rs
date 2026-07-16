@@ -111,6 +111,8 @@ fn finish(
         road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
+        settlement_aliases: draft.settlement_aliases,
+        settlement_descriptions: draft.settlement_descriptions,
         settlements,
         report: draft.report,
     })
@@ -525,6 +527,8 @@ mod tests {
             road_types: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
+            settlement_aliases: Vec::new(),
+            settlement_descriptions: Vec::new(),
             settlements: Vec::new(),
             report: Default::default(),
         };

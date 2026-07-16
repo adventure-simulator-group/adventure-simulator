@@ -10,12 +10,12 @@ use adventuresim_world_schema::{
     FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover, GeologicAgeEvidence,
     GeologicEra, GeologicLithologyEvidence, IgneousRock, InlandWaterSize, MarineWaterAccess,
     MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SettlementReligiousStatus,
-    SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
-    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
-    WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
-    CompiledWorld, EdgeEndpoint, SettlementAliasImport, SettlementDescriptionImport,
-    SettlementDescriptionKind, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
+    PotentialVegetationFormation, SedimentaryRock, SettlementAliasImport,
+    SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
+    SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
+    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport,
+    WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -193,17 +193,26 @@ fn serialize_batches<T>(
     let rows = rows.iter().map(encode).collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
-    let mut characters = 2;
+    let mut code_units = 2;
     for row in rows {
-        let row_characters = row.to_string().chars().count() + usize::from(!batch.is_empty());
+        let encoded = row.to_string();
+        let row_code_units = encoded.encode_utf16().count();
+        if row_code_units + 2 > MAX_REDUCER_ARGUMENT_CHARS {
+            return Err(Error::Validation(format!(
+                "a serialized import row requires {} UTF-16 code units; maximum is {}",
+                row_code_units + 2,
+                MAX_REDUCER_ARGUMENT_CHARS
+            )));
+        }
+        let row_code_units = row_code_units + usize::from(!batch.is_empty());
         if !batch.is_empty()
             && (batch.len() == batch_size
-                || characters + row_characters > MAX_REDUCER_ARGUMENT_CHARS)
+                || code_units + row_code_units > MAX_REDUCER_ARGUMENT_CHARS)
         {
             batches.push(std::mem::take(&mut batch));
-            characters = 2;
+            code_units = 2;
         }
-        characters += row_characters;
+        code_units += row_code_units;
         batch.push(row);
     }
     if !batch.is_empty() {
@@ -853,27 +862,20 @@ mod tests {
         DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
         ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
         GeologicUnitId, HabitatSuitability, IgneousRock, InferredGeologicSetting,
-        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile,
+        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
         MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology, MineralSoil,
         MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
         OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-        PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
-        SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-        StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-        TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
-        Woodland, WrbReferenceGroup,
+        PotentialVegetationFormation, SettlementDescriptionImport, SettlementDescriptionKind,
+        SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
+        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
     };
 
     use super::{
-        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement, encode_travel_edge,
-        serialize_batches,
-        EdgeEndpoint, LanguageCode, SettlementDescriptionImport, SettlementDescriptionKind,
-        TravelEdgeImport, TravelRoute,
-    };
-
-    use super::{
-        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement_description,
-        encode_travel_edge, serialize_batches,
+        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
+        encode_settlement_description, encode_travel_edge, serialize_batches,
     };
 
     #[test]
@@ -1160,10 +1162,20 @@ mod tests {
         assert!(batches.iter().all(|batch| {
             serde_json::Value::Array(batch.clone())
                 .to_string()
-                .chars()
+                .encode_utf16()
                 .count()
                 <= MAX_REDUCER_ARGUMENT_CHARS
         }));
+    }
+
+    #[test]
+    fn rejects_a_single_row_that_exceeds_the_windows_command_line_bound() {
+        let row = "😀".repeat(MAX_REDUCER_ARGUMENT_CHARS / 2);
+        let error = serialize_batches(&[row], 100, |row| {
+            serde_json::to_value(row).map_err(adventuresim_world_import::Error::from)
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("UTF-16 code units"));
     }
 
     #[test]

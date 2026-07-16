@@ -30,4 +30,5 @@ fn parses_settlement_enrichment_into_domain_types() {
     );
     assert_eq!(world.report.settlement_aliases, 1);
     assert_eq!(world.report.settlement_descriptions, 2);
+    assert_eq!(world.report.deferred_settlement_descriptions["bridge"], 1);
 }

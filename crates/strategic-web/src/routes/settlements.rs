@@ -161,14 +161,20 @@ async fn show_settlement_location(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let aliases = aliases.unwrap_or_else(|error| {
+        tracing::warn!(%error, settlement_id = %id, "failed to load settlement aliases");
+        Vec::new()
+    });
+    let descriptions = descriptions.unwrap_or_else(|error| {
+        tracing::warn!(%error, settlement_id = %id, "failed to load settlement descriptions");
+        Vec::new()
+    });
     let mut aliases: Vec<_> = aliases
-        .unwrap_or_default()
         .into_iter()
         .filter(|alias| alias.settlement_id == id)
         .collect();
     aliases.sort_by(|left, right| left.id.cmp(&right.id));
     let mut descriptions: Vec<_> = descriptions
-        .unwrap_or_default()
         .into_iter()
         .filter(|description| description.settlement_id == id)
         .collect();
