@@ -9,6 +9,7 @@ use super::forest_cover_type::ForestCover;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::soil_profile_type::SoilProfile;
+use super::surface_geology_type::SurfaceGeology;
 use super::tree_species_profile_type::TreeSpeciesProfile;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -26,6 +27,7 @@ pub struct Settlement {
     pub potential_vegetation: PotentialVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
+    pub geology: SurfaceGeology,
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,

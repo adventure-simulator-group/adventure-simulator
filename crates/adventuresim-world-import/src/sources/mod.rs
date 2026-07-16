@@ -3,6 +3,7 @@
 
 pub mod elevation;
 pub mod forest_cover;
+pub mod geology;
 pub mod land_use;
 pub mod potential_vegetation;
 pub mod soil;

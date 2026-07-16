@@ -18,6 +18,11 @@ pub enum Error {
     },
     #[error("failed to read dBase table {path}: {source}")]
     Dbase { path: PathBuf, source: dbase::Error },
+    #[error("failed to read GeoPackage {path}: {source}")]
+    GeoPackage {
+        path: PathBuf,
+        source: rusqlite::Error,
+    },
     #[error("failed to read ZIP archive {path}: {source}")]
     Archive {
         path: PathBuf,
