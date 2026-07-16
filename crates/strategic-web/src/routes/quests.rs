@@ -17,8 +17,8 @@ use super::{
 };
 use crate::session::Session;
 use crate::spacetimedb::{
-    BattleLootItem, BattleResult, Character, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
+    AutoresolveReport, BattleLootItem, BattleResult, Character, InventoryQuantityTarget,
+    ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
 };
 use crate::templates::quest::{
     quest_location_base_page, quest_location_map_page, quest_location_page,
@@ -420,6 +420,20 @@ async fn render_quest_location(
     let resolved = party
         .as_ref()
         .is_some_and(|party| results.iter().any(|result| result.party_id == party.id));
+    let autoresolve_report = if let Some(party) = party.as_ref() {
+        state
+            .db
+            .query::<AutoresolveReport>(&format!(
+                "SELECT * FROM autoresolve_report WHERE quest_id = '{}' AND party_id = '{}'",
+                quest.id, party.id
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
     let loot: Vec<BattleLootItem> = state
         .db
         .query(&format!(
@@ -484,6 +498,7 @@ async fn render_quest_location(
             &party_members,
             can_fight,
             resolved,
+            autoresolve_report.as_ref(),
             logged_in_as,
             session.theme(),
         ),
@@ -496,6 +511,7 @@ async fn render_quest_location(
             can_control,
             can_fight,
             resolved,
+            autoresolve_report.as_ref(),
             logged_in_as,
             session.theme(),
         ),
@@ -505,6 +521,7 @@ async fn render_quest_location(
             &party_members,
             can_fight,
             resolved,
+            autoresolve_report.as_ref(),
             &loot,
             &pooled,
             stake,

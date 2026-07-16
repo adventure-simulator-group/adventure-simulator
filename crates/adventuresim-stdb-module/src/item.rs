@@ -89,6 +89,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Populating items...");
 
     define_item(ctx, "torch", 0.5);
+    define_item(ctx, "arrow", 0.05);
     ctx.db.item().insert(Item {
         id: "gold_coin".into(),
         weight: 0.01,

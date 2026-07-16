@@ -5,7 +5,8 @@ use maud::{Markup, html};
 use super::{empty_state, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, Quest,
+    AutoresolveReport, BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
+    Quest,
 };
 use crate::{
     spacetimedb::Character,
@@ -21,6 +22,7 @@ pub fn quest_location_base_page(
     party_members: &[Character],
     can_fight: bool,
     resolved: bool,
+    autoresolve_report: Option<&AutoresolveReport>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -28,7 +30,14 @@ pub fn quest_location_base_page(
         aside class="left-sidebar" {
             (sidebar_section("Location", html! { p { (&quest.location_description) } }))
         }
-        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
+        (quest_location_center(
+            quest,
+            active_character,
+            party_members,
+            can_fight,
+            resolved,
+            autoresolve_report,
+        ))
         aside class="right-sidebar" aria-label="Location details" {}
     };
     super::quest_location_layout_with_session(
@@ -51,6 +60,7 @@ pub fn quest_location_map_page(
     can_travel: bool,
     can_fight: bool,
     resolved: bool,
+    autoresolve_report: Option<&AutoresolveReport>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -61,7 +71,14 @@ pub fn quest_location_map_page(
             selected_id,
             &format!("/locations/quest/{}/map", quest.id),
         ))
-        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
+        (quest_location_center(
+            quest,
+            active_character,
+            party_members,
+            can_fight,
+            resolved,
+            autoresolve_report,
+        ))
         (map_destination_detail(selected, can_travel, false, None))
     };
     super::quest_location_layout_with_session(
@@ -81,6 +98,7 @@ fn quest_location_center(
     party_members: &[Character],
     can_fight: bool,
     resolved: bool,
+    autoresolve_report: Option<&AutoresolveReport>,
 ) -> Markup {
     html! {
         main class="center-content settlement-main quest-location-main" {
@@ -107,6 +125,24 @@ fn quest_location_center(
                 }
                 }
             }
+            @if let Some(report) = autoresolve_report {
+                section class="autoresolve-report" aria-label="Autoresolve report" {
+                    h2 { "Combat summary" }
+                    p {
+                        strong { (report.victor) }
+                        " - Seed " code { (report.seed) }
+                    }
+                    p { (&report.summary) }
+                    details {
+                        summary { "Combat log (" (report.log.len()) " exchanges)" }
+                        ol {
+                            @for entry in &report.log {
+                                li { (entry) }
+                            }
+                        }
+                    }
+                }
+            }
             (settlement_chat_area(&quest.title, active_character))
         }
     }
@@ -119,6 +155,7 @@ pub fn quest_location_page(
     party_members: &[Character],
     can_fight: bool,
     resolved: bool,
+    autoresolve_report: Option<&AutoresolveReport>,
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
@@ -162,7 +199,14 @@ pub fn quest_location_page(
             }))
         }
 
-        (quest_location_center(quest, active_character, party_members, can_fight, resolved))
+        (quest_location_center(
+            quest,
+            active_character,
+            party_members,
+            can_fight,
+            resolved,
+            autoresolve_report,
+        ))
 
         aside class="right-sidebar" {
             (sidebar_section("Party inventory", html! {

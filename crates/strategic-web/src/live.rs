@@ -16,7 +16,8 @@ use std::{
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey};
 use adventuresim_stdb_client::*;
 use adventuresim_stdb_client::{
-    DbConnection, battle_loot_item_table::BattleLootItemTableAccess,
+    DbConnection, autoresolve_report_table::AutoresolveReportTableAccess,
+    battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
     character_attributes_table::CharacterAttributesTableAccess,
@@ -150,6 +151,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
         invalidate_on_changes!(state.0._connection.db.battle_result());
+        invalidate_on_changes!(state.0._connection.db.autoresolve_report());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
         invalidate_on_changes!(state.0._connection.db.battle_participant());
         invalidate_on_changes!(state.0._connection.db.tactical_server_request());
