@@ -191,13 +191,31 @@ Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low
 ## Strategic autoresolve
 
 The strategic autoresolver is a bounded abstract battle built from the pure
-melee and ranged exchanges in `adventuresim-core`. Each round gives every
-capable combatant an opportunity to attack a randomly selected capable enemy.
-Targeted body part, hit precision, active defense, and occasional flanking are
-drawn from a deterministic seeded random stream. Pain, blood loss, existing
-strategic incapacitation, and temporary imbalance can remove a combatant from
-the fight. The battle ends when one side is incapacitated or after 256 rounds,
-in which case it is a stalemate.
+melee and ranged exchanges in `adventuresim-core`. It begins with two symmetric
+pre-engagement phases:
+
+1. Every melee combatant makes a contested Stealth attempt against a randomly
+   selected enemy's average Eyesight and Hearing. Both checks add a seeded
+   random value from 0 to 5. Success grants one full-precision melee attack
+   against the flat-footed target, with no active or facing defense.
+2. Ranged combatants fire while enemy melee combatants close. A ranged weapon
+   gains one opening volley per five meters of weapon reach, capped at eight
+   opening volleys. Melee combatants form a screen at two-meter intervals. If
+   the closing side has surplus melee combatants able to bypass that screen,
+   they must travel a semicircle around it; the screen's one-meter radius per
+   member is added to the approach distance before counting volleys.
+
+During the main engagement, opposing melee combatants pair off. A melee screen
+therefore forces an equal number of enemy melee combatants to target it, while
+surplus melee combatants may reach exposed ranged combatants. The same
+formation, approach, and engagement rules apply to allies and enemies.
+
+Each main round gives every capable combatant an opportunity to attack a valid
+enemy. Targeted body part, hit precision, active defense, and occasional
+flanking are drawn from a deterministic seeded random stream. Pain, blood loss,
+existing strategic incapacitation, and temporary imbalance can remove a
+combatant from the fight. The battle ends when one side is incapacitated or
+after 256 main rounds, in which case it is a stalemate.
 
 Autoresolve persists only the final player wounds and blood loss. Its rounds,
 enemy state, imbalance, and individual exchanges are transient values and do
