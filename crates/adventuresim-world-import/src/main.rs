@@ -24,6 +24,8 @@ struct Args {
     elevation_dir: PathBuf,
     #[arg(long, default_value_os_t = default_land_use_directory())]
     land_use_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_forest_cover_directory())]
+    forest_cover_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -58,6 +60,7 @@ fn run(args: Args) -> Result<()> {
         &args.viabundus_dir,
         &args.elevation_dir,
         &args.land_use_dir,
+        &args.forest_cover_dir,
     )?;
     let output = args
         .output
@@ -227,6 +230,10 @@ fn default_elevation_directory() -> PathBuf {
 
 fn default_land_use_directory() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/historical-land-use")
+}
+
+fn default_forest_cover_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/forest-cover")
 }
 
 fn default_output(year: i32) -> PathBuf {

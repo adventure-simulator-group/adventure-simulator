@@ -7,14 +7,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_schema::{
-    CompiledWorld, LandUseFraction, LandUseProfile, SettlementImport, SourceProvenance,
-    WORLD_SCHEMA_VERSION, WorldMetadata,
-};
+use adventuresim_world_schema::{LandUseFraction, LandUseProfile, SourceProvenance};
 
 use crate::{
     Error, Result,
-    draft::{ElevatedSettlementDraft, WorldDraft},
+    draft::{ElevatedSettlementDraft, LandUseSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "History Database of the Global Environment 3.2.1";
@@ -64,7 +61,7 @@ const RASTERS: [(&str, &str, LandUseComponent); 7] = [
 pub(crate) fn enrich(
     mut draft: WorldDraft<ElevatedSettlementDraft>,
     directory: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<LandUseSettlementDraft>> {
     if !(START_YEAR..=END_YEAR).contains(&draft.year) {
         return Err(Error::Validation(format!(
             "HYDE interpolation supports {START_YEAR}..={END_YEAR}, not {}",
@@ -73,7 +70,15 @@ pub(crate) fn enrich(
     }
     if draft.settlements.is_empty() {
         draft.sources.push(source_provenance());
-        return Ok(compiled_world(draft, Vec::new()));
+        return Ok(WorldDraft {
+            year: draft.year,
+            sources: draft.sources,
+            road_types: draft.road_types,
+            nodes: draft.nodes,
+            edges: draft.edges,
+            settlements: Vec::new(),
+            report: draft.report,
+        });
     }
     let coordinates: Vec<_> = draft
         .settlements
@@ -112,20 +117,7 @@ pub(crate) fn enrich(
                     fallback_profile(&elevated)
                 }
             };
-            let settlement = elevated.settlement;
-            Ok(SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            })
+            Ok(LandUseSettlementDraft { elevated, land_use })
         })
         .collect::<Result<Vec<_>>>()?;
     draft.sources.push(source_provenance());
@@ -133,7 +125,15 @@ pub(crate) fn enrich(
     draft.report.land_use_samples = settlements.len();
     draft.report.land_use_fallback_samples = fallback_samples;
     draft.report.land_use_normalized_samples = normalized_samples;
-    Ok(compiled_world(draft, settlements))
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
+        nodes: draft.nodes,
+        edges: draft.edges,
+        settlements,
+        report: draft.report,
+    })
 }
 
 fn source_provenance() -> SourceProvenance {
@@ -141,24 +141,6 @@ fn source_provenance() -> SourceProvenance {
         name: SOURCE_NAME.into(),
         url: SOURCE_URL.into(),
         license: SOURCE_LICENSE.into(),
-    }
-}
-
-fn compiled_world(
-    draft: WorldDraft<ElevatedSettlementDraft>,
-    settlements: Vec<SettlementImport>,
-) -> CompiledWorld {
-    CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
-        nodes: draft.nodes,
-        edges: draft.edges,
-        settlements,
-        report: draft.report,
     }
 }
 

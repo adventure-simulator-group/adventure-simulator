@@ -5,7 +5,65 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 4;
+pub const WORLD_SCHEMA_VERSION: u32 = 5;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct CanopyDensity {
+    percent: u8,
+}
+
+impl CanopyDensity {
+    pub const fn new(percent: u8) -> Option<Self> {
+        if percent >= 1 && percent <= 100 {
+            Some(Self { percent })
+        } else {
+            None
+        }
+    }
+
+    pub const fn percent(self) -> u8 {
+        self.percent
+    }
+}
+
+impl<'de> Deserialize<'de> for CanopyDensity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            percent: u8,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.percent).ok_or_else(|| {
+            serde::de::Error::custom("wooded canopy density must be 1..=100 percent")
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DominantLeafType {
+    Broadleaf,
+    Coniferous,
+    Mixed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct Woodland {
+    pub density: CanopyDensity,
+    pub dominant: DominantLeafType,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ForestCover {
+    Open,
+    Wooded(Woodland),
+}
 
 pub const LAND_USE_BASIS_POINTS: u16 = 10_000;
 
@@ -279,6 +337,9 @@ pub struct WorldBuildReport {
     pub land_use_samples: usize,
     pub land_use_fallback_samples: usize,
     pub land_use_normalized_samples: usize,
+    pub forest_tiles_read: usize,
+    pub forest_samples: usize,
+    pub forest_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -330,6 +391,7 @@ pub struct SettlementImport {
     pub population_estimate: u32,
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
+    pub forest_cover: ForestCover,
     pub scene_key: String,
     pub religion_id: String,
 }
@@ -337,7 +399,8 @@ pub struct SettlementImport {
 #[cfg(test)]
 mod tests {
     use super::{
-        ElevationBand, ElevationMeters, HumanLandUseIntensity, LandUseFraction, LandUseProfile,
+        CanopyDensity, ElevationBand, ElevationMeters, ForestCover, HumanLandUseIntensity,
+        LandUseFraction, LandUseProfile,
     };
 
     #[test]
@@ -391,5 +454,14 @@ mod tests {
             r#"{"cropland":{"basis_points":3000},"grazing":{"basis_points":2000},"built_up":{"basis_points":100},"natural":{"basis_points":4800}}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn forest_cover_cannot_attach_zero_density_to_woodland() {
+        assert!(CanopyDensity::new(0).is_none());
+        assert!(CanopyDensity::new(101).is_none());
+        assert!(CanopyDensity::new(50).is_some());
+        assert!(serde_json::from_str::<CanopyDensity>(r#"{"percent":0}"#).is_err());
+        assert_eq!(ForestCover::Open, ForestCover::Open);
     }
 }
