@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = "adventuresim.chat-height";
-  const MIN_HEIGHT = 128;
+  const DESKTOP_MIN_HEIGHT = 128;
+  const MOBILE_MIN_HEIGHT = 160;
   const MIN_STAGE_HEIGHT = 128;
   const CHAT_BOTTOM_GAP = 5;
   const KEYBOARD_STEP = 24;
@@ -10,12 +11,14 @@
   const container = chat?.closest(".settlement-main");
   if (!chat || !handle || !container) return;
 
-  const maximumHeight = () => Math.max(MIN_HEIGHT, container.clientHeight - MIN_STAGE_HEIGHT - CHAT_BOTTOM_GAP);
-  const clampHeight = (height) => Math.min(maximumHeight(), Math.max(MIN_HEIGHT, height));
+  const minimumHeight = () => window.matchMedia("(max-width: 768px)").matches ? MOBILE_MIN_HEIGHT : DESKTOP_MIN_HEIGHT;
+  const maximumHeight = () => Math.max(minimumHeight(), container.clientHeight - MIN_STAGE_HEIGHT - CHAT_BOTTOM_GAP);
+  const clampHeight = (height) => Math.min(maximumHeight(), Math.max(minimumHeight(), height));
 
   const setHeight = (height, persist = true) => {
     const next = Math.round(clampHeight(height));
     chat.style.setProperty("--chat-height", `${next}px`);
+    handle.setAttribute("aria-valuemin", String(minimumHeight()));
     handle.setAttribute("aria-valuenow", String(next));
     handle.setAttribute("aria-valuemax", String(Math.round(maximumHeight())));
     if (persist) localStorage.setItem(STORAGE_KEY, String(next));
