@@ -20,7 +20,8 @@ before reading the next. A settlement receives a required `ElevationMeters`
 value; `ElevationBand` is derived from it rather than redundantly stored, so the
 two can never contradict each other. There is no unknown variant. Invalid or
 void source pixels are replaced by the nearest plausible pixel within eight
-raster cells, then by sea level if the local window is entirely void. The
+raster cells of the same source tile, then by sea level if that local window is
+entirely void. The
 build report counts these fallbacks. The verified 1544 build sampled all 6,041
 settlements without using a fallback.
 

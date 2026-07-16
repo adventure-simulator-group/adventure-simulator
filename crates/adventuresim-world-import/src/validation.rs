@@ -129,10 +129,43 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .iter()
                 .filter(|edge| edge.toll.is_some())
                 .count()
+        || !elevation_counts_are_consistent(
+            world.report.elevation_tiles_read,
+            world.report.elevation_samples,
+            world.report.elevation_fallback_samples,
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn elevation_counts_are_consistent(
+    tiles: usize,
+    samples: usize,
+    fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks <= samples
+        && ((settlements == 0 && tiles == 0)
+            || (settlements > 0 && tiles > 0 && tiles <= settlements))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::elevation_counts_are_consistent;
+
+    #[test]
+    fn elevation_report_requires_complete_consistent_counts() {
+        assert!(elevation_counts_are_consistent(2, 3, 1, 3));
+        assert!(elevation_counts_are_consistent(0, 0, 0, 0));
+        assert!(!elevation_counts_are_consistent(0, 3, 0, 3));
+        assert!(!elevation_counts_are_consistent(2, 2, 0, 3));
+        assert!(!elevation_counts_are_consistent(2, 3, 4, 3));
+        assert!(!elevation_counts_are_consistent(4, 3, 0, 3));
+    }
 }
