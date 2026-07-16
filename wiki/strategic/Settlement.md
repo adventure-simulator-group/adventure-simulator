@@ -8,7 +8,7 @@ Services show up at the top, above the list of items in their own list. Each ser
 
 In the center of the screen, clients may render a 3D window of the NPC representing the service. They can have dialogue that plays, like a greeting when you open their menu, a goodbye when you leave it, and comments as you interact with their menu. But this should never interfere with the gameplay. You don't have to click through dialogue in order to buy something, it just plays in the background as you use their service. This is not important for the MVP, and later down the line this would also be a great opportunity to add voice acting and mocap to give the world some personality.
 
-The shared chat panel can be resized vertically from its top edge. Its height is shared across settlement and quest-location pages and remembered by the client.
+The shared chat panel floats just above the bottom of the center view with a translucent background and can be resized vertically from its top edge. Its height is shared across settlement and quest-location pages and remembered by the client. Local, Party, Settlement, direct-message, Guild, and Info messages share one chronological stream rather than separate tabs. A row of colored dot toggles filters each channel: Local is white, Party blue, Settlement yellow, direct messages purple, Guild green, and Info grey. Info is reserved for game notices such as inventory and currency changes.
 > Halbe: The inspiration for this is the Maiden in Black from Demon's Souls, who recites an incantation while you are in the level-up menu.
 
 # Social

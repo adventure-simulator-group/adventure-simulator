@@ -1718,8 +1718,9 @@ fn incapacitation_wheel(character_id: u64) -> Markup {
     }
 }
 
-/// Layout-only chat panel matching the UX prototype. Channels, message history,
-/// and sending are deliberately disabled until the strategic chat backend exists.
+/// Shared chat panel. Local conversations are live; the remaining channel
+/// filters are present so their messages can join the same stream as their
+/// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
     chat_area(location, active_character, None, None)
 }
@@ -1761,27 +1762,31 @@ fn chat_area(
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
                 span aria-hidden="true" {}
             }
-            div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
-                button type="button" class="settlement-chat-tab active" {
-                    "Local"
-                }
-                button type="button" class="settlement-chat-tab" disabled
-                    title="TODO: settlement chat requires real-time message delivery" {
-                    "Settlement"
-                }
-                button type="button" class="settlement-chat-tab" disabled
-                    title="TODO: guild chat requires guild membership and real-time message delivery" {
-                    "Guild"
+            div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
+                @for (channel, label) in [
+                    ("local", "Local"),
+                    ("party", "Party"),
+                    ("settlement", "Settlement"),
+                    ("dm", "DMs"),
+                    ("guild", "Guild"),
+                    ("info", "Info"),
+                ] {
+                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) {
+                        input type="checkbox" checked data-chat-filter=(channel);
+                        span { (label) }
+                    }
                 }
             }
             div class="settlement-chat-messages" aria-live="polite" {
-                @if local_context.is_none() { div class="chat-system-message" {
+                @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
                     span class="chat-timestamp" { "[--:--]" }
                     " Select a local character or settlement service to begin talking."
                 } }
             }
             div class="settlement-chat-composer" {
-                input type="text" name="body" disabled[local_context.is_none()] placeholder=(format!("Message {location}"));
+                input type="text" name="body" disabled[local_context.is_none()]
+                    aria-label="Local message"
+                    placeholder=(format!("Message {location} (Local)"));
                 button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
                     aria-label="Send message" {
                     "➤"
@@ -2006,5 +2011,19 @@ mod tests {
         assert!(markup.contains("value=\"underprovisioned\""));
         assert!(!markup.contains("Provision and travel"));
         assert!(!markup.contains("Provision forecast"));
+    }
+
+    #[test]
+    fn chat_uses_one_stream_with_all_channel_filters() {
+        let markup = chat_area("Lubeck", None, None, None).into_string();
+
+        assert!(!markup.contains("role=\"tablist\""));
+        for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
+            assert!(
+                markup.contains(&format!("data-chat-filter=\"{channel}\"")),
+                "missing {channel} filter"
+            );
+        }
+        assert!(markup.contains("data-chat-channel=\"info\""));
     }
 }

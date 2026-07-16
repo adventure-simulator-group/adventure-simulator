@@ -1,4 +1,22 @@
 (() => {
+  document.querySelectorAll(".settlement-chat").forEach((panel) => {
+    const messages = panel.querySelector(".settlement-chat-messages");
+    const filters = [...panel.querySelectorAll("[data-chat-filter]")];
+    if (!messages || !filters.length) return;
+
+    const applyFilters = () => {
+      const visibleChannels = new Set(filters
+        .filter((filter) => filter.checked)
+        .map((filter) => filter.dataset.chatFilter));
+      messages.querySelectorAll("[data-chat-channel]").forEach((message) => {
+        message.hidden = !visibleChannels.has(message.dataset.chatChannel);
+      });
+    };
+    filters.forEach((filter) => filter.addEventListener("change", applyFilters));
+    new MutationObserver(applyFilters).observe(messages, { childList: true, subtree: true });
+    applyFilters();
+  });
+
   const incomingHost = document.createElement("div");
   incomingHost.className = "local-chat-incoming";
   document.querySelector("main.center-content")?.append(incomingHost);
@@ -80,6 +98,7 @@
       }
       const row = document.createElement("div");
       row.className = message.sender_id === 0 ? "chat-npc-message" : "chat-player-message";
+      row.dataset.chatChannel = "local";
       const time = document.createElement("span");
       time.className = "chat-timestamp";
       time.textContent = `[${new Date(message.created_micros / 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}] `;
