@@ -7,16 +7,16 @@ use std::{
     path::Path,
 };
 
-use adventuresim_world_schema::{
-    CompiledWorld, ElevationMeters, SettlementImport, SourceProvenance, WORLD_SCHEMA_VERSION,
-    WorldMetadata,
-};
+use adventuresim_world_schema::{ElevationMeters, SourceProvenance};
 use tiff::{
     decoder::{Decoder, DecodingResult},
     tags::Tag,
 };
 
-use crate::{Error, Result, draft::WorldDraft};
+use crate::{
+    Error, Result,
+    draft::{ElevatedSettlementDraft, SettlementDraft, WorldDraft},
+};
 
 const SOURCE_NAME: &str = "Copernicus DEM GLO-30";
 const SOURCE_URL: &str = "https://doi.org/10.5270/ESA-c5d3d65";
@@ -28,7 +28,10 @@ const GEOGRAPHIC_MODEL_TYPE: u16 = 2;
 const RASTER_PIXEL_IS_POINT: u16 = 2;
 const WGS84_EPSG: u16 = 4_326;
 
-pub(crate) fn enrich(mut draft: WorldDraft, directory: &Path) -> Result<CompiledWorld> {
+pub(crate) fn enrich(
+    mut draft: WorldDraft<SettlementDraft>,
+    directory: &Path,
+) -> Result<WorldDraft<ElevatedSettlementDraft>> {
     let mut nominal_tiles: BTreeMap<TileKey, Vec<usize>> = BTreeMap::new();
     for (index, settlement) in draft.settlements.iter().enumerate() {
         let tile = TileKey::containing(settlement.latitude, settlement.longitude)?;
@@ -72,17 +75,9 @@ pub(crate) fn enrich(mut draft: WorldDraft, directory: &Path) -> Result<Compiled
         .zip(samples)
         .map(|(settlement, elevation)| {
             let elevation = elevation.expect("every settlement was grouped into a raster tile");
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
+            ElevatedSettlementDraft {
+                settlement,
                 elevation,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
             }
         })
         .collect();
@@ -95,13 +90,10 @@ pub(crate) fn enrich(mut draft: WorldDraft, directory: &Path) -> Result<Compiled
     draft.report.elevation_tiles_read = by_tile.len();
     draft.report.elevation_samples = settlements.len();
     draft.report.elevation_fallback_samples = fallback_samples;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,
