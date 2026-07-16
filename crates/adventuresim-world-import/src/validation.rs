@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use adventuresim_world_schema::{CompiledWorld, WORLD_SCHEMA_VERSION};
+use adventuresim_world_schema::{
+    CompiledWorld, TravelCrossing, TravelEdgeKind, WORLD_SCHEMA_VERSION,
+};
 
 use crate::{Error, Result};
 
@@ -67,6 +69,23 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+        match (edge.kind, edge.crossing) {
+            (TravelEdgeKind::Ferry, Some(TravelCrossing::Ferry))
+            | (TravelEdgeKind::Land, Some(TravelCrossing::Bridge))
+            | (TravelEdgeKind::Land, None) => {}
+            (TravelEdgeKind::Ferry, _) => {
+                return Err(Error::Validation(format!(
+                    "ferry edge {} must have a ferry crossing",
+                    edge.id
+                )));
+            }
+            (TravelEdgeKind::Land, Some(TravelCrossing::Ferry)) => {
+                return Err(Error::Validation(format!(
+                    "land edge {} cannot have a ferry crossing",
+                    edge.id
+                )));
+            }
+        }
     }
 
     let settlement_ids: HashSet<_> = world
@@ -117,6 +136,13 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
     if world.report.nodes != world.nodes.len()
         || world.report.edges != world.edges.len()
         || world.report.settlements != world.settlements.len()
+        || world.report.route_crossings
+            != world
+                .edges
+                .iter()
+                .filter(|edge| edge.crossing.is_some())
+                .count()
+        || world.report.toll_edges != world.edges.iter().filter(|edge| edge.has_toll).count()
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),

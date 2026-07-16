@@ -4,8 +4,8 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementImport, SourceProvenance, TravelEdgeImport, TravelEdgeKind,
-    WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata, WorldNodeImport,
+    CompiledWorld, SettlementImport, SourceProvenance, TravelCrossing, TravelEdgeImport,
+    TravelEdgeKind, WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata, WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -32,6 +32,18 @@ struct RawNode {
     is_ferry: SourceFlag,
     #[serde(rename = "Is_Harbour", default)]
     is_harbour: SourceFlag,
+    #[serde(rename = "Is_Bridge", default)]
+    is_bridge: SourceFlag,
+    #[serde(rename = "Bridge_From", default)]
+    bridge_from: String,
+    #[serde(rename = "Bridge_To", default)]
+    bridge_to: String,
+    #[serde(rename = "Is_Toll", default)]
+    is_toll: SourceFlag,
+    #[serde(rename = "Toll_From", default)]
+    toll_from: String,
+    #[serde(rename = "Toll_To", default)]
+    toll_to: String,
     #[serde(rename = "Settlement_From", default)]
     settlement_from: String,
     #[serde(rename = "Settlement_To", default)]
@@ -82,6 +94,20 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             is_town: raw.is_town.is_set(),
             is_ferry: raw.is_ferry.is_set(),
             is_harbour: raw.is_harbour.is_set(),
+            bridge: DatedFeature::parse(
+                &nodes_path,
+                "Bridge",
+                raw.is_bridge,
+                &raw.bridge_from,
+                &raw.bridge_to,
+            )?,
+            toll: DatedFeature::parse(
+                &nodes_path,
+                "Toll",
+                raw.is_toll,
+                &raw.toll_from,
+                &raw.toll_to,
+            )?,
             settlement_from: optional_number(&nodes_path, "Settlement_From", &raw.settlement_from)?,
             settlement_to: optional_number(&nodes_path, "Settlement_To", &raw.settlement_to)?,
         };
@@ -140,11 +166,24 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             continue;
         }
         endpoint_ids.extend([from_node_id, to_node_id]);
+        let from_node = &nodes_by_id[&from_node_id];
+        let to_node = &nodes_by_id[&to_node_id];
+        let crossing = match kind {
+            TravelEdgeKind::Ferry => Some(TravelCrossing::Ferry),
+            TravelEdgeKind::Land
+                if from_node.bridge.active_in(year) || to_node.bridge.active_in(year) =>
+            {
+                Some(TravelCrossing::Bridge)
+            }
+            TravelEdgeKind::Land => None,
+        };
         edges.push(TravelEdgeImport {
             id: required_number(&edges_path, "id", &raw.id)?,
             from_node_id,
             to_node_id,
             kind,
+            crossing,
+            has_toll: from_node.toll.active_in(year) || to_node.toll.active_in(year),
             length_m: required_number(&edges_path, "length", &raw.length)?,
             slope_multiplier: if raw.slopemultiplier.trim().is_empty() {
                 1.0
@@ -211,6 +250,8 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
         .flat_map(|edge| [edge.from_node_id, edge.to_node_id])
         .filter(|node_id| settlement_node_ids.contains(node_id))
         .collect();
+    let route_crossings = edges.iter().filter(|edge| edge.crossing.is_some()).count();
+    let toll_edges = edges.iter().filter(|edge| edge.has_toll).count();
 
     Ok(CompiledWorld {
         metadata: WorldMetadata {
@@ -228,6 +269,8 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             edges: edges.len(),
             settlements: settlements.len(),
             settlements_connected_to_road_network: connected_settlements.len(),
+            route_crossings,
+            toll_edges,
             excluded_edges,
         },
         nodes,
@@ -247,8 +290,66 @@ struct SourceNode {
     is_town: bool,
     is_ferry: bool,
     is_harbour: bool,
+    bridge: DatedFeature,
+    toll: DatedFeature,
     settlement_from: Option<i32>,
     settlement_to: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DatedFeature {
+    Absent,
+    PointYear(i32),
+    Present { from: Option<i32>, to: Option<i32> },
+}
+
+impl DatedFeature {
+    fn parse(
+        path: &Path,
+        field: &'static str,
+        present: SourceFlag,
+        from: &str,
+        to: &str,
+    ) -> Result<Self> {
+        let from_year = optional_number(path, field, from)?;
+        let to_year = optional_number(path, field, to)?;
+        if !present.is_set() {
+            if from_year.is_some() || to_year.is_some() {
+                return Err(Error::InvalidField {
+                    path: path.into(),
+                    field,
+                    value: format!("{from:?}..{to:?}"),
+                    message: "feature dates are present while its source flag is unset".into(),
+                });
+            }
+            return Ok(Self::Absent);
+        }
+        if let Some((from, to)) = from_year.zip(to_year)
+            && from == to
+        {
+            return Ok(Self::PointYear(from));
+        }
+        if from_year.zip(to_year).is_some_and(|(from, to)| from > to) {
+            return Err(Error::InvalidField {
+                path: path.into(),
+                field,
+                value: format!("{from:?}..{to:?}"),
+                message: "feature end year must be later than its start year".into(),
+            });
+        }
+        Ok(Self::Present {
+            from: from_year,
+            to: to_year,
+        })
+    }
+
+    fn active_in(self, year: i32) -> bool {
+        match self {
+            Self::Absent => false,
+            Self::PointYear(point) => point == year,
+            Self::Present { from, to } => active_in_year(from, to, year),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -370,7 +471,7 @@ fn increment(counts: &mut BTreeMap<String, usize>, key: String) {
 mod tests {
     use serde::Deserialize;
 
-    use super::{SourceFlag, active_in_year, population_estimate, population_level};
+    use super::{DatedFeature, SourceFlag, active_in_year, population_estimate, population_level};
 
     #[test]
     fn end_year_is_exclusive() {
@@ -422,5 +523,22 @@ mod tests {
         assert!(
             population_estimate(std::path::Path::new("population.csv"), Some(u32::MAX)).is_err()
         );
+    }
+
+    #[test]
+    fn dated_features_parse_into_valid_states() {
+        let path = std::path::Path::new("nodes.csv");
+        assert_eq!(
+            DatedFeature::parse(path, "Bridge", SourceFlag(false), "", "").unwrap(),
+            DatedFeature::Absent
+        );
+        let bridge = DatedFeature::parse(path, "Bridge", SourceFlag(true), "1500", "1600").unwrap();
+        assert!(bridge.active_in(1544));
+        assert!(!bridge.active_in(1600));
+        assert!(DatedFeature::parse(path, "Bridge", SourceFlag(false), "1500", "").is_err());
+        assert!(DatedFeature::parse(path, "Bridge", SourceFlag(true), "1600", "1500").is_err());
+        let point = DatedFeature::parse(path, "Bridge", SourceFlag(true), "1544", "1544").unwrap();
+        assert_eq!(point, DatedFeature::PointYear(1544));
+        assert!(point.active_in(1544));
     }
 }
