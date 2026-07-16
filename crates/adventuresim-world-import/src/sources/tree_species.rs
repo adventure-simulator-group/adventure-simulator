@@ -152,25 +152,13 @@ pub(crate) fn enrich(
             RasterContract::Binary,
         )?;
         rasters_read += 3;
-        if potential.grid != native.grid {
-            return Err(Error::Validation(format!(
-                "EU-Trees4F potential/native grids disagree for {}",
-                species.as_str()
-            )));
-        }
+        validate_binary_pair(&potential, &native, &species)?;
         for (index, settlement) in draft.settlements.iter().enumerate() {
             let base = &settlement.forest.land.elevated.settlement;
             let probability = suitability.sample(base.longitude, base.latitude);
             let potential_value = potential.sample(projected[index].0, projected[index].1);
             let native_value = native.sample(projected[index].0, projected[index].1);
             match (probability, potential_value, native_value) {
-                (_, Some(0), Some(1)) => {
-                    return Err(Error::Validation(format!(
-                        "EU-Trees4F marks {} native but not potentially suitable at {}",
-                        species.as_str(),
-                        base.name
-                    )));
-                }
                 (Some(score), Some(1), Some(native @ (0 | 1))) => {
                     let score = u16::try_from(score)
                         .ok()
@@ -191,35 +179,44 @@ pub(crate) fn enrich(
                         },
                     });
                 }
-                (_, Some(0), Some(0)) | (_, None, _) | (_, _, None) => {}
+                (_, Some(0), Some(0)) | (_, None, None) => {}
                 (None, Some(1), Some(_)) => {}
-                (_, Some(other), _) => unreachable!("binary raster admitted {other}"),
+                other => unreachable!("validated binary raster pair admitted {other:?}"),
             }
         }
     }
 
     let mut profiles = Vec::with_capacity(draft.settlements.len());
     let mut fallbacks = 0;
-    for (settlement, mut modeled) in draft.settlements.iter().zip(candidates) {
-        modeled.sort_by(|left, right| {
-            right
-                .suitability
-                .cmp(&left.suitability)
-                .then_with(|| left.species.cmp(&right.species))
-        });
-        modeled.truncate(adventuresim_world_schema::MAX_MODELED_TREE_SPECIES);
-        let profile = if modeled.is_empty() {
+    for (settlement, modeled) in draft.settlements.iter().zip(candidates) {
+        let profile = if let Some(modeled) = rank_modeled_candidates(modeled) {
+            TreeSpeciesProfile::Modeled(modeled)
+        } else {
             fallbacks += 1;
             TreeSpeciesProfile::Inferred(infer_species(&settlement.potential_vegetation))
-        } else {
-            TreeSpeciesProfile::Modeled(
-                ModeledTreeSpeciesProfile::new(modeled)
-                    .expect("archive contains one raster triplet per species"),
-            )
         };
         profiles.push(profile);
     }
     finish(draft, profiles, rasters_read, fallbacks)
+}
+
+fn rank_modeled_candidates(
+    mut candidates: Vec<ModeledTreeSpecies>,
+) -> Option<ModeledTreeSpeciesProfile> {
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort_by(|left, right| {
+        right
+            .suitability
+            .cmp(&left.suitability)
+            .then_with(|| left.species.cmp(&right.species))
+    });
+    candidates.truncate(adventuresim_world_schema::MAX_MODELED_TREE_SPECIES);
+    Some(
+        ModeledTreeSpeciesProfile::new(candidates)
+            .expect("archive contains one raster triplet per species"),
+    )
 }
 
 fn finish(
@@ -402,20 +399,24 @@ fn read_entry<R: Read + Seek>(
         path: archive_path.into(),
         source,
     })?;
-    if entry.size() > MAX_ENTRY_BYTES {
+    if !entry.is_file() || entry.encrypted() || entry.size() > MAX_ENTRY_BYTES {
         return Err(Error::Validation(format!(
-            "EU-Trees4F archive entry {name} is implausibly large"
+            "EU-Trees4F archive entry {name} is not an admissible source file"
         )));
     }
     let declared_size = entry.size();
     let mut bytes = Vec::with_capacity(declared_size as usize);
     entry.take(MAX_ENTRY_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 != declared_size || bytes.len() as u64 > MAX_ENTRY_BYTES {
+    if !valid_entry_size(declared_size, bytes.len()) {
         return Err(Error::Validation(format!(
             "EU-Trees4F archive entry {name} has an invalid decoded size"
         )));
     }
     Ok(bytes)
+}
+
+fn valid_entry_size(declared: u64, actual: usize) -> bool {
+    declared <= MAX_ENTRY_BYTES && u64::try_from(actual) == Ok(declared)
 }
 
 #[derive(Clone, Copy)]
@@ -542,6 +543,42 @@ impl SignedRaster {
         let value = self.pixels[row as usize * self.width as usize + column as usize];
         (value != NODATA).then_some(value)
     }
+}
+
+fn validate_binary_pair(
+    potential: &SignedRaster,
+    native: &SignedRaster,
+    species: &TreeSpeciesId,
+) -> Result<()> {
+    if potential.width != native.width
+        || potential.height != native.height
+        || potential.grid != native.grid
+        || potential.pixels.len() != native.pixels.len()
+    {
+        return Err(Error::Validation(format!(
+            "EU-Trees4F potential/native grids disagree for {}",
+            species.as_str()
+        )));
+    }
+    for (&potential, &native) in potential.pixels.iter().zip(&native.pixels) {
+        match (potential, native) {
+            (NODATA, NODATA) | (0, 0) | (1, 0 | 1) => {}
+            (NODATA, _) | (_, NODATA) => {
+                return Err(Error::Validation(format!(
+                    "EU-Trees4F potential/native nodata masks disagree for {}",
+                    species.as_str()
+                )));
+            }
+            (0, 1) => {
+                return Err(Error::Validation(format!(
+                    "EU-Trees4F marks {} native outside potential habitat",
+                    species.as_str()
+                )));
+            }
+            _ => unreachable!("binary rasters were individually domain-checked"),
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -717,13 +754,22 @@ fn geo_key(keys: &[u16], requested: u16) -> Option<u16> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, path::Path};
+    use std::{
+        fs::File,
+        io::{Cursor, Write},
+        path::Path,
+    };
 
     use adventuresim_world_schema::{
-        ElevationMeters, ForestCover, LandUseFraction, LandUseProfile, PotentialVegetation,
-        PotentialVegetationFormation, TreeSpeciesProfile,
+        ElevationMeters, ForestCover, HabitatSuitability, LandUseFraction, LandUseProfile,
+        ModeledTreeSpecies, NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation,
+        TreeSpeciesId, TreeSpeciesProfile,
     };
-    use zip::ZipArchive;
+    use tiff::{
+        encoder::{TiffEncoder, colortype::GrayI16},
+        tags::Tag,
+    };
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
     use crate::draft::{
         ElevatedSettlementDraft, ForestSettlementDraft, LandUseSettlementDraft,
@@ -732,7 +778,8 @@ mod tests {
 
     use super::{
         ArchiveManifest, AreaGrid, BinaryProjection, EXPECTED_RASTERS, EXPECTED_SPECIES, Layer,
-        RasterContract, SignedRaster, parse_current_name, read_entry,
+        NODATA, RasterContract, SignedRaster, infer_species, parse_current_name,
+        rank_modeled_candidates, read_entry, valid_entry_size, validate_binary_pair,
     };
 
     #[test]
@@ -777,6 +824,118 @@ mod tests {
     }
 
     #[test]
+    fn binary_pairs_reject_impossible_states_across_the_whole_raster() {
+        let species = TreeSpeciesId::new("Abies_alba").unwrap();
+        let potential = small_binary(vec![1, 1, 0, NODATA]);
+        let native = small_binary(vec![1, 0, 0, NODATA]);
+        validate_binary_pair(&potential, &native, &species).unwrap();
+
+        let impossible = small_binary(vec![1, 0, 1, NODATA]);
+        assert!(validate_binary_pair(&potential, &impossible, &species).is_err());
+        let mismatched_nodata = small_binary(vec![1, 0, 0, 0]);
+        assert!(validate_binary_pair(&potential, &mismatched_nodata, &species).is_err());
+    }
+
+    #[test]
+    fn signed_geotiff_boundary_checks_contract_and_value_domain() {
+        let mut probability = vec![NODATA; 828 * 540];
+        probability[0] = 997;
+        let raster = SignedRaster::read(
+            fixture_tiff(RasterContract::Probability, &probability),
+            "probability.tif",
+            RasterContract::Probability,
+        )
+        .unwrap();
+        assert_eq!(raster.sample(-19.0, 72.0), Some(997));
+
+        probability[1] = 1_001;
+        assert!(
+            SignedRaster::read(
+                fixture_tiff(RasterContract::Probability, &probability),
+                "invalid-probability.tif",
+                RasterContract::Probability,
+            )
+            .is_err()
+        );
+
+        let mut binary = vec![NODATA; 400 * 410];
+        binary[0] = 2;
+        assert!(
+            SignedRaster::read(
+                fixture_tiff(RasterContract::Binary, &binary),
+                "invalid-binary.tif",
+                RasterContract::Binary,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn archive_manifest_requires_every_current_triplet() {
+        let mut complete = ZipArchive::new(Cursor::new(manifest_zip(None))).unwrap();
+        assert_eq!(
+            ArchiveManifest::parse(&mut complete, Path::new("fixture.zip"))
+                .unwrap()
+                .species
+                .len(),
+            EXPECTED_SPECIES.len()
+        );
+        let mut incomplete = ZipArchive::new(Cursor::new(manifest_zip(Some((
+            "Abies_alba",
+            Layer::Native,
+        )))))
+        .unwrap();
+        assert!(ArchiveManifest::parse(&mut incomplete, Path::new("fixture.zip")).is_err());
+        assert!(valid_entry_size(100, 100));
+        assert!(!valid_entry_size(super::MAX_ENTRY_BYTES + 1, 100));
+        assert!(!valid_entry_size(100, 99));
+    }
+
+    #[test]
+    fn ranking_is_bounded_and_fallbacks_are_formation_specific() {
+        let candidates = EXPECTED_SPECIES
+            .iter()
+            .take(13)
+            .enumerate()
+            .map(|(index, species)| ModeledTreeSpecies {
+                species: TreeSpeciesId::new(*species).unwrap(),
+                suitability: HabitatSuitability::new(500 + (index % 2) as u16).unwrap(),
+                native_range: NativeRangeEvidence::WithinNativeRange,
+            })
+            .collect();
+        let ranked = rank_modeled_candidates(candidates).unwrap();
+        assert_eq!(ranked.candidates().len(), 12);
+        assert!(
+            ranked
+                .candidates()
+                .windows(2)
+                .all(|pair| pair[0].suitability >= pair[1].suitability)
+        );
+        assert!(ranked.candidates().windows(2).all(|pair| {
+            pair[0].suitability != pair[1].suitability || pair[0].species <= pair[1].species
+        }));
+
+        let mediterranean = infer_species(&PotentialVegetation::Inferred(
+            PotentialVegetationFormation::MediterraneanSclerophyll,
+        ));
+        assert!(
+            mediterranean
+                .species()
+                .iter()
+                .any(|species| species.as_str() == "Quercus_ilex")
+        );
+        let wetland = infer_species(&PotentialVegetation::Inferred(
+            PotentialVegetationFormation::FloodplainAndWetland,
+        ));
+        assert!(
+            wetland
+                .species()
+                .iter()
+                .any(|species| species.as_str() == "Salix_alba")
+        );
+    }
+
+    #[test]
     #[ignore = "requires the official archive in EU_TREES4F_ARCHIVE"]
     fn full_source_boundary_reads_all_current_rasters() {
         let path = std::env::var_os("EU_TREES4F_ARCHIVE").expect("set EU_TREES4F_ARCHIVE");
@@ -787,7 +946,7 @@ mod tests {
         let graz = projection.project(47.076_671_6, 15.421_369_6).unwrap();
         let mut rasters = 0;
         let mut plausible_at_graz = 0;
-        for (_, paths) in manifest.species {
+        for (species, paths) in manifest.species {
             let probability = SignedRaster::read(
                 read_entry(&mut archive, path, &paths.probability).unwrap(),
                 &paths.probability,
@@ -806,6 +965,7 @@ mod tests {
                 RasterContract::Binary,
             )
             .unwrap();
+            validate_binary_pair(&potential, &native, &species).unwrap();
             rasters += 3;
             let score = probability.sample(15.421_369_6, 47.076_671_6);
             let potential = potential.sample(graz.0, graz.1);
@@ -870,5 +1030,88 @@ mod tests {
         assert_eq!(world.report.tree_species_rasters_read, EXPECTED_RASTERS);
         assert_eq!(world.report.tree_species_samples, world.settlements.len());
         assert!(modeled > world.settlements.len() * 9 / 10);
+    }
+
+    fn small_binary(pixels: Vec<i16>) -> SignedRaster {
+        SignedRaster {
+            width: 2,
+            height: 2,
+            grid: AreaGrid {
+                west: 0.0,
+                north: 2.0,
+                x_scale: 1.0,
+                y_scale: 1.0,
+            },
+            pixels,
+        }
+    }
+
+    fn fixture_tiff(contract: RasterContract, pixels: &[i16]) -> Vec<u8> {
+        let (width, height) = contract.dimensions();
+        assert_eq!(pixels.len(), width as usize * height as usize);
+        let grid = contract.grid();
+        let (model_type, epsg) = contract.epsg();
+        let (crs_key, unit_key, unit) = if model_type == 2 {
+            (2_048, 2_054, 9_102)
+        } else {
+            (3_072, 3_076, 9_001)
+        };
+        let mut bytes = Cursor::new(Vec::new());
+        let mut encoder = TiffEncoder::new(&mut bytes).unwrap();
+        let mut image = encoder.new_image::<GrayI16>(width, height).unwrap();
+        image
+            .encoder()
+            .write_tag(
+                Tag::ModelPixelScaleTag,
+                &[grid.x_scale, grid.y_scale, 0.0][..],
+            )
+            .unwrap();
+        image
+            .encoder()
+            .write_tag(
+                Tag::ModelTiepointTag,
+                &[0.0, 0.0, 0.0, grid.west, grid.north, 0.0][..],
+            )
+            .unwrap();
+        image
+            .encoder()
+            .write_tag(
+                Tag::GeoKeyDirectoryTag,
+                &[
+                    1_u16, 1, 0, 4, 1_024, 0, 1, model_type, 1_025, 0, 1, 1, crs_key, 0, 1, epsg,
+                    unit_key, 0, 1, unit,
+                ][..],
+            )
+            .unwrap();
+        image
+            .encoder()
+            .write_tag(Tag::GdalNodata, "-32768")
+            .unwrap();
+        image.write_data(pixels).unwrap();
+        bytes.into_inner()
+    }
+
+    fn manifest_zip(omit: Option<(&str, Layer)>) -> Vec<u8> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for species in EXPECTED_SPECIES {
+            for (layer, suffix) in [
+                (Layer::Probability, "prob_pot.tif"),
+                (Layer::Potential, "bin_pot.tif"),
+                (Layer::Native, "bin_nat.tif"),
+            ] {
+                if omit == Some((species, layer)) {
+                    continue;
+                }
+                writer
+                    .start_file(
+                        format!("ens_clim/{species}_ens-clim_cur2005_{suffix}"),
+                        options,
+                    )
+                    .unwrap();
+                writer.write_all(&[]).unwrap();
+            }
+        }
+        writer.finish().unwrap().into_inner()
     }
 }
