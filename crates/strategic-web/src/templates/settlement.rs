@@ -5,7 +5,7 @@
 //! and the active player's party on the right.
 
 use maud::{Markup, html};
-use std::{fmt, str::FromStr};
+use std::{collections::BTreeSet, fmt, str::FromStr};
 
 use super::{
     empty_state, population_description, quest_location_layout_with_session,
@@ -15,7 +15,8 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
-    InventoryQuantityTarget, Party, PartyInventoryItem, Settlement,
+    InventoryQuantityTarget, Party, PartyInventoryItem, Settlement, SettlementAlias,
+    SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -148,11 +149,15 @@ impl MerchantShop {
 /// ferry network.
 pub fn settlement_overview_page(
     settlement: &Settlement,
+    aliases: &[SettlementAlias],
+    descriptions: &[SettlementDescription],
     active_character: Option<&Character>,
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
+    let alias_labels = settlement_alias_labels(settlement, aliases);
+    let historical_description = preferred_settlement_description(descriptions);
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Settlement", html! {
@@ -161,6 +166,9 @@ pub fn settlement_overview_page(
                         div { dt { "Population" } dd { (format_population(settlement)) } }
                         div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
                         div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
+                        @if !alias_labels.is_empty() {
+                            div { dt { "Also known as" } dd { (alias_labels.join(", ")) } }
+                        }
                     }
                 }
             }))
@@ -173,6 +181,12 @@ pub fn settlement_overview_page(
         aside class="right-sidebar" {
             (sidebar_section("Description", html! {
                 p { (settlement_description(settlement.population_level)) }
+                @if let Some(description) = historical_description {
+                    details class="settlement-historical-description" {
+                        summary { (format!("Historical description — {}", language_label(description.language.as_deref()))) }
+                        p { (description.body) }
+                    }
+                }
             }))
         }
     };
@@ -185,6 +199,50 @@ pub fn settlement_overview_page(
         logged_in_as,
         theme,
     )
+}
+
+fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
+    let canonical = settlement.name.to_lowercase();
+    let mut labels = BTreeSet::new();
+    for alias in aliases {
+        let label = alias.prefix.as_ref().map_or_else(
+            || alias.name.trim().to_owned(),
+            |prefix| format!("{} {}", prefix.trim(), alias.name.trim()),
+        );
+        if !label.is_empty() && label.to_lowercase() != canonical {
+            labels.insert(label);
+        }
+    }
+    let total = labels.len();
+    let mut labels: Vec<_> = labels.into_iter().take(8).collect();
+    if total > labels.len() {
+        labels.push(format!("and {} more", total - labels.len()));
+    }
+    labels
+}
+
+fn preferred_settlement_description(
+    descriptions: &[SettlementDescription],
+) -> Option<&SettlementDescription> {
+    descriptions.iter().min_by_key(|description| {
+        (
+            description.language.as_deref() != Some("eng"),
+            description.kind != SettlementDescriptionKind::Settlement,
+            description.id.as_str(),
+        )
+    })
+}
+
+fn language_label(language: Option<&str>) -> &str {
+    match language {
+        Some("dan") => "Danish",
+        Some("deu") => "German",
+        Some("eng") => "English",
+        Some("fin") => "Finnish",
+        Some("nld") => "Dutch",
+        Some(code) => code,
+        None => "Unspecified language",
+    }
 }
 
 pub fn settlement_map_page(
@@ -1996,6 +2054,110 @@ mod tests {
         ] {
             assert_eq!(religion_name(Some(id)), label);
         }
+    }
+    fn settlement() -> Settlement {
+        Settlement {
+            id: "viabundus-1".into(),
+            name: "Lübeck".into(),
+            coord_x: 10.0,
+            coord_y: 53.0,
+            population_level: 4,
+            population_estimate: 12_000,
+            scene_key: "hills".into(),
+            religion_id: "western_church".into(),
+            source_node_id: Some(1),
+        }
+    }
+
+    #[test]
+    fn aliases_are_deduplicated_and_do_not_repeat_the_canonical_name() {
+        let aliases = [
+            SettlementAlias {
+                id: "1".into(),
+                settlement_id: "viabundus-1".into(),
+                name: "Lubeke".into(),
+                prefix: None,
+                language: Some("deu".into()),
+            },
+            SettlementAlias {
+                id: "2".into(),
+                settlement_id: "viabundus-1".into(),
+                name: "Lübeck".into(),
+                prefix: None,
+                language: None,
+            },
+        ];
+
+        assert_eq!(settlement_alias_labels(&settlement(), &aliases), ["Lubeke"]);
+    }
+
+    #[test]
+    fn english_settlement_description_is_preferred_deterministically() {
+        let descriptions = [
+            SettlementDescription {
+                id: "1".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::Settlement,
+                language: Some("deu".into()),
+                body: "Deutsch".into(),
+            },
+            SettlementDescription {
+                id: "2".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::City,
+                language: Some("eng".into()),
+                body: "English city".into(),
+            },
+            SettlementDescription {
+                id: "3".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::Settlement,
+                language: Some("eng".into()),
+                body: "English settlement".into(),
+            },
+        ];
+
+        assert_eq!(
+            preferred_settlement_description(&descriptions)
+                .unwrap()
+                .body,
+            "English settlement"
+        );
+    }
+
+    #[test]
+    fn settlement_overview_renders_enrichment_as_escaped_text() {
+        let aliases = [SettlementAlias {
+            id: "1".into(),
+            settlement_id: "viabundus-1".into(),
+            name: "Lubeke".into(),
+            prefix: None,
+            language: Some("deu".into()),
+        }];
+        let descriptions = [SettlementDescription {
+            id: "1".into(),
+            settlement_id: "viabundus-1".into(),
+            kind: SettlementDescriptionKind::Settlement,
+            language: Some("deu".into()),
+            body: "Burg & Markt <alt>".into(),
+        }];
+
+        let markup = settlement_overview_page(
+            &settlement(),
+            &aliases,
+            &descriptions,
+            None,
+            &[],
+            None,
+            "system",
+        )
+        .into_string();
+
+        assert!(markup.contains("Also known as"));
+        assert!(markup.contains("Lubeke"));
+        assert!(markup.contains("Historical description — German"));
+        assert!(markup.contains("Burg &amp; Markt &lt;alt&gt;"));
+        assert!(!markup.contains("<alt>"));
     }
     use super::*;
 
