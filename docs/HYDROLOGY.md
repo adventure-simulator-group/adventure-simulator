@@ -16,9 +16,12 @@ Download the basin GeoPackage distribution and extract its `.gpkg` files under
 accepted. Override the directory with `--hydrology-dir`.
 
 The official full archive is not currently present in the development data
-directory, so only the strict source boundary has been verified using real
-SQLite GeoPackage files with synthetic EPSG:3035 geometries. Do not describe a
-full-world hydrology audit as complete until the official archive has been run.
+directory, so only the strict source boundary has been verified using
+read-focused SQLite fixtures with GeoPackage core metadata, a real EPSG:3035
+definition, synthetic geometries, and manually populated RTree tables. The
+fixtures exercise the reader but are not a writable GeoPackage conformance
+suite. Do not describe a full-world hydrology audit as complete until the
+official archive has been run.
 
 ## Parsed source features
 
@@ -26,6 +29,9 @@ The compiler recognizes the official `River_Net_l`, `Canals_l`, `Ditches_l`,
 `InlandWater`, `Transit_p`, and `Coastal_p` feature classes. It also accepts
 the equivalent names exposed by the EEA map service. Relevant features are
 clipped to a ten-kilometer margin around the imported world before enrichment.
+When a basin GeoPackage provides the standard RTree extension, the SQL reader
+applies that envelope before decoding geometry; packages without it use a
+compatible full-table scan and the same exact geometry-bounds filter.
 
 For flowing water, `STRAHLER`, `HYP`, and `NVS` become bounded Strahler order,
 perennial/intermittent/ephemeral persistence, and navigability. Dry source

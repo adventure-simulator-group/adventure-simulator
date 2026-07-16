@@ -4,7 +4,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::spacetimedb::{Settlement, TravelEdge, TravelKind};
+use crate::spacetimedb::{Settlement, TravelEdge};
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 
@@ -111,10 +111,7 @@ pub(crate) fn connected_destinations(
         .filter_map(|settlement| settlement.source_node_id.map(|node| (node, settlement)))
         .collect();
     let mut adjacency: HashMap<u64, Vec<(u64, u32)>> = HashMap::new();
-    for edge in edges
-        .iter()
-        .filter(|edge| matches!(edge.kind, TravelKind::Land | TravelKind::Ferry))
-    {
+    for edge in edges {
         adjacency
             .entry(edge.from_node_id)
             .or_default()

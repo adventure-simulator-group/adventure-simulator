@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 adventuresim-core.workspace = true
 adventuresim-stdb-client.workspace = true
+adventuresim-world-schema.workspace = true
 anyhow = "1"
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["cookie"] }

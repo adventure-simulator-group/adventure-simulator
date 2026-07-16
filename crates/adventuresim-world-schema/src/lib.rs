@@ -1726,7 +1726,7 @@ pub struct WorldBuildReport {
     pub hydrology_files_read: usize,
     pub hydrology_features_read: usize,
     pub hydrology_settlement_samples: usize,
-    pub hydrology_settlement_fallback_samples: usize,
+    pub hydrology_landlocked_settlements: usize,
     pub hydrology_edge_crossings: usize,
     pub hydrology_inferred_ferry_waterways: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
@@ -2018,5 +2018,19 @@ mod tests {
         assert!(GeologicUnitId::new("").is_none());
         assert!(GeologicUnitId::new(" leading-space").is_none());
         assert!(GeologicUnitId::new("x".repeat(256)).is_none());
+    }
+
+    #[test]
+    fn hydrology_wire_values_cannot_bypass_bounded_constructors() {
+        assert!(serde_json::from_str::<super::WaterDistanceMeters>(r#"{"meters":10000}"#).is_ok());
+        assert!(serde_json::from_str::<super::WaterDistanceMeters>(r#"{"meters":10001}"#).is_err());
+        assert!(serde_json::from_str::<super::StrahlerOrder>(r#"{"order":1}"#).is_ok());
+        assert!(serde_json::from_str::<super::StrahlerOrder>(r#"{"order":0}"#).is_err());
+        assert!(
+            serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1000}"#).is_ok()
+        );
+        assert!(
+            serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1001}"#).is_err()
+        );
     }
 }
