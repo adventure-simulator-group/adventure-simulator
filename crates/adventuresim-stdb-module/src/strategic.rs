@@ -1,10 +1,12 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover,
-    HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType, EdgeEndpoint,
+    ElevationMeters, ForestCover, HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction,
+    LandUseProfile, MappedPotentialVegetation, MineralSoilTexture, ModeledTreeSpecies,
+    ModeledTreeSpeciesProfile, PotentialVegetation, PotentialVegetationFormation, SettlementImport,
+    SoilDepth, SoilMaterial, SoilProfile, SoilProperties, SoilWaterRegime, StoneContentPercent,
+    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -95,6 +97,7 @@ pub struct Settlement {
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
     pub tree_species: TreeSpeciesProfile,
+    pub soil: SoilProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -432,6 +435,7 @@ pub fn import_settlements(
             forest_cover,
             potential_vegetation,
             tree_species,
+            soil: settlement.soil,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3879,6 +3883,15 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     ])
                     .unwrap(),
                 ),
+                soil: SoilProfile::Inferred(SoilProperties {
+                    material: SoilMaterial::Mineral(MineralSoilTexture::Medium),
+                    depth: SoilDepth::Deep,
+                    available_water: AvailableWaterCapacity::Medium,
+                    organic_carbon: TopsoilOrganicCarbon::Medium,
+                    water_regime: SoilWaterRegime::SeasonallyWet,
+                    stones: StoneContentPercent::new(10).unwrap(),
+                    agricultural_limitation: AgriculturalLimitation::None,
+                }),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,

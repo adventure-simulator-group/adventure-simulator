@@ -1,6 +1,6 @@
 use adventuresim_world_schema::{
     ElevationMeters, ForestCover, LandUseProfile, PotentialVegetation, SourceProvenance,
-    TravelEdgeImport, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
+    TravelEdgeImport, TravelEdgeKind, TreeSpeciesProfile, WorldBuildReport, WorldNodeImport,
 };
 
 #[derive(Debug)]
@@ -49,4 +49,10 @@ pub(crate) struct ForestSettlementDraft {
 pub(crate) struct PotentialVegetationSettlementDraft {
     pub(crate) forest: ForestSettlementDraft,
     pub(crate) potential_vegetation: PotentialVegetation,
+}
+
+#[derive(Debug)]
+pub(crate) struct TreeSpeciesSettlementDraft {
+    pub(crate) vegetated: PotentialVegetationSettlementDraft,
+    pub(crate) tree_species: TreeSpeciesProfile,
 }

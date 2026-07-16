@@ -8,10 +8,9 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CompiledWorld, HabitatSuitability, InferredTreeSpeciesProfile, ModeledTreeSpecies,
-    ModeledTreeSpeciesProfile, NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SourceProvenance, TreeSpeciesId,
-    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, WorldMetadata,
+    HabitatSuitability, InferredTreeSpeciesProfile, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+    NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SourceProvenance,
+    TreeSpeciesId, TreeSpeciesProfile,
 };
 use proj4rs::{proj::Proj, transform::transform};
 use tiff::{
@@ -23,7 +22,7 @@ use zip::ZipArchive;
 
 use crate::{
     Error, Result,
-    draft::{PotentialVegetationSettlementDraft, WorldDraft},
+    draft::{PotentialVegetationSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "EU-Trees4F v2 current-climate ensemble";
@@ -108,7 +107,7 @@ const EXPECTED_SPECIES: &[&str] = &[
 pub(crate) fn enrich(
     draft: WorldDraft<PotentialVegetationSettlementDraft>,
     archive_path: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<TreeSpeciesSettlementDraft>> {
     if draft.settlements.is_empty() {
         return finish(draft, Vec::new(), 0, 0);
     }
@@ -224,7 +223,7 @@ fn finish(
     profiles: Vec<TreeSpeciesProfile>,
     rasters_read: usize,
     fallbacks: usize,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<TreeSpeciesSettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
             "tree-species profiles do not match settlements".into(),
@@ -240,27 +239,9 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(vegetated, tree_species)| {
-            let forest = vegetated.forest;
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
-                potential_vegetation: vegetated.potential_vegetation,
-                tree_species,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            }
+        .map(|(vegetated, tree_species)| TreeSpeciesSettlementDraft {
+            vegetated,
+            tree_species,
         })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
@@ -272,13 +253,10 @@ fn finish(
     draft.report.tree_species_samples = settlements.len();
     draft.report.tree_species_fallback_samples = fallbacks;
     draft.report.tree_species_candidates = candidate_count;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,

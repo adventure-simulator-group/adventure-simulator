@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use adventuresim_world_schema::{CompiledWorld, TreeSpeciesProfile, WORLD_SCHEMA_VERSION};
+use adventuresim_world_schema::{
+    CompiledWorld, SoilProfile, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+};
 
 use crate::{Error, Result};
 
@@ -176,12 +178,38 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .sum(),
             world.settlements.len(),
         )
+        || !soil_counts_are_consistent(
+            world.report.soil_polygons_read,
+            world.report.soil_attribute_rows_read,
+            world.report.soil_samples,
+            world.report.soil_fallback_samples,
+            world
+                .settlements
+                .iter()
+                .filter(|settlement| matches!(settlement.soil, SoilProfile::Inferred(_)))
+                .count(),
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn soil_counts_are_consistent(
+    polygons: usize,
+    attribute_rows: usize,
+    samples: usize,
+    fallbacks: usize,
+    actual_fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks == actual_fallbacks
+        && ((settlements == 0 && polygons == 0 && attribute_rows == 0)
+            || (settlements > 0 && polygons > 0 && attribute_rows > 0))
 }
 
 fn tree_species_counts_are_consistent(
@@ -255,7 +283,7 @@ mod tests {
     use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
     use super::potential_vegetation_counts_are_consistent;
-    use super::tree_species_counts_are_consistent;
+    use super::{soil_counts_are_consistent, tree_species_counts_are_consistent};
 
     #[test]
     fn elevation_report_requires_complete_consistent_counts() {
@@ -305,5 +333,13 @@ mod tests {
         assert!(!tree_species_counts_are_consistent(201, 3, 0, 2, 0, 3, 3));
         assert!(!tree_species_counts_are_consistent(201, 3, 0, 12, 1, 12, 3));
         assert!(!tree_species_counts_are_consistent(201, 3, 0, 4, 0, 3, 3));
+    }
+
+    #[test]
+    fn soil_report_requires_source_tables_and_exact_fallback_count() {
+        assert!(soil_counts_are_consistent(10, 20, 3, 1, 1, 3));
+        assert!(soil_counts_are_consistent(0, 0, 0, 0, 0, 0));
+        assert!(!soil_counts_are_consistent(0, 20, 3, 1, 1, 3));
+        assert!(!soil_counts_are_consistent(10, 20, 3, 2, 1, 3));
     }
 }
