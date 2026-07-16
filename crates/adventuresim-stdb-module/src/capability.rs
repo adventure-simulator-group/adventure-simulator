@@ -1,7 +1,7 @@
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
-use crate::condition::character_needs as _;
+use crate::condition::{character_condition as _, character_needs as _};
 use crate::item::item as _;
 use crate::{
     CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
@@ -194,6 +194,10 @@ impl PlayerAttributes for CharacterAttributes {
             SimpleAttribute::Hearing => self.hearing,
         }
     }
+
+    fn raw_precision(&self) -> f32 {
+        self.precision
+    }
 }
 
 impl PlayerSkills for CharacterSkills {
@@ -216,6 +220,7 @@ impl PlayerSkills for CharacterSkills {
 
 pub(crate) struct StrategicEquipment {
     weapon: Option<Item>,
+    weapon_side: Option<BodySide>,
     shield: Option<Item>,
     armor: [Option<Item>; 7],
     inventory_weight: f32,
@@ -232,11 +237,18 @@ impl StrategicEquipment {
             definition(equip.left_hand_item_id),
             definition(equip.right_hand_item_id),
         ];
-        let weapon = hands
-            .iter()
-            .flatten()
-            .find(|item| item.kind == ItemKind::Weapon)
-            .cloned();
+        let weapon_index = hands.iter().position(|item| {
+            item.as_ref()
+                .is_some_and(|item| item.kind == ItemKind::Weapon)
+        });
+        let weapon = weapon_index.and_then(|index| hands[index].clone());
+        let weapon_side = weapon_index.map(|index| {
+            if index == 0 {
+                BodySide::Left
+            } else {
+                BodySide::Right
+            }
+        });
         let shield = hands
             .iter()
             .flatten()
@@ -272,6 +284,7 @@ impl StrategicEquipment {
             .map_or(0.0, |needs| carried_water_weight_kg(needs.carried_water_ml));
         Self {
             weapon,
+            weapon_side,
             shield,
             armor,
             inventory_weight: dry_inventory_weight + carried_water_weight,
@@ -290,21 +303,49 @@ impl StrategicEquipment {
         };
         self.armor[index].as_ref()
     }
+
+    pub(crate) fn combat_equipment(&self) -> CombatEquipment {
+        let mut armor = [CombatArmor {
+            flexibility: 1.0,
+            range_of_motion: 1.0,
+            ..CombatArmor::default()
+        }; 7];
+        for part in BodyPart::FULL_BODY.iter() {
+            if let Some(item) = self.armor_for(part) {
+                armor[body_part_index(part)] = CombatArmor {
+                    resistance: item.resistance,
+                    padding: item.padding,
+                    flexibility: item.flexibility,
+                    range_of_motion: item.range_of_motion,
+                    coverage: item.coverage,
+                };
+            }
+        }
+        CombatEquipment {
+            weapon: self.weapon.as_ref().map(|item| CombatWeapon {
+                melee: item.melee,
+                ranged: item.ranged,
+                blunt: item.blunt,
+                slash: item.slash,
+                pierce: item.pierce,
+                accuracy: item.accuracy,
+                weight: item.weight,
+                penetration: item.penetration,
+                reach: item.reach,
+                precise: item.precise,
+                balance: item.balance,
+                ranged_force_joules: 40.0 * item.weight.max(0.5),
+            }),
+            holding_side: self.weapon_side.unwrap_or(BodySide::Right),
+            shield_block_bonus: self.shield.as_ref().map_or(0.0, |item| item.block),
+            armor,
+            inventory_weight: self.inventory_weight,
+        }
+    }
 }
 
 fn carried_water_weight_kg(carried_water_ml: f32) -> f32 {
     carried_water_ml.max(0.0) / 1_000.0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::carried_water_weight_kg;
-
-    #[test]
-    fn carried_water_contributes_one_kilogram_per_litre() {
-        assert_eq!(carried_water_weight_kg(4_000.0), 4.0);
-        assert_eq!(carried_water_weight_kg(-1.0), 0.0);
-    }
 }
 
 impl PlayerEquipment for StrategicEquipment {
@@ -336,7 +377,7 @@ impl PlayerEquipment for StrategicEquipment {
         self.weapon.as_ref().map_or(0.0, |item| item.reach)
     }
     fn weapon_holding_side(&self) -> Option<BodySide> {
-        Some(BodySide::Right)
+        self.weapon_side
     }
     fn weapon_is_precise(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.precise)
@@ -365,5 +406,123 @@ impl PlayerEquipment for StrategicEquipment {
     }
     fn inventory_weight(&self) -> f32 {
         self.inventory_weight
+    }
+}
+
+pub(crate) fn load_combatant(
+    ctx: &ReducerContext,
+    character_id: u64,
+    strategic_incapacitation: f32,
+    strategic_pain: f32,
+    strategic_blood_loss: f32,
+) -> Result<Combatant, String> {
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character attributes not found")?;
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?;
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character equipment not found")?;
+    let limbs = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character limbs not found")?;
+    let stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
+    let condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+
+    Ok(Combatant {
+        id: character_id,
+        attributes: CombatAttributes {
+            endurance: attributes.endurance,
+            immunity: attributes.immunity,
+            gut: attributes.gut,
+            precision: attributes.precision,
+            intelligence: attributes.intelligence,
+            instinct: attributes.instinct,
+            eyesight: attributes.eyesight,
+            hearing: attributes.hearing,
+            left_arm_strength: attributes.left_arm_strength,
+            right_arm_strength: attributes.right_arm_strength,
+            left_leg_strength: attributes.left_leg_strength,
+            right_leg_strength: attributes.right_leg_strength,
+            left_arm_agility: attributes.left_arm_agility,
+            right_arm_agility: attributes.right_arm_agility,
+            left_leg_agility: attributes.left_leg_agility,
+            right_leg_agility: attributes.right_leg_agility,
+        },
+        body: CombatBody {
+            health: [
+                limbs.left_arm_health,
+                limbs.right_arm_health,
+                limbs.left_leg_health,
+                limbs.right_leg_health,
+                limbs.chest_health,
+                limbs.stomach_health,
+                limbs.head_health,
+            ],
+            weight_kg: condition.body_weight_kg,
+            primary_side: BodySide::Right,
+        },
+        essentials: CombatEssentials {
+            calories_used_today: stats.calories_used,
+            focus_level: stats.focus,
+        },
+        equipment: equipment.combat_equipment(),
+        skills: CombatSkills {
+            melee_hours: skills.melee_hours,
+            dodge_hours: skills.dodge_hours,
+            block_hours: skills.block_hours,
+            ranged_hours: skills.ranged_hours,
+            will_hours: skills.will_hours,
+            charisma_hours: skills.charisma_hours,
+            medicine_hours: skills.medicine_hours,
+            faith_hours: skills.faith_hours,
+            stealth_hours: skills.stealth_hours,
+            balance_hours: skills.balance_hours,
+            surgeon_hours: skills.surgeon_hours,
+        },
+        starting_incapacitation: (strategic_incapacitation - strategic_pain - strategic_blood_loss)
+            .max(0.0),
+        starting_blood_fraction: if condition.maximum_blood_ml > 0.0 {
+            (condition.current_blood_ml / condition.maximum_blood_ml).clamp(0.0, 1.0)
+        } else {
+            1.0
+        },
+        ..Combatant::new(character_id)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::carried_water_weight_kg;
+
+    #[test]
+    fn carried_water_contributes_one_kilogram_per_litre() {
+        assert_eq!(carried_water_weight_kg(4_000.0), 4.0);
+        assert_eq!(carried_water_weight_kg(-1.0), 0.0);
     }
 }

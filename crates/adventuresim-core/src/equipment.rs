@@ -32,6 +32,12 @@ pub trait PlayerEquipment {
     fn weapon_holding_side(&self) -> Option<BodySide>;
     fn weapon_is_precise(&self) -> bool;
     fn weapon_balance(&self) -> f32;
+    /// Kinetic energy delivered by a projectile. Forty joules is a useful
+    /// short-bow baseline; implementations with richer item data can override
+    /// it per weapon.
+    fn weapon_ranged_force_joules(&self) -> f32 {
+        40.0 * self.weapon_weight().max(0.5)
+    }
     fn shield_block_bonus(&self) -> f32;
 
     fn armor_resistance(&self, part: BodyPart) -> f32;

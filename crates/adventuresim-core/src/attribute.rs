@@ -65,6 +65,26 @@ pub trait PlayerAttributes {
     fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32;
     fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32;
 
+    /// Fine motor control used while an attacker has time to aim. Older
+    /// adapters can rely on their existing reflex-only behavior until they
+    /// expose a dedicated precision value.
+    fn raw_precision(&self) -> f32 {
+        f32::NAN
+    }
+
+    fn precision_by_parts(&self, body: &impl PlayerBody, weights: LimbWeights) -> f32 {
+        let usable_limbs = BodyPart::LIMBS.iter().fold(0.0, |sum, part| {
+            sum + weights.by_part(part).clamp(0.0, 1.0)
+                * body.body_part_health(part).clamp(0.0, 1.0)
+        });
+        let precision = self.raw_precision();
+        if precision.is_nan() {
+            self.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights)
+        } else {
+            precision * usable_limbs
+        }
+    }
+
     fn attr_by_parts(&self, attr: impl Into<Attribute>, body: &impl PlayerBody) -> f32 {
         let attr = attr.into();
         match attr {

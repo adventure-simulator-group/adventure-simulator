@@ -1,3 +1,4 @@
+use adventuresim_core::prelude::*;
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CrossingWatercourse,
@@ -36,7 +37,6 @@ const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
-const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const SURGERY_CHECK_PER_HEALTH_DAMAGE: f32 = 20.0;
 
 /// Untreated autoresolve wounds can deteriorate by as much as their original
@@ -51,6 +51,95 @@ fn post_battle_wound_deterioration(damage: f32, surgery_check: f32) -> f32 {
     let untreated_fraction =
         ((required_check - surgery_check.clamp(0.0, 5.0)) / required_check).clamp(0.0, 1.0);
     damage * untreated_fraction
+}
+
+fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
+    let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
+    let enemy = enemy_type.to_ascii_lowercase();
+    let ranged = enemy.contains("goblin");
+    let precise = enemy.contains("spider") || ranged;
+    let mut combatant = Combatant::new(id);
+    combatant.attributes = CombatAttributes {
+        endurance: rating,
+        immunity: rating,
+        gut: rating,
+        precision: if precise { rating + 0.5 } else { rating },
+        intelligence: rating * 0.7,
+        instinct: rating,
+        eyesight: rating,
+        hearing: rating,
+        left_arm_strength: rating,
+        right_arm_strength: rating,
+        left_leg_strength: rating,
+        right_leg_strength: rating,
+        left_arm_agility: rating,
+        right_arm_agility: rating,
+        left_leg_agility: rating,
+        right_leg_agility: rating,
+    };
+    let training = rating * 1_500.0;
+    combatant.skills = CombatSkills {
+        melee_hours: training,
+        ranged_hours: if ranged { training * 2.0 } else { 0.0 },
+        dodge_hours: training,
+        block_hours: if enemy.contains("bandit") || enemy.contains("thieve") {
+            training
+        } else {
+            training * 0.4
+        },
+        will_hours: training,
+        balance_hours: training,
+        ..CombatSkills::default()
+    };
+    combatant.body.weight_kg = if enemy.contains("wolf") {
+        45.0
+    } else if enemy.contains("spider") {
+        35.0
+    } else {
+        70.0
+    };
+    combatant.equipment.weapon = Some(CombatWeapon {
+        melee: !ranged,
+        ranged,
+        blunt: !ranged
+            && !enemy.contains("bandit")
+            && !enemy.contains("thieve")
+            && !enemy.contains("spider")
+            && !enemy.contains("wolf"),
+        slash: enemy.contains("bandit") || enemy.contains("thieve"),
+        pierce: precise || enemy.contains("wolf"),
+        accuracy: if precise { 1.4 } else { 0.8 },
+        weight: if ranged { 1.0 } else { 1.5 },
+        penetration: if enemy.contains("spider") { 2.0 } else { 0.8 },
+        reach: if ranged { 20.0 } else { 0.8 },
+        precise,
+        balance: 0.3,
+        ranged_force_joules: if ranged { 40.0 } else { 0.0 },
+    });
+    if enemy.contains("bandit") || enemy.contains("thieve") {
+        combatant.equipment.shield_block_bonus = 1.0;
+        combatant.equipment.armor.fill(CombatArmor {
+            resistance: 25.0,
+            padding: 15.0,
+            flexibility: 0.8,
+            range_of_motion: 0.9,
+            coverage: 0.5,
+        });
+    }
+    combatant
+}
+
+fn autoresolve_drop(enemy_type: &str) -> Option<&'static str> {
+    let enemy = enemy_type.to_ascii_lowercase();
+    if enemy.contains("wolf") || enemy.contains("spider") {
+        None
+    } else if enemy.contains("goblin") {
+        Some("short_bow")
+    } else if enemy.contains("bandit") || enemy.contains("thieve") {
+        Some("short_sword")
+    } else {
+        Some("club")
+    }
 }
 
 #[cfg(test)]
@@ -4152,40 +4241,90 @@ pub fn autoresolve_quest(
         .collect::<Result<Vec<_>, _>>()?;
     let surgery_check = aggregate_bounded_party_check(surgery_checks);
 
-    for member_id in member_ids {
-        if let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member_id) {
+    let allies = member_ids
+        .iter()
+        .map(|member_id| {
             let condition =
-                crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
-            let base_damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
-            let damage = base_damage * (2.0 - condition.check_multiplier);
-            let deterioration = post_battle_wound_deterioration(damage, surgery_check);
-            let final_damage = damage + deterioration;
-            match ctx.random::<u64>() % 7 {
-                0 => limbs.left_arm_health = (limbs.left_arm_health - final_damage).max(0.0),
-                1 => limbs.right_arm_health = (limbs.right_arm_health - final_damage).max(0.0),
-                2 => limbs.left_leg_health = (limbs.left_leg_health - final_damage).max(0.0),
-                3 => limbs.right_leg_health = (limbs.right_leg_health - final_damage).max(0.0),
-                4 => limbs.head_health = (limbs.head_health - final_damage).max(0.0),
-                5 => limbs.chest_health = (limbs.chest_health - final_damage).max(0.0),
-                _ => limbs.stomach_health = (limbs.stomach_health - final_damage).max(0.0),
-            }
-            ctx.db.character_limbs().character_id().update(limbs);
-            crate::condition::apply_blood_loss(
+                crate::condition::refresh_character_strategic_condition(ctx, *member_id)?;
+            crate::capability::load_combatant(
+                ctx,
+                *member_id,
+                condition.incapacitation,
+                condition.pain,
+                condition.blood_loss,
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let enemies = (0..quest.enemy_count.max(0) as u64)
+        .map(|index| {
+            autoresolve_enemy(
+                u64::MAX.saturating_sub(index),
+                &quest.enemy_type,
+                quest.difficulty,
+            )
+        })
+        .collect();
+    let outcome = resolve_battle(allies, enemies, ctx.random());
+
+    for member in &outcome.allies {
+        let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member.id) else {
+            continue;
+        };
+        let old_health = [
+            limbs.left_arm_health,
+            limbs.right_arm_health,
+            limbs.left_leg_health,
+            limbs.right_leg_health,
+            limbs.chest_health,
+            limbs.stomach_health,
+            limbs.head_health,
+        ];
+        let mut final_health = member.body.health;
+        let mut deterioration_blood_loss = 0.0;
+        for index in 0..final_health.len() {
+            let fresh_damage = (old_health[index] - final_health[index]).max(0.0);
+            let deterioration = post_battle_wound_deterioration(fresh_damage, surgery_check);
+            final_health[index] = (final_health[index] - deterioration).max(0.0);
+            deterioration_blood_loss += deterioration * 0.5;
+        }
+        limbs.left_arm_health = final_health[0];
+        limbs.right_arm_health = final_health[1];
+        limbs.left_leg_health = final_health[2];
+        limbs.right_leg_health = final_health[3];
+        limbs.chest_health = final_health[4];
+        limbs.stomach_health = final_health[5];
+        limbs.head_health = final_health[6];
+        ctx.db.character_limbs().character_id().update(limbs);
+        crate::condition::apply_blood_loss(
+            ctx,
+            member.id,
+            member.blood_loss_fraction + deterioration_blood_loss,
+        )?;
+        crate::capability::refresh_character_capability(ctx, member.id)?;
+    }
+
+    if outcome.victor != BattleVictor::Allies {
+        for member_id in member_ids {
+            crate::condition::record_morale_event(
                 ctx,
                 member_id,
-                final_damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
+                "defeat",
+                -(5.0 + quest.difficulty.max(0) as f32),
+                Some(quest_id.clone()),
             )?;
-            crate::capability::refresh_character_capability(ctx, member_id)?;
         }
+        return Ok(());
     }
-    // The current enemy generator equips its placeholder enemies with clubs.
-    let dropped_item = "club";
+
+    let dropped_items = autoresolve_drop(&quest.enemy_type)
+        .map(|item| vec![(item.to_string(), quest.enemy_count.max(0) as u32)])
+        .unwrap_or_default();
     record_battle_result(
         ctx,
         &party_id,
         &quest_id,
         &format!("autoresolve-{quest_id}"),
-        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        dropped_items,
         true,
     )?;
     complete_quest(ctx, quest_id)
