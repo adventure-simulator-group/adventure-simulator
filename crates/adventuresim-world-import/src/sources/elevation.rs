@@ -560,7 +560,6 @@ mod tests {
             )
             .unwrap();
         image.write_data(values).unwrap();
-        drop(encoder);
         bytes.set_position(0);
         bytes
     }

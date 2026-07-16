@@ -1,7 +1,8 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    EdgeEndpoint, ElevationMeters, LandUseFraction, LandUseProfile, SettlementImport,
-    TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION, WorldNodeImport,
+    CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover, LandUseFraction,
+    LandUseProfile, SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION,
+    Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -89,6 +90,7 @@ pub struct Settlement {
     pub population_estimate: u32,
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
+    pub forest_cover: ForestCover,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -317,6 +319,15 @@ pub fn import_settlements(
                 settlement.id
             )
         })?;
+        let forest_cover = match settlement.forest_cover {
+            ForestCover::Open => ForestCover::Open,
+            ForestCover::Wooded(woodland) => ForestCover::Wooded(Woodland {
+                density: CanopyDensity::new(woodland.density.percent()).ok_or_else(|| {
+                    format!("Settlement {} has invalid canopy density", settlement.id)
+                })?,
+                dominant: woodland.dominant,
+            }),
+        };
         if ctx
             .db
             .world_node()
@@ -338,6 +349,7 @@ pub fn import_settlements(
             population_estimate: settlement.population_estimate,
             elevation,
             land_use,
+            forest_cover,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3772,6 +3784,10 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     LandUseFraction::new(5_400).unwrap(),
                 )
                 .unwrap(),
+                forest_cover: ForestCover::Wooded(Woodland {
+                    density: CanopyDensity::new(35).unwrap(),
+                    dominant: DominantLeafType::Mixed,
+                }),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,
