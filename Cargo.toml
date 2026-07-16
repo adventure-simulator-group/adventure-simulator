@@ -2,6 +2,8 @@
 resolver = "3"
 members = [
     "crates/adventuresim-core",
+    "crates/adventuresim-world-schema",
+    "crates/adventuresim-world-import",
     "crates/adventuresim-stdb-module",
     "crates/adventuresim-stdb-client",
     "crates/adventuresim-tactical-core",
@@ -25,6 +27,7 @@ adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
+adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
   "reflect_auto_register",
@@ -58,6 +61,7 @@ rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
+csv = "1.3"
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"

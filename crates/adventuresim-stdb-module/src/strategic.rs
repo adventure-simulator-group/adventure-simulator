@@ -1,4 +1,7 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
+use adventuresim_world_schema::{
+    SettlementImport, TravelEdgeImport, WORLD_SCHEMA_VERSION, WorldNodeImport,
+};
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
@@ -134,58 +137,33 @@ pub struct WorldDataImport {
     #[primary_key]
     pub id: u8,
     pub owner: Identity,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct WorldNodeImport {
-    pub id: u64,
-    pub parent_node_id: Option<u64>,
-    pub latitude: f64,
-    pub longitude: f64,
-    pub is_settlement: bool,
-    pub is_town: bool,
-    pub is_ferry: bool,
-    pub is_harbour: bool,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct TravelEdgeImport {
-    pub id: u64,
-    pub from_node_id: u64,
-    pub to_node_id: u64,
-    pub kind: String,
-    pub length_m: u32,
-    pub slope_multiplier: f32,
-    pub certainty: u8,
-    pub section: String,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct SettlementImport {
-    pub id: String,
-    pub source_node_id: u64,
-    pub name: String,
-    pub longitude: f64,
-    pub latitude: f64,
-    pub population_level: i32,
-    /// Viabundus records this approximation in thousands of inhabitants; zero means absent.
-    pub population_estimate: u32,
-    pub scene_key: String,
-    pub religion_id: String,
+    pub schema_version: u32,
 }
 
 /// Start a world import. This must be called before sending any import batch.
 /// The first caller becomes the owner of this import session; in production the
 /// deployment operator must claim it before the database is opened to players.
 #[reducer]
-pub fn begin_world_data_import(ctx: &ReducerContext) -> Result<(), String> {
+pub fn begin_world_data_import(ctx: &ReducerContext, schema_version: u32) -> Result<(), String> {
+    if schema_version != WORLD_SCHEMA_VERSION {
+        return Err(format!(
+            "World schema version {schema_version} is unsupported; expected {WORLD_SCHEMA_VERSION}"
+        ));
+    }
     match ctx.db.world_data_import().id().find(0) {
-        Some(import) if import.owner == ctx.sender() => Ok(()),
+        Some(import) if import.owner == ctx.sender() && import.schema_version == schema_version => {
+            Ok(())
+        }
+        Some(import) if import.owner == ctx.sender() => Err(format!(
+            "The existing import session uses world schema version {}",
+            import.schema_version
+        )),
         Some(_) => Err("World data import is owned by another identity".into()),
         None => {
             ctx.db.world_data_import().insert(WorldDataImport {
                 id: 0,
                 owner: ctx.sender(),
+                schema_version,
             });
             Ok(())
         }
@@ -250,7 +228,7 @@ pub fn import_travel_edges(
             id: edge.id,
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
-            kind: edge.kind,
+            kind: edge.kind.as_str().into(),
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
             certainty: edge.certainty,

@@ -162,6 +162,7 @@ pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
+pub mod travel_edge_kind_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_to_quest_reducer;
@@ -338,6 +339,7 @@ pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_import_type::TravelEdgeImport;
+pub use travel_edge_kind_type::TravelEdgeKind;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_to_quest_reducer::travel_to_quest;
@@ -389,7 +391,9 @@ pub enum Reducer {
     },
     BackfillItemValues,
     BackfillSoloParties,
-    BeginWorldDataImport,
+    BeginWorldDataImport {
+        schema_version: u32,
+    },
     CalibrateWeaponPrecision,
     CancelMissionRequest {
         mission_id: String,
@@ -750,7 +754,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
-            Reducer::BeginWorldDataImport => "begin_world_data_import",
+            Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
