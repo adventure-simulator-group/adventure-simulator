@@ -2,11 +2,12 @@ use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervo
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType, EdgeEndpoint,
     ElevationMeters, ForestCover, HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction,
-    LandUseProfile, MappedPotentialVegetation, MineralSoilTexture, ModeledTreeSpecies,
-    ModeledTreeSpeciesProfile, PotentialVegetation, PotentialVegetationFormation, SettlementImport,
-    SoilDepth, SoilMaterial, SoilProfile, SoilProperties, SoilWaterRegime, StoneContentPercent,
-    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
-    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, TopsoilOrganicCarbon,
+    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -411,6 +412,7 @@ pub fn import_settlements(
                 )?)
             }
         };
+        let soil = reconstruct_soil_profile(&settlement.id, settlement.soil)?;
         if ctx
             .db
             .world_node()
@@ -435,7 +437,7 @@ pub fn import_settlements(
             forest_cover,
             potential_vegetation,
             tree_species,
-            soil: settlement.soil,
+            soil,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -449,6 +451,62 @@ pub fn import_settlements(
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
     Ok(())
+}
+
+fn reconstruct_soil_profile(
+    settlement_id: &str,
+    profile: SoilProfile,
+) -> Result<SoilProfile, String> {
+    let reconstruct_properties = |mut properties: SoilProperties| {
+        let stones = |value: StoneContentPercent| {
+            StoneContentPercent::new(value.percent())
+                .ok_or_else(|| format!("Settlement {settlement_id} has invalid soil stone content"))
+        };
+        properties.substrate = match properties.substrate {
+            SoilSubstrate::Mineral(mut soil) => {
+                soil.stones = stones(soil.stones)?;
+                SoilSubstrate::Mineral(soil)
+            }
+            SoilSubstrate::Organic(mut soil) => {
+                soil.stones = stones(soil.stones)?;
+                SoilSubstrate::Organic(soil)
+            }
+            SoilSubstrate::RockOutcrop(mut soil) => {
+                soil.stones = stones(soil.stones)?;
+                SoilSubstrate::RockOutcrop(soil)
+            }
+            SoilSubstrate::OtherNonTextured(mut soil) => {
+                soil.stones = stones(soil.stones)?;
+                SoilSubstrate::OtherNonTextured(soil)
+            }
+        };
+        Ok::<_, String>(properties)
+    };
+    match profile {
+        SoilProfile::Inferred(properties) => {
+            Ok(SoilProfile::Inferred(reconstruct_properties(properties)?))
+        }
+        SoilProfile::Mapped(mapped) => {
+            let mapping_unit = SoilMappingUnit::new(
+                mapped.mapping_unit.smu(),
+                mapped.mapping_unit.dominant_stu(),
+                mapped.mapping_unit.dominance_percent(),
+            )
+            .ok_or_else(|| {
+                format!("Settlement {settlement_id} has an invalid soil mapping unit")
+            })?;
+            let parent_material =
+                ParentMaterialCode::new(mapped.parent_material.as_str().to_owned()).ok_or_else(
+                    || format!("Settlement {settlement_id} has an invalid parent-material code"),
+                )?;
+            Ok(SoilProfile::Mapped(MappedSoilProfile {
+                mapping_unit,
+                wrb_group: mapped.wrb_group,
+                parent_material,
+                properties: reconstruct_properties(mapped.properties)?,
+            }))
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -3884,12 +3942,14 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     .unwrap(),
                 ),
                 soil: SoilProfile::Inferred(SoilProperties {
-                    material: SoilMaterial::Mineral(MineralSoilTexture::Medium),
-                    depth: SoilDepth::Deep,
-                    available_water: AvailableWaterCapacity::Medium,
-                    organic_carbon: TopsoilOrganicCarbon::Medium,
+                    substrate: SoilSubstrate::Mineral(MineralSoil {
+                        texture: MineralSoilTexture::Medium,
+                        depth: SoilDepth::Deep,
+                        available_water: AvailableWaterCapacity::Medium,
+                        organic_carbon: TopsoilOrganicCarbon::Medium,
+                        stones: StoneContentPercent::new(10).unwrap(),
+                    }),
                     water_regime: SoilWaterRegime::SeasonallyWet,
-                    stones: StoneContentPercent::new(10).unwrap(),
                     agricultural_limitation: AgriculturalLimitation::None,
                 }),
                 scene_key: scene.into(),

@@ -4,20 +4,23 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::mineral_soil_texture_type::MineralSoilTexture;
+use super::mineral_soil_type::MineralSoil;
+use super::organic_soil_type::OrganicSoil;
+use super::other_non_textured_soil_type::OtherNonTexturedSoil;
+use super::rock_outcrop_soil_type::RockOutcropSoil;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum SoilMaterial {
-    Mineral(MineralSoilTexture),
+pub enum SoilSubstrate {
+    Mineral(MineralSoil),
 
-    Organic,
+    Organic(OrganicSoil),
 
-    RockOutcrop,
+    RockOutcrop(RockOutcropSoil),
 
-    OtherNonTextured,
+    OtherNonTextured(OtherNonTexturedSoil),
 }
 
-impl __sdk::InModule for SoilMaterial {
+impl __sdk::InModule for SoilSubstrate {
     type Module = super::RemoteModule;
 }

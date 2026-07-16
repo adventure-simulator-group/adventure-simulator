@@ -4,12 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::stone_content_percent_type::StoneContentPercent;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SoilClassificationCode {
-    pub code: String,
+pub struct RockOutcropSoil {
+    pub stones: StoneContentPercent,
 }
 
-impl __sdk::InModule for SoilClassificationCode {
+impl __sdk::InModule for RockOutcropSoil {
     type Module = super::RemoteModule;
 }

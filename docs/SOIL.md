@@ -40,16 +40,25 @@ projection used by SGDBE; it must not be silently interpreted as EPSG:3035.
 Polygon records provide a soil mapping-unit ID, dominant soil typological-unit
 ID, and dominance percentage. Attribute tables are joined by STU.
 
-Mapped profiles retain those source IDs, the WRB level-one code, dominant
-parent-material code, and typed gameplay properties: surface material and
-texture, depth to rock, available water capacity, topsoil organic carbon,
-stone content, dominant agricultural limitation, and a water-regime inference.
-Source code domains are parsed exhaustively. Structurally unexpected fields or
-new non-placeholder codes fail the import rather than becoming `Unknown`.
+Mapped profiles retain those source IDs, an exhaustive WRB reference-group
+enum, dominant parent-material code, and typed gameplay properties: substrate
+and texture, depth to rock, available water capacity, topsoil organic carbon,
+stone content, dominant agricultural limitation, and annual water regime.
+The parser uses the physical DBF names (`WRBLV1`, `PARMADO`, and `AGLI1NNI`),
+not the longer logical attribute names shown in parts of the metadata. Source
+code domains are parsed exhaustively. Structurally unexpected fields or new
+non-placeholder codes fail the import rather than becoming `Unknown`.
 
-Documented no-information markers (`0`, `#`, or blank), incomplete joins, and
-settlements outside polygon coverage instead produce a complete `Inferred`
-profile from already-typed elevation and potential vegetation. Wetland and mire
+Material-dependent fields live inside substrate variants. Mineral and other
+non-textured substrates carry depth, water capacity, carbon, and stone content;
+organic substrate does not carry a separately contradictory carbon class; rock
+outcrop carries only stone content. This prevents canonical states such as a
+very deep, high-water-capacity rock outcrop.
+
+Documented no-information markers (`0`, `#`, or blank), WRB non-soil categories
+(town, water, marsh, glacier, disturbed ground, and rock outcrop), incomplete
+joins, and settlements outside polygon coverage instead produce a complete
+`Inferred` profile from already-typed elevation and potential vegetation. Wetland and mire
 formations favor wetter or organic soils; alpine terrain favors shallow stony
 or rocky soil; dry Mediterranean and steppe formations favor coarser, drier
 soil; all other settlements receive a temperate medium-textured fallback.
