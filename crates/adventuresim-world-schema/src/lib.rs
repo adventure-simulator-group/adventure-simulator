@@ -89,6 +89,7 @@ pub enum IgneousRock {
     Tuff,
     OtherPlutonic,
     OtherVolcanic,
+    OtherIgneous,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -128,16 +129,20 @@ pub enum GeologicEra {
     Quaternary,
     Neogene,
     Paleogene,
+    Cenozoic,
     Cretaceous,
     Jurassic,
     Triassic,
+    Mesozoic,
     Permian,
     Carboniferous,
     Devonian,
     Silurian,
     Ordovician,
     Cambrian,
+    Paleozoic,
     Precambrian,
+    Phanerozoic,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -168,11 +173,18 @@ pub struct MappedSurfaceGeology {
     pub setting: GeologicSetting,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct InferredGeologicSetting {
+    pub lithology: SurfaceLithology,
+    pub age: GeologicEra,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum SurfaceGeology {
     Mapped(MappedSurfaceGeology),
-    Inferred(GeologicSetting),
+    Inferred(InferredGeologicSetting),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

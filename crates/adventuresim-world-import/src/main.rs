@@ -250,7 +250,10 @@ fn encode_geology(profile: &SurfaceGeology) -> Value {
             "unit": { "value": mapped.unit.as_str() },
             "setting": setting(&mapped.setting),
         }}),
-        SurfaceGeology::Inferred(inferred) => json!({ "Inferred": setting(inferred) }),
+        SurfaceGeology::Inferred(inferred) => json!({ "Inferred": {
+            "lithology": encode_lithology(inferred.lithology),
+            "age": enum_unit(geologic_era_name(inferred.age)),
+        }}),
     }
 }
 
@@ -303,6 +306,7 @@ fn encode_lithology(lithology: SurfaceLithology) -> Value {
                 IgneousRock::Tuff => "Tuff",
                 IgneousRock::OtherPlutonic => "OtherPlutonic",
                 IgneousRock::OtherVolcanic => "OtherVolcanic",
+                IgneousRock::OtherIgneous => "OtherIgneous",
             },
         ),
         SurfaceLithology::Metamorphic(value) => named(
@@ -334,16 +338,20 @@ const fn geologic_era_name(era: GeologicEra) -> &'static str {
         GeologicEra::Quaternary => "Quaternary",
         GeologicEra::Neogene => "Neogene",
         GeologicEra::Paleogene => "Paleogene",
+        GeologicEra::Cenozoic => "Cenozoic",
         GeologicEra::Cretaceous => "Cretaceous",
         GeologicEra::Jurassic => "Jurassic",
         GeologicEra::Triassic => "Triassic",
+        GeologicEra::Mesozoic => "Mesozoic",
         GeologicEra::Permian => "Permian",
         GeologicEra::Carboniferous => "Carboniferous",
         GeologicEra::Devonian => "Devonian",
         GeologicEra::Silurian => "Silurian",
         GeologicEra::Ordovician => "Ordovician",
         GeologicEra::Cambrian => "Cambrian",
+        GeologicEra::Paleozoic => "Paleozoic",
         GeologicEra::Precambrian => "Precambrian",
+        GeologicEra::Phanerozoic => "Phanerozoic",
     }
 }
 
@@ -614,14 +622,14 @@ mod tests {
         AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
         EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, GeologicAgeEvidence,
         GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
-        HabitatSuitability, IgneousRock, InferredTreeSpeciesProfile, LandUseFraction,
-        LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology,
-        MineralSoil, MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, ParentMaterialCode, PotentialVegetation, PotentialVegetationFormation,
-        SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate,
-        SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
-        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
-        UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
+        HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
+        LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile,
+        MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode, PotentialVegetation,
+        PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
+        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
     };
 
     use super::{
@@ -776,8 +784,8 @@ mod tests {
         assert_eq!(
             encode_settlement(&settlement).unwrap()["geology"],
             serde_json::json!({ "Inferred": {
-                "lithology": { "Inferred": { "Unconsolidated": { "Alluvium": [] } } },
-                "age": { "Inferred": { "Quaternary": [] } },
+                "lithology": { "Unconsolidated": { "Alluvium": [] } },
+                "age": { "Quaternary": [] },
             }})
         );
         settlement.geology = SurfaceGeology::Mapped(MappedSurfaceGeology {
@@ -831,11 +839,9 @@ mod tests {
                 water_regime: SoilWaterRegime::SeasonallyWet,
                 agricultural_limitation: AgriculturalLimitation::None,
             }),
-            geology: SurfaceGeology::Inferred(GeologicSetting {
-                lithology: GeologicLithologyEvidence::Inferred(SurfaceLithology::Unconsolidated(
-                    UnconsolidatedDeposit::Alluvium,
-                )),
-                age: GeologicAgeEvidence::Inferred(GeologicEra::Quaternary),
+            geology: SurfaceGeology::Inferred(InferredGeologicSetting {
+                lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                age: GeologicEra::Quaternary,
             }),
             scene_key: "village".into(),
             religion_id: "catholic".into(),

@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use adventuresim_world_schema::{
     CompiledWorld, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
-    GeologicUnitId, IgneousRock, MappedSurfaceGeology, MetamorphicRock, MixedLithology,
-    SedimentaryRock, SettlementImport, SoilProfile, SoilSubstrate, SourceProvenance,
-    SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, WorldMetadata,
+    GeologicUnitId, IgneousRock, InferredGeologicSetting, MappedSurfaceGeology, MetamorphicRock,
+    MixedLithology, SedimentaryRock, SettlementImport, SoilProfile, SoilSubstrate,
+    SourceProvenance, SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit,
+    WORLD_SCHEMA_VERSION, WorldMetadata,
 };
 use geo::{Contains, Geometry, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -193,6 +194,98 @@ impl GeologyMap {
                 path.display()
             )));
         }
+        let (organization, organization_srs): (String, i64) = connection
+            .query_row(
+                "SELECT organization, organization_coordsys_id FROM gpkg_spatial_ref_sys WHERE srs_id = ?1",
+                params![EXPECTED_SRS],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if !organization.eq_ignore_ascii_case("EPSG") || organization_srs != EXPECTED_SRS {
+            return Err(Error::Validation(format!(
+                "{} binds GeoPackage SRS {EXPECTED_SRS} to {organization}:{organization_srs}; expected EPSG:{EXPECTED_SRS}",
+                path.display()
+            )));
+        }
+        let contents_srs: i64 = connection
+            .query_row(
+                "SELECT srs_id FROM gpkg_contents WHERE table_name = ?1 AND data_type = 'features'",
+                params![TABLE],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let rtree_registration: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM gpkg_extensions WHERE table_name = ?1 AND column_name = ?2 AND extension_name = 'gpkg_rtree_index'",
+                params![TABLE, GEOMETRY_COLUMN],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let rtree_sql: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rtree_GeologicUnitView_geom'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        // GeoPackage flags are the fourth byte: bits 4/5 are empty and
+        // standard-vs-extended geometry, bits 1..=3 select the envelope, and
+        // bit 0 is byte order. The first hex nibble is therefore 0/2 for a
+        // non-empty geometry or 1/3 for an empty one; the second is 0..=9.
+        let missing_rtree_entries: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM GeologicUnitView g LEFT JOIN rtree_GeologicUnitView_geom r ON r.id = g.fid WHERE g.geom IS NOT NULL AND substr(hex(g.geom), 7, 1) IN ('0', '2') AND r.id IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let invalid_geometry_headers: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM GeologicUnitView WHERE geom IS NULL OR length(geom) < 8 OR substr(geom, 1, 2) != X'4750' OR substr(hex(geom), 7, 1) NOT IN ('0', '1', '2', '3') OR substr(hex(geom), 8, 1) NOT IN ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let orphan_rtree_entries: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM rtree_GeologicUnitView_geom r LEFT JOIN GeologicUnitView g ON g.fid = r.id WHERE g.fid IS NULL OR g.geom IS NULL OR substr(hex(g.geom), 7, 1) IN ('1', '3')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if contents_srs != EXPECTED_SRS
+            || rtree_registration != 1
+            || !is_expected_rtree_sql(&rtree_sql)
+            || invalid_geometry_headers != 0
+            || missing_rtree_entries != 0
+            || orphan_rtree_entries != 0
+        {
+            return Err(Error::Validation(format!(
+                "{} does not register GeologicUnitView as an EPSG:{EXPECTED_SRS} feature layer with a virtual GeoPackage R-tree",
+                path.display()
+            )));
+        }
         let features: i64 = connection
             .query_row("SELECT COUNT(*) FROM GeologicUnitView", [], |row| {
                 row.get(0)
@@ -271,6 +364,17 @@ impl GeologyMap {
     }
 }
 
+fn is_expected_rtree_sql(sql: &str) -> bool {
+    let normalized = sql
+        .chars()
+        .filter(|character| {
+            !character.is_ascii_whitespace() && !matches!(character, '"' | '`' | '[' | ']' | ';')
+        })
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    normalized == "createvirtualtablertree_geologicunitview_geomusingrtree(id,minx,maxx,miny,maxy)"
+}
+
 fn geometry_contains(geometry: &Geometry<f64>, point: &Point<f64>) -> bool {
     match geometry {
         Geometry::Polygon(polygon) => polygon.contains(point),
@@ -341,12 +445,14 @@ fn preferred_label(title: Option<String>, uri: Option<String>) -> String {
 }
 
 fn is_missing(value: &str) -> bool {
+    let lowercase = value.to_ascii_lowercase();
     value.is_empty()
         || matches!(
-            value.to_ascii_lowercase().as_str(),
+            lowercase.as_str(),
             "unknown" | "nil" | "missing" | "notavailable" | "not available"
         )
-        || value.contains("/nil/OGC/")
+        || lowercase.contains("/nil/ogc/")
+        || lowercase.contains("voidreasonvalue/")
 }
 
 fn classify_lithology(value: &str) -> SurfaceLithology {
@@ -357,7 +463,13 @@ fn classify_lithology(value: &str) -> SurfaceLithology {
     use UnconsolidatedDeposit as U;
     let value = value.to_ascii_lowercase();
     let has = |needle: &str| value.contains(needle);
-    if has("limestone") || has("carbonate sedimentary") {
+    if has("limestone")
+        || has("carbonatesedimentary")
+        || has("carbonate sedimentary")
+        || has("carbonateooze")
+        || has("carbonatemud")
+        || has("travertine")
+    {
         L::Sedimentary(S::Limestone)
     } else if has("dolom") {
         L::Sedimentary(S::Dolostone)
@@ -365,11 +477,11 @@ fn classify_lithology(value: &str) -> SurfaceLithology {
         L::Sedimentary(S::Chalk)
     } else if has("marl") {
         L::Sedimentary(S::Marl)
-    } else if has("sandstone") || has("arenite") {
+    } else if has("sandstone") || has("arenite") || has("wacke") {
         L::Sedimentary(S::Sandstone)
     } else if has("siltstone") {
         L::Sedimentary(S::Siltstone)
-    } else if has("mudstone") {
+    } else if has("mudstone") || has("claystone") {
         L::Sedimentary(S::Mudstone)
     } else if has("shale") {
         L::Sedimentary(S::Shale)
@@ -387,20 +499,44 @@ fn classify_lithology(value: &str) -> SurfaceLithology {
         L::Igneous(I::Granitoid)
     } else if has("diorite") {
         L::Igneous(I::Diorite)
-    } else if has("gabbro") {
+    } else if has("gabbro") || has("dolerit") {
         L::Igneous(I::Gabbro)
     } else if has("basalt") {
         L::Igneous(I::Basalt)
     } else if has("andesite") {
         L::Igneous(I::Andesite)
-    } else if has("rhyolite") {
+    } else if has("rhyolit") {
         L::Igneous(I::Rhyolite)
     } else if has("tuff") {
         L::Igneous(I::Tuff)
-    } else if has("plutonic") || has("intrusive") {
+    } else if has("plutonic")
+        || has("intrusive")
+        || has("peridotite")
+        || has("tonalite")
+        || has("syenit")
+        || has("monzonite")
+        || has("pyroxenite")
+        || has("anorthosit")
+        || has("porphyry")
+        || has("phaneritic")
+    {
         L::Igneous(I::OtherPlutonic)
-    } else if has("volcanic") || has("extrusive") || has("lava") {
+    } else if has("volcanic")
+        || has("extrusive")
+        || has("lava")
+        || has("pyroclastic")
+        || has("basanite")
+        || has("tephrite")
+        || has("spilite")
+        || has("trachyt")
+        || has("phonolite")
+        || has("dacite")
+        || has("komatiit")
+        || has("carbonatite")
+    {
         L::Igneous(I::OtherVolcanic)
+    } else if has("igneous") {
+        L::Igneous(I::OtherIgneous)
     } else if has("slate") {
         L::Metamorphic(M::Slate)
     } else if has("schist") {
@@ -415,11 +551,20 @@ fn classify_lithology(value: &str) -> SurfaceLithology {
         L::Metamorphic(M::Phyllite)
     } else if has("amphibolite") {
         L::Metamorphic(M::Amphibolite)
-    } else if has("metamorph") {
+    } else if has("metamorph")
+        || has("migmatite")
+        || has("granulite")
+        || has("serpentinite")
+        || has("mylonit")
+        || has("eclogite")
+        || has("skarn")
+        || has("hornfels")
+        || has("phyllonite")
+    {
         L::Metamorphic(M::OtherMetamorphic)
     } else if has("clay") {
         L::Unconsolidated(U::Clay)
-    } else if has("silt") {
+    } else if has("silt") || has("silicatemud") || value == "mud" {
         L::Unconsolidated(U::Silt)
     } else if has("sand") {
         L::Unconsolidated(U::Sand)
@@ -435,7 +580,7 @@ fn classify_lithology(value: &str) -> SurfaceLithology {
         L::Unconsolidated(U::Loess)
     } else if has("ash") || has("tephra") {
         L::Unconsolidated(U::VolcanicAsh)
-    } else if has("sediment") || has("unconsolidated") {
+    } else if has("sediment") || has("unconsolidated") || has("residualmaterial") {
         L::Unconsolidated(U::MixedSediment)
     } else if has("breccia") {
         L::Mixed(MixedLithology::Breccia)
@@ -452,44 +597,178 @@ fn classify_age(value: &str) -> Option<GeologicEra> {
     use GeologicEra as E;
     let value = value.to_ascii_lowercase();
     let has = |needle: &str| value.contains(needle);
+    let has_any = |needles: &[&str]| needles.iter().any(|needle| has(needle));
     if is_missing(&value) {
         None
-    } else if has("quaternary") || has("holocene") || has("pleistocene") {
+    } else if has_any(&[
+        "quaternary",
+        "holocene",
+        "pleistocene",
+        "ionian",
+        "calabrian",
+        "gelasian",
+    ]) {
         Some(E::Quaternary)
-    } else if has("neogene") || has("miocene") || has("pliocene") {
+    } else if has_any(&[
+        "neogene",
+        "miocene",
+        "pliocene",
+        "aquitanian",
+        "burdigalian",
+        "langhian",
+        "serravallian",
+        "tortonian",
+        "messinian",
+        "zanclean",
+        "piacenzian",
+    ]) {
         Some(E::Neogene)
-    } else if has("paleogene")
-        || has("palaeogene")
-        || has("eocene")
-        || has("oligocene")
-        || has("paleocene")
-    {
+    } else if has_any(&[
+        "paleogene",
+        "palaeogene",
+        "eocene",
+        "oligocene",
+        "paleocene",
+        "danian",
+        "selandian",
+        "thanetian",
+        "ypresian",
+        "lutetian",
+        "bartonian",
+        "priabonian",
+        "rupelian",
+        "chattian",
+    ]) {
         Some(E::Paleogene)
-    } else if has("cretaceous") {
+    } else if has_any(&[
+        "cretaceous",
+        "berriasian",
+        "valanginian",
+        "hauterivian",
+        "barremian",
+        "aptian",
+        "albian",
+        "cenomanian",
+        "turonian",
+        "coniacian",
+        "santonian",
+        "campanian",
+        "maastrichtian",
+    ]) {
         Some(E::Cretaceous)
-    } else if has("jurassic") {
+    } else if has_any(&[
+        "jurassic",
+        "hettangian",
+        "sinemurian",
+        "pliensbachian",
+        "toarcian",
+        "aalenian",
+        "bajocian",
+        "bathonian",
+        "callovian",
+        "oxfordian",
+        "kimmeridgian",
+        "tithonian",
+    ]) {
         Some(E::Jurassic)
-    } else if has("triassic") {
+    } else if has_any(&[
+        "triassic",
+        "induan",
+        "olenekian",
+        "anisian",
+        "ladinian",
+        "carnian",
+        "norian",
+        "rhaetian",
+    ]) {
         Some(E::Triassic)
-    } else if has("permian") {
+    } else if has_any(&["permian", "cisuralian", "guadalupian", "lopingian"]) {
         Some(E::Permian)
-    } else if has("carboniferous") || has("mississippian") || has("pennsylvanian") {
+    } else if has_any(&[
+        "carboniferous",
+        "mississippian",
+        "pennsylvanian",
+        "tournaisian",
+        "visean",
+        "serpukhovian",
+        "bashkirian",
+        "moscovian",
+        "kasimovian",
+        "gzhelian",
+    ]) {
         Some(E::Carboniferous)
-    } else if has("devonian") {
+    } else if has_any(&[
+        "devonian",
+        "lochkovian",
+        "pragian",
+        "emsian",
+        "eifelian",
+        "givetian",
+        "frasnian",
+        "famennian",
+    ]) {
         Some(E::Devonian)
-    } else if has("silurian") {
+    } else if has_any(&[
+        "silurian",
+        "llandovery",
+        "rhuddanian",
+        "aeronian",
+        "telychian",
+        "wenlock",
+        "ludlow",
+        "pridoli",
+    ]) {
         Some(E::Silurian)
-    } else if has("ordovician") {
+    } else if has_any(&[
+        "ordovician",
+        "tremadocian",
+        "floian",
+        "dapingian",
+        "darriwilian",
+        "sandbian",
+        "katian",
+        "hirnantian",
+    ]) {
         Some(E::Ordovician)
-    } else if has("cambrian") {
-        Some(E::Cambrian)
-    } else if has("precambrian")
-        || has("proterozoic")
-        || has("archaean")
-        || has("archean")
-        || has("hadaean")
-    {
+    } else if has_any(&[
+        "precambrian",
+        "proterozoic",
+        "archaean",
+        "archean",
+        "hadaean",
+        "ediacaran",
+        "cryogenian",
+        "tonian",
+        "stenian",
+        "ectasian",
+        "calymmian",
+        "statherian",
+        "orosirian",
+        "rhyacian",
+        "siderian",
+    ]) {
         Some(E::Precambrian)
+    } else if has_any(&[
+        "cambrian",
+        "terreneuvian",
+        "furongian",
+        "drumian",
+        "stage2",
+        "stage4",
+        "stage5",
+        "stage10",
+        "series2",
+        "series3",
+    ]) {
+        Some(E::Cambrian)
+    } else if has("cenozoic") {
+        Some(E::Cenozoic)
+    } else if has("mesozoic") {
+        Some(E::Mesozoic)
+    } else if has("paleozoic") || has("palaeozoic") {
+        Some(E::Paleozoic)
+    } else if has("phanerozoic") {
+        Some(E::Phanerozoic)
     } else {
         None
     }
@@ -506,7 +785,7 @@ const fn infer_age(lithology: SurfaceLithology) -> GeologicEra {
     }
 }
 
-fn infer_setting(settlement: &SoilSettlementDraft) -> GeologicSetting {
+fn infer_setting(settlement: &SoilSettlementDraft) -> InferredGeologicSetting {
     let substrate = match &settlement.soil {
         SoilProfile::Mapped(profile) => profile.properties.substrate,
         SoilProfile::Inferred(properties) => properties.substrate,
@@ -523,9 +802,9 @@ fn infer_setting(settlement: &SoilSettlementDraft) -> GeologicSetting {
             SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone)
         }
     };
-    GeologicSetting {
-        lithology: GeologicLithologyEvidence::Inferred(lithology),
-        age: GeologicAgeEvidence::Inferred(infer_age(lithology)),
+    InferredGeologicSetting {
+        lithology,
+        age: infer_age(lithology),
     }
 }
 
@@ -556,6 +835,14 @@ mod tests {
             classify_lithology("diamicton"),
             SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Till)
         );
+        assert_eq!(
+            classify_lithology("claystone"),
+            SurfaceLithology::Sedimentary(SedimentaryRock::Mudstone)
+        );
+        assert_eq!(
+            classify_lithology("ultramaficIgneousRock"),
+            SurfaceLithology::Igneous(IgneousRock::OtherIgneous)
+        );
     }
 
     #[test]
@@ -568,7 +855,14 @@ mod tests {
             classify_age("http://example/mesoproterozoic"),
             Some(GeologicEra::Precambrian)
         );
+        assert_eq!(classify_age("precambrian"), Some(GeologicEra::Precambrian));
+        assert_eq!(classify_age("visean"), Some(GeologicEra::Carboniferous));
+        assert_eq!(classify_age("rhaetian"), Some(GeologicEra::Triassic));
         assert_eq!(classify_age("unknown"), None);
+        assert_eq!(
+            classify_age("http://inspire.ec.europa.eu/codelist/VoidReasonValue/Unpopulated"),
+            None
+        );
     }
 
     #[test]
@@ -604,6 +898,41 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_registered_but_incomplete_spatial_index() {
+        let fixture = Fixture::new();
+        let connection = Connection::open(&fixture.path).unwrap();
+        connection
+            .execute("DELETE FROM rtree_GeologicUnitView_geom", [])
+            .unwrap();
+        drop(connection);
+        assert!(matches!(
+            GeologyMap::open(&fixture.path),
+            Err(crate::Error::Validation(message)) if message.contains("virtual GeoPackage R-tree")
+        ));
+    }
+
+    #[test]
+    fn rejects_an_empty_geometry_in_the_spatial_index() {
+        let fixture = Fixture::new();
+        let connection = Connection::open(&fixture.path).unwrap();
+        connection.execute(
+            "INSERT INTO GeologicUnitView VALUES (2, ?1, 'empty-unit', NULL, NULL, NULL, 'unknown', NULL, 'unknown')",
+            params![empty_geopackage_geometry()],
+        ).unwrap();
+        connection
+            .execute(
+                "INSERT INTO rtree_GeologicUnitView_geom VALUES (2, 0.0, 0.0, 0.0, 0.0)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        assert!(matches!(
+            GeologyMap::open(&fixture.path),
+            Err(crate::Error::Validation(message)) if message.contains("virtual GeoPackage R-tree")
+        ));
+    }
+
+    #[test]
     #[ignore = "requires the manually downloaded 675 MB EGDI GeoPackage"]
     fn samples_downloaded_egdi_geopackage() {
         let path = std::env::var_os("EGDI_GEOPACKAGE")
@@ -614,6 +943,30 @@ mod tests {
         let projection = GeologyProjection::new().unwrap();
         let point = projection.project(48.8055, -1.2265).unwrap();
         assert!(map.sample(point).unwrap().is_some());
+        let mut statement = map
+            .connection
+            .prepare(
+                "SELECT DISTINCT representativeage_title, representativeage_uri FROM GeologicUnitView",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            })
+            .unwrap();
+        for row in rows {
+            let (title, uri) = row.unwrap();
+            let label = super::preferred_label(title, uri);
+            if !super::is_missing(&label) {
+                assert!(
+                    super::classify_age(&label).is_some(),
+                    "unparsed EGDI age codelist term {label:?}"
+                );
+            }
+        }
     }
 
     struct Fixture {
@@ -636,15 +989,26 @@ mod tests {
                 .unwrap();
             connection
                 .execute_batch(
-                    "CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER, z INTEGER, m INTEGER);
+                    "CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT, srs_id INTEGER PRIMARY KEY, organization TEXT, organization_coordsys_id INTEGER, definition TEXT, description TEXT);
+                     CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT, identifier TEXT, description TEXT DEFAULT '', last_change TEXT, min_x REAL, min_y REAL, max_x REAL, max_y REAL, srs_id INTEGER);
+                     CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER, z INTEGER, m INTEGER);
+                     CREATE TABLE gpkg_extensions (table_name TEXT, column_name TEXT, extension_name TEXT, definition TEXT, scope TEXT);
                      CREATE TABLE GeologicUnitView (
                          fid INTEGER PRIMARY KEY, geom BLOB, id TEXT, geolunitid TEXT, name TEXT,
                          representativeage_uri TEXT, representativeage_title TEXT,
                          representativelithology_uri TEXT, representativelithology_title TEXT
                      );
-                     CREATE TABLE rtree_GeologicUnitView_geom (id INTEGER PRIMARY KEY, minx REAL, maxx REAL, miny REAL, maxy REAL);",
+                     CREATE VIRTUAL TABLE rtree_GeologicUnitView_geom USING rtree(id, minx, maxx, miny, maxy);",
                 )
                 .unwrap();
+            connection.execute(
+                "INSERT INTO gpkg_spatial_ref_sys VALUES ('ETRS89-extended / LCC Europe', 3034, 'EPSG', 3034, 'fixture', '')",
+                [],
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?1, 'features', ?1, 3034)",
+                params![super::TABLE],
+            ).unwrap();
             connection
                 .execute(
                     "INSERT INTO gpkg_geometry_columns VALUES (?1, ?2, 'MULTISURFACE', 3034, 0, 0)",
@@ -654,6 +1018,10 @@ mod tests {
             connection.execute(
                 "INSERT INTO GeologicUnitView VALUES (1, ?1, 'fixture-unit', NULL, NULL, NULL, 'unknown', NULL, 'limestone')",
                 params![square_geopackage_geometry()],
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO gpkg_extensions VALUES (?1, ?2, 'gpkg_rtree_index', 'http://www.geopackage.org/spec120/#extension_rtree', 'write-only')",
+                params![super::TABLE, super::GEOMETRY_COLUMN],
             ).unwrap();
             connection
                 .execute(
@@ -695,6 +1063,15 @@ mod tests {
             bytes.extend_from_slice(&x.to_le_bytes());
             bytes.extend_from_slice(&y.to_le_bytes());
         }
+        bytes
+    }
+
+    fn empty_geopackage_geometry() -> Vec<u8> {
+        let mut bytes = b"GP\0\x11".to_vec();
+        bytes.extend_from_slice(&3034_i32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&6_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
         bytes
     }
 }

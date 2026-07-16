@@ -4,33 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::geologic_era_type::GeologicEra;
+use super::surface_lithology_type::SurfaceLithology;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum IgneousRock {
-    Granite,
-
-    Granitoid,
-
-    Diorite,
-
-    Gabbro,
-
-    Basalt,
-
-    Andesite,
-
-    Rhyolite,
-
-    Tuff,
-
-    OtherPlutonic,
-
-    OtherVolcanic,
-
-    OtherIgneous,
+pub struct InferredGeologicSetting {
+    pub lithology: SurfaceLithology,
+    pub age: GeologicEra,
 }
 
-impl __sdk::InModule for IgneousRock {
+impl __sdk::InModule for InferredGeologicSetting {
     type Module = super::RemoteModule;
 }
