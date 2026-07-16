@@ -182,6 +182,12 @@ in `docs/FOREST_COVER.md` under
 `target/world-data-sources/raw/forest-cover/`. Override that directory with
 `--forest-cover-dir`.
 
+EuroVegMap potential vegetation is distributed in an installer. Extract or
+install version 2.1 manually and place its `Maps` directory under
+`target/world-data-sources/raw/potential-vegetation/Maps/`, as documented in
+`docs/POTENTIAL_VEGETATION.md`. Override it with
+`--potential-vegetation-dir`.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
