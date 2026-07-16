@@ -311,7 +311,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             hydrology_files_read: 0,
             hydrology_features_read: 0,
             hydrology_settlement_samples: 0,
-            hydrology_settlement_fallback_samples: 0,
+            hydrology_landlocked_settlements: 0,
             hydrology_edge_crossings: 0,
             hydrology_inferred_ferry_waterways: 0,
             excluded_edges,
