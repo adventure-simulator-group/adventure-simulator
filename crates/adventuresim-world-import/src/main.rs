@@ -5,7 +5,8 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementImport, TravelEdgeImport, TravelEdgeKind, WorldNodeImport,
+    CompiledWorld, SettlementImport, TravelCrossing, TravelEdgeImport, TravelEdgeKind,
+    WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -158,11 +159,18 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         TravelEdgeKind::Land => json!({ "Land": [] }),
         TravelEdgeKind::Ferry => json!({ "Ferry": [] }),
     };
+    let crossing = match edge.crossing {
+        Some(TravelCrossing::Bridge) => json!({ "some": { "Bridge": [] } }),
+        Some(TravelCrossing::Ferry) => json!({ "some": { "Ferry": [] } }),
+        None => json!({ "none": [] }),
+    };
     Ok(json!({
         "id": edge.id,
         "from_node_id": edge.from_node_id,
         "to_node_id": edge.to_node_id,
         "kind": kind,
+        "crossing": crossing,
+        "has_toll": edge.has_toll,
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
         "certainty": edge.certainty,
@@ -207,7 +215,7 @@ fn default_output(year: i32) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use adventuresim_world_schema::{TravelEdgeImport, TravelEdgeKind};
+    use adventuresim_world_schema::{TravelCrossing, TravelEdgeImport, TravelEdgeKind};
 
     use super::{
         MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_travel_edge, serialize_batches,
@@ -220,6 +228,8 @@ mod tests {
             from_node_id: 2,
             to_node_id: 3,
             kind: TravelEdgeKind::Ferry,
+            crossing: Some(TravelCrossing::Ferry),
+            has_toll: false,
             length_m: 4,
             slope_multiplier: 1.0,
             certainty: 1,
@@ -227,6 +237,10 @@ mod tests {
         };
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(batches[0][0]["kind"], serde_json::json!({ "Ferry": [] }));
+        assert_eq!(
+            batches[0][0]["crossing"],
+            serde_json::json!({ "some": { "Ferry": [] } })
+        );
     }
 
     #[test]

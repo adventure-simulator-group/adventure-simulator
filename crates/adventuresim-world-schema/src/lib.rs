@@ -24,6 +24,14 @@ impl TravelEdgeKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "lowercase")]
+pub enum TravelCrossing {
+    Bridge,
+    Ferry,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WorldMetadata {
     pub schema_version: u32,
@@ -45,6 +53,8 @@ pub struct WorldBuildReport {
     pub edges: usize,
     pub settlements: usize,
     pub settlements_connected_to_road_network: usize,
+    pub route_crossings: usize,
+    pub toll_edges: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -77,6 +87,8 @@ pub struct TravelEdgeImport {
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub kind: TravelEdgeKind,
+    pub crossing: Option<TravelCrossing>,
+    pub has_toll: bool,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,

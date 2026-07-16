@@ -18,6 +18,13 @@ settlement's approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
+Active Viabundus bridge and toll nodes are projected onto their incident travel
+edges. Ferry edges carry a typed ferry crossing; land edges incident to an
+active bridge carry a typed bridge crossing. Toll presence is retained
+separately. These are edge properties rather than settlement properties so
+travel encounters and tactical scene generation can use them without implying
+that the infrastructure lies inside a neighboring settlement.
+
 Each imported settlement has the prototype's shared merchant services, and
 newly created characters start at a random loaded settlement.
 

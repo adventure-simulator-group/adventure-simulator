@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::travel_crossing_type::TravelCrossing;
 use super::travel_edge_kind_type::TravelEdgeKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,6 +14,8 @@ pub struct TravelEdgeImport {
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub kind: TravelEdgeKind,
+    pub crossing: Option<TravelCrossing>,
+    pub has_toll: bool,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,
