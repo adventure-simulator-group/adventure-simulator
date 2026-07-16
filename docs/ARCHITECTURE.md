@@ -27,8 +27,10 @@ settlement. HYDE then adds an exhaustive typed land-use profile and constructs
 an enriched draft. Copernicus forest cover consumes that draft and constructs
 another enriched draft with a typed open-or-wooded state. EuroVegMap then adds
 typed mapped-or-inferred potential vegetation. EU-Trees4F consumes that state,
-adds a nonempty modeled-or-inferred tree-species profile, and constructs the
-canonical settlement record. The generic draft is a typestate boundary: each enrichment
+adds a nonempty modeled-or-inferred tree-species profile, and constructs another
+enriched draft. ESDB consumes all of those environmental inputs, adds a complete
+mapped-or-inferred soil profile, and constructs the canonical settlement record.
+The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents
 later stages from being called before their dependencies exist.

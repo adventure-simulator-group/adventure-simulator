@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 7;
+pub const WORLD_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -344,6 +344,268 @@ impl<'de> Deserialize<'de> for InferredTreeSpeciesProfile {
 pub enum TreeSpeciesProfile {
     Modeled(ModeledTreeSpeciesProfile),
     Inferred(InferredTreeSpeciesProfile),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum MineralSoilTexture {
+    Coarse,
+    Medium,
+    MediumFine,
+    Fine,
+    VeryFine,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilMaterial {
+    Mineral(MineralSoilTexture),
+    Organic,
+    RockOutcrop,
+    OtherNonTextured,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilDepth {
+    Shallow,
+    Moderate,
+    Deep,
+    VeryDeep,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum AvailableWaterCapacity {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+    VeryHigh,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum TopsoilOrganicCarbon {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilWaterRegime {
+    UsuallyDry,
+    SeasonallyWet,
+    LongSeasonWet,
+    PermanentlyWet,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum AgriculturalLimitation {
+    None,
+    Gravelly,
+    Stony,
+    ShallowRock,
+    Concretionary,
+    CementedCalcic,
+    Saline,
+    Sodic,
+    GlacierOrSnow,
+    Disturbed,
+    Fragic,
+    Drained,
+    Flooded,
+    Eroded,
+    ShallowWaterTable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct StoneContentPercent {
+    percent: u8,
+}
+
+impl StoneContentPercent {
+    pub const fn new(percent: u8) -> Option<Self> {
+        if percent <= 100 {
+            Some(Self { percent })
+        } else {
+            None
+        }
+    }
+
+    pub const fn percent(self) -> u8 {
+        self.percent
+    }
+}
+
+impl<'de> Deserialize<'de> for StoneContentPercent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            percent: u8,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.percent)
+            .ok_or_else(|| serde::de::Error::custom("stone content must be 0..=100 percent"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SoilProperties {
+    pub material: SoilMaterial,
+    pub depth: SoilDepth,
+    pub available_water: AvailableWaterCapacity,
+    pub organic_carbon: TopsoilOrganicCarbon,
+    pub water_regime: SoilWaterRegime,
+    pub stones: StoneContentPercent,
+    pub agricultural_limitation: AgriculturalLimitation,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SoilMappingUnit {
+    smu: u32,
+    dominant_stu: u32,
+    dominance_percent: u8,
+}
+
+impl SoilMappingUnit {
+    pub const fn new(smu: u32, dominant_stu: u32, dominance_percent: u8) -> Option<Self> {
+        if smu > 0 && dominant_stu > 0 && dominance_percent >= 1 && dominance_percent <= 100 {
+            Some(Self {
+                smu,
+                dominant_stu,
+                dominance_percent,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub const fn smu(self) -> u32 {
+        self.smu
+    }
+
+    pub const fn dominant_stu(self) -> u32 {
+        self.dominant_stu
+    }
+
+    pub const fn dominance_percent(self) -> u8 {
+        self.dominance_percent
+    }
+}
+
+impl<'de> Deserialize<'de> for SoilMappingUnit {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            smu: u32,
+            dominant_stu: u32,
+            dominance_percent: u8,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.smu, wire.dominant_stu, wire.dominance_percent)
+            .ok_or_else(|| serde::de::Error::custom("invalid ESDB soil mapping unit"))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SoilClassificationCode {
+    code: String,
+}
+
+impl SoilClassificationCode {
+    pub fn new(code: impl Into<String>) -> Option<Self> {
+        let code = code.into();
+        (!code.is_empty()
+            && code.len() <= 32
+            && code
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'/' | b'.')))
+        .then_some(Self { code })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.code
+    }
+}
+
+impl<'de> Deserialize<'de> for SoilClassificationCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            code: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.code)
+            .ok_or_else(|| serde::de::Error::custom("invalid ESDB classification code"))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct ParentMaterialCode {
+    code: String,
+}
+
+impl ParentMaterialCode {
+    pub fn new(code: impl Into<String>) -> Option<Self> {
+        let code = code.into();
+        (!code.is_empty()
+            && code.len() <= 16
+            && code.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+        .then_some(Self { code })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.code
+    }
+}
+
+impl<'de> Deserialize<'de> for ParentMaterialCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            code: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.code)
+            .ok_or_else(|| serde::de::Error::custom("invalid ESDB parent-material code"))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct MappedSoilProfile {
+    pub mapping_unit: SoilMappingUnit,
+    pub wrb_code: SoilClassificationCode,
+    pub parent_material: ParentMaterialCode,
+    pub properties: SoilProperties,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilProfile {
+    Mapped(MappedSoilProfile),
+    Inferred(SoilProperties),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -686,6 +948,10 @@ pub struct WorldBuildReport {
     pub tree_species_samples: usize,
     pub tree_species_fallback_samples: usize,
     pub tree_species_candidates: usize,
+    pub soil_polygons_read: usize,
+    pub soil_attribute_rows_read: usize,
+    pub soil_samples: usize,
+    pub soil_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -740,6 +1006,7 @@ pub struct SettlementImport {
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
     pub tree_species: TreeSpeciesProfile,
+    pub soil: SoilProfile,
     pub scene_key: String,
     pub religion_id: String,
 }
@@ -750,7 +1017,8 @@ mod tests {
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
         HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
         LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, PotentialVegetationFormation, TreeSpeciesId,
+        NativeRangeEvidence, ParentMaterialCode, PotentialVegetationFormation,
+        SoilClassificationCode, SoilMappingUnit, StoneContentPercent, TreeSpeciesId,
     };
 
     #[test]
@@ -905,5 +1173,19 @@ mod tests {
         );
         assert!(InferredTreeSpeciesProfile::new(Vec::new()).is_none());
         assert!(serde_json::from_str::<ModeledTreeSpeciesProfile>(r#"{"candidates":[]}"#).is_err());
+    }
+
+    #[test]
+    fn soil_source_identifiers_and_percentages_are_bounded() {
+        assert!(SoilMappingUnit::new(1, 2, 75).is_some());
+        assert!(SoilMappingUnit::new(0, 2, 75).is_none());
+        assert!(SoilMappingUnit::new(1, 2, 0).is_none());
+        assert!(SoilMappingUnit::new(1, 2, 101).is_none());
+        assert!(StoneContentPercent::new(100).is_some());
+        assert!(StoneContentPercent::new(101).is_none());
+        assert!(SoilClassificationCode::new("CM").is_some());
+        assert!(SoilClassificationCode::new("bad code").is_none());
+        assert!(ParentMaterialCode::new("110").is_some());
+        assert!(ParentMaterialCode::new("bad-code").is_none());
     }
 }
