@@ -3445,6 +3445,7 @@ pub fn travel_to_settlement(
         ctx.db.character().id().update(traveler);
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
+        crate::capability::refresh_character_capability(ctx, traveler_id)?;
     }
 
     if let Some(ref mut party) = party {

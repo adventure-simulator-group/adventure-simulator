@@ -24,6 +24,7 @@ The current implementation defines personal `travel_ration` and `waterskin`
 items. A ration weighs 1 kg, costs 3 gold through automatic provisioning, and
 supplies 6,000 kcal. A waterskin weighs 0.5 kg empty, costs 2 gold, and adds 4
 litres of aggregate carried-water capacity. Water volume is tracked per
-character rather than per individual container. Party-pool provisions are not
+character rather than per individual container; carried water adds one kilogram
+per litre to that character's encumbrance. Party-pool provisions are not
 automatically consumed because party inventory stake accounting does not yet
 define how communal consumables should be charged.

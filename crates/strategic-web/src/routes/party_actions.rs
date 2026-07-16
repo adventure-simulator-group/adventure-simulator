@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::travel::ProvisioningChoice;
+
 use crate::spacetimedb::RecruitmentRequirements;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -10,11 +12,11 @@ use crate::spacetimedb::RecruitmentRequirements;
 pub(crate) enum PartyAction {
     TravelToSettlement {
         settlement_id: String,
-        provision: bool,
+        provisioning: ProvisioningChoice,
     },
     TravelToQuest {
         quest_id: String,
-        provision: bool,
+        provisioning: ProvisioningChoice,
     },
     RemovePartyMember {
         character_id: u64,
@@ -140,17 +142,25 @@ impl PartyAction {
         match self {
             Self::TravelToSettlement {
                 settlement_id,
-                provision,
+                provisioning,
             } => (
                 "travel_to_settlement",
-                vec![json!(actor_id), json!(settlement_id), json!(provision)],
+                vec![
+                    json!(actor_id),
+                    json!(settlement_id),
+                    json!(provisioning.should_provision()),
+                ],
             ),
             Self::TravelToQuest {
                 quest_id,
-                provision,
+                provisioning,
             } => (
                 "travel_to_quest",
-                vec![json!(actor_id), json!(quest_id), json!(provision)],
+                vec![
+                    json!(actor_id),
+                    json!(quest_id),
+                    json!(provisioning.should_provision()),
+                ],
             ),
             Self::RemovePartyMember { character_id } => (
                 "remove_party_member",
@@ -263,7 +273,7 @@ mod tests {
     fn approval_rebinds_actor_from_the_typed_variant() {
         let action = PartyAction::TravelToQuest {
             quest_id: "quest-7".into(),
-            provision: true,
+            provisioning: ProvisioningChoice::Provision,
         };
         assert_eq!(
             action.reducer_call(42),

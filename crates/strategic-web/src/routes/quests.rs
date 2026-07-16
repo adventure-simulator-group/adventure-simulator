@@ -13,7 +13,7 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     settlements::get_active_party_members,
-    travel::{TravelDestination, settlement_destination},
+    travel::{TravelDestination, TravelForm, settlement_destination},
 };
 use crate::session::Session;
 use crate::spacetimedb::{
@@ -248,7 +248,7 @@ async fn travel_to_quest(
         character_id,
         PartyAction::TravelToQuest {
             quest_id: id.clone(),
-            provision: form.provision,
+            provisioning: form.provisioning,
         },
     )
     .await;
@@ -262,12 +262,6 @@ async fn travel_to_quest(
         }
         PartyActionOutcome::Requested => Redirect::to("/?party-requested=travel").into_response(),
     }
-}
-
-#[derive(Default, serde::Deserialize)]
-struct TravelForm {
-    #[serde(default)]
-    provision: bool,
 }
 
 #[derive(Default, serde::Deserialize)]

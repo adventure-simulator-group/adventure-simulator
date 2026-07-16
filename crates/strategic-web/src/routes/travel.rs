@@ -2,9 +2,45 @@
 
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
+
 use crate::spacetimedb::{Settlement, TravelEdge, TravelKind};
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+
+/// Explicit travel-provision choice parsed at the HTTP boundary and persisted
+/// in party-action requests.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvisioningChoice {
+    Provision,
+    Underprovisioned,
+}
+
+impl ProvisioningChoice {
+    pub fn should_provision(self) -> bool {
+        matches!(self, Self::Provision)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TravelForm {
+    pub provisioning: ProvisioningChoice,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TravelerProvisionForecast {
+    pub name: String,
+    pub rations_to_buy: u32,
+    pub waterskins_to_buy: u32,
+    pub cost: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TravelProvisionForecast {
+    pub travelers: Vec<TravelerProvisionForecast>,
+    pub total_cost: u32,
+}
 
 #[derive(Clone)]
 pub struct TravelDestination {
@@ -137,5 +173,13 @@ mod tests {
     fn walking_time_rounds_up_to_a_minute() {
         assert_eq!(journey_minutes(1), 1);
         assert_eq!(journey_minutes(5_000), 60);
+    }
+
+    #[test]
+    fn travel_form_requires_an_explicit_provisioning_choice() {
+        assert!(serde_json::from_str::<TravelForm>(r#"{}"#).is_err());
+        let form: TravelForm =
+            serde_json::from_str(r#"{"provisioning":"underprovisioned"}"#).unwrap();
+        assert_eq!(form.provisioning, ProvisioningChoice::Underprovisioned);
     }
 }
