@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     Error, Result,
-    draft::{GeologySettlementDraft, ReligionSettlementDraft, WorldDraft},
+    draft::{GeologySettlementDraft, ReligionSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "IEG Maps of Confessional Europe (1500 and 1555)";
@@ -272,7 +272,7 @@ pub(crate) fn enrich(
     let mut fallbacks = 0;
     let settlements: Vec<ReligionSettlementDraft> = std::mem::take(&mut draft.settlements)
         .into_iter()
-        .map(|geologic| {
+        .map(|mut geologic| {
             let settlement = &geologic
                 .soil
                 .trees
@@ -281,14 +281,21 @@ pub(crate) fn enrich(
                 .land
                 .elevated
                 .settlement;
-            let religious_status = regions
+            let matched = regions
                 .iter()
-                .find(|region| region.contains(settlement.latitude, settlement.longitude))
-                .map(|region| region.status)
-                .unwrap_or_else(|| {
+                .find(|region| region.contains(settlement.latitude, settlement.longitude));
+            let religious_status = matched.map(|region| region.status).unwrap_or_else(|| {
                     fallbacks += 1;
                     infer_fallback(settlement.latitude, settlement.longitude)
                 });
+            push_source_note(
+                &mut geologic,
+                if matched.is_some() {
+                    "**[IEG AtlasEuropa religion maps](https://www.atlas-europa.de/t02/rel-anerkannt/t02-anerkannte-religionen.htm):** Official 1544 legal status comes from the prioritized, coarse project-curated intermediate between the 1500 and 1555 maps; it is a gameplay approximation rather than an exact historical border claim."
+                } else {
+                    "**IEG religion fallback:** No curated region covered the settlement, so official religion is deterministically assigned from the documented broad geographic fallback; personal belief is not inferred."
+                },
+            );
             ReligionSettlementDraft {
                 geologic,
                 religious_status,

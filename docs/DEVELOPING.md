@@ -153,7 +153,9 @@ local download. The command records the source URLs and SHA-256 checksums in
 needed to connect those segments, and active settlements. The Rust world
 compiler writes a deterministic, schema-versioned artifact to
 `target/world-1544.json`, validates its references and invariants, and emits a
-build report. `just load-world` sends that same compiled
+build report. Canonical nodes, edges, and settlements include a bounded,
+unstructured Markdown `sources` field for future debugging; it is persisted but
+not currently displayed. `just load-world` sends that same compiled
 data in bounded batches to a published local module. Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
 Interrupted loads can be resumed with the identical compiled artifact. The

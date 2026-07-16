@@ -11,7 +11,7 @@ use adventuresim_world_schema::{LandUseFraction, LandUseProfile, SourceProvenanc
 
 use crate::{
     Error, Result,
-    draft::{ElevatedSettlementDraft, LandUseSettlementDraft, WorldDraft},
+    draft::{ElevatedSettlementDraft, LandUseSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "History Database of the Global Environment 3.2.1";
@@ -106,17 +106,28 @@ pub(crate) fn enrich(
     let settlements = elevated_settlements
         .into_iter()
         .zip(values)
-        .map(|(elevated, values)| {
-            let land_use = match values.profile(interpolation)? {
+        .map(|(mut elevated, values)| {
+            let (land_use, note) = match values.profile(interpolation)? {
                 Some((profile, normalized)) => {
                     normalized_samples += usize::from(normalized);
-                    profile
+                    (
+                        profile,
+                        if normalized {
+                            "**[HYDE 3.2.1](https://doi.org/10.17026/DANS-25G-GEZ3):** Land-use fractions are linearly interpolated to the world year from source cells; overlapping human-use fractions were deterministically normalized to an exhaustive profile."
+                        } else {
+                            "**[HYDE 3.2.1](https://doi.org/10.17026/DANS-25G-GEZ3):** Land-use fractions are linearly interpolated to the world year from the source grid cells."
+                        },
+                    )
                 }
                 None => {
                     fallback_samples += 1;
-                    fallback_profile(&elevated)
+                    (
+                        fallback_profile(&elevated),
+                        "**HYDE land-use fallback:** The source cells had no usable profile, so cropland and grazing are deterministically seeded by the Viabundus node, built-up land by settlement population level, and the remainder is natural land.",
+                    )
                 }
             };
+            push_source_note(&mut elevated, note);
             Ok(LandUseSettlementDraft { elevated, land_use })
         })
         .collect::<Result<Vec<_>>>()?;

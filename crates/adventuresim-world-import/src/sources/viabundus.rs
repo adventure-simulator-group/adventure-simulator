@@ -179,8 +179,10 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
                 ),
             },
         };
+        let edge_id = required_number(&edges_path, "id", &raw.id)?;
+        let slope_was_inferred = raw.slopemultiplier.trim().is_empty();
         edges.push(TravelEdgeDraft {
-            id: required_number(&edges_path, "id", &raw.id)?,
+            id: edge_id,
             from_node_id,
             to_node_id,
             route,
@@ -193,6 +195,14 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             },
             certainty: required_number(&edges_path, "certainty", &raw.certainty)?,
             section: raw.section,
+            sources: format!(
+                "- **[Viabundus 2]({SOURCE_DOI}):** Direct edge record `{edge_id}` supplies endpoints, route type, length, certainty, section, and active bridge/toll endpoint evidence.{}",
+                if slope_was_inferred {
+                    " The source slope multiplier was empty, so the importer used the documented neutral multiplier `1.0`."
+                } else {
+                    " The slope multiplier is source-provided."
+                }
+            ),
         });
     }
 
@@ -203,7 +213,8 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             continue;
         }
         settlement_node_ids.insert(node.id);
-        let estimate = population_by_node.get(&node.id).map(|(_, value)| *value);
+        let population = population_by_node.get(&node.id).copied();
+        let estimate = population.map(|(_, value)| value);
         settlements.push(SettlementDraft {
             id: format!("viabundus-{}", node.id),
             source_node_id: node.id,
@@ -213,6 +224,16 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             population_level: population_level(estimate),
             population_estimate: population_estimate(&population_path, estimate)?,
             scene_key: "hills".into(),
+            sources: format!(
+                "- **[Viabundus 2]({SOURCE_DOI}):** Direct settlement node `{}` supplies name, coordinates, settlement/town status, and transport flags. {}",
+                node.id,
+                population.map_or_else(
+                    || "No eligible population observation was available; the canonical estimate is `0` and the population band uses the documented fallback.".to_owned(),
+                    |(population_year, value)| format!(
+                        "Population `{value}` comes from the latest source observation not after the world year (`{population_year}`)."
+                    ),
+                )
+            ),
         });
     }
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
@@ -243,6 +264,10 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             is_town: node.is_town,
             is_ferry: node.is_ferry,
             is_harbour: node.is_harbour,
+            sources: format!(
+                "- **[Viabundus 2]({SOURCE_DOI}):** Direct node record `{}` supplies coordinates, parent relationship, and settlement/town/ferry/harbour flags.",
+                node.id
+            ),
         })
         .collect();
     let connected_settlements: HashSet<_> = edges

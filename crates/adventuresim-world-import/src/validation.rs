@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use adventuresim_world_schema::{
     CompiledWorld, DroughtProfile, SettlementHydrology, SoilProfile, SurfaceGeology, TravelRoute,
-    TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, valid_sources_markdown,
 };
 
 use crate::{Error, Result};
@@ -20,6 +20,12 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation("world node IDs are not unique".into()));
     }
     for node in &world.nodes {
+        if !valid_sources_markdown(&node.sources) {
+            return Err(Error::Validation(format!(
+                "world node {} has invalid source notes",
+                node.id
+            )));
+        }
         if !node.latitude.is_finite()
             || !(-90.0..=90.0).contains(&node.latitude)
             || !node.longitude.is_finite()
@@ -46,6 +52,12 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation("travel edge IDs are not unique".into()));
     }
     for edge in &world.edges {
+        if !valid_sources_markdown(&edge.sources) {
+            return Err(Error::Validation(format!(
+                "travel edge {} has invalid source notes",
+                edge.id
+            )));
+        }
         if !node_ids.contains(&edge.from_node_id) || !node_ids.contains(&edge.to_node_id) {
             return Err(Error::Validation(format!(
                 "travel edge {} references an unknown node",
@@ -92,6 +104,12 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation("settlement IDs are not unique".into()));
     }
     for settlement in &world.settlements {
+        if !valid_sources_markdown(&settlement.sources) {
+            return Err(Error::Validation(format!(
+                "settlement {} has invalid source notes",
+                settlement.id
+            )));
+        }
         if !node_ids.contains(&settlement.source_node_id) {
             return Err(Error::Validation(format!(
                 "settlement {} references an unknown source node",

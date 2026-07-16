@@ -22,7 +22,10 @@ use zip::ZipArchive;
 
 use crate::{
     Error, Result,
-    draft::{PotentialVegetationSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft},
+    draft::{
+        PotentialVegetationSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft,
+        push_source_note,
+    },
 };
 
 const SOURCE_NAME: &str = "EU-Trees4F v2 current-climate ensemble";
@@ -239,9 +242,18 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(vegetated, tree_species)| TreeSpeciesSettlementDraft {
-            vegetated,
-            tree_species,
+        .map(|(mut vegetated, tree_species)| {
+            push_source_note(
+                &mut vegetated,
+                match &tree_species {
+                    TreeSpeciesProfile::Modeled(_) => "**[EU-Trees4F v2](https://doi.org/10.6084/m9.figshare.17032328.v2):** Ranked tree candidates come from current-climate probability, potential-range, and native-range rasters; suitability is modeled habitat suitability, not observed abundance.",
+                    TreeSpeciesProfile::Inferred(_) => "**EU-Trees4F fallback:** No modeled candidate survived the source masks, so a deterministic non-empty species profile is inferred from potential-vegetation formation.",
+                },
+            );
+            TreeSpeciesSettlementDraft {
+                vegetated,
+                tree_species,
+            }
         })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {

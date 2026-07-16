@@ -11,7 +11,7 @@ use adventuresim_world_schema::{
     SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
     StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
     TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport,
+    Woodland, WorldNodeImport, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -114,6 +114,9 @@ pub struct Settlement {
     /// the historical world dataset. Demo settlements deliberately leave this
     /// empty.
     pub source_node_id: Option<u64>,
+    /// Unstructured Markdown explaining source evidence and deterministic
+    /// inferences. Reserved for a future debug view.
+    pub sources: String,
 }
 
 /// A navigational point in the imported Viabundus network. This contains the
@@ -130,6 +133,8 @@ pub struct WorldNode {
     pub is_town: bool,
     pub is_ferry: bool,
     pub is_harbour: bool,
+    /// Unstructured Markdown source notes for future debugging.
+    pub sources: String,
 }
 
 /// An active 1544 land-network segment. Geometry remains an offline map asset;
@@ -149,6 +154,8 @@ pub struct TravelEdge {
     pub slope_multiplier: f32,
     pub certainty: u8,
     pub section: String,
+    /// Unstructured Markdown source and inference notes for future debugging.
+    pub sources: String,
 }
 
 /// The identity that started the one-time local world-data import. All later
@@ -161,6 +168,9 @@ pub struct WorldDataImport {
     pub owner: Identity,
     pub schema_version: u32,
     pub artifact_id: String,
+    /// Unstructured Markdown describing the source distributions in this
+    /// compiled artifact. Per-record inference details live on imported rows.
+    pub sources: String,
     pub completed: bool,
 }
 
@@ -172,6 +182,7 @@ pub fn begin_world_data_import(
     ctx: &ReducerContext,
     schema_version: u32,
     artifact_id: String,
+    sources: String,
 ) -> Result<(), String> {
     if schema_version != WORLD_SCHEMA_VERSION {
         return Err(format!(
@@ -181,12 +192,17 @@ pub fn begin_world_data_import(
     if artifact_id.trim().is_empty() {
         return Err("World artifact ID must not be empty".into());
     }
+    if !valid_sources_markdown(&sources) {
+        return Err("World source notes are empty, too large, or contain a NUL byte".into());
+    }
     match ctx.db.world_data_import().id().find(0) {
         Some(import) if import.owner != ctx.sender() => {
             Err("World data import is owned by another identity".into())
         }
         Some(import)
-            if import.schema_version == schema_version && import.artifact_id == artifact_id =>
+            if import.schema_version == schema_version
+                && import.artifact_id == artifact_id
+                && import.sources == sources =>
         {
             if import.completed {
                 Err("This world artifact has already been imported".into())
@@ -204,6 +220,7 @@ pub fn begin_world_data_import(
                 owner: ctx.sender(),
                 schema_version,
                 artifact_id,
+                sources,
                 completed: false,
             });
             Ok(())
@@ -244,6 +261,9 @@ pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> 
         return Err("World-node batch is empty".into());
     }
     for node in nodes {
+        if !valid_sources_markdown(&node.sources) {
+            return Err(format!("World node {} has invalid source notes", node.id));
+        }
         let row = WorldNode {
             id: node.id,
             parent_node_id: node.parent_node_id,
@@ -253,6 +273,7 @@ pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> 
             is_town: node.is_town,
             is_ferry: node.is_ferry,
             is_harbour: node.is_harbour,
+            sources: node.sources,
         };
         if ctx.db.world_node().id().find(row.id).is_some() {
             ctx.db.world_node().id().update(row);
@@ -282,6 +303,9 @@ pub fn import_travel_edges(
             ));
         }
         validate_travel_route(edge.id, &edge.route)?;
+        if !valid_sources_markdown(&edge.sources) {
+            return Err(format!("Travel edge {} has invalid source notes", edge.id));
+        }
         let row = TravelEdge {
             id: edge.id,
             from_node_id: edge.from_node_id,
@@ -292,6 +316,7 @@ pub fn import_travel_edges(
             slope_multiplier: edge.slope_multiplier,
             certainty: edge.certainty,
             section: edge.section,
+            sources: edge.sources,
         };
         if ctx.db.travel_edge().id().find(row.id).is_some() {
             ctx.db.travel_edge().id().update(row);
@@ -419,6 +444,12 @@ pub fn import_settlements(
         let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
         let drought = reconstruct_drought_profile(&settlement.id, settlement.drought)?;
         validate_settlement_hydrology(&settlement.id, settlement.hydrology)?;
+        if !valid_sources_markdown(&settlement.sources) {
+            return Err(format!(
+                "Settlement {} has invalid source notes",
+                settlement.id
+            ));
+        }
         if ctx
             .db
             .world_node()
@@ -451,6 +482,7 @@ pub fn import_settlements(
             drought,
             hydrology: settlement.hydrology,
             source_node_id: Some(settlement.source_node_id),
+            sources: settlement.sources,
         };
         let settlement_id = row.id.clone();
         if ctx.db.settlement().id().find(&row.id).is_some() {
@@ -4101,6 +4133,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 scene_key: scene.into(),
                 religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,
+                sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
         }
     }

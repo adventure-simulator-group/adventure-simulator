@@ -36,6 +36,7 @@ pub struct SettlementImport {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub scene_key: String,
+    pub sources: String,
 }
 
 impl __sdk::InModule for SettlementImport {

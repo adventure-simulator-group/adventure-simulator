@@ -16,7 +16,9 @@ use proj4rs::{proj::Proj, transform::transform};
 
 use crate::{
     Error, Result,
-    draft::{ForestSettlementDraft, PotentialVegetationSettlementDraft, WorldDraft},
+    draft::{
+        ForestSettlementDraft, PotentialVegetationSettlementDraft, WorldDraft, push_source_note,
+    },
 };
 
 const SOURCE_NAME: &str = "EuroVegMap 2.1 Map of the Natural Vegetation of Europe";
@@ -68,9 +70,18 @@ fn finish(
         .into_iter()
         .zip(samples)
         .map(
-            |(forest, potential_vegetation)| PotentialVegetationSettlementDraft {
-                forest,
-                potential_vegetation,
+            |(mut forest, potential_vegetation)| {
+                push_source_note(
+                    &mut forest,
+                    match &potential_vegetation {
+                        PotentialVegetation::Mapped(_) => "**[EuroVegMap 2.1](https://www.synbiosys.alterra.nl/eurovegmap/):** Potential-natural-vegetation unit and formation come from polygon containment in the source map.",
+                        PotentialVegetation::Inferred(_) => "**EuroVegMap fallback:** No source polygon contained this settlement, so formation is deterministically inferred from forest cover, dominant leaf type, elevation, and HYDE land use.",
+                    },
+                );
+                PotentialVegetationSettlementDraft {
+                    forest,
+                    potential_vegetation,
+                }
             },
         )
         .collect::<Vec<_>>();
