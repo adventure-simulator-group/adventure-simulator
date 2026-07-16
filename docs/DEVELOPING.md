@@ -194,6 +194,14 @@ documented in `docs/TREE_SPECIES.md`. Override it with
 `--tree-species-archive`. This stage requires all 67 current-climate
 probability, potential, and native-range rasters in the pinned archive.
 
+European Soil Database v2 vector data requires ESDAC registration and
+project-specific permission; it is not redistributed by this repository.
+After authorization, extract the required SGDBE/PTRDB files under
+`target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes/`, as
+documented in `docs/SOIL.md`. Override that directory with `--soil-dir`.
+Until the official archive is available, only the synthetic source boundary is
+verified and the stacked compiler will stop at this stage.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
