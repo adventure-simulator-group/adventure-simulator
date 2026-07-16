@@ -68,6 +68,7 @@ blake3 = "1"
 geo = "0.33.1"
 proj4rs = { version = "0.1.10", default-features = false }
 shapefile = { version = "0.9.0", features = ["geo-types"] }
+zip = { version = "3.0.0", default-features = false, features = ["deflate"] }
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"

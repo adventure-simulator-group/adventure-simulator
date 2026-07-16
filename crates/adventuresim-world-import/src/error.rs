@@ -16,6 +16,11 @@ pub enum Error {
         path: PathBuf,
         source: shapefile::Error,
     },
+    #[error("failed to read ZIP archive {path}: {source}")]
+    Archive {
+        path: PathBuf,
+        source: zip::result::ZipError,
+    },
     #[error("coordinate projection failed: {0}")]
     Projection(#[from] proj4rs::errors::Error),
     #[error("failed to parse JSON source {path}: {source}")]
