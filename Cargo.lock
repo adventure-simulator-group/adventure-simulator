@@ -195,6 +195,7 @@ name = "adventuresim-world-import"
 version = "0.1.0"
 dependencies = [
  "adventuresim-world-schema",
+ "blake3",
  "clap",
  "csv",
  "serde",

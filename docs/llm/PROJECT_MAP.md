@@ -120,6 +120,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/equip_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finalize_merchant_trade_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finalize_party_offer_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/finish_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_settlements_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_travel_edges_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_world_nodes_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -359,7 +360,6 @@ development, or wiki document before changing a subsystem.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_wasm.sh` — Development or documentation automation script.
-- `scripts/import_viabundus.py` — Development or documentation automation script.
 - `scripts/init_viabundus.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `utils/generate_certificates.sh` — Development or documentation automation script.

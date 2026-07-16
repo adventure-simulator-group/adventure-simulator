@@ -138,51 +138,86 @@ pub struct WorldDataImport {
     pub id: u8,
     pub owner: Identity,
     pub schema_version: u32,
+    pub artifact_id: String,
+    pub completed: bool,
 }
 
 /// Start a world import. This must be called before sending any import batch.
 /// The first caller becomes the owner of this import session; in production the
 /// deployment operator must claim it before the database is opened to players.
 #[reducer]
-pub fn begin_world_data_import(ctx: &ReducerContext, schema_version: u32) -> Result<(), String> {
+pub fn begin_world_data_import(
+    ctx: &ReducerContext,
+    schema_version: u32,
+    artifact_id: String,
+) -> Result<(), String> {
     if schema_version != WORLD_SCHEMA_VERSION {
         return Err(format!(
             "World schema version {schema_version} is unsupported; expected {WORLD_SCHEMA_VERSION}"
         ));
     }
+    if artifact_id.trim().is_empty() {
+        return Err("World artifact ID must not be empty".into());
+    }
     match ctx.db.world_data_import().id().find(0) {
-        Some(import) if import.owner == ctx.sender() && import.schema_version == schema_version => {
-            Ok(())
+        Some(import) if import.owner != ctx.sender() => {
+            Err("World data import is owned by another identity".into())
         }
-        Some(import) if import.owner == ctx.sender() => Err(format!(
-            "The existing import session uses world schema version {}",
-            import.schema_version
+        Some(import)
+            if import.schema_version == schema_version && import.artifact_id == artifact_id =>
+        {
+            if import.completed {
+                Err("This world artifact has already been imported".into())
+            } else {
+                Ok(())
+            }
+        }
+        Some(import) => Err(format!(
+            "A different world artifact is already active (schema version {}, artifact {})",
+            import.schema_version, import.artifact_id
         )),
-        Some(_) => Err("World data import is owned by another identity".into()),
         None => {
             ctx.db.world_data_import().insert(WorldDataImport {
                 id: 0,
                 owner: ctx.sender(),
                 schema_version,
+                artifact_id,
+                completed: false,
             });
             Ok(())
         }
     }
 }
 
-fn require_world_import_owner(ctx: &ReducerContext) -> Result<(), String> {
+fn require_active_world_import(ctx: &ReducerContext) -> Result<WorldDataImport, String> {
     let Some(import) = ctx.db.world_data_import().id().find(0) else {
         return Err("Call begin_world_data_import before loading world data".into());
     };
     if import.owner != ctx.sender() {
         return Err("Only the world data import owner may load batches".into());
     }
+    if import.completed {
+        return Err("The world data import has already completed".into());
+    }
+    Ok(import)
+}
+
+/// Mark a resumable world import complete. Once completed, the session rejects
+/// further batches and a different artifact requires an explicit database reset.
+#[reducer]
+pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Result<(), String> {
+    let mut import = require_active_world_import(ctx)?;
+    if import.artifact_id != artifact_id {
+        return Err("Cannot finish a different world artifact".into());
+    }
+    import.completed = true;
+    ctx.db.world_data_import().id().update(import);
     Ok(())
 }
 
 #[reducer]
 pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> Result<(), String> {
-    require_world_import_owner(ctx)?;
+    require_active_world_import(ctx)?;
     if nodes.is_empty() {
         return Err("World-node batch is empty".into());
     }
@@ -211,7 +246,7 @@ pub fn import_travel_edges(
     ctx: &ReducerContext,
     edges: Vec<TravelEdgeImport>,
 ) -> Result<(), String> {
-    require_world_import_owner(ctx)?;
+    require_active_world_import(ctx)?;
     if edges.is_empty() {
         return Err("Travel-edge batch is empty".into());
     }
@@ -248,7 +283,7 @@ pub fn import_settlements(
     ctx: &ReducerContext,
     settlements: Vec<SettlementImport>,
 ) -> Result<(), String> {
-    require_world_import_owner(ctx)?;
+    require_active_world_import(ctx)?;
     if settlements.is_empty() {
         return Err("Settlement batch is empty".into());
     }
