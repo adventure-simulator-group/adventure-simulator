@@ -79,7 +79,7 @@ struct RawPopulation {
     inhabitants: String,
 }
 
-pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft> {
+pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<SettlementDraft>> {
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
     let population_path = require(directory, "population.csv")?;
@@ -282,6 +282,9 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft> {
             elevation_tiles_read: 0,
             elevation_samples: 0,
             elevation_fallback_samples: 0,
+            land_use_rasters_read: 0,
+            land_use_samples: 0,
+            land_use_fallback_samples: 0,
             excluded_edges,
         },
         nodes,

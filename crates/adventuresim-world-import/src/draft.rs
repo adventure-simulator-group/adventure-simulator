@@ -1,15 +1,16 @@
 use adventuresim_world_schema::{
-    SourceProvenance, TravelEdgeImport, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
+    ElevationMeters, SourceProvenance, TravelEdgeImport, TravelEdgeKind, WorldBuildReport,
+    WorldNodeImport,
 };
 
 #[derive(Debug)]
-pub(crate) struct WorldDraft {
+pub(crate) struct WorldDraft<S> {
     pub(crate) year: i32,
     pub(crate) sources: Vec<SourceProvenance>,
     pub(crate) road_types: Vec<TravelEdgeKind>,
     pub(crate) nodes: Vec<WorldNodeImport>,
     pub(crate) edges: Vec<TravelEdgeImport>,
-    pub(crate) settlements: Vec<SettlementDraft>,
+    pub(crate) settlements: Vec<S>,
     pub(crate) report: WorldBuildReport,
 }
 
@@ -24,4 +25,10 @@ pub(crate) struct SettlementDraft {
     pub(crate) population_estimate: u32,
     pub(crate) scene_key: String,
     pub(crate) religion_id: String,
+}
+
+#[derive(Debug)]
+pub(crate) struct ElevatedSettlementDraft {
+    pub(crate) settlement: SettlementDraft,
+    pub(crate) elevation: ElevationMeters,
 }
