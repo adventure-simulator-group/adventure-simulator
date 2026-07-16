@@ -4,16 +4,16 @@ use adventuresim_world_schema::{
     DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
     FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
     InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
+    LanguageCode, MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
     MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
     PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementHydrology, SettlementImport, SettlementReligiousStatus,
-    SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, valid_sources_markdown,
-    EdgeEndpoint, LanguageCode, SettlementDescriptionKind, SettlementImport, TravelEdgeImport,
-    TravelRoute, WORLD_SCHEMA_VERSION, WorldNodeImport,
+    PotentialVegetationFormation, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
+    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit,
+    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent,
+    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+    TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
+    WorldNodeImport, valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -570,6 +570,11 @@ fn validate_travel_route(edge_id: u64, route: &TravelRoute) -> Result<(), String
                     "Travel edge {edge_id} has an invalid ferry waterway"
                 ));
             }
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn import_settlement_aliases(
     ctx: &ReducerContext,
@@ -580,6 +585,9 @@ pub fn import_settlement_aliases(
         return Err("Settlement-alias batch is empty".into());
     }
     for alias in aliases {
+        if alias.id.trim().is_empty() {
+            return Err("Settlement alias ID must not be empty".into());
+        }
         if ctx
             .db
             .settlement()
@@ -592,8 +600,19 @@ pub fn import_settlement_aliases(
                 alias.id
             ));
         }
-        if alias.name.trim().is_empty() {
-            return Err(format!("Settlement alias {} has no name", alias.id));
+        if !valid_bounded_source_text(&alias.name, SETTLEMENT_ALIAS_NAME_MAX_BYTES) {
+            return Err(format!(
+                "Settlement alias {} name must be trimmed, NUL-free, and at most {} bytes",
+                alias.id, SETTLEMENT_ALIAS_NAME_MAX_BYTES
+            ));
+        }
+        if let Some(prefix) = &alias.prefix
+            && !valid_bounded_source_text(prefix, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES)
+        {
+            return Err(format!(
+                "Settlement alias {} prefix must be trimmed, NUL-free, and at most {} bytes",
+                alias.id, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES
+            ));
         }
         let language = alias
             .language
@@ -759,6 +778,8 @@ fn reconstruct_geology_profile(
         }
         SurfaceGeology::Inferred(setting) => Ok(SurfaceGeology::Inferred(setting)),
     }
+}
+
 #[reducer]
 pub fn import_settlement_descriptions(
     ctx: &ReducerContext,
@@ -769,6 +790,9 @@ pub fn import_settlement_descriptions(
         return Err("Settlement-description batch is empty".into());
     }
     for description in descriptions {
+        if description.id.trim().is_empty() {
+            return Err("Settlement description ID must not be empty".into());
+        }
         if ctx
             .db
             .settlement()
@@ -781,10 +805,10 @@ pub fn import_settlement_descriptions(
                 description.id
             ));
         }
-        if description.body.trim().is_empty() {
+        if !valid_bounded_source_text(&description.body, SETTLEMENT_DESCRIPTION_MAX_BYTES) {
             return Err(format!(
-                "Settlement description {} has no body",
-                description.id
+                "Settlement description {} body must be trimmed, NUL-free, and at most {} bytes",
+                description.id, SETTLEMENT_DESCRIPTION_MAX_BYTES
             ));
         }
         let language = description

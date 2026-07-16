@@ -19,6 +19,15 @@ pub fn valid_sources_markdown(value: &str) -> bool {
         && !value.contains('\0')
 }
 
+pub const SETTLEMENT_ALIAS_NAME_MAX_BYTES: usize = 256;
+pub const SETTLEMENT_ALIAS_PREFIX_MAX_BYTES: usize = 128;
+pub const SETTLEMENT_DESCRIPTION_MAX_BYTES: usize = 8_192;
+
+/// Validates bounded, canonical external text before it enters compiled world data.
+pub fn valid_bounded_source_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty() && value == value.trim() && value.len() <= max_bytes && !value.contains('\0')
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum OfficialReligion {
@@ -1757,6 +1766,7 @@ pub struct WorldBuildReport {
     pub settlements: usize,
     pub settlement_aliases: usize,
     pub settlement_descriptions: usize,
+    pub deferred_settlement_descriptions: std::collections::BTreeMap<String, usize>,
     pub settlements_connected_to_road_network: usize,
     pub route_crossings: usize,
     pub toll_edges: usize,
@@ -1867,14 +1877,16 @@ pub struct SettlementImport {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::{
         CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, EuroVegMapUnitCode,
         ForestCover, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
-        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetationFormation,
-        SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SummerHydroclimate,
-        TreeSpeciesId,
+        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LanguageCode,
+        MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode,
+        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
+        StoneContentPercent, SummerHydroclimate, TreeSpeciesId,
     };
 
     #[test]
@@ -1885,6 +1897,18 @@ mod tests {
         assert!(!super::valid_sources_markdown(
             &"x".repeat(super::MAX_SOURCES_MARKDOWN_CHARS + 1)
         ));
+    }
+
+    #[test]
+    fn external_settlement_text_is_bounded_and_nul_free() {
+        let limit = super::SETTLEMENT_ALIAS_NAME_MAX_BYTES;
+        assert!(super::valid_bounded_source_text(&"a".repeat(limit), limit));
+        assert!(!super::valid_bounded_source_text(
+            &"a".repeat(limit + 1),
+            limit
+        ));
+        assert!(!super::valid_bounded_source_text("name\0hidden", limit));
+        assert!(!super::valid_bounded_source_text(" padded ", limit));
     }
 
     #[test]
@@ -2117,6 +2141,13 @@ mod tests {
             serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1001}"#).is_err()
         );
     }
+
+    #[test]
+    fn language_codes_are_parsed_into_a_closed_representation() {
+        assert_eq!(LanguageCode::from_str("deu").unwrap().as_str(), "deu");
+        assert!(LanguageCode::from_str("DE").is_err());
+        assert!(serde_json::from_str::<LanguageCode>("\"english\"").is_err());
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2152,18 +2183,4 @@ pub struct SettlementDescriptionImport {
     pub kind: SettlementDescriptionKind,
     pub language: Option<LanguageCode>,
     pub body: String,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use super::LanguageCode;
-
-    #[test]
-    fn language_codes_are_parsed_into_a_closed_representation() {
-        assert_eq!(LanguageCode::from_str("deu").unwrap().as_str(), "deu");
-        assert!(LanguageCode::from_str("DE").is_err());
-        assert!(serde_json::from_str::<LanguageCode>("\"english\"").is_err());
-    }
 }

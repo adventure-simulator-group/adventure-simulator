@@ -47,6 +47,8 @@ use adventuresim_stdb_client::{
     quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
     religious_demand_table::ReligiousDemandTableAccess,
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
+    settlement_alias_table::SettlementAliasTableAccess,
+    settlement_description_table::SettlementDescriptionTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
@@ -127,6 +129,8 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_leader_vote());
         invalidate_on_changes!(state.0._connection.db.party_recruitment_role());
         invalidate_on_changes!(state.0._connection.db.saved_recruitment_role());
+        invalidate_on_changes!(state.0._connection.db.settlement_alias());
+        invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
         invalidate_on_changes!(state.0._connection.db.inventory_quantity_target());
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
@@ -173,6 +177,7 @@ impl LiveState {
             .add_query(|query| query.from.character_equip())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.character_morale_source())
+            .add_query(|query| query.from.character_needs())
             .add_query(|query| query.from.character_notoriety())
             .add_query(|query| query.from.character_skills())
             .add_query(|query| query.from.character_stats())
@@ -199,6 +204,8 @@ impl LiveState {
             .add_query(|query| query.from.religious_demand())
             .add_query(|query| query.from.saved_recruitment_role())
             .add_query(|query| query.from.settlement())
+            .add_query(|query| query.from.settlement_alias())
+            .add_query(|query| query.from.settlement_description())
             .add_query(|query| query.from.strategic_incident())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())
@@ -311,4 +318,27 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         },
     };
     Json(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LIVE_SUBSCRIPTION_QUERIES;
+
+    #[test]
+    fn live_subscription_excludes_static_world_data() {
+        for table in [
+            "settlement",
+            "settlement_alias",
+            "settlement_description",
+            "travel_edge",
+            "world_node",
+        ] {
+            assert!(
+                LIVE_SUBSCRIPTION_QUERIES
+                    .iter()
+                    .all(|query| !query.ends_with(table)),
+                "static table {table} must remain query-on-demand"
+            );
+        }
+    }
 }

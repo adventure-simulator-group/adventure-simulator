@@ -132,6 +132,8 @@ pub(crate) fn enrich(
         },
         nodes: draft.nodes,
         edges,
+        settlement_aliases: draft.settlement_aliases,
+        settlement_descriptions: draft.settlement_descriptions,
         settlements,
         report: draft.report,
     })

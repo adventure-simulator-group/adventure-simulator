@@ -115,8 +115,13 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
                 &raw.toll_from,
                 &raw.toll_to,
             )?,
-            settlement_from: optional_number(&nodes_path, "Settlement_From", &raw.settlement_from)?,
-            settlement_to: optional_number(&nodes_path, "Settlement_To", &raw.settlement_to)?,
+            settlement_interval: ActiveInterval::parse(
+                &nodes_path,
+                "Settlement_From",
+                &raw.settlement_from,
+                "Settlement_To",
+                &raw.settlement_to,
+            )?,
         };
         if nodes_by_id.insert(id, node).is_some() {
             return Err(Error::Validation(format!(
@@ -156,9 +161,14 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
                 continue;
             }
         };
-        let from_year = optional_number(&edges_path, "fromyear", &raw.fromyear)?;
-        let to_year = optional_number(&edges_path, "toyear", &raw.toyear)?;
-        if !active_in_year(from_year, to_year, year) {
+        let interval = ActiveInterval::parse(
+            &edges_path,
+            "fromyear",
+            &raw.fromyear,
+            "toyear",
+            &raw.toyear,
+        )?;
+        if !interval.contains(year) {
             increment(&mut excluded_edges, "inactive".into());
             continue;
         }
@@ -214,7 +224,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
     let mut settlement_node_ids = HashSet::new();
     let mut settlements = Vec::new();
     for node in nodes_by_id.values() {
-        if !node.is_settlement || !active_in_year(node.settlement_from, node.settlement_to, year) {
+        if !node.is_settlement || !node.settlement_interval.contains(year) {
             continue;
         }
         settlement_node_ids.insert(node.id);
@@ -247,7 +257,8 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
         .map(|settlement| (settlement.source_node_id, settlement.id.clone()))
         .collect();
     let settlement_aliases = names::compile(&alternative_names_path, year, &settlement_ids)?;
-    let settlement_descriptions = descriptions::compile(&descriptions_path, &settlement_ids)?;
+    let (settlement_descriptions, deferred_settlement_descriptions) =
+        descriptions::compile(&descriptions_path, &settlement_ids)?;
 
     let mut required_nodes: HashSet<_> =
         endpoint_ids.union(&settlement_node_ids).copied().collect();
@@ -311,6 +322,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             settlements: settlements.len(),
             settlement_aliases: settlement_aliases.len(),
             settlement_descriptions: settlement_descriptions.len(),
+            deferred_settlement_descriptions,
             settlements_connected_to_road_network: connected_settlements.len(),
             route_crossings,
             toll_edges,
@@ -375,8 +387,45 @@ struct SourceNode {
     is_harbour: bool,
     bridge: DatedFeature,
     toll: DatedFeature,
-    settlement_from: Option<i32>,
-    settlement_to: Option<i32>,
+    settlement_interval: ActiveInterval,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActiveInterval {
+    from: Option<i32>,
+    to: Option<i32>,
+}
+
+impl ActiveInterval {
+    fn parse(
+        path: &Path,
+        from_field: &'static str,
+        from: &str,
+        to_field: &'static str,
+        to: &str,
+    ) -> Result<Self> {
+        let interval = Self {
+            from: optional_number(path, from_field, from)?,
+            to: optional_number(path, to_field, to)?,
+        };
+        if interval
+            .from
+            .zip(interval.to)
+            .is_some_and(|(from, to)| from > to)
+        {
+            return Err(Error::InvalidField {
+                path: path.into(),
+                field: from_field,
+                value: format!("{:?}..{:?}", interval.from, interval.to),
+                message: format!("{from_field} must not be later than {to_field}"),
+            });
+        }
+        Ok(interval)
+    }
+
+    fn contains(self, year: i32) -> bool {
+        self.from.is_none_or(|from| from <= year) && self.to.is_none_or(|to| year < to)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -430,7 +479,7 @@ impl DatedFeature {
         match self {
             Self::Absent => false,
             Self::ContradictoryEmptyRange { .. } => false,
-            Self::Present { from, to } => active_in_year(from, to, year),
+            Self::Present { from, to } => ActiveInterval { from, to }.contains(year),
         }
     }
 
@@ -527,10 +576,6 @@ where
     })
 }
 
-fn active_in_year(from: Option<i32>, to: Option<i32>, year: i32) -> bool {
-    from.is_none_or(|from| from <= year) && to.is_none_or(|to| year < to)
-}
-
 fn endpoints(from: bool, to: bool) -> Option<EdgeEndpoint> {
     match (from, to) {
         (false, false) => None,
@@ -572,13 +617,20 @@ fn increment(counts: &mut BTreeMap<String, usize>, key: String) {
 mod tests {
     use serde::Deserialize;
 
-    use super::{DatedFeature, SourceFlag, active_in_year, population_estimate, population_level};
+    use super::{ActiveInterval, DatedFeature, SourceFlag, population_estimate, population_level};
 
     #[test]
     fn end_year_is_exclusive() {
-        assert!(active_in_year(Some(1500), Some(1545), 1544));
-        assert!(!active_in_year(Some(1500), Some(1544), 1544));
-        assert!(active_in_year(None, None, 1544));
+        let path = std::path::Path::new("source.csv");
+        let interval = ActiveInterval::parse(path, "from", "1500", "to", "1545").unwrap();
+        assert!(interval.contains(1544));
+        assert!(!interval.contains(1545));
+        assert!(ActiveInterval::parse(path, "from", "1600", "to", "1500").is_err());
+        assert!(
+            ActiveInterval::parse(path, "from", "", "to", "")
+                .unwrap()
+                .contains(1544)
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use adventuresim_world_schema::CompiledWorld;
+use adventuresim_world_schema::{
+    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, WorldBuildReport,
+};
 
 use crate::{
     Result,
@@ -16,9 +18,27 @@ pub struct WorldBuilder {
     year: i32,
 }
 
+/// Viabundus-only enrichment output used to inspect source-boundary behavior
+/// without fabricating values for the required environmental stages.
+#[derive(Debug)]
+pub struct ViabundusEnrichment {
+    pub settlement_aliases: Vec<SettlementAliasImport>,
+    pub settlement_descriptions: Vec<SettlementDescriptionImport>,
+    pub report: WorldBuildReport,
+}
+
 impl WorldBuilder {
     pub const fn new(year: i32) -> Self {
         Self { year }
+    }
+
+    pub fn build_from_viabundus(self, directory: &Path) -> Result<ViabundusEnrichment> {
+        let draft = viabundus::compile(directory, self.year)?;
+        Ok(ViabundusEnrichment {
+            settlement_aliases: draft.settlement_aliases,
+            settlement_descriptions: draft.settlement_descriptions,
+            report: draft.report,
+        })
     }
 
     pub fn build_from_sources(
