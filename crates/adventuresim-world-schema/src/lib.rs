@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 1;
+pub const WORLD_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -27,9 +27,30 @@ impl TravelEdgeKind {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "lowercase")]
-pub enum TravelCrossing {
-    Bridge,
+pub enum EdgeEndpoint {
+    From,
+    To,
+    Both,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum TravelRoute {
+    Land { bridge: Option<EdgeEndpoint> },
     Ferry,
+}
+
+impl TravelRoute {
+    pub const fn kind(self) -> TravelEdgeKind {
+        match self {
+            Self::Land { .. } => TravelEdgeKind::Land,
+            Self::Ferry => TravelEdgeKind::Ferry,
+        }
+    }
+
+    pub const fn has_crossing(self) -> bool {
+        matches!(self, Self::Land { bridge: Some(_) } | Self::Ferry)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -55,6 +76,7 @@ pub struct WorldBuildReport {
     pub settlements_connected_to_road_network: usize,
     pub route_crossings: usize,
     pub toll_edges: usize,
+    pub contradictory_feature_dates: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -86,9 +108,8 @@ pub struct TravelEdgeImport {
     pub id: u64,
     pub from_node_id: u64,
     pub to_node_id: u64,
-    pub kind: TravelEdgeKind,
-    pub crossing: Option<TravelCrossing>,
-    pub has_toll: bool,
+    pub route: TravelRoute,
+    pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,

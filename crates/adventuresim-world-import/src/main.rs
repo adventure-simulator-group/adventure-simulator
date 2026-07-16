@@ -5,8 +5,7 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementImport, TravelCrossing, TravelEdgeImport, TravelEdgeKind,
-    WorldNodeImport,
+    CompiledWorld, EdgeEndpoint, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -155,27 +154,32 @@ fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
 }
 
 fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
-    let kind = match edge.kind {
-        TravelEdgeKind::Land => json!({ "Land": [] }),
-        TravelEdgeKind::Ferry => json!({ "Ferry": [] }),
-    };
-    let crossing = match edge.crossing {
-        Some(TravelCrossing::Bridge) => json!({ "some": { "Bridge": [] } }),
-        Some(TravelCrossing::Ferry) => json!({ "some": { "Ferry": [] } }),
-        None => json!({ "none": [] }),
+    let route = match edge.route {
+        TravelRoute::Land { bridge } => {
+            json!({ "Land": encode_endpoint(bridge) })
+        }
+        TravelRoute::Ferry => json!({ "Ferry": [] }),
     };
     Ok(json!({
         "id": edge.id,
         "from_node_id": edge.from_node_id,
         "to_node_id": edge.to_node_id,
-        "kind": kind,
-        "crossing": crossing,
-        "has_toll": edge.has_toll,
+        "route": route,
+        "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
         "certainty": edge.certainty,
         "section": edge.section,
     }))
+}
+
+fn encode_endpoint(endpoint: Option<EdgeEndpoint>) -> Value {
+    match endpoint {
+        Some(EdgeEndpoint::From) => json!({ "some": { "From": [] } }),
+        Some(EdgeEndpoint::To) => json!({ "some": { "To": [] } }),
+        Some(EdgeEndpoint::Both) => json!({ "some": { "Both": [] } }),
+        None => json!({ "none": [] }),
+    }
 }
 
 fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
@@ -215,7 +219,7 @@ fn default_output(year: i32) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use adventuresim_world_schema::{TravelCrossing, TravelEdgeImport, TravelEdgeKind};
+    use adventuresim_world_schema::{EdgeEndpoint, TravelEdgeImport, TravelRoute};
 
     use super::{
         MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_travel_edge, serialize_batches,
@@ -227,19 +231,23 @@ mod tests {
             id: 1,
             from_node_id: 2,
             to_node_id: 3,
-            kind: TravelEdgeKind::Ferry,
-            crossing: Some(TravelCrossing::Ferry),
-            has_toll: false,
+            route: TravelRoute::Land {
+                bridge: Some(EdgeEndpoint::To),
+            },
+            toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,
             certainty: 1,
             section: String::new(),
         };
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
-        assert_eq!(batches[0][0]["kind"], serde_json::json!({ "Ferry": [] }));
         assert_eq!(
-            batches[0][0]["crossing"],
-            serde_json::json!({ "some": { "Ferry": [] } })
+            batches[0][0]["route"],
+            serde_json::json!({ "Land": { "some": { "To": [] } } })
+        );
+        assert_eq!(
+            batches[0][0]["toll"],
+            serde_json::json!({ "some": { "From": [] } })
         );
     }
 
