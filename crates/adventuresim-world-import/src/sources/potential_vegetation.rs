@@ -282,7 +282,16 @@ impl SourceAttributes {
                 let unit = EuroVegMapUnitCode::new(raw_unit.to_owned()).ok_or_else(|| {
                     invalid_field(path, "CODE_E", raw_unit, "invalid mapping-unit code")
                 })?;
-                Some(MappedPotentialVegetation { unit, formation })
+                Some(
+                    MappedPotentialVegetation::new(unit, formation).ok_or_else(|| {
+                        invalid_field(
+                            path,
+                            "CODE_E",
+                            raw_unit,
+                            "mapping-unit code contradicts FORMATION",
+                        )
+                    })?,
+                )
             }
             SourceFormation::NonVegetation => None,
         };
@@ -321,8 +330,11 @@ impl SourceFormation {
             Some("S") => Self::Mapped(F::Mire),
             Some("T") => Self::Mapped(F::SwampAndFenForest),
             Some("U") => Self::Mapped(F::FloodplainAndWetland),
-            None | Some("See") | Some("Meer") | Some("Obdo") | Some("Salz") | Some("Salt")
+            Some("See") | Some("Meer") | Some("Obdo") | Some("Salz") | Some("Salt")
             | Some("Pfan") | Some("grau") | Some("X") => Self::NonVegetation,
+            None => {
+                return Err(invalid_field(path, "FORMATION", "", "formation is blank"));
+            }
             Some(other) => {
                 return Err(invalid_field(
                     path,
@@ -449,11 +461,20 @@ fn require(directory: &Path, filename: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use adventuresim_world_schema::{PotentialVegetation, PotentialVegetationFormation};
+    use dbase::{FieldName, FieldValue, Record, TableWriterBuilder};
+    use geo::Point;
+    use shapefile::{Point as ShapePoint, Polygon, PolygonRing, Writer};
 
-    use super::{EuroVegProjection, SourceFormation, VegetationMap};
+    use super::{
+        EXPECTED_PROJECTION, EuroVegProjection, SHAPEFILE_NAME, SourceFormation, VegetationMap,
+    };
 
     #[test]
     fn source_formations_parse_exhaustively_without_unknown() {
@@ -465,6 +486,7 @@ mod tests {
             SourceFormation::parse(Some("See"), Path::new("Vegetation.dbf")).unwrap(),
             SourceFormation::NonVegetation
         ));
+        assert!(SourceFormation::parse(None, Path::new("Vegetation.dbf")).is_err());
         assert!(SourceFormation::parse(Some("future-code"), Path::new("Vegetation.dbf")).is_err());
     }
 
@@ -476,6 +498,79 @@ mod tests {
             .unwrap();
         assert!((point.x() - 5_071_000.0).abs() < 0.001);
         assert!((point.y() - 3_210_000.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn custom_projection_matches_a_non_origin_oracle() {
+        let point = EuroVegProjection::new()
+            .unwrap()
+            .project(52.52, 13.405)
+            .unwrap();
+        assert!((point.x() - 4_624_035.488).abs() < 0.01);
+        assert!((point.y() - 3_288_138.509).abs() < 0.01);
+    }
+
+    #[test]
+    fn synthetic_source_reads_polygons_holes_exclusions_and_deterministic_overlaps() {
+        let directory = fixture_directory("geometry");
+        write_fixture(
+            &directory,
+            &[
+                FeatureFixture {
+                    id: 10,
+                    formation: "F",
+                    code: "F27",
+                    polygon: polygon_with_hole(),
+                },
+                FeatureFixture {
+                    id: 5,
+                    formation: "M",
+                    code: "M1",
+                    polygon: rectangle(150_000.0, 0.0, 300_000.0, 200_000.0),
+                },
+                FeatureFixture {
+                    id: 20,
+                    formation: "See",
+                    code: "",
+                    polygon: rectangle(400_000.0, 0.0, 500_000.0, 100_000.0),
+                },
+            ],
+        );
+
+        let map = VegetationMap::read(&directory).unwrap();
+        assert_eq!(map.polygons_read, 3);
+        assert_eq!(
+            mapped_unit(&map, Point::new(25_000.0, 25_000.0)).as_deref(),
+            Some("F27")
+        );
+        assert_eq!(map.sample(Point::new(75_000.0, 75_000.0)), None);
+        assert_eq!(
+            mapped_unit(&map, Point::new(175_000.0, 25_000.0)).as_deref(),
+            Some("M1")
+        );
+        assert_eq!(
+            mapped_unit(&map, Point::new(150_000.0, 25_000.0)).as_deref(),
+            Some("M1")
+        );
+        assert_eq!(map.sample(Point::new(450_000.0, 50_000.0)), None);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn synthetic_source_rejects_a_unit_formation_contradiction() {
+        let directory = fixture_directory("contradiction");
+        write_fixture(
+            &directory,
+            &[FeatureFixture {
+                id: 1,
+                formation: "F",
+                code: "M1",
+                polygon: rectangle(0.0, 0.0, 100_000.0, 100_000.0),
+            }],
+        );
+        let error = VegetationMap::read(&directory).err().unwrap().to_string();
+        fs::remove_dir_all(directory).unwrap();
+        assert!(error.contains("contradicts FORMATION"));
     }
 
     #[test]
@@ -512,5 +607,84 @@ mod tests {
             settlements.len()
         );
         assert!(mapped > settlements.len() * 9 / 10);
+    }
+
+    struct FeatureFixture<'a> {
+        id: u32,
+        formation: &'a str,
+        code: &'a str,
+        polygon: Polygon,
+    }
+
+    fn fixture_directory(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "adventuresim-eurovegmap-{label}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("Vegetation.prj"), EXPECTED_PROJECTION).unwrap();
+        directory
+    }
+
+    fn write_fixture(directory: &Path, features: &[FeatureFixture<'_>]) {
+        let table = TableWriterBuilder::new()
+            .add_numeric_field(FieldName::try_from("ID").unwrap(), 10, 0)
+            .add_character_field(FieldName::try_from("FORMATION").unwrap(), 10)
+            .add_character_field(FieldName::try_from("CODE_E").unwrap(), 20);
+        let mut writer = Writer::from_path(directory.join(SHAPEFILE_NAME), table).unwrap();
+        for feature in features {
+            let mut record = Record::default();
+            record.insert(
+                "ID".into(),
+                FieldValue::Numeric(Some(f64::from(feature.id))),
+            );
+            record.insert(
+                "FORMATION".into(),
+                FieldValue::Character(Some(feature.formation.into())),
+            );
+            record.insert(
+                "CODE_E".into(),
+                FieldValue::Character(Some(feature.code.into())),
+            );
+            writer
+                .write_shape_and_record(&feature.polygon, &record)
+                .unwrap();
+        }
+    }
+
+    fn rectangle(west: f64, south: f64, east: f64, north: f64) -> Polygon {
+        Polygon::new(PolygonRing::Outer(vec![
+            ShapePoint::new(west, south),
+            ShapePoint::new(west, north),
+            ShapePoint::new(east, north),
+            ShapePoint::new(east, south),
+        ]))
+    }
+
+    fn polygon_with_hole() -> Polygon {
+        Polygon::with_rings(vec![
+            PolygonRing::Outer(vec![
+                ShapePoint::new(0.0, 0.0),
+                ShapePoint::new(0.0, 200_000.0),
+                ShapePoint::new(200_000.0, 200_000.0),
+                ShapePoint::new(200_000.0, 0.0),
+            ]),
+            PolygonRing::Inner(vec![
+                ShapePoint::new(50_000.0, 50_000.0),
+                ShapePoint::new(100_000.0, 50_000.0),
+                ShapePoint::new(100_000.0, 100_000.0),
+                ShapePoint::new(50_000.0, 100_000.0),
+            ]),
+        ])
+    }
+
+    fn mapped_unit(map: &VegetationMap, point: Point<f64>) -> Option<String> {
+        match map.sample(point) {
+            Some(PotentialVegetation::Mapped(mapped)) => Some(mapped.unit().as_str().into()),
+            Some(PotentialVegetation::Inferred(_)) | None => None,
+        }
     }
 }

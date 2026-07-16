@@ -219,8 +219,8 @@ fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
     match vegetation {
         PotentialVegetation::Mapped(mapped) => json!({
             "Mapped": {
-                "unit": { "code": mapped.unit.as_str() },
-                "formation": encode_potential_formation(mapped.formation),
+                "unit": { "code": mapped.unit().as_str() },
+                "formation": encode_potential_formation(mapped.formation()),
             }
         }),
         PotentialVegetation::Inferred(formation) => {
@@ -399,10 +399,13 @@ mod tests {
                 "Inferred": { "DeciduousAndMixedForest": [] }
             })
         );
-        settlement.potential_vegetation = PotentialVegetation::Mapped(MappedPotentialVegetation {
-            unit: EuroVegMapUnitCode::new("F27").unwrap(),
-            formation: PotentialVegetationFormation::DeciduousAndMixedForest,
-        });
+        settlement.potential_vegetation = PotentialVegetation::Mapped(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("F27").unwrap(),
+                PotentialVegetationFormation::DeciduousAndMixedForest,
+            )
+            .unwrap(),
+        );
         assert_eq!(
             encode_settlement(&settlement).unwrap()["potential_vegetation"],
             serde_json::json!({

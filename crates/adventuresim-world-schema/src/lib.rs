@@ -71,11 +71,74 @@ pub enum PotentialVegetationFormation {
     FloodplainAndWetland,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct MappedPotentialVegetation {
-    pub unit: EuroVegMapUnitCode,
-    pub formation: PotentialVegetationFormation,
+    unit: EuroVegMapUnitCode,
+    formation: PotentialVegetationFormation,
+}
+
+impl MappedPotentialVegetation {
+    pub fn new(unit: EuroVegMapUnitCode, formation: PotentialVegetationFormation) -> Option<Self> {
+        (formation_for_unit(unit.as_str()) == Some(formation)).then_some(Self { unit, formation })
+    }
+
+    pub fn unit(&self) -> &EuroVegMapUnitCode {
+        &self.unit
+    }
+
+    pub const fn formation(&self) -> PotentialVegetationFormation {
+        self.formation
+    }
+}
+
+impl<'de> Deserialize<'de> for MappedPotentialVegetation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            unit: EuroVegMapUnitCode,
+            formation: PotentialVegetationFormation,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.unit, wire.formation).ok_or_else(|| {
+            serde::de::Error::custom("EuroVegMap unit code and formation do not agree")
+        })
+    }
+}
+
+fn formation_for_unit(code: &str) -> Option<PotentialVegetationFormation> {
+    use PotentialVegetationFormation as F;
+    match code {
+        "Glacier" => return Some(F::PolarDesertAndNival),
+        // EuroVegMap 2.1 assigns its descriptive River unit to formation F.
+        "River" => return Some(F::DeciduousAndMixedForest),
+        _ => {}
+    }
+    match code.as_bytes().first().copied()? {
+        b'A' => Some(F::PolarDesertAndNival),
+        b'B' => Some(F::TundraAndAlpine),
+        b'C' => Some(F::OpenWoodlandAndSubalpine),
+        b'D' => Some(F::ConiferousAndMixedForest),
+        b'E' => Some(F::Heath),
+        b'F' => Some(F::DeciduousAndMixedForest),
+        b'G' => Some(F::ThermophilousBroadleafForest),
+        b'H' => Some(F::HygroThermophilousBroadleafForest),
+        b'J' => Some(F::MediterraneanSclerophyll),
+        b'K' => Some(F::XerophyticConiferAndScrub),
+        b'L' => Some(F::ForestSteppe),
+        b'M' => Some(F::Steppe),
+        b'N' => Some(F::Oroxerophytic),
+        b'O' => Some(F::Desert),
+        b'P' => Some(F::CoastalAndHalophytic),
+        b'R' => Some(F::AquaticAndReed),
+        b'S' => Some(F::Mire),
+        b'T' => Some(F::SwampAndFenForest),
+        b'U' => Some(F::FloodplainAndWetland),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -482,7 +545,8 @@ pub struct SettlementImport {
 mod tests {
     use super::{
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
-        HumanLandUseIntensity, LandUseFraction, LandUseProfile,
+        HumanLandUseIntensity, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        PotentialVegetationFormation,
     };
 
     #[test]
@@ -557,5 +621,46 @@ mod tests {
         assert!(EuroVegMapUnitCode::new("").is_none());
         assert!(EuroVegMapUnitCode::new("future-code").is_none());
         assert!(serde_json::from_str::<EuroVegMapUnitCode>(r#"{"code":"bad code"}"#).is_err());
+    }
+
+    #[test]
+    fn mapped_vegetation_parses_unit_and_formation_as_one_invariant() {
+        let mapped = MappedPotentialVegetation::new(
+            EuroVegMapUnitCode::new("F27").unwrap(),
+            PotentialVegetationFormation::DeciduousAndMixedForest,
+        )
+        .unwrap();
+        assert_eq!(mapped.unit().as_str(), "F27");
+        assert_eq!(
+            mapped.formation(),
+            PotentialVegetationFormation::DeciduousAndMixedForest
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("F27").unwrap(),
+                PotentialVegetationFormation::Steppe,
+            )
+            .is_none()
+        );
+        assert!(
+            serde_json::from_str::<MappedPotentialVegetation>(
+                r#"{"unit":{"code":"F27"},"formation":"Steppe"}"#
+            )
+            .is_err()
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("Glacier").unwrap(),
+                PotentialVegetationFormation::PolarDesertAndNival,
+            )
+            .is_some()
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("River").unwrap(),
+                PotentialVegetationFormation::DeciduousAndMixedForest,
+            )
+            .is_some()
+        );
     }
 }

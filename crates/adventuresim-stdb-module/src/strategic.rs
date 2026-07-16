@@ -333,7 +333,7 @@ pub fn import_settlements(
         let potential_vegetation = match settlement.potential_vegetation {
             PotentialVegetation::Mapped(mapped) => {
                 let unit = adventuresim_world_schema::EuroVegMapUnitCode::new(
-                    mapped.unit.as_str().to_owned(),
+                    mapped.unit().as_str().to_owned(),
                 )
                 .ok_or_else(|| {
                     format!(
@@ -341,10 +341,14 @@ pub fn import_settlements(
                         settlement.id
                     )
                 })?;
-                PotentialVegetation::Mapped(MappedPotentialVegetation {
-                    unit,
-                    formation: mapped.formation,
-                })
+                PotentialVegetation::Mapped(
+                    MappedPotentialVegetation::new(unit, mapped.formation()).ok_or_else(|| {
+                        format!(
+                            "Settlement {} has contradictory EuroVegMap vegetation",
+                            settlement.id
+                        )
+                    })?,
+                )
             }
             PotentialVegetation::Inferred(formation) => PotentialVegetation::Inferred(formation),
         };
