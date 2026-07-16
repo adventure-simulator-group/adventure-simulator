@@ -36,11 +36,13 @@ pub struct StrategicIncapacitation {
     pub blood_loss: f32,
     pub fear: f32,
     pub fatigue: f32,
+    pub hunger: f32,
+    pub thirst: f32,
 }
 
 impl StrategicIncapacitation {
     pub fn total(self) -> f32 {
-        self.pain + self.blood_loss + self.fear + self.fatigue
+        self.pain + self.blood_loss + self.fear + self.fatigue + self.hunger + self.thirst
     }
 
     pub fn status(self) -> IncapacitationStatus {
@@ -164,6 +166,24 @@ pub fn fatigue_incapacitation(fatigue_ratio: f32) -> f32 {
     ((fatigue_ratio - 0.5).max(0.0) / 0.5).powi(2)
 }
 
+/// Hunger begins only after the body's short-term energy reserve is exhausted
+/// and reaches full incapacitation after three unsupported marching days.
+pub fn hunger_incapacitation(food_balance_kcal: f32, travel_kcal_per_day: f32) -> f32 {
+    if travel_kcal_per_day <= 0.0 {
+        return 0.0;
+    }
+    ((-food_balance_kcal).max(0.0) / (travel_kcal_per_day * 3.0)).powi(2)
+}
+
+/// Thirst escalates much faster than hunger and reaches full incapacitation
+/// after one unsupported marching day beyond the body's short-term reserve.
+pub fn thirst_incapacitation(water_balance_ml: f32, travel_water_ml_per_day: f32) -> f32 {
+    if travel_water_ml_per_day <= 0.0 {
+        return 0.0;
+    }
+    ((-water_balance_ml).max(0.0) / travel_water_ml_per_day).powi(2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +283,13 @@ mod tests {
         };
         assert_eq!(down.status(), IncapacitationStatus::Incapacitated);
         assert_eq!(down.check_multiplier(), 0.0);
+    }
+
+    #[test]
+    fn hunger_and_thirst_begin_after_reserves_are_exhausted() {
+        assert_eq!(hunger_incapacitation(1.0, 6_000.0), 0.0);
+        assert_eq!(thirst_incapacitation(1.0, 4_000.0), 0.0);
+        assert!((hunger_incapacitation(-18_000.0, 6_000.0) - 1.0).abs() < 0.0001);
+        assert!((thirst_incapacitation(-4_000.0, 4_000.0) - 1.0).abs() < 0.0001);
     }
 }

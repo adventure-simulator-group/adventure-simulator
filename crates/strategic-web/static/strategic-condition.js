@@ -16,6 +16,8 @@
       ["blood loss", condition.blood_loss, "#c84747"],
       ["fear", condition.fear, "#4f83cc"],
       ["fatigue", condition.fatigue, "#202020"],
+      ["hunger", condition.hunger, "#b57a35"],
+      ["thirst", condition.thirst, "#3f9fa8"],
     ];
     let cursor = 0;
     const stops = [];

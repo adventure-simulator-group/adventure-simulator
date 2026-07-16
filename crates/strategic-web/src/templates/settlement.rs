@@ -262,7 +262,8 @@ pub(crate) fn map_destination_detail(
                 (sidebar_section(&destination.name, html! {
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) {
-                            button type="submit" class="btn btn-primary btn-block" { "Travel" }
+                            button type="submit" name="provision" value="true" class="btn btn-primary btn-block" { "Provision and travel" }
+                            button type="submit" name="provision" value="false" class="btn btn-danger btn-block" { "Travel underprovisioned" }
                         }
                     }
                     p { (&destination.description) }
@@ -271,11 +272,39 @@ pub(crate) fn map_destination_detail(
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                     }
+                    @if can_travel {
+                        (travel_provision_forecast(destination))
+                    }
                 }))
             } @else {
                 (sidebar_section("Destination", html! {
                     p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
                 }))
+            }
+        }
+    }
+}
+
+fn travel_provision_forecast(destination: &TravelDestination) -> Markup {
+    let planning_minutes = if destination.quest_in_progress {
+        destination.journey_minutes.saturating_mul(2)
+    } else {
+        destination.journey_minutes
+    };
+    let buffered_minutes = planning_minutes.saturating_mul(130).div_ceil(100);
+    let buffered_days = buffered_minutes as f32 / 1_440.0;
+    let rations = (buffered_days - 1.0).max(0.0).ceil() as u32;
+    let waterskins = (buffered_days - 1.0).max(0.0).ceil() as u32;
+    let cost = rations * 3 + waterskins * 2;
+    html! {
+        div class="travel-provision-forecast" {
+            strong { "Provisions per traveler" }
+            p class="text-muted small-copy" {
+                (rations) " ration" @if rations != 1 { "s" }
+                " · " (waterskins) " waterskin" @if waterskins != 1 { "s" }
+                " · up to " (cost) " gold"
+                @if destination.quest_in_progress { " · includes return and 30% reserve" }
+                @else { " · includes 30% reserve" }
             }
         }
     }
@@ -1454,6 +1483,10 @@ fn strategic_condition_rail(
                 div { dt { "Blood loss" } dd { (percent(condition.blood_loss)) } }
                 div { dt { "Fear" } dd { (percent(condition.fear)) } }
                 div { dt { "Fatigue" } dd { (percent(condition.fatigue)) } }
+                div { dt { "Hunger" } dd { (percent(condition.hunger)) } }
+                div { dt { "Thirst" } dd { (percent(condition.thirst)) } }
+                div { dt { "Food" } dd { (format!("{:.1} travel days", condition.food_days.max(0.0))) } }
+                div { dt { "Water" } dd { (format!("{:.1} travel days / {:.1} L capacity", condition.water_days.max(0.0), condition.water_capacity_ml as f32 / 1_000.0)) } }
                 div { dt { "Check effectiveness" } dd { (percent(condition.check_multiplier)) } }
             }
         }))

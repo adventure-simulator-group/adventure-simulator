@@ -73,3 +73,23 @@ travel action.
 - Fortunately, its easier to obtain water than it is food (in most places)
 - You instead bring a certain *capacity* for water, which starts out full, and must periodically stop at places where it can be replenished
 - Any source of freshwater as well as settlements and inns (via wells) can provide water. It is normally pretty easy to plan around this, but certain environments (deserts, obviously) make it extremely difficult.
+
+### Current provisioning implementation
+
+Every destination offers **Provision and travel** or **Travel
+underprovisioned**. Provisioning purchases each party member's personal
+shortfall and fills their waterskins. Settlement journeys plan for the one-way
+duration plus 30%. Quest journeys plan for the outbound and expected return
+duration plus 30%, because quest locations cannot resupply the party. Existing
+rations and waterskins reduce the purchase.
+
+Each party member pays for their own provisions. The reducer validates and
+performs every purchase and the travel atomically, so insufficient funds leave
+the entire party unchanged. A party member's travel request records whether
+provisioning was requested for the captain's eventual approval.
+
+Travel consumes personal rations and carried water automatically. Settlement
+arrival immediately clears hunger and thirst and refills owned containers;
+quest arrival does not. Foraging, intermediate freshwater stops, weather-based
+water use, spoilage, food quality, and manual eating or drinking remain future
+layers.
