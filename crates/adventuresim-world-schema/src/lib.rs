@@ -358,11 +358,44 @@ pub enum MineralSoilTexture {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub enum SoilMaterial {
-    Mineral(MineralSoilTexture),
-    Organic,
-    RockOutcrop,
-    OtherNonTextured,
+pub struct MineralSoil {
+    pub texture: MineralSoilTexture,
+    pub depth: SoilDepth,
+    pub available_water: AvailableWaterCapacity,
+    pub organic_carbon: TopsoilOrganicCarbon,
+    pub stones: StoneContentPercent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct OrganicSoil {
+    pub depth: SoilDepth,
+    pub available_water: AvailableWaterCapacity,
+    pub stones: StoneContentPercent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RockOutcropSoil {
+    pub stones: StoneContentPercent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct OtherNonTexturedSoil {
+    pub depth: SoilDepth,
+    pub available_water: AvailableWaterCapacity,
+    pub organic_carbon: TopsoilOrganicCarbon,
+    pub stones: StoneContentPercent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilSubstrate {
+    Mineral(MineralSoil),
+    Organic(OrganicSoil),
+    RockOutcrop(RockOutcropSoil),
+    OtherNonTextured(OtherNonTexturedSoil),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -460,12 +493,8 @@ impl<'de> Deserialize<'de> for StoneContentPercent {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct SoilProperties {
-    pub material: SoilMaterial,
-    pub depth: SoilDepth,
-    pub available_water: AvailableWaterCapacity,
-    pub organic_carbon: TopsoilOrganicCarbon,
+    pub substrate: SoilSubstrate,
     pub water_regime: SoilWaterRegime,
-    pub stones: StoneContentPercent,
     pub agricultural_limitation: AgriculturalLimitation,
 }
 
@@ -520,41 +549,39 @@ impl<'de> Deserialize<'de> for SoilMappingUnit {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct SoilClassificationCode {
-    code: String,
-}
-
-impl SoilClassificationCode {
-    pub fn new(code: impl Into<String>) -> Option<Self> {
-        let code = code.into();
-        (!code.is_empty()
-            && code.len() <= 32
-            && code
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'/' | b'.')))
-        .then_some(Self { code })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.code
-    }
-}
-
-impl<'de> Deserialize<'de> for SoilClassificationCode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            code: String,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.code)
-            .ok_or_else(|| serde::de::Error::custom("invalid ESDB classification code"))
-    }
+pub enum WrbReferenceGroup {
+    Albeluvisol,
+    Acrisol,
+    Alisol,
+    Andosol,
+    Arenosol,
+    Anthrosol,
+    Chernozem,
+    Calcisol,
+    Cambisol,
+    Cryosol,
+    Durisol,
+    Fluvisol,
+    Ferralsol,
+    Gleysol,
+    Gypsisol,
+    Histosol,
+    Kastanozem,
+    Leptosol,
+    Luvisol,
+    Lixisol,
+    Nitisol,
+    Phaeozem,
+    Planosol,
+    Plinthosol,
+    Podzol,
+    Regosol,
+    Solonchak,
+    Solonetz,
+    Umbrisol,
+    Vertisol,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -596,7 +623,7 @@ impl<'de> Deserialize<'de> for ParentMaterialCode {
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct MappedSoilProfile {
     pub mapping_unit: SoilMappingUnit,
-    pub wrb_code: SoilClassificationCode,
+    pub wrb_group: WrbReferenceGroup,
     pub parent_material: ParentMaterialCode,
     pub properties: SoilProperties,
 }
@@ -1017,8 +1044,8 @@ mod tests {
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
         HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
         LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, ParentMaterialCode, PotentialVegetationFormation,
-        SoilClassificationCode, SoilMappingUnit, StoneContentPercent, TreeSpeciesId,
+        NativeRangeEvidence, ParentMaterialCode, PotentialVegetationFormation, SoilMappingUnit,
+        StoneContentPercent, TreeSpeciesId,
     };
 
     #[test]
@@ -1183,8 +1210,6 @@ mod tests {
         assert!(SoilMappingUnit::new(1, 2, 101).is_none());
         assert!(StoneContentPercent::new(100).is_some());
         assert!(StoneContentPercent::new(101).is_none());
-        assert!(SoilClassificationCode::new("CM").is_some());
-        assert!(SoilClassificationCode::new("bad code").is_none());
         assert!(ParentMaterialCode::new("110").is_some());
         assert!(ParentMaterialCode::new("bad-code").is_none());
     }

@@ -4,18 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::agricultural_limitation_type::AgriculturalLimitation;
-use super::soil_substrate_type::SoilSubstrate;
-use super::soil_water_regime_type::SoilWaterRegime;
+use super::available_water_capacity_type::AvailableWaterCapacity;
+use super::soil_depth_type::SoilDepth;
+use super::stone_content_percent_type::StoneContentPercent;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SoilProperties {
-    pub substrate: SoilSubstrate,
-    pub water_regime: SoilWaterRegime,
-    pub agricultural_limitation: AgriculturalLimitation,
+pub struct OrganicSoil {
+    pub depth: SoilDepth,
+    pub available_water: AvailableWaterCapacity,
+    pub stones: StoneContentPercent,
 }
 
-impl __sdk::InModule for SoilProperties {
+impl __sdk::InModule for OrganicSoil {
     type Module = super::RemoteModule;
 }
