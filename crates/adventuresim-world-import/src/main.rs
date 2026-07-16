@@ -20,6 +20,8 @@ const MAX_REDUCER_ARGUMENT_CHARS: usize = 24_000;
 struct Args {
     #[arg(long, alias = "raw-dir", default_value_os_t = default_viabundus_directory())]
     viabundus_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_elevation_directory())]
+    elevation_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -50,7 +52,8 @@ fn run(args: Args) -> Result<()> {
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
     }
-    let world = WorldBuilder::new(args.year).build_from_viabundus(&args.viabundus_dir)?;
+    let world = WorldBuilder::new(args.year)
+        .build_from_sources(&args.viabundus_dir, &args.elevation_dir)?;
     let output = args
         .output
         .clone()
@@ -211,6 +214,10 @@ fn repository_root() -> PathBuf {
 
 fn default_viabundus_directory() -> PathBuf {
     repository_root().join("viabundus")
+}
+
+fn default_elevation_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/elevation")
 }
 
 fn default_output(year: i32) -> PathBuf {

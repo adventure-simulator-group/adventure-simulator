@@ -19,6 +19,12 @@ import types shared by the compiler and strategic module. The strategic module
 accepts those records through reducers but never parses raw datasets or depends
 on native geospatial libraries.
 
+Source modules first parse into importer-only draft types. The outer builder
+enriches that draft in dependency order and only then constructs the canonical
+world schema. For example, Viabundus supplies settlement identity and road
+topology, while GLO-30 supplies the required typed elevation for each draft
+settlement. This keeps source-specific placeholders out of canonical records.
+
 Each compiled artifact is identified by a content hash. An interrupted load may
 resume only with the same artifact; a different artifact requires a database
 reset. Successful loads explicitly complete their import session so later

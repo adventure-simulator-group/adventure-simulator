@@ -4,6 +4,7 @@
 //! source models into the canonical, source-independent import schema.
 
 pub mod builder;
+mod draft;
 pub mod error;
 mod sources;
 mod validation;

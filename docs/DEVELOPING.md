@@ -103,7 +103,7 @@ just generate-db-client # Regenerate and format the Rust client bindings
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
-just compile-world      # Compile and validate the 1544 strategic world in target/
+just compile-world      # Compile initialized sources into the 1544 world in target/
 just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
 ```
@@ -163,6 +163,12 @@ use `just publish-reset` before loading changed source data or a different year.
 The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing
 untrusted clients to connect.
+
+The compiler also currently requires manually downloaded Copernicus DEM
+GLO-30 `*_DEM.tif` tiles in
+`target/world-data-sources/raw/elevation/`. See `docs/ELEVATION.md` for source,
+licensing, parsing, and fallback details. You can override either input with
+`--viabundus-dir` or `--elevation-dir`.
 
 ## Strategic UI
 
