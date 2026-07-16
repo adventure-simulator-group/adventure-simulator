@@ -4,17 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::ferry_route_type::FerryRoute;
-use super::land_route_type::LandRoute;
+use super::edge_endpoint_type::EdgeEndpoint;
+use super::land_water_crossing_type::LandWaterCrossing;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum TravelRoute {
-    Land(LandRoute),
-
-    Ferry(FerryRoute),
+pub struct LandRoute {
+    pub bridge: Option<EdgeEndpoint>,
+    pub water_crossings: Vec<LandWaterCrossing>,
 }
 
-impl __sdk::InModule for TravelRoute {
+impl __sdk::InModule for LandRoute {
     type Module = super::RemoteModule;
 }

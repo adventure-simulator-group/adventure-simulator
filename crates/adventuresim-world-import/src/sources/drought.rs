@@ -3,14 +3,13 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CompiledWorld, DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SettlementImport,
-    SourceProvenance, WORLD_SCHEMA_VERSION, WorldMetadata,
+    DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SourceProvenance,
 };
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
 use crate::{
     Error, Result,
-    draft::{ReligionSettlementDraft, WorldDraft},
+    draft::{DroughtSettlementDraft, ReligionSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "NOAA Old World Drought Atlas v1.0";
@@ -27,7 +26,7 @@ const MAX_NEIGHBOR_DISTANCE_DEGREES: f64 = 1.5;
 pub(crate) fn enrich(
     draft: WorldDraft<ReligionSettlementDraft>,
     netcdf_path: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<DroughtSettlementDraft>> {
     let grid = OwdaGrid::open(netcdf_path, draft.year)?;
     if draft.settlements.is_empty() {
         return finish(draft, Vec::new(), grid.valid_cells.len(), 0, 0);
@@ -74,44 +73,16 @@ fn finish(
     cells_read: usize,
     neighbor_samples: usize,
     fallbacks: usize,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<DroughtSettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
             "drought profiles do not match settlements".into(),
         ));
     }
-    let settlements: Vec<SettlementImport> = std::mem::take(&mut draft.settlements)
+    let settlements: Vec<DroughtSettlementDraft> = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(religious, drought)| {
-            let geologic = religious.geologic;
-            let soil = geologic.soil;
-            let trees = soil.trees;
-            let vegetated = trees.vegetated;
-            let forest = vegetated.forest;
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
-                potential_vegetation: vegetated.potential_vegetation,
-                tree_species: trees.tree_species,
-                soil: soil.soil,
-                geology: geologic.geology,
-                religious_status: religious.religious_status,
-                drought,
-                scene_key: settlement.scene_key,
-            }
-        })
+        .map(|(religious, drought)| DroughtSettlementDraft { religious, drought })
         .collect();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),
@@ -122,13 +93,10 @@ fn finish(
     draft.report.drought_samples = settlements.len();
     draft.report.drought_neighbor_samples = neighbor_samples;
     draft.report.drought_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,

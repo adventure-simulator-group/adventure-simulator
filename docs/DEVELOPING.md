@@ -219,6 +219,13 @@ NOAA OWDA summer PDSI is read directly from the NetCDF-4 file at
 typed twenty-year profile, and full-file verification are documented in
 `docs/DROUGHT.md`; override the path with `--drought-netcdf`.
 
+Copernicus EU-Hydro v1.3 is read from extracted EPSG:3035 basin GeoPackages
+under `target/world-data-sources/raw/hydrology/`, as documented in
+`docs/HYDROLOGY.md`. Override that directory with `--hydrology-dir`. The
+official archive is not currently available locally, so the parser and
+enrichment are verified against standards-compliant synthetic GeoPackages but
+the complete source distribution remains unverified.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients

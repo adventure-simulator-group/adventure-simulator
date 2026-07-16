@@ -4,14 +4,13 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    EdgeEndpoint, SourceProvenance, TravelEdgeImport, TravelEdgeKind, TravelRoute,
-    WorldBuildReport, WorldNodeImport,
+    EdgeEndpoint, SourceProvenance, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
 use crate::{
     Error, Result,
-    draft::{SettlementDraft, WorldDraft},
+    draft::{SettlementDraft, TravelEdgeDraft, TravelRouteDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "Viabundus Pre-modern Street Map 2";
@@ -172,15 +171,15 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
         let from_node = &nodes_by_id[&from_node_id];
         let to_node = &nodes_by_id[&to_node_id];
         let route = match kind {
-            TravelEdgeKind::Ferry => TravelRoute::Ferry,
-            TravelEdgeKind::Land => TravelRoute::Land {
+            TravelEdgeKind::Ferry => TravelRouteDraft::Ferry,
+            TravelEdgeKind::Land => TravelRouteDraft::Land {
                 bridge: endpoints(
                     from_node.bridge.active_in(year),
                     to_node.bridge.active_in(year),
                 ),
             },
         };
-        edges.push(TravelEdgeImport {
+        edges.push(TravelEdgeDraft {
             id: required_number(&edges_path, "id", &raw.id)?,
             from_node_id,
             to_node_id,
@@ -309,6 +308,12 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             drought_samples: 0,
             drought_neighbor_samples: 0,
             drought_fallback_samples: 0,
+            hydrology_files_read: 0,
+            hydrology_features_read: 0,
+            hydrology_settlement_samples: 0,
+            hydrology_settlement_fallback_samples: 0,
+            hydrology_edge_crossings: 0,
+            hydrology_inferred_ferry_waterways: 0,
             excluded_edges,
         },
         nodes,

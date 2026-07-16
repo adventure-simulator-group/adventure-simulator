@@ -4,17 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::ferry_route_type::FerryRoute;
-use super::land_route_type::LandRoute;
+use super::flow_persistence_type::FlowPersistence;
+use super::strahler_order_type::StrahlerOrder;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum TravelRoute {
-    Land(LandRoute),
-
-    Ferry(FerryRoute),
+pub struct RiverWatercourse {
+    pub order: StrahlerOrder,
+    pub persistence: FlowPersistence,
 }
 
-impl __sdk::InModule for TravelRoute {
+impl __sdk::InModule for RiverWatercourse {
     type Module = super::RemoteModule;
 }
