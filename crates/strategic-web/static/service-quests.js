@@ -20,7 +20,10 @@
     const timestamp = document.createElement("span");
     timestamp.className = "chat-timestamp";
     timestamp.textContent = "[--:--] ";
-    row.append(timestamp);
+    const badge = document.createElement("span");
+    badge.className = "chat-channel-badge";
+    badge.textContent = "[Local] ";
+    row.append(timestamp, badge);
     if (speaker) {
       const name = document.createElement("strong");
       name.textContent = `${speaker}: `;
