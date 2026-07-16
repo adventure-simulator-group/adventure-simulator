@@ -3,7 +3,11 @@
 use crate::prelude::*;
 
 const MAX_COMBAT_ROUNDS: usize = 256;
+const MAX_OPENING_VOLLEYS: usize = 8;
 const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+const FORMATION_SPACING_METERS: f32 = 2.0;
+const METERS_CLOSED_PER_VOLLEY: f32 = 5.0;
+const CONTESTED_CHECK_RANDOM_RANGE: f32 = 5.0;
 
 #[derive(Clone, Debug, Default)]
 pub struct CombatAttributes {
@@ -373,6 +377,20 @@ enum AttackMode {
     Ranged,
 }
 
+#[derive(Clone, Copy)]
+struct PendingAttack {
+    attacker_index: usize,
+    target_index: usize,
+    result: AttackResult,
+    part: BodyPart,
+}
+
+#[derive(Clone, Copy, Default)]
+struct OpeningVolleyPlan {
+    direct_volleys: usize,
+    total_volleys: usize,
+}
+
 /// Resolve an abstract battle using the same attack calculations as direct
 /// combat. The supplied seed makes the result reproducible and the hard round
 /// cap keeps reducer execution bounded.
@@ -384,6 +402,9 @@ pub fn resolve_battle(
     let mut random = SplitMix64::new(seed);
     let mut victor = BattleVictor::Stalemate;
     let mut rounds = 0;
+
+    resolve_stealth_openers(&mut allies, &mut enemies, &mut random);
+    resolve_opening_volleys(&mut allies, &mut enemies, &mut random);
 
     for round in 0..MAX_COMBAT_ROUNDS {
         if side_defeated(&allies) {
@@ -425,20 +446,260 @@ pub fn resolve_battle(
     }
 }
 
+fn resolve_stealth_openers(
+    allies: &mut [Combatant],
+    enemies: &mut [Combatant],
+    random: &mut SplitMix64,
+) {
+    let allies_first = random.next_u64().is_multiple_of(2);
+    let (ally_attacks, enemy_attacks) = if allies_first {
+        (
+            plan_stealth_openers(allies, enemies, random),
+            plan_stealth_openers(enemies, allies, random),
+        )
+    } else {
+        let enemy_attacks = plan_stealth_openers(enemies, allies, random);
+        let ally_attacks = plan_stealth_openers(allies, enemies, random);
+        (ally_attacks, enemy_attacks)
+    };
+    if allies_first {
+        apply_pending_attacks(allies, enemies, &ally_attacks);
+        apply_pending_attacks(enemies, allies, &enemy_attacks);
+    } else {
+        apply_pending_attacks(enemies, allies, &enemy_attacks);
+        apply_pending_attacks(allies, enemies, &ally_attacks);
+    }
+}
+
+fn plan_stealth_openers(
+    attackers: &[Combatant],
+    defenders: &[Combatant],
+    random: &mut SplitMix64,
+) -> Vec<PendingAttack> {
+    let mut attacks = Vec::new();
+    for (attacker_index, attacker) in attackers.iter().enumerate() {
+        if attacker.is_incapacitated() || preferred_attack_mode(attacker) != AttackMode::Melee {
+            continue;
+        }
+        let targets = active_indices(defenders);
+        if targets.is_empty() {
+            break;
+        }
+        let target_index = targets[random.index(targets.len())];
+        let stealth = attacker.skills.skill_check_by_parts(
+            Skill::Stealth,
+            &attacker.attributes,
+            &attacker.body,
+            &attacker.essentials,
+            &attacker.equipment,
+            LimbWeights::all_equal(),
+        );
+        let awareness = defender_awareness(&defenders[target_index]);
+        let stealth_roll = stealth + random.unit_f32() * CONTESTED_CHECK_RANDOM_RANGE;
+        let awareness_roll = awareness + random.unit_f32() * CONTESTED_CHECK_RANDOM_RANGE;
+        if stealth_roll <= awareness_roll {
+            continue;
+        }
+
+        let part = random_body_part(random);
+        let result = melee_exchange(
+            attacker,
+            &defenders[target_index],
+            1.0,
+            1.0,
+            part,
+            DefenderResponse::None,
+        );
+        attacks.push(PendingAttack {
+            attacker_index,
+            target_index,
+            result,
+            part,
+        });
+    }
+    attacks
+}
+
+fn apply_pending_attacks(
+    attackers: &mut [Combatant],
+    defenders: &mut [Combatant],
+    attacks: &[PendingAttack],
+) {
+    for attack in attacks {
+        apply_attack_result(
+            &mut attackers[attack.attacker_index],
+            &mut defenders[attack.target_index],
+            attack.result,
+            attack.part,
+        );
+    }
+}
+
+fn defender_awareness(defender: &Combatant) -> f32 {
+    let eyesight = defender
+        .attributes
+        .attr_by_parts(SimpleAttribute::Eyesight, &defender.body);
+    let hearing = defender
+        .attributes
+        .attr_by_parts(SimpleAttribute::Hearing, &defender.body);
+    (eyesight + hearing) * 0.5
+}
+
+fn resolve_opening_volleys(
+    allies: &mut [Combatant],
+    enemies: &mut [Combatant],
+    random: &mut SplitMix64,
+) {
+    let ally_plans = opening_volley_plans(allies, enemies);
+    let enemy_plans = opening_volley_plans(enemies, allies);
+    let ally_detour_targets: Vec<_> = active_melee_indices(enemies)
+        .into_iter()
+        .skip(active_melee_indices(allies).len())
+        .collect();
+    let enemy_detour_targets: Vec<_> = active_melee_indices(allies)
+        .into_iter()
+        .skip(active_melee_indices(enemies).len())
+        .collect();
+    let steps = ally_plans
+        .iter()
+        .chain(&enemy_plans)
+        .map(|plan| plan.total_volleys)
+        .max()
+        .unwrap_or(0);
+
+    for step in 0..steps {
+        if side_defeated(allies) || side_defeated(enemies) {
+            break;
+        }
+        if random.next_u64().is_multiple_of(2) {
+            take_opening_volley_step(
+                allies,
+                &ally_plans,
+                enemies,
+                &ally_detour_targets,
+                step,
+                random,
+            );
+            take_opening_volley_step(
+                enemies,
+                &enemy_plans,
+                allies,
+                &enemy_detour_targets,
+                step,
+                random,
+            );
+        } else {
+            take_opening_volley_step(
+                enemies,
+                &enemy_plans,
+                allies,
+                &enemy_detour_targets,
+                step,
+                random,
+            );
+            take_opening_volley_step(
+                allies,
+                &ally_plans,
+                enemies,
+                &ally_detour_targets,
+                step,
+                random,
+            );
+        }
+    }
+}
+
+fn opening_volley_plans(
+    ranged_side: &[Combatant],
+    closing_side: &[Combatant],
+) -> Vec<OpeningVolleyPlan> {
+    let screen_count = active_melee_indices(ranged_side).len();
+    let closing_melee_count = active_melee_indices(closing_side).len();
+    ranged_side
+        .iter()
+        .map(|attacker| {
+            if attacker.is_incapacitated()
+                || preferred_attack_mode(attacker) != AttackMode::Ranged
+                || closing_melee_count == 0
+            {
+                return OpeningVolleyPlan::default();
+            }
+
+            let range = attacker.equipment.weapon_reach().max(0.0);
+            let direct_volleys = (range / METERS_CLOSED_PER_VOLLEY)
+                .ceil()
+                .clamp(0.0, MAX_OPENING_VOLLEYS as f32) as usize;
+            let detour = if closing_melee_count > screen_count && screen_count > 0 {
+                let formation_radius = screen_count as f32 * FORMATION_SPACING_METERS * 0.5;
+                std::f32::consts::PI * formation_radius
+            } else {
+                0.0
+            };
+            OpeningVolleyPlan {
+                direct_volleys,
+                total_volleys: ((range + detour) / METERS_CLOSED_PER_VOLLEY)
+                    .ceil()
+                    .clamp(0.0, MAX_OPENING_VOLLEYS as f32) as usize,
+            }
+        })
+        .collect()
+}
+
+fn take_opening_volley_step(
+    attackers: &mut [Combatant],
+    plans: &[OpeningVolleyPlan],
+    defenders: &mut [Combatant],
+    detour_targets: &[usize],
+    step: usize,
+    random: &mut SplitMix64,
+) {
+    for attacker_index in 0..attackers.len() {
+        let plan = plans[attacker_index];
+        if plan.total_volleys <= step || attackers[attacker_index].is_incapacitated() {
+            continue;
+        }
+        let targets = if step < plan.direct_volleys {
+            active_melee_indices(defenders)
+        } else {
+            detour_targets
+                .iter()
+                .copied()
+                .filter(|index| !defenders[*index].is_incapacitated())
+                .collect()
+        };
+        if targets.is_empty() {
+            break;
+        }
+        let target_index = targets[random.index(targets.len())];
+        let part = random_body_part(random);
+        let result = ranged_exchange(
+            &attackers[attacker_index],
+            &defenders[target_index],
+            0.65 + random.unit_f32() * 0.35,
+            0.0,
+            part,
+            random_response(random),
+        );
+        apply_attack_result(
+            &mut attackers[attacker_index],
+            &mut defenders[target_index],
+            result,
+            part,
+        );
+    }
+}
+
 fn take_side_turns(
     attackers: &mut [Combatant],
     defenders: &mut [Combatant],
     random: &mut SplitMix64,
 ) {
-    for attacker in attackers.iter_mut() {
-        if attacker.is_incapacitated() || side_defeated(defenders) {
+    for attacker_index in 0..attackers.len() {
+        if attackers[attacker_index].is_incapacitated() || side_defeated(defenders) {
             continue;
         }
-        let active_targets: Vec<_> = defenders
-            .iter()
-            .enumerate()
-            .filter_map(|(index, target)| (!target.is_incapacitated()).then_some(index))
-            .collect();
+        let mode = preferred_attack_mode(&attackers[attacker_index]);
+        let active_targets = engaged_target_indices(attacker_index, attackers, defenders, mode);
         let target_index = active_targets[random.index(active_targets.len())];
         let part = random_body_part(random);
         let response = random_response(random);
@@ -449,9 +710,9 @@ fn take_side_turns(
             0.0
         };
 
-        let result = if preferred_attack_mode(attacker) == AttackMode::Ranged {
+        let result = if mode == AttackMode::Ranged {
             ranged_exchange(
-                attacker,
+                &attackers[attacker_index],
                 &defenders[target_index],
                 hit_precision,
                 flanking,
@@ -460,7 +721,7 @@ fn take_side_turns(
             )
         } else {
             melee_exchange(
-                attacker,
+                &attackers[attacker_index],
                 &defenders[target_index],
                 hit_precision,
                 flanking,
@@ -468,18 +729,82 @@ fn take_side_turns(
                 response,
             )
         };
+        apply_attack_result(
+            &mut attackers[attacker_index],
+            &mut defenders[target_index],
+            result,
+            part,
+        );
+    }
+}
 
-        match result {
-            AttackResult::ToAttacker { balance_damage } => {
-                attacker.imbalance += balance_damage.max(0.0);
-            }
-            AttackResult::ToDefender { balance_damage, .. } => {
-                defenders[target_index].imbalance += balance_damage.max(0.0);
-                let damage = health_damage_from_attack(result, part);
-                let applied = defenders[target_index].body.apply_damage(part, damage);
-                defenders[target_index].blood_loss_fraction +=
-                    applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
-            }
+fn engaged_target_indices(
+    attacker_index: usize,
+    attackers: &[Combatant],
+    defenders: &[Combatant],
+    mode: AttackMode,
+) -> Vec<usize> {
+    let active = active_indices(defenders);
+    if mode == AttackMode::Ranged {
+        return active;
+    }
+
+    let defending_melee = active_melee_indices(defenders);
+    let melee_rank = attackers[..=attacker_index]
+        .iter()
+        .filter(|combatant| {
+            !combatant.is_incapacitated() && preferred_attack_mode(combatant) == AttackMode::Melee
+        })
+        .count()
+        .saturating_sub(1);
+    if melee_rank < defending_melee.len() {
+        return defending_melee;
+    }
+
+    let exposed_backline: Vec<_> = active
+        .iter()
+        .copied()
+        .filter(|index| preferred_attack_mode(&defenders[*index]) == AttackMode::Ranged)
+        .collect();
+    if exposed_backline.is_empty() {
+        active
+    } else {
+        exposed_backline
+    }
+}
+
+fn active_indices(side: &[Combatant]) -> Vec<usize> {
+    side.iter()
+        .enumerate()
+        .filter_map(|(index, combatant)| (!combatant.is_incapacitated()).then_some(index))
+        .collect()
+}
+
+fn active_melee_indices(side: &[Combatant]) -> Vec<usize> {
+    side.iter()
+        .enumerate()
+        .filter_map(|(index, combatant)| {
+            (!combatant.is_incapacitated() && preferred_attack_mode(combatant) == AttackMode::Melee)
+                .then_some(index)
+        })
+        .collect()
+}
+
+fn apply_attack_result(
+    attacker: &mut Combatant,
+    defender: &mut Combatant,
+    result: AttackResult,
+    part: BodyPart,
+) {
+    match result {
+        AttackResult::ToAttacker { balance_damage } => {
+            attacker.imbalance += balance_damage.max(0.0);
+        }
+        AttackResult::ToDefender { balance_damage, .. } => {
+            defender.imbalance += balance_damage.max(0.0);
+            let damage = health_damage_from_attack(result, part);
+            let applied = defender.body.apply_damage(part, damage);
+            defender.blood_loss_fraction += applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
         }
     }
 }
@@ -865,6 +1190,128 @@ mod tests {
         hybrid.skills.melee_hours = 0.0;
         hybrid.skills.ranged_hours = 30_000.0;
         assert_eq!(preferred_attack_mode(&hybrid), AttackMode::Ranged);
+    }
+
+    #[test]
+    fn melee_screen_forces_engagement_before_backline_access() {
+        let attackers = vec![fighter(1, 3.0, false), fighter(2, 3.0, false)];
+        let defenders = vec![fighter(3, 3.0, false), fighter(4, 3.0, true)];
+
+        assert_eq!(
+            engaged_target_indices(0, &attackers, &defenders, AttackMode::Melee),
+            vec![0]
+        );
+        assert_eq!(
+            engaged_target_indices(1, &attackers, &defenders, AttackMode::Melee),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn formation_detour_grants_additional_opening_volleys() {
+        let ranged_side = vec![
+            fighter(1, 3.0, true),
+            fighter(2, 3.0, false),
+            fighter(3, 3.0, false),
+            fighter(4, 3.0, false),
+        ];
+        let matched_closers = vec![
+            fighter(5, 3.0, false),
+            fighter(6, 3.0, false),
+            fighter(7, 3.0, false),
+        ];
+        let mut surplus_closers = matched_closers.clone();
+        surplus_closers.push(fighter(8, 3.0, false));
+
+        let direct_plan = opening_volley_plans(&ranged_side, &matched_closers)[0];
+        let detour_plan = opening_volley_plans(&ranged_side, &surplus_closers)[0];
+        assert_eq!(direct_plan.total_volleys, 4);
+        assert_eq!(detour_plan.direct_volleys, 4);
+        assert_eq!(detour_plan.total_volleys, 6);
+    }
+
+    #[test]
+    fn ranged_characters_fire_during_the_enemy_approach() {
+        let mut archer = fighter(1, 5.0, true);
+        archer.skills.ranged_hours = 100_000.0;
+        archer.equipment.weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut allies = vec![archer];
+        let mut enemies = vec![fighter(2, 1.0, false)];
+
+        resolve_opening_volleys(&mut allies, &mut enemies, &mut SplitMix64::new(7));
+
+        assert!(enemies[0].body.total_damage() > 0.0);
+    }
+
+    #[test]
+    fn detour_volleys_only_target_surplus_melee() {
+        let mut archer = fighter(1, 5.0, true);
+        archer.skills.ranged_hours = 100_000.0;
+        archer.equipment.weapon.as_mut().unwrap().accuracy = 2.0;
+        let screen = fighter(2, 3.0, false);
+        let mut attackers = vec![archer, screen];
+        let mut defenders = vec![fighter(3, 1.0, false), fighter(4, 1.0, false)];
+        let plans = opening_volley_plans(&attackers, &defenders);
+        let direct_volleys = plans[0].direct_volleys;
+
+        take_opening_volley_step(
+            &mut attackers,
+            &plans,
+            &mut defenders,
+            &[1],
+            direct_volleys,
+            &mut SplitMix64::new(17),
+        );
+
+        assert_eq!(defenders[0].body.total_damage(), 0.0);
+        assert!(defenders[1].body.total_damage() > 0.0);
+    }
+
+    #[test]
+    fn successful_stealth_grants_a_flat_footed_melee_attack() {
+        let mut ambusher = fighter(1, 5.0, false);
+        ambusher.skills.stealth_hours = 100_000.0;
+        ambusher.equipment.weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut attackers = vec![ambusher];
+        let mut defenders = vec![fighter(2, 1.0, false)];
+
+        let attacks = plan_stealth_openers(&attackers, &defenders, &mut SplitMix64::new(11));
+        apply_pending_attacks(&mut attackers, &mut defenders, &attacks);
+
+        assert!(defenders[0].body.total_damage() > 0.0);
+    }
+
+    #[test]
+    fn failed_stealth_does_not_grant_an_attack() {
+        let mut ambusher = fighter(1, 0.0, false);
+        ambusher.skills.stealth_hours = 0.0;
+        let mut observer = fighter(2, 1.0, false);
+        observer.attributes.eyesight = 100.0;
+        observer.attributes.hearing = 100.0;
+        let mut attackers = vec![ambusher];
+        let mut defenders = vec![observer];
+
+        let attacks = plan_stealth_openers(&attackers, &defenders, &mut SplitMix64::new(11));
+        apply_pending_attacks(&mut attackers, &mut defenders, &attacks);
+
+        assert_eq!(defenders[0].body.total_damage(), 0.0);
+    }
+
+    #[test]
+    fn opposing_stealth_openers_are_simultaneous() {
+        let mut ally = fighter(1, 5.0, false);
+        ally.skills.stealth_hours = 100_000.0;
+        ally.equipment.weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut enemy = fighter(2, 5.0, false);
+        enemy.skills.stealth_hours = 100_000.0;
+        enemy.equipment.weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut allies = vec![ally];
+        let mut enemies = vec![enemy];
+
+        resolve_stealth_openers(&mut allies, &mut enemies, &mut SplitMix64::new(23));
+
+        assert!(allies[0].body.total_damage() > 0.0);
+        assert!(enemies[0].body.total_damage() > 0.0);
     }
 
     #[test]
