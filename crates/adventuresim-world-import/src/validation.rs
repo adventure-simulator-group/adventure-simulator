@@ -241,7 +241,7 @@ fn drought_counts_are_consistent(
         && neighbors
             .checked_add(fallbacks)
             .is_some_and(|classified| classified <= samples)
-        && ((settlements == 0 && cells == 0) || (settlements > 0 && cells > 0))
+        && cells > 0
 }
 
 fn religion_counts_are_consistent(
@@ -435,8 +435,9 @@ mod tests {
     #[test]
     fn drought_report_requires_cells_and_exact_fallbacks() {
         assert!(drought_counts_are_consistent(5_414, 3, 1, 1, 1, 3));
-        assert!(drought_counts_are_consistent(0, 0, 0, 0, 0, 0));
+        assert!(drought_counts_are_consistent(5_414, 0, 0, 0, 0, 0));
         assert!(!drought_counts_are_consistent(0, 3, 1, 1, 1, 3));
+        assert!(!drought_counts_are_consistent(0, 0, 0, 0, 0, 0));
         assert!(!drought_counts_are_consistent(5_414, 3, 2, 2, 2, 3));
         assert!(!drought_counts_are_consistent(5_414, 3, 1, 1, 0, 3));
     }

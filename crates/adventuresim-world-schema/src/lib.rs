@@ -217,25 +217,55 @@ pub struct DroughtHistory {
 impl DroughtHistory {
     pub const WINDOW_YEARS: u8 = 20;
 
-    pub const fn new(
+    pub fn new(
         current_summer: PalmerDroughtSeverityIndex,
         twenty_year_mean: PalmerDroughtSeverityIndex,
         drought_summers: u8,
         wet_summers: u8,
     ) -> Option<Self> {
-        if drought_summers <= Self::WINDOW_YEARS
-            && wet_summers <= Self::WINDOW_YEARS
-            && drought_summers + wet_summers <= Self::WINDOW_YEARS
+        if drought_summers > Self::WINDOW_YEARS
+            || wet_summers > Self::WINDOW_YEARS
+            || drought_summers + wet_summers > Self::WINDOW_YEARS
         {
-            Some(Self {
-                current_summer,
-                twenty_year_mean,
-                drought_summers,
-                wet_summers,
-            })
-        } else {
-            None
+            return None;
         }
+        let mut drought_remaining = i32::from(drought_summers);
+        let mut wet_remaining = i32::from(wet_summers);
+        let mut normal_remaining = i32::from(Self::WINDOW_YEARS - drought_summers - wet_summers);
+        let current = i32::from(current_summer.milli_units());
+        if current <= -2_000 {
+            if drought_remaining == 0 {
+                return None;
+            }
+            drought_remaining -= 1;
+        } else if current >= 2_000 {
+            if wet_remaining == 0 {
+                return None;
+            }
+            wet_remaining -= 1;
+        } else {
+            if normal_remaining == 0 {
+                return None;
+            }
+            normal_remaining -= 1;
+        }
+        let minimum_sum = current + drought_remaining * i32::from(PalmerDroughtSeverityIndex::MIN)
+            - normal_remaining * 1_999
+            + wet_remaining * 2_000;
+        let maximum_sum = current - drought_remaining * 2_000
+            + normal_remaining * 1_999
+            + wet_remaining * i32::from(PalmerDroughtSeverityIndex::MAX);
+        let minimum_mean = (f64::from(minimum_sum) / f64::from(Self::WINDOW_YEARS)).round() as i16;
+        let maximum_mean = (f64::from(maximum_sum) / f64::from(Self::WINDOW_YEARS)).round() as i16;
+        if !(minimum_mean..=maximum_mean).contains(&twenty_year_mean.milli_units()) {
+            return None;
+        }
+        Some(Self {
+            current_summer,
+            twenty_year_mean,
+            drought_summers,
+            wet_summers,
+        })
     }
 
     pub const fn current_summer(self) -> PalmerDroughtSeverityIndex {
@@ -1407,7 +1437,7 @@ pub struct SourceProvenance {
     pub license: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct WorldBuildReport {
     pub nodes: usize,
     pub edges: usize,
@@ -1551,9 +1581,13 @@ mod tests {
     #[test]
     fn drought_history_rejects_impossible_twenty_year_counts() {
         let normal = PalmerDroughtSeverityIndex::new(0).unwrap();
-        assert!(DroughtHistory::new(normal, normal, 10, 10).is_some());
+        let drought = PalmerDroughtSeverityIndex::new(-4_000).unwrap();
+        let impossible_mean = PalmerDroughtSeverityIndex::new(5_000).unwrap();
+        assert!(DroughtHistory::new(drought, normal, 10, 10).is_some());
         assert!(DroughtHistory::new(normal, normal, 11, 10).is_none());
         assert!(DroughtHistory::new(normal, normal, 21, 0).is_none());
+        assert!(DroughtHistory::new(drought, normal, 0, 0).is_none());
+        assert!(DroughtHistory::new(normal, impossible_mean, 0, 0).is_none());
     }
 
     #[test]
