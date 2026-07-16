@@ -18,6 +18,7 @@ serde_json.workspace = true
 shapefile.workspace = true
 thiserror.workspace = true
 tiff.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

@@ -5,8 +5,9 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
+    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, NativeRangeEvidence,
+    PotentialVegetation, PotentialVegetationFormation, SettlementImport, TravelEdgeImport,
+    TravelRoute, TreeSpeciesProfile, WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -29,6 +30,8 @@ struct Args {
     forest_cover_dir: PathBuf,
     #[arg(long, default_value_os_t = default_potential_vegetation_directory())]
     potential_vegetation_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_tree_species_archive())]
+    tree_species_archive: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -65,6 +68,7 @@ fn run(args: Args) -> Result<()> {
         &args.land_use_dir,
         &args.forest_cover_dir,
         &args.potential_vegetation_dir,
+        &args.tree_species_archive,
     )?;
     let output = args
         .output
@@ -210,6 +214,7 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "land_use": settlement.land_use,
         "forest_cover": encode_forest_cover(settlement.forest_cover),
         "potential_vegetation": encode_potential_vegetation(&settlement.potential_vegetation),
+        "tree_species": encode_tree_species(&settlement.tree_species),
         "scene_key": settlement.scene_key,
         "religion_id": settlement.religion_id,
     }))
@@ -226,6 +231,30 @@ fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
         PotentialVegetation::Inferred(formation) => {
             json!({ "Inferred": encode_potential_formation(*formation) })
         }
+    }
+}
+
+fn encode_tree_species(profile: &TreeSpeciesProfile) -> Value {
+    match profile {
+        TreeSpeciesProfile::Modeled(profile) => json!({
+            "Modeled": {
+                "candidates": profile.candidates().iter().map(|candidate| json!({
+                    "species": { "scientific_name": candidate.species.as_str() },
+                    "suitability": { "score": candidate.suitability.score() },
+                    "native_range": match candidate.native_range {
+                        NativeRangeEvidence::WithinNativeRange => json!({ "WithinNativeRange": [] }),
+                        NativeRangeEvidence::OutsideNativeRange => json!({ "OutsideNativeRange": [] }),
+                    },
+                })).collect::<Vec<_>>()
+            }
+        }),
+        TreeSpeciesProfile::Inferred(profile) => json!({
+            "Inferred": {
+                "species": profile.species().iter().map(|species| {
+                    json!({ "scientific_name": species.as_str() })
+                }).collect::<Vec<_>>()
+            }
+        }),
     }
 }
 
@@ -317,6 +346,10 @@ fn default_potential_vegetation_directory() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/potential-vegetation/Maps")
 }
 
+fn default_tree_species_archive() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/tree-species/EU-Trees4F_ens-clim.zip")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -325,9 +358,10 @@ fn default_output(year: i32) -> PathBuf {
 mod tests {
     use adventuresim_world_schema::{
         CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
-        ForestCover, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        PotentialVegetation, PotentialVegetationFormation, SettlementImport, TravelEdgeImport,
-        TravelRoute, Woodland,
+        ForestCover, HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+        NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SettlementImport,
+        TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, Woodland,
     };
 
     use super::{
@@ -417,6 +451,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_modeled_and_inferred_tree_profiles_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["tree_species"],
+            serde_json::json!({
+                "Inferred": {
+                    "species": [{ "scientific_name": "Quercus_robur" }]
+                }
+            })
+        );
+        settlement.tree_species = TreeSpeciesProfile::Modeled(
+            ModeledTreeSpeciesProfile::new(vec![ModeledTreeSpecies {
+                species: TreeSpeciesId::new("Fagus_sylvatica").unwrap(),
+                suitability: HabitatSuitability::new(875).unwrap(),
+                native_range: NativeRangeEvidence::WithinNativeRange,
+            }])
+            .unwrap(),
+        );
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["tree_species"],
+            serde_json::json!({
+                "Modeled": {
+                    "candidates": [{
+                        "species": { "scientific_name": "Fagus_sylvatica" },
+                        "suitability": { "score": 875 },
+                        "native_range": { "WithinNativeRange": [] }
+                    }]
+                }
+            })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -437,6 +504,10 @@ mod tests {
             forest_cover,
             potential_vegetation: PotentialVegetation::Inferred(
                 PotentialVegetationFormation::DeciduousAndMixedForest,
+            ),
+            tree_species: TreeSpeciesProfile::Inferred(
+                InferredTreeSpeciesProfile::new(vec![TreeSpeciesId::new("Quercus_robur").unwrap()])
+                    .unwrap(),
             ),
             scene_key: "village".into(),
             religion_id: "catholic".into(),

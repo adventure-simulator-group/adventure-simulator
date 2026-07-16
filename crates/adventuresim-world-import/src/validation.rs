@@ -154,12 +154,33 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.report.potential_vegetation_fallback_samples,
             world.settlements.len(),
         )
+        || !tree_species_counts_are_consistent(
+            world.report.tree_species_rasters_read,
+            world.report.tree_species_samples,
+            world.report.tree_species_fallback_samples,
+            world.report.tree_species_candidates,
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn tree_species_counts_are_consistent(
+    rasters: usize,
+    samples: usize,
+    fallbacks: usize,
+    candidates: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks <= samples
+        && candidates >= samples
+        && candidates <= samples.saturating_mul(adventuresim_world_schema::MAX_MODELED_TREE_SPECIES)
+        && ((settlements == 0 && rasters == 0) || (settlements > 0 && rasters == 201))
 }
 
 fn potential_vegetation_counts_are_consistent(
@@ -216,6 +237,7 @@ mod tests {
     use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
     use super::potential_vegetation_counts_are_consistent;
+    use super::tree_species_counts_are_consistent;
 
     #[test]
     fn elevation_report_requires_complete_consistent_counts() {
@@ -253,5 +275,15 @@ mod tests {
         assert!(!forest_counts_are_consistent(0, 3, 0, 3));
         assert!(!forest_counts_are_consistent(2, 2, 0, 3));
         assert!(!forest_counts_are_consistent(2, 3, 4, 3));
+    }
+
+    #[test]
+    fn tree_species_report_requires_all_triplets_and_nonempty_profiles() {
+        assert!(tree_species_counts_are_consistent(201, 3, 1, 12, 3));
+        assert!(tree_species_counts_are_consistent(0, 0, 0, 0, 0));
+        assert!(!tree_species_counts_are_consistent(200, 3, 0, 3, 3));
+        assert!(!tree_species_counts_are_consistent(201, 2, 0, 3, 3));
+        assert!(!tree_species_counts_are_consistent(201, 3, 4, 3, 3));
+        assert!(!tree_species_counts_are_consistent(201, 3, 0, 2, 3));
     }
 }
