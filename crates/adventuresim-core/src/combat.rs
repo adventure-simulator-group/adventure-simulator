@@ -193,6 +193,121 @@ pub fn resolve_melee_attack_by_parts(
     }
 }
 
+/// Resolve a ranged attack using the same defense, armor, and damage model as
+/// melee combat. Ranged accuracy uses the attacker's Ranged check and the
+/// weapon's projectile energy rather than muscular striking force.
+pub fn resolve_ranged_attack_by_parts(
+    attacker_skills: &impl PlayerSkills,
+    attacker_attr: &impl PlayerAttributes,
+    attacker_body: &impl PlayerBody,
+    attacker_essentials: &impl PlayerEssentials,
+    attacker_equip: &impl PlayerEquipment,
+    hit_precision: f32,
+    flanking: f32,
+    defender_body_part: BodyPart,
+    defender_response: DefenderResponse,
+    defender_skills: &impl PlayerSkills,
+    defender_attr: &impl PlayerAttributes,
+    defender_body: &impl PlayerBody,
+    defender_essentials: &impl PlayerEssentials,
+    defender_equip: &impl PlayerEquipment,
+) -> AttackResult {
+    let defender_response = if matches!(defender_response, DefenderResponse::Parry { .. })
+        && defender_equip.shield_block_bonus() <= 0.0
+    {
+        DefenderResponse::None
+    } else {
+        defender_response
+    };
+    let accuracy = attacker_skills.skill_check_by_parts(
+        Skill::Ranged,
+        attacker_attr,
+        attacker_body,
+        attacker_essentials,
+        attacker_equip,
+        LimbWeights::both_arms(),
+    ) * attacker_equip.weapon_accuracy()
+        * hit_precision.clamp(0.0, 1.0);
+
+    let defense = defense_by_parts(
+        defender_response,
+        defender_skills,
+        defender_attr,
+        defender_body,
+        defender_essentials,
+        defender_equip,
+    ) * (1.0 - flanking).clamp(0.0, 1.0);
+    let attack = accuracy - defense;
+
+    if attack < 0.0 {
+        return AttackResult::ToAttacker {
+            // Missing with a projectile does not physically unbalance the
+            // attacker. Keep the common result shape for callers.
+            balance_damage: 0.0,
+        };
+    }
+
+    let directness = attack.min(1.0);
+    let damage = calculate_damage_from_force(
+        directness,
+        attacker_equip.weapon_ranged_force_joules(),
+        attacker_equip,
+        defender_body_part,
+        defender_body,
+        defender_equip,
+    );
+    if attack > 1.0 && attacker_equip.weapon_is_precise() {
+        let critical = (attack - 1.0 - defender_equip.armor_coverage(defender_body_part)).max(0.0);
+        if critical > 0.0 {
+            return damage * critical;
+        }
+    }
+    damage
+}
+
+fn defense_by_parts(
+    response: DefenderResponse,
+    skills: &impl PlayerSkills,
+    attr: &impl PlayerAttributes,
+    body: &impl PlayerBody,
+    essentials: &impl PlayerEssentials,
+    equip: &impl PlayerEquipment,
+) -> f32 {
+    let base = match response {
+        DefenderResponse::None => 0.0,
+        DefenderResponse::Parry { .. } => {
+            let block = skills.skill_check_by_parts(
+                Skill::Block,
+                attr,
+                body,
+                essentials,
+                equip,
+                LimbWeights::all_equal(),
+            );
+            5.0 * (1.0 - (-(equip.shield_block_bonus() + block) / 2.0).exp())
+        }
+        DefenderResponse::Dodge { .. } => {
+            let dodge = skills.skill_check_by_parts(
+                Skill::Dodge,
+                attr,
+                body,
+                essentials,
+                equip,
+                LimbWeights {
+                    left_arm: 0.1,
+                    right_arm: 0.1,
+                    left_leg: 0.4,
+                    right_leg: 0.4,
+                },
+            );
+            dodge
+                * equip.armor_penalty(BodyPart::FULL_BODY)
+                * equip.encumbrance_penalty_by_parts(attr, body)
+        }
+    };
+    base * response.factor()
+}
+
 /// Calculate attack force in joules
 fn attack_force(
     attr: &impl PlayerAttributes,
@@ -217,28 +332,83 @@ fn calculate_damage(
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
+    calculate_damage_from_force(
+        attack,
+        attack_force(attacker_attr, attacker_body, attacker_equip),
+        attacker_equip,
+        defender_body_part,
+        defender_body,
+        defender_equip,
+    )
+}
+
+fn calculate_damage_from_force(
+    attack: f32,
+    full_force: f32,
+    attacker_equip: &impl PlayerEquipment,
+    defender_body_part: BodyPart,
+    defender_body: &impl PlayerBody,
+    defender_equip: &impl PlayerEquipment,
+) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
     let defender_resistance = {
         let resistance = defender_equip.armor_resistance(defender_body_part);
         let flexibility = defender_equip.armor_flexibility(defender_body_part);
         let penetration = attacker_equip.weapon_penetration();
-        resistance - flexibility * resistance * penetration
+        (resistance - flexibility * resistance * penetration).max(0.0)
     };
     let defender_padding = defender_equip.armor_padding(defender_body_part);
     let defender_stagger_resistance = STAGGER_RESISTANCE_JOULES_PER_KG
         * (defender_equip.inventory_weight() + defender_body.body_weight());
 
-    let attack_force = attack_force(&attacker_attr, &attacker_body, &attacker_equip) * attack;
+    let attack_force = full_force.max(0.0) * attack;
     let penetrated_force = (attack_force - defender_resistance).max(0.0);
     let absorbed_force = (attack_force - penetrated_force).max(0.0);
 
-    let cut_damage = penetrated_force;
-    let blunt_damage = (absorbed_force * 0.5 - defender_padding).max(0.0);
+    // Wider cutting surfaces make poor penetrators but damage more tissue once
+    // through. A zero coefficient is treated as a purely blunt weapon.
+    let penetration = attacker_equip.weapon_penetration().max(0.0);
+    let cut_damage = if penetration > 0.0
+        && (attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce())
+    {
+        penetrated_force / penetration
+    } else {
+        0.0
+    };
+    let blunt_force = absorbed_force * 0.5
+        + if attacker_equip.weapon_does_blunt() {
+            penetrated_force
+        } else {
+            0.0
+        };
+    let blunt_damage = (blunt_force - defender_padding).max(0.0);
     let balance_damage = (absorbed_force * 0.5) / defender_stagger_resistance;
     AttackResult::ToDefender {
         cut_damage,
         blunt_damage,
         balance_damage,
     }
+}
+
+/// Convert physical damage energy into the strategic 0-1 body-part health
+/// scale. The calibration follows Combat.md: roughly 20 J to an unarmored arm
+/// is disabling, while larger body regions absorb proportionally more energy.
+pub fn health_damage_from_attack(result: AttackResult, part: BodyPart) -> f32 {
+    let AttackResult::ToDefender {
+        cut_damage,
+        blunt_damage,
+        ..
+    } = result
+    else {
+        return 0.0;
+    };
+    let capacity_joules = match part {
+        BodyPart::LeftArm | BodyPart::RightArm => 20.0,
+        BodyPart::LeftLeg | BodyPart::RightLeg => 35.0,
+        BodyPart::Head => 20.0,
+        BodyPart::Chest => 80.0,
+        BodyPart::Stomach => 55.0,
+    };
+    ((cut_damage + blunt_damage * 0.75) / capacity_joules).max(0.0)
 }

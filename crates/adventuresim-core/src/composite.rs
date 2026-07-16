@@ -316,4 +316,30 @@ where
             &defender.equipment,
         )
     }
+
+    pub fn resolve_ranged_attack(
+        &self,
+        defender: &Self,
+        defender_response: DefenderResponse,
+        hit_precision: f32,
+        flanking: f32,
+        body_part: BodyPart,
+    ) -> AttackResult {
+        resolve_ranged_attack_by_parts(
+            &self.skills,
+            &self.attributes,
+            &self.body,
+            &self.essentials,
+            &self.equipment,
+            hit_precision,
+            flanking,
+            body_part,
+            defender_response,
+            &defender.skills,
+            &defender.attributes,
+            &defender.body,
+            &defender.essentials,
+            &defender.equipment,
+        )
+    }
 }
