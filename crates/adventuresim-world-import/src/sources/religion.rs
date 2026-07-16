@@ -5,15 +5,14 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CatholicLutheranChurch, CatholicReformedChurch, CompiledWorld, LutheranReformedChurch,
-    OfficialReligion, SettlementImport, SettlementReligiousStatus, SourceProvenance,
-    WORLD_SCHEMA_VERSION, WesternChristianArrangement, WorldMetadata,
+    CatholicLutheranChurch, CatholicReformedChurch, LutheranReformedChurch, OfficialReligion,
+    SettlementReligiousStatus, SourceProvenance, WesternChristianArrangement,
 };
 use serde::Deserialize;
 
 use crate::{
     Error, Result,
-    draft::{GeologySettlementDraft, WorldDraft},
+    draft::{GeologySettlementDraft, ReligionSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "IEG Maps of Confessional Europe (1500 and 1555)";
@@ -261,7 +260,7 @@ fn read_regions(path: &Path) -> Result<Vec<Region>> {
 pub(crate) fn enrich(
     mut draft: WorldDraft<GeologySettlementDraft>,
     regions_path: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<ReligionSettlementDraft>> {
     if draft.year != SUPPORTED_YEAR {
         return Err(Error::Validation(format!(
             "IEG intermediate represents {SUPPORTED_YEAR}, not {}",
@@ -271,16 +270,17 @@ pub(crate) fn enrich(
     let regions = read_regions(regions_path)?;
 
     let mut fallbacks = 0;
-    let settlements: Vec<SettlementImport> = std::mem::take(&mut draft.settlements)
+    let settlements: Vec<ReligionSettlementDraft> = std::mem::take(&mut draft.settlements)
         .into_iter()
         .map(|geologic| {
-            let soil = geologic.soil;
-            let trees = soil.trees;
-            let vegetated = trees.vegetated;
-            let forest = vegetated.forest;
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
+            let settlement = &geologic
+                .soil
+                .trees
+                .vegetated
+                .forest
+                .land
+                .elevated
+                .settlement;
             let religious_status = regions
                 .iter()
                 .find(|region| region.contains(settlement.latitude, settlement.longitude))
@@ -289,23 +289,9 @@ pub(crate) fn enrich(
                     fallbacks += 1;
                     infer_fallback(settlement.latitude, settlement.longitude)
                 });
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
-                potential_vegetation: vegetated.potential_vegetation,
-                tree_species: trees.tree_species,
-                soil: soil.soil,
-                geology: geologic.geology,
+            ReligionSettlementDraft {
+                geologic,
                 religious_status,
-                scene_key: settlement.scene_key,
             }
         })
         .collect();
@@ -317,13 +303,10 @@ pub(crate) fn enrich(
     draft.report.religion_regions_read = regions.len();
     draft.report.religion_samples = settlements.len();
     draft.report.religion_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,

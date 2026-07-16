@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::land_use_profile_type::LandUseProfile;
@@ -31,6 +32,7 @@ pub struct SettlementImport {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub drought: DroughtProfile,
     pub scene_key: String,
 }
 
