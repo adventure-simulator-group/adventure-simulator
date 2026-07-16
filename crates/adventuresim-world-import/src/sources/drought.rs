@@ -28,10 +28,10 @@ pub(crate) fn enrich(
     draft: WorldDraft<ReligionSettlementDraft>,
     netcdf_path: &Path,
 ) -> Result<CompiledWorld> {
-    if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), 0, 0, 0);
-    }
     let grid = OwdaGrid::open(netcdf_path, draft.year)?;
+    if draft.settlements.is_empty() {
+        return finish(draft, Vec::new(), grid.valid_cells.len(), 0, 0);
+    }
     let mut neighbor_samples = 0;
     let mut fallbacks = 0;
     let profiles = draft
@@ -288,9 +288,11 @@ impl OwdaGrid {
         if !latitude.is_finite() || !longitude.is_finite() {
             return None;
         }
-        let longitude_index = nearest_index(&self.longitudes, longitude)?;
-        let latitude_index = nearest_index(&self.latitudes, latitude)?;
-        if let Some(history) = self.cell(longitude_index, latitude_index) {
+        if let (Some(longitude_index), Some(latitude_index)) = (
+            nearest_index(&self.longitudes, longitude),
+            nearest_index(&self.latitudes, latitude),
+        ) && let Some(history) = self.cell(longitude_index, latitude_index)
+        {
             return Some(Sample {
                 history,
                 used_neighbor: false,
@@ -522,6 +524,37 @@ mod tests {
     }
 
     #[test]
+    fn just_outside_grid_footprint_can_use_a_nearby_reconstruction() {
+        let history = neutral_history();
+        let grid = OwdaGrid {
+            longitudes: vec![0.25],
+            latitudes: vec![0.25],
+            cells: vec![Some(history)],
+            valid_cells: vec![(0, 0)],
+        };
+        let sample = grid.sample(0.25, -0.1).unwrap();
+        assert!(sample.used_neighbor);
+        assert_eq!(sample.history, history);
+    }
+
+    #[test]
+    fn empty_world_still_requires_the_source() {
+        let draft = WorldDraft {
+            year: 1544,
+            sources: Vec::new(),
+            road_types: Vec::new(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            settlements: Vec::new(),
+            report: Default::default(),
+        };
+        let missing = Path::new("missing-owda.nc");
+        assert!(
+            matches!(enrich(draft, missing), Err(Error::MissingSource(path)) if path == missing)
+        );
+    }
+
+    #[test]
     #[ignore = "requires the manually downloaded 228 MB NOAA OWDA NetCDF file"]
     fn reads_downloaded_owda_source() {
         let path = std::env::var_os("OWDA_NETCDF").expect("set OWDA_NETCDF");
@@ -543,7 +576,10 @@ mod tests {
         let mut fallbacks = 0;
         for settlement in draft.settlements {
             match grid.sample(settlement.latitude, settlement.longitude) {
-                Some(Sample { used_neighbor: true, .. }) => neighbors += 1,
+                Some(Sample {
+                    used_neighbor: true,
+                    ..
+                }) => neighbors += 1,
                 Some(_) => direct += 1,
                 None => fallbacks += 1,
             }

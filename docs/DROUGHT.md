@@ -44,9 +44,11 @@ conditions; and mild through extreme wetness. Each settlement stores:
 - the number of moderate-or-worse drought summers (PDSI at most -2);
 - the number of moderately-or-more wet summers (PDSI at least 2).
 
-The history constructor guarantees that both counts fit the twenty-year window
-and cannot sum past it. Canonical data distinguishes reconstructed profiles
-from complete inferred profiles; there is no unknown state.
+The history constructor guarantees that both counts fit the twenty-year window,
+cannot sum past it, include the current summer in the correct category, and
+admit the stored mean under the bounded drought, normal, and wet value ranges.
+Canonical data distinguishes reconstructed profiles from complete inferred
+profiles; there is no unknown state.
 
 Sampling first uses the containing half-degree grid point. For a coastal or
 otherwise missing cell, it selects the physically nearest reconstructed point,
