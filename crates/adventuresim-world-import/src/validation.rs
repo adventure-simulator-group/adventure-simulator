@@ -148,12 +148,29 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.report.forest_fallback_samples,
             world.settlements.len(),
         )
+        || !potential_vegetation_counts_are_consistent(
+            world.report.potential_vegetation_polygons_read,
+            world.report.potential_vegetation_samples,
+            world.report.potential_vegetation_fallback_samples,
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn potential_vegetation_counts_are_consistent(
+    polygons: usize,
+    samples: usize,
+    fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks <= samples
+        && ((settlements == 0 && polygons == 0) || (settlements > 0 && polygons > 0))
 }
 
 fn forest_counts_are_consistent(
@@ -198,6 +215,7 @@ mod tests {
     use super::elevation_counts_are_consistent;
     use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
+    use super::potential_vegetation_counts_are_consistent;
 
     #[test]
     fn elevation_report_requires_complete_consistent_counts() {
@@ -217,6 +235,15 @@ mod tests {
         assert!(!land_use_counts_are_consistent(7, 2, 0, 0, 3));
         assert!(!land_use_counts_are_consistent(7, 3, 4, 0, 3));
         assert!(!land_use_counts_are_consistent(7, 3, 1, 3, 3));
+    }
+
+    #[test]
+    fn potential_vegetation_report_requires_source_polygons_and_all_samples() {
+        assert!(potential_vegetation_counts_are_consistent(19_059, 3, 1, 3));
+        assert!(potential_vegetation_counts_are_consistent(0, 0, 0, 0));
+        assert!(!potential_vegetation_counts_are_consistent(0, 3, 0, 3));
+        assert!(!potential_vegetation_counts_are_consistent(19_059, 2, 0, 3));
+        assert!(!potential_vegetation_counts_are_consistent(19_059, 3, 4, 3));
     }
 
     #[test]

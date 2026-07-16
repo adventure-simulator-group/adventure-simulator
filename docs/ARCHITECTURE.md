@@ -25,11 +25,12 @@ world schema. For example, Viabundus supplies settlement identity and road
 topology, while GLO-30 supplies the required typed elevation for each draft
 settlement. HYDE then adds an exhaustive typed land-use profile and constructs
 an enriched draft. Copernicus forest cover consumes that draft and constructs
-the canonical settlement record with a typed open-or-wooded state. The generic
-draft is a typestate boundary: each enrichment stage consumes only settlements
-that have all of its required predecessor data. This keeps source-specific
-placeholders out of canonical records and prevents later stages from being
-called before their dependencies exist.
+another enriched draft with a typed open-or-wooded state. EuroVegMap then adds
+typed mapped-or-inferred potential vegetation and constructs the canonical
+settlement record. The generic draft is a typestate boundary: each enrichment
+stage consumes only settlements that have all of its required predecessor data.
+This keeps source-specific placeholders out of canonical records and prevents
+later stages from being called before their dependencies exist.
 
 Each compiled artifact is identified by a content hash. An interrupted load may
 resume only with the same artifact; a different artifact requires a database
