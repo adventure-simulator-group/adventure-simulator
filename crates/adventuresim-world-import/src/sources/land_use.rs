@@ -1,4 +1,4 @@
-//! HYDE 3.2 historical land-use sampling for the 1544 world.
+//! HYDE 3.2.1 historical land-use sampling for the 1544 world.
 
 use std::{
     collections::HashMap,
@@ -17,14 +17,15 @@ use crate::{
     draft::{ElevatedSettlementDraft, WorldDraft},
 };
 
-const SOURCE_NAME: &str = "History Database of the Global Environment 3.2";
-const SOURCE_URL: &str = "https://doi.org/10.17026/dans-znk-cfy3";
+const SOURCE_NAME: &str = "History Database of the Global Environment 3.2.1";
+const SOURCE_URL: &str = "https://doi.org/10.17026/dans-25g-gez3";
 const SOURCE_LICENSE: &str = "CC0-1.0";
 const START_YEAR: i32 = 1500;
 const END_YEAR: i32 = 1600;
 const HYDE_COLUMNS: usize = 4_320;
 const HYDE_ROWS: usize = 2_160;
 const HYDE_CELL_SIZE: f64 = 1.0 / 12.0;
+const MAX_NORMALIZABLE_OVERLAP: f64 = 1.05;
 
 const RASTERS: [(&str, &str, LandUseComponent); 7] = [
     ("garea_cr.asc", "cell area", LandUseComponent::CellArea),
@@ -70,6 +71,10 @@ pub(crate) fn enrich(
             draft.year
         )));
     }
+    if draft.settlements.is_empty() {
+        draft.sources.push(source_provenance());
+        return Ok(compiled_world(draft, Vec::new()));
+    }
     let coordinates: Vec<_> = draft
         .settlements
         .iter()
@@ -91,20 +96,24 @@ pub(crate) fn enrich(
 
     let interpolation = f64::from(draft.year - START_YEAR) / f64::from(END_YEAR - START_YEAR);
     let mut fallback_samples = 0;
-    let settlements = draft
-        .settlements
+    let mut normalized_samples = 0;
+    let elevated_settlements = std::mem::take(&mut draft.settlements);
+    let settlements = elevated_settlements
         .into_iter()
         .zip(values)
         .map(|(elevated, values)| {
-            let land_use = match values.profile(interpolation) {
-                Some(profile) => profile,
+            let land_use = match values.profile(interpolation)? {
+                Some((profile, normalized)) => {
+                    normalized_samples += usize::from(normalized);
+                    profile
+                }
                 None => {
                     fallback_samples += 1;
                     fallback_profile(&elevated)
                 }
             };
             let settlement = elevated.settlement;
-            SettlementImport {
+            Ok(SettlementImport {
                 id: settlement.id,
                 source_node_id: settlement.source_node_id,
                 name: settlement.name,
@@ -116,18 +125,30 @@ pub(crate) fn enrich(
                 land_use,
                 scene_key: settlement.scene_key,
                 religion_id: settlement.religion_id,
-            }
+            })
         })
-        .collect::<Vec<_>>();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+        .collect::<Result<Vec<_>>>()?;
+    draft.sources.push(source_provenance());
     draft.report.land_use_rasters_read = RASTERS.len();
     draft.report.land_use_samples = settlements.len();
     draft.report.land_use_fallback_samples = fallback_samples;
-    Ok(CompiledWorld {
+    draft.report.land_use_normalized_samples = normalized_samples;
+    Ok(compiled_world(draft, settlements))
+}
+
+fn source_provenance() -> SourceProvenance {
+    SourceProvenance {
+        name: SOURCE_NAME.into(),
+        url: SOURCE_URL.into(),
+        license: SOURCE_LICENSE.into(),
+    }
+}
+
+fn compiled_world(
+    draft: WorldDraft<ElevatedSettlementDraft>,
+    settlements: Vec<SettlementImport>,
+) -> CompiledWorld {
+    CompiledWorld {
         metadata: WorldMetadata {
             schema_version: WORLD_SCHEMA_VERSION,
             world_year: draft.year,
@@ -138,7 +159,7 @@ pub(crate) fn enrich(
         edges: draft.edges,
         settlements,
         report: draft.report,
-    })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -187,12 +208,30 @@ impl LandUseSourceValues {
         Ok(())
     }
 
-    fn profile(self, interpolation: f64) -> Option<LandUseProfile> {
-        let area = self.cell_area.filter(|area| *area > 0.0)?;
-        let crop = interpolate(self.cropland_start?, self.cropland_end?, interpolation) / area;
-        let grazing = interpolate(self.grazing_start?, self.grazing_end?, interpolation) / area;
-        let built = interpolate(self.built_up_start?, self.built_up_end?, interpolation) / area;
-        Some(profile_from_fractions(crop, grazing, built))
+    fn profile(self, interpolation: f64) -> Result<Option<(LandUseProfile, bool)>> {
+        let Some(area) = self.cell_area.filter(|area| *area > 0.0) else {
+            return Ok(None);
+        };
+        let Some((
+            cropland_start,
+            cropland_end,
+            grazing_start,
+            grazing_end,
+            built_start,
+            built_end,
+        )) = self
+            .cropland_start
+            .zip(self.cropland_end)
+            .zip(self.grazing_start.zip(self.grazing_end))
+            .zip(self.built_up_start.zip(self.built_up_end))
+            .map(|(((cs, ce), (gs, ge)), (bs, be))| (cs, ce, gs, ge, bs, be))
+        else {
+            return Ok(None);
+        };
+        let crop = interpolate(cropland_start, cropland_end, interpolation) / area;
+        let grazing = interpolate(grazing_start, grazing_end, interpolation) / area;
+        let built = interpolate(built_start, built_end, interpolation) / area;
+        profile_from_fractions(crop, grazing, built).map(Some)
     }
 }
 
@@ -200,9 +239,28 @@ fn interpolate(start: f64, end: f64, amount: f64) -> f64 {
     start + (end - start) * amount
 }
 
-fn profile_from_fractions(cropland: f64, grazing: f64, built_up: f64) -> LandUseProfile {
-    let mut fractions = [cropland.max(0.0), grazing.max(0.0), built_up.max(0.0)];
+fn profile_from_fractions(
+    cropland: f64,
+    grazing: f64,
+    built_up: f64,
+) -> Result<(LandUseProfile, bool)> {
+    let mut fractions = [cropland, grazing, built_up];
+    if !fractions
+        .iter()
+        .all(|value| value.is_finite() && *value >= 0.0)
+    {
+        return Err(Error::Validation(
+            "HYDE derived land-use fractions are negative or non-finite".into(),
+        ));
+    }
     let total = fractions.iter().sum::<f64>();
+    if !total.is_finite() || total > MAX_NORMALIZABLE_OVERLAP {
+        return Err(Error::Validation(format!(
+            "HYDE land-use areas exceed cell area by more than {:.0}%",
+            (MAX_NORMALIZABLE_OVERLAP - 1.0) * 100.0
+        )));
+    }
+    let normalized = total > 1.0;
     if total > 1.0 {
         for fraction in &mut fractions {
             *fraction /= total;
@@ -224,13 +282,16 @@ fn profile_from_fractions(cropland: f64, grazing: f64, built_up: f64) -> LandUse
         basis_points[largest] -= excess;
     }
     let natural = 10_000 - basis_points.iter().sum::<u16>();
-    LandUseProfile::new(
-        LandUseFraction::new(basis_points[0]).unwrap(),
-        LandUseFraction::new(basis_points[1]).unwrap(),
-        LandUseFraction::new(basis_points[2]).unwrap(),
-        LandUseFraction::new(natural).unwrap(),
-    )
-    .unwrap()
+    Ok((
+        LandUseProfile::new(
+            LandUseFraction::new(basis_points[0]).unwrap(),
+            LandUseFraction::new(basis_points[1]).unwrap(),
+            LandUseFraction::new(basis_points[2]).unwrap(),
+            LandUseFraction::new(natural).unwrap(),
+        )
+        .unwrap(),
+        normalized,
+    ))
 }
 
 fn fallback_profile(settlement: &ElevatedSettlementDraft) -> LandUseProfile {
@@ -428,7 +489,7 @@ impl GridHeader {
             || (self.cell_size - HYDE_CELL_SIZE).abs() > epsilon
         {
             return Err(Error::Validation(format!(
-                "{} is not a global 5-arcminute HYDE 3.2 grid",
+                "{} is not a global 5-arcminute HYDE 3.2.1 grid",
                 path.display()
             )));
         }
@@ -494,7 +555,8 @@ mod tests {
             built_up_start: Some(1.0),
             built_up_end: Some(1.0),
         };
-        let profile = values.profile(0.44).unwrap();
+        let (profile, normalized) = values.profile(0.44).unwrap().unwrap();
+        assert!(!normalized);
         assert_eq!(profile.cropland().basis_points(), 1_880);
         assert_eq!(profile.grazing().basis_points(), 2_000);
         assert_eq!(profile.built_up().basis_points(), 100);
@@ -527,12 +589,20 @@ mod tests {
 
     #[test]
     fn overlapping_source_areas_are_normalized_without_invalid_totals() {
-        let profile = profile_from_fractions(0.8, 0.6, 0.1);
+        let (profile, normalized) = profile_from_fractions(0.7, 0.3, 0.01).unwrap();
+        assert!(normalized);
         let total = profile.cropland().basis_points()
             + profile.grazing().basis_points()
             + profile.built_up().basis_points()
             + profile.natural().basis_points();
         assert_eq!(total, 10_000);
         assert_eq!(profile.natural().basis_points(), 0);
+    }
+
+    #[test]
+    fn malformed_overfull_or_non_finite_areas_are_rejected() {
+        assert!(profile_from_fractions(1.0, 1.0, 0.0).is_err());
+        assert!(profile_from_fractions(f64::MAX, f64::MAX, 0.0).is_err());
+        assert!(profile_from_fractions(f64::NAN, 0.0, 0.0).is_err());
     }
 }
