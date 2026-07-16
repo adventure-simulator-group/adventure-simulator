@@ -1,7 +1,7 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    EdgeEndpoint, SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION,
-    WorldNodeImport,
+    EdgeEndpoint, ElevationMeters, SettlementImport, TravelEdgeImport, TravelRoute,
+    WORLD_SCHEMA_VERSION, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -87,6 +87,7 @@ pub struct Settlement {
     pub population_level: i32,
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
+    pub elevation: ElevationMeters,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -297,6 +298,12 @@ pub fn import_settlements(
         return Err("Settlement batch is empty".into());
     }
     for settlement in settlements {
+        let elevation = ElevationMeters::new(settlement.elevation.get()).ok_or_else(|| {
+            format!(
+                "Settlement {} has elevation outside the supported range",
+                settlement.id
+            )
+        })?;
         if ctx
             .db
             .world_node()
@@ -316,6 +323,7 @@ pub fn import_settlements(
             coord_y: settlement.latitude,
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
+            elevation,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3742,6 +3750,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 coord_y: y,
                 population_level: pop,
                 population_estimate: 0,
+                elevation: ElevationMeters::new(100).unwrap(),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,

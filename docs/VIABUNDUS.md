@@ -9,7 +9,8 @@ version 2 (released 25 April 2025), edited by Bart Holterman et al.
 
 The upstream CSVs are downloaded locally into the Git-ignored `viabundus/`
 directory with `just init-viabundus`. The native Rust world compiler reads them
-from its source-specific `sources::viabundus` module. `just compile-world`
+from its source-specific `sources::viabundus` module, then enriches the draft
+with required values from the other initialized sources. `just compile-world`
 writes the validated, schema-versioned artifact to
 `target/world-1544.json`. The generated strategic graph contains
 only the source attributes required to route between settlements in 1544:

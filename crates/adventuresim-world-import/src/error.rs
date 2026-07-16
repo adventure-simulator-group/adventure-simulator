@@ -6,6 +6,11 @@ pub enum Error {
     MissingSource(PathBuf),
     #[error("failed to read {path}: {source}")]
     Csv { path: PathBuf, source: csv::Error },
+    #[error("failed to read TIFF {path}: {source}")]
+    Tiff {
+        path: PathBuf,
+        source: tiff::TiffError,
+    },
     #[error("invalid {field} value {value:?} in {path}: {message}")]
     InvalidField {
         path: PathBuf,

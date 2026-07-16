@@ -4,13 +4,15 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CompiledWorld, EdgeEndpoint, SettlementImport, SourceProvenance, TravelEdgeImport,
-    TravelEdgeKind, TravelRoute, WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata,
-    WorldNodeImport,
+    EdgeEndpoint, SourceProvenance, TravelEdgeImport, TravelEdgeKind, TravelRoute,
+    WorldBuildReport, WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    draft::{SettlementDraft, WorldDraft},
+};
 
 const SOURCE_NAME: &str = "Viabundus Pre-modern Street Map 2";
 const SOURCE_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
@@ -77,7 +79,7 @@ struct RawPopulation {
     inhabitants: String,
 }
 
-pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
+pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft> {
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
     let population_path = require(directory, "population.csv")?;
@@ -203,7 +205,7 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
         }
         settlement_node_ids.insert(node.id);
         let estimate = population_by_node.get(&node.id).map(|(_, value)| *value);
-        settlements.push(SettlementImport {
+        settlements.push(SettlementDraft {
             id: format!("viabundus-{}", node.id),
             source_node_id: node.id,
             name: node.name.clone(),
@@ -261,17 +263,14 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
         .filter(|feature| feature.is_contradictory())
         .count();
 
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: year,
-            sources: vec![SourceProvenance {
-                name: SOURCE_NAME.into(),
-                url: SOURCE_DOI.into(),
-                license: SOURCE_LICENSE.into(),
-            }],
-            road_types: vec![TravelEdgeKind::Ferry, TravelEdgeKind::Land],
-        },
+    Ok(WorldDraft {
+        year,
+        sources: vec![SourceProvenance {
+            name: SOURCE_NAME.into(),
+            url: SOURCE_DOI.into(),
+            license: SOURCE_LICENSE.into(),
+        }],
+        road_types: vec![TravelEdgeKind::Ferry, TravelEdgeKind::Land],
         report: WorldBuildReport {
             nodes: nodes.len(),
             edges: edges.len(),
@@ -280,6 +279,9 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             route_crossings,
             toll_edges,
             contradictory_feature_dates,
+            elevation_tiles_read: 0,
+            elevation_samples: 0,
+            elevation_fallback_samples: 0,
             excluded_edges,
         },
         nodes,
