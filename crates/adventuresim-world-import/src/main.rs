@@ -5,7 +5,8 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, EdgeEndpoint, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
+    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, SettlementImport, TravelEdgeImport,
+    TravelRoute, WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -194,7 +195,36 @@ fn encode_endpoint(endpoint: Option<EdgeEndpoint>) -> Value {
 }
 
 fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
-    serde_json::to_value(settlement).map_err(Error::from)
+    Ok(json!({
+        "id": settlement.id,
+        "source_node_id": settlement.source_node_id,
+        "name": settlement.name,
+        "longitude": settlement.longitude,
+        "latitude": settlement.latitude,
+        "population_level": settlement.population_level,
+        "population_estimate": settlement.population_estimate,
+        "elevation": settlement.elevation,
+        "land_use": settlement.land_use,
+        "forest_cover": encode_forest_cover(settlement.forest_cover),
+        "scene_key": settlement.scene_key,
+        "religion_id": settlement.religion_id,
+    }))
+}
+
+fn encode_forest_cover(cover: ForestCover) -> Value {
+    match cover {
+        ForestCover::Open => json!({ "Open": [] }),
+        ForestCover::Wooded(woodland) => json!({
+            "Wooded": {
+                "density": woodland.density,
+                "dominant": match woodland.dominant {
+                    DominantLeafType::Broadleaf => json!({ "Broadleaf": [] }),
+                    DominantLeafType::Coniferous => json!({ "Coniferous": [] }),
+                    DominantLeafType::Mixed => json!({ "Mixed": [] }),
+                },
+            }
+        }),
+    }
 }
 
 fn call_reducer(args: &Args, reducer: &str, arguments: &[Value]) -> Result<()> {
@@ -242,10 +272,14 @@ fn default_output(year: i32) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use adventuresim_world_schema::{EdgeEndpoint, TravelEdgeImport, TravelRoute};
+    use adventuresim_world_schema::{
+        CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover,
+        LandUseFraction, LandUseProfile, SettlementImport, TravelEdgeImport, TravelRoute, Woodland,
+    };
 
     use super::{
-        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_travel_edge, serialize_batches,
+        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement, encode_travel_edge,
+        serialize_batches,
     };
 
     #[test]
@@ -272,6 +306,58 @@ mod tests {
             batches[0][0]["toll"],
             serde_json::json!({ "some": { "From": [] } })
         );
+    }
+
+    #[test]
+    fn encodes_all_forest_variants_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["forest_cover"],
+            serde_json::json!({ "Open": [] })
+        );
+
+        for (dominant, name) in [
+            (DominantLeafType::Broadleaf, "Broadleaf"),
+            (DominantLeafType::Coniferous, "Coniferous"),
+            (DominantLeafType::Mixed, "Mixed"),
+        ] {
+            settlement.forest_cover = ForestCover::Wooded(Woodland {
+                density: CanopyDensity::new(40).unwrap(),
+                dominant,
+            });
+            assert_eq!(
+                encode_settlement(&settlement).unwrap()["forest_cover"],
+                serde_json::json!({
+                    "Wooded": {
+                        "density": { "percent": 40 },
+                        "dominant": { (name): [] },
+                    }
+                })
+            );
+        }
+    }
+
+    fn settlement(forest_cover: ForestCover) -> SettlementImport {
+        SettlementImport {
+            id: "test".into(),
+            source_node_id: 1,
+            name: "Test".into(),
+            longitude: 0.0,
+            latitude: 0.0,
+            population_level: 1,
+            population_estimate: 100,
+            elevation: ElevationMeters::new(10).unwrap(),
+            land_use: LandUseProfile::new(
+                LandUseFraction::new(1_000).unwrap(),
+                LandUseFraction::new(1_000).unwrap(),
+                LandUseFraction::new(100).unwrap(),
+                LandUseFraction::new(7_900).unwrap(),
+            )
+            .unwrap(),
+            forest_cover,
+            scene_key: "village".into(),
+            religion_id: "catholic".into(),
+        }
     }
 
     #[test]
