@@ -36,7 +36,8 @@ newly created characters start at a random loaded settlement.
 The settlement overview lists historical aliases and exposes one deterministic
 historical description with its source language; population-based English
 flavor text remains the primary description. Non-settlement description
-categories such as bridges, tolls, and roads remain deferred.
+categories such as bridges, tolls, and ferries remain deferred and are counted
+by category in the compiler build report.
 
 The import does not claim that every represented line is an exact historical
 road. Viabundus' `certainty` value is preserved on each travel edge so gameplay

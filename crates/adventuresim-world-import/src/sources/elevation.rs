@@ -104,6 +104,8 @@ pub(crate) fn enrich(
         road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
+        settlement_aliases: draft.settlement_aliases,
+        settlement_descriptions: draft.settlement_descriptions,
         settlements,
         report: draft.report,
     })

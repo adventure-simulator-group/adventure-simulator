@@ -157,6 +157,11 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         ));
     }
     for alias in &world.settlement_aliases {
+        if alias.id.trim().is_empty() {
+            return Err(Error::Validation(
+                "settlement alias ID must not be empty".into(),
+            ));
+        }
         if !settlement_ids.contains(alias.settlement_id.as_str()) {
             return Err(Error::Validation(format!(
                 "settlement alias {} references an unknown settlement",
@@ -181,6 +186,11 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         ));
     }
     for description in &world.settlement_descriptions {
+        if description.id.trim().is_empty() {
+            return Err(Error::Validation(
+                "settlement description ID must not be empty".into(),
+            ));
+        }
         if !settlement_ids.contains(description.settlement_id.as_str()) {
             return Err(Error::Validation(format!(
                 "settlement description {} references an unknown settlement",
