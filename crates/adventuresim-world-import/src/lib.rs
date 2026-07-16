@@ -5,8 +5,8 @@
 
 pub mod builder;
 pub mod error;
-pub mod sources;
-pub mod validation;
+mod sources;
+mod validation;
 
 pub use builder::WorldBuilder;
 pub use error::{Error, Result};

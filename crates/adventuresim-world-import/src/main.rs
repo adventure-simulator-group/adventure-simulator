@@ -4,9 +4,10 @@ use std::{
 };
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
-use adventuresim_world_schema::{CompiledWorld, WORLD_SCHEMA_VERSION};
+use adventuresim_world_schema::{
+    CompiledWorld, SettlementImport, TravelEdgeImport, TravelEdgeKind, WorldNodeImport,
+};
 use clap::Parser;
-use serde::Serialize;
 use serde_json::{Value, json};
 
 const WORLD_YEAR: i32 = 1544;
@@ -21,8 +22,8 @@ struct Args {
     viabundus_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
-    #[arg(long, default_value_os_t = default_output())]
-    output: PathBuf,
+    #[arg(long)]
+    output: Option<PathBuf>,
     #[arg(long)]
     load: bool,
     #[arg(long, default_value = "spacetime")]
@@ -50,42 +51,47 @@ fn run(args: Args) -> Result<()> {
         return Err(Error::Validation("batch size must be positive".into()));
     }
     let world = WorldBuilder::new(args.year).build_from_viabundus(&args.viabundus_dir)?;
-    if let Some(parent) = args.output.parent() {
+    let output = args
+        .output
+        .clone()
+        .unwrap_or_else(|| default_output(args.year));
+    if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let mut artifact = serde_json::to_vec(&world)?;
+    let artifact_id = blake3::hash(&artifact).to_hex().to_string();
     artifact.push(b'\n');
-    std::fs::write(&args.output, artifact)?;
+    std::fs::write(&output, artifact)?;
     println!("{}", serde_json::to_string_pretty(&world.report)?);
-    println!("Wrote compiled world to {}", args.output.display());
+    println!("Wrote compiled world to {}", output.display());
     if args.load {
-        load_world(&world, &args)?;
+        load_world(&world, &artifact_id, &args)?;
     }
     Ok(())
 }
 
-fn load_world(world: &CompiledWorld, args: &Args) -> Result<()> {
+fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
     call_reducer(
         args,
         "begin_world_data_import",
-        &[json!(WORLD_SCHEMA_VERSION)],
+        &[json!(world.metadata.schema_version), json!(artifact_id)],
     )?;
 
     for (label, reducer, batches) in [
         (
             "nodes",
             "import_world_nodes",
-            serialize_batches(&world.nodes, args.batch_size, encode_node_options)?,
+            serialize_batches(&world.nodes, args.batch_size, encode_world_node)?,
         ),
         (
             "edges",
             "import_travel_edges",
-            serialize_batches(&world.edges, args.batch_size, encode_edge_kinds)?,
+            serialize_batches(&world.edges, args.batch_size, encode_travel_edge)?,
         ),
         (
             "settlements",
             "import_settlements",
-            serialize_batches(&world.settlements, args.batch_size, identity)?,
+            serialize_batches(&world.settlements, args.batch_size, encode_settlement)?,
         ),
     ] {
         let total = batches.iter().map(Vec::len).sum::<usize>();
@@ -99,22 +105,16 @@ fn load_world(world: &CompiledWorld, args: &Args) -> Result<()> {
         }
         println!("Loaded {total} {label}.");
     }
+    call_reducer(args, "finish_world_data_import", &[json!(artifact_id)])?;
     Ok(())
 }
 
-fn serialize_batches<T: Serialize>(
+fn serialize_batches<T>(
     rows: &[T],
     batch_size: usize,
-    transform: fn(Value) -> Value,
+    encode: fn(&T) -> Result<Value>,
 ) -> Result<Vec<Vec<Value>>> {
-    let rows = rows
-        .iter()
-        .map(|row| {
-            serde_json::to_value(row)
-                .map(transform)
-                .map_err(Error::from)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let rows = rows.iter().map(encode).collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
     let mut characters = 2;
@@ -136,31 +136,42 @@ fn serialize_batches<T: Serialize>(
     Ok(batches)
 }
 
-fn encode_node_options(mut node: Value) -> Value {
-    let parent = node["parent_node_id"].take();
-    node["parent_node_id"] = if parent.is_null() {
-        json!({ "none": [] })
-    } else {
-        json!({ "some": parent })
+fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
+    let parent_node_id = match node.parent_node_id {
+        Some(parent) => json!({ "some": parent }),
+        None => json!({ "none": [] }),
     };
-    node
+    Ok(json!({
+        "id": node.id,
+        "parent_node_id": parent_node_id,
+        "latitude": node.latitude,
+        "longitude": node.longitude,
+        "is_settlement": node.is_settlement,
+        "is_town": node.is_town,
+        "is_ferry": node.is_ferry,
+        "is_harbour": node.is_harbour,
+    }))
 }
 
-fn encode_edge_kinds(mut edge: Value) -> Value {
-    let kind = edge["kind"].take();
-    let variant = match kind.as_str().expect("serialized edge kinds are strings") {
-        "land" => "Land",
-        "ferry" => "Ferry",
-        other => panic!("unsupported serialized edge kind {other}"),
+fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
+    let kind = match edge.kind {
+        TravelEdgeKind::Land => json!({ "Land": [] }),
+        TravelEdgeKind::Ferry => json!({ "Ferry": [] }),
     };
-    let mut encoded = serde_json::Map::new();
-    encoded.insert(variant.into(), json!([]));
-    edge["kind"] = Value::Object(encoded);
-    edge
+    Ok(json!({
+        "id": edge.id,
+        "from_node_id": edge.from_node_id,
+        "to_node_id": edge.to_node_id,
+        "kind": kind,
+        "length_m": edge.length_m,
+        "slope_multiplier": edge.slope_multiplier,
+        "certainty": edge.certainty,
+        "section": edge.section,
+    }))
 }
 
-fn identity(value: Value) -> Value {
-    value
+fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
+    serde_json::to_value(settlement).map_err(Error::from)
 }
 
 fn call_reducer(args: &Args, reducer: &str, arguments: &[Value]) -> Result<()> {
@@ -190,15 +201,17 @@ fn default_viabundus_directory() -> PathBuf {
     repository_root().join("viabundus")
 }
 
-fn default_output() -> PathBuf {
-    repository_root().join("target/world-1544.json")
+fn default_output(year: i32) -> PathBuf {
+    repository_root().join(format!("target/world-{year}.json"))
 }
 
 #[cfg(test)]
 mod tests {
     use adventuresim_world_schema::{TravelEdgeImport, TravelEdgeKind};
 
-    use super::{MAX_REDUCER_ARGUMENT_CHARS, encode_edge_kinds, serialize_batches};
+    use super::{
+        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_travel_edge, serialize_batches,
+    };
 
     #[test]
     fn encodes_shared_enum_for_spacetimedb_sats_json() {
@@ -212,14 +225,17 @@ mod tests {
             certainty: 1,
             section: String::new(),
         };
-        let batches = serialize_batches(&[edge], 100, encode_edge_kinds).unwrap();
+        let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(batches[0][0]["kind"], serde_json::json!({ "Ferry": [] }));
     }
 
     #[test]
     fn batches_are_bounded_for_windows_process_arguments() {
         let rows = vec!["x".repeat(1_000); 100];
-        let batches = serialize_batches(&rows, 100, super::identity).unwrap();
+        let batches = serialize_batches(&rows, 100, |row| {
+            serde_json::to_value(row).map_err(adventuresim_world_import::Error::from)
+        })
+        .unwrap();
         assert!(batches.len() > 1);
         assert!(batches.iter().all(|batch| {
             serde_json::Value::Array(batch.clone())
@@ -228,5 +244,10 @@ mod tests {
                 .count()
                 <= MAX_REDUCER_ARGUMENT_CHARS
         }));
+    }
+
+    #[test]
+    fn default_output_names_the_selected_world_year() {
+        assert!(default_output(1600).ends_with("target/world-1600.json"));
     }
 }
