@@ -8,11 +8,11 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType,
     DroughtHistory, DroughtProfile, EdgeEndpoint, ForestCover, GeologicAgeEvidence, GeologicEra,
     GeologicLithologyEvidence, IgneousRock, MetamorphicRock, MineralSoilTexture, MixedLithology,
-    NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SettlementReligiousStatus,
-    SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
-    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
-    WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
+    NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SedimentaryRock,
+    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate,
+    SoilWaterRegime, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement,
+    WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
