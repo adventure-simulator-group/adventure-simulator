@@ -4,17 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::ferry_route_type::FerryRoute;
-use super::land_route_type::LandRoute;
+use super::crossing_traversal_type::CrossingTraversal;
+use super::crossing_watercourse_type::CrossingWatercourse;
+use super::edge_progress_permille_type::EdgeProgressPermille;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub enum TravelRoute {
-    Land(LandRoute),
-
-    Ferry(FerryRoute),
+pub struct LandWaterCrossing {
+    pub position: EdgeProgressPermille,
+    pub watercourse: CrossingWatercourse,
+    pub traversal: CrossingTraversal,
 }
 
-impl __sdk::InModule for TravelRoute {
+impl __sdk::InModule for LandWaterCrossing {
     type Module = super::RemoteModule;
 }

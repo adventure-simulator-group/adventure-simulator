@@ -33,8 +33,10 @@ complete mapped-or-inferred soil profile. EGDI surface geology then uses an
 indexed local GeoPackage to attach a typed mapped-or-inferred lithology and age
 setting. The IEG stage then parses a curated 1544 legal-religion
 intermediate into an established, parity, multi-confessional, or municipally
-determined typed status. NOAA OWDA finally adds a bounded current-summer PDSI and typed twenty-year
-drought/wetness history before constructing the canonical settlement record.
+determined typed status. NOAA OWDA adds a bounded current-summer PDSI and typed
+twenty-year drought/wetness history. EU-Hydro is the final typestate stage: it
+adds settlement water access, converts draft roads into typed land crossings
+or ferry waterways, and only then constructs the canonical world records.
 The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents

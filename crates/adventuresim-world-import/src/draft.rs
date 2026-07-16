@@ -1,7 +1,7 @@
 use adventuresim_world_schema::{
-    ElevationMeters, ForestCover, LandUseProfile, PotentialVegetation, SoilProfile,
-    SourceProvenance, TravelEdgeImport, TravelEdgeKind, TreeSpeciesProfile, WorldBuildReport,
-    WorldNodeImport,
+    DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, LandUseProfile,
+    PotentialVegetation, SoilProfile, SourceProvenance, TravelEdgeKind, TreeSpeciesProfile,
+    WorldBuildReport, WorldNodeImport,
 };
 
 #[derive(Debug)]
@@ -10,9 +10,34 @@ pub(crate) struct WorldDraft<S> {
     pub(crate) sources: Vec<SourceProvenance>,
     pub(crate) road_types: Vec<TravelEdgeKind>,
     pub(crate) nodes: Vec<WorldNodeImport>,
-    pub(crate) edges: Vec<TravelEdgeImport>,
+    pub(crate) edges: Vec<TravelEdgeDraft>,
     pub(crate) settlements: Vec<S>,
     pub(crate) report: WorldBuildReport,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TravelRouteDraft {
+    Land { bridge: Option<EdgeEndpoint> },
+    Ferry,
+}
+
+impl TravelRouteDraft {
+    pub(crate) const fn has_crossing(self) -> bool {
+        matches!(self, Self::Land { bridge: Some(_) } | Self::Ferry)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TravelEdgeDraft {
+    pub(crate) id: u64,
+    pub(crate) from_node_id: u64,
+    pub(crate) to_node_id: u64,
+    pub(crate) route: TravelRouteDraft,
+    pub(crate) toll: Option<EdgeEndpoint>,
+    pub(crate) length_m: u32,
+    pub(crate) slope_multiplier: f32,
+    pub(crate) certainty: u8,
+    pub(crate) section: String,
 }
 
 #[derive(Debug)]
@@ -73,4 +98,10 @@ pub(crate) struct GeologySettlementDraft {
 pub(crate) struct ReligionSettlementDraft {
     pub(crate) geologic: GeologySettlementDraft,
     pub(crate) religious_status: adventuresim_world_schema::SettlementReligiousStatus,
+}
+
+#[derive(Debug)]
+pub(crate) struct DroughtSettlementDraft {
+    pub(crate) religious: ReligionSettlementDraft,
+    pub(crate) drought: DroughtProfile,
 }
