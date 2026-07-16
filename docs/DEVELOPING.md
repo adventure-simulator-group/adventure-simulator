@@ -202,6 +202,12 @@ documented in `docs/SOIL.md`. Override that directory with `--soil-dir`.
 Until the official archive is available, only the synthetic source boundary is
 verified and the stacked compiler will stop at this stage.
 
+EGDI surface geology is read from the indexed EPSG:3034 GeoPackage at
+`target/world-data-sources/raw/geology/GeologicUnitView.gpkg`, as documented in
+`docs/GEOLOGY.md`. Override it with `--geology-geopackage`. The downloaded
+675 MB file and a real spatial sample have been verified; it remains a manually
+prepared input until the integration is accepted.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients

@@ -1,12 +1,14 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType, EdgeEndpoint,
-    ElevationMeters, ForestCover, HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction,
-    LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
-    ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
-    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, TopsoilOrganicCarbon,
-    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    ElevationMeters, ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence,
+    GeologicSetting, GeologicUnitId, HabitatSuitability, InferredTreeSpeciesProfile,
+    LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil,
+    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode,
+    PotentialVegetation, PotentialVegetationFormation, SettlementImport, SoilDepth,
+    SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
     Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
@@ -99,6 +101,7 @@ pub struct Settlement {
     pub potential_vegetation: PotentialVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
+    pub geology: SurfaceGeology,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -413,6 +416,7 @@ pub fn import_settlements(
             }
         };
         let soil = reconstruct_soil_profile(&settlement.id, settlement.soil)?;
+        let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
         if ctx
             .db
             .world_node()
@@ -438,6 +442,7 @@ pub fn import_settlements(
             potential_vegetation,
             tree_species,
             soil,
+            geology,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -506,6 +511,22 @@ fn reconstruct_soil_profile(
                 properties: reconstruct_properties(mapped.properties)?,
             }))
         }
+    }
+}
+
+fn reconstruct_geology_profile(
+    settlement_id: &str,
+    profile: SurfaceGeology,
+) -> Result<SurfaceGeology, String> {
+    match profile {
+        SurfaceGeology::Mapped(mut mapped) => {
+            mapped.unit =
+                GeologicUnitId::new(mapped.unit.as_str().to_owned()).ok_or_else(|| {
+                    format!("Settlement {settlement_id} has an invalid geologic unit identifier")
+                })?;
+            Ok(SurfaceGeology::Mapped(mapped))
+        }
+        SurfaceGeology::Inferred(setting) => Ok(SurfaceGeology::Inferred(setting)),
     }
 }
 
@@ -3951,6 +3972,12 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     }),
                     water_regime: SoilWaterRegime::SeasonallyWet,
                     agricultural_limitation: AgriculturalLimitation::None,
+                }),
+                geology: SurfaceGeology::Inferred(GeologicSetting {
+                    lithology: GeologicLithologyEvidence::Inferred(
+                        SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                    ),
+                    age: GeologicAgeEvidence::Inferred(GeologicEra::Quaternary),
                 }),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),

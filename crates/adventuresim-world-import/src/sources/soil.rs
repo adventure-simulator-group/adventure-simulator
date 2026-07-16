@@ -7,12 +7,11 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, MappedSoilProfile, MineralSoil,
+    AgriculturalLimitation, AvailableWaterCapacity, MappedSoilProfile, MineralSoil,
     MineralSoilTexture, OrganicSoil, OtherNonTexturedSoil, ParentMaterialCode,
-    PotentialVegetationFormation, RockOutcropSoil, SettlementImport, SoilDepth, SoilMappingUnit,
-    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, SourceProvenance,
-    StoneContentPercent, TopsoilOrganicCarbon, WORLD_SCHEMA_VERSION, WorldMetadata,
-    WrbReferenceGroup,
+    PotentialVegetationFormation, RockOutcropSoil, SoilDepth, SoilMappingUnit, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, SourceProvenance, StoneContentPercent,
+    TopsoilOrganicCarbon, WrbReferenceGroup,
 };
 use dbase::{FieldValue, Record};
 use geo::{BoundingRect, Intersects, MultiPolygon, Point, Rect};
@@ -20,7 +19,7 @@ use proj4rs::{proj::Proj, transform::transform};
 
 use crate::{
     Error, Result,
-    draft::{TreeSpeciesSettlementDraft, WorldDraft},
+    draft::{SoilSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "European Soil Database v2.0 (SGDBE/PTRDB)";
@@ -39,7 +38,7 @@ const EXPECTED_PROJECTION: &str = "PROJCS[\"User_Defined_Lambert_Azimuthal_Equal
 pub(crate) fn enrich(
     draft: WorldDraft<TreeSpeciesSettlementDraft>,
     directory: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<SoilSettlementDraft>> {
     if draft.settlements.is_empty() {
         return finish(draft, Vec::new(), 0, 0, 0);
     }
@@ -71,7 +70,7 @@ fn finish(
     polygons_read: usize,
     attribute_rows_read: usize,
     fallbacks: usize,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<SoilSettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
             "soil profiles do not match settlements".into(),
@@ -80,30 +79,7 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(trees, soil)| {
-            let vegetated = trees.vegetated;
-            let forest = vegetated.forest;
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
-                potential_vegetation: vegetated.potential_vegetation,
-                tree_species: trees.tree_species,
-                soil,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            }
-        })
+        .map(|(trees, soil)| SoilSettlementDraft { trees, soil })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),
@@ -114,13 +90,10 @@ fn finish(
     draft.report.soil_attribute_rows_read = attribute_rows_read;
     draft.report.soil_samples = settlements.len();
     draft.report.soil_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,
