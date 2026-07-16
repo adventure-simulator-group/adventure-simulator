@@ -23,7 +23,11 @@ Source modules first parse into importer-only draft types. The outer builder
 enriches that draft in dependency order and only then constructs the canonical
 world schema. For example, Viabundus supplies settlement identity and road
 topology, while GLO-30 supplies the required typed elevation for each draft
-settlement. This keeps source-specific placeholders out of canonical records.
+settlement. HYDE then adds an exhaustive typed land-use profile and constructs
+the canonical settlement record. The generic draft is a typestate boundary:
+each enrichment stage consumes only settlements that have all of its required
+predecessor data. This keeps source-specific placeholders out of canonical
+records.
 
 Each compiled artifact is identified by a content hash. An interrupted load may
 resume only with the same artifact; a different artifact requires a database

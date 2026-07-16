@@ -1,7 +1,7 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    EdgeEndpoint, ElevationMeters, SettlementImport, TravelEdgeImport, TravelRoute,
-    WORLD_SCHEMA_VERSION, WorldNodeImport,
+    EdgeEndpoint, ElevationMeters, LandUseFraction, LandUseProfile, SettlementImport,
+    TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -88,6 +88,7 @@ pub struct Settlement {
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
     pub elevation: ElevationMeters,
+    pub land_use: LandUseProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -304,6 +305,18 @@ pub fn import_settlements(
                 settlement.id
             )
         })?;
+        let land_use = LandUseProfile::new(
+            settlement.land_use.cropland(),
+            settlement.land_use.grazing(),
+            settlement.land_use.built_up(),
+            settlement.land_use.natural(),
+        )
+        .ok_or_else(|| {
+            format!(
+                "Settlement {} has invalid land-use fractions",
+                settlement.id
+            )
+        })?;
         if ctx
             .db
             .world_node()
@@ -324,6 +337,7 @@ pub fn import_settlements(
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
             elevation,
+            land_use,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3751,6 +3765,13 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 population_level: pop,
                 population_estimate: 0,
                 elevation: ElevationMeters::new(100).unwrap(),
+                land_use: LandUseProfile::new(
+                    LandUseFraction::new(2_500).unwrap(),
+                    LandUseFraction::new(2_000).unwrap(),
+                    LandUseFraction::new(100).unwrap(),
+                    LandUseFraction::new(5_400).unwrap(),
+                )
+                .unwrap(),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,

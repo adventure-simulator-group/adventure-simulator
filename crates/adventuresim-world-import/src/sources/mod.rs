@@ -2,4 +2,5 @@
 //! the database boundary unless the game actually needs them.
 
 pub mod elevation;
+pub mod land_use;
 pub mod viabundus;
