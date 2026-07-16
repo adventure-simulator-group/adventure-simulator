@@ -225,6 +225,11 @@ impl PlayerSkills for CharacterSkills {
 pub(crate) struct StrategicEquipment {
     weapon: Option<Item>,
     weapon_side: Option<BodySide>,
+    melee_weapon: Option<Item>,
+    melee_weapon_side: Option<BodySide>,
+    ranged_weapon: Option<Item>,
+    ranged_weapon_side: Option<BodySide>,
+    ammunition: u32,
     shield: Option<Item>,
     armor: [Option<Item>; 7],
     inventory_weight: f32,
@@ -258,6 +263,38 @@ impl StrategicEquipment {
             .flatten()
             .find(|item| item.kind == ItemKind::Shield)
             .cloned();
+        let melee_weapon = hands
+            .iter()
+            .flatten()
+            .find(|item| item.kind == ItemKind::Weapon && item.melee)
+            .cloned();
+        let melee_weapon_side = hands
+            .iter()
+            .position(|item| {
+                item.as_ref()
+                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
+            })
+            .map(hand_side);
+        let ranged_weapon = hands
+            .iter()
+            .flatten()
+            .find(|item| item.kind == ItemKind::Weapon && item.ranged)
+            .cloned();
+        let ranged_weapon_side = hands
+            .iter()
+            .position(|item| {
+                item.as_ref()
+                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
+            })
+            .map(hand_side);
+        let ammunition = ctx
+            .db
+            .inventory_item()
+            .character_id()
+            .filter(character_id)
+            .filter(|inventory| inventory.item_id == "arrow")
+            .map(|inventory| inventory.quantity)
+            .sum();
         let armor = [
             definition(equip.left_arm_armor_id),
             definition(equip.right_arm_armor_id),
@@ -289,6 +326,11 @@ impl StrategicEquipment {
         Self {
             weapon,
             weapon_side,
+            melee_weapon,
+            melee_weapon_side,
+            ranged_weapon,
+            ranged_weapon_side,
+            ammunition,
             shield,
             armor,
             inventory_weight: dry_inventory_weight + carried_water_weight,
@@ -326,26 +368,51 @@ impl StrategicEquipment {
             }
         }
         CombatEquipment {
-            weapon: self.weapon.as_ref().map(|item| CombatWeapon {
-                melee: item.melee,
-                ranged: item.ranged,
-                blunt: item.blunt,
-                slash: item.slash,
-                pierce: item.pierce,
-                accuracy: item.accuracy,
-                weight: item.weight,
-                penetration: item.penetration,
-                reach: item.reach,
-                precise: item.precise,
-                balance: item.balance,
-                ranged_force_joules: 40.0 * item.weight.max(0.5),
-            }),
+            weapon: self.weapon.as_ref().map(combat_weapon),
+            melee_weapon: self.melee_weapon.as_ref().map(combat_weapon),
+            ranged_weapon: self.ranged_weapon.as_ref().map(combat_weapon),
+            ammunition: self.ammunition,
             holding_side: self.weapon_side.unwrap_or(BodySide::Right),
+            melee_holding_side: self.melee_weapon_side.unwrap_or(BodySide::Right),
+            ranged_holding_side: self.ranged_weapon_side.unwrap_or(BodySide::Right),
             shield_block_bonus: self.shield.as_ref().map_or(0.0, |item| item.block),
             armor,
             inventory_weight: self.inventory_weight,
         }
     }
+}
+
+fn hand_side(index: usize) -> BodySide {
+    if index == 0 {
+        BodySide::Left
+    } else {
+        BodySide::Right
+    }
+}
+
+fn combat_weapon(item: &Item) -> CombatWeapon {
+    CombatWeapon {
+        melee: item.melee,
+        ranged: item.ranged,
+        blunt: item.blunt,
+        slash: item.slash,
+        pierce: item.pierce,
+        accuracy: item.accuracy,
+        weight: item.weight,
+        penetration: item.penetration,
+        melee_reach: if item.melee { item.reach } else { 0.0 },
+        ranged_range: if item.ranged { item.reach } else { 0.0 },
+        attack_interval_seconds: weapon_attack_interval(item),
+        precise: item.precise,
+        balance: item.balance,
+        ranged_force_joules: 40.0 * item.weight.max(0.5),
+    }
+}
+
+fn weapon_attack_interval(item: &Item) -> f32 {
+    let draw_or_recovery = if item.ranged { 0.45 } else { 0.0 };
+    (0.4 + item.weight.max(0.1) * 0.15 + item.balance.max(0.0) * 0.2 + draw_or_recovery)
+        .clamp(0.35, 3.0)
 }
 
 fn carried_water_weight_kg(carried_water_ml: f32) -> f32 {
@@ -457,6 +524,8 @@ pub(crate) fn load_combatant(
         .find(character_id)
         .ok_or("Character condition not found")?;
     let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let combat_equipment = equipment.combat_equipment();
+    let initial_ammunition = combat_equipment.ammunition;
 
     Ok(Combatant {
         id: character_id,
@@ -495,7 +564,7 @@ pub(crate) fn load_combatant(
             calories_used_today: stats.calories_used,
             focus_level: stats.focus,
         },
-        equipment: equipment.combat_equipment(),
+        equipment: combat_equipment,
         skills: CombatSkills {
             melee_hours: skills.melee_hours,
             dodge_hours: skills.dodge_hours,
@@ -516,6 +585,7 @@ pub(crate) fn load_combatant(
         } else {
             1.0
         },
+        initial_ammunition,
         ..Combatant::new(character_id)
     })
 }

@@ -193,7 +193,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `cancel_mission` | Cancel active mission |
 | `start_quest` / `complete_quest` | Quest management |
 | `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
-| `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit final injuries and blood loss, apply Surgery deterioration, and complete or retain the quest according to the outcome |
+| `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit final injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, apply Surgery deterioration, and complete or retain the quest according to the outcome |
 
 ## adventuresim-tactical-server
 
@@ -205,7 +205,7 @@ The tactical server is a headless Bevy application that:
 - **Maintains ALL tactical state in game memory** (HP, damage, positions, enemies, loot)
 - **Commits only the final results** to SpacetimeDB when the mission ends
 
-Strategic incapacitation deliberately excludes tactical imbalance, breath exhaustion, animation state, and knockdown. Only durable inputs and final outcomes cross the boundary: body-part injuries, blood volume, fatigue accumulated by strategic travel, morale history, and encounter results.
+Strategic incapacitation deliberately excludes tactical imbalance, breath exhaustion, animation state, and knockdown. Only durable inputs and final outcomes cross the boundary: body-part injuries, blood volume, spent strategic ammunition, fatigue accumulated by strategic travel, morale history, encounter results, and diagnostic autoresolve reports. The report records exchanges for explanation and replay; it does not persist live tactical state.
 
 ### Command-Line Arguments
 

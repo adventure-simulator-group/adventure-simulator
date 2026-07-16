@@ -198,25 +198,43 @@ pre-engagement phases:
    selected enemy's average Eyesight and Hearing. Both checks add a seeded
    random value from 0 to 5. Success grants one full-precision melee attack
    against the flat-footed target, with no active or facing defense.
-2. Ranged combatants fire while enemy melee combatants close. A ranged weapon
-   gains one opening volley per five meters of weapon reach, capped at eight
-   opening volleys. Melee combatants form a screen at two-meter intervals. If
-   the closing side has surplus melee combatants able to bypass that screen,
-   they must travel a semicircle around it; the screen's one-meter radius per
-   member is added to the approach distance before counting volleys.
+2. Ranged combatants fire while enemy melee combatants close. Their number of
+   opening attacks is the ranged weapon's range divided by the fastest closer's
+   movement speed and the weapon's attack interval. Melee combatants form a
+   screen at two-meter intervals. If the closing side has surplus melee
+   combatants able to bypass that screen, they must travel a semicircle around
+   it; this detour increases the ranged firing window. Weapon melee reach and
+   ranged range are separate autoresolve inputs.
 
-During the main engagement, opposing melee combatants pair off. A melee screen
-therefore forces an equal number of enemy melee combatants to target it, while
-surplus melee combatants may reach exposed ranged combatants. The same
-formation, approach, and engagement rules apply to allies and enemies.
+During the main engagement, pairings are recomputed every round. Every active
+defender receives one melee opponent before surplus attackers are distributed
+for a second opponent, then a third, and so on. Every surplus attacker applies
+the current 90-degree flanking penalty. A melee screen therefore forces an
+equal number of enemy melee combatants to target it before exposed ranged
+combatants, and the same rules apply to allies and enemies.
 
-Each main round gives every capable combatant an opportunity to attack a valid
-enemy. Targeted body part, hit precision, active defense, and occasional
-flanking are drawn from a deterministic seeded random stream. Pain, blood loss,
-existing strategic incapacitation, and temporary imbalance can remove a
-combatant from the fight. The battle ends when one side is incapacitated or
-after 256 main rounds, in which case it is a stalemate.
+Melee remains round-based: every capable melee combatant attacks once per main
+round. A faster melee weapon instead reduces the simulated input reflex of the
+defender, representing less time to react. Ranged combat runs on elapsed time;
+weapon attack interval determines how many shots occur in each one-second main
+round. Ranged combatants target opposing ranged combatants before melee targets.
+Every defender chooses dodge, parry/block, or no active response according to
+the response with the best expected result.
 
-Autoresolve persists only the final player wounds and blood loss. Its rounds,
-enemy state, imbalance, and individual exchanges are transient values and do
-not change the strategic/tactical persistence boundary.
+Every ranged attack consumes one generic arrow. When a combatant runs out, it
+becomes a melee combatant and uses its separately equipped melee weapon, if it
+has one. Player ammunition spent in autoresolve is removed from personal
+inventory. Enemy ranged profiles carry a bounded encounter supply and a melee
+fallback.
+
+Targeted body part and hit precision are drawn from a deterministic seeded
+random stream. Pain, blood loss, existing strategic incapacitation, and
+temporary imbalance can remove a combatant from the fight. The battle ends
+when one side is incapacitated or after 256 main rounds, in which case it is a
+stalemate.
+
+Autoresolve persists final player wounds, blood loss, and spent ammunition. It
+also writes a compact report containing the seed, victor, round count, summary,
+and an expandable exchange log. Enemy health and temporary combat state remain
+transient, so this diagnostic report does not change the tactical persistence
+boundary.
