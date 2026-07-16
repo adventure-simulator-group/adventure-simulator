@@ -3,7 +3,8 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
-    response::{Html, Redirect},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use serde::Serialize;
@@ -237,26 +238,36 @@ async fn travel_to_quest(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Redirect {
+    axum::Form(form): axum::Form<TravelForm>,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters");
+        return Redirect::to("/characters").into_response();
     };
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
         PartyAction::TravelToQuest {
             quest_id: id.clone(),
+            provision: form.provision,
         },
     )
     .await;
     if let Err(ref error) = outcome {
         tracing::error!("Failed to travel to quest: {error:?}");
-        return Redirect::to("/");
+        return (StatusCode::BAD_REQUEST, error.clone()).into_response();
     }
     match outcome.unwrap() {
-        PartyActionOutcome::Executed => Redirect::to(&format!("/locations/quest/{id}")),
-        PartyActionOutcome::Requested => Redirect::to("/?party-requested=travel"),
+        PartyActionOutcome::Executed => {
+            Redirect::to(&format!("/locations/quest/{id}")).into_response()
+        }
+        PartyActionOutcome::Requested => Redirect::to("/?party-requested=travel").into_response(),
     }
+}
+
+#[derive(Default, serde::Deserialize)]
+struct TravelForm {
+    #[serde(default)]
+    provision: bool,
 }
 
 #[derive(Default, serde::Deserialize)]

@@ -77,6 +77,10 @@ pub struct Item {
     pub slash: bool,
     pub pierce: bool,
     pub base_value: Option<u32>,
+    /// Metabolizable energy supplied when this item is automatically eaten.
+    pub nutrition_kcal: f32,
+    /// Water capacity contributed while this item is in personal inventory.
+    pub water_capacity_ml: u32,
 }
 
 #[reducer(init)]
@@ -93,6 +97,20 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         ..Item::default()
     });
     define_item(ctx, "bandage", 0.05);
+    ctx.db.item().insert(Item {
+        id: "travel_ration".into(),
+        weight: 1.0,
+        base_value: Some(3),
+        nutrition_kcal: 6_000.0,
+        ..Item::default()
+    });
+    ctx.db.item().insert(Item {
+        id: "waterskin".into(),
+        weight: 0.5,
+        base_value: Some(2),
+        water_capacity_ml: 4_000,
+        ..Item::default()
+    });
     define_clothing(ctx, "linen_tunic", 0.6);
 
     define_shield(ctx, "buckler", 1.0, 1.0);

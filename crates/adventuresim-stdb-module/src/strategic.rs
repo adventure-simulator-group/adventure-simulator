@@ -3290,6 +3290,7 @@ pub fn travel_to_quest(
     ctx: &ReducerContext,
     character_id: u64,
     quest_id: String,
+    provision: bool,
 ) -> Result<(), String> {
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
@@ -3318,6 +3319,16 @@ pub fn travel_to_quest(
     require_party_ready(ctx, &party_id)?;
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
+    if provision {
+        let planning_minutes = travel_minutes.saturating_mul(2);
+        for membership in ctx.db.party_member().party_id().filter(&party_id) {
+            crate::condition::provision_character_for_travel(
+                ctx,
+                membership.character_id,
+                planning_minutes,
+            )?;
+        }
+    }
     for membership in ctx.db.party_member().party_id().filter(&party_id) {
         if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
             advance_character_time(ctx, member.id, travel_minutes)?;
@@ -3337,6 +3348,7 @@ pub fn travel_to_settlement(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
+    provision: bool,
 ) -> Result<(), String> {
     let Some(destination) = ctx.db.settlement().id().find(&settlement_id) else {
         return Err("Settlement not found".into());
@@ -3415,6 +3427,11 @@ pub fn travel_to_settlement(
     } else {
         vec![character_id]
     };
+    if provision && character.current_settlement_id.is_some() {
+        for traveler_id in traveler_ids.iter().copied() {
+            crate::condition::provision_character_for_travel(ctx, traveler_id, travel_minutes)?;
+        }
+    }
     for traveler_id in traveler_ids {
         advance_character_time(ctx, traveler_id, travel_minutes)?;
         let mut traveler = ctx
@@ -3426,6 +3443,8 @@ pub fn travel_to_settlement(
         traveler.current_settlement_id = Some(settlement_id.clone());
         traveler.current_quest_location_id = None;
         ctx.db.character().id().update(traveler);
+        crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
+        crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
     }
 
     if let Some(ref mut party) = party {

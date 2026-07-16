@@ -16,6 +16,7 @@ These features demonstrate everything needed for the basic gameplay loop. It won
 13. Rest system for [health](shared/Health.md) recovery
 14. Inventory management (loot/buy/sell items)
 15. Food/water/sleep system
+	1. Food and water strategic needs and automatic travel provisioning are implemented; sleep remains.
 # Polished Product
 With these features, the game becomes something that we can imagine players actually wanting to pay for. A fun, unique product rather than a mere tech demo.
 

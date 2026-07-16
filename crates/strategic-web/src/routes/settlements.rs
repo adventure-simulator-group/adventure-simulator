@@ -3,6 +3,7 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
@@ -1673,6 +1674,12 @@ struct RestForm {
     days: u16,
 }
 
+#[derive(Default, Deserialize)]
+struct TravelForm {
+    #[serde(default)]
+    provision: bool,
+}
+
 async fn rest(
     State(state): State<AppState>,
     Path((id, kind)): Path<(String, String)>,
@@ -1871,9 +1878,10 @@ async fn travel(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Redirect {
+    Form(form): Form<TravelForm>,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters");
+        return Redirect::to("/characters").into_response();
     };
 
     let outcome = super::execute_or_request_party_action(
@@ -1881,6 +1889,7 @@ async fn travel(
         character_id,
         super::PartyAction::TravelToSettlement {
             settlement_id: id.clone(),
+            provision: form.provision,
         },
     )
     .await;
@@ -1895,9 +1904,12 @@ async fn travel(
                 Some(quest_id) => Redirect::to(&format!("/locations/quest/{quest_id}")),
                 None => Redirect::to(&format!("/locations/settlement/{id}")),
             }
+            .into_response()
         }
-        Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
-        Err(_) => Redirect::to("/"),
+        Ok(super::PartyActionOutcome::Requested) => {
+            Redirect::to("/?party-requested=travel").into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
     }
 }
 

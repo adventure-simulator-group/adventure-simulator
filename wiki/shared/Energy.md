@@ -15,3 +15,23 @@ The exact biological functions aren't really relevant to gameplay, but they are 
 	- Cellulose: 0.2
 	- Alcohol: 7
 # Equations
+
+## Current food and water needs
+
+Food and water advance only with a character's authoritative strategic clock.
+Settlement life currently assumes that ordinary meals and drinking water are
+provided, including lazy catch-up and explicit rest. Entering a settlement
+restores one day of short-term food and hydration reserve and refills every
+owned waterskin.
+
+Travel uses **6,000 kcal and 4 litres of water per full day**, applied
+proportionally for partial days. A travel ration supplies 6,000 kcal. A
+waterskin carries 4 litres. Characters automatically eat personal rations and
+drink carried water whenever their short-term reserve would otherwise become
+negative.
+
+Unsupported hunger reaches full strategic incapacitation after three marching
+days beyond the food reserve. Unsupported thirst reaches it after one marching
+day beyond the hydration reserve. Both curves are quadratic, begin only below
+zero reserve, and combine with pain, blood loss, fear, and fatigue. They do not
+currently kill a character.
