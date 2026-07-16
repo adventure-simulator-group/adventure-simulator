@@ -5,8 +5,8 @@ use adventuresim_world_schema::CompiledWorld;
 use crate::{
     Result,
     sources::{
-        elevation, forest_cover, geology, land_use, potential_vegetation, soil, tree_species,
-        viabundus,
+        elevation, forest_cover, geology, land_use, potential_vegetation, religion, soil,
+        tree_species, viabundus,
     },
     validation,
 };
@@ -31,6 +31,7 @@ impl WorldBuilder {
         tree_species_archive: &Path,
         soil_directory: &Path,
         geology_geopackage: &Path,
+        religion_regions: &Path,
     ) -> Result<CompiledWorld> {
         let draft = viabundus::compile(viabundus_directory, self.year)?;
         let draft = elevation::enrich(draft, elevation_directory)?;
@@ -39,7 +40,8 @@ impl WorldBuilder {
         let draft = potential_vegetation::enrich(draft, potential_vegetation_directory)?;
         let draft = tree_species::enrich(draft, tree_species_archive)?;
         let draft = soil::enrich(draft, soil_directory)?;
-        let world = geology::enrich(draft, geology_geopackage)?;
+        let draft = geology::enrich(draft, geology_geopackage)?;
+        let world = religion::enrich(draft, religion_regions)?;
         validation::validate(&world)?;
         Ok(world)
     }
