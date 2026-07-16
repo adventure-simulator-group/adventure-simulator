@@ -1,15 +1,14 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType, EdgeEndpoint,
-    ElevationMeters, ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence,
-    GeologicSetting, GeologicUnitId, HabitatSuitability, InferredTreeSpeciesProfile,
-    LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil,
-    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode,
-    PotentialVegetation, PotentialVegetationFormation, SettlementImport, SoilDepth,
-    SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport,
+    ElevationMeters, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
+    InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
+    MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -3973,11 +3972,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     water_regime: SoilWaterRegime::SeasonallyWet,
                     agricultural_limitation: AgriculturalLimitation::None,
                 }),
-                geology: SurfaceGeology::Inferred(GeologicSetting {
-                    lithology: GeologicLithologyEvidence::Inferred(
-                        SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
-                    ),
-                    age: GeologicAgeEvidence::Inferred(GeologicEra::Quaternary),
+                geology: SurfaceGeology::Inferred(InferredGeologicSetting {
+                    lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                    age: GeologicEra::Quaternary,
                 }),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),

@@ -14,11 +14,15 @@ pub enum GeologicEra {
 
     Paleogene,
 
+    Cenozoic,
+
     Cretaceous,
 
     Jurassic,
 
     Triassic,
+
+    Mesozoic,
 
     Permian,
 
@@ -32,7 +36,11 @@ pub enum GeologicEra {
 
     Cambrian,
 
+    Paleozoic,
+
     Precambrian,
+
+    Phanerozoic,
 }
 
 impl __sdk::InModule for GeologicEra {
