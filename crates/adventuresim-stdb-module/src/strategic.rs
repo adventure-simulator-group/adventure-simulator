@@ -53,17 +53,148 @@ fn post_battle_wound_deterioration(damage: f32, surgery_check: f32) -> f32 {
     damage * untreated_fraction
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EnemyArchetype {
+    Bandit,
+    Goblin,
+    Spider,
+    Wolf,
+    Other,
+}
+
+#[derive(Clone, Copy)]
+struct EnemyProfile {
+    ranged: bool,
+    precise: bool,
+    weight_kg: f32,
+    block_training_multiplier: f32,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
+    accuracy: f32,
+    weapon_weight_kg: f32,
+    penetration: f32,
+    reach: f32,
+    ranged_force_joules: f32,
+    armored: bool,
+    drop: Option<&'static str>,
+}
+
+impl EnemyArchetype {
+    fn from_label(enemy_type: &str) -> Self {
+        let label = enemy_type.to_ascii_lowercase();
+        if label.contains("bandit") || label.contains("thieve") {
+            Self::Bandit
+        } else if label.contains("goblin") {
+            Self::Goblin
+        } else if label.contains("spider") {
+            Self::Spider
+        } else if label.contains("wolf") {
+            Self::Wolf
+        } else {
+            Self::Other
+        }
+    }
+
+    fn profile(self) -> EnemyProfile {
+        match self {
+            Self::Bandit => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 70.0,
+                block_training_multiplier: 1.0,
+                blunt: false,
+                slash: true,
+                pierce: false,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: true,
+                drop: Some("short_sword"),
+            },
+            Self::Goblin => EnemyProfile {
+                ranged: true,
+                precise: true,
+                weight_kg: 70.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 1.4,
+                weapon_weight_kg: 1.0,
+                penetration: 0.8,
+                reach: 20.0,
+                ranged_force_joules: 40.0,
+                armored: false,
+                drop: Some("short_bow"),
+            },
+            Self::Spider => EnemyProfile {
+                ranged: false,
+                precise: true,
+                weight_kg: 35.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 1.4,
+                weapon_weight_kg: 1.5,
+                penetration: 2.0,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: None,
+            },
+            Self::Wolf => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 45.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: None,
+            },
+            Self::Other => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 70.0,
+                block_training_multiplier: 0.4,
+                blunt: true,
+                slash: false,
+                pierce: false,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: Some("club"),
+            },
+        }
+    }
+}
+
 fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
-    let enemy = enemy_type.to_ascii_lowercase();
-    let ranged = enemy.contains("goblin");
-    let precise = enemy.contains("spider") || ranged;
+    let profile = EnemyArchetype::from_label(enemy_type).profile();
     let mut combatant = Combatant::new(id);
     combatant.attributes = CombatAttributes {
         endurance: rating,
         immunity: rating,
         gut: rating,
-        precision: if precise { rating + 0.5 } else { rating },
+        precision: if profile.precise {
+            rating + 0.5
+        } else {
+            rating
+        },
         intelligence: rating * 0.7,
         instinct: rating,
         eyesight: rating,
@@ -80,43 +211,29 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     let training = rating * 1_500.0;
     combatant.skills = CombatSkills {
         melee_hours: training,
-        ranged_hours: if ranged { training * 2.0 } else { 0.0 },
+        ranged_hours: if profile.ranged { training * 2.0 } else { 0.0 },
         dodge_hours: training,
-        block_hours: if enemy.contains("bandit") || enemy.contains("thieve") {
-            training
-        } else {
-            training * 0.4
-        },
+        block_hours: training * profile.block_training_multiplier,
         will_hours: training,
         balance_hours: training,
         ..CombatSkills::default()
     };
-    combatant.body.weight_kg = if enemy.contains("wolf") {
-        45.0
-    } else if enemy.contains("spider") {
-        35.0
-    } else {
-        70.0
-    };
+    combatant.body.weight_kg = profile.weight_kg;
     combatant.equipment.weapon = Some(CombatWeapon {
-        melee: !ranged,
-        ranged,
-        blunt: !ranged
-            && !enemy.contains("bandit")
-            && !enemy.contains("thieve")
-            && !enemy.contains("spider")
-            && !enemy.contains("wolf"),
-        slash: enemy.contains("bandit") || enemy.contains("thieve"),
-        pierce: precise || enemy.contains("wolf"),
-        accuracy: if precise { 1.4 } else { 0.8 },
-        weight: if ranged { 1.0 } else { 1.5 },
-        penetration: if enemy.contains("spider") { 2.0 } else { 0.8 },
-        reach: if ranged { 20.0 } else { 0.8 },
-        precise,
+        melee: !profile.ranged,
+        ranged: profile.ranged,
+        blunt: profile.blunt,
+        slash: profile.slash,
+        pierce: profile.pierce,
+        accuracy: profile.accuracy,
+        weight: profile.weapon_weight_kg,
+        penetration: profile.penetration,
+        reach: profile.reach,
+        precise: profile.precise,
         balance: 0.3,
-        ranged_force_joules: if ranged { 40.0 } else { 0.0 },
+        ranged_force_joules: profile.ranged_force_joules,
     });
-    if enemy.contains("bandit") || enemy.contains("thieve") {
+    if profile.armored {
         combatant.equipment.shield_block_bonus = 1.0;
         combatant.equipment.armor.fill(CombatArmor {
             resistance: 25.0,
@@ -130,21 +247,12 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
 }
 
 fn autoresolve_drop(enemy_type: &str) -> Option<&'static str> {
-    let enemy = enemy_type.to_ascii_lowercase();
-    if enemy.contains("wolf") || enemy.contains("spider") {
-        None
-    } else if enemy.contains("goblin") {
-        Some("short_bow")
-    } else if enemy.contains("bandit") || enemy.contains("thieve") {
-        Some("short_sword")
-    } else {
-        Some("club")
-    }
+    EnemyArchetype::from_label(enemy_type).profile().drop
 }
 
 #[cfg(test)]
 mod healing_tests {
-    use super::post_battle_wound_deterioration;
+    use super::{EnemyArchetype, autoresolve_drop, post_battle_wound_deterioration};
 
     #[test]
     fn surgery_prevents_deterioration_when_it_meets_wound_severity() {
@@ -156,6 +264,20 @@ mod healing_tests {
     fn surgery_shortfall_proportionally_worsens_the_wound() {
         assert!((post_battle_wound_deterioration(0.20, 2.0) - 0.10).abs() < f32::EPSILON);
         assert!((post_battle_wound_deterioration(0.20, 0.0) - 0.20).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn enemy_archetypes_keep_combat_and_loot_classification_together() {
+        let goblin = EnemyArchetype::from_label("forest goblins").profile();
+        assert!(goblin.ranged);
+        assert_eq!(goblin.drop, Some("short_bow"));
+
+        let bandit = EnemyArchetype::from_label("guild thieves").profile();
+        assert!(bandit.armored);
+        assert_eq!(autoresolve_drop("guild thieves"), Some("short_sword"));
+
+        assert_eq!(autoresolve_drop("giant spiders"), None);
+        assert_eq!(autoresolve_drop("unknown menace"), Some("club"));
     }
 }
 

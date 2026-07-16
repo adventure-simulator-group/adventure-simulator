@@ -198,6 +198,10 @@ impl PlayerAttributes for CharacterAttributes {
     fn raw_precision(&self) -> f32 {
         self.precision
     }
+
+    fn has_dedicated_precision(&self) -> bool {
+        true
+    }
 }
 
 impl PlayerSkills for CharacterSkills {

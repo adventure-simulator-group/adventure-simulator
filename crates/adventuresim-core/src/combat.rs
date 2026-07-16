@@ -164,20 +164,28 @@ pub fn resolve_melee_attack_by_parts(
             let critical_attack =
                 (attack - 1.0 - defender_equip.armor_coverage(defender_body_part)).max(0.0);
 
-            let damage = calculate_damage(
-                1.0,
-                attacker_attr,
-                attacker_body,
-                attacker_equip,
-                defender_body_part,
-                defender_body,
-                defender_equip,
-            );
-
             if critical_attack > 0.0 {
-                damage * critical_attack
+                calculate_damage(
+                    1.0,
+                    attacker_attr,
+                    attacker_body,
+                    attacker_equip,
+                    defender_body_part,
+                    defender_body,
+                    defender_equip,
+                    false,
+                ) * critical_attack
             } else {
-                damage
+                calculate_damage(
+                    1.0,
+                    attacker_attr,
+                    attacker_body,
+                    attacker_equip,
+                    defender_body_part,
+                    defender_body,
+                    defender_equip,
+                    true,
+                )
             }
         }
         // (8) Simple connected attack
@@ -189,6 +197,7 @@ pub fn resolve_melee_attack_by_parts(
             defender_body_part,
             defender_body,
             defender_equip,
+            true,
         ),
     }
 }
@@ -247,22 +256,29 @@ pub fn resolve_ranged_attack_by_parts(
         };
     }
 
-    let directness = attack.min(1.0);
-    let damage = calculate_damage_from_force(
-        directness,
+    if attack > 1.0 && attacker_equip.weapon_is_precise() {
+        let critical = (attack - 1.0 - defender_equip.armor_coverage(defender_body_part)).max(0.0);
+        if critical > 0.0 {
+            return calculate_damage_from_force(
+                1.0,
+                attacker_equip.weapon_ranged_force_joules(),
+                attacker_equip,
+                defender_body_part,
+                defender_body,
+                defender_equip,
+                false,
+            ) * critical;
+        }
+    }
+    calculate_damage_from_force(
+        attack.min(1.0),
         attacker_equip.weapon_ranged_force_joules(),
         attacker_equip,
         defender_body_part,
         defender_body,
         defender_equip,
-    );
-    if attack > 1.0 && attacker_equip.weapon_is_precise() {
-        let critical = (attack - 1.0 - defender_equip.armor_coverage(defender_body_part)).max(0.0);
-        if critical > 0.0 {
-            return damage * critical;
-        }
-    }
-    damage
+        true,
+    )
 }
 
 fn defense_by_parts(
@@ -331,6 +347,7 @@ fn calculate_damage(
     defender_body_part: BodyPart,
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
+    armor_applies: bool,
 ) -> AttackResult {
     calculate_damage_from_force(
         attack,
@@ -339,6 +356,7 @@ fn calculate_damage(
         defender_body_part,
         defender_body,
         defender_equip,
+        armor_applies,
     )
 }
 
@@ -349,16 +367,23 @@ fn calculate_damage_from_force(
     defender_body_part: BodyPart,
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
+    armor_applies: bool,
 ) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
-    let defender_resistance = {
+    let defender_resistance = if armor_applies {
         let resistance = defender_equip.armor_resistance(defender_body_part);
         let flexibility = defender_equip.armor_flexibility(defender_body_part);
         let penetration = attacker_equip.weapon_penetration();
         (resistance - flexibility * resistance * penetration).max(0.0)
+    } else {
+        0.0
     };
-    let defender_padding = defender_equip.armor_padding(defender_body_part);
+    let defender_padding = if armor_applies {
+        defender_equip.armor_padding(defender_body_part)
+    } else {
+        0.0
+    };
     let defender_stagger_resistance = STAGGER_RESISTANCE_JOULES_PER_KG
         * (defender_equip.inventory_weight() + defender_body.body_weight());
 

@@ -55,6 +55,10 @@ impl PlayerAttributes for CombatAttributes {
     fn raw_precision(&self) -> f32 {
         self.precision
     }
+
+    fn has_dedicated_precision(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -363,6 +367,12 @@ pub struct BattleOutcome {
     pub enemies: Vec<CombatantOutcome>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AttackMode {
+    Melee,
+    Ranged,
+}
+
 /// Resolve an abstract battle using the same attack calculations as direct
 /// combat. The supplied seed makes the result reproducible and the hard round
 /// cap keeps reducer execution bounded.
@@ -439,7 +449,7 @@ fn take_side_turns(
             0.0
         };
 
-        let result = if attacker.equipment.weapon_is_ranged() {
+        let result = if preferred_attack_mode(attacker) == AttackMode::Ranged {
             ranged_exchange(
                 attacker,
                 &defenders[target_index],
@@ -471,6 +481,42 @@ fn take_side_turns(
                     applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
             }
         }
+    }
+}
+
+fn preferred_attack_mode(attacker: &Combatant) -> AttackMode {
+    match (
+        attacker.equipment.weapon_is_melee(),
+        attacker.equipment.weapon_is_ranged(),
+    ) {
+        (false, true) => AttackMode::Ranged,
+        (true, true) => {
+            let melee = attacker.skills.skill_check_by_parts(
+                Skill::Melee,
+                &attacker.attributes,
+                &attacker.body,
+                &attacker.essentials,
+                &attacker.equipment,
+                LimbWeights::arm(
+                    attacker.equipment.holding_side,
+                    attacker.body.primary_side(),
+                ),
+            );
+            let ranged = attacker.skills.skill_check_by_parts(
+                Skill::Ranged,
+                &attacker.attributes,
+                &attacker.body,
+                &attacker.essentials,
+                &attacker.equipment,
+                LimbWeights::both_arms(),
+            );
+            if ranged > melee {
+                AttackMode::Ranged
+            } else {
+                AttackMode::Melee
+            }
+        }
+        _ => AttackMode::Melee,
     }
 }
 
@@ -705,6 +751,120 @@ mod tests {
             health_damage_from_attack(undefended, BodyPart::Chest),
             health_damage_from_attack(weapon_parry, BodyPart::Chest)
         );
+    }
+
+    #[test]
+    fn precision_does_not_increase_block_defense() {
+        let mut low_precision = fighter(1, 3.0, false);
+        let mut high_precision = low_precision.clone();
+        low_precision.attributes.precision = 0.0;
+        high_precision.attributes.precision = 5.0;
+
+        let block = |combatant: &Combatant| {
+            combatant.skills.skill_check_by_parts(
+                Skill::Block,
+                &combatant.attributes,
+                &combatant.body,
+                &combatant.essentials,
+                &combatant.equipment,
+                LimbWeights::all_equal(),
+            )
+        };
+        assert_eq!(block(&low_precision), block(&high_precision));
+    }
+
+    #[test]
+    fn precise_ranged_criticals_bypass_armor() {
+        let mut attacker = fighter(1, 5.0, true);
+        attacker.skills.ranged_hours = 100_000.0;
+        let weapon = attacker.equipment.weapon.as_mut().unwrap();
+        weapon.accuracy = 2.0;
+        weapon.precise = true;
+
+        let mut defender = fighter(2, 1.0, false);
+        defender.equipment.armor.fill(CombatArmor {
+            resistance: 10_000.0,
+            padding: 10_000.0,
+            flexibility: 0.0,
+            range_of_motion: 1.0,
+            coverage: 0.0,
+        });
+
+        let critical = ranged_exchange(
+            &attacker,
+            &defender,
+            1.0,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::None,
+        );
+        attacker.equipment.weapon.as_mut().unwrap().precise = false;
+        let armored = ranged_exchange(
+            &attacker,
+            &defender,
+            1.0,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::None,
+        );
+
+        assert!(health_damage_from_attack(critical, BodyPart::Chest) > 0.0);
+        assert_eq!(health_damage_from_attack(armored, BodyPart::Chest), 0.0);
+    }
+
+    #[test]
+    fn precise_melee_criticals_bypass_armor() {
+        let mut attacker = fighter(1, 5.0, false);
+        attacker.skills.melee_hours = 100_000.0;
+        let weapon = attacker.equipment.weapon.as_mut().unwrap();
+        weapon.accuracy = 2.0;
+        weapon.precise = true;
+
+        let mut defender = fighter(2, 1.0, false);
+        defender.equipment.armor.fill(CombatArmor {
+            resistance: 10_000.0,
+            padding: 10_000.0,
+            flexibility: 0.0,
+            range_of_motion: 1.0,
+            coverage: 0.0,
+        });
+
+        let critical = melee_exchange(
+            &attacker,
+            &defender,
+            1.0,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::None,
+        );
+        attacker.equipment.weapon.as_mut().unwrap().precise = false;
+        let armored = melee_exchange(
+            &attacker,
+            &defender,
+            1.0,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::None,
+        );
+
+        assert!(health_damage_from_attack(critical, BodyPart::Chest) > 0.0);
+        assert_eq!(health_damage_from_attack(armored, BodyPart::Chest), 0.0);
+    }
+
+    #[test]
+    fn hybrid_weapons_use_the_stronger_combat_skill() {
+        let mut hybrid = fighter(1, 3.0, false);
+        let weapon = hybrid.equipment.weapon.as_mut().unwrap();
+        weapon.melee = true;
+        weapon.ranged = true;
+
+        hybrid.skills.melee_hours = 20_000.0;
+        hybrid.skills.ranged_hours = 0.0;
+        assert_eq!(preferred_attack_mode(&hybrid), AttackMode::Melee);
+
+        hybrid.skills.melee_hours = 0.0;
+        hybrid.skills.ranged_hours = 30_000.0;
+        assert_eq!(preferred_attack_mode(&hybrid), AttackMode::Ranged);
     }
 
     #[test]
