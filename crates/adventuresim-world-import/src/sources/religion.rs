@@ -24,6 +24,7 @@ const SUPPORTED_YEAR: i32 = 1544;
 
 #[derive(Debug, Deserialize)]
 struct RawRegion {
+    priority: u16,
     region: String,
     min_latitude: f64,
     max_latitude: f64,
@@ -36,6 +37,7 @@ struct RawRegion {
 
 #[derive(Debug)]
 struct Region {
+    priority: u16,
     name: String,
     min_latitude: f64,
     max_latitude: f64,
@@ -74,16 +76,17 @@ impl Region {
                 ));
             }
         }
-        if raw.min_latitude > raw.max_latitude || raw.min_longitude > raw.max_longitude {
+        if raw.min_latitude >= raw.max_latitude || raw.min_longitude >= raw.max_longitude {
             return Err(invalid(
                 "bounds",
                 &name,
-                "minimum coordinate exceeds maximum",
+                "region must have positive width and height",
             ));
         }
 
         let status = parse_status(path, &raw)?;
         Ok(Self {
+            priority: raw.priority,
             name,
             min_latitude: raw.min_latitude,
             max_latitude: raw.max_latitude,
@@ -207,6 +210,54 @@ fn invalid_arrangement<T>(path: &Path, religions: &str, church: &str) -> Result<
     })
 }
 
+fn read_regions(path: &Path) -> Result<Vec<Region>> {
+    if !path.is_file() {
+        return Err(Error::MissingSource(path.to_path_buf()));
+    }
+    let mut reader = csv::Reader::from_path(path).map_err(|source| Error::Csv {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut regions = Vec::new();
+    for row in reader.deserialize() {
+        let raw = row.map_err(|source| Error::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        regions.push(Region::parse(path, raw)?);
+    }
+    if regions.is_empty() {
+        return Err(Error::Validation(format!(
+            "{} contains no IEG-derived regions",
+            path.display()
+        )));
+    }
+    let mut names = HashSet::with_capacity(regions.len());
+    if let Some(duplicate) = regions
+        .iter()
+        .find(|region| !names.insert(region.name.as_str()))
+    {
+        return Err(Error::Validation(format!(
+            "{} repeats IEG-derived region {:?}",
+            path.display(),
+            duplicate.name
+        )));
+    }
+    let mut priorities = HashSet::with_capacity(regions.len());
+    if let Some(duplicate) = regions
+        .iter()
+        .find(|region| !priorities.insert(region.priority))
+    {
+        return Err(Error::Validation(format!(
+            "{} repeats IEG-derived priority {}",
+            path.display(),
+            duplicate.priority
+        )));
+    }
+    regions.sort_by_key(|region| region.priority);
+    Ok(regions)
+}
+
 pub(crate) fn enrich(
     mut draft: WorldDraft<GeologySettlementDraft>,
     regions_path: &Path,
@@ -217,38 +268,7 @@ pub(crate) fn enrich(
             draft.year
         )));
     }
-    if !regions_path.is_file() {
-        return Err(Error::MissingSource(regions_path.to_path_buf()));
-    }
-    let mut reader = csv::Reader::from_path(regions_path).map_err(|source| Error::Csv {
-        path: regions_path.to_path_buf(),
-        source,
-    })?;
-    let mut regions = Vec::new();
-    for row in reader.deserialize() {
-        let raw = row.map_err(|source| Error::Csv {
-            path: regions_path.to_path_buf(),
-            source,
-        })?;
-        regions.push(Region::parse(regions_path, raw)?);
-    }
-    if regions.is_empty() {
-        return Err(Error::Validation(format!(
-            "{} contains no IEG-derived regions",
-            regions_path.display()
-        )));
-    }
-    let mut names = HashSet::with_capacity(regions.len());
-    if let Some(duplicate) = regions
-        .iter()
-        .find(|region| !names.insert(region.name.as_str()))
-    {
-        return Err(Error::Validation(format!(
-            "{} repeats IEG-derived region {:?}",
-            regions_path.display(),
-            duplicate.name
-        )));
-    }
+    let regions = read_regions(regions_path)?;
 
     let mut fallbacks = 0;
     let settlements: Vec<SettlementImport> = std::mem::take(&mut draft.settlements)
@@ -326,6 +346,7 @@ mod tests {
 
     fn raw(status: &str, religions: &str, church: &str) -> RawRegion {
         RawRegion {
+            priority: 10,
             region: "test".into(),
             min_latitude: 50.0,
             max_latitude: 51.0,
@@ -371,6 +392,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_zero_area_regions() {
+        let mut region = raw("established", "lutheran", "");
+        region.max_latitude = region.min_latitude;
+        let error = Region::parse(Path::new("regions.csv"), region).unwrap_err();
+        assert!(error.to_string().contains("positive width and height"));
+    }
+
+    #[test]
     fn fallback_is_complete_and_geographically_plausible() {
         assert_eq!(
             infer_fallback(50.0, 28.0).church(),
@@ -386,11 +415,7 @@ mod tests {
     fn checked_in_intermediate_parses_into_typed_regions() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/world-data/ieg-religion-1544.csv");
-        let mut reader = csv::Reader::from_path(&path).unwrap();
-        let regions: Vec<_> = reader
-            .deserialize()
-            .map(|row| Region::parse(&path, row.unwrap()).unwrap())
-            .collect();
+        let regions = read_regions(&path).unwrap();
         assert_eq!(regions.len(), 14);
         assert!(regions.iter().any(|region| {
             matches!(
@@ -399,5 +424,14 @@ mod tests {
             )
         }));
         assert!(regions.iter().all(|region| !region.name.is_empty()));
+        let upper_rhine = regions
+            .iter()
+            .find(|region| region.contains(50.5, 8.5))
+            .unwrap();
+        assert_eq!(upper_rhine.name, "Upper Rhine mixed territories");
+        assert!(matches!(
+            upper_rhine.status,
+            SettlementReligiousStatus::MultiConfessional { .. }
+        ));
     }
 }

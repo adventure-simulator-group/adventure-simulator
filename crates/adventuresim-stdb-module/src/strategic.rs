@@ -3912,7 +3912,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             0.0,
             3,
             "hills",
-            "western_church",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::RomanCatholic,
+            },
         ),
         (
             "ironforge",
@@ -3921,7 +3923,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             50.0,
             4,
             "desert",
-            "reformed",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::Reformed,
+            },
         ),
         (
             "willowmere",
@@ -3930,11 +3934,13 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             75.0,
             2,
             "hills",
-            "old_faith",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::EasternOrthodox,
+            },
         ),
     ];
 
-    for (id, name, x, y, pop, scene, religion_id) in settlements {
+    for (id, name, x, y, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
@@ -3979,15 +3985,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
                     age: GeologicEra::Quaternary,
                 }),
-                religious_status: SettlementReligiousStatus::Established {
-                    religion: match religion_id {
-                        "reformed" => OfficialReligion::Reformed,
-                        "old_faith" => OfficialReligion::EasternOrthodox,
-                        _ => OfficialReligion::RomanCatholic,
-                    },
-                },
+                religious_status,
                 scene_key: scene.into(),
-                religion_id: religion_id.into(),
+                religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,
             });
         }

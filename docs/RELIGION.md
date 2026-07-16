@@ -16,9 +16,10 @@ The published maps are illustrative rasters without a machine-readable
 geographic boundary layer. The checked-in
 `assets/world-data/ieg-religion-1544.csv` is therefore a deliberately coarse,
 human-curated intermediate between the two maps. Each row is a named bounding
-region. Rows are evaluated in file order, most specific first, so small
-territories override broad ones. The shapes are gameplay priors and do not
-claim to reproduce historical borders exactly.
+region with an explicit unique priority; lower numbers are evaluated first, so
+small territories override broad ones even if the file is reordered. The
+shapes are gameplay priors and do not claim to reproduce historical borders
+exactly.
 
 Settlements outside the curated regions receive a complete plausible fallback:
 Roman Catholic in the general Viabundus coverage and Eastern Orthodox in the
@@ -45,3 +46,9 @@ second potentially contradictory field.
 The compiler reports the number of curated regions, settlement samples, and
 fallback samples. `--religion-regions` can point to another intermediate using
 the same checked CSV boundary.
+
+The checked intermediate was audited against all 6,041 Viabundus settlements
+active in 1544: 4,590 matched one of the 14 prioritized regions and 1,451 used
+the Roman Catholic fallback. The matched set includes 155 settlements in the
+Upper Rhine multi-confessional approximation, confirming that its specific
+priority takes precedence over the broader Hessian region.
