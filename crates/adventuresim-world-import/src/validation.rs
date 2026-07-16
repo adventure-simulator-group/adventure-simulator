@@ -142,12 +142,30 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.report.land_use_normalized_samples,
             world.settlements.len(),
         )
+        || !forest_counts_are_consistent(
+            world.report.forest_tiles_read,
+            world.report.forest_samples,
+            world.report.forest_fallback_samples,
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn forest_counts_are_consistent(
+    tiles: usize,
+    samples: usize,
+    fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks <= samples
+        && ((settlements == 0 && tiles == 0)
+            || (settlements > 0 && tiles > 0 && tiles <= settlements))
 }
 
 fn land_use_counts_are_consistent(
@@ -178,6 +196,7 @@ fn elevation_counts_are_consistent(
 #[cfg(test)]
 mod tests {
     use super::elevation_counts_are_consistent;
+    use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
 
     #[test]
@@ -198,5 +217,14 @@ mod tests {
         assert!(!land_use_counts_are_consistent(7, 2, 0, 0, 3));
         assert!(!land_use_counts_are_consistent(7, 3, 4, 0, 3));
         assert!(!land_use_counts_are_consistent(7, 3, 1, 3, 3));
+    }
+
+    #[test]
+    fn forest_report_requires_complete_consistent_counts() {
+        assert!(forest_counts_are_consistent(2, 3, 1, 3));
+        assert!(forest_counts_are_consistent(0, 0, 0, 0));
+        assert!(!forest_counts_are_consistent(0, 3, 0, 3));
+        assert!(!forest_counts_are_consistent(2, 2, 0, 3));
+        assert!(!forest_counts_are_consistent(2, 3, 4, 3));
     }
 }

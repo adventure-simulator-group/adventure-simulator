@@ -176,6 +176,12 @@ dataset. Preparing the seven corrected HYDE 3.2.1 ESRI ASCII files documented in
 `target/world-data-sources/raw/historical-land-use/` is required before the
 stacked compiler can complete. Override that directory with `--land-use-dir`.
 
+Forest cover likewise has a tested boundary but no authenticated full local
+download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
+in `docs/FOREST_COVER.md` under
+`target/world-data-sources/raw/forest-cover/`. Override that directory with
+`--forest-cover-dir`.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
