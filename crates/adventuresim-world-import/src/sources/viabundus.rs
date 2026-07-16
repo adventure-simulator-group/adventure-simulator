@@ -4,8 +4,9 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementImport, SourceProvenance, TravelCrossing, TravelEdgeImport,
-    TravelEdgeKind, WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata, WorldNodeImport,
+    CompiledWorld, EdgeEndpoint, SettlementImport, SourceProvenance, TravelEdgeImport,
+    TravelEdgeKind, TravelRoute, WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata,
+    WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -32,17 +33,17 @@ struct RawNode {
     is_ferry: SourceFlag,
     #[serde(rename = "Is_Harbour", default)]
     is_harbour: SourceFlag,
-    #[serde(rename = "Is_Bridge", default)]
+    #[serde(rename = "Is_Bridge")]
     is_bridge: SourceFlag,
-    #[serde(rename = "Bridge_From", default)]
+    #[serde(rename = "Bridge_From")]
     bridge_from: String,
-    #[serde(rename = "Bridge_To", default)]
+    #[serde(rename = "Bridge_To")]
     bridge_to: String,
-    #[serde(rename = "Is_Toll", default)]
+    #[serde(rename = "Is_Toll")]
     is_toll: SourceFlag,
-    #[serde(rename = "Toll_From", default)]
+    #[serde(rename = "Toll_From")]
     toll_from: String,
-    #[serde(rename = "Toll_To", default)]
+    #[serde(rename = "Toll_To")]
     toll_to: String,
     #[serde(rename = "Settlement_From", default)]
     settlement_from: String,
@@ -168,22 +169,21 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
         endpoint_ids.extend([from_node_id, to_node_id]);
         let from_node = &nodes_by_id[&from_node_id];
         let to_node = &nodes_by_id[&to_node_id];
-        let crossing = match kind {
-            TravelEdgeKind::Ferry => Some(TravelCrossing::Ferry),
-            TravelEdgeKind::Land
-                if from_node.bridge.active_in(year) || to_node.bridge.active_in(year) =>
-            {
-                Some(TravelCrossing::Bridge)
-            }
-            TravelEdgeKind::Land => None,
+        let route = match kind {
+            TravelEdgeKind::Ferry => TravelRoute::Ferry,
+            TravelEdgeKind::Land => TravelRoute::Land {
+                bridge: endpoints(
+                    from_node.bridge.active_in(year),
+                    to_node.bridge.active_in(year),
+                ),
+            },
         };
         edges.push(TravelEdgeImport {
             id: required_number(&edges_path, "id", &raw.id)?,
             from_node_id,
             to_node_id,
-            kind,
-            crossing,
-            has_toll: from_node.toll.active_in(year) || to_node.toll.active_in(year),
+            route,
+            toll: endpoints(from_node.toll.active_in(year), to_node.toll.active_in(year)),
             length_m: required_number(&edges_path, "length", &raw.length)?,
             slope_multiplier: if raw.slopemultiplier.trim().is_empty() {
                 1.0
@@ -250,8 +250,16 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
         .flat_map(|edge| [edge.from_node_id, edge.to_node_id])
         .filter(|node_id| settlement_node_ids.contains(node_id))
         .collect();
-    let route_crossings = edges.iter().filter(|edge| edge.crossing.is_some()).count();
-    let toll_edges = edges.iter().filter(|edge| edge.has_toll).count();
+    let route_crossings = edges
+        .iter()
+        .filter(|edge| edge.route.has_crossing())
+        .count();
+    let toll_edges = edges.iter().filter(|edge| edge.toll.is_some()).count();
+    let contradictory_feature_dates = nodes_by_id
+        .values()
+        .flat_map(|node| [node.bridge, node.toll])
+        .filter(|feature| feature.is_contradictory())
+        .count();
 
     Ok(CompiledWorld {
         metadata: WorldMetadata {
@@ -271,6 +279,7 @@ pub fn compile(directory: &Path, year: i32) -> Result<CompiledWorld> {
             settlements_connected_to_road_network: connected_settlements.len(),
             route_crossings,
             toll_edges,
+            contradictory_feature_dates,
             excluded_edges,
         },
         nodes,
@@ -299,7 +308,7 @@ struct SourceNode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DatedFeature {
     Absent,
-    PointYear(i32),
+    ContradictoryEmptyRange { year: i32 },
     Present { from: Option<i32>, to: Option<i32> },
 }
 
@@ -327,7 +336,7 @@ impl DatedFeature {
         if let Some((from, to)) = from_year.zip(to_year)
             && from == to
         {
-            return Ok(Self::PointYear(from));
+            return Ok(Self::ContradictoryEmptyRange { year: from });
         }
         if from_year.zip(to_year).is_some_and(|(from, to)| from > to) {
             return Err(Error::InvalidField {
@@ -346,9 +355,13 @@ impl DatedFeature {
     fn active_in(self, year: i32) -> bool {
         match self {
             Self::Absent => false,
-            Self::PointYear(point) => point == year,
+            Self::ContradictoryEmptyRange { .. } => false,
             Self::Present { from, to } => active_in_year(from, to, year),
         }
+    }
+
+    const fn is_contradictory(self) -> bool {
+        matches!(self, Self::ContradictoryEmptyRange { .. })
     }
 }
 
@@ -437,6 +450,15 @@ where
 
 fn active_in_year(from: Option<i32>, to: Option<i32>, year: i32) -> bool {
     from.is_none_or(|from| from <= year) && to.is_none_or(|to| year < to)
+}
+
+fn endpoints(from: bool, to: bool) -> Option<EdgeEndpoint> {
+    match (from, to) {
+        (false, false) => None,
+        (true, false) => Some(EdgeEndpoint::From),
+        (false, true) => Some(EdgeEndpoint::To),
+        (true, true) => Some(EdgeEndpoint::Both),
+    }
 }
 
 fn population_level(thousands: Option<u32>) -> i32 {
@@ -537,8 +559,23 @@ mod tests {
         assert!(!bridge.active_in(1600));
         assert!(DatedFeature::parse(path, "Bridge", SourceFlag(false), "1500", "").is_err());
         assert!(DatedFeature::parse(path, "Bridge", SourceFlag(true), "1600", "1500").is_err());
-        let point = DatedFeature::parse(path, "Bridge", SourceFlag(true), "1544", "1544").unwrap();
-        assert_eq!(point, DatedFeature::PointYear(1544));
-        assert!(point.active_in(1544));
+        let contradiction =
+            DatedFeature::parse(path, "Bridge", SourceFlag(true), "1544", "1544").unwrap();
+        assert_eq!(
+            contradiction,
+            DatedFeature::ContradictoryEmptyRange { year: 1544 }
+        );
+        assert!(!contradiction.active_in(1544));
+        assert!(contradiction.is_contradictory());
+    }
+
+    #[test]
+    fn infrastructure_keeps_endpoint_identity() {
+        use adventuresim_world_schema::EdgeEndpoint;
+
+        assert_eq!(super::endpoints(false, false), None);
+        assert_eq!(super::endpoints(true, false), Some(EdgeEndpoint::From));
+        assert_eq!(super::endpoints(false, true), Some(EdgeEndpoint::To));
+        assert_eq!(super::endpoints(true, true), Some(EdgeEndpoint::Both));
     }
 }

@@ -7,12 +7,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum TravelEdgeKind {
-    Land,
+pub enum EdgeEndpoint {
+    From,
 
-    Ferry,
+    To,
+
+    Both,
 }
 
-impl __sdk::InModule for TravelEdgeKind {
+impl __sdk::InModule for EdgeEndpoint {
     type Module = super::RemoteModule;
 }

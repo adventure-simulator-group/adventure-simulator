@@ -1,6 +1,7 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    SettlementImport, TravelCrossing, TravelEdgeImport, WORLD_SCHEMA_VERSION, WorldNodeImport,
+    EdgeEndpoint, SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION,
+    WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -123,8 +124,8 @@ pub struct TravelEdge {
     #[index(btree)]
     pub to_node_id: u64,
     pub kind: String,
-    pub crossing: Option<TravelCrossing>,
-    pub has_toll: bool,
+    pub bridge_at: Option<EdgeEndpoint>,
+    pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,
@@ -261,13 +262,17 @@ pub fn import_travel_edges(
                 edge.id
             ));
         }
+        let (kind, bridge_at) = match edge.route {
+            TravelRoute::Land { bridge } => ("land", bridge),
+            TravelRoute::Ferry => ("ferry", None),
+        };
         let row = TravelEdge {
             id: edge.id,
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
-            kind: edge.kind.as_str().into(),
-            crossing: edge.crossing,
-            has_toll: edge.has_toll,
+            kind: kind.into(),
+            bridge_at,
+            toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
             certainty: edge.certainty,

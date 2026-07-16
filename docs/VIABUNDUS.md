@@ -19,11 +19,13 @@ dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
 Active Viabundus bridge and toll nodes are projected onto their incident travel
-edges. Ferry edges carry a typed ferry crossing; land edges incident to an
-active bridge carry a typed bridge crossing. Toll presence is retained
-separately. These are edge properties rather than settlement properties so
-travel encounters and tactical scene generation can use them without implying
-that the infrastructure lies inside a neighboring settlement.
+edges with their `from`, `to`, or `both` endpoint identity intact. Ferry routes
+and land routes with an optional bridge are distinct enum variants, so invalid
+combinations cannot enter the import schema. These are edge properties rather
+than settlement properties so travel encounters and tactical scene generation
+can use them without implying that the infrastructure lies inside a neighboring
+settlement. Contradictory equal start/end years are retained in the compiler's
+source model and reported, but do not invent an active feature interval.
 
 Each imported settlement has the prototype's shared merchant services, and
 newly created characters start at a random loaded settlement.
