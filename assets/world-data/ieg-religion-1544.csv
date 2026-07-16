@@ -1,15 +1,15 @@
-region,min_latitude,max_latitude,min_longitude,max_longitude,status,religions,church
-Finland,59.0,66.5,19.0,30.0,established,lutheran,
-Sweden,55.0,66.5,10.5,24.0,established,lutheran,
-Denmark,54.4,58.1,7.5,15.8,established,lutheran,
-Livonia,55.5,59.5,21.0,29.5,established,lutheran,
-Ducal Prussia,53.0,55.8,18.0,23.5,established,lutheran,
-East Frisia,53.0,53.8,6.5,8.0,established,reformed,
-Brandenburg,51.5,54.0,11.5,15.5,established,lutheran,
-North German Lutheran territories,52.4,55.1,7.0,13.2,established,lutheran,
-Electoral Saxony and Thuringia,50.0,52.7,9.5,14.8,established,lutheran,
-Hessian Lutheran territories,50.0,51.8,8.0,10.5,established,lutheran,
-Nuremberg municipal territory,49.30,49.65,10.85,11.30,locally_determined,,lutheran
-Bohemian Protestant territories,48.7,51.2,12.0,16.8,established,protestant_unspecified,
-Upper Rhine mixed territories,49.0,50.8,7.3,9.5,multi_confessional,catholic_lutheran,roman_catholic
-Eastern Ruthenian territories,48.7,52.5,27.0,30.0,established,eastern_orthodox,
+priority,region,min_latitude,max_latitude,min_longitude,max_longitude,status,religions,church
+10,Nuremberg municipal territory,49.30,49.65,10.85,11.30,locally_determined,,lutheran
+20,East Frisia,53.0,53.8,6.5,8.0,established,reformed,
+30,Upper Rhine mixed territories,49.0,50.8,7.3,9.5,multi_confessional,catholic_lutheran,roman_catholic
+40,Finland,59.0,66.5,19.0,30.0,established,lutheran,
+50,Sweden,55.0,66.5,10.5,24.0,established,lutheran,
+60,Denmark,54.4,58.1,7.5,15.8,established,lutheran,
+70,Livonia,55.5,59.5,21.0,29.5,established,lutheran,
+80,Ducal Prussia,53.0,55.8,18.0,23.5,established,lutheran,
+90,Brandenburg,51.5,54.0,11.5,15.5,established,lutheran,
+100,Electoral Saxony and Thuringia,50.0,52.7,9.5,14.8,established,lutheran,
+110,Bohemian Protestant territories,48.7,51.2,12.0,16.8,established,protestant_unspecified,
+120,North German Lutheran territories,52.4,55.1,7.0,13.2,established,lutheran,
+130,Hessian Lutheran territories,50.0,51.8,8.0,10.5,established,lutheran,
+140,Eastern Ruthenian territories,48.7,52.5,27.0,30.0,established,eastern_orthodox,
