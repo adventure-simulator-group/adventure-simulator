@@ -188,6 +188,12 @@ install version 2.1 manually and place its `Maps` directory under
 `docs/POTENTIAL_VEGETATION.md`. Override it with
 `--potential-vegetation-dir`.
 
+EU-Trees4F v2 tree-species suitability is read directly from the downloaded
+`target/world-data-sources/raw/tree-species/EU-Trees4F_ens-clim.zip`, as
+documented in `docs/TREE_SPECIES.md`. Override it with
+`--tree-species-archive`. This stage requires all 67 current-climate
+probability, potential, and native-range rasters in the pinned archive.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients

@@ -7,9 +7,8 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CompiledWorld, DominantLeafType, EuroVegMapUnitCode, ForestCover, MappedPotentialVegetation,
-    PotentialVegetation, PotentialVegetationFormation, SettlementImport, SourceProvenance,
-    WORLD_SCHEMA_VERSION, WorldMetadata,
+    DominantLeafType, EuroVegMapUnitCode, ForestCover, MappedPotentialVegetation,
+    PotentialVegetation, PotentialVegetationFormation, SourceProvenance,
 };
 use dbase::{FieldValue, Record};
 use geo::{BoundingRect, Intersects, MultiPolygon, Point, Rect};
@@ -17,7 +16,7 @@ use proj4rs::{proj::Proj, transform::transform};
 
 use crate::{
     Error, Result,
-    draft::{ForestSettlementDraft, WorldDraft},
+    draft::{ForestSettlementDraft, PotentialVegetationSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "EuroVegMap 2.1 Map of the Natural Vegetation of Europe";
@@ -32,7 +31,7 @@ const EXPECTED_PROJECTION: &str = "PROJCS[\"ETRS89-LAEA5220\",GEOGCS[\"ETRS89\",
 pub(crate) fn enrich(
     draft: WorldDraft<ForestSettlementDraft>,
     directory: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<PotentialVegetationSettlementDraft>> {
     if draft.settlements.is_empty() {
         return finish(draft, Vec::new(), 0, 0);
     }
@@ -59,7 +58,7 @@ fn finish(
     samples: Vec<PotentialVegetation>,
     polygons_read: usize,
     fallbacks: usize,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<PotentialVegetationSettlementDraft>> {
     if samples.len() != draft.settlements.len() {
         return Err(Error::Validation(
             "potential-vegetation samples do not match settlements".into(),
@@ -68,26 +67,12 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(samples)
-        .map(|(forest, potential_vegetation)| {
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
+        .map(
+            |(forest, potential_vegetation)| PotentialVegetationSettlementDraft {
+                forest,
                 potential_vegetation,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            }
-        })
+            },
+        )
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),
@@ -97,13 +82,10 @@ fn finish(
     draft.report.potential_vegetation_polygons_read = polygons_read;
     draft.report.potential_vegetation_samples = settlements.len();
     draft.report.potential_vegetation_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,

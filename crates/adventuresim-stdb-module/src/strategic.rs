@@ -1,9 +1,10 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover, LandUseFraction,
-    LandUseProfile, MappedPotentialVegetation, PotentialVegetation, PotentialVegetationFormation,
-    SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION, Woodland,
-    WorldNodeImport,
+    CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover,
+    HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
+    MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -93,6 +94,7 @@ pub struct Settlement {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub tree_species: TreeSpeciesProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -352,6 +354,60 @@ pub fn import_settlements(
             }
             PotentialVegetation::Inferred(formation) => PotentialVegetation::Inferred(formation),
         };
+        let tree_species = match settlement.tree_species {
+            TreeSpeciesProfile::Modeled(profile) => {
+                let candidates = profile
+                    .candidates()
+                    .iter()
+                    .map(|candidate| {
+                        Ok(ModeledTreeSpecies {
+                            species: TreeSpeciesId::new(candidate.species.as_str().to_owned())
+                                .ok_or_else(|| {
+                                    format!(
+                                        "Settlement {} has an invalid tree species",
+                                        settlement.id
+                                    )
+                                })?,
+                            suitability: HabitatSuitability::new(candidate.suitability.score())
+                                .ok_or_else(|| {
+                                    format!(
+                                        "Settlement {} has invalid tree suitability",
+                                        settlement.id
+                                    )
+                                })?,
+                            native_range: candidate.native_range,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                TreeSpeciesProfile::Modeled(ModeledTreeSpeciesProfile::new(candidates).ok_or_else(
+                    || {
+                        format!(
+                            "Settlement {} has an invalid modeled tree profile",
+                            settlement.id
+                        )
+                    },
+                )?)
+            }
+            TreeSpeciesProfile::Inferred(profile) => {
+                let species = profile
+                    .species()
+                    .iter()
+                    .map(|species| {
+                        TreeSpeciesId::new(species.as_str().to_owned()).ok_or_else(|| {
+                            format!("Settlement {} has an invalid tree species", settlement.id)
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                TreeSpeciesProfile::Inferred(InferredTreeSpeciesProfile::new(species).ok_or_else(
+                    || {
+                        format!(
+                            "Settlement {} has an invalid inferred tree profile",
+                            settlement.id
+                        )
+                    },
+                )?)
+            }
+        };
         if ctx
             .db
             .world_node()
@@ -375,6 +431,7 @@ pub fn import_settlements(
             land_use,
             forest_cover,
             potential_vegetation,
+            tree_species,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3815,6 +3872,12 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 }),
                 potential_vegetation: PotentialVegetation::Inferred(
                     PotentialVegetationFormation::DeciduousAndMixedForest,
+                ),
+                tree_species: TreeSpeciesProfile::Inferred(
+                    InferredTreeSpeciesProfile::new(vec![
+                        TreeSpeciesId::new("Quercus_robur").unwrap(),
+                    ])
+                    .unwrap(),
                 ),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
