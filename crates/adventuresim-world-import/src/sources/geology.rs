@@ -15,7 +15,7 @@ use rusqlite::{Connection, OpenFlags, params};
 
 use crate::{
     Error, Result,
-    draft::{GeologySettlementDraft, SoilSettlementDraft, WorldDraft},
+    draft::{GeologySettlementDraft, SoilSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "EGDI 1:1 Million pan-European Surface Geology";
@@ -63,7 +63,16 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(soil, geology)| GeologySettlementDraft { soil, geology })
+        .map(|(mut soil, geology)| {
+            push_source_note(
+                &mut soil,
+                match &geology {
+                    SurfaceGeology::Mapped(_) => "**[EGDI pan-European Surface Geology](https://doi.org/10.22008/y9hj-va55):** Surface lithology and age come from containment in the indexed aggregate geologic-unit layer; missing source attributes may use the mapped record's explicit deterministic evidence classifications.",
+                    SurfaceGeology::Inferred(_) => "**EGDI geology fallback:** No usable geologic unit covered the settlement, so a plausible geologic setting is deterministically inferred from the soil profile.",
+                },
+            );
+            GeologySettlementDraft { soil, geology }
+        })
         .collect();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),

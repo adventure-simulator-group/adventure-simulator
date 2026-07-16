@@ -42,6 +42,15 @@ stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents
 later stages from being called before their dependencies exist.
 
+The compiled world and persisted strategic tables retain source explanations as
+bounded, unstructured Markdown in a `sources` field. The world-import session
+stores the distribution-level list, while each imported node, travel edge, and
+settlement stores record-specific notes describing direct samples,
+interpolation, deterministic inference, and fallbacks. This is deliberately a
+display/debug payload rather than a structured provenance API. No debug view
+renders it yet; any future renderer must treat it as untrusted Markdown and
+sanitize generated HTML.
+
 Each compiled artifact is identified by a content hash. An interrupted load may
 resume only with the same artifact; a different artifact requires a database
 reset. Successful loads explicitly complete their import session so later

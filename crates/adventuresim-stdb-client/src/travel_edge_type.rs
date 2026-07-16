@@ -19,6 +19,7 @@ pub struct TravelEdge {
     pub slope_multiplier: f32,
     pub certainty: u8,
     pub section: String,
+    pub sources: String,
 }
 
 impl __sdk::InModule for TravelEdge {

@@ -15,6 +15,7 @@ pub struct WorldNodeImport {
     pub is_town: bool,
     pub is_ferry: bool,
     pub is_harbour: bool,
+    pub sources: String,
 }
 
 impl __sdk::InModule for WorldNodeImport {

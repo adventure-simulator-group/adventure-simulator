@@ -37,6 +37,7 @@ pub struct Settlement {
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,
+    pub sources: String,
 }
 
 impl __sdk::InModule for Settlement {

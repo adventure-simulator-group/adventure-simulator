@@ -25,7 +25,10 @@ use rusqlite::{Connection, OpenFlags, params};
 
 use crate::{
     Error, Result,
-    draft::{DroughtSettlementDraft, TravelEdgeDraft, TravelRouteDraft, WorldDraft},
+    draft::{
+        DroughtSettlementDraft, SettlementDraftAccess, TravelEdgeDraft, TravelRouteDraft,
+        WorldDraft, push_source_note,
+    },
 };
 
 const SOURCE_NAME: &str = "Copernicus EU-Hydro River Network Database v1.3";
@@ -69,12 +72,21 @@ pub(crate) fn enrich(
     let mut inferred_ferries = 0;
     let edges = std::mem::take(&mut draft.edges)
         .into_iter()
-        .map(|edge| {
+        .map(|mut edge| {
             let from = projected_nodes[&edge.from_node_id];
             let to = projected_nodes[&edge.to_node_id];
             let (route, edge_crossings, inferred) = database.enrich_route(edge.route, from, to)?;
             crossings += edge_crossings;
             inferred_ferries += usize::from(inferred);
+            let note = match &route {
+                TravelRoute::Land(route) if route.water_crossings.is_empty() => "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** No mapped linear watercourse intersects the straight endpoint-to-endpoint road geometry after endpoint-touch filtering.",
+                TravelRoute::Land(_) => "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** Water crossings come from mapped road/linear-water intersections. Bridge versus ford is inferred deterministically from watercourse attributes unless Viabundus supplies endpoint bridge evidence; unmatched Viabundus bridge evidence receives the documented small-river fallback.",
+                TravelRoute::Ferry(_) if inferred => "**EU-Hydro ferry fallback:** No mapped water feature explained this Viabundus ferry, so the route uses the documented plausible small perennial river waterway.",
+                TravelRoute::Ferry(_) => "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** The ferry waterway is classified from a mapped river, inland-water, tidal-water, or coastal feature near the route.",
+            };
+            edge.sources.push('\n');
+            edge.sources.push_str("- ");
+            edge.sources.push_str(note);
             Ok(finish_edge(edge, route))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -82,7 +94,17 @@ pub(crate) fn enrich(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(hydrology)
-        .map(|(drought, hydrology)| finish_settlement(drought, hydrology))
+        .map(|(mut drought, hydrology)| {
+            push_source_note(
+                &mut drought,
+                if hydrology == SettlementHydrology::default() {
+                    "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** No mapped flowing, inland, tidal, or coastal feature lies within the two-kilometer settlement-adjacency threshold; absence is treated as landlocked rather than unknown."
+                } else {
+                    "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** Flowing, inland, and marine access is derived by exact geometry distance within two kilometers. Missing/sentinel source attributes are resolved by documented parser-boundary defaults rather than stored as unknown."
+                },
+            );
+            finish_settlement(drought, hydrology)
+        })
         .collect::<Vec<_>>();
 
     draft.sources.push(SourceProvenance {
@@ -126,6 +148,7 @@ fn finish_edge(edge: TravelEdgeDraft, route: TravelRoute) -> TravelEdgeImport {
         slope_multiplier: edge.slope_multiplier,
         certainty: edge.certainty,
         section: edge.section,
+        sources: edge.sources,
     }
 }
 
@@ -161,20 +184,12 @@ fn finish_settlement(
         drought: drought.drought,
         hydrology,
         scene_key: settlement.scene_key,
+        sources: settlement.sources,
     }
 }
 
 fn base_settlement(draft: &DroughtSettlementDraft) -> &crate::draft::SettlementDraft {
-    &draft
-        .religious
-        .geologic
-        .soil
-        .trees
-        .vegetated
-        .forest
-        .land
-        .elevated
-        .settlement
+    draft.base_settlement()
 }
 
 struct HydrologyProjection {
