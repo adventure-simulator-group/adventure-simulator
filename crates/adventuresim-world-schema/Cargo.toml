@@ -13,5 +13,8 @@ spacetimedb = ["dep:spacetimedb"]
 serde.workspace = true
 spacetimedb = { workspace = true, optional = true }
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true
