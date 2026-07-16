@@ -11,6 +11,13 @@ pub enum Error {
         path: PathBuf,
         source: tiff::TiffError,
     },
+    #[error("failed to read shapefile {path}: {source}")]
+    Shapefile {
+        path: PathBuf,
+        source: shapefile::Error,
+    },
+    #[error("coordinate projection failed: {0}")]
+    Projection(#[from] proj4rs::errors::Error),
     #[error("failed to parse JSON source {path}: {source}")]
     JsonSource {
         path: PathBuf,

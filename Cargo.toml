@@ -63,7 +63,11 @@ getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
 tiff = "0.11.3"
 csv = "1.3"
+dbase = "0.8.0"
 blake3 = "1"
+geo = "0.33.1"
+proj4rs = { version = "0.1.10", default-features = false }
+shapefile = { version = "0.9.0", features = ["geo-types"] }
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"
