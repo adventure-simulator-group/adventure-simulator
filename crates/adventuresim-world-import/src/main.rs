@@ -5,9 +5,10 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType, EdgeEndpoint,
-    ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, IgneousRock,
-    MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
+    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType,
+    DroughtHistory, DroughtProfile, EdgeEndpoint, ForestCover, GeologicAgeEvidence, GeologicEra,
+    GeologicLithologyEvidence, IgneousRock, MetamorphicRock, MineralSoilTexture, MixedLithology,
+    NativeRangeEvidence, PotentialVegetation,
     PotentialVegetationFormation, SedimentaryRock, SettlementImport, SettlementReligiousStatus,
     SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology,
     TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit,
@@ -42,6 +43,8 @@ struct Args {
     geology_geopackage: PathBuf,
     #[arg(long, default_value_os_t = default_religion_regions())]
     religion_regions: PathBuf,
+    #[arg(long, default_value_os_t = default_drought_netcdf())]
+    drought_netcdf: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -82,6 +85,7 @@ fn run(args: Args) -> Result<()> {
         &args.soil_dir,
         &args.geology_geopackage,
         &args.religion_regions,
+        &args.drought_netcdf,
     )?;
     let output = args
         .output
@@ -231,8 +235,24 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "soil": encode_soil(&settlement.soil),
         "geology": encode_geology(&settlement.geology),
         "religious_status": encode_religious_status(settlement.religious_status),
+        "drought": encode_drought(settlement.drought),
         "scene_key": settlement.scene_key,
     }))
+}
+
+fn encode_drought(profile: DroughtProfile) -> Value {
+    let history = |history: DroughtHistory| {
+        json!({
+            "current_summer": { "milli_units": history.current_summer().milli_units() },
+            "twenty_year_mean": { "milli_units": history.twenty_year_mean().milli_units() },
+            "drought_summers": history.drought_summers(),
+            "wet_summers": history.wet_summers(),
+        })
+    };
+    match profile {
+        DroughtProfile::Reconstructed(value) => json!({ "Reconstructed": history(value) }),
+        DroughtProfile::Inferred(value) => json!({ "Inferred": history(value) }),
+    }
 }
 
 fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
@@ -669,6 +689,10 @@ fn default_religion_regions() -> PathBuf {
     repository_root().join("assets/world-data/ieg-religion-1544.csv")
 }
 
+fn default_drought_netcdf() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/climate/owda.nc")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -677,17 +701,18 @@ fn default_output(year: i32) -> PathBuf {
 mod tests {
     use adventuresim_world_schema::{
         AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
-        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, GeologicAgeEvidence,
-        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
-        HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
-        LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile,
-        MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
-        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion, ParentMaterialCode,
-        PotentialVegetation, PotentialVegetationFormation, SettlementImport,
-        SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties,
-        SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
-        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
-        UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
+        DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
+        ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
+        GeologicUnitId, HabitatSuitability, IgneousRock, InferredGeologicSetting,
+        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        MappedSoilProfile, MappedSurfaceGeology, MineralSoil, MineralSoilTexture,
+        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
+        PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
+        SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+        StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+        TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
+        Woodland, WrbReferenceGroup,
     };
 
     use super::{
@@ -887,6 +912,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_drought_profile_for_spacetimedb_sats_json() {
+        let settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["drought"],
+            serde_json::json!({
+                "Inferred": {
+                    "current_summer": { "milli_units": 0 },
+                    "twenty_year_mean": { "milli_units": 0 },
+                    "drought_summers": 0,
+                    "wet_summers": 0,
+                }
+            })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -930,6 +971,15 @@ mod tests {
             religious_status: SettlementReligiousStatus::Established {
                 religion: OfficialReligion::RomanCatholic,
             },
+            drought: DroughtProfile::Inferred(
+                DroughtHistory::new(
+                    PalmerDroughtSeverityIndex::new(0).unwrap(),
+                    PalmerDroughtSeverityIndex::new(0).unwrap(),
+                    0,
+                    0,
+                )
+                .unwrap(),
+            ),
             scene_key: "village".into(),
         }
     }
