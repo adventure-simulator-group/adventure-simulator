@@ -11,6 +11,7 @@ use adventuresim_world_schema::{
     CanopyDensity, CompiledWorld, DominantLeafType, ForestCover, SettlementImport,
     SourceProvenance, WORLD_SCHEMA_VERSION, Woodland, WorldMetadata,
 };
+use serde::Deserialize;
 use tiff::{
     decoder::{Decoder, DecodingResult},
     tags::Tag,
@@ -26,6 +27,20 @@ const SOURCE_URL: &str =
     "https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover";
 const SOURCE_LICENSE: &str = "Copernicus data licence";
 const NODATA: u8 = 255;
+const MANIFEST_FILENAME: &str = "forest-cover-manifest.json";
+const PIXELS_PER_DEGREE: u32 = 1_000;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreparedManifest {
+    format: PreparedFormat,
+}
+
+#[derive(Debug, Deserialize)]
+enum PreparedFormat {
+    #[serde(rename = "adventuresim-copernicus-forest-2018-v1")]
+    CopernicusForest2018V1,
+}
 
 pub(crate) fn enrich(
     mut draft: WorldDraft<LandUseSettlementDraft>,
@@ -38,6 +53,9 @@ pub(crate) fn enrich(
             .entry(DegreeTile::containing(base.latitude, base.longitude)?)
             .or_default()
             .push(index);
+    }
+    if !by_tile.is_empty() {
+        read_manifest(directory)?;
     }
     let mut covers = vec![None; draft.settlements.len()];
     let mut fallbacks = 0;
@@ -114,6 +132,19 @@ pub(crate) fn enrich(
     })
 }
 
+fn read_manifest(directory: &Path) -> Result<()> {
+    let path = require(directory, MANIFEST_FILENAME)?;
+    let file = File::open(&path)?;
+    let manifest: PreparedManifest =
+        serde_json::from_reader(BufReader::new(file)).map_err(|source| Error::JsonSource {
+            path: path.clone(),
+            source,
+        })?;
+    match manifest.format {
+        PreparedFormat::CopernicusForest2018V1 => Ok(()),
+    }
+}
+
 fn forest_cover(
     density: Option<u8>,
     leaf: Option<u8>,
@@ -125,10 +156,13 @@ fn forest_cover(
             return (ForestCover::Open, true);
         }
         let inferred = ((u32::from(natural_basis_points) * 60) / 10_000).clamp(5, 60) as u8;
+        let dominant = leaf
+            .and_then(source_leaf)
+            .unwrap_or_else(|| fallback_leaf(elevation_meters));
         return (
             ForestCover::Wooded(Woodland {
                 density: CanopyDensity::new(inferred).unwrap(),
-                dominant: fallback_leaf(elevation_meters),
+                dominant,
             }),
             true,
         );
@@ -136,11 +170,9 @@ fn forest_cover(
     if density == 0 {
         return (ForestCover::Open, false);
     }
-    let dominant = match leaf {
-        Some(1) => DominantLeafType::Broadleaf,
-        Some(2) => DominantLeafType::Coniferous,
-        Some(3) => DominantLeafType::Mixed,
-        _ => {
+    let dominant = match leaf.and_then(source_leaf) {
+        Some(dominant) => dominant,
+        None => {
             return (
                 ForestCover::Wooded(Woodland {
                     density: CanopyDensity::new(density).unwrap(),
@@ -157,6 +189,15 @@ fn forest_cover(
         }),
         false,
     )
+}
+
+fn source_leaf(value: u8) -> Option<DominantLeafType> {
+    match value {
+        1 => Some(DominantLeafType::Broadleaf),
+        2 => Some(DominantLeafType::Coniferous),
+        3 => Some(DominantLeafType::Mixed),
+        _ => None,
+    }
 }
 
 fn fallback_leaf(elevation_meters: i16) -> DominantLeafType {
@@ -177,7 +218,8 @@ impl DegreeTile {
     fn containing(latitude: f64, longitude: f64) -> Result<Self> {
         if !latitude.is_finite()
             || !longitude.is_finite()
-            || !(-90.0..90.0).contains(&latitude)
+            || latitude <= -90.0
+            || latitude >= 90.0
             || !(-180.0..180.0).contains(&longitude)
         {
             return Err(Error::Validation(format!(
@@ -240,10 +282,10 @@ impl ByteRaster {
             path: path.into(),
             source,
         })?;
-        if width == 0 || height == 0 {
+        if width != PIXELS_PER_DEGREE || height != PIXELS_PER_DEGREE {
             return Err(Error::Validation(format!(
-                "{} has zero dimensions",
-                path.display()
+                "{} is {width}x{height}; prepared forest tiles must be {PIXELS_PER_DEGREE}x{PIXELS_PER_DEGREE}",
+                path.display(),
             )));
         }
         let grid = AreaGrid::parse(&mut decoder, path, tile, width, height)?;
@@ -376,16 +418,16 @@ mod tests {
         tags::Tag,
     };
 
-    use super::{ByteRaster, DegreeTile, forest_cover};
+    use super::{ByteRaster, DegreeTile, PreparedManifest, forest_cover};
 
     #[test]
     fn prepared_area_geotiff_is_parsed_and_sampled() {
         let mut bytes = Cursor::new(Vec::new());
         let mut encoder = TiffEncoder::new(&mut bytes).unwrap();
-        let mut image = encoder.new_image::<Gray8>(2, 2).unwrap();
+        let mut image = encoder.new_image::<Gray8>(1_000, 1_000).unwrap();
         image
             .encoder()
-            .write_tag(Tag::ModelPixelScaleTag, &[0.5_f64, 0.5, 0.0][..])
+            .write_tag(Tag::ModelPixelScaleTag, &[0.001_f64, 0.001, 0.0][..])
             .unwrap();
         image
             .encoder()
@@ -403,7 +445,9 @@ mod tests {
                 ][..],
             )
             .unwrap();
-        image.write_data(&[42, 10, 20, 30]).unwrap();
+        let mut pixels = vec![0; 1_000_000];
+        pixels[250 * 1_000 + 250] = 42;
+        image.write_data(&pixels).unwrap();
         bytes.set_position(0);
         let raster = ByteRaster::decode(
             bytes,
@@ -416,6 +460,22 @@ mod tests {
             .pixel(48.75, 0.25, raster.width, raster.height)
             .unwrap();
         assert_eq!(raster.value(column, row), Some(42));
+    }
+
+    #[test]
+    fn manifest_identifies_the_exact_preparation_contract() {
+        assert!(
+            serde_json::from_str::<PreparedManifest>(
+                r#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_str::<PreparedManifest>(
+                r#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -445,6 +505,13 @@ mod tests {
                 ..
             })
         ));
+        assert!(matches!(
+            forest_cover(None, Some(2), 8_000, 100).0,
+            ForestCover::Wooded(Woodland {
+                dominant: DominantLeafType::Coniferous,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -458,6 +525,7 @@ mod tests {
             "TCD_N52_W002.tif"
         );
         assert!(DegreeTile::containing(f64::NAN, 0.0).is_err());
+        assert!(DegreeTile::containing(-90.0, 0.0).is_err());
         assert!(DegreeTile::containing(90.0, 0.0).is_err());
     }
 

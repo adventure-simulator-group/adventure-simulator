@@ -18,16 +18,27 @@ the data-initialization script.
 
 ## Manual preparation contract
 
-Reproject and aggregate the official 2018 status layers into one-degree,
-EPSG:4326, `RasterPixelIsArea`, single-band UInt8 GeoTIFFs. Place them in the
-Git-ignored `target/world-data-sources/raw/forest-cover/` directory. Each used
-degree tile requires a pair named for its southwest corner:
+Reproject and aggregate the official 2018 status layers into 1000-by-1000-pixel
+one-degree, EPSG:4326, `RasterPixelIsArea`, single-band UInt8 GeoTIFFs. This
+fixed 0.001-degree grid is approximately 100 m at European latitudes and makes
+the prepared format deterministic. Place the files in the Git-ignored
+`target/world-data-sources/raw/forest-cover/` directory. That directory must
+also contain `forest-cover-manifest.json` with exactly this version marker:
+
+```json
+{"format":"adventuresim-copernicus-forest-2018-v1"}
+```
+
+The marker identifies the source year, resolution, aggregation rule, and class
+mapping described here so a raw, stale, or differently prepared byte raster is
+not silently interpreted under this contract. Each used degree tile requires a
+pair named for its southwest corner:
 
 - `TCD_N48_E002.tif`
 - `DLT_N48_E002.tif`
 
 Southern and western coordinates use `S` and `W`. Both rasters in a pair must
-have identical dimensions and transforms and span exactly one degree. TCD
+be 1000 by 1000, have identical transforms, and span exactly one degree. TCD
 values are canopy percentages from 0 through 100. DLT preparation aggregates
 the source 10 m broadleaf and conifer pixels to the same approximately 100 m
 grid as TCD: emit `1` for at least 75% broadleaf, `2` for at least 75%
