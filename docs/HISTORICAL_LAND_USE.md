@@ -34,16 +34,24 @@ floating-point state variable using one `time`, one `lat`, and one `lon`
 dimension. It verifies that all five coordinate/time axes are identical,
 selects the requested **annual** world year directly (there is no
 interpolation), reads the full annual slice for numeric validation, then
-samples each settlement at its containing coordinate-cell footprint.
+samples each settlement at its containing coordinate-cell footprint. Time may
+be stored as direct calendar years (with no units, `year`, or `years`) or as
+`years since YYYY-01-01` with a standard/proleptic-Gregorian calendar; other
+time encodings fail closed.
 
 At each valid terrestrial cell the importer maps `gcrop`, `gpast`, `gurbn`,
 and `gothr + gsecd` respectively to cropland, grazing, built-up, and
-natural/seminatural fractions. The five source states must be exhaustive. Only
-a tiny floating-point overfill is normalized; malformed, missing, nonnumeric,
-or materially non-exhaustive source values fail the build. A cell whose state
-values are all nodata or all zero is a documented deterministic fallback, and
-is counted in the build report. A missing or invalid global source file is
-never converted into a fallback.
+natural/seminatural fractions.
+LUH1 separately supplies ice/water coverage (`gicew`), which is deliberately
+not part of this five-file preparation contract. Therefore the importer treats
+the positive five-state total as a **conditional terrestrial** composition and
+normalizes it into the exhaustive game profile. A total above one is accepted
+only within a tiny floating-point tolerance; material overfill, partial nodata,
+or nonnumeric values fail the build. Only a cell whose five state values are
+all nodata or all zero receives the documented deterministic fallback, and is
+counted in the build report. The profile intentionally does not represent the
+absolute ice/water share of a source cell. A missing or invalid global source
+file is never converted into a fallback.
 
 Canonical land use is stored as bounded basis-point fractions for cropland,
 grazing land, built-up land, and natural/seminatural land. The four fractions

@@ -18,6 +18,11 @@ const SOURCE_NAME: &str = "LUH1: Harmonized Global Land Use for Years 1500-2100,
 const SOURCE_URL: &str = "https://doi.org/10.3334/ORNLDAAC/1248";
 const MAX_NORMALIZABLE_OVERFILL: f64 = 1.000_001;
 const AXIS_EPSILON: f64 = 1e-9;
+// LUH1's published half-degree grid has 259,200 cells. These limits leave a
+// generous margin without allowing a malformed external NetCDF file to force
+// unbounded coordinate or annual-slice allocation.
+const MAX_AXIS_VALUES: u64 = 2_000;
+const MAX_GRID_CELLS: usize = 1_000_000;
 
 const STATES: [StateFile; 5] = [
     StateFile::new("gcrop", "cropland"),
@@ -63,7 +68,7 @@ pub(crate) fn enrich(
                     (
                         profile,
                         if was_normalized {
-                            "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. Tiny floating-point state overfill was deterministically normalized into an exhaustive profile."
+                            "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. Its five terrestrial states were normalized into an exhaustive conditional-terrestrial profile."
                         } else {
                             "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. It is a regional grid estimate, not an exact settlement observation."
                         },
@@ -122,9 +127,15 @@ struct LandUseStates {
 
 impl LandUseStates {
     fn profile(self) -> Result<Option<(LandUseProfile, bool)>> {
-        let Some([crop, pasture, urban, primary, secondary]) = self.values() else {
+        if self.values().iter().all(Option::is_none) {
             return Ok(None);
-        };
+        }
+        if self.values().iter().any(Option::is_none) {
+            return Err(Error::Validation(
+                "LUH1 state sample has partial nodata; all five terrestrial states must be present or absent".into(),
+            ));
+        }
+        let [crop, pasture, urban, primary, secondary] = self.values().map(Option::unwrap);
         let values = [crop, pasture, urban, primary, secondary];
         if values.iter().all(|value| *value == 0.0) {
             return Ok(None);
@@ -143,13 +154,11 @@ impl LandUseStates {
                 "LUH1 state fractions sum to {total}, which exceeds the small floating-point tolerance"
             )));
         }
-        if total < 1.0 - AXIS_EPSILON {
-            return Err(Error::Validation(format!(
-                "LUH1 terrestrial state fractions sum to {total}, not one"
-            )));
-        }
-        let normalized = total > 1.0;
-        let scale = if normalized { total } else { 1.0 };
+        let normalized = (total - 1.0).abs() > AXIS_EPSILON;
+        // `gicew` is a separate LUH1 ice/water fraction. The five required
+        // state files therefore describe terrestrial shares conditionally, so
+        // a positive sum below one is valid and must be normalized here.
+        let scale = total;
         profile_from_components(
             crop / scale,
             pasture / scale,
@@ -159,14 +168,14 @@ impl LandUseStates {
         .map(|profile| Some((profile, normalized)))
     }
 
-    fn values(self) -> Option<[f64; 5]> {
-        Some([
-            self.crop?,
-            self.pasture?,
-            self.urban?,
-            self.primary?,
-            self.secondary?,
-        ])
+    fn values(self) -> [Option<f64>; 5] {
+        [
+            self.crop,
+            self.pasture,
+            self.urban,
+            self.primary,
+            self.secondary,
+        ]
     }
 }
 
@@ -242,31 +251,35 @@ struct LuhGrid {
 
 impl LuhGrid {
     fn open(directory: &Path, year: i32) -> Result<Self> {
-        let mut reference: Option<(Vec<f64>, Vec<f64>, Vec<f64>)> = None;
+        let mut reference: Option<(Vec<f64>, Vec<f64>, Vec<f64>, TimeEncoding)> = None;
         let mut component_values: Vec<Vec<Option<f64>>> = Vec::with_capacity(STATES.len());
         for state in STATES {
             let path = require(directory, &state.filename())?;
             let component = read_component(&path, state, year)?;
-            if let Some((longitudes, latitudes, times)) = &reference {
+            if let Some((longitudes, latitudes, times, time_encoding)) = &reference {
                 require_same_axis(&path, "longitude", longitudes, &component.longitudes)?;
                 require_same_axis(&path, "latitude", latitudes, &component.latitudes)?;
                 require_same_axis(&path, "time", times, &component.times)?;
+                if *time_encoding != component.time_encoding {
+                    return Err(invalid(
+                        &path,
+                        "time units",
+                        component.time_encoding.describe(),
+                        "time encoding differs from the other LUH1 state files",
+                    ));
+                }
             } else {
                 reference = Some((
                     component.longitudes.clone(),
                     component.latitudes.clone(),
                     component.times.clone(),
+                    component.time_encoding,
                 ));
             }
             component_values.push(component.values);
         }
-        let (longitudes, latitudes, _) = reference.expect("five required LUH1 states");
-        let cells = longitudes
-            .len()
-            .checked_mul(latitudes.len())
-            .ok_or_else(|| {
-                Error::Validation("LUH1 grid dimensions overflow the address space".into())
-            })?;
+        let (longitudes, latitudes, _, _) = reference.expect("five required LUH1 states");
+        let cells = checked_grid_cells(longitudes.len(), latitudes.len())?;
         if component_values.iter().any(|values| values.len() != cells) {
             return Err(Error::Validation(
                 "LUH1 component slice dimensions do not match the coordinate grid".into(),
@@ -303,7 +316,23 @@ struct Component {
     longitudes: Vec<f64>,
     latitudes: Vec<f64>,
     times: Vec<f64>,
+    time_encoding: TimeEncoding,
     values: Vec<Option<f64>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TimeEncoding {
+    CalendarYear,
+    YearsSince(i32),
+}
+
+impl TimeEncoding {
+    fn describe(self) -> String {
+        match self {
+            Self::CalendarYear => "calendar year".into(),
+            Self::YearsSince(year) => format!("years since {year}-01-01"),
+        }
+    }
 }
 
 fn read_component(path: &Path, state: StateFile, year: i32) -> Result<Component> {
@@ -345,21 +374,30 @@ fn read_component(path: &Path, state: StateFile, year: i32) -> Result<Component>
     let longitudes = read_axis(&file, path, "lon")?;
     let latitudes = read_axis(&file, path, "lat")?;
     let times = read_axis(&file, path, "time")?;
-    let time_index = times
-        .iter()
-        .position(|value| *value == f64::from(year))
-        .ok_or_else(|| {
-            Error::Validation(format!(
-                "{} does not contain requested annual LUH1 year {year}",
-                path.display()
-            ))
-        })?;
+    let time_variable = nc(path, file.variable("time"))?;
+    let time_encoding = parse_time_encoding(path, time_variable)?;
+    let time_index = annual_time_index(path, &times, time_encoding, year)?;
+    let cells = checked_grid_cells(longitudes.len(), latitudes.len())?;
     let dimension_index = |name: &str| {
         dimensions
             .iter()
             .position(|dimension| *dimension == name)
             .expect("validated dimension")
     };
+    for (dimension, expected) in [
+        ("lon", longitudes.len()),
+        ("lat", latitudes.len()),
+        ("time", times.len()),
+    ] {
+        if variable.dimensions[dimension_index(dimension)].size != expected as u64 {
+            return Err(invalid(
+                path,
+                state.variable,
+                format!("{dimensions:?}"),
+                "state variable dimensions do not match its coordinate axes",
+            ));
+        }
+    }
     let mut selections = vec![
         NcSliceInfoElem::Slice {
             start: 0,
@@ -412,7 +450,7 @@ fn read_component(path: &Path, state: StateFile, year: i32) -> Result<Component>
     let missing = variable
         .attribute("missing_value")
         .and_then(|attribute| attribute.value.as_f64());
-    let mut values = vec![None; longitudes.len() * latitudes.len()];
+    let mut values = vec![None; cells];
     let spatial_dimensions: Vec<_> = dimensions
         .iter()
         .copied()
@@ -452,6 +490,7 @@ fn read_component(path: &Path, state: StateFile, year: i32) -> Result<Component>
         longitudes,
         latitudes,
         times,
+        time_encoding,
         values,
     })
 }
@@ -467,6 +506,14 @@ fn read_axis(file: &NcFile, path: &Path, name: &'static str) -> Result<Vec<f64>>
             name,
             format!("{:?}", variable.dtype),
             "expected a one-dimensional floating-point coordinate variable",
+        ));
+    }
+    if variable.dimensions[0].size > MAX_AXIS_VALUES {
+        return Err(invalid(
+            path,
+            name,
+            variable.dimensions[0].size.to_string(),
+            "coordinate axis exceeds the LUH1 safety limit",
         ));
     }
     let values: Vec<_> = nc(path, file.read_variable_as_f64(name))?
@@ -486,6 +533,68 @@ fn read_axis(file: &NcFile, path: &Path, name: &'static str) -> Result<Vec<f64>>
         ));
     }
     Ok(values)
+}
+
+fn parse_time_encoding(path: &Path, time: &netcdf_reader::NcVariable) -> Result<TimeEncoding> {
+    let units = time
+        .attribute("units")
+        .and_then(|attribute| attribute.value.as_string());
+    let calendar = time
+        .attribute("calendar")
+        .and_then(|attribute| attribute.value.as_string());
+    if calendar
+        .as_deref()
+        .is_some_and(|value| !matches!(value, "standard" | "proleptic_gregorian"))
+    {
+        return Err(invalid(
+            path,
+            "calendar",
+            format!("{calendar:?}"),
+            "unsupported LUH1 calendar; expected standard or proleptic_gregorian",
+        ));
+    }
+    match units.as_deref() {
+        None | Some("year") | Some("years") => Ok(TimeEncoding::CalendarYear),
+        Some(units) => parse_years_since(units)
+            .map(TimeEncoding::YearsSince)
+            .ok_or_else(|| {
+                invalid(
+                    path,
+                    "time units",
+                    units.into(),
+                    "expected calendar years or 'years since YYYY-01-01'",
+                )
+            }),
+    }
+}
+
+fn parse_years_since(units: &str) -> Option<i32> {
+    let date = units.strip_prefix("years since ")?;
+    let year = date.get(..4)?.parse().ok()?;
+    let suffix = date.get(4..)?;
+    matches!(suffix, "-01-01" | "-01-01 00:00:00" | "-01-01T00:00:00").then_some(year)
+}
+
+fn annual_time_index(
+    path: &Path,
+    times: &[f64],
+    encoding: TimeEncoding,
+    year: i32,
+) -> Result<usize> {
+    let target = match encoding {
+        TimeEncoding::CalendarYear => f64::from(year),
+        TimeEncoding::YearsSince(origin) => f64::from(year - origin),
+    };
+    times
+        .iter()
+        .position(|value| (*value - target).abs() <= AXIS_EPSILON)
+        .ok_or_else(|| {
+            Error::Validation(format!(
+                "{} does not contain requested annual LUH1 year {year} ({})",
+                path.display(),
+                encoding.describe()
+            ))
+        })
 }
 
 fn require_same_axis(
@@ -508,6 +617,18 @@ fn require_same_axis(
         ));
     }
     Ok(())
+}
+
+fn checked_grid_cells(longitudes: usize, latitudes: usize) -> Result<usize> {
+    let cells = longitudes.checked_mul(latitudes).ok_or_else(|| {
+        Error::Validation("LUH1 grid dimensions overflow the address space".into())
+    })?;
+    if cells > MAX_GRID_CELLS {
+        return Err(Error::Validation(format!(
+            "LUH1 grid has {cells} cells, exceeding the {MAX_GRID_CELLS}-cell safety limit"
+        )));
+    }
+    Ok(cells)
 }
 
 fn strictly_monotonic(values: &[f64]) -> bool {
@@ -562,7 +683,10 @@ fn invalid(path: &Path, field: &'static str, value: String, message: &'static st
 mod tests {
     use std::path::Path;
 
-    use super::{LandUseStates, LuhGrid, STATES, nearest_axis_index, require_same_axis};
+    use super::{
+        LandUseStates, LuhGrid, MAX_GRID_CELLS, STATES, TimeEncoding, annual_time_index,
+        checked_grid_cells, nearest_axis_index, parse_years_since, require_same_axis,
+    };
 
     #[test]
     fn annual_luh_states_map_directly_into_an_exhaustive_profile() {
@@ -588,10 +712,10 @@ mod tests {
         assert!(
             LandUseStates {
                 crop: None,
-                pasture: Some(0.0),
-                urban: Some(0.0),
-                primary: Some(0.0),
-                secondary: Some(0.0)
+                pasture: None,
+                urban: None,
+                primary: None,
+                secondary: None
             }
             .profile()
             .unwrap()
@@ -612,7 +736,78 @@ mod tests {
     }
 
     #[test]
-    fn malformed_or_materially_non_exhaustive_states_are_rejected() {
+    fn partially_missing_terrestrial_states_are_rejected() {
+        assert!(
+            LandUseStates {
+                crop: Some(0.2),
+                pasture: Some(0.3),
+                urban: None,
+                primary: Some(0.4),
+                secondary: Some(0.1)
+            }
+            .profile()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn positive_terrestrial_state_sums_below_one_are_conditionally_normalized() {
+        let (profile, normalized) = LandUseStates {
+            crop: Some(0.1),
+            pasture: Some(0.1),
+            urban: Some(0.0),
+            primary: Some(0.2),
+            secondary: Some(0.1),
+        }
+        .profile()
+        .unwrap()
+        .unwrap();
+        assert!(normalized);
+        assert_eq!(profile.cropland().basis_points(), 2_000);
+        assert_eq!(profile.grazing().basis_points(), 2_000);
+        assert_eq!(profile.built_up().basis_points(), 0);
+        assert_eq!(profile.natural().basis_points(), 6_000);
+    }
+
+    #[test]
+    fn direct_and_cf_offset_annual_time_axes_select_the_requested_year() {
+        let path = Path::new("gcrop.nc4");
+        assert_eq!(
+            annual_time_index(
+                path,
+                &[1500.0, 1501.0, 1544.0],
+                TimeEncoding::CalendarYear,
+                1544
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            annual_time_index(
+                path,
+                &[0.0, 1.0, 44.0],
+                TimeEncoding::YearsSince(1500),
+                1544
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(parse_years_since("years since 1500-01-01"), Some(1500));
+        assert_eq!(
+            parse_years_since("years since 1500-01-01 00:00:00"),
+            Some(1500)
+        );
+        assert_eq!(parse_years_since("days since 1500-01-01"), None);
+    }
+
+    #[test]
+    fn grid_size_is_bounded_before_annual_slice_allocation() {
+        assert!(checked_grid_cells(720, 360).is_ok());
+        assert!(checked_grid_cells(MAX_GRID_CELLS + 1, 1).is_err());
+    }
+
+    #[test]
+    fn malformed_or_materially_overfull_states_are_rejected() {
         assert!(
             LandUseStates {
                 crop: Some(0.5),
@@ -627,10 +822,10 @@ mod tests {
         assert!(
             LandUseStates {
                 crop: Some(0.5),
-                pasture: Some(0.0),
+                pasture: Some(0.5),
                 urban: Some(0.0),
                 primary: Some(0.0),
-                secondary: Some(0.0)
+                secondary: Some(0.01)
             }
             .profile()
             .is_err()
@@ -644,7 +839,7 @@ mod tests {
             pasture: Some(0.3),
             urban: Some(0.1),
             primary: Some(0.3),
-            secondary: Some(0.100_000_000_1),
+            secondary: Some(0.100_000_5),
         }
         .profile()
         .unwrap()
