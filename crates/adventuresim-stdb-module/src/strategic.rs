@@ -113,7 +113,7 @@ impl EnemyArchetype {
                 reach: 0.8,
                 ranged_force_joules: 0.0,
                 armored: true,
-                drop: Some("short_sword"),
+                drop: Some("katzbalger"),
             },
             Self::Goblin => EnemyProfile {
                 ranged: true,
@@ -129,7 +129,7 @@ impl EnemyArchetype {
                 reach: 20.0,
                 ranged_force_joules: 40.0,
                 armored: false,
-                drop: Some("short_bow"),
+                drop: Some("self_bow"),
             },
             Self::Spider => EnemyProfile {
                 ranged: false,
@@ -370,11 +370,11 @@ mod healing_tests {
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
         let goblin = EnemyArchetype::from_label("forest goblins").profile();
         assert!(goblin.ranged);
-        assert_eq!(goblin.drop, Some("short_bow"));
+        assert_eq!(goblin.drop, Some("self_bow"));
 
         let bandit = EnemyArchetype::from_label("guild thieves").profile();
         assert!(bandit.armored);
-        assert_eq!(autoresolve_drop("guild thieves"), Some("short_sword"));
+        assert_eq!(autoresolve_drop("guild thieves"), Some("katzbalger"));
 
         assert_eq!(autoresolve_drop("giant spiders"), None);
         assert_eq!(autoresolve_drop("unknown menace"), Some("club"));
@@ -2698,21 +2698,16 @@ pub fn seed_bot_join_requests(
         skills.surgeon_hours = 1_000_000.0;
         skills.charisma_hours = 1_000_000.0;
         skills.faith_hours = 1_000_000.0;
-        crate::character::add_and_equip_item(
-            ctx,
-            id,
-            "bot_multirole_weapon",
-            crate::ItemSlot::RightHolding,
-        )?;
+        crate::character::add_and_equip_item(ctx, id, "halberd", crate::ItemSlot::RightHolding)?;
         if role.requirements.full_armor {
             for (item, slot) in [
-                ("bot_plate_arm", crate::ItemSlot::LeftArm),
-                ("bot_plate_arm", crate::ItemSlot::RightArm),
-                ("bot_plate_leg", crate::ItemSlot::LeftLeg),
-                ("bot_plate_leg", crate::ItemSlot::RightLeg),
-                ("bot_plate_chest", crate::ItemSlot::Chest),
-                ("bot_plate_stomach", crate::ItemSlot::Stomach),
-                ("bot_plate_helmet", crate::ItemSlot::Head),
+                ("vambrace", crate::ItemSlot::LeftArm),
+                ("vambrace", crate::ItemSlot::RightArm),
+                ("greave", crate::ItemSlot::LeftLeg),
+                ("greave", crate::ItemSlot::RightLeg),
+                ("cuirass", crate::ItemSlot::Chest),
+                ("fauld", crate::ItemSlot::Stomach),
+                ("close_helmet", crate::ItemSlot::Head),
             ] {
                 crate::character::add_and_equip_item(ctx, id, item, slot)?;
             }
@@ -2760,7 +2755,7 @@ pub fn seed_bot_join_requests(
                 crate::character::add_and_equip_item(
                     ctx,
                     id,
-                    "short_bow",
+                    "self_bow",
                     crate::ItemSlot::RightHolding,
                 )?;
             } else if requirements.ranged {

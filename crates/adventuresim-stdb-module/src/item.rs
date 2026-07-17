@@ -83,6 +83,697 @@ pub struct Item {
     pub water_capacity_ml: u32,
 }
 
+/// A static item definition used to seed the strategic item table.
+///
+/// The values use the combat quantities documented in `wiki/tactical/Combat.md`.
+/// `base_value` is a relative gameplay price, not a claim about a historical
+/// market price; the historical basis and gameplay inferences are recorded in
+/// `docs/EQUIPMENT.md`.
+#[derive(Clone, Copy, Debug)]
+struct EquipmentDefinition {
+    id: &'static str,
+    weight: f32,
+    base_value: u32,
+    slot: ItemSlot,
+    kind: ItemKind,
+    accuracy: f32,
+    reach: f32,
+    block: f32,
+    coverage: f32,
+    penetration: f32,
+    resistance: f32,
+    padding: f32,
+    flexibility: f32,
+    range_of_motion: f32,
+    precise: bool,
+    balance: f32,
+    melee: bool,
+    ranged: bool,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
+}
+
+const fn weapon(
+    id: &'static str,
+    weight: f32,
+    base_value: u32,
+    accuracy: f32,
+    penetration: f32,
+    reach: f32,
+    balance: f32,
+    precise: bool,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
+    ranged: bool,
+) -> EquipmentDefinition {
+    EquipmentDefinition {
+        id,
+        weight,
+        base_value,
+        slot: ItemSlot::None,
+        kind: ItemKind::Weapon,
+        accuracy,
+        reach,
+        block: 0.0,
+        coverage: 0.0,
+        penetration,
+        resistance: 0.0,
+        padding: 0.0,
+        flexibility: 0.0,
+        range_of_motion: 0.0,
+        precise,
+        balance,
+        melee: !ranged,
+        ranged,
+        blunt,
+        slash,
+        pierce,
+    }
+}
+
+const fn armor(
+    id: &'static str,
+    weight: f32,
+    base_value: u32,
+    slot: ItemSlot,
+    coverage: f32,
+    resistance: f32,
+    padding: f32,
+    flexibility: f32,
+    range_of_motion: f32,
+) -> EquipmentDefinition {
+    EquipmentDefinition {
+        id,
+        weight,
+        base_value,
+        slot,
+        kind: ItemKind::Armor,
+        accuracy: 0.0,
+        reach: 0.0,
+        block: 0.0,
+        coverage,
+        penetration: 0.0,
+        resistance,
+        padding,
+        flexibility,
+        range_of_motion,
+        precise: false,
+        balance: 0.0,
+        melee: false,
+        ranged: false,
+        blunt: false,
+        slash: false,
+        pierce: false,
+    }
+}
+
+const fn shield(id: &'static str, weight: f32, base_value: u32, block: f32) -> EquipmentDefinition {
+    EquipmentDefinition {
+        id,
+        weight,
+        base_value,
+        slot: ItemSlot::None,
+        kind: ItemKind::Shield,
+        accuracy: 0.0,
+        reach: 0.0,
+        block,
+        coverage: 0.0,
+        penetration: 0.0,
+        resistance: 0.0,
+        padding: 0.0,
+        flexibility: 0.0,
+        range_of_motion: 0.0,
+        precise: false,
+        balance: 0.0,
+        melee: false,
+        ranged: false,
+        blunt: false,
+        slash: false,
+        pierce: false,
+    }
+}
+
+// Common civilian, militia, professional, elite, and older-serviceable arms.
+// Ranged reach is the current autoresolver range in metres; melee reach is in
+// metres. Weapon precision and penetration follow the Combat.md calibration.
+const WEAPONS: &[EquipmentDefinition] = &[
+    weapon(
+        "club", 1.2, 1, 0.5, 0.1, 0.7, 0.7, false, true, false, false, false,
+    ),
+    weapon(
+        "walking_staff",
+        1.5,
+        1,
+        0.8,
+        0.1,
+        1.8,
+        0.3,
+        false,
+        true,
+        false,
+        false,
+        false,
+    ),
+    weapon(
+        "hand_axe", 0.9, 4, 1.0, 1.0, 0.7, 0.65, false, false, true, false, false,
+    ),
+    weapon(
+        "flanged_mace",
+        1.2,
+        10,
+        0.7,
+        0.5,
+        0.75,
+        0.65,
+        false,
+        true,
+        false,
+        false,
+        false,
+    ),
+    weapon(
+        "war_hammer",
+        1.4,
+        14,
+        0.7,
+        0.5,
+        0.8,
+        0.55,
+        false,
+        true,
+        false,
+        true,
+        false,
+    ),
+    weapon(
+        "utility_knife",
+        0.2,
+        2,
+        1.5,
+        1.0,
+        0.3,
+        0.8,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "baselard", 0.4, 6, 1.5, 1.0, 0.4, 0.75, false, false, true, true, false,
+    ),
+    weapon(
+        "rondel_dagger",
+        0.45,
+        12,
+        2.0,
+        4.0,
+        0.4,
+        0.8,
+        true,
+        false,
+        false,
+        true,
+        false,
+    ),
+    weapon(
+        "misericorde",
+        0.35,
+        14,
+        2.0,
+        4.0,
+        0.4,
+        0.75,
+        true,
+        false,
+        false,
+        true,
+        false,
+    ),
+    weapon(
+        "bauernwehr",
+        0.7,
+        8,
+        1.2,
+        1.0,
+        0.65,
+        0.7,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "katzbalger",
+        1.1,
+        18,
+        1.5,
+        1.0,
+        0.8,
+        0.55,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "arming_sword",
+        1.3,
+        28,
+        1.5,
+        1.0,
+        0.95,
+        0.5,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "longsword",
+        1.5,
+        40,
+        1.5,
+        1.0,
+        1.25,
+        0.45,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "messer", 1.2, 20, 1.2, 1.0, 1.0, 0.6, false, false, true, true, false,
+    ),
+    weapon(
+        "kriegsmesser",
+        1.6,
+        35,
+        1.0,
+        1.0,
+        1.25,
+        0.65,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "rapier", 1.1, 45, 2.0, 4.0, 1.05, 0.45, true, false, false, true, false,
+    ),
+    weapon(
+        "zweihander",
+        2.8,
+        60,
+        0.7,
+        1.0,
+        1.8,
+        0.5,
+        false,
+        false,
+        true,
+        true,
+        false,
+    ),
+    weapon(
+        "hunting_spear",
+        1.5,
+        6,
+        1.5,
+        2.0,
+        2.2,
+        0.45,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    weapon(
+        "military_pike",
+        4.0,
+        9,
+        1.3,
+        2.0,
+        4.2,
+        0.85,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    weapon(
+        "halberd", 2.4, 24, 1.1, 2.0, 2.0, 0.75, false, true, true, true, false,
+    ),
+    weapon(
+        "self_bow", 0.8, 8, 1.5, 2.0, 60.0, 0.35, false, false, false, true, true,
+    ),
+    weapon(
+        "longbow", 1.0, 18, 1.8, 2.0, 120.0, 0.4, false, false, false, true, true,
+    ),
+    weapon(
+        "light_crossbow",
+        2.2,
+        28,
+        2.0,
+        4.0,
+        80.0,
+        0.45,
+        true,
+        false,
+        false,
+        true,
+        true,
+    ),
+    weapon(
+        "heavy_crossbow",
+        3.5,
+        50,
+        2.0,
+        4.0,
+        110.0,
+        0.5,
+        true,
+        false,
+        false,
+        true,
+        true,
+    ),
+    weapon(
+        "matchlock_arquebus",
+        4.5,
+        55,
+        1.5,
+        1.0,
+        90.0,
+        0.55,
+        false,
+        false,
+        false,
+        true,
+        true,
+    ),
+    weapon(
+        "hooked_arquebus",
+        7.0,
+        80,
+        1.2,
+        1.0,
+        130.0,
+        0.65,
+        false,
+        false,
+        false,
+        true,
+        true,
+    ),
+];
+
+const SHIELDS: &[EquipmentDefinition] = &[
+    shield("buckler", 1.0, 5, 1.5),
+    shield("targe", 2.5, 8, 2.5),
+    shield("heater_shield", 3.0, 10, 3.0),
+    shield("round_shield", 3.5, 10, 3.0),
+    shield("pavise", 8.0, 20, 5.0),
+];
+
+// Helmets deliberately receive more entries than other armor slots: helmets
+// remained independently useful, and armories retained older patterns.
+const ARMOR: &[EquipmentDefinition] = &[
+    armor(
+        "arming_cap",
+        0.35,
+        2,
+        ItemSlot::Head,
+        0.15,
+        20.0,
+        35.0,
+        0.4,
+        0.95,
+    ),
+    armor(
+        "mail_coif",
+        1.5,
+        18,
+        ItemSlot::Head,
+        0.65,
+        70.0,
+        30.0,
+        0.8,
+        0.85,
+    ),
+    armor(
+        "kettle_hat",
+        1.8,
+        20,
+        ItemSlot::Head,
+        0.6,
+        90.0,
+        25.0,
+        0.2,
+        0.75,
+    ),
+    armor(
+        "barbute",
+        2.5,
+        35,
+        ItemSlot::Head,
+        0.75,
+        95.0,
+        30.0,
+        0.15,
+        0.65,
+    ),
+    armor(
+        "sallet",
+        2.6,
+        40,
+        ItemSlot::Head,
+        0.8,
+        100.0,
+        30.0,
+        0.2,
+        0.65,
+    ),
+    armor(
+        "visored_sallet",
+        3.0,
+        50,
+        ItemSlot::Head,
+        0.9,
+        105.0,
+        35.0,
+        0.15,
+        0.55,
+    ),
+    armor(
+        "burgonet",
+        2.3,
+        55,
+        ItemSlot::Head,
+        0.75,
+        100.0,
+        30.0,
+        0.2,
+        0.7,
+    ),
+    armor(
+        "close_helmet",
+        3.0,
+        75,
+        ItemSlot::Head,
+        0.9,
+        110.0,
+        35.0,
+        0.15,
+        0.55,
+    ),
+    armor(
+        "quilted_sleeve",
+        0.6,
+        5,
+        ItemSlot::AnyArm,
+        0.45,
+        50.0,
+        40.0,
+        0.35,
+        0.9,
+    ),
+    armor(
+        "mail_sleeve",
+        1.8,
+        28,
+        ItemSlot::AnyArm,
+        0.65,
+        70.0,
+        30.0,
+        0.8,
+        0.8,
+    ),
+    armor(
+        "vambrace",
+        0.9,
+        35,
+        ItemSlot::AnyArm,
+        0.65,
+        95.0,
+        25.0,
+        0.15,
+        0.8,
+    ),
+    armor(
+        "padded_chausses",
+        1.2,
+        8,
+        ItemSlot::AnyLeg,
+        0.45,
+        50.0,
+        40.0,
+        0.35,
+        0.9,
+    ),
+    armor(
+        "mail_chausses",
+        3.5,
+        45,
+        ItemSlot::AnyLeg,
+        0.65,
+        70.0,
+        30.0,
+        0.8,
+        0.8,
+    ),
+    armor(
+        "greave",
+        1.4,
+        45,
+        ItemSlot::AnyLeg,
+        0.65,
+        95.0,
+        25.0,
+        0.15,
+        0.78,
+    ),
+    armor(
+        "arming_doublet",
+        2.5,
+        12,
+        ItemSlot::Chest,
+        0.6,
+        60.0,
+        45.0,
+        0.3,
+        0.88,
+    ),
+    armor(
+        "jack_of_plates",
+        5.0,
+        35,
+        ItemSlot::Chest,
+        0.7,
+        85.0,
+        35.0,
+        0.45,
+        0.8,
+    ),
+    armor(
+        "brigandine",
+        5.5,
+        50,
+        ItemSlot::Chest,
+        0.8,
+        100.0,
+        40.0,
+        0.4,
+        0.75,
+    ),
+    armor(
+        "mail_shirt",
+        6.0,
+        55,
+        ItemSlot::Chest,
+        0.75,
+        70.0,
+        35.0,
+        0.8,
+        0.82,
+    ),
+    armor(
+        "breastplate",
+        3.5,
+        70,
+        ItemSlot::Chest,
+        0.85,
+        120.0,
+        45.0,
+        0.05,
+        0.72,
+    ),
+    armor(
+        "cuirass",
+        6.0,
+        110,
+        ItemSlot::Chest,
+        0.9,
+        120.0,
+        50.0,
+        0.08,
+        0.65,
+    ),
+    armor(
+        "padded_skirt",
+        0.8,
+        5,
+        ItemSlot::Stomach,
+        0.45,
+        50.0,
+        40.0,
+        0.35,
+        0.92,
+    ),
+    armor(
+        "mail_skirt",
+        2.5,
+        30,
+        ItemSlot::Stomach,
+        0.65,
+        70.0,
+        30.0,
+        0.8,
+        0.85,
+    ),
+    armor(
+        "fauld",
+        1.6,
+        40,
+        ItemSlot::Stomach,
+        0.7,
+        95.0,
+        35.0,
+        0.2,
+        0.78,
+    ),
+    armor(
+        "tassets",
+        2.0,
+        55,
+        ItemSlot::Stomach,
+        0.75,
+        100.0,
+        35.0,
+        0.18,
+        0.75,
+    ),
+];
+
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
@@ -114,217 +805,32 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     });
     define_clothing(ctx, "linen_tunic", 0.6);
 
-    define_shield(ctx, "buckler", 1.0, 1.0);
-
-    define_weapon(
-        ctx,
-        "short_sword",
-        1.5,
-        1.5,
-        1.0,
-        1.0,
-        0.5,
-        false,
-        true,
-        false,
-        false,
-        true,
-        true,
-    );
-    define_weapon(
-        ctx, "knife", 0.5, 2.0, 1.0, 1.0, 0.5, false, true, false, false, true, true,
-    );
-    define_weapon(
-        ctx,
-        "zweihander",
-        6.0,
-        0.6,
-        1.0,
-        2.0,
-        0.3,
-        false,
-        true,
-        false,
-        false,
-        true,
-        false,
-    );
-    define_weapon(
-        ctx, "club", 2.0, 0.5, 0.5, 1.0, 0.3, false, true, false, true, false, false,
-    );
-    define_weapon(
-        ctx,
-        "short_bow",
-        1.0,
-        1.2,
-        1.0,
-        20.0,
-        0.4,
-        false,
-        false,
-        true,
-        false,
-        false,
-        true,
-    );
-    define_weapon(
-        ctx,
-        "bot_multirole_weapon",
-        4.0,
-        2.0,
-        1.0,
-        2.0,
-        0.5,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-    );
-    define_weapon(
-        ctx, "rapier", 1.2, 2.0, 1.2, 1.8, 0.7, true, true, false, false, false, true,
-    );
-    define_weapon(
-        ctx, "rondel", 0.5, 2.0, 1.0, 0.6, 0.8, true, true, false, false, false, true,
-    );
-    define_weapon(
-        ctx,
-        "misericorde",
-        0.5,
-        2.0,
-        1.0,
-        0.7,
-        0.8,
-        true,
-        true,
-        false,
-        false,
-        false,
-        true,
-    );
-
-    define_armor(
-        ctx,
-        "leather_armguard",
-        0.5,
-        ItemSlot::AnyArm,
-        0.2,
-        60.0,
-        40.0,
-        1.0,
-        0.9,
-    );
-    define_armor(
-        ctx,
-        "leather_helmet",
-        0.5,
-        ItemSlot::Head,
-        0.3,
-        60.0,
-        40.0,
-        1.0,
-        0.9,
-    );
-    define_armor(
-        ctx,
-        "leather_vest",
-        0.5,
-        ItemSlot::Chest,
-        0.3,
-        60.0,
-        40.0,
-        1.0,
-        0.9,
-    );
-    define_armor(
-        ctx,
-        "leather_belt",
-        0.5,
-        ItemSlot::Stomach,
-        0.2,
-        60.0,
-        40.0,
-        1.0,
-        0.9,
-    );
-    define_armor(
-        ctx,
-        "leather_cuisse",
-        0.5,
-        ItemSlot::AnyLeg,
-        0.4,
-        60.0,
-        40.0,
-        1.0,
-        0.9,
-    );
-    define_armor(
-        ctx,
-        "steel_sallet",
-        2.0,
-        ItemSlot::Head,
-        0.7,
-        70.0,
-        40.0,
-        0.4,
-        0.3,
-    );
-    define_armor(
-        ctx,
-        "bot_plate_arm",
-        1.5,
-        ItemSlot::AnyArm,
-        0.9,
-        80.0,
-        60.0,
-        0.4,
-        0.4,
-    );
-    define_armor(
-        ctx,
-        "bot_plate_leg",
-        2.0,
-        ItemSlot::AnyLeg,
-        0.9,
-        80.0,
-        60.0,
-        0.4,
-        0.4,
-    );
-    define_armor(
-        ctx,
-        "bot_plate_chest",
-        3.0,
-        ItemSlot::Chest,
-        0.9,
-        80.0,
-        60.0,
-        0.4,
-        0.4,
-    );
-    define_armor(
-        ctx,
-        "bot_plate_stomach",
-        2.0,
-        ItemSlot::Stomach,
-        0.9,
-        80.0,
-        60.0,
-        0.4,
-        0.4,
-    );
-    define_armor(
-        ctx,
-        "bot_plate_helmet",
-        2.0,
-        ItemSlot::Head,
-        0.9,
-        80.0,
-        60.0,
-        0.4,
-        0.4,
-    );
+    for definition in WEAPONS.iter().chain(SHIELDS).chain(ARMOR) {
+        ctx.db.item().insert(Item {
+            id: definition.id.into(),
+            weight: definition.weight,
+            base_value: Some(definition.base_value),
+            slot: definition.slot,
+            kind: definition.kind,
+            accuracy: definition.accuracy,
+            reach: definition.reach,
+            block: definition.block,
+            coverage: definition.coverage,
+            penetration: definition.penetration,
+            resistance: definition.resistance,
+            padding: definition.padding,
+            flexibility: definition.flexibility,
+            range_of_motion: definition.range_of_motion,
+            precise: definition.precise,
+            balance: definition.balance,
+            melee: definition.melee,
+            ranged: definition.ranged,
+            blunt: definition.blunt,
+            slash: definition.slash,
+            pierce: definition.pierce,
+            ..Item::default()
+        });
+    }
 
     Ok(())
 }
@@ -333,7 +839,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 /// numeric weapon-precision scale was introduced.
 #[reducer]
 pub fn calibrate_weapon_precision(ctx: &ReducerContext) {
-    for (item_id, accuracy) in [("club", 0.5), ("bot_multirole_weapon", 2.0)] {
+    for (item_id, accuracy) in [("club", 0.5), ("halberd", 1.1)] {
         if let Some(mut item) = ctx.db.item().id().find(item_id.to_string()) {
             item.accuracy = accuracy;
             ctx.db.item().id().update(item);
@@ -502,5 +1008,71 @@ pub fn change_inventory_item(
 
     if !is_found {
         add_inventory_item(ctx, character_id, item_id, by_quantity as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn historical_equipment_catalog_is_well_formed() {
+        let definitions: Vec<_> = WEAPONS.iter().chain(SHIELDS).chain(ARMOR).collect();
+        let mut ids = HashSet::new();
+
+        assert!(WEAPONS.len() > ARMOR.len());
+        assert_eq!(
+            ARMOR
+                .iter()
+                .filter(|definition| definition.slot == ItemSlot::Head)
+                .count(),
+            8
+        );
+
+        for definition in definitions {
+            assert!(
+                ids.insert(definition.id),
+                "duplicate item id: {}",
+                definition.id
+            );
+            assert!(definition.weight > 0.0, "{} has no weight", definition.id);
+            assert!(definition.base_value > 0, "{} has no value", definition.id);
+            assert!(
+                !definition.id.starts_with("bot_"),
+                "{} is a placeholder rather than historical equipment",
+                definition.id
+            );
+
+            match definition.kind {
+                ItemKind::Weapon => {
+                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert!(definition.accuracy > 0.0);
+                    assert!(definition.reach > 0.0);
+                    assert!(definition.blunt || definition.slash || definition.pierce);
+                    assert_ne!(definition.melee, definition.ranged);
+                }
+                ItemKind::Armor => {
+                    assert!(matches!(
+                        definition.slot,
+                        ItemSlot::AnyArm
+                            | ItemSlot::AnyLeg
+                            | ItemSlot::Chest
+                            | ItemSlot::Stomach
+                            | ItemSlot::Head
+                    ));
+                    assert!((0.0..=1.0).contains(&definition.coverage));
+                    assert!(definition.resistance > 0.0);
+                    assert!(definition.padding > 0.0);
+                    assert!((0.0..=1.0).contains(&definition.flexibility));
+                    assert!((0.0..=1.0).contains(&definition.range_of_motion));
+                }
+                ItemKind::Shield => {
+                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert!((1.0..=5.0).contains(&definition.block));
+                }
+                _ => unreachable!("equipment catalog contains a non-equipment item"),
+            }
+        }
     }
 }
