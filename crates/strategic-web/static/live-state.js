@@ -18,6 +18,7 @@
   const locationMatches = ({ kind, id }) => {
     // Character selection is an intentional escape from the current location.
     if (location.pathname.startsWith("/characters")) return true;
+    if (kind === "camp") return location.pathname === "/camp";
     if (!kind || !id) return location.pathname === "/characters";
     const encoded = encodeURIComponent(id);
     if (kind === "quest") return location.pathname.startsWith(`/locations/quest/${encoded}`);

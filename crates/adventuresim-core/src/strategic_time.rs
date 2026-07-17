@@ -1,9 +1,40 @@
 //! Pure calculations used by the strategic clock, training, and recovery systems.
 
+use crate::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY;
+
 pub const MINUTES_PER_DAY: u64 = 24 * 60;
 pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
 /// Natural recovery while taking full settlement downtime.
 pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
+
+/// The fatigue inputs that determine one party member's available marching
+/// time.  Keeping this small and data-only lets both the strategic reducer and
+/// the HTML travel preview use exactly the same calculation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TravelFatigueInputs {
+    pub fatigue_capacity: f32,
+    pub calories_used: f32,
+}
+
+/// Return the next leg's length for the least-rested party member. A one-minute
+/// minimum lets an already-tired party establish camp rather than becoming
+/// stranded. `None` represents a party with no members.
+pub fn party_travel_leg_minutes(
+    members: &[TravelFatigueInputs],
+    fatigue_percent: u8,
+) -> Option<u64> {
+    let threshold = f32::from(fatigue_percent) / 100.0;
+    members
+        .iter()
+        .map(|member| {
+            let remaining_calories =
+                (threshold * member.fatigue_capacity - member.calories_used).max(0.0);
+            (remaining_calories / STRATEGIC_TRAVEL_KCAL_PER_DAY * MINUTES_PER_DAY as f32).ceil()
+                as u64
+        })
+        .map(|minutes| minutes.max(1))
+        .min()
+}
 
 /// Convert real elapsed time to authoritative strategic minutes.
 pub fn elapsed_official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
@@ -123,5 +154,34 @@ mod tests {
     #[test]
     fn healing_is_capped_at_full_health() {
         assert_eq!(healed_health(0.98, MINUTES_PER_DAY), 1.0);
+    }
+
+    #[test]
+    fn travel_leg_uses_the_least_rested_member() {
+        let members = [
+            TravelFatigueInputs {
+                fatigue_capacity: 6_000.0,
+                calories_used: 0.0,
+            },
+            TravelFatigueInputs {
+                fatigue_capacity: 6_000.0,
+                calories_used: 1_500.0,
+            },
+        ];
+        assert_eq!(party_travel_leg_minutes(&members, 50), Some(360));
+    }
+
+    #[test]
+    fn exhausted_party_can_still_make_camp() {
+        assert_eq!(
+            party_travel_leg_minutes(
+                &[TravelFatigueInputs {
+                    fatigue_capacity: 6_000.0,
+                    calories_used: 9_000.0,
+                }],
+                50,
+            ),
+            Some(1)
+        );
     }
 }

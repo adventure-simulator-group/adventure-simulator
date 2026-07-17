@@ -12,7 +12,7 @@ use crate::{
     spacetimedb::Character,
     templates::settlement::{
         map_destination_detail, map_destination_list, party_portrait_overlay, settlement_chat_area,
-        visual_stage,
+        travel_planner_bar, visual_stage,
     },
 };
 
@@ -37,6 +37,7 @@ pub fn quest_location_base_page(
             can_fight,
             resolved,
             autoresolve_report,
+            None,
         ))
         aside class="right-sidebar" aria-label="Location details" {}
     };
@@ -78,8 +79,17 @@ pub fn quest_location_map_page(
             can_fight,
             resolved,
             autoresolve_report,
+            Some(travel_planner_bar(selected, 50)),
         ))
-        (map_destination_detail(selected, can_travel, false, None))
+        (map_destination_detail(
+            selected,
+            can_travel,
+            false,
+            None,
+            None,
+            false,
+            &format!("/locations/quest/{}/map", quest.id),
+        ))
     };
     super::quest_location_layout_with_session(
         &format!("{} map", quest.title),
@@ -99,6 +109,7 @@ fn quest_location_center(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    travel_planner: Option<Markup>,
 ) -> Markup {
     html! {
         main class="center-content settlement-main quest-location-main" {
@@ -119,12 +130,15 @@ fn quest_location_center(
                         form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
+                    } @else if autoresolve_report.is_some_and(|report| report.victor == "enemies") {
+                        span class="badge badge-danger" { "Defeated — rest before trying again" }
                     } @else {
                         span class="badge badge-info" { "Waiting for party leader" }
                     }
                 }
                 }
             }
+            @if let Some(travel_planner) = travel_planner { (travel_planner) }
             @if let Some(report) = autoresolve_report {
                 section class="autoresolve-report" aria-label="Autoresolve report" {
                     h2 { "Combat summary" }
@@ -206,6 +220,7 @@ pub fn quest_location_page(
             can_fight,
             resolved,
             autoresolve_report,
+            None,
         ))
 
         aside class="right-sidebar" {

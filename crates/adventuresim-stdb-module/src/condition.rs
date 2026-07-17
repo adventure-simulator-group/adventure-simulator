@@ -1343,6 +1343,39 @@ pub fn apply_rest_condition(
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
+/// Rest performed away from a settlement. Camps relieve fatigue and permit
+/// natural recovery but do not refill rations or water.
+pub fn apply_camp_rest_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let days = elapsed_minutes as f32 / (24.0 * 60.0);
+    let mut condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    condition.current_blood_ml = (condition.current_blood_ml
+        + condition.maximum_blood_ml * BLOOD_RECOVERY_FRACTION_PER_DAY * days)
+        .min(condition.maximum_blood_ml);
+    ctx.db
+        .character_condition()
+        .character_id()
+        .update(condition);
+    let mut stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
+    stats.calories_used = (stats.calories_used - TRAVEL_CALORIES_PER_DAY * days).max(0.0);
+    ctx.db.character_stats().character_id().update(stats);
+    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+}
+
 pub fn apply_blood_loss(
     ctx: &ReducerContext,
     character_id: u64,

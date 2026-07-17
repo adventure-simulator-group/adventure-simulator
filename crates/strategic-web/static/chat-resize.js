@@ -18,6 +18,9 @@
   const setHeight = (height, persist = true) => {
     const next = Math.round(clampHeight(height));
     chat.style.setProperty("--chat-height", `${next}px`);
+    // The quest combat controls share this stage with the floating chat. Keep
+    // their reserved space in lockstep with a user-resized chat panel.
+    container.style.setProperty("--chat-panel-height", `${next}px`);
     handle.setAttribute("aria-valuemin", String(minimumHeight()));
     handle.setAttribute("aria-valuenow", String(next));
     handle.setAttribute("aria-valuemax", String(Math.round(maximumHeight())));
