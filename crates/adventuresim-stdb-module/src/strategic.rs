@@ -508,6 +508,7 @@ pub struct TravelEdge {
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
+    pub terrain: adventuresim_world_schema::RouteTerrain,
     pub certainty: u8,
     pub section: String,
     /// Unstructured Markdown source and inference notes for future debugging.
@@ -671,6 +672,9 @@ pub fn import_travel_edges(
             ));
         }
         validate_travel_route(edge.id, &edge.route)?;
+        edge.terrain
+            .validate_context(&edge.route, edge.length_m)
+            .map_err(|reason| format!("Travel edge {} has invalid terrain: {reason}", edge.id))?;
         if !valid_sources_markdown(&edge.sources) {
             return Err(format!("Travel edge {} has invalid source notes", edge.id));
         }
@@ -682,6 +686,7 @@ pub fn import_travel_edges(
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
+            terrain: edge.terrain,
             certainty: edge.certainty,
             section: edge.section,
             sources: edge.sources,
@@ -890,6 +895,28 @@ fn validate_travel_route(edge_id: u64, route: &TravelRoute) -> Result<(), String
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod route_terrain_boundary_tests {
+    use adventuresim_world_schema::{LandRoute, RouteSlopePermille, RouteTerrain, TravelRoute};
+
+    #[test]
+    fn strategic_boundary_rejects_raw_out_of_range_terrain_without_panicking() {
+        let route = TravelRoute::Land(LandRoute {
+            bridge: None,
+            water_crossings: vec![],
+        });
+        let mut terrain = RouteTerrain::stage_placeholder();
+        // Simulates a raw Spacetime-decoded newtype that bypassed serde and its
+        // constructor. Every u16 bit pattern remains valid to read.
+        terrain.max_slope = unsafe { std::mem::transmute::<u16, RouteSlopePermille>(10_001) };
+        assert!(
+            std::panic::catch_unwind(|| terrain.validate_context(&route, 1_000))
+                .unwrap()
+                .is_err()
+        );
+    }
 }
 
 #[reducer]

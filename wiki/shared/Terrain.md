@@ -1,6 +1,13 @@
 # Map
 The world map is a grid where each square has a height and an enum for the terrain type. Each of these affect both the speed of travel and the difficulty of climb/swim check to avoid injury. We should not try and create our own, we should be able to find both height and biome data from some open GIS dataset. At minimum, it should be easy to find modern data for these, but there may also be a historical dataset that we can use.
 
+The strategic import records a bounded terrain profile on each road/ferry edge:
+elevation, ascent/descent, grade, slope/aspect, roughness, relief, landforms,
+water adjacency, and versioned seasonal/encounter tags. Because the historical
+road source has endpoint topology but no polyline, these facts explicitly use
+straight endpoint geometry. They select strategic travel and possible scenes;
+a tactical server still owns all live terrain interaction.
+
 ## Height
 Traveling from a lower height to a higher one may require the characters to make a climb check (based on upper body strength vs weight) based on the slope, and traveling from higher to lower may require the characters to make an agility check.
 

@@ -25,6 +25,136 @@ const GEOGRAPHIC_MODEL_TYPE: u16 = 2;
 const RASTER_PIXEL_IS_POINT: u16 = 2;
 const WGS84_EPSG: u16 = 4_326;
 
+/// Shared strict GLO-30 reader used by both settlement and route stages. Tiles
+/// are decoded once and retained for deterministic batched sampling.
+pub(crate) struct Glo30Sampler<'a> {
+    directory: &'a Path,
+    tiles: BTreeMap<TileKey, CachedRaster>,
+    bytes: usize,
+    clock: u64,
+    #[cfg(test)]
+    loads: usize,
+}
+
+const GLO30_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+struct CachedRaster {
+    raster: Raster,
+    bytes: usize,
+    last_used: u64,
+}
+
+impl<'a> Glo30Sampler<'a> {
+    pub(crate) fn new(directory: &'a Path) -> Self {
+        Self {
+            directory,
+            tiles: BTreeMap::new(),
+            bytes: 0,
+            clock: 0,
+            #[cfg(test)]
+            loads: 0,
+        }
+    }
+
+    pub(crate) fn sample(
+        &mut self,
+        latitude: f64,
+        longitude: f64,
+    ) -> Result<(ElevationMeters, bool)> {
+        let tile = TileKey::containing(latitude, longitude)?;
+        self.clock = self
+            .clock
+            .checked_add(1)
+            .ok_or_else(|| Error::Validation("GLO-30 cache clock overflow".into()))?;
+        if !self.tiles.contains_key(&tile) {
+            let path = self.directory.join(tile.filename());
+            if !path.is_file() {
+                return Ok((ElevationMeters::new(0).unwrap(), true));
+            }
+            let raster = Raster::read(&path, tile)?;
+            let bytes = raster.decoded_bytes()?;
+            if bytes > GLO30_CACHE_MAX_BYTES {
+                return Err(Error::Validation(format!(
+                    "decoded GLO-30 tile {} exceeds the 64 MiB cache bound",
+                    path.display()
+                )));
+            }
+            self.make_room(bytes)?;
+            self.bytes += bytes;
+            self.tiles.insert(
+                tile,
+                CachedRaster {
+                    raster,
+                    bytes,
+                    last_used: self.clock,
+                },
+            );
+            #[cfg(test)]
+            {
+                self.loads += 1;
+            }
+        }
+        let cached = self.tiles.get_mut(&tile).expect("loaded tile is cached");
+        cached.last_used = self.clock;
+        let raster = &cached.raster;
+        let (column, row) = raster.pixel(latitude, longitude)?;
+        Ok(raster.elevation_near(column, row))
+    }
+
+    fn make_room(&mut self, additional: usize) -> Result<()> {
+        while self
+            .bytes
+            .checked_add(additional)
+            .is_none_or(|total| total > GLO30_CACHE_MAX_BYTES)
+        {
+            let victim = self
+                .tiles
+                .iter()
+                .min_by_key(|(key, value)| (value.last_used, **key))
+                .map(|(key, _)| *key)
+                .ok_or_else(|| {
+                    Error::Validation("GLO-30 cache cannot admit a decoded tile".into())
+                })?;
+            let removed = self
+                .tiles
+                .remove(&victim)
+                .expect("selected cache victim exists");
+            self.bytes -= removed.bytes;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn insert_test_raster(&mut self, tile: TileKey, bytes: usize, elevation: i16) {
+        self.clock += 1;
+        self.make_room(bytes).unwrap();
+        let pixels = vec![f32::from(elevation); bytes / std::mem::size_of::<f32>()];
+        let raster = Raster {
+            width: pixels.len() as u32,
+            height: 1,
+            georeference: GeoReference {
+                longitude_scale: 1.0,
+                latitude_scale: 1.0,
+                tie_column: 0.0,
+                tie_row: 0.0,
+                tie_longitude: 0.0,
+                tie_latitude: 0.0,
+            },
+            pixels,
+        };
+        self.bytes += bytes;
+        self.tiles.insert(
+            tile,
+            CachedRaster {
+                raster,
+                bytes,
+                last_used: self.clock,
+            },
+        );
+        self.loads += 1;
+    }
+}
+
 pub(crate) fn enrich(
     mut draft: WorldDraft<SettlementDraft>,
     directory: &Path,
@@ -161,6 +291,12 @@ struct Raster {
 }
 
 impl Raster {
+    fn decoded_bytes(&self) -> Result<usize> {
+        self.pixels
+            .len()
+            .checked_mul(std::mem::size_of::<f32>())
+            .ok_or_else(|| Error::Validation("decoded GLO-30 allocation size overflow".into()))
+    }
     fn read(path: &Path, expected_tile: TileKey) -> Result<Self> {
         let file = File::open(path)?;
         let raster = Self::decode(BufReader::new(file), path)?;
@@ -444,11 +580,13 @@ fn geo_key(keys: &[u16], requested: u16) -> Option<u16> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{io::Cursor, path::Path};
 
     use tiff::encoder::{TiffEncoder, colortype::Gray32Float};
 
-    use super::{GeoReference, Raster, RasterMetadata, TileKey};
+    use super::{
+        GLO30_CACHE_MAX_BYTES, GeoReference, Glo30Sampler, Raster, RasterMetadata, TileKey,
+    };
 
     #[test]
     fn coordinates_select_signed_degree_tiles() {
@@ -532,6 +670,30 @@ mod tests {
     fn decoder_rejects_non_finite_tiepoints() {
         let mut bytes = fixture_bytes(&[0.0; 9], 0.25, 0.0, f64::NAN);
         assert!(Raster::decode(&mut bytes, std::path::Path::new("fixture.tif")).is_err());
+    }
+
+    #[test]
+    fn shared_sampler_cache_is_bounded_lru_and_reload_stable() {
+        let mut sampler = Glo30Sampler::new(Path::new("."));
+        let first = TileKey { south: 48, west: 0 };
+        let second = TileKey { south: 48, west: 1 };
+        let bytes = 40 * 1024 * 1024;
+        sampler.insert_test_raster(first, bytes, 123);
+        assert_eq!(
+            sampler.tiles[&first].raster.elevation(0, 0).unwrap().get(),
+            123
+        );
+        sampler.insert_test_raster(second, bytes, 456);
+        assert!(!sampler.tiles.contains_key(&first));
+        assert!(sampler.bytes <= GLO30_CACHE_MAX_BYTES);
+        sampler.insert_test_raster(first, bytes, 123);
+        assert!(!sampler.tiles.contains_key(&second));
+        assert_eq!(
+            sampler.tiles[&first].raster.elevation(0, 0).unwrap().get(),
+            123
+        );
+        assert_eq!(sampler.loads, 3);
+        assert!(sampler.bytes <= GLO30_CACHE_MAX_BYTES);
     }
 
     fn fixture_raster(values: &[f32], scale: f64, west: f64, north: f64) -> Raster {

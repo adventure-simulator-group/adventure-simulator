@@ -26,7 +26,7 @@ artifact identity. Source coverage extents remain source-manifest concerns.
 The grid is compiler metadata, not a SpacetimeDB table shape: no grid columns or
 tactical coordinates are persisted.
 
-World schema v18 replaces the old source labels with the typed canonical
+World schema v19 retains typed canonical
 distribution manifests documented in `docs/SOURCE_MANIFESTS.md`. Their
 schema/rules/year/grid/source digest is the cache and build boundary and is
 retained by the import session alongside the complete artifact ID.
@@ -54,6 +54,11 @@ Jung wetland evidence, elevation, and hydrology but returns another private
 draft. A final environmental-synthesis stage then consumes the entire evidence
 chain and alone constructs canonical world records, including a reconstruction
 of dominant 1544 cover distinct from modern-climate potential vegetation.
+The terminal route-terrain stage then samples straight edge geometry from
+GLO-30 and combines it with EU-Hydro route context into bounded strategic
+profiles, landforms, risks, and encounter selectors. Those selectors are
+coarse planning facts; they never persist tactical positions, HP, damage,
+enemies, or ticks.
 Land-use sampled/normalized/fallback evidence remains private through this
 stage so a deterministic missing-HYDE profile cannot masquerade as direct.
 The generic draft is a typestate boundary: each enrichment

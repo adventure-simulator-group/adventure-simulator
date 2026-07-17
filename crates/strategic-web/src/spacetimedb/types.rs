@@ -99,6 +99,7 @@ pub struct TravelEdge {
     pub route: adventuresim_world_schema::TravelRoute,
     pub length_m: u32,
     pub slope_multiplier: f32,
+    pub terrain: adventuresim_world_schema::RouteTerrain,
     pub certainty: u8,
     pub section: String,
 }

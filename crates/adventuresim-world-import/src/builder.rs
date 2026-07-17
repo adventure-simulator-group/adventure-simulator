@@ -9,7 +9,7 @@ use crate::{
     Result,
     sources::{
         drought, elevation, environment_synthesis, forest_cover, geology, hydrology, land_use,
-        potential_vegetation, religion, soil, tree_species, viabundus,
+        potential_vegetation, religion, route_terrain, soil, tree_species, viabundus,
     },
     validation,
 };
@@ -78,6 +78,7 @@ impl WorldBuilder {
         let draft = hydrology::enrich(draft, hydrology_directory)?;
         let draft = soil::finalize(draft)?;
         let world = environment_synthesis::finalize(draft)?;
+        let world = route_terrain::enrich(world, elevation_directory)?;
         validation::validate(&world)?;
         Ok(world)
     }

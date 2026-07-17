@@ -14,8 +14,8 @@ use adventuresim_world_schema::{
     CanalWatercourse, CrossingTraversal, CrossingWatercourse, EdgeEndpoint, EdgeProgressPermille,
     FerryRoute, FerryWaterway, FlowPersistence, FlowingWaterAccess, InlandWaterAccess,
     InlandWaterSize, LandRoute, LandWaterCrossing, MarineWaterAccess, RiverAccess,
-    RiverAndCanalAccess, RiverWatercourse, SettlementHydrology, StrahlerOrder, TravelEdgeImport,
-    TravelRoute, WaterDistanceMeters,
+    RiverAndCanalAccess, RiverWatercourse, RouteWaterAdjacency, RouteWaterFeatureKind,
+    SettlementHydrology, StrahlerOrder, TravelEdgeImport, TravelRoute, WaterDistanceMeters,
 };
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -76,7 +76,8 @@ pub(crate) fn enrich(
         .map(|mut edge| {
             let from = projected_nodes[&edge.from_node_id];
             let to = projected_nodes[&edge.to_node_id];
-            let (route, edge_crossings, inferred) = database.enrich_route(edge.route, from, to)?;
+            let (route, edge_crossings, inferred, water_adjacencies) =
+                database.enrich_route(edge.route, from, to)?;
             crossings += edge_crossings;
             inferred_ferries += usize::from(inferred);
             let note = match &route {
@@ -88,7 +89,7 @@ pub(crate) fn enrich(
             edge.sources.push('\n');
             edge.sources.push_str("- ");
             edge.sources.push_str(note);
-            Ok(finish_edge(edge, route))
+            Ok(finish_edge(edge, route, water_adjacencies))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -140,7 +141,13 @@ pub(crate) fn enrich(
     })
 }
 
-fn finish_edge(edge: TravelEdgeDraft, route: TravelRoute) -> TravelEdgeImport {
+fn finish_edge(
+    edge: TravelEdgeDraft,
+    route: TravelRoute,
+    water_adjacencies: Vec<RouteWaterAdjacency>,
+) -> TravelEdgeImport {
+    let mut terrain = adventuresim_world_schema::RouteTerrain::stage_placeholder();
+    terrain.water_adjacencies = water_adjacencies;
     TravelEdgeImport {
         id: edge.id,
         from_node_id: edge.from_node_id,
@@ -149,6 +156,7 @@ fn finish_edge(edge: TravelEdgeDraft, route: TravelRoute) -> TravelEdgeImport {
         toll: edge.toll,
         length_m: edge.length_m,
         slope_multiplier: edge.slope_multiplier,
+        terrain,
         certainty: edge.certainty,
         section: edge.section,
         sources: edge.sources,
@@ -311,9 +319,9 @@ impl HydrologyDatabase {
         route: TravelRouteDraft,
         from: Point<f64>,
         to: Point<f64>,
-    ) -> Result<(TravelRoute, usize, bool)> {
+    ) -> Result<(TravelRoute, usize, bool, Vec<RouteWaterAdjacency>)> {
         let line = Line::new(from.0, to.0);
-        match route {
+        let (route, crossings, inferred) = match route {
             TravelRouteDraft::Land { bridge } => {
                 let route_length = line_length(line);
                 let mut crossings = self
@@ -334,14 +342,14 @@ impl HydrologyDatabase {
                     .into_iter()
                     .map(|crossing| crossing.crossing)
                     .collect();
-                Ok((
+                (
                     TravelRoute::Land(LandRoute {
                         bridge,
                         water_crossings: crossings,
                     }),
                     count,
                     false,
-                ))
+                )
             }
             TravelRouteDraft::Ferry => {
                 let midpoint = Point::new((from.x() + to.x()) / 2.0, (from.y() + to.y()) / 2.0);
@@ -354,9 +362,63 @@ impl HydrologyDatabase {
                     order: StrahlerOrder::new(2).expect("constant is valid"),
                     persistence: FlowPersistence::Perennial,
                 }));
-                Ok((TravelRoute::Ferry(FerryRoute { waterway }), 0, inferred))
+                (TravelRoute::Ferry(FerryRoute { waterway }), 0, inferred)
             }
+        };
+        let adjacencies = self.route_adjacencies(line, &route);
+        Ok((route, crossings, inferred, adjacencies))
+    }
+
+    fn route_adjacencies(
+        &self,
+        route: Line<f64>,
+        canonical: &TravelRoute,
+    ) -> Vec<RouteWaterAdjacency> {
+        let bounds = Bounds {
+            min_x: route.start.x.min(route.end.x) - SETTLEMENT_ADJACENCY_METERS,
+            min_y: route.start.y.min(route.end.y) - SETTLEMENT_ADJACENCY_METERS,
+            max_x: route.start.x.max(route.end.x) + SETTLEMENT_ADJACENCY_METERS,
+            max_y: route.start.y.max(route.end.y) + SETTLEMENT_ADJACENCY_METERS,
+        };
+        let mut nearest: std::collections::BTreeMap<RouteWaterFeatureKind, WaterDistanceMeters> =
+            std::collections::BTreeMap::new();
+        for feature in self.candidates(bounds) {
+            let Some(distance) = route_geometry_distance(route, &feature.geometry)
+                .filter(|value| *value <= SETTLEMENT_ADJACENCY_METERS)
+            else {
+                continue;
+            };
+            let kind = route_feature_kind(feature.kind);
+            let distance = water_distance(distance);
+            nearest
+                .entry(kind)
+                .and_modify(|old| *old = (*old).min(distance))
+                .or_insert(distance);
         }
+        let mut zero = |kind| {
+            nearest.insert(kind, WaterDistanceMeters::new(0).unwrap());
+        };
+        match canonical {
+            TravelRoute::Land(value) => {
+                for crossing in &value.water_crossings {
+                    zero(match crossing.watercourse {
+                        CrossingWatercourse::River(_) => RouteWaterFeatureKind::River,
+                        CrossingWatercourse::Canal(_) => RouteWaterFeatureKind::Canal,
+                        CrossingWatercourse::Ditch => RouteWaterFeatureKind::Ditch,
+                    });
+                }
+            }
+            TravelRoute::Ferry(value) => zero(match value.waterway {
+                FerryWaterway::River(_) => RouteWaterFeatureKind::River,
+                FerryWaterway::InlandWater => RouteWaterFeatureKind::Inland,
+                FerryWaterway::TidalWater => RouteWaterFeatureKind::Tidal,
+                FerryWaterway::CoastalWater => RouteWaterFeatureKind::Coastal,
+            }),
+        }
+        nearest
+            .into_iter()
+            .map(|(feature, distance)| RouteWaterAdjacency { feature, distance })
+            .collect()
     }
 
     fn line_crossings(&self, route: Line<f64>) -> Vec<LocatedCrossing> {
@@ -1043,6 +1105,71 @@ fn geometry_contains(geometry: &Geometry<f64>, point: Point<f64>) -> bool {
     }
 }
 
+fn route_feature_kind(kind: FeatureKind) -> RouteWaterFeatureKind {
+    match kind {
+        FeatureKind::River => RouteWaterFeatureKind::River,
+        FeatureKind::Canal => RouteWaterFeatureKind::Canal,
+        FeatureKind::Ditch => RouteWaterFeatureKind::Ditch,
+        FeatureKind::InlandWater => RouteWaterFeatureKind::Inland,
+        FeatureKind::Tidal => RouteWaterFeatureKind::Tidal,
+        FeatureKind::Coastal => RouteWaterFeatureKind::Coastal,
+    }
+}
+
+fn route_geometry_distance(route: Line<f64>, geometry: &Geometry<f64>) -> Option<f64> {
+    let midpoint = Point::new(
+        (route.start.x + route.end.x) / 2.0,
+        (route.start.y + route.end.y) / 2.0,
+    );
+    if geometry_contains(geometry, Point(route.start))
+        || geometry_contains(geometry, Point(route.end))
+        || geometry_contains(geometry, midpoint)
+        || !geometry_line_intersections(route, geometry).is_empty()
+    {
+        return Some(0.0);
+    }
+    let line_string_distance = |line: &LineString<f64>| {
+        line.lines()
+            .map(|segment| segment_distance(route, segment))
+            .min_by(f64::total_cmp)
+    };
+    match geometry {
+        Geometry::Line(line) => Some(segment_distance(route, *line)),
+        Geometry::LineString(line) => line_string_distance(line),
+        Geometry::MultiLineString(lines) => lines
+            .iter()
+            .filter_map(line_string_distance)
+            .min_by(f64::total_cmp),
+        Geometry::Polygon(polygon) => line_string_distance(polygon.exterior()),
+        Geometry::MultiPolygon(polygons) => polygons
+            .iter()
+            .filter_map(|polygon| line_string_distance(polygon.exterior()))
+            .min_by(f64::total_cmp),
+        Geometry::Point(point) => Some(point_segment_distance(point.0, route)),
+        Geometry::GeometryCollection(collection) => collection
+            .iter()
+            .filter_map(|item| route_geometry_distance(route, item))
+            .min_by(f64::total_cmp),
+        _ => None,
+    }
+}
+
+fn segment_distance(left: Line<f64>, right: Line<f64>) -> f64 {
+    if !geometry_line_intersections(left, &Geometry::Line(right)).is_empty() {
+        0.0
+    } else {
+        [
+            point_segment_distance(left.start, right),
+            point_segment_distance(left.end, right),
+            point_segment_distance(right.start, left),
+            point_segment_distance(right.end, left),
+        ]
+        .into_iter()
+        .min_by(f64::total_cmp)
+        .unwrap()
+    }
+}
+
 fn geometry_distance(point: Point<f64>, geometry: &Geometry<f64>) -> Option<f64> {
     if geometry_contains(geometry, point) {
         return Some(0.0);
@@ -1167,6 +1294,28 @@ mod tests {
     }
 
     #[test]
+    fn route_distance_is_exact_for_crossing_nearest_and_cutoff() {
+        let route = Line::new(Coord { x: 0.0, y: 0.0 }, Coord { x: 1_000.0, y: 0.0 });
+        let crossing = Geometry::Line(Line::new(
+            Coord {
+                x: 500.0,
+                y: -100.0,
+            },
+            Coord { x: 500.0, y: 100.0 },
+        ));
+        assert_eq!(route_geometry_distance(route, &crossing), Some(0.0));
+        let nearby = Geometry::Line(Line::new(
+            Coord { x: 0.0, y: 2_000.0 },
+            Coord {
+                x: 1_000.0,
+                y: 2_000.0,
+            },
+        ));
+        assert_eq!(route_geometry_distance(route, &nearby), Some(2_000.0));
+        assert!(route_geometry_distance(route, &nearby).unwrap() <= SETTLEMENT_ADJACENCY_METERS);
+    }
+
+    #[test]
     fn bridge_evidence_supplies_missing_source_crossing() {
         let mut crossings = Vec::new();
         add_unmapped_bridges(&mut crossings, Some(EdgeEndpoint::Both), 100.0);
@@ -1182,7 +1331,7 @@ mod tests {
     fn touching_water_at_road_endpoint_is_not_a_crossing_without_bridge_evidence() {
         let fixture = Fixture::new();
         let database = HydrologyDatabase::open(&fixture.directory, None).unwrap();
-        let (route, count, _) = database
+        let (route, count, _, _) = database
             .enrich_route(
                 TravelRouteDraft::Land { bridge: None },
                 Point::new(0.0, 0.0),
@@ -1231,7 +1380,7 @@ mod tests {
     fn long_edge_endpoint_bridge_does_not_consume_a_distant_crossing() {
         let fixture = Fixture::new();
         let database = HydrologyDatabase::open(&fixture.directory, None).unwrap();
-        let (route, count, _) = database
+        let (route, count, _, _) = database
             .enrich_route(
                 TravelRouteDraft::Land {
                     bridge: Some(EdgeEndpoint::From),
@@ -1265,7 +1414,7 @@ mod tests {
     fn endpoint_bridge_evidence_preserves_mapped_watercourse_attributes() {
         let fixture = Fixture::new();
         let database = HydrologyDatabase::open(&fixture.directory, None).unwrap();
-        let (route, count, _) = database
+        let (route, count, _, _) = database
             .enrich_route(
                 TravelRouteDraft::Land {
                     bridge: Some(EdgeEndpoint::From),
@@ -1307,7 +1456,7 @@ mod tests {
         assert!(hydrology.has_freshwater());
         assert!(!hydrology.has_saltwater());
 
-        let (route, count, inferred) = database
+        let (route, count, inferred, _) = database
             .enrich_route(
                 TravelRouteDraft::Land { bridge: None },
                 Point::new(-100.0, 0.0),

@@ -16,8 +16,11 @@ the deterministic request and redacted `CDSE_TOKEN_FILE` preflight,
 `verify-glo30` checks a strict local `source-inventory.json`. This
 release-blocked workflow never logs or stores a token.
 
-`sources::elevation` uses the pure-Rust `tiff` crate and does not require GDAL
-or PROJ. It groups settlements by one-degree GLO-30 tile, decodes only the 159
+`sources::elevation` uses the pure-Rust `tiff` crate and does not require GDAL.
+Its strict tile, georeference, nodata, and nearest-valid-pixel reader is shared
+with route-terrain enrichment. Route sampling uses a deterministic 64 MiB LRU
+decoded-tile cache, while the settlement batch remains grouped one tile at a
+time. It groups settlements by one-degree GLO-30 tile, decodes only the 159
 tiles used by the current Viabundus settlement set, and releases each raster
 before reading the next. A settlement receives a required `ElevationMeters`
 value; `ElevationBand` is derived from it rather than redundantly stored, so the
@@ -31,5 +34,5 @@ settlements without using a fallback.
 Elevation is stored on settlements because it describes the settlement's own
 location and can directly influence scene selection, climate inference,
 agriculture, travel preparation, and UI presentation. A future source may add
-route elevation profiles separately; settlement elevation should not be used
-as a proxy for terrain along an entire road edge.
+route elevation profiles. See [ROUTE_TERRAIN.md](ROUTE_TERRAIN.md); settlement
+elevation is never used as a proxy for terrain along an entire road edge.

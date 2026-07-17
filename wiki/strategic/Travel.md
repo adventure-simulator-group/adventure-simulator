@@ -46,6 +46,12 @@ time by that duration and moves them to the destination. Route cost, party
 speed, terrain, rest stops, and encounters are subsequent layers on this
 graph.
 
+Each edge retains canonical route terrain compiled from GLO-30 and EU-Hydro: a
+bounded elevation profile, directional grade, terrain class, landforms,
+nearby/crossed water, seasonal risks, and static encounter tags. The separate
+Viabundus slope multiplier is only its source travel-cost hint. These values
+inform routing and encounter selection without persisting live tactical state.
+
 Travel edges also retain typed bridge and toll infrastructure derived from
 active Viabundus nodes. Ferry and land routes are distinct typed variants; land
 routes may carry a bridge endpoint. Toll and bridge properties retain whether
