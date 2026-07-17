@@ -44,6 +44,9 @@ observational source SHA-256/size, ETag and Last-Modified when supplied, and
 exact prepared hashes. Because rolling source bytes can change between the
 observation and GDAL requests, those source fields do not bind the prepared
 bytes. The prepared SHA-256 is the authoritative local snapshot; future raw
+The canonical source manifest uses the strict preparation manifest's actual
+`retrieved_at` value and prepared-manifest digest. This identifies the local
+snapshot but does not claim that the rolling `latest` source is reacquirable.
 reacquisition is not claimed reproducible.
 
 Preparation requires both `gdalwarp` and `gdalinfo`. Every staged TIFF must pass

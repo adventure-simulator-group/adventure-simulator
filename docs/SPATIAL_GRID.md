@@ -41,3 +41,5 @@ must contain:
 
 Any mismatch means regeneration. Source coverage extents belong in the source
 manifest and will affect its checksum rather than expanding `SpatialGridSpec`.
+The complete canonical manifest checksum and operational-notice contract are
+documented in `docs/SOURCE_MANIFESTS.md`.

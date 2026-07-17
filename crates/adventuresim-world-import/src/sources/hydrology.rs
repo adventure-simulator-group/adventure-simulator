@@ -14,8 +14,8 @@ use adventuresim_world_schema::{
     CanalWatercourse, CrossingTraversal, CrossingWatercourse, EdgeEndpoint, EdgeProgressPermille,
     FerryRoute, FerryWaterway, FlowPersistence, FlowingWaterAccess, InlandWaterAccess,
     InlandWaterSize, LandRoute, LandWaterCrossing, MarineWaterAccess, RiverAccess,
-    RiverAndCanalAccess, RiverWatercourse, SettlementHydrology, SourceProvenance, StrahlerOrder,
-    TravelEdgeImport, TravelRoute, WaterDistanceMeters,
+    RiverAndCanalAccess, RiverWatercourse, SettlementHydrology, StrahlerOrder, TravelEdgeImport,
+    TravelRoute, WaterDistanceMeters,
 };
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -30,10 +30,6 @@ use crate::{
     spatial::SpatialProjection,
 };
 
-const SOURCE_NAME: &str = "Copernicus EU-Hydro River Network Database v1.3";
-const SOURCE_URL: &str =
-    "https://land.copernicus.eu/en/products/eu-hydro/eu-hydro-river-network-database";
-const SOURCE_LICENSE: &str = "Copernicus Land Monitoring Service full and open data policy";
 const EXPECTED_SRS: i64 = 3035;
 const SETTLEMENT_ADJACENCY_METERS: f64 = 2_000.0;
 const SOURCE_MARGIN_METERS: f64 = 10_000.0;
@@ -112,11 +108,13 @@ pub(crate) fn enrich(
         })
         .collect::<Vec<_>>();
 
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if database.files_read > 0
+        || !database.features.is_empty()
+        || crossings > 0
+        || inferred_ferries > 0
+    {
+        draft.sources.push(crate::manifest::hydrology());
+    }
     draft.report.hydrology_files_read = database.files_read;
     draft.report.hydrology_features_read = database.features.len();
     draft.report.hydrology_settlement_samples = settlements.len();

@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use adventuresim_world_schema::{ElevationMeters, SourceProvenance};
+use adventuresim_world_schema::ElevationMeters;
 use tiff::{
     decoder::{Decoder, DecodingResult},
     tags::Tag,
@@ -18,9 +18,6 @@ use crate::{
     draft::{ElevatedSettlementDraft, SettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "Copernicus DEM GLO-30";
-const SOURCE_URL: &str = "https://doi.org/10.5270/ESA-c5d3d65";
-const SOURCE_LICENSE: &str = "Copernicus DEM licence";
 const SEARCH_RADIUS_PIXELS: u32 = 8;
 const GLO30_TILE_HEIGHT: u32 = 3_600;
 const GLO30_TILE_WIDTHS: [u32; 3] = [1_800, 2_400, 3_600];
@@ -90,11 +87,9 @@ pub(crate) fn enrich(
         })
         .collect();
 
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if !by_tile.is_empty() {
+        draft.sources.push(crate::manifest::elevation());
+    }
     draft.report.elevation_tiles_read = by_tile.len();
     draft.report.elevation_samples = settlements.len();
     draft.report.elevation_fallback_samples = fallback_samples;

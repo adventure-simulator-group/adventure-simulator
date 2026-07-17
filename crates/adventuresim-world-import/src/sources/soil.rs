@@ -14,8 +14,8 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, MineralSoil,
     MineralSoilTexture, OrganicSoil, PotentialVegetationClass, RockOutcropSoil, SoilAcidity,
     SoilBasisPoints, SoilEvidence, SoilFertility, SoilPrediction, SoilProfile, SoilProperties,
-    SoilSubstrate, SoilWaterRegime, SourceProvenance, StoneContentPercent, SurfaceGeology,
-    SurfaceLithology, TopsoilOrganicCarbon, WrbReferenceGroup,
+    SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
+    TopsoilOrganicCarbon, WrbReferenceGroup,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -31,9 +31,6 @@ use crate::{
     spatial::SpatialProjection,
 };
 
-const SOURCE_NAME: &str = "ISRIC SoilGrids rolling version 2";
-const SOURCE_URL: &str = "https://www.isric.org/explore/soilgrids";
-const SOURCE_LICENSE: &str = "CC BY 4.0";
 const MANIFEST: &str = "soilgrids-manifest.json";
 const MAX_MANIFEST_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_RASTER_BYTES: u64 = 512 * 1024 * 1024;
@@ -52,7 +49,7 @@ const PROPERTIES: [&str; 11] = [
     "sand", "silt", "clay", "cfvo", "soc", "phh2o", "cec", "bdod", "wv0033", "wv1500", "wrb",
 ];
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
     schema: u32,
@@ -72,7 +69,7 @@ struct Manifest {
     files: Vec<ManifestFile>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct ManifestFile {
     property: String,
@@ -89,13 +86,27 @@ struct ManifestFile {
     prepared_sha256: String,
 }
 
+fn canonicalize_files(files: &mut [ManifestFile]) {
+    files.sort_by(|left, right| {
+        (&left.property, &left.depth, &left.quantile).cmp(&(
+            &right.property,
+            &right.depth,
+            &right.quantile,
+        ))
+    });
+}
+
 pub(crate) fn predict(
     draft: WorldDraft<TreeSpeciesSettlementDraft>,
     directory: &Path,
 ) -> Result<WorldDraft<SoilPredictionSettlementDraft>> {
     let manifest = validate_manifest(directory, draft.spatial_grid.cell_size_meters().get())?;
+    let manifest_identity = (
+        manifest.retrieved_at.clone(),
+        format!("{:x}", Sha256::digest(serde_json::to_vec(&manifest)?)),
+    );
     if draft.settlements.is_empty() {
-        return finish_predictions(draft, vec![], manifest.files.len(), 0);
+        return finish_predictions(draft, vec![], manifest.files.len(), 0, manifest_identity);
     }
     let projection = SpatialProjection::new()?;
     let points = draft
@@ -142,7 +153,13 @@ pub(crate) fn predict(
             },
         )
         .collect::<Result<Vec<_>>>()?;
-    finish_predictions(draft, predictions, manifest.files.len(), inferred)
+    finish_predictions(
+        draft,
+        predictions,
+        manifest.files.len(),
+        inferred,
+        manifest_identity,
+    )
 }
 
 fn finish_predictions(
@@ -150,6 +167,7 @@ fn finish_predictions(
     predictions: Vec<SoilPrediction>,
     rasters: usize,
     inferred: usize,
+    manifest_identity: (String, String),
 ) -> Result<WorldDraft<SoilPredictionSettlementDraft>> {
     if predictions.len() != draft.settlements.len() {
         return Err(Error::Validation(
@@ -164,11 +182,12 @@ fn finish_predictions(
         });
         SoilPredictionSettlementDraft { trees, prediction }
     }).collect();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if rasters > 0 {
+        draft.sources.push(crate::manifest::soil(
+            manifest_identity.0,
+            manifest_identity.1,
+        )?);
+    }
     draft.report.soil_rasters_read = rasters;
     draft.report.soil_depth_layers_read = rasters.saturating_sub(3);
     draft.report.soil_samples = settlements.len();
@@ -500,7 +519,7 @@ fn validate_manifest(directory: &Path, cell_size: u32) -> Result<Manifest> {
             "SoilGrids manifest exceeds size limit".into(),
         ));
     }
-    let manifest: Manifest =
+    let mut manifest: Manifest =
         serde_json::from_slice(&fs::read(&path)?).map_err(|source| Error::JsonSource {
             path: path.clone(),
             source,
@@ -511,11 +530,13 @@ fn validate_manifest(directory: &Path, cell_size: u32) -> Result<Manifest> {
         || manifest.crs != "EPSG:3035"
         || manifest.origin_easting_meters != 0
         || manifest.origin_northing_meters != 0
+        || manifest.source_version != "latest"
         || manifest.cell_size_meters != cell_size
         || manifest.west >= manifest.east
         || manifest.south >= manifest.north
         || manifest.retrieved_at.trim().is_empty()
-        || manifest.source_version.trim().is_empty()
+        || manifest.retrieved_at.len() > 128
+        || manifest.retrieved_at.contains('\0')
         || !valid_hash(&manifest.generation)
         || manifest.files.len() != 207
     {
@@ -675,6 +696,7 @@ fn validate_manifest(directory: &Path, cell_size: u32) -> Result<Manifest> {
             )));
         }
     }
+    canonicalize_files(&mut manifest.files);
     Ok(manifest)
 }
 
@@ -1220,6 +1242,11 @@ mod tests {
             prepared_size: 1,
             prepared_sha256: "b".repeat(64),
         };
+        let mut later = file.clone();
+        later.property = "silt".into();
+        let mut reordered = vec![later, file.clone()];
+        canonicalize_files(&mut reordered);
+        assert_eq!(reordered[0].property, "sand");
         assert!(validate_unit(&file).is_ok());
         file.unit = "percent".into();
         assert!(validate_unit(&file).is_err());

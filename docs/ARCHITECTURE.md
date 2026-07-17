@@ -26,6 +26,11 @@ artifact identity. Source coverage extents remain source-manifest concerns.
 The grid is compiler metadata, not a SpacetimeDB table shape: no grid columns or
 tactical coordinates are persisted.
 
+World schema v18 replaces the old source labels with the typed canonical
+distribution manifests documented in `docs/SOURCE_MANIFESTS.md`. Their
+schema/rules/year/grid/source digest is the cache and build boundary and is
+retained by the import session alongside the complete artifact ID.
+
 Source modules first parse into importer-only draft types. The outer builder
 enriches that draft in dependency order and only then constructs the canonical
 world schema. For example, Viabundus supplies settlement identity and road

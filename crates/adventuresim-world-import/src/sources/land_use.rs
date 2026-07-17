@@ -17,9 +17,6 @@ use crate::{
     },
 };
 
-const SOURCE_NAME: &str = "History Database of the Global Environment 3.2.1";
-const SOURCE_URL: &str = "https://doi.org/10.17026/dans-25g-gez3";
-const SOURCE_LICENSE: &str = "CC0-1.0";
 const START_YEAR: i32 = 1500;
 const END_YEAR: i32 = 1600;
 const HYDE_COLUMNS: usize = 4_320;
@@ -72,7 +69,6 @@ pub(crate) fn enrich(
         )));
     }
     if draft.settlements.is_empty() {
-        draft.sources.push(source_provenance());
         return Ok(WorldDraft {
             year: draft.year,
             spatial_grid: draft.spatial_grid,
@@ -159,11 +155,7 @@ pub(crate) fn enrich(
 }
 
 fn source_provenance() -> SourceProvenance {
-    SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    }
+    crate::manifest::hyde()
 }
 
 #[derive(Clone, Copy)]

@@ -16,7 +16,13 @@ from pathlib import Path
 
 RECORD_URL = "https://zenodo.org/api/records/16611998"
 VERSION = "2"
-REQUIRED_FILES = {"nodes.csv", "edges.csv", "population.csv"}
+REQUIRED_FILES = {
+    "nodes.csv",
+    "edges.csv",
+    "population.csv",
+    "alternativenames.csv",
+    "descriptions.csv",
+}
 USER_AGENT = "adventure-simulator-viabundus-initializer/1.0"
 
 
@@ -61,7 +67,7 @@ def download_file(file: dict[str, object], destination: Path) -> dict[str, str]:
     except (urllib.error.URLError, urllib.error.HTTPError) as error:
         raise RuntimeError(f"Could not download {name}: {error}") from error
 
-    return {"name": name, "sha256": digest.hexdigest(), "url": url}
+    return {"name": name, "sha256": digest.hexdigest(), "url": url, "size": destination.stat().st_size}
 
 
 def is_initialised(destination: Path) -> bool:

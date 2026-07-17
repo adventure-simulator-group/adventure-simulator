@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use adventuresim_world_schema::{
     GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
     IgneousRock, InferredGeologicSetting, MappedSurfaceGeology, MetamorphicRock, MixedLithology,
-    SedimentaryRock, SourceProvenance, SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit,
+    SedimentaryRock, SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit,
 };
 use geo::{Contains, Geometry, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -17,10 +17,6 @@ use crate::{
     draft::{GeologySettlementDraft, SoilPredictionSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "EGDI 1:1 Million pan-European Surface Geology";
-const SOURCE_URL: &str =
-    "https://metadata.europe-geology.eu/record/full/5729ffdf-2558-48fc-a5d2-645a0a010855";
-const SOURCE_LICENSE: &str = "Creative Commons Attribution 4.0 (CC BY 4.0)";
 const TABLE: &str = "GeologicUnitView";
 const GEOMETRY_COLUMN: &str = "geom";
 const EXPECTED_SRS: i64 = 3034;
@@ -30,7 +26,7 @@ pub(crate) fn enrich(
     geopackage: &Path,
 ) -> Result<WorldDraft<GeologySettlementDraft>> {
     if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), 0, 0);
+        return finish(draft, Vec::new(), 0, 0, geopackage);
     }
     let map = GeologyMap::open(geopackage)?;
     let projection = GeologyProjection::new()?;
@@ -45,7 +41,7 @@ pub(crate) fn enrich(
         });
         profiles.push(profile);
     }
-    finish(draft, profiles, map.features_read, fallbacks)
+    finish(draft, profiles, map.features_read, fallbacks, geopackage)
 }
 
 fn finish(
@@ -53,6 +49,7 @@ fn finish(
     profiles: Vec<SurfaceGeology>,
     features_read: usize,
     fallbacks: usize,
+    geopackage: &Path,
 ) -> Result<WorldDraft<GeologySettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
@@ -73,11 +70,9 @@ fn finish(
             GeologySettlementDraft { predicted, geology }
         })
         .collect();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if features_read > 0 {
+        draft.sources.push(crate::manifest::geology(geopackage));
+    }
     draft.report.geology_features_read = features_read;
     draft.report.geology_samples = draft.report.settlements;
     draft.report.geology_fallback_samples = fallbacks;

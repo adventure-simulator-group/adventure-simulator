@@ -22,6 +22,74 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.metadata.inference_rules_version
         )));
     }
+    for source in &world.metadata.sources {
+        crate::manifest::validate_source(source)?;
+    }
+    if world
+        .metadata
+        .sources
+        .windows(2)
+        .any(|pair| pair[0].id >= pair[1].id)
+    {
+        return Err(Error::Validation(
+            "source manifests are duplicated or not in canonical id order".into(),
+        ));
+    }
+    let expected_manifest_digest = crate::manifest::digest(
+        world.metadata.world_year,
+        world.metadata.spatial_grid,
+        &world.metadata.sources,
+    )?;
+    if world.metadata.manifest_digest != expected_manifest_digest {
+        return Err(Error::Validation(
+            "world metadata manifest digest does not match its canonical manifest".into(),
+        ));
+    }
+    let report = &world.report;
+    let mut expected = std::collections::BTreeSet::new();
+    if !world.nodes.is_empty() || !world.edges.is_empty() || !world.settlements.is_empty() {
+        expected.insert("viabundus-v2");
+    }
+    for (used, id) in [
+        (report.elevation_tiles_read > 0, "copernicus-dem-glo30"),
+        (report.land_use_rasters_read > 0, "hyde-3-2-1"),
+        (report.forest_tiles_read > 0, "clms-forest-2018"),
+        (
+            report.potential_vegetation_raster_files_read > 0,
+            "jung-pnv-1-1",
+        ),
+        (report.tree_species_rasters_read > 0, "eu-trees4f-v2"),
+        (report.soil_rasters_read > 0, "soilgrids-v2-rolling"),
+        (report.geology_features_read > 0, "egdi-surface-geology-1m"),
+        (
+            report.religion_regions_read > 0,
+            "ieg-religion-1544-curated",
+        ),
+        (report.drought_grid_cells_read > 0, "noaa-owda-v1"),
+        (
+            report.hydrology_files_read > 0
+                || report.hydrology_features_read > 0
+                || report.hydrology_settlement_samples > 0
+                || report.hydrology_edge_crossings > 0
+                || report.hydrology_inferred_ferry_waterways > 0,
+            "copernicus-eu-hydro-1-3",
+        ),
+    ] {
+        if used {
+            expected.insert(id);
+        }
+    }
+    let actual = world
+        .metadata
+        .sources
+        .iter()
+        .map(|source| source.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if actual != expected {
+        return Err(Error::Validation(format!(
+            "canonical source manifest set does not match build evidence (expected {expected:?}, got {actual:?})"
+        )));
+    }
 
     let node_ids: HashSet<_> = world.nodes.iter().map(|node| node.id).collect();
     if node_ids.len() != world.nodes.len() {
@@ -570,13 +638,17 @@ mod tests {
     };
 
     fn empty_world(schema_version: u32, inference_rules_version: u32) -> CompiledWorld {
+        let spatial_grid = SpatialGridSpec::default();
+        let sources = Vec::new();
+        let manifest_digest = crate::manifest::digest(1544, spatial_grid, &sources).unwrap();
         CompiledWorld {
             metadata: WorldMetadata {
                 schema_version,
                 inference_rules_version,
-                spatial_grid: SpatialGridSpec::default(),
+                spatial_grid,
                 world_year: 1544,
-                sources: Vec::new(),
+                manifest_digest,
+                sources,
                 road_types: Vec::new(),
             },
             nodes: Vec::new(),
@@ -607,6 +679,37 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("inference rules version")
+        );
+    }
+
+    #[test]
+    fn build_report_cannot_claim_an_absent_source_manifest() {
+        let mut world = empty_world(WORLD_SCHEMA_VERSION, CURRENT_INFERENCE_RULES_VERSION);
+        world.report.elevation_tiles_read = 1;
+        world.report.elevation_samples = 1;
+        assert!(
+            super::validate(&world)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match build evidence")
+        );
+    }
+
+    #[test]
+    fn build_report_rejects_an_extra_source_manifest() {
+        let mut world = empty_world(WORLD_SCHEMA_VERSION, CURRENT_INFERENCE_RULES_VERSION);
+        world.metadata.sources.push(crate::manifest::hydrology());
+        world.metadata.manifest_digest = crate::manifest::digest(
+            world.metadata.world_year,
+            world.metadata.spatial_grid,
+            &world.metadata.sources,
+        )
+        .unwrap();
+        assert!(
+            super::validate(&world)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match build evidence")
         );
     }
 
