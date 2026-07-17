@@ -52,6 +52,7 @@ noiz = "0.4.0"
 
 serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 netcdf-reader = { version = "0.8", default-features = false, features = ["netcdf4"] }
 console_error_panic_hook = "0.1.7"
 async-compat = "0.2.5"

@@ -5,16 +5,16 @@ use adventuresim_world_schema::{
     DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
     FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
     InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    LanguageCode, MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
-    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
-    PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
-    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
-    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit,
-    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent,
-    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
-    TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
-    WorldNodeImport, valid_bounded_source_text, valid_sources_markdown,
+    LanguageCode, MappedSoilProfile, MarineWaterAccess, MineralSoil, MineralSoilTexture,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
+    ParentMaterialCode, PotentialVegetation, PotentialVegetationClass,
+    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
+    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -718,28 +718,7 @@ pub fn import_settlements(
                 dominant: woodland.dominant,
             }),
         };
-        let potential_vegetation = match settlement.potential_vegetation {
-            PotentialVegetation::Mapped(mapped) => {
-                let unit = adventuresim_world_schema::EuroVegMapUnitCode::new(
-                    mapped.unit().as_str().to_owned(),
-                )
-                .ok_or_else(|| {
-                    format!(
-                        "Settlement {} has invalid EuroVegMap unit code",
-                        settlement.id
-                    )
-                })?;
-                PotentialVegetation::Mapped(
-                    MappedPotentialVegetation::new(unit, mapped.formation()).ok_or_else(|| {
-                        format!(
-                            "Settlement {} has contradictory EuroVegMap vegetation",
-                            settlement.id
-                        )
-                    })?,
-                )
-            }
-            PotentialVegetation::Inferred(formation) => PotentialVegetation::Inferred(formation),
-        };
+        let potential_vegetation = settlement.potential_vegetation;
         let tree_species = match settlement.tree_species {
             TreeSpeciesProfile::Modeled(profile) => {
                 let candidates = profile
@@ -4639,7 +4618,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     dominant: DominantLeafType::Mixed,
                 }),
                 potential_vegetation: PotentialVegetation::Inferred(
-                    PotentialVegetationFormation::DeciduousAndMixedForest,
+                    PotentialVegetationClass::WoodlandAndForest,
                 ),
                 tree_species: TreeSpeciesProfile::Inferred(
                     InferredTreeSpeciesProfile::new(vec![

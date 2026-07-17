@@ -10,7 +10,7 @@ use adventuresim_world_schema::{
     FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover, GeologicAgeEvidence,
     GeologicEra, GeologicLithologyEvidence, GridCellSizeMeters, IgneousRock, InlandWaterSize,
     MarineWaterAccess, MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence,
-    PotentialVegetation, PotentialVegetationFormation, SedimentaryRock, SettlementAliasImport,
+    PotentialVegetation, PotentialVegetationClass, SedimentaryRock, SettlementAliasImport,
     SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
     SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
     SpatialGridSpec, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
@@ -676,14 +676,21 @@ fn enum_unit(name: &str) -> Value {
 
 fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
     match vegetation {
-        PotentialVegetation::Mapped(mapped) => json!({
-            "Mapped": {
-                "unit": { "code": mapped.unit().as_str() },
-                "formation": encode_potential_formation(mapped.formation()),
+        PotentialVegetation::Posterior(values) => json!({
+            "Posterior": {
+                "woodland_and_forest": { "basis_points": values.woodland_and_forest.get() },
+                "heathland_and_shrub": { "basis_points": values.heathland_and_shrub.get() },
+                "grassland": { "basis_points": values.grassland.get() },
+                "sparsely_vegetated_areas": { "basis_points": values.sparsely_vegetated_areas.get() },
+                "wetlands": { "basis_points": values.wetlands.get() },
+                "marine_inlets_and_transitional_waters": { "basis_points": values.marine_inlets_and_transitional_waters.get() },
             }
         }),
-        PotentialVegetation::Inferred(formation) => {
-            json!({ "Inferred": encode_potential_formation(*formation) })
+        PotentialVegetation::Categorical(class) => {
+            json!({ "Categorical": encode_potential_class(*class) })
+        }
+        PotentialVegetation::Inferred(class) => {
+            json!({ "Inferred": encode_potential_class(*class) })
         }
     }
 }
@@ -712,31 +719,16 @@ fn encode_tree_species(profile: &TreeSpeciesProfile) -> Value {
     }
 }
 
-fn encode_potential_formation(formation: PotentialVegetationFormation) -> Value {
-    let name = match formation {
-        PotentialVegetationFormation::PolarDesertAndNival => "PolarDesertAndNival",
-        PotentialVegetationFormation::TundraAndAlpine => "TundraAndAlpine",
-        PotentialVegetationFormation::OpenWoodlandAndSubalpine => "OpenWoodlandAndSubalpine",
-        PotentialVegetationFormation::ConiferousAndMixedForest => "ConiferousAndMixedForest",
-        PotentialVegetationFormation::Heath => "Heath",
-        PotentialVegetationFormation::DeciduousAndMixedForest => "DeciduousAndMixedForest",
-        PotentialVegetationFormation::ThermophilousBroadleafForest => {
-            "ThermophilousBroadleafForest"
+fn encode_potential_class(class: PotentialVegetationClass) -> Value {
+    let name = match class {
+        PotentialVegetationClass::WoodlandAndForest => "WoodlandAndForest",
+        PotentialVegetationClass::HeathlandAndShrub => "HeathlandAndShrub",
+        PotentialVegetationClass::Grassland => "Grassland",
+        PotentialVegetationClass::SparselyVegetatedAreas => "SparselyVegetatedAreas",
+        PotentialVegetationClass::Wetlands => "Wetlands",
+        PotentialVegetationClass::MarineInletsAndTransitionalWaters => {
+            "MarineInletsAndTransitionalWaters"
         }
-        PotentialVegetationFormation::HygroThermophilousBroadleafForest => {
-            "HygroThermophilousBroadleafForest"
-        }
-        PotentialVegetationFormation::MediterraneanSclerophyll => "MediterraneanSclerophyll",
-        PotentialVegetationFormation::XerophyticConiferAndScrub => "XerophyticConiferAndScrub",
-        PotentialVegetationFormation::ForestSteppe => "ForestSteppe",
-        PotentialVegetationFormation::Steppe => "Steppe",
-        PotentialVegetationFormation::Oroxerophytic => "Oroxerophytic",
-        PotentialVegetationFormation::Desert => "Desert",
-        PotentialVegetationFormation::CoastalAndHalophytic => "CoastalAndHalophytic",
-        PotentialVegetationFormation::AquaticAndReed => "AquaticAndReed",
-        PotentialVegetationFormation::Mire => "Mire",
-        PotentialVegetationFormation::SwampAndFenForest => "SwampAndFenForest",
-        PotentialVegetationFormation::FloodplainAndWetland => "FloodplainAndWetland",
     };
     json!({ (name): [] })
 }
@@ -828,7 +820,7 @@ fn default_forest_cover_directory() -> PathBuf {
 }
 
 fn default_potential_vegetation_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/potential-vegetation/Maps")
+    repository_root().join("target/world-data-sources/raw/jung-pnv")
 }
 
 fn default_tree_species_archive() -> PathBuf {
@@ -864,14 +856,14 @@ mod tests {
     use adventuresim_world_schema::{
         AgriculturalLimitation, AvailableWaterCapacity, CURRENT_INFERENCE_RULES_VERSION,
         CanopyDensity, CompiledWorld, DominantLeafType, DroughtHistory, DroughtProfile,
-        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, GeologicAgeEvidence,
-        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
-        GridCellSizeMeters, HabitatSuitability, IgneousRock, InferredGeologicSetting,
-        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
-        MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology, MineralSoil,
-        MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
-        OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-        PotentialVegetationFormation, SettlementDescriptionImport, SettlementDescriptionKind,
+        EdgeEndpoint, ElevationMeters, ForestCover, GeologicAgeEvidence, GeologicEra,
+        GeologicLithologyEvidence, GeologicSetting, GeologicUnitId, GridCellSizeMeters,
+        HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
+        LandRoute, LandUseFraction, LandUseProfile, LanguageCode, MappedSoilProfile,
+        MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
+        PotentialVegetationClass, SettlementDescriptionImport, SettlementDescriptionKind,
         SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
         SoilProperties, SoilSubstrate, SoilWaterRegime, SpatialGridSpec, StoneContentPercent,
         SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
@@ -984,28 +976,20 @@ mod tests {
     }
 
     #[test]
-    fn encodes_mapped_and_inferred_vegetation_for_spacetimedb_sats_json() {
+    fn encodes_categorical_and_inferred_vegetation_for_spacetimedb_sats_json() {
         let mut settlement = settlement(ForestCover::Open);
         assert_eq!(
             encode_settlement(&settlement).unwrap()["potential_vegetation"],
             serde_json::json!({
-                "Inferred": { "DeciduousAndMixedForest": [] }
+                "Inferred": { "WoodlandAndForest": [] }
             })
         );
-        settlement.potential_vegetation = PotentialVegetation::Mapped(
-            MappedPotentialVegetation::new(
-                EuroVegMapUnitCode::new("F27").unwrap(),
-                PotentialVegetationFormation::DeciduousAndMixedForest,
-            )
-            .unwrap(),
-        );
+        settlement.potential_vegetation =
+            PotentialVegetation::Categorical(PotentialVegetationClass::Grassland);
         assert_eq!(
             encode_settlement(&settlement).unwrap()["potential_vegetation"],
             serde_json::json!({
-                "Mapped": {
-                    "unit": { "code": "F27" },
-                    "formation": { "DeciduousAndMixedForest": [] }
-                }
+                "Categorical": { "Grassland": [] }
             })
         );
     }
@@ -1155,7 +1139,7 @@ mod tests {
             .unwrap(),
             forest_cover,
             potential_vegetation: PotentialVegetation::Inferred(
-                PotentialVegetationFormation::DeciduousAndMixedForest,
+                PotentialVegetationClass::WoodlandAndForest,
             ),
             tree_species: TreeSpeciesProfile::Inferred(
                 InferredTreeSpeciesProfile::new(vec![TreeSpeciesId::new("Quercus_robur").unwrap()])

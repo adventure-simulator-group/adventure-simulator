@@ -32,8 +32,9 @@ world schema. For example, Viabundus supplies settlement identity and road
 topology, while GLO-30 supplies the required typed elevation for each draft
 settlement. HYDE then adds an exhaustive typed land-use profile and constructs
 an enriched draft. Copernicus forest cover consumes that draft and constructs
-another enriched draft with a typed open-or-wooded state. EuroVegMap then adds
-typed mapped-or-inferred potential vegetation. EU-Trees4F consumes that state,
+another enriched draft with a typed open-or-wooded state. Jung/IIASA European
+PNV v1.1 then adds typed posterior, categorical, or inferred potential
+vegetation. EU-Trees4F consumes that source-independent class accessor,
 adds a nonempty modeled-or-inferred tree-species profile, and constructs another
 enriched draft. ESDB consumes all of those environmental inputs and adds a
 complete mapped-or-inferred soil profile. EGDI surface geology then uses an

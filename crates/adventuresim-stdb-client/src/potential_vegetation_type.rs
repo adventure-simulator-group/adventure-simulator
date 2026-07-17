@@ -4,15 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::mapped_potential_vegetation_type::MappedPotentialVegetation;
-use super::potential_vegetation_formation_type::PotentialVegetationFormation;
+use super::potential_vegetation_class_type::PotentialVegetationClass;
+use super::potential_vegetation_posterior_type::PotentialVegetationPosterior;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum PotentialVegetation {
-    Mapped(MappedPotentialVegetation),
+    Posterior(PotentialVegetationPosterior),
 
-    Inferred(PotentialVegetationFormation),
+    Categorical(PotentialVegetationClass),
+
+    Inferred(PotentialVegetationClass),
 }
 
 impl __sdk::InModule for PotentialVegetation {

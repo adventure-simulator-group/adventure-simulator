@@ -9,7 +9,7 @@ use std::{
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, MappedSoilProfile, MineralSoil,
     MineralSoilTexture, OrganicSoil, OtherNonTexturedSoil, ParentMaterialCode,
-    PotentialVegetationFormation, RockOutcropSoil, SoilDepth, SoilMappingUnit, SoilProfile,
+    PotentialVegetationClass, RockOutcropSoil, SoilDepth, SoilMappingUnit, SoilProfile,
     SoilProperties, SoilSubstrate, SoilWaterRegime, SourceProvenance, StoneContentPercent,
     TopsoilOrganicCarbon, WrbReferenceGroup,
 };
@@ -114,16 +114,13 @@ fn finish(
 }
 
 fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
-    use PotentialVegetationFormation as V;
-    let formation = match &settlement.vegetated.potential_vegetation {
-        adventuresim_world_schema::PotentialVegetation::Mapped(mapped) => mapped.formation(),
-        adventuresim_world_schema::PotentialVegetation::Inferred(formation) => *formation,
-    };
+    use PotentialVegetationClass as V;
+    let formation = settlement.vegetated.potential_vegetation.class();
     let elevation = settlement.vegetated.forest.land.elevated.elevation.get();
     let stones =
         |percent| StoneContentPercent::new(percent).expect("fallback percentage is bounded");
     match formation {
-        V::Mire | V::SwampAndFenForest => SoilProperties {
+        V::Wetlands => SoilProperties {
             substrate: SoilSubstrate::Organic(OrganicSoil {
                 depth: SoilDepth::Deep,
                 available_water: AvailableWaterCapacity::VeryHigh,
@@ -132,7 +129,7 @@ fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
             water_regime: SoilWaterRegime::PermanentlyWet,
             agricultural_limitation: AgriculturalLimitation::ShallowWaterTable,
         },
-        V::AquaticAndReed | V::FloodplainAndWetland => SoilProperties {
+        V::MarineInletsAndTransitionalWaters => SoilProperties {
             substrate: SoilSubstrate::Mineral(MineralSoil {
                 texture: MineralSoilTexture::MediumFine,
                 depth: SoilDepth::VeryDeep,
@@ -143,26 +140,22 @@ fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
             water_regime: SoilWaterRegime::LongSeasonWet,
             agricultural_limitation: AgriculturalLimitation::Flooded,
         },
-        V::TundraAndAlpine | V::Oroxerophytic | V::PolarDesertAndNival if elevation >= 900 => {
-            SoilProperties {
-                substrate: SoilSubstrate::RockOutcrop(RockOutcropSoil { stones: stones(20) }),
-                water_regime: SoilWaterRegime::UsuallyDry,
-                agricultural_limitation: AgriculturalLimitation::ShallowRock,
-            }
-        }
-        V::MediterraneanSclerophyll | V::XerophyticConiferAndScrub | V::Steppe | V::Desert => {
-            SoilProperties {
-                substrate: SoilSubstrate::Mineral(MineralSoil {
-                    texture: MineralSoilTexture::Coarse,
-                    depth: SoilDepth::Moderate,
-                    available_water: AvailableWaterCapacity::Low,
-                    organic_carbon: TopsoilOrganicCarbon::Low,
-                    stones: stones(10),
-                }),
-                water_regime: SoilWaterRegime::UsuallyDry,
-                agricultural_limitation: AgriculturalLimitation::None,
-            }
-        }
+        V::SparselyVegetatedAreas if elevation >= 900 => SoilProperties {
+            substrate: SoilSubstrate::RockOutcrop(RockOutcropSoil { stones: stones(20) }),
+            water_regime: SoilWaterRegime::UsuallyDry,
+            agricultural_limitation: AgriculturalLimitation::ShallowRock,
+        },
+        V::HeathlandAndShrub | V::Grassland => SoilProperties {
+            substrate: SoilSubstrate::Mineral(MineralSoil {
+                texture: MineralSoilTexture::Coarse,
+                depth: SoilDepth::Moderate,
+                available_water: AvailableWaterCapacity::Low,
+                organic_carbon: TopsoilOrganicCarbon::Low,
+                stones: stones(10),
+            }),
+            water_regime: SoilWaterRegime::UsuallyDry,
+            agricultural_limitation: AgriculturalLimitation::None,
+        },
         _ => SoilProperties {
             substrate: SoilSubstrate::Mineral(MineralSoil {
                 texture: MineralSoilTexture::Medium,
