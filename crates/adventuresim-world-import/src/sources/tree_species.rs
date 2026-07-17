@@ -983,6 +983,7 @@ mod tests {
                             LandUseFraction::new(5_900).unwrap(),
                         )
                         .unwrap(),
+                        evidence: crate::draft::LandUseEvidence::HydeSampled { normalized: false },
                     },
                     forest_cover: ForestCover::Open,
                 },

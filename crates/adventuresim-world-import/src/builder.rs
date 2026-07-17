@@ -8,8 +8,8 @@ use adventuresim_world_schema::{
 use crate::{
     Result,
     sources::{
-        drought, elevation, forest_cover, geology, hydrology, land_use, potential_vegetation,
-        religion, soil, tree_species, viabundus,
+        drought, elevation, environment_synthesis, forest_cover, geology, hydrology, land_use,
+        potential_vegetation, religion, soil, tree_species, viabundus,
     },
     validation,
 };
@@ -76,7 +76,8 @@ impl WorldBuilder {
         let draft = religion::enrich(draft, religion_regions)?;
         let draft = drought::enrich(draft, drought_netcdf)?;
         let draft = hydrology::enrich(draft, hydrology_directory)?;
-        let world = soil::finalize(draft)?;
+        let draft = soil::finalize(draft)?;
+        let world = environment_synthesis::finalize(draft)?;
         validation::validate(&world)?;
         Ok(world)
     }

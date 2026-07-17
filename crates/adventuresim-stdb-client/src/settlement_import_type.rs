@@ -7,6 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
+use super::historical_vegetation_type::HistoricalVegetation;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_hydrology_type::SettlementHydrology;
@@ -29,6 +30,7 @@ pub struct SettlementImport {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub historical_vegetation: HistoricalVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,

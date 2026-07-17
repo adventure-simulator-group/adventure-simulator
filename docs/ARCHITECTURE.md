@@ -44,8 +44,13 @@ intermediate into an established, parity, multi-confessional, or municipally
 determined typed status. NOAA OWDA adds a bounded current-summer PDSI and typed
 twenty-year drought/wetness history. EU-Hydro adds settlement water access and
 converts draft roads into typed land crossings or ferry waterways, returning a
-private hydrology draft. The soil finalizer then combines prediction, geology,
-Jung wetland evidence, elevation, and hydrology into canonical world records.
+private hydrology draft. The soil finalizer combines prediction, geology,
+Jung wetland evidence, elevation, and hydrology but returns another private
+draft. A final environmental-synthesis stage then consumes the entire evidence
+chain and alone constructs canonical world records, including a reconstruction
+of dominant 1544 cover distinct from modern-climate potential vegetation.
+Land-use sampled/normalized/fallback evidence remains private through this
+stage so a deterministic missing-HYDE profile cannot masquerade as direct.
 The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents

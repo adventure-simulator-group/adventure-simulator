@@ -4,16 +4,17 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CationExchangeCapacity,
     CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
     ElevationMeters, FerryWaterway, FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId,
-    HabitatSuitability, InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction,
-    LandUseProfile, LanguageCode, MarineWaterAccess, MineralSoil, MineralSoilTexture,
-    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
-    PotentialVegetation, PotentialVegetationClass, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
-    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
-    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
-    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
-    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
-    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport, valid_bounded_source_text,
+    HabitatSuitability, HistoricalVegetation, InferredGeologicSetting, InferredTreeSpeciesProfile,
+    LandUseFraction, LandUseProfile, LanguageCode, MarineWaterAccess, MineralSoil,
+    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
+    PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
+    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
+    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
+    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
+    Woodland, WorldNodeImport, historical_vegetation_matches_context, valid_bounded_source_text,
     valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
@@ -413,6 +414,7 @@ pub struct Settlement {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub historical_vegetation: HistoricalVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
@@ -719,6 +721,7 @@ pub fn import_settlements(
             }),
         };
         let potential_vegetation = settlement.potential_vegetation;
+        let historical_vegetation = settlement.historical_vegetation;
         let tree_species = match settlement.tree_species {
             TreeSpeciesProfile::Modeled(profile) => {
                 let candidates = profile
@@ -777,6 +780,18 @@ pub fn import_settlements(
         let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
         let drought = reconstruct_drought_profile(&settlement.id, settlement.drought)?;
         validate_settlement_hydrology(&settlement.id, settlement.hydrology)?;
+        if !historical_vegetation_matches_context(
+            historical_vegetation,
+            land_use,
+            &potential_vegetation,
+            soil,
+            settlement.hydrology,
+        ) {
+            return Err(format!(
+                "Settlement {} has historical vegetation inconsistent with its evidence",
+                settlement.id
+            ));
+        }
         if !valid_sources_markdown(&settlement.sources) {
             return Err(format!(
                 "Settlement {} has invalid source notes",
@@ -806,6 +821,7 @@ pub fn import_settlements(
             land_use,
             forest_cover,
             potential_vegetation,
+            historical_vegetation,
             tree_species,
             soil,
             geology,
@@ -4599,6 +4615,13 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 potential_vegetation: PotentialVegetation::Inferred(
                     PotentialVegetationClass::WoodlandAndForest,
                 ),
+                historical_vegetation: HistoricalVegetation::Fallback(adventuresim_world_schema::FallbackHistoricalVegetation {
+                    cover: adventuresim_world_schema::FallbackHistoricalVegetationCover::Woodland(adventuresim_world_schema::HistoricalWoodland {
+                        canopy: CanopyDensity::new(35).unwrap(),
+                        dominant: DominantLeafType::Mixed,
+                    }),
+                    method: adventuresim_world_schema::FallbackHistoricalVegetationMethod::PotentialEnvelopeV4,
+                }),
                 tree_species: TreeSpeciesProfile::Inferred(
                     InferredTreeSpeciesProfile::new(vec![
                         TreeSpeciesId::new("Quercus_robur").unwrap(),

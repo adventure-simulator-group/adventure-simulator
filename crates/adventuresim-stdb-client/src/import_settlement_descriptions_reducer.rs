@@ -50,8 +50,8 @@ pub trait import_settlement_descriptions {
     fn on_import_settlement_descriptions(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &Vec<SettlementDescriptionBatchRow>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> ImportSettlementDescriptionsCallbackId;
     /// Cancel a callback previously registered by [`Self::on_import_settlement_descriptions`],
     /// causing it not to run in the future.
@@ -74,8 +74,8 @@ impl import_settlement_descriptions for super::RemoteReducers {
     fn on_import_settlement_descriptions(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &Vec<SettlementDescriptionBatchRow>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> ImportSettlementDescriptionsCallbackId {
         ImportSettlementDescriptionsCallbackId(self.imp.on_reducer(
             "import_settlement_descriptions",

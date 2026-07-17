@@ -945,6 +945,7 @@ mod tests {
                         elevation: ElevationMeters::new(0).unwrap(),
                     },
                     land_use,
+                    evidence: crate::draft::LandUseEvidence::HydeSampled { normalized: false },
                 },
                 forest_cover: ForestCover::Open,
             })

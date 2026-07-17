@@ -37,7 +37,7 @@ pub trait import_settlement_aliases {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_import_settlement_aliases`] callbacks.
     fn import_settlement_aliases(&self, aliases: Vec<SettlementAliasBatchRow>)
-    -> __sdk::Result<()>;
+        -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `import_settlement_aliases`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -48,8 +48,8 @@ pub trait import_settlement_aliases {
     fn on_import_settlement_aliases(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &Vec<SettlementAliasBatchRow>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> ImportSettlementAliasesCallbackId;
     /// Cancel a callback previously registered by [`Self::on_import_settlement_aliases`],
     /// causing it not to run in the future.
@@ -69,8 +69,8 @@ impl import_settlement_aliases for super::RemoteReducers {
     fn on_import_settlement_aliases(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &Vec<SettlementAliasBatchRow>)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> ImportSettlementAliasesCallbackId {
         ImportSettlementAliasesCallbackId(self.imp.on_reducer(
             "import_settlement_aliases",
