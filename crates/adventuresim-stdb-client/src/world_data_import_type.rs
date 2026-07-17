@@ -24,6 +24,9 @@ impl __sdk::InModule for WorldDataImport {
 pub struct WorldDataImportCols {
     pub id: __sdk::__query_builder::Col<WorldDataImport, u8>,
     pub owner: __sdk::__query_builder::Col<WorldDataImport, __sdk::Identity>,
+    pub schema_version: __sdk::__query_builder::Col<WorldDataImport, u32>,
+    pub artifact_id: __sdk::__query_builder::Col<WorldDataImport, String>,
+    pub completed: __sdk::__query_builder::Col<WorldDataImport, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for WorldDataImport {
@@ -32,6 +35,9 @@ impl __sdk::__query_builder::HasCols for WorldDataImport {
         WorldDataImportCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             owner: __sdk::__query_builder::Col::new(table_name, "owner"),
+            schema_version: __sdk::__query_builder::Col::new(table_name, "schema_version"),
+            artifact_id: __sdk::__query_builder::Col::new(table_name, "artifact_id"),
+            completed: __sdk::__query_builder::Col::new(table_name, "completed"),
         }
     }
 }

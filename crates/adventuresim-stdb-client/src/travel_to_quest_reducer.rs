@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct TravelToQuestArgs {
     pub character_id: u64,
     pub quest_id: String,
+    pub provision: bool,
 }
 
 impl From<TravelToQuestArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<TravelToQuestArgs> for super::Reducer {
         Self::TravelToQuest {
             character_id: args.character_id,
             quest_id: args.quest_id,
+            provision: args.provision,
         }
     }
 }
@@ -35,8 +37,13 @@ pub trait travel_to_quest {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`travel_to_quest:travel_to_quest_then`] to run a callback after the reducer completes.
-    fn travel_to_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.travel_to_quest_then(character_id, quest_id, |_, _| {})
+    fn travel_to_quest(
+        &self,
+        character_id: u64,
+        quest_id: String,
+        provision: bool,
+    ) -> __sdk::Result<()> {
+        self.travel_to_quest_then(character_id, quest_id, provision, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `travel_to_quest` to run as soon as possible,
@@ -49,6 +56,7 @@ pub trait travel_to_quest {
         &self,
         character_id: u64,
         quest_id: String,
+        provision: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,6 +71,7 @@ impl travel_to_quest for super::RemoteReducers {
         &self,
         character_id: u64,
         quest_id: String,
+        provision: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -74,6 +83,7 @@ impl travel_to_quest for super::RemoteReducers {
             TravelToQuestArgs {
                 character_id,
                 quest_id,
+                provision,
             },
             callback,
         )
