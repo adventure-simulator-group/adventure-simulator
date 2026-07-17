@@ -234,6 +234,10 @@ generate-db-client: spacetime-version-check
 init-viabundus:
 	@python3 scripts/init_viabundus.py
 
+# Download and verify the pinned NOAA OWDA v1.0 NetCDF source.
+init-owda:
+	@python3 scripts/init_owda.py
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --
