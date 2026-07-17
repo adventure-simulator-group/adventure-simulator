@@ -82,8 +82,7 @@ impl PartyAction {
     pub(super) fn requires_ready_party(&self) -> bool {
         matches!(
             self,
-            Self::TravelToSettlement { .. }
-                | Self::TravelToQuest { .. }
+            Self::TravelToQuest { .. }
                 | Self::AutoresolveQuest { .. }
                 | Self::RequestTacticalServer { .. }
         )

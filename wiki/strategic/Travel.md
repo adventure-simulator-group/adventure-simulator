@@ -58,17 +58,45 @@ stores an off-road point near its posting settlement. The trip to that point and
 trips from it to the five nearest settlements use straight-line distance, require
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
-shared Map tab: destinations are selected in the left rail and their description,
-distance, journey time, and travel action appear in the right rail. A party's
-active quest destination is added to the settlement Map list alongside the
-road-connected settlements and carries the same red exclamation used by the
-active quest tracker. Once resolved, the issuing settlement instead carries a
-gold turn-in exclamation. Quest-offer dialogue itself never presents a separate
-travel action.
+shared Map tab: destinations are selected in the left rail while the right rail
+sets the fatigue threshold at which the first tiring member makes camp.
+Hovering or selecting a destination previews the route above chat with start,
+camp, destination, and animated party pins. The preview is calculated from the
+same least-rested-member fatigue and Endurance rule that advances travel, so it
+does not use a browser-only daily-march approximation. A journey longer than a
+leg stops at a persisted camp; the leader may rest the whole party for free and
+continue in instantaneous legs. The strategic layer persists the journey's
+original endpoints, total duration, actual camp checkpoints, and the remaining
+forecast. SSE updates therefore keep every party member's tracker consistent
+across camp rests and page navigations. A shorter-than-recommended camp rest
+can legitimately add a future projected camp, but camps already reached never
+disappear. A party's
+active quest destination is added to the settlement Map list only while the
+party is at the quest's posting settlement; it then carries the same red
+exclamation used by the active quest tracker. From any other settlement, the
+Map traces the shortest road/ferry path to the posting settlement and marks the
+next available settlement leg with that red exclamation. Once resolved, the
+issuing settlement instead carries a gold turn-in exclamation. Quest-offer
+dialogue itself never presents a separate travel action.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.
 - The time between each rest stop *should be* 24 hours. Your cursor when placing points displays the expected arrival time, but the longer your characters go without resting the slower their travel speed and worse their combat abilities will be.
+
+### Camping and hourly rest
+
+The party leader chooses the fatigue percentage at which the first tiring party
+member should make camp. The map control is a slider and saves when released;
+the route preview updates immediately. Camp rest advances every member by the
+selected duration and removes their recoverable travel fatigue without
+settlement food, water, or a gold cost. The recommended camp duration is the
+longest time any party member needs to remove fatigue; it does not extend the
+rest to finish healing injuries.
+
+At an inn or church, resting remains personal rather than party-wide. The rest
+control can switch between **Hours** and **Days**; its recommendation heals the
+active character's injuries first, or removes their fatigue when uninjured.
+Recommendations of a day or longer are shown in days.
 ### Food
 - Based on the total duration of the trip (and the return trip, which by default is to just follow the original trip backwards), you will need to bring food.
 - We do not actually want players to micromanage their inventory. Your character will automatically purchase sufficient rations for the journey before they set out, displaying the cost of this on the screen before you finalize your travel plan.

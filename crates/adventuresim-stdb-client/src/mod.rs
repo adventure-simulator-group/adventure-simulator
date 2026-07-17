@@ -12,6 +12,8 @@ pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
 pub mod agricultural_limitation_type;
 pub mod autoresolve_quest_reducer;
+pub mod autoresolve_report_table;
+pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -61,6 +63,7 @@ pub mod complete_quest_reducer;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
+pub mod continue_camp_travel_reducer;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
@@ -162,6 +165,8 @@ pub mod party_inventory_state_table;
 pub mod party_inventory_state_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
+pub mod party_journey_table;
+pub mod party_journey_type;
 pub mod party_leader_vote_table;
 pub mod party_leader_vote_type;
 pub mod party_member_table;
@@ -194,6 +199,8 @@ pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
 pub mod resolve_religious_demand_reducer;
+pub mod rest_at_camp_reducer;
+pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
@@ -211,6 +218,7 @@ pub mod seed_world_reducer;
 pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
+pub mod set_party_camp_fatigue_percent_reducer;
 pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
@@ -278,6 +286,8 @@ pub use accept_quest_reducer::accept_quest;
 pub use add_and_equip_item_reducer::add_and_equip_item;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use autoresolve_quest_reducer::autoresolve_quest;
+pub use autoresolve_report_table::*;
+pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -327,6 +337,7 @@ pub use complete_quest_reducer::complete_quest;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
+pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
@@ -428,6 +439,8 @@ pub use party_inventory_state_table::*;
 pub use party_inventory_state_type::PartyInventoryState;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
+pub use party_journey_table::*;
+pub use party_journey_type::PartyJourney;
 pub use party_leader_vote_table::*;
 pub use party_leader_vote_type::PartyLeaderVote;
 pub use party_member_table::*;
@@ -460,6 +473,8 @@ pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_s
 pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
+pub use rest_at_camp_reducer::rest_at_camp;
+pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
@@ -477,6 +492,7 @@ pub use seed_world_reducer::seed_world;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
+pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
@@ -585,6 +601,9 @@ pub enum Reducer {
     },
     CompleteQuest {
         quest_id: String,
+    },
+    ContinueCampTravel {
+        character_id: u64,
     },
     CreateCharacter {
         id: u64,
@@ -802,9 +821,18 @@ pub enum Reducer {
         demand_id: u64,
         choice: String,
     },
+    RestAtCamp {
+        character_id: u64,
+        requested_minutes: u64,
+    },
     RestAtSettlement {
         character_id: u64,
         requested_days: u16,
+        at_inn: bool,
+    },
+    RestAtSettlementHours {
+        character_id: u64,
+        requested_minutes: u64,
         at_inn: bool,
     },
     SaveRecruitmentRole {
@@ -836,6 +864,10 @@ pub enum Reducer {
         party_scope: bool,
         item_id: String,
         quantity: u32,
+    },
+    SetPartyCampFatiguePercent {
+        character_id: u64,
+        fatigue_percent: u8,
     },
     StoreBattleLoot {
         character_id: u64,
@@ -948,6 +980,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CompleteQuest { .. } => "complete_quest",
+            Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
@@ -995,7 +1028,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::RequestToJoinParty { .. } => "request_to_join_party",
             Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
+            Reducer::RestAtCamp { .. } => "rest_at_camp",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
+            Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
@@ -1004,6 +1039,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
+            Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
@@ -1098,6 +1134,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::CompleteQuest { quest_id } => {
                 __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
                     quest_id: quest_id.clone(),
+                })
+            }
+            Reducer::ContinueCampTravel { character_id } => {
+                __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
+                    character_id: character_id.clone(),
                 })
             }
             Reducer::CreateCharacter { id } => {
@@ -1504,6 +1545,13 @@ impl __sdk::Reducer for Reducer {
                     choice: choice.clone(),
                 },
             ),
+            Reducer::RestAtCamp {
+                character_id,
+                requested_minutes,
+            } => __sats::bsatn::to_vec(&rest_at_camp_reducer::RestAtCampArgs {
+                character_id: character_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+            }),
             Reducer::RestAtSettlement {
                 character_id,
                 requested_days,
@@ -1513,6 +1561,17 @@ impl __sdk::Reducer for Reducer {
                 requested_days: requested_days.clone(),
                 at_inn: at_inn.clone(),
             }),
+            Reducer::RestAtSettlementHours {
+                character_id,
+                requested_minutes,
+                at_inn,
+            } => __sats::bsatn::to_vec(
+                &rest_at_settlement_hours_reducer::RestAtSettlementHoursArgs {
+                    character_id: character_id.clone(),
+                    requested_minutes: requested_minutes.clone(),
+                    at_inn: at_inn.clone(),
+                },
+            ),
             Reducer::SaveRecruitmentRole {
                 owner_id,
                 name,
@@ -1569,6 +1628,15 @@ impl __sdk::Reducer for Reducer {
                     party_scope: party_scope.clone(),
                     item_id: item_id.clone(),
                     quantity: quantity.clone(),
+                },
+            ),
+            Reducer::SetPartyCampFatiguePercent {
+                character_id,
+                fatigue_percent,
+            } => __sats::bsatn::to_vec(
+                &set_party_camp_fatigue_percent_reducer::SetPartyCampFatiguePercentArgs {
+                    character_id: character_id.clone(),
+                    fatigue_percent: fatigue_percent.clone(),
                 },
             ),
             Reducer::StoreBattleLoot {
@@ -1755,6 +1823,7 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -1783,6 +1852,7 @@ pub struct DbUpdate {
     party_inventory_item: __sdk::TableUpdate<PartyInventoryItem>,
     party_inventory_state: __sdk::TableUpdate<PartyInventoryState>,
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
+    party_journey: __sdk::TableUpdate<PartyJourney>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
     party_member: __sdk::TableUpdate<PartyMember>,
     party_recruitment_role: __sdk::TableUpdate<PartyRecruitmentRole>,
@@ -1809,6 +1879,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "autoresolve_report" => db_update
+                    .autoresolve_report
+                    .append(autoresolve_report_table::parse_table_update(table_update)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(battle_loot_item_table::parse_table_update(table_update)?),
@@ -1893,6 +1966,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_join_request" => db_update
                     .party_join_request
                     .append(party_join_request_table::parse_table_update(table_update)?),
+                "party_journey" => db_update
+                    .party_journey
+                    .append(party_journey_table::parse_table_update(table_update)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(party_leader_vote_table::parse_table_update(table_update)?),
@@ -1973,6 +2049,12 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.autoresolve_report = cache
+            .apply_diff_to_table::<AutoresolveReport>(
+                "autoresolve_report",
+                &self.autoresolve_report,
+            )
+            .with_updates_by_pk(|row| &row.quest_id);
         diff.battle_loot_item = cache
             .apply_diff_to_table::<BattleLootItem>("battle_loot_item", &self.battle_loot_item)
             .with_updates_by_pk(|row| &row.id);
@@ -2090,6 +2172,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_join_request = cache
             .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
             .with_updates_by_pk(|row| &row.id);
+        diff.party_journey = cache
+            .apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey)
+            .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
             .apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote)
             .with_updates_by_pk(|row| &row.id);
@@ -2168,6 +2253,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "autoresolve_report" => db_update
+                    .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2251,6 +2339,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_join_request" => db_update
                     .party_join_request
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey" => db_update
+                    .party_journey
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
@@ -2319,6 +2410,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "autoresolve_report" => db_update
+                    .autoresolve_report
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2402,6 +2496,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_join_request" => db_update
                     .party_join_request
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey" => db_update
+                    .party_journey
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
@@ -2472,6 +2569,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -2500,6 +2598,7 @@ pub struct AppliedDiff<'r> {
     party_inventory_item: __sdk::TableAppliedDiff<'r, PartyInventoryItem>,
     party_inventory_state: __sdk::TableAppliedDiff<'r, PartyInventoryState>,
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
+    party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
     party_recruitment_role: __sdk::TableAppliedDiff<'r, PartyRecruitmentRole>,
@@ -2531,6 +2630,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
+            "autoresolve_report",
+            &self.autoresolve_report,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
             "battle_loot_item",
             &self.battle_loot_item,
@@ -2657,6 +2761,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyJoinRequest>(
             "party_join_request",
             &self.party_join_request,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyJourney>(
+            "party_journey",
+            &self.party_journey,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyLeaderVote>(
@@ -3385,6 +3494,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        autoresolve_report_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -3413,6 +3523,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_inventory_item_table::register_table(client_cache);
         party_inventory_state_table::register_table(client_cache);
         party_join_request_table::register_table(client_cache);
+        party_journey_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_recruitment_role_table::register_table(client_cache);
@@ -3433,6 +3544,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         world_node_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "autoresolve_report",
         "battle_loot_item",
         "battle_participant",
         "battle_result",
@@ -3461,6 +3573,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_inventory_item",
         "party_inventory_state",
         "party_join_request",
+        "party_journey",
         "party_leader_vote",
         "party_member",
         "party_recruitment_role",

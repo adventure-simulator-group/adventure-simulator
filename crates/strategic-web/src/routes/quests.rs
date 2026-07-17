@@ -13,12 +13,13 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     settlements::get_active_party_members,
-    travel::{TravelDestination, TravelForm, settlement_destination},
+    travel::{TravelDestination, TravelForm, populate_camp_forecasts, settlement_destination},
 };
 use crate::session::Session;
 use crate::spacetimedb::{
-    AutoresolveReport, BattleLootItem, BattleResult, Character, InventoryQuantityTarget,
-    ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
+    AutoresolveReport, BattleLootItem, BattleResult, Character, CharacterAttributes,
+    CharacterLimbs, CharacterStats, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
 };
 use crate::templates::quest::{
     quest_location_base_page, quest_location_map_page, quest_location_page,
@@ -257,10 +258,8 @@ async fn travel_to_quest(
         return (StatusCode::BAD_REQUEST, error.clone()).into_response();
     }
     match outcome.unwrap() {
-        PartyActionOutcome::Executed => {
-            Redirect::to(&format!("/locations/quest/{id}")).into_response()
-        }
-        PartyActionOutcome::Requested => Redirect::to("/?party-requested=travel").into_response(),
+        PartyActionOutcome::Executed => StatusCode::NO_CONTENT.into_response(),
+        PartyActionOutcome::Requested => StatusCode::ACCEPTED.into_response(),
     }
 }
 
@@ -483,6 +482,32 @@ async fn render_quest_location(
         Vec::new()
     };
     let party_members = get_active_party_members(&state, character.as_ref()).await;
+    if let Some(party) = party.as_ref() {
+        let attributes: Vec<CharacterAttributes> = state
+            .db
+            .query("SELECT * FROM character_attributes")
+            .await
+            .unwrap_or_default();
+        let limbs: Vec<CharacterLimbs> = state
+            .db
+            .query("SELECT * FROM character_limbs")
+            .await
+            .unwrap_or_default();
+        let stats: Vec<CharacterStats> = state
+            .db
+            .query("SELECT * FROM character_stats")
+            .await
+            .unwrap_or_default();
+        let member_ids: Vec<_> = party_members.iter().map(|member| member.id).collect();
+        populate_camp_forecasts(
+            &mut nearby,
+            &member_ids,
+            &attributes,
+            &limbs,
+            &stats,
+            party.camp_fatigue_percent,
+        );
+    }
     let party_ready = party_is_ready(&state, &party_members).await;
     let can_fight = can_control
         && party_ready

@@ -41,6 +41,7 @@ use adventuresim_stdb_client::{
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_inventory_state_table::PartyInventoryStateTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
+    party_journey_table::PartyJourneyTableAccess,
     party_leader_vote_table::PartyLeaderVoteTableAccess,
     party_member_table::PartyMemberTableAccess,
     party_recruitment_role_table::PartyRecruitmentRoleTableAccess,
@@ -65,7 +66,11 @@ use maud::html;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::{routes::AppState, session::Session, spacetimedb::Character};
+use crate::{
+    routes::AppState,
+    session::Session,
+    spacetimedb::{Character, Party},
+};
 
 struct LiveInner {
     revision: AtomicU64,
@@ -124,6 +129,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_limbs());
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
         invalidate_on_changes!(state.0._connection.db.party());
+        invalidate_on_changes!(state.0._connection.db.party_journey());
         invalidate_on_changes!(state.0._connection.db.party_member());
         invalidate_on_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());
@@ -287,39 +293,67 @@ struct NavigationState {
 }
 
 async fn navigation(State(state): State<AppState>, session: Session) -> Json<NavigationState> {
-    let character = match session.character_id_u64() {
-        Some(id) => state
-            .db
-            .query::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
-            .await
-            .ok()
-            .and_then(|rows| rows.into_iter().next()),
-        None => None,
-    };
-    let value = match character {
-        Some(character) if character.current_quest_location_id.is_some() => {
-            let id = character.current_quest_location_id.unwrap();
-            NavigationState {
-                kind: Some("quest"),
-                path: format!("/locations/quest/{id}"),
-                id: Some(id),
-            }
-        }
-        Some(character) if character.current_settlement_id.is_some() => {
-            let id = character.current_settlement_id.unwrap();
-            NavigationState {
-                kind: Some("settlement"),
-                path: format!("/locations/settlement/{id}"),
-                id: Some(id),
-            }
-        }
-        _ => NavigationState {
+    let Some(character_id) = session.character_id_u64() else {
+        return Json(NavigationState {
             kind: None,
             id: None,
             path: "/characters".into(),
-        },
+        });
     };
-    Json(value)
+
+    // Subscription updates can precede visibility through the SQL API. A
+    // selected character having neither a location nor a camp is only valid
+    // during that short transition, so retry it rather than navigating away.
+    for attempt in 0..4 {
+        let character = state
+            .db
+            .query::<Character>(&format!(
+                "SELECT * FROM character WHERE id = {character_id}"
+            ))
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next());
+        let Some(character) = character else {
+            break;
+        };
+        if let Some(party_id) = character.party_id.as_deref()
+            && state
+                .db
+                .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{party_id}'"))
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|party| party.camp_destination_id.is_some())
+        {
+            return Json(NavigationState {
+                kind: Some("camp"),
+                path: "/camp".into(),
+                id: None,
+            });
+        }
+        if let Some(id) = character.current_quest_location_id {
+            return Json(NavigationState {
+                kind: Some("quest"),
+                path: format!("/locations/quest/{id}"),
+                id: Some(id),
+            });
+        }
+        if let Some(id) = character.current_settlement_id {
+            return Json(NavigationState {
+                kind: Some("settlement"),
+                path: format!("/locations/settlement/{id}"),
+                id: Some(id),
+            });
+        }
+        if attempt < 3 {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+    Json(NavigationState {
+        kind: None,
+        id: None,
+        path: "/characters".into(),
+    })
 }
 
 #[cfg(test)]

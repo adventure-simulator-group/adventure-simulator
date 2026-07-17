@@ -21,6 +21,7 @@ use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table
 use crate::{
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
+        character_stats,
     },
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
@@ -1208,6 +1209,16 @@ pub struct Party {
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
+    /// The fatigue level at which the first tiring party member makes camp.
+    #[default(50u8)]
+    pub camp_fatigue_percent: u8,
+    /// A non-empty destination means the party is currently camped en route.
+    #[default(None::<String>)]
+    pub camp_destination_id: Option<String>,
+    #[default(None::<String>)]
+    pub camp_destination_kind: Option<String>,
+    #[default(0u64)]
+    pub camp_remaining_minutes: u64,
     #[default(0.0)]
     pub medicine_target: f32,
     #[default(0.0)]
@@ -1216,6 +1227,30 @@ pub struct Party {
     pub charisma_target: f32,
     #[default(0.0)]
     pub faith_target: f32,
+}
+
+/// The durable strategic record behind the travel tracker. Party location
+/// answers where the party is right now; this record retains the journey's
+/// original endpoints, completed camp stops, and authoritative forecast.
+#[derive(Clone, Debug)]
+#[table(accessor = party_journey, public)]
+pub struct PartyJourney {
+    #[primary_key]
+    pub party_id: String,
+    pub origin_kind: String,
+    pub origin_id: String,
+    pub origin_name: String,
+    pub destination_kind: String,
+    pub destination_id: String,
+    pub destination_name: String,
+    pub total_minutes: u64,
+    pub completed_minutes: u64,
+    /// Cumulative journey minutes for camps the party has actually reached.
+    pub camp_stop_minutes: Vec<u64>,
+    /// Cumulative future camp estimates, recalculated after each camp rest.
+    pub forecast_camp_stop_minutes: Vec<u64>,
+    /// A journey keeps the leader's chosen threshold from departure.
+    pub fatigue_percent: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -1840,6 +1875,10 @@ pub(crate) fn create_solo_party_for_character(
             current_quest_location_id: character.current_quest_location_id.clone(),
             active_quest_id: None,
             is_solo: true,
+            camp_fatigue_percent: 50,
+            camp_destination_id: None,
+            camp_destination_kind: None,
+            camp_remaining_minutes: 0,
             medicine_target: 0.0,
             surgery_target: 0.0,
             charisma_target: 0.0,
@@ -2526,7 +2565,7 @@ pub fn seed_bot_join_requests(
         .id()
         .find(&role.party_id)
         .ok_or("Party not found")?;
-    for index in 0..role.quantity.saturating_mul(2).min(16) {
+    for _ in 0..role.quantity {
         let name = petname::Petnames::default()
             .generate(&mut ctx.rng(), 2, " ")
             .ok_or("Could not generate bot applicant name")?;
@@ -2538,7 +2577,20 @@ pub fn seed_bot_join_requests(
         let mut bot = ctx.db.character().id().find(id).unwrap();
         bot.current_settlement_id = party.current_settlement_id.clone();
         bot.current_quest_location_id = party.current_quest_location_id.clone();
+        let bot_party_id = bot.party_id.clone().ok_or("Bot party was not created")?;
         ctx.db.character().id().update(bot);
+        // A new character starts in a solo party at a random settlement. The
+        // applicant and that source party must share the recruiting party's
+        // location before the normal party-merge validation can accept it.
+        let mut bot_party = ctx
+            .db
+            .party()
+            .id()
+            .find(&bot_party_id)
+            .ok_or("Bot party not found")?;
+        bot_party.current_settlement_id = party.current_settlement_id.clone();
+        bot_party.current_quest_location_id = party.current_quest_location_id.clone();
+        ctx.db.party().id().update(bot_party);
         let mut attrs = ctx
             .db
             .character_attributes()
@@ -2574,68 +2626,22 @@ pub fn seed_bot_join_requests(
             }
         }
 
-        if index % 2 == 1 {
-            let requirements = role.requirements;
-            if requirements.endurance > 0 {
-                attrs.endurance = 0.0;
-            } else if requirements.athletics > 0 || requirements.heavy {
-                attrs.left_arm_strength = 0.0;
-                attrs.right_arm_strength = 0.0;
-                if requirements.athletics > 0 {
-                    attrs.left_arm_agility = 0.0;
-                    attrs.right_arm_agility = 0.0;
-                    attrs.left_leg_agility = 0.0;
-                    attrs.right_leg_agility = 0.0;
-                    attrs.endurance = 0.0;
-                }
-            } else if requirements.medicine > 0 {
-                skills.medicine_hours = 0.0;
-            } else if requirements.surgery > 0 {
-                skills.surgeon_hours = 0.0;
-            } else if requirements.charisma > 0 {
-                skills.charisma_hours = 0.0;
-                attrs.intelligence = 0.0;
-                attrs.instinct = 0.0;
-            } else if requirements.faith > 0 {
-                skills.faith_hours = 0.0;
-            } else if requirements.quarter_armor
-                || requirements.half_armor
-                || requirements.three_quarter_armor
-                || requirements.full_armor
-            {
-                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
-                equip.left_arm_armor_id = None;
-                equip.right_arm_armor_id = None;
-                equip.left_leg_armor_id = None;
-                equip.right_leg_armor_id = None;
-                equip.chest_armor_id = None;
-                equip.stomach_armor_id = None;
-                equip.head_armor_id = None;
-                ctx.db.character_equip().character_id().update(equip);
-            } else if requirements.melee {
-                crate::character::add_and_equip_item(
-                    ctx,
-                    id,
-                    "self_bow",
-                    crate::ItemSlot::RightHolding,
-                )?;
-            } else if requirements.ranged {
-                crate::character::add_and_equip_item(
-                    ctx,
-                    id,
-                    "club",
-                    crate::ItemSlot::RightHolding,
-                )?;
-            } else if role.weapon_precision > 0.0 {
-                let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
-                equip.left_hand_item_id = None;
-                equip.right_hand_item_id = None;
-                ctx.db.character_equip().character_id().update(equip);
-            }
-        }
         ctx.db.character_attributes().character_id().update(attrs);
         ctx.db.character_skills().character_id().update(skills);
         request_to_join_party(ctx, id, recruitment_role_id)?;
+        // This reducer is only invoked by the local-development web flow.
+        // Fill the requested slots directly so a solo tester can assemble a
+        // capable party without manually approving disposable bot requests.
+        if filled_role_slots(ctx, recruitment_role_id) < role.quantity {
+            let request = ctx
+                .db
+                .party_join_request()
+                .character_id()
+                .filter(id)
+                .find(|request| request.recruitment_role_id == recruitment_role_id)
+                .ok_or("Bot join request was not created")?;
+            accept_party_join_request(ctx, party.leader_id, request.id)?;
+        }
     }
     Ok(())
 }
@@ -3569,6 +3575,9 @@ pub fn remove_party_member(
     if actor_character_id != member_character_id && party.leader_id != actor_character_id {
         return Err("Only the party leader may remove another member".into());
     }
+    if actor_character_id == party.leader_id && character.temporary {
+        settle_temporary_member_stake(ctx, &party_id, member_character_id)?;
+    }
     if ctx
         .db
         .party_stake()
@@ -3593,6 +3602,36 @@ pub fn remove_party_member(
     ctx.db.character().id().update(character);
     create_solo_party_for_character(ctx, member_character_id)?;
     Ok(())
+}
+
+/// Generated companions retain the value they contributed to the shared pool
+/// when the leader dismisses them. Use the normal gold-withdrawal path before
+/// removing them, rather than silently deleting their stake.
+fn settle_temporary_member_stake(
+    ctx: &ReducerContext,
+    party_id: &str,
+    member_character_id: u64,
+) -> Result<(), String> {
+    let stake_value = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(party_id)
+        .find(|stake| stake.character_id == member_character_id)
+        .map_or(0, |stake| stake.value);
+    if stake_value == 0 {
+        return Ok(());
+    }
+    let gold = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .find(|item| item.item_id == "gold_coin")
+        .ok_or("The party has no liquid gold to settle this companion's stake")?;
+    let quantity =
+        u32::try_from(stake_value).map_err(|_| "Companion stake is too large to settle")?;
+    withdraw_party_inventory_item(ctx, member_character_id, gold.id, quantity)
 }
 
 #[reducer]
@@ -4127,6 +4166,183 @@ fn finish_strategic_incident(
     Ok(())
 }
 
+fn party_travel_fatigue_inputs(
+    ctx: &ReducerContext,
+    party_id: &str,
+    fully_rested: bool,
+) -> Result<Vec<TravelFatigueInputs>, String> {
+    let mut members = Vec::new();
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        let attributes = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(membership.character_id)
+            .ok_or("Party member attributes not found")?;
+        let limbs = ctx
+            .db
+            .character_limbs()
+            .character_id()
+            .find(membership.character_id)
+            .ok_or("Party member limbs not found")?;
+        let stats = ctx
+            .db
+            .character_stats()
+            .character_id()
+            .find(membership.character_id)
+            .ok_or("Party member stats not found")?;
+        members.push(TravelFatigueInputs {
+            fatigue_capacity: attributes
+                .attr_by_parts(SimpleAttribute::Endurance, &limbs)
+                .max(0.01)
+                * 1_000.0,
+            calories_used: if fully_rested {
+                0.0
+            } else {
+                stats.calories_used
+            },
+        });
+    }
+    Ok(members)
+}
+
+/// Return the next leg's length. The least-rested member sets the party's
+/// pace: once that member reaches the configured raw fatigue percentage, the
+/// party makes camp. A one-minute minimum lets an already-tired party begin a
+/// journey and immediately establish camp rather than becoming stranded.
+fn party_travel_leg_minutes(
+    ctx: &ReducerContext,
+    party_id: &str,
+    fatigue_percent: u8,
+) -> Result<u64, String> {
+    let members = party_travel_fatigue_inputs(ctx, party_id, false)?;
+    adventuresim_core::strategic_time::party_travel_leg_minutes(&members, fatigue_percent)
+        .ok_or_else(|| "Party has no members".into())
+}
+
+fn full_rest_party_travel_leg_minutes(
+    ctx: &ReducerContext,
+    party_id: &str,
+    fatigue_percent: u8,
+) -> Result<u64, String> {
+    let members = party_travel_fatigue_inputs(ctx, party_id, true)?;
+    adventuresim_core::strategic_time::party_travel_leg_minutes(&members, fatigue_percent)
+        .ok_or_else(|| "Party has no members".into())
+}
+
+fn forecast_camp_stop_minutes(
+    ctx: &ReducerContext,
+    party_id: &str,
+    total_minutes: u64,
+    completed_minutes: u64,
+    fatigue_percent: u8,
+) -> Result<Vec<u64>, String> {
+    let mut stops = Vec::new();
+    let mut elapsed = completed_minutes.min(total_minutes);
+    let mut use_current_fatigue = true;
+    while elapsed < total_minutes {
+        let leg_minutes = if use_current_fatigue {
+            party_travel_leg_minutes(ctx, party_id, fatigue_percent)?
+        } else {
+            full_rest_party_travel_leg_minutes(ctx, party_id, fatigue_percent)?
+        };
+        elapsed = elapsed.saturating_add(leg_minutes).min(total_minutes);
+        if elapsed < total_minutes {
+            stops.push(elapsed);
+        }
+        use_current_fatigue = false;
+    }
+    Ok(stops)
+}
+
+fn start_party_journey(
+    ctx: &ReducerContext,
+    party: &Party,
+    origin_kind: &str,
+    origin_id: &str,
+    origin_name: &str,
+    destination_kind: &str,
+    destination_id: &str,
+    destination_name: &str,
+    total_minutes: u64,
+) -> Result<(), String> {
+    if ctx.db.party_journey().party_id().find(&party.id).is_some() {
+        ctx.db.party_journey().party_id().delete(&party.id);
+    }
+    let fatigue_percent = party.camp_fatigue_percent;
+    let forecast_camp_stop_minutes =
+        forecast_camp_stop_minutes(ctx, &party.id, total_minutes, 0, fatigue_percent)?;
+    ctx.db.party_journey().insert(PartyJourney {
+        party_id: party.id.clone(),
+        origin_kind: origin_kind.into(),
+        origin_id: origin_id.into(),
+        origin_name: origin_name.into(),
+        destination_kind: destination_kind.into(),
+        destination_id: destination_id.into(),
+        destination_name: destination_name.into(),
+        total_minutes,
+        completed_minutes: 0,
+        camp_stop_minutes: Vec::new(),
+        forecast_camp_stop_minutes,
+        fatigue_percent,
+    });
+    Ok(())
+}
+
+fn record_party_journey_camp(
+    ctx: &ReducerContext,
+    party_id: &str,
+    leg_minutes: u64,
+) -> Result<(), String> {
+    let Some(mut journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    journey.completed_minutes = journey
+        .completed_minutes
+        .saturating_add(leg_minutes)
+        .min(journey.total_minutes);
+    if journey.camp_stop_minutes.last() != Some(&journey.completed_minutes) {
+        journey.camp_stop_minutes.push(journey.completed_minutes);
+    }
+    ctx.db.party_journey().party_id().update(journey);
+    Ok(())
+}
+
+pub(crate) fn refresh_party_journey_forecast(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    let Some(mut journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    journey.forecast_camp_stop_minutes = forecast_camp_stop_minutes(
+        ctx,
+        party_id,
+        journey.total_minutes,
+        journey.completed_minutes,
+        journey.fatigue_percent,
+    )?;
+    ctx.db.party_journey().party_id().update(journey);
+    Ok(())
+}
+
+fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
+    let party_id = party_id.to_string();
+    if ctx.db.party_journey().party_id().find(&party_id).is_some() {
+        ctx.db.party_journey().party_id().delete(&party_id);
+    }
+}
+
 #[reducer]
 pub fn travel_to_quest(
     ctx: &ReducerContext,
@@ -4146,6 +4362,9 @@ pub fn travel_to_quest(
     if party.leader_id != character_id {
         return Err("Only the party leader can travel".into());
     }
+    if party.camp_destination_id.is_some() {
+        return Err("Break camp and continue the current journey first".into());
+    }
     if party.active_quest_id.as_deref() != Some(&quest_id) {
         return Err("This is not the party's active quest".into());
     }
@@ -4161,6 +4380,23 @@ pub fn travel_to_quest(
     require_party_ready(ctx, &party_id)?;
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
+    let origin = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&quest.settlement_id)
+        .ok_or("Quest posting settlement not found")?;
+    start_party_journey(
+        ctx,
+        &party,
+        "settlement",
+        &origin.id,
+        &origin.name,
+        "quest",
+        &quest.id,
+        &quest.title,
+        travel_minutes,
+    )?;
     if provision {
         let planning_minutes = travel_minutes.saturating_mul(2);
         for membership in ctx.db.party_member().party_id().filter(&party_id) {
@@ -4170,6 +4406,33 @@ pub fn travel_to_quest(
                 planning_minutes,
             )?;
         }
+    }
+    let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
+        ctx,
+        &party.id,
+        party.camp_fatigue_percent,
+    )?);
+    if leg_minutes < travel_minutes {
+        for membership in ctx.db.party_member().party_id().filter(&party_id) {
+            advance_character_time(ctx, membership.character_id, leg_minutes)?;
+            let mut member = ctx
+                .db
+                .character()
+                .id()
+                .find(membership.character_id)
+                .ok_or("Party member not found")?;
+            member.current_settlement_id = None;
+            member.current_quest_location_id = None;
+            ctx.db.character().id().update(member);
+        }
+        party.current_settlement_id = None;
+        party.current_quest_location_id = None;
+        party.camp_destination_id = Some(quest_id);
+        party.camp_destination_kind = Some("quest".into());
+        party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+        ctx.db.party().id().update(party);
+        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        return Ok(());
     }
     for membership in ctx.db.party_member().party_id().filter(&party_id) {
         if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
@@ -4181,7 +4444,11 @@ pub fn travel_to_quest(
     }
     party.current_settlement_id = None;
     party.current_quest_location_id = Some(quest_id);
+    party.camp_destination_id = None;
+    party.camp_destination_kind = None;
+    party.camp_remaining_minutes = 0;
     ctx.db.party().id().update(party);
+    finish_party_journey(ctx, &party_id);
     Ok(())
 }
 
@@ -4214,49 +4481,64 @@ pub fn travel_to_settlement(
         if party.leader_id != character_id {
             return Err("Only the party leader can travel".into());
         }
-        require_party_ready(ctx, &party.id)?;
+        // A defeated party can withdraw from an off-road quest location to
+        // recover at a settlement, but may not begin ordinary travel while a
+        // member is incapacitated.
+        if party.current_quest_location_id.is_none() {
+            require_party_ready(ctx, &party.id)?;
+        }
+        if party.camp_destination_id.is_some() {
+            return Err("Break camp and continue the current journey first".into());
+        }
     } else {
         crate::condition::require_character_ready(ctx, character_id)?;
     }
 
-    let travel_minutes = if let Some(origin_id) = &character.current_settlement_id {
-        let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
-            return Err("Character's current settlement does not exist".into());
-        };
-        // Demo settlements remain usable before a Viabundus world is loaded.
-        // Imported journeys must lead to the next settlement on the road graph.
-        if let (Some(origin_node), Some(destination_node)) =
-            (origin.source_node_id, destination.source_node_id)
-        {
-            let Some(distance_m) = connected_settlement_distances(ctx, origin_node)
-                .get(&destination_node)
-                .copied()
-            else {
-                return Err("That settlement is not directly connected by land or ferry".into());
+    let (travel_minutes, origin_kind, origin_id, origin_name) =
+        if let Some(origin_id) = &character.current_settlement_id {
+            let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
+                return Err("Character's current settlement does not exist".into());
             };
-            journey_minutes(distance_m)
+            // Demo settlements remain usable before a Viabundus world is loaded.
+            // Imported journeys must lead to the next settlement on the road graph.
+            let minutes = if let (Some(origin_node), Some(destination_node)) =
+                (origin.source_node_id, destination.source_node_id)
+            {
+                let Some(distance_m) = connected_settlement_distances(ctx, origin_node)
+                    .get(&destination_node)
+                    .copied()
+                else {
+                    return Err("That settlement is not directly connected by land or ferry".into());
+                };
+                journey_minutes(distance_m)
+            } else {
+                let distance_km = ((origin.coord_x - destination.coord_x).powi(2)
+                    + (origin.coord_y - destination.coord_y).powi(2))
+                .sqrt()
+                .ceil() as u64;
+                journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER))
+            };
+            (minutes, "settlement", origin.id, origin.name)
+        } else if let Some(quest_id) = &character.current_quest_location_id {
+            let Some(quest) = ctx.db.quest().id().find(quest_id) else {
+                return Err("Character's current quest location does not exist".into());
+            };
+            let distance_m = straight_line_distance_m(
+                quest.location_coord_x,
+                quest.location_coord_y,
+                destination.coord_x,
+                destination.coord_y,
+                quest.coordinates_are_geographic && destination.source_node_id.is_some(),
+            );
+            (
+                quest_journey_minutes(distance_m),
+                "quest",
+                quest.id,
+                quest.title,
+            )
         } else {
-            let distance_km = ((origin.coord_x - destination.coord_x).powi(2)
-                + (origin.coord_y - destination.coord_y).powi(2))
-            .sqrt()
-            .ceil() as u64;
-            journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER))
-        }
-    } else if let Some(quest_id) = &character.current_quest_location_id {
-        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
-            return Err("Character's current quest location does not exist".into());
+            return Err("Character is not at a known location".into());
         };
-        let distance_m = straight_line_distance_m(
-            quest.location_coord_x,
-            quest.location_coord_y,
-            destination.coord_x,
-            destination.coord_y,
-            quest.coordinates_are_geographic && destination.source_node_id.is_some(),
-        );
-        quest_journey_minutes(distance_m)
-    } else {
-        return Err("Character is not at a known location".into());
-    };
 
     let departing_quest = character.current_quest_location_id.clone();
     let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
@@ -4269,9 +4551,51 @@ pub fn travel_to_settlement(
     } else {
         vec![character_id]
     };
+    if let Some(party) = party.as_ref() {
+        start_party_journey(
+            ctx,
+            party,
+            origin_kind,
+            &origin_id,
+            &origin_name,
+            "settlement",
+            &destination.id,
+            &destination.name,
+            travel_minutes,
+        )?;
+    }
     if provision && character.current_settlement_id.is_some() {
         for traveler_id in traveler_ids.iter().copied() {
             crate::condition::provision_character_for_travel(ctx, traveler_id, travel_minutes)?;
+        }
+    }
+    if let Some(ref mut party) = party {
+        let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
+            ctx,
+            &party.id,
+            party.camp_fatigue_percent,
+        )?);
+        if leg_minutes < travel_minutes {
+            for traveler_id in traveler_ids {
+                advance_character_time(ctx, traveler_id, leg_minutes)?;
+                let mut traveler = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(traveler_id)
+                    .ok_or("Party member not found")?;
+                traveler.current_settlement_id = None;
+                traveler.current_quest_location_id = None;
+                ctx.db.character().id().update(traveler);
+            }
+            party.current_settlement_id = None;
+            party.current_quest_location_id = None;
+            party.camp_destination_id = Some(settlement_id);
+            party.camp_destination_kind = Some("settlement".into());
+            party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+            ctx.db.party().id().update(party.clone());
+            record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            return Ok(());
         }
     }
     for traveler_id in traveler_ids {
@@ -4288,12 +4612,17 @@ pub fn travel_to_settlement(
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
         crate::capability::refresh_character_capability(ctx, traveler_id)?;
+        crate::time::rest_temporary_party_member_until_healed_at_settlement(ctx, traveler_id)?;
     }
 
     if let Some(ref mut party) = party {
         party.current_settlement_id = Some(settlement_id.clone());
         party.current_quest_location_id = None;
+        party.camp_destination_id = None;
+        party.camp_destination_kind = None;
+        party.camp_remaining_minutes = 0;
         ctx.db.party().id().update(party.clone());
+        finish_party_journey(ctx, &party.id);
         let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
             ctx.db
                 .strategic_incident()
@@ -4311,6 +4640,147 @@ pub fn travel_to_settlement(
         }
     }
 
+    Ok(())
+}
+
+#[reducer]
+pub fn set_party_camp_fatigue_percent(
+    ctx: &ReducerContext,
+    character_id: u64,
+    fatigue_percent: u8,
+) -> Result<(), String> {
+    if !(10..=100).contains(&fatigue_percent) {
+        return Err("Camp fatigue must be between 10% and 100%".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character is not in a party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can configure travel".into());
+    }
+    party.camp_fatigue_percent = fatigue_percent;
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
+/// Advance a single planned leg from a camp. A journey remains a strategic
+/// state, rather than a tactical simulation: the UI animates this instantaneous
+/// transition between pins.
+#[reducer]
+pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character is not in a party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can continue travel".into());
+    }
+    let destination_id = party
+        .camp_destination_id
+        .clone()
+        .ok_or("The party is not camped")?;
+    let destination_kind = party
+        .camp_destination_kind
+        .clone()
+        .ok_or("Camp destination is missing")?;
+    let leg_minutes = party.camp_remaining_minutes.min(party_travel_leg_minutes(
+        ctx,
+        &party.id,
+        party.camp_fatigue_percent,
+    )?);
+    if leg_minutes == 0 {
+        return Err("Camp journey has no remaining travel time".into());
+    }
+    for membership in ctx.db.party_member().party_id().filter(&party_id) {
+        advance_character_time(ctx, membership.character_id, leg_minutes)?;
+    }
+    party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
+    if party.camp_remaining_minutes > 0 {
+        ctx.db.party().id().update(party);
+        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        return Ok(());
+    }
+    match destination_kind.as_str() {
+        "settlement" => {
+            let _destination = ctx
+                .db
+                .settlement()
+                .id()
+                .find(&destination_id)
+                .ok_or("Camp destination settlement not found")?;
+            for membership in ctx.db.party_member().party_id().filter(&party_id) {
+                let mut member = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(membership.character_id)
+                    .ok_or("Party member not found")?;
+                member.current_settlement_id = Some(destination_id.clone());
+                member.current_quest_location_id = None;
+                ctx.db.character().id().update(member);
+                crate::condition::replenish_needs_at_settlement(ctx, membership.character_id)?;
+                crate::condition::refresh_character_strategic_condition(
+                    ctx,
+                    membership.character_id,
+                )?;
+                crate::time::rest_temporary_party_member_until_healed_at_settlement(
+                    ctx,
+                    membership.character_id,
+                )?;
+            }
+            party.current_settlement_id = Some(destination_id);
+            party.current_quest_location_id = None;
+        }
+        "quest" => {
+            let _quest = ctx
+                .db
+                .quest()
+                .id()
+                .find(&destination_id)
+                .ok_or("Camp destination quest not found")?;
+            for membership in ctx.db.party_member().party_id().filter(&party_id) {
+                let mut member = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(membership.character_id)
+                    .ok_or("Party member not found")?;
+                member.current_settlement_id = None;
+                member.current_quest_location_id = Some(destination_id.clone());
+                ctx.db.character().id().update(member);
+                crate::condition::refresh_character_strategic_condition(
+                    ctx,
+                    membership.character_id,
+                )?;
+            }
+            party.current_settlement_id = None;
+            party.current_quest_location_id = Some(destination_id);
+        }
+        _ => return Err("Camp destination kind is invalid".into()),
+    }
+    party.camp_destination_id = None;
+    party.camp_destination_kind = None;
+    ctx.db.party().id().update(party);
+    finish_party_journey(ctx, &party_id);
     Ok(())
 }
 

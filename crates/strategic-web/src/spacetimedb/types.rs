@@ -150,10 +150,30 @@ pub struct Party {
     pub current_quest_location_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
+    pub camp_fatigue_percent: u8,
+    pub camp_destination_id: Option<String>,
+    pub camp_destination_kind: Option<String>,
+    pub camp_remaining_minutes: u64,
     pub medicine_target: f32,
     pub surgery_target: f32,
     pub charisma_target: f32,
     pub faith_target: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJourney {
+    pub party_id: String,
+    pub origin_kind: String,
+    pub origin_id: String,
+    pub origin_name: String,
+    pub destination_kind: String,
+    pub destination_id: String,
+    pub destination_name: String,
+    pub total_minutes: u64,
+    pub completed_minutes: u64,
+    pub camp_stop_minutes: Vec<u64>,
+    pub forecast_camp_stop_minutes: Vec<u64>,
+    pub fatigue_percent: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -487,6 +507,13 @@ pub struct CharacterSkills {
 pub struct CharacterTime {
     pub character_id: u64,
     pub minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterStats {
+    pub character_id: u64,
+    pub calories_used: f32,
+    pub focus: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

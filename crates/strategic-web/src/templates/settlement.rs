@@ -13,10 +13,10 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
-    InventoryQuantityTarget, Party, PartyInventoryItem, Settlement, SettlementAlias,
-    SettlementDescription, SettlementDescriptionKind,
+    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party, PartyInventoryItem,
+    PartyJourney, Settlement, SettlementAlias, SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -105,7 +105,7 @@ pub enum MerchantShop {
 }
 
 pub struct RestSummary {
-    pub days: u64,
+    pub minutes: u64,
     pub gold_spent: u32,
     pub gold_earned: u32,
     pub notoriety_gained: f32,
@@ -250,6 +250,7 @@ pub fn settlement_map_page(
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
+    active_party: Option<&Party>,
     party_members: &[Character],
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -263,9 +264,18 @@ pub fn settlement_map_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (visual_stage("map", &settlement.name, "TODO: settlement map"))
+            (travel_planner_bar(selected, active_party.map_or(50, |party| party.camp_fatigue_percent)))
             (settlement_chat_area(&settlement.name, active_character))
         }
-        (map_destination_detail(selected, can_travel, true, provision_forecast))
+        (map_destination_detail(
+            selected,
+            can_travel,
+            true,
+            provision_forecast,
+            active_party,
+            active_party.is_some_and(|party| party.leader_id == active_character.map_or(0, |character| character.id)),
+            &base_path,
+        ))
     };
     settlement_layout_with_session(
         &format!("{} map", settlement.name),
@@ -292,11 +302,19 @@ pub(crate) fn map_destination_list(
                     nav class="location-destination-list" aria-label="Travel destinations" {
                         @for destination in destinations {
                             a href=(format!("{}?destination={}", base_path, destination.id))
-                                class=(if selected_id == Some(destination.id.as_str()) { "list-item active" } else { "list-item" }) {
+                                class=(if selected_id == Some(destination.id.as_str()) { "list-item travel-destination-row active" } else { "list-item travel-destination-row" })
+                                data-travel-name=(&destination.name)
+                                data-travel-minutes=(destination.journey_minutes)
+                                data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
+                                data-travel-camp-forecasts=(format_camp_forecasts(destination))
+                                data-travel-distance=(format_distance(destination.distance_m)) {
                                 strong { (&destination.name) }
                                 @if destination.quest_in_progress {
                                     span class="destination-quest-badge" title="Active quest destination"
                                         aria-label="Active quest destination" { "!" }
+                                } @else if destination.active_quest_route {
+                                    span class="destination-quest-badge" title="Next settlement toward active quest"
+                                        aria-label="Next settlement toward active quest" { "!" }
                                 } @else if destination.turn_in_ready {
                                     span class="destination-turn-in-badge" title="Quest ready to turn in here"
                                         aria-label="Quest ready to turn in here" { "!" }
@@ -316,20 +334,38 @@ pub(crate) fn map_destination_detail(
     can_travel: bool,
     provisioning_available: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
+    party: Option<&Party>,
+    can_configure_travel: bool,
+    map_path: &str,
 ) -> Markup {
+    let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     html! {
         aside class="right-sidebar" {
+            @if party.is_some() && can_configure_travel {
+            (sidebar_section("Travel configuration", html! {
+                p class="text-muted small-copy" { "The party camps when its first member reaches this fatigue level." }
+                form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
+                    label for="camp-fatigue-percent" { "Fatigue before camping" }
+                    div class="travel-fatigue-control" {
+                        input id="camp-fatigue-percent" type="range" name="fatigue_percent" min="10" max="100" step="5" value=(camp_fatigue_percent) aria-describedby="camp-fatigue-value" {}
+                        output id="camp-fatigue-value" data-camp-fatigue-value { (format!("{camp_fatigue_percent}%")) }
+                    }
+                    p class="text-muted small-copy" data-travel-configuration-status { "Saved automatically when released." }
+                }
+            }))
+            }
             @if let Some(destination) = selected {
                 (sidebar_section(&destination.name, html! {
                     @if can_travel {
-                        form method="post" action=(&destination.travel_action) {
+                        form method="post" action=(&destination.travel_action) data-travel-submit {
                             @if provisioning_available {
-                                button type="submit" name="provisioning" value="provision" class="btn btn-primary btn-block" { "Provision and travel" }
-                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-danger btn-block" { "Travel underprovisioned" }
+                                button type="submit" name="provisioning" value="provision" class="btn btn-primary btn-block" { "Provision and begin journey" }
+                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-danger btn-block" { "Begin underprovisioned" }
                             } @else {
-                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-primary btn-block" { "Travel" }
+                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-primary btn-block" { "Begin journey" }
                             }
                         }
+                        p class="travel-action-status" data-travel-action-status role="alert" hidden {}
                     }
                     p { (&destination.description) }
                     p class="text-muted small-copy" {
@@ -345,6 +381,172 @@ pub(crate) fn map_destination_detail(
                 (sidebar_section("Destination", html! {
                     p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
                 }))
+            }
+        }
+    }
+}
+
+pub(crate) fn travel_planner_bar(
+    selected: Option<&TravelDestination>,
+    camp_fatigue_percent: u8,
+) -> Markup {
+    let selected_name = selected
+        .map(|destination| destination.name.as_str())
+        .unwrap_or("");
+    let selected_minutes = selected.map_or(0, |destination| destination.journey_minutes);
+    let selected_camp_stops = selected.map_or_else(String::new, |destination| {
+        format_camp_stops(&destination.camp_stop_minutes)
+    });
+    let selected_camp_forecasts = selected.map_or_else(String::new, format_camp_forecasts);
+    travel_planner_bar_for(
+        selected_name,
+        selected_minutes,
+        &selected_camp_stops,
+        &selected_camp_forecasts,
+        camp_fatigue_percent,
+        None,
+    )
+}
+
+pub(crate) fn travel_planner_bar_for(
+    destination_name: &str,
+    journey_minutes: u64,
+    camp_stop_minutes: &str,
+    camp_forecasts: &str,
+    camp_fatigue_percent: u8,
+    journey: Option<&PartyJourney>,
+) -> Markup {
+    let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
+    let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
+    let journey_total_minutes = journey.map_or(0, |item| item.total_minutes);
+    let journey_completed_minutes = journey.map_or(0, |item| item.completed_minutes);
+    let journey_camp_stops = journey.map_or_else(String::new, |item| {
+        format_camp_stops(&item.camp_stop_minutes)
+    });
+    let journey_forecast_stops = journey.map_or_else(String::new, |item| {
+        format_camp_stops(&item.forecast_camp_stop_minutes)
+    });
+    html! {
+        section class="travel-planner" data-travel-planner
+            data-camp-fatigue-percent=(camp_fatigue_percent)
+            data-selected-name=(destination_name)
+            data-selected-minutes=(journey_minutes)
+            data-selected-camp-stops=(camp_stop_minutes)
+            data-selected-camp-forecasts=(camp_forecasts)
+            data-journey-origin-name=(journey_origin_name)
+            data-journey-destination-name=(journey_destination_name)
+            data-journey-total-minutes=(journey_total_minutes)
+            data-journey-completed-minutes=(journey_completed_minutes)
+            data-journey-camp-stops=(journey_camp_stops)
+            data-journey-forecast-stops=(journey_forecast_stops)
+            aria-live="polite" hidden {
+            div class="travel-planner-route" data-travel-planner-route {}
+            p class="travel-planner-caption" data-travel-planner-caption {}
+        }
+    }
+}
+
+fn format_camp_stops(stops: &[u64]) -> String {
+    stops
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn format_camp_forecasts(destination: &TravelDestination) -> String {
+    destination
+        .camp_forecasts
+        .iter()
+        .map(|forecast| {
+            format!(
+                "{}:{}",
+                forecast.fatigue_percent,
+                format_camp_stops(&forecast.camp_stop_minutes)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+/// The transient strategic location between planned travel legs.
+pub fn camp_page(
+    party: &Party,
+    journey: Option<&PartyJourney>,
+    destination_name: &str,
+    active_character: Option<&Character>,
+    party_members: &[Character],
+    default_rest_minutes: u64,
+    logged_in_as: Option<&str>,
+    theme: &str,
+) -> Markup {
+    let rest_hours = default_rest_minutes.div_ceil(60);
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Camp", html! {
+                p { "The party has made camp between travel legs." }
+                p class="text-muted small-copy" { "Destination: " (destination_name) }
+                p class="text-muted small-copy" { (format_journey_time(party.camp_remaining_minutes)) " remaining" }
+            }))
+        }
+        main class="center-content settlement-main settlement-overview" {
+            (party_portrait_overlay(party_members, active_character, "/camp", None))
+            (visual_stage("camp", "Camp", "The party is resting beside the road."))
+            (travel_planner_bar_for(destination_name, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey))
+            (settlement_chat_area("Camp", active_character))
+        }
+        aside class="right-sidebar" {
+            (sidebar_section("Journey", html! {
+                p class="text-muted small-copy" { "Break camp to travel the next planned leg." }
+                form action="/camp/continue" method="post" data-travel-submit {
+                    button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
+                }
+                p class="travel-action-status" data-travel-action-status role="alert" hidden {}
+            }))
+            section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
+                div class="rest-service-heading" { strong { "Rest at camp" } }
+                p class="rest-service-copy" { "The whole party rests. Camping is free and does not replenish provisions." }
+                form action="/camp/rest" method="post" {
+                    (rest_duration_control("camp-rest", rest_hours, "hours", "Rest the party"))
+                    button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit
+                        disabled[rest_hours == 0] { "Rest party" }
+                }
+            }
+        }
+    };
+    quest_location_layout_with_session(
+        "Camp",
+        "Camp",
+        &party.id,
+        "camp",
+        content,
+        logged_in_as,
+        theme,
+    )
+}
+
+fn rest_duration_control(_id_prefix: &str, value: u64, unit: &str, label: &str) -> Markup {
+    let hours_active = unit == "hours";
+    html! {
+        div class="rest-duration-control" data-rest-duration {
+            div class="rest-duration-units" role="radiogroup" aria-label=(label) {
+                label class=(if hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
+                    input type="radio" name="unit" value="hours" checked[hours_active] {}
+                    "Hours"
+                }
+                label class=(if !hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
+                    input type="radio" name="unit" value="days" checked[!hours_active] {}
+                    "Days"
+                }
+            }
+            div class="rest-days-control" {
+                button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest duration"
+                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
+                input type="number" name="duration" value=(value) min="0" max="365" aria-label=(label)
+                    oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
+                span class="rest-days-unit" data-rest-unit-label { (unit) }
+                button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration"
+                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
             }
         }
     }
@@ -454,6 +656,8 @@ pub fn inn_page(
     inventory: &[InventoryItem],
     party_members: &[Character],
     limbs: Option<&CharacterLimbs>,
+    stats: Option<&CharacterStats>,
+    condition: Option<&CharacterCondition>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -468,7 +672,7 @@ pub fn inn_page(
         party_members,
         logged_in_as,
         theme,
-        limbs.map(days_to_full_health),
+        rest_default_minutes(limbs, stats, condition),
         None,
     )
 }
@@ -480,6 +684,8 @@ pub fn religion_page(
     inventory: &[InventoryItem],
     party_members: &[Character],
     limbs: Option<&CharacterLimbs>,
+    stats: Option<&CharacterStats>,
+    condition: Option<&CharacterCondition>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -494,7 +700,7 @@ pub fn religion_page(
         party_members,
         logged_in_as,
         theme,
-        limbs.map(days_to_full_health),
+        rest_default_minutes(limbs, stats, condition),
         None,
     )
 }
@@ -721,7 +927,7 @@ fn service_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
-    healing_days: Option<u16>,
+    rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
@@ -752,7 +958,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", healing_days, rest_summary))
+                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -765,7 +971,7 @@ fn service_page(
                             p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", healing_days, rest_summary))
+                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -1965,7 +2171,7 @@ fn rest_service_menu(
     location: &str,
     settlement_id: &str,
     kind: &str,
-    healing_days: Option<u16>,
+    default_minutes: Option<u64>,
     summary: Option<&RestSummary>,
 ) -> Markup {
     html! {
@@ -1977,6 +2183,11 @@ fn rest_service_menu(
             p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
+                @let minutes = default_minutes.unwrap_or(0);
+                @let unit = if minutes >= 1_440 { "days" } else { "hours" };
+                @let value = if unit == "days" { minutes.div_ceil(1_440) } else { minutes.div_ceil(60) };
+                (rest_duration_control("settlement-rest", value, unit, "Rest duration"))
+                /*
                 div class="rest-days-control" {
                     button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
                         onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
@@ -1989,7 +2200,8 @@ fn rest_service_menu(
                         title="Set the rest duration needed to fully heal"
                         onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                 }
-                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled { "Rest" }
+                */
+                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[value == 0] { "Rest" }
         }
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
@@ -1998,7 +2210,7 @@ fn rest_service_menu(
                         strong id="rest-summary-title" { "Rest summary" }
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
-                    p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
+                    p { @if summary.minutes >= 1_440 { (summary.minutes / 1_440) " day" @if summary.minutes / 1_440 != 1 { "s" } " passed." } @else { (summary.minutes / 60) " hour" @if summary.minutes / 60 != 1 { "s" } " passed." } }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p { "+" (format!("{:.1}", summary.notoriety_gained)) " notoriety gained." } }
@@ -2031,14 +2243,61 @@ fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
     .fold(1.0_f32, f32::min);
     ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
 }
+
+fn rest_default_minutes(
+    limbs: Option<&CharacterLimbs>,
+    stats: Option<&CharacterStats>,
+    condition: Option<&CharacterCondition>,
+) -> Option<u64> {
+    let healing_days = limbs.map(days_to_full_health).unwrap_or(0);
+    let healing_minutes = u64::from(healing_days) * 1_440;
+    let fatigue_minutes = stats
+        .map(|stats| ((stats.calories_used / 2_000.0) * 1_440.0).ceil() as u64)
+        .unwrap_or(0);
+    let blood_recovery_minutes = condition.map_or(0, blood_recovery_minutes);
+    (limbs.is_some() || stats.is_some() || condition.is_some()).then_some(
+        healing_minutes
+            .max(fatigue_minutes)
+            .max(blood_recovery_minutes),
+    )
+}
+
+/// This must match the strategic module's `BLOOD_RECOVERY_FRACTION_PER_DAY`.
+const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
+
+fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
+    if condition.maximum_blood_ml <= 0.0 {
+        return 0;
+    }
+    let missing_fraction = ((condition.maximum_blood_ml - condition.current_blood_ml)
+        / condition.maximum_blood_ml)
+        .clamp(0.0, 1.0);
+    (missing_fraction / BLOOD_RECOVERY_FRACTION_PER_DAY * 1_440.0).ceil() as u64
+}
 #[cfg(test)]
 mod tests {
-    use super::LocationKind;
+    use super::{CharacterCondition, LocationKind, rest_default_minutes};
 
     #[test]
     fn location_kind_rejects_unknown_path_segments() {
         assert_eq!("quest".parse(), Ok(LocationKind::Quest));
         assert!("merchant".parse::<LocationKind>().is_err());
+    }
+
+    #[test]
+    fn rest_recommendation_includes_blood_recovery() {
+        let condition = CharacterCondition {
+            character_id: 1,
+            body_weight_kg: 70.0,
+            current_blood_ml: 4_900.0,
+            maximum_blood_ml: 5_000.0,
+            religion_id: None,
+        };
+
+        assert_eq!(
+            rest_default_minutes(None, None, Some(&condition)),
+            Some(1_440)
+        );
     }
 
     #[test]
@@ -2170,7 +2429,10 @@ mod tests {
             travel_action: "/quests/quest-location/travel".to_string(),
             distance_m: 1_000,
             journey_minutes: 48,
+            camp_stop_minutes: Vec::new(),
+            camp_forecasts: Vec::new(),
             quest_in_progress: true,
+            active_quest_route: false,
             turn_in_ready: false,
         }
     }
@@ -2190,7 +2452,9 @@ mod tests {
     #[test]
     fn quest_location_travel_does_not_offer_unavailable_provisioning() {
         let destination = quest_destination();
-        let markup = map_destination_detail(Some(&destination), true, false, None).into_string();
+        let markup =
+            map_destination_detail(Some(&destination), true, false, None, None, false, "/map")
+                .into_string();
 
         assert!(markup.contains("value=\"underprovisioned\""));
         assert!(!markup.contains("Provision and travel"));
