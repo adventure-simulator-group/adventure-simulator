@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 16;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 3;
+pub const WORLD_SCHEMA_VERSION: u32 = 17;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 4;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1159,6 +1159,181 @@ pub enum ForestCover {
     Wooded(Woodland),
 }
 
+/// Reconstructed dominant surface cover near a settlement in the world year.
+/// This is deliberately distinct from [`PotentialVegetation`], which describes
+/// the modern-climate ecological envelope in the absence of historical land use.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct BuiltSettlementCover {
+    pub built_fraction: LandUseFraction,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct CroplandCover {
+    pub cultivated_fraction: LandUseFraction,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct PastureCover {
+    pub grazing_fraction: LandUseFraction,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct HistoricalWoodland {
+    pub canopy: CanopyDensity,
+    pub dominant: DominantLeafType,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct HistoricalWetland {
+    pub water_regime: SoilWaterRegime,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DirectHistoricalVegetationCover {
+    BuiltSettlement(BuiltSettlementCover),
+    Cropland(CroplandCover),
+    Pasture(PastureCover),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DerivedHistoricalVegetationCover {
+    Woodland(HistoricalWoodland),
+    HeathAndShrub,
+    Grassland,
+    Sparse,
+    Wetland(HistoricalWetland),
+    TransitionalWater,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FallbackHistoricalVegetationCover {
+    Woodland(HistoricalWoodland),
+    HeathAndShrub,
+    Grassland,
+    Sparse,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DirectHistoricalVegetationMethod {
+    HydeDominantLandUse,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DerivedHistoricalVegetationMethod {
+    MultiSourceRulesV4,
+    MultiSourceRulesV4TieBreak,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FallbackHistoricalVegetationMethod {
+    PotentialEnvelopeV4,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct DirectHistoricalVegetation {
+    pub cover: DirectHistoricalVegetationCover,
+    pub method: DirectHistoricalVegetationMethod,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct DerivedHistoricalVegetation {
+    pub cover: DerivedHistoricalVegetationCover,
+    pub method: DerivedHistoricalVegetationMethod,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct FallbackHistoricalVegetation {
+    pub cover: FallbackHistoricalVegetationCover,
+    pub method: FallbackHistoricalVegetationMethod,
+}
+
+/// Closed evidence-bearing reconstruction. Variant-specific methods prevent a
+/// serialized confidence blob or an incompatible evidence/method combination.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum HistoricalVegetation {
+    Direct(DirectHistoricalVegetation),
+    Derived(DerivedHistoricalVegetation),
+    Fallback(FallbackHistoricalVegetation),
+}
+
+impl HistoricalVegetation {
+    pub const fn evidence(self) -> HistoricalVegetationEvidence {
+        match self {
+            Self::Direct(_) => HistoricalVegetationEvidence::Direct,
+            Self::Derived(_) => HistoricalVegetationEvidence::Derived,
+            Self::Fallback(_) => HistoricalVegetationEvidence::Fallback,
+        }
+    }
+}
+
+/// Cross-field invariants shared by offline validation and the strategic import
+/// boundary. Evidence-specific enums make invalid category pairings
+/// unrepresentable; this predicate validates the surrounding source context.
+pub fn historical_vegetation_matches_context(
+    historical: HistoricalVegetation,
+    land_use: LandUseProfile,
+    potential: &PotentialVegetation,
+    soil: SoilProfile,
+    hydrology: SettlementHydrology,
+) -> bool {
+    match historical {
+        HistoricalVegetation::Direct(value) => {
+            let crop = land_use.cropland().basis_points();
+            let grazing = land_use.grazing().basis_points();
+            let built = land_use.built_up().basis_points();
+            // Stable tie order is built, cropland, pasture.
+            if built >= crop && built >= grazing {
+                matches!(value.cover, DirectHistoricalVegetationCover::BuiltSettlement(v) if v.built_fraction == land_use.built_up() && built >= 1_000)
+            } else if crop >= grazing {
+                matches!(value.cover, DirectHistoricalVegetationCover::Cropland(v) if v.cultivated_fraction == land_use.cropland() && crop >= 3_500)
+            } else {
+                matches!(value.cover, DirectHistoricalVegetationCover::Pasture(v) if v.grazing_fraction == land_use.grazing() && grazing >= 3_500)
+            }
+        }
+        HistoricalVegetation::Derived(value) => match value.cover {
+            DerivedHistoricalVegetationCover::Wetland(wetland) => {
+                wetland_context_is_convergent(potential, soil, hydrology)
+                    && wetland.water_regime == soil.properties.water_regime
+            }
+            DerivedHistoricalVegetationCover::TransitionalWater => {
+                matches!(hydrology.marine, Some(MarineWaterAccess::Tidal(_)))
+            }
+            _ => true,
+        },
+        HistoricalVegetation::Fallback(_) => true,
+    }
+}
+
+pub fn wetland_context_is_convergent(
+    potential: &PotentialVegetation,
+    soil: SoilProfile,
+    hydrology: SettlementHydrology,
+) -> bool {
+    potential.class() == PotentialVegetationClass::Wetlands
+        && matches!(
+            soil.properties.water_regime,
+            SoilWaterRegime::LongSeasonWet | SoilWaterRegime::PermanentlyWet
+        )
+        && (hydrology.has_freshwater()
+            || matches!(hydrology.marine, Some(MarineWaterAccess::Tidal(_))))
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum HistoricalVegetationEvidence {
+    Direct,
+    Derived,
+    Fallback,
+}
+
 pub const LAND_USE_BASIS_POINTS: u16 = 10_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -1945,6 +2120,10 @@ pub struct WorldBuildReport {
     pub hydrology_landlocked_settlements: usize,
     pub hydrology_edge_crossings: usize,
     pub hydrology_inferred_ferry_waterways: usize,
+    pub historical_vegetation_direct_samples: usize,
+    pub historical_vegetation_derived_samples: usize,
+    pub historical_vegetation_fallback_samples: usize,
+    pub historical_vegetation_tie_breaks: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -2002,6 +2181,7 @@ pub struct SettlementImport {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub historical_vegetation: HistoricalVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
@@ -2148,6 +2328,171 @@ mod tests {
         assert!(CanopyDensity::new(50).is_some());
         assert!(serde_json::from_str::<CanopyDensity>(r#"{"percent":0}"#).is_err());
         assert_eq!(ForestCover::Open, ForestCover::Open);
+    }
+
+    #[test]
+    fn historical_vegetation_wire_rejects_invalid_dependent_fields() {
+        let invalid = serde_json::json!({
+            "Derived": {
+                "cover": { "Woodland": { "canopy": { "percent": 0 }, "dominant": "Mixed" } },
+                "method": "MultiSourceRulesV4"
+            }
+        });
+        assert!(serde_json::from_value::<super::HistoricalVegetation>(invalid).is_err());
+        let invalid_fraction = serde_json::json!({
+            "Direct": {
+                "cover": { "Cropland": { "cultivated_fraction": { "basis_points": 10001 } } },
+                "method": "HydeDominantLandUse"
+            }
+        });
+        assert!(serde_json::from_value::<super::HistoricalVegetation>(invalid_fraction).is_err());
+        for invalid in [
+            serde_json::json!({ "Fallback": { "cover": { "BuiltSettlement": { "built_fraction": { "basis_points": 1000 } } }, "method": "PotentialEnvelopeV4" } }),
+            serde_json::json!({ "Derived": { "cover": { "Cropland": { "cultivated_fraction": { "basis_points": 4000 } } }, "method": "MultiSourceRulesV4" } }),
+            serde_json::json!({ "Direct": { "cover": { "Wetland": { "water_regime": "LongSeasonWet" } }, "method": "HydeDominantLandUse" } }),
+        ] {
+            assert!(serde_json::from_value::<super::HistoricalVegetation>(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn historical_context_enforces_direct_fractions_and_wetland_convergence() {
+        use super::*;
+        let profile = |crop, grazing, built| {
+            LandUseProfile::new(
+                LandUseFraction::new(crop).unwrap(),
+                LandUseFraction::new(grazing).unwrap(),
+                LandUseFraction::new(built).unwrap(),
+                LandUseFraction::new(10_000 - crop - grazing - built).unwrap(),
+            )
+            .unwrap()
+        };
+        let soil = |water_regime| SoilProfile {
+            wrb_group: WrbReferenceGroup::Cambisol,
+            parent_material: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+            properties: SoilProperties {
+                substrate: SoilSubstrate::Mineral(MineralSoil {
+                    texture: MineralSoilTexture::Medium,
+                    depth: SoilDepth::Deep,
+                    available_water: AvailableWaterCapacity::Medium,
+                    organic_carbon: TopsoilOrganicCarbon::Medium,
+                    stones: StoneContentPercent::new(0).unwrap(),
+                }),
+                water_regime,
+                agricultural_limitation: AgriculturalLimitation::None,
+            },
+            acidity: SoilAcidity::Neutral,
+            cation_exchange_capacity: CationExchangeCapacity::Medium,
+            fertility: SoilFertility::Medium,
+            confidence: SoilBasisPoints::new(5_000).unwrap(),
+            evidence: SoilEvidence::SoilGridsPrediction,
+        };
+        let dry_soil = soil(SoilWaterRegime::SeasonallyWet);
+        let pnv = PotentialVegetation::Categorical(PotentialVegetationClass::Grassland);
+        let direct = |cover| {
+            HistoricalVegetation::Direct(DirectHistoricalVegetation {
+                cover,
+                method: DirectHistoricalVegetationMethod::HydeDominantLandUse,
+            })
+        };
+        assert!(!historical_vegetation_matches_context(
+            direct(DirectHistoricalVegetationCover::BuiltSettlement(
+                BuiltSettlementCover {
+                    built_fraction: LandUseFraction::new(1).unwrap()
+                }
+            )),
+            profile(0, 0, 1),
+            &pnv,
+            dry_soil,
+            SettlementHydrology::default()
+        ));
+        assert!(!historical_vegetation_matches_context(
+            direct(DirectHistoricalVegetationCover::BuiltSettlement(
+                BuiltSettlementCover {
+                    built_fraction: LandUseFraction::new(1_001).unwrap()
+                }
+            )),
+            profile(0, 0, 1_000),
+            &pnv,
+            dry_soil,
+            SettlementHydrology::default()
+        ));
+        for (historical, land) in [
+            (
+                direct(DirectHistoricalVegetationCover::BuiltSettlement(
+                    BuiltSettlementCover {
+                        built_fraction: LandUseFraction::new(1_000).unwrap(),
+                    },
+                )),
+                profile(0, 0, 1_000),
+            ),
+            (
+                direct(DirectHistoricalVegetationCover::Cropland(CroplandCover {
+                    cultivated_fraction: LandUseFraction::new(4_000).unwrap(),
+                })),
+                profile(4_000, 0, 0),
+            ),
+            (
+                direct(DirectHistoricalVegetationCover::Pasture(PastureCover {
+                    grazing_fraction: LandUseFraction::new(4_000).unwrap(),
+                })),
+                profile(0, 4_000, 0),
+            ),
+        ] {
+            assert!(historical_vegetation_matches_context(
+                historical,
+                land,
+                &pnv,
+                dry_soil,
+                SettlementHydrology::default()
+            ));
+        }
+
+        let wet = |regime| {
+            HistoricalVegetation::Derived(DerivedHistoricalVegetation {
+                cover: DerivedHistoricalVegetationCover::Wetland(HistoricalWetland {
+                    water_regime: regime,
+                }),
+                method: DerivedHistoricalVegetationMethod::MultiSourceRulesV4,
+            })
+        };
+        let wet_pnv = PotentialVegetation::Categorical(PotentialVegetationClass::Wetlands);
+        let fresh = SettlementHydrology {
+            inland: Some(InlandWaterAccess {
+                distance: WaterDistanceMeters::new(10).unwrap(),
+                size: InlandWaterSize::Pond,
+            }),
+            ..Default::default()
+        };
+        let natural = profile(0, 0, 0);
+        assert!(!historical_vegetation_matches_context(
+            wet(SoilWaterRegime::SeasonallyWet),
+            natural,
+            &wet_pnv,
+            soil(SoilWaterRegime::SeasonallyWet),
+            fresh
+        ));
+        assert!(!historical_vegetation_matches_context(
+            wet(SoilWaterRegime::LongSeasonWet),
+            natural,
+            &wet_pnv,
+            soil(SoilWaterRegime::LongSeasonWet),
+            SettlementHydrology::default()
+        ));
+        assert!(!historical_vegetation_matches_context(
+            wet(SoilWaterRegime::LongSeasonWet),
+            natural,
+            &pnv,
+            soil(SoilWaterRegime::LongSeasonWet),
+            fresh
+        ));
+        assert!(historical_vegetation_matches_context(
+            wet(SoilWaterRegime::LongSeasonWet),
+            natural,
+            &wet_pnv,
+            soil(SoilWaterRegime::LongSeasonWet),
+            fresh
+        ));
     }
 
     #[test]

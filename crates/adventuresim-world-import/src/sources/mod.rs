@@ -3,6 +3,7 @@
 
 pub mod drought;
 pub mod elevation;
+pub mod environment_synthesis;
 pub mod forest_cover;
 pub mod geology;
 pub mod hydrology;

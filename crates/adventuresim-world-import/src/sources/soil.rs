@@ -11,12 +11,11 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CURRENT_INFERENCE_RULES_VERSION,
-    CationExchangeCapacity, CompiledWorld, MineralSoil, MineralSoilTexture, OrganicSoil,
-    PotentialVegetationClass, RockOutcropSoil, SoilAcidity, SoilBasisPoints, SoilEvidence,
-    SoilFertility, SoilPrediction, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    SourceProvenance, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-    WORLD_SCHEMA_VERSION, WorldMetadata, WrbReferenceGroup,
+    AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, MineralSoil,
+    MineralSoilTexture, OrganicSoil, PotentialVegetationClass, RockOutcropSoil, SoilAcidity,
+    SoilBasisPoints, SoilEvidence, SoilFertility, SoilPrediction, SoilProfile, SoilProperties,
+    SoilSubstrate, SoilWaterRegime, SourceProvenance, StoneContentPercent, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, WrbReferenceGroup,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -26,8 +25,8 @@ use tiff::tags::Tag;
 use crate::{
     Error, Result,
     draft::{
-        HydrologyWorldDraft, SoilPredictionSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft,
-        push_source_note,
+        FinalizedSoilSettlementDraft, FinalizedSoilWorldDraft, HydrologyWorldDraft,
+        SoilPredictionSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft, push_source_note,
     },
     spatial::SpatialProjection,
 };
@@ -189,7 +188,7 @@ fn finish_predictions(
 }
 
 /// Resolve the prediction against geology, hydrology and Jung wetland evidence.
-pub(crate) fn finalize(draft: HydrologyWorldDraft) -> Result<CompiledWorld> {
+pub(crate) fn finalize(draft: HydrologyWorldDraft) -> Result<FinalizedSoilWorldDraft> {
     let settlements = draft.settlements.into_iter().map(|mut wet| {
         push_source_note(&mut wet, "**Soil finalizer v3:** SoilGrids prediction is deterministically resolved with geology, Jung wetland evidence, elevation, and EU-Hydro context; slope/roughness refinement is deferred.");
         let drought = wet.drought;
@@ -203,17 +202,46 @@ pub(crate) fn finalize(draft: HydrologyWorldDraft) -> Result<CompiledWorld> {
         let elevated = land.elevated;
         let settlement = elevated.settlement;
         let soil = finalize_prediction(predicted.prediction, &geologic.geology, wet.hydrology, vegetated.potential_vegetation.class(), elevated.elevation.get());
-        Ok(adventuresim_world_schema::SettlementImport { id: settlement.id, source_node_id: settlement.source_node_id, name: settlement.name, longitude: settlement.longitude, latitude: settlement.latitude, population_level: settlement.population_level, population_estimate: settlement.population_estimate, elevation: elevated.elevation, land_use: land.land_use, forest_cover: forest.forest_cover, potential_vegetation: vegetated.potential_vegetation, tree_species: trees.tree_species, soil, geology: geologic.geology, religious_status: religious.religious_status, drought: drought.drought, hydrology: wet.hydrology, scene_key: settlement.scene_key, sources: settlement.sources })
+        // Keep the complete nested evidence chain for the post-soil synthesis stage.
+        let wet = crate::draft::HydrologySettlementDraft {
+            drought: crate::draft::DroughtSettlementDraft {
+                religious: crate::draft::ReligionSettlementDraft {
+                    geologic: crate::draft::GeologySettlementDraft {
+                        predicted: crate::draft::SoilPredictionSettlementDraft {
+                            trees: crate::draft::TreeSpeciesSettlementDraft {
+                                vegetated: crate::draft::PotentialVegetationSettlementDraft {
+                                    forest: crate::draft::ForestSettlementDraft {
+                                        land: crate::draft::LandUseSettlementDraft {
+                                            elevated: crate::draft::ElevatedSettlementDraft {
+                                                settlement,
+                                                elevation: elevated.elevation,
+                                            },
+                                            land_use: land.land_use,
+                                            evidence: land.evidence,
+                                        },
+                                        forest_cover: forest.forest_cover,
+                                    },
+                                    potential_vegetation: vegetated.potential_vegetation,
+                                },
+                                tree_species: trees.tree_species,
+                            },
+                            prediction: predicted.prediction,
+                        },
+                        geology: geologic.geology,
+                    },
+                    religious_status: religious.religious_status,
+                },
+                drought: drought.drought,
+            },
+            hydrology: wet.hydrology,
+        };
+        Ok(FinalizedSoilSettlementDraft { hydrologic: wet, soil })
     }).collect::<Result<Vec<_>>>()?;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
-            spatial_grid: draft.spatial_grid,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(FinalizedSoilWorldDraft {
+        year: draft.year,
+        spatial_grid: draft.spatial_grid,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlement_aliases: draft.settlement_aliases,

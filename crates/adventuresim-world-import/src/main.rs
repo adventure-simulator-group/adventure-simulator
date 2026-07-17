@@ -6,16 +6,18 @@ use std::{
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
-    CrossingTraversal, CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile,
-    EdgeEndpoint, FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover,
-    GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GridCellSizeMeters, IgneousRock,
-    InlandWaterSize, MarineWaterAccess, MetamorphicRock, MineralSoilTexture, MixedLithology,
-    NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass, SedimentaryRock,
-    SettlementAliasImport, SettlementDescriptionImport, SettlementDescriptionKind,
-    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilDepth, SoilEvidence,
-    SoilFertility, SoilProfile, SoilSubstrate, SoilWaterRegime, SpatialGridSpec, SurfaceGeology,
-    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile,
-    UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
+    CrossingTraversal, CrossingWatercourse, DerivedHistoricalVegetationCover,
+    DirectHistoricalVegetationCover, DominantLeafType, DroughtHistory, DroughtProfile,
+    EdgeEndpoint, FallbackHistoricalVegetationCover, FerryWaterway, FlowPersistence,
+    FlowingWaterAccess, ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence,
+    GridCellSizeMeters, HistoricalVegetation, IgneousRock, InlandWaterSize, MarineWaterAccess,
+    MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
+    PotentialVegetationClass, SedimentaryRock, SettlementAliasImport, SettlementDescriptionImport,
+    SettlementDescriptionKind, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilDepth,
+    SoilEvidence, SoilFertility, SoilProfile, SoilSubstrate, SoilWaterRegime, SpatialGridSpec,
+    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport,
+    WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -324,6 +326,7 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "land_use": settlement.land_use,
         "forest_cover": encode_forest_cover(settlement.forest_cover),
         "potential_vegetation": encode_potential_vegetation(&settlement.potential_vegetation),
+        "historical_vegetation": encode_historical_vegetation(settlement.historical_vegetation),
         "tree_species": encode_tree_species(&settlement.tree_species),
         "soil": encode_soil(&settlement.soil),
         "geology": encode_geology(&settlement.geology),
@@ -697,6 +700,52 @@ fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
     }
 }
 
+fn encode_historical_vegetation(vegetation: HistoricalVegetation) -> Value {
+    use adventuresim_world_schema::{
+        DerivedHistoricalVegetationMethod as D, DirectHistoricalVegetationMethod as R,
+        FallbackHistoricalVegetationMethod as F,
+    };
+    let direct_cover = |value| match value {
+        DirectHistoricalVegetationCover::BuiltSettlement(v) => {
+            json!({ "BuiltSettlement": { "built_fraction": v.built_fraction } })
+        }
+        DirectHistoricalVegetationCover::Cropland(v) => {
+            json!({ "Cropland": { "cultivated_fraction": v.cultivated_fraction } })
+        }
+        DirectHistoricalVegetationCover::Pasture(v) => {
+            json!({ "Pasture": { "grazing_fraction": v.grazing_fraction } })
+        }
+    };
+    let woodland = |v: adventuresim_world_schema::HistoricalWoodland| json!({ "Woodland": { "canopy": v.canopy, "dominant": enum_unit(match v.dominant { DominantLeafType::Broadleaf => "Broadleaf", DominantLeafType::Coniferous => "Coniferous", DominantLeafType::Mixed => "Mixed" }) } });
+    let derived_cover = |value| match value {
+        DerivedHistoricalVegetationCover::Woodland(v) => woodland(v),
+        DerivedHistoricalVegetationCover::HeathAndShrub => enum_unit("HeathAndShrub"),
+        DerivedHistoricalVegetationCover::Grassland => enum_unit("Grassland"),
+        DerivedHistoricalVegetationCover::Sparse => enum_unit("Sparse"),
+        DerivedHistoricalVegetationCover::Wetland(v) => {
+            json!({ "Wetland": { "water_regime": enum_unit(match v.water_regime { SoilWaterRegime::UsuallyDry => "UsuallyDry", SoilWaterRegime::SeasonallyWet => "SeasonallyWet", SoilWaterRegime::LongSeasonWet => "LongSeasonWet", SoilWaterRegime::PermanentlyWet => "PermanentlyWet" }) } })
+        }
+        DerivedHistoricalVegetationCover::TransitionalWater => enum_unit("TransitionalWater"),
+    };
+    let fallback_cover = |value| match value {
+        FallbackHistoricalVegetationCover::Woodland(v) => woodland(v),
+        FallbackHistoricalVegetationCover::HeathAndShrub => enum_unit("HeathAndShrub"),
+        FallbackHistoricalVegetationCover::Grassland => enum_unit("Grassland"),
+        FallbackHistoricalVegetationCover::Sparse => enum_unit("Sparse"),
+    };
+    match vegetation {
+        HistoricalVegetation::Direct(v) => {
+            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::HydeDominantLandUse => "HydeDominantLandUse" }) } })
+        }
+        HistoricalVegetation::Derived(v) => {
+            json!({ "Derived": { "cover": derived_cover(v.cover), "method": enum_unit(match v.method { D::MultiSourceRulesV4 => "MultiSourceRulesV4", D::MultiSourceRulesV4TieBreak => "MultiSourceRulesV4TieBreak" }) } })
+        }
+        HistoricalVegetation::Fallback(v) => {
+            json!({ "Fallback": { "cover": fallback_cover(v.cover), "method": enum_unit(match v.method { F::PotentialEnvelopeV4 => "PotentialEnvelopeV4" }) } })
+        }
+    }
+}
+
 fn encode_tree_species(profile: &TreeSpeciesProfile) -> Value {
     match profile {
         TreeSpeciesProfile::Modeled(profile) => json!({
@@ -858,12 +907,12 @@ mod tests {
     use adventuresim_world_schema::{
         AgriculturalLimitation, AvailableWaterCapacity, CURRENT_INFERENCE_RULES_VERSION,
         CanopyDensity, CationExchangeCapacity, CompiledWorld, DominantLeafType, DroughtHistory,
-        DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, GeologicAgeEvidence,
-        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
-        GridCellSizeMeters, HabitatSuitability, IgneousRock, InferredGeologicSetting,
-        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
-        MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
-        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        DroughtProfile, EdgeEndpoint, ElevationMeters, FallbackHistoricalVegetationCover,
+        ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
+        GeologicUnitId, GridCellSizeMeters, HabitatSuitability, HistoricalVegetation, IgneousRock,
+        InferredGeologicSetting, InferredTreeSpeciesProfile, LandRoute, LandUseFraction,
+        LandUseProfile, LanguageCode, MappedSurfaceGeology, MineralSoil, MineralSoilTexture,
+        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
         PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
         SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
         SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth, SoilEvidence,
@@ -1114,6 +1163,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_historical_vegetation_for_spacetimedb_sats_json() {
+        let settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["historical_vegetation"],
+            serde_json::json!({
+                "Fallback": {
+                    "cover": { "Woodland": {
+                        "canopy": { "percent": 20 },
+                        "dominant": { "Mixed": [] }
+                    }},
+                    "method": { "PotentialEnvelopeV4": [] }
+                }
+            })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -1135,6 +1201,13 @@ mod tests {
             potential_vegetation: PotentialVegetation::Inferred(
                 PotentialVegetationClass::WoodlandAndForest,
             ),
+            historical_vegetation: HistoricalVegetation::Fallback(adventuresim_world_schema::FallbackHistoricalVegetation {
+                cover: FallbackHistoricalVegetationCover::Woodland(adventuresim_world_schema::HistoricalWoodland {
+                    canopy: CanopyDensity::new(20).unwrap(),
+                    dominant: DominantLeafType::Mixed,
+                }),
+                method: adventuresim_world_schema::FallbackHistoricalVegetationMethod::PotentialEnvelopeV4,
+            }),
             tree_species: TreeSpeciesProfile::Inferred(
                 InferredTreeSpeciesProfile::new(vec![TreeSpeciesId::new("Quercus_robur").unwrap()])
                     .unwrap(),

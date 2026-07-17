@@ -236,6 +236,12 @@ official archive is not currently available locally, so the parser and
 enrichment are verified against standards-compliant synthetic GeoPackages but
 the complete source distribution remains unverified.
 
+World schema v17 / inference rules v4 add the final 1544 environmental
+synthesis. Its direct/derived/fallback and tie-break counters must reconcile to
+settlement count during validation. A complete official all-source audit is not
+available until the HYDE, forest, SoilGrids, and EU-Hydro inputs above exist
+locally; unit tests use bounded synthetic evidence and make no coverage claim.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients

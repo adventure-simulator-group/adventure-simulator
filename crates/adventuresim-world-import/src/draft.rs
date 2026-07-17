@@ -1,8 +1,8 @@
 use adventuresim_world_schema::{
     DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, LandUseProfile,
     PotentialVegetation, SettlementAliasImport, SettlementDescriptionImport, SettlementHydrology,
-    SoilPrediction, SourceProvenance, SpatialGridSpec, TravelEdgeImport, TravelEdgeKind,
-    TreeSpeciesProfile, WorldBuildReport, WorldNodeImport,
+    SoilPrediction, SoilProfile, SourceProvenance, SpatialGridSpec, TravelEdgeImport,
+    TravelEdgeKind, TreeSpeciesProfile, WorldBuildReport, WorldNodeImport,
 };
 
 #[derive(Debug)]
@@ -89,11 +89,13 @@ macro_rules! delegate_settlement_access {
 
 pub(crate) fn push_source_note(target: &mut impl SettlementDraftAccess, note: &str) {
     let sources = &mut target.base_settlement_mut().sources;
-    if !sources.is_empty() {
-        sources.push('\n');
+    let separator = if sources.is_empty() { "" } else { "\n" };
+    let addition = format!("{separator}- {note}");
+    let remaining = adventuresim_world_schema::MAX_SOURCES_MARKDOWN_CHARS
+        .saturating_sub(sources.chars().count());
+    if addition.chars().count() <= remaining {
+        sources.push_str(&addition);
     }
-    sources.push_str("- ");
-    sources.push_str(note);
 }
 
 #[derive(Debug)]
@@ -107,8 +109,15 @@ delegate_settlement_access!(ElevatedSettlementDraft, settlement);
 pub(crate) struct LandUseSettlementDraft {
     pub(crate) elevated: ElevatedSettlementDraft,
     pub(crate) land_use: LandUseProfile,
+    pub(crate) evidence: LandUseEvidence,
 }
 delegate_settlement_access!(LandUseSettlementDraft, elevated);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LandUseEvidence {
+    HydeSampled { normalized: bool },
+    DeterministicFallback,
+}
 
 #[derive(Debug)]
 pub(crate) struct ForestSettlementDraft {
@@ -182,6 +191,29 @@ pub(crate) struct HydrologyWorldDraft {
     pub(crate) report: WorldBuildReport,
 }
 
+#[derive(Debug)]
+pub(crate) struct FinalizedSoilSettlementDraft {
+    pub(crate) hydrologic: HydrologySettlementDraft,
+    pub(crate) soil: SoilProfile,
+}
+delegate_settlement_access!(FinalizedSoilSettlementDraft, hydrologic);
+
+/// Private final-stage input. Canonical records are constructed only after
+/// historical environmental synthesis has consumed the complete evidence chain.
+#[derive(Debug)]
+pub(crate) struct FinalizedSoilWorldDraft {
+    pub(crate) year: i32,
+    pub(crate) spatial_grid: SpatialGridSpec,
+    pub(crate) sources: Vec<SourceProvenance>,
+    pub(crate) road_types: Vec<TravelEdgeKind>,
+    pub(crate) nodes: Vec<WorldNodeImport>,
+    pub(crate) edges: Vec<TravelEdgeImport>,
+    pub(crate) settlement_aliases: Vec<SettlementAliasImport>,
+    pub(crate) settlement_descriptions: Vec<SettlementDescriptionImport>,
+    pub(crate) settlements: Vec<FinalizedSoilSettlementDraft>,
+    pub(crate) report: WorldBuildReport,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{SettlementDraft, push_source_note};
@@ -206,5 +238,23 @@ mod tests {
             settlement.sources,
             "- First source.\n- **Fallback:** Deterministic guess."
         );
+    }
+
+    #[test]
+    fn source_notes_never_exceed_the_schema_bound() {
+        let mut settlement = SettlementDraft {
+            id: "test".into(),
+            source_node_id: 1,
+            name: "Test".into(),
+            longitude: 0.0,
+            latitude: 0.0,
+            population_level: 1,
+            population_estimate: 0,
+            scene_key: "test".into(),
+            sources: "x".repeat(adventuresim_world_schema::MAX_SOURCES_MARKDOWN_CHARS - 1),
+        };
+        let before = settlement.sources.clone();
+        push_source_note(&mut settlement, "would overflow");
+        assert_eq!(settlement.sources, before);
     }
 }
