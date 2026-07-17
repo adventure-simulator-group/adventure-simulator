@@ -81,21 +81,21 @@ pub trait define_weapon {
     fn on_define_weapon(
         &self,
         callback: impl FnMut(
-                &super::ReducerEventContext,
-                &String,
-                &f32,
-                &f32,
-                &f32,
-                &f32,
-                &f32,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &String,
+            &f32,
+            &f32,
+            &f32,
+            &f32,
+            &f32,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> DefineWeaponCallbackId;
     /// Cancel a callback previously registered by [`Self::on_define_weapon`],
     /// causing it not to run in the future.
@@ -139,21 +139,21 @@ impl define_weapon for super::RemoteReducers {
     fn on_define_weapon(
         &self,
         mut callback: impl FnMut(
-                &super::ReducerEventContext,
-                &String,
-                &f32,
-                &f32,
-                &f32,
-                &f32,
-                &f32,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-                &bool,
-            ) + Send
-            + 'static,
+            &super::ReducerEventContext,
+            &String,
+            &f32,
+            &f32,
+            &f32,
+            &f32,
+            &f32,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+            &bool,
+        ) + Send
+        + 'static,
     ) -> DefineWeaponCallbackId {
         DefineWeaponCallbackId(self.imp.on_reducer(
             "define_weapon",

@@ -5,6 +5,8 @@ edition.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+test = false
+doctest = false
 
 [dependencies]
 adventuresim-core.workspace = true

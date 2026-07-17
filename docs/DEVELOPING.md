@@ -44,7 +44,8 @@ Now when you click a location in the browser, a tactical server will automatical
 
 ## Requirements
 
-- Rust toolchain
+- Rustup (the repository's `rust-toolchain.toml` automatically selects the
+  pinned nightly toolchain and required components)
 - just (`cargo install just`)
 - SpacetimeDB CLI (`curl -sSf https://install.spacetimedb.com | bash`)
 - Python 3
@@ -76,6 +77,12 @@ just tactical         # Run a single tactical server (for testing)
 just status           # Check service status
 just stop             # Stop all services
 
+# Workspace verification
+just fmt              # Format all Rust workspace packages
+just check            # Check all Rust workspace packages
+just test             # Test all Rust workspace packages
+just lint             # Run Clippy with warnings denied
+
 # Building
 just build-tactical   # Build adventuresim-tactical-server and adventuresim-tactical-server-dispatcher
 just build-all        # Build everything
@@ -83,12 +90,19 @@ just build-all        # Build everything
 # Database
 just publish          # Publish SpacetimeDB module
 just publish-reset    # Publish and clear database
+just generate-db-client # Regenerate and format the Rust client bindings
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
 just normalise-viabundus # Write the 1544 strategic graph to target/
 just load-viabundus-world # Load it into a published local SpacetimeDB module
 ```
+
+`just test` runs the native test suites across the workspace. The
+SpacetimeDB module itself targets the SpacetimeDB host ABI, so validate that
+crate with `spacetime build`; its pure strategic calculations live in
+`adventuresim-core` and are covered by native unit tests. Reducer integration
+tests require a running SpacetimeDB environment.
 
 ## Viabundus source data
 
@@ -168,6 +182,14 @@ just tactical mission_id="test-123" scene_key="town_a"
 - **SpacetimeDB failed to start:** check `/tmp/adventure-simulator-1/spacetime.log`
 - **Tactical spawner can't find binary:** run `just build-tactical` first
 - **Mission stuck on "pending":** spawner not running or binary not found
+- **Cargo cannot create a temporary `target` directory:** ensure the parent of
+  `CARGO_TARGET_DIR` is writable. On Windows or in a restricted sandbox, use a
+  workspace-local directory, for example:
+
+  ```powershell
+  $env:CARGO_TARGET_DIR = "$PWD\target\verification"
+  just test
+  ```
 
 `strategic-web` logs every HTTP request at `info` level with a request ID,
 method, URI, response status, and elapsed milliseconds. The same request ID is

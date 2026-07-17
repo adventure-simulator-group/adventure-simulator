@@ -57,8 +57,8 @@ pub trait send_local_chat_message {
     fn on_send_local_chat_message(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> SendLocalChatMessageCallbackId;
     /// Cancel a callback previously registered by [`Self::on_send_local_chat_message`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl send_local_chat_message for super::RemoteReducers {
     fn on_send_local_chat_message(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> SendLocalChatMessageCallbackId {
         SendLocalChatMessageCallbackId(self.imp.on_reducer(
             "send_local_chat_message",

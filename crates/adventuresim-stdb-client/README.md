@@ -12,13 +12,19 @@ Regenerate with:
 just generate-db-client
 ```
 
+This recipe formats the package immediately after successful generation, so
+checked-in bindings remain compatible with the repository's pinned Rust
+toolchain. If generation fails, formatting is not run and the recipe returns
+the generator's failure.
+
 Or manually:
 
 ```bash
 spacetime generate \
   --lang rust \
   --out-dir crates/adventuresim-stdb-client/src \
-  --project-path crates/adventuresim-stdb-module
+  --project-path crates/adventuresim-stdb-module && \
+cargo fmt --package adventuresim-stdb-client
 ```
 
 Regenerate whenever the SpacetimeDB module schema changes (tables, reducers).
