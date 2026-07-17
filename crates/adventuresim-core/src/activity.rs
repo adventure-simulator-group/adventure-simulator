@@ -1,10 +1,11 @@
 //! Strategic schedule activities which combine training with other outcomes.
 
+use crate::strategic_time::MINUTES_PER_DAY;
+
 pub const ACTIVITY_TRAINING_RATE: f32 = 0.25;
 pub const PRAYER_MORALE_LIMIT: f32 = 4.0;
 pub const PRAYER_MORALE_SCALE_MINUTES: f32 = 60.0;
 pub const MAX_DAILY_PRAYER_OBLIGATION_MINUTES: f32 = 120.0;
-pub const MINUTES_PER_DAY: u64 = 24 * 60;
 pub const DAYS_PER_WEEK: u64 = 7;
 pub const SUNDAY_INDEX: u64 = 6;
 

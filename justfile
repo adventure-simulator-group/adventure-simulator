@@ -196,6 +196,7 @@ build-strategic:
 generate-db-client:
 	@echo "Generating SpacetimeDB client bindings..."
 	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{strategic_dir}}"
+	@cargo fmt --package adventuresim-stdb-client
 	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
 
 # Download and extract the Viabundus v2 CSV source data into viabundus/.

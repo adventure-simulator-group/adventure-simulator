@@ -89,8 +89,8 @@ impl update_party_check_targets for super::RemoteReducers {
     fn on_update_party_check_targets(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &f32, &f32, &f32, &f32)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> UpdatePartyCheckTargetsCallbackId {
         UpdatePartyCheckTargetsCallbackId(self.imp.on_reducer(
             "update_party_check_targets",

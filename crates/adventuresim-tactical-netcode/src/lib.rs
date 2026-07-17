@@ -14,12 +14,12 @@ pub use aeronet_websocket;
 pub use bevy_replicon;
 
 pub mod prelude {
+    pub use crate::AdventureSimulatorNetPlugins;
     #[cfg(feature = "client")]
     pub use crate::client::AdventureSimulatorClient;
     pub use crate::message::{AttackRequest, JoinRequest, PlayerInputRequest};
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;
-    pub use crate::AdventureSimulatorNetPlugins;
 }
 
 const FIXED_TIMESTEP_HZ: f64 = 64.0;

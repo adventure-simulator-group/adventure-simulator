@@ -57,8 +57,8 @@ pub trait request_party_action {
     fn on_request_party_action(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> RequestPartyActionCallbackId;
     /// Cancel a callback previously registered by [`Self::on_request_party_action`],
     /// causing it not to run in the future.
@@ -86,8 +86,8 @@ impl request_party_action for super::RemoteReducers {
     fn on_request_party_action(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> RequestPartyActionCallbackId {
         RequestPartyActionCallbackId(self.imp.on_reducer(
             "request_party_action",

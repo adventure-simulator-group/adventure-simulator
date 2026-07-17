@@ -87,8 +87,8 @@ impl set_inventory_quantity_target for super::RemoteReducers {
     fn on_set_inventory_quantity_target(
         &self,
         mut callback: impl FnMut(&super::ReducerEventContext, &u64, &bool, &String, &u32)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> SetInventoryQuantityTargetCallbackId {
         SetInventoryQuantityTargetCallbackId(self.imp.on_reducer(
             "set_inventory_quantity_target",

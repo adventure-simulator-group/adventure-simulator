@@ -37,15 +37,8 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 /// // Add skills
 /// let player = player.with_skills(StubSkills);
 ///
-/// assert!(
-///     matches!(player, PlayerInfo {
-///         attributes: StubAttributes,
-///         body: StubBody,
-///         essentials: StubEssentials,
-///         equipment: StubEquipment,
-///         skills: StubSkills,
-///     })
-/// );
+/// // The builder records every component in the resulting composite type.
+/// let _: PlayerInfo<StubAttributes, StubBody, StubEssentials, StubEquipment, StubSkills> = player;
 /// ```
 ///
 /// ## Trait Methods Available Based on Parts
@@ -59,14 +52,15 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 ///
 /// ```
 /// # use adventuresim_core::prelude::*;
-/// # use adventuresim_core::stub::{StubAttributes, StubSkills};
+/// # use adventuresim_core::stub::{StubAttributes, StubBody, StubSkills};
 /// // Create a player with attributes and skills
 /// let player = PlayerInfo::empty()
 ///     .with_attributes(StubAttributes)
+///     .with_body(StubBody)
 ///     .with_skills(StubSkills);
 ///
 /// // We can call PlayerAttributes methods via the trait
-/// let _strength = player.attr(Attribute::Strength);
+/// let _strength = player.attr(LimbAttribute::Strength);
 ///
 /// // We can call PlayerSkills methods via the trait
 /// let _hours = player.skill_hours_trained(Skill::Melee);
@@ -83,25 +77,34 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 ///
 /// ```
 /// # use adventuresim_core::prelude::*;
-/// # use adventuresim_core::stub::{StubAttributes, StubEssentials, StubEquipment, StubSkills};
+/// # use adventuresim_core::stub::{StubAttributes, StubBody, StubEssentials, StubEquipment, StubSkills};
+/// let attributes = StubAttributes;
+/// let body = StubBody;
+/// let essentials = StubEssentials;
+/// let equipment = StubEquipment;
+/// let skills = StubSkills;
+/// let weights = LimbWeights::all_equal();
+///
+/// // Calling skill_check_by_parts explicitly uses the same component values.
+/// let check_explicit = skills.skill_check_by_parts(
+///     Skill::Melee,
+///     &attributes,
+///     &body,
+///     &essentials,
+///     &equipment,
+///     weights,
+/// );
+///
 /// // Build player with all required parts for skill_check
 /// let player = PlayerInfo::empty()
-///     .with_attributes(StubAttributes)
-///     .with_essentials(StubEssentials)
-///     .with_equipment(StubEquipment)
-///     .with_skills(StubSkills);
+///     .with_attributes(attributes)
+///     .with_body(body)
+///     .with_essentials(essentials)
+///     .with_equipment(equipment)
+///     .with_skills(skills);
 ///
 /// // Use the shorthand - combines skills, attributes, essentials, and equipment internally
-/// let check = player.skill_check(Skill::Melee);
-///
-/// // This is equivalent to calling skill_check_by_parts with explicit parts:
-/// let check_explicit = player.skill_check_by_parts(
-///     Skill::Melee,
-///     &player.attributes,
-///     &player.essentials,
-///     &player.equipment,
-///     &LimbWeights::all_equal(),
-/// );
+/// let check = player.skill_check(Skill::Melee, weights);
 ///
 /// assert_eq!(check, check_explicit);
 /// ```
@@ -110,16 +113,21 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 ///
 /// ```
 /// # use adventuresim_core::prelude::*;
-/// # use adventuresim_core::stub::{StubAttributes, StubEssentials};
+/// # use adventuresim_core::stub::{StubAttributes, StubBody, StubEssentials};
+/// let attributes = StubAttributes;
+/// let body = StubBody;
+/// let essentials = StubEssentials;
+///
+/// // Calling fatigue_by_parts explicitly uses the same component values.
+/// let fatigue_explicit = essentials.fatigue_by_parts(&attributes, &body);
+///
 /// let player = PlayerInfo::empty()
-///     .with_attributes(StubAttributes)
-///     .with_essentials(StubEssentials);
+///     .with_attributes(attributes)
+///     .with_body(body)
+///     .with_essentials(essentials);
 ///
 /// // Shorthand method
 /// let fatigue = player.fatigue();
-///
-/// // Equivalent explicit call
-/// let fatigue_explicit= player.fatigue_by_parts(&player.attributes);
 ///
 /// assert_eq!(fatigue, fatigue_explicit);
 /// ```

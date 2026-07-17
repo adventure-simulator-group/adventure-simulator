@@ -59,8 +59,8 @@ pub trait save_recruitment_role {
     fn on_save_recruitment_role(
         &self,
         callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &RecruitmentRequirements, &f32)
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> SaveRecruitmentRoleCallbackId;
     /// Cancel a callback previously registered by [`Self::on_save_recruitment_role`],
     /// causing it not to run in the future.
@@ -87,9 +87,14 @@ impl save_recruitment_role for super::RemoteReducers {
     }
     fn on_save_recruitment_role(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &RecruitmentRequirements, &f32)
-            + Send
-            + 'static,
+        mut callback: impl FnMut(
+            &super::ReducerEventContext,
+            &u64,
+            &String,
+            &RecruitmentRequirements,
+            &f32,
+        ) + Send
+        + 'static,
     ) -> SaveRecruitmentRoleCallbackId {
         SaveRecruitmentRoleCallbackId(self.imp.on_reducer(
             "save_recruitment_role",
