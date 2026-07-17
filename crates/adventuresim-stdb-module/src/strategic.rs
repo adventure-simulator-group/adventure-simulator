@@ -1731,7 +1731,7 @@ pub fn seed_bot_join_requests(
                 equip.chest_armor_id = None;
                 equip.stomach_armor_id = None;
                 equip.head_armor_id = None;
-                crate::replace_character_equip(ctx, equip);
+                ctx.db.character_equip().character_id().update(equip);
             } else if requirements.melee {
                 crate::character::add_and_equip_item(
                     ctx,
@@ -1750,11 +1750,11 @@ pub fn seed_bot_join_requests(
                 let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
                 equip.left_hand_item_id = None;
                 equip.right_hand_item_id = None;
-                crate::replace_character_equip(ctx, equip);
+                ctx.db.character_equip().character_id().update(equip);
             }
         }
-        crate::replace_character_attributes(ctx, attrs);
-        crate::replace_character_skills(ctx, skills);
+        ctx.db.character_attributes().character_id().update(attrs);
+        ctx.db.character_skills().character_id().update(skills);
         request_to_join_party(ctx, id, recruitment_role_id)?;
     }
     Ok(())
@@ -3583,7 +3583,7 @@ pub fn autoresolve_quest(
                 5 => limbs.chest_health = (limbs.chest_health - damage).max(0.0),
                 _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
             }
-            crate::replace_character_limbs(ctx, limbs);
+            ctx.db.character_limbs().character_id().update(limbs);
             crate::condition::apply_blood_loss(
                 ctx,
                 member.character_id,

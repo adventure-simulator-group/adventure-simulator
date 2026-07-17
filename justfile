@@ -13,6 +13,7 @@ public_bind := "0.0.0.0"
 
 spacetime_url := "http://localhost:" + spacetime_port
 spacetime_module := "adventuresim-stdb-module"
+spacetime_version := "2.6.1"
 
 strategic_dir := "crates/adventuresim-stdb-module"
 strategic_static := strategic_dir + "/static"
@@ -35,9 +36,23 @@ default:
     @just --list
 
 # Verify required tools are available
-preflight:
-    @command -v spacetime >/dev/null 2>&1 || { echo "Missing 'spacetime' CLI. Install it before running."; exit 1; }
+preflight: spacetime-version-check
     @command -v python3 >/dev/null 2>&1 || { echo "Missing python3. Install it before running."; exit 1; }
+
+# Refuse to build, generate, publish, or start with a mismatched CLI/runtime.
+spacetime-version-check:
+    @command -v spacetime >/dev/null 2>&1 || { echo "Missing 'spacetime' CLI. Install version {{spacetime_version}} before running."; exit 1; }
+    @version_output="$(spacetime --version 2>&1)"; \
+      grep -Fq "spacetimedb tool version {{spacetime_version}};" <<<"$version_output" || { \
+        echo "Expected SpacetimeDB CLI {{spacetime_version}}, but found:" >&2; \
+        echo "$version_output" >&2; \
+        exit 1; \
+      }; \
+      grep -Fq "spacetimedb-lib version {{spacetime_version}};" <<<"$version_output" || { \
+        echo "Expected SpacetimeDB library {{spacetime_version}}, but found:" >&2; \
+        echo "$version_output" >&2; \
+        exit 1; \
+      }
 
 [script("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")]
 caddy-preflight:
@@ -122,7 +137,7 @@ _seed-damaged-character server=spacetime_url:
     @spacetime call --server {{server}} {{spacetime_module}} seed_damaged_character
 
 # Start SpacetimeDB if it is not already listening
-spacetime-start:
+spacetime-start: spacetime-version-check
     @mkdir -p "{{run_dir}}"
     @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
         echo "SpacetimeDB already running on http://localhost:{{spacetime_port}}"; \
@@ -138,7 +153,7 @@ spacetime-start:
     fi
 
 # Start SpacetimeDB bound to all interfaces (for VPS/public use)
-spacetime-start-public:
+spacetime-start-public: spacetime-version-check
     @mkdir -p "{{run_dir}}"
     @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
         echo "SpacetimeDB already running on http://localhost:{{spacetime_port}}"; \
@@ -165,11 +180,11 @@ spacetime-stop:
     fi
 
 # Publish the strategic module (optional target can be provided: just publish target=localhost)
-publish server=spacetime_url:
+publish server=spacetime_url: spacetime-version-check
     @cd "{{strategic_dir}}" && spacetime publish --server {{server}} {{spacetime_module}}
 
 # Publish and clear the module database
-publish-reset server=spacetime_url:
+publish-reset server=spacetime_url: spacetime-version-check
     @cd "{{strategic_dir}}" && spacetime publish --delete-data=always --server {{server}} {{spacetime_module}}
 
 # Stop all running services started by this justfile
@@ -189,11 +204,11 @@ status:
     fi
 
 # Build the strategic SpacetimeDB module
-build-strategic:
+build-strategic: spacetime-version-check
     @cd "{{strategic_dir}}" && spacetime build
 
 # Generate SpacetimeDB SDK client bindings
-generate-db-client:
+generate-db-client: spacetime-version-check
 	@echo "Generating SpacetimeDB client bindings..."
 	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --module-path "{{strategic_dir}}"
 	@cargo fmt --package adventuresim-stdb-client

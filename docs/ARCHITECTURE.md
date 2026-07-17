@@ -209,10 +209,14 @@ spacetime publish adventuresim-stdb-module
 ```
 
 The repository's module and SDK are pinned to SpacetimeDB 2.6.1 and should be
-built, published, and used to generate bindings with the matching CLI. A local
-`publish-reset` is appropriate only for disposable development data. Before
-publishing this schema to a persistent database, back up the database and
-review SpacetimeDB's proposed migration; publish without deleting data.
+built, published, and used to generate bindings with the matching CLI. This
+pre-launch 1.x upgrade deliberately does not support an in-place schema/data
+migration: stop the old server, retain an operator backup if wanted, move the
+old data directory aside or provision a new empty one, select 2.6.1, start the
+new server, and use `just publish-reset` plus `just _seed-world`. The reset
+permanently discards prior database contents.
+Once the reset is complete, return to plain `just publish` for data-preserving
+module updates.
 
 ### 4. Open the UI
 

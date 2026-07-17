@@ -987,7 +987,7 @@ pub fn apply_travel_condition(
         .find(character_id)
         .ok_or("Character stats not found")?;
     stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
-    crate::replace_character_stats(ctx, stats);
+    ctx.db.character_stats().character_id().update(stats);
 
     refuse_expired_holy_day_demands(ctx, character_id, true)?;
     let condition = refresh_character_strategic_condition_projection(ctx, character_id)?;
@@ -1080,7 +1080,7 @@ pub fn apply_rest_condition(
         .find(character_id)
         .ok_or("Character stats not found")?;
     stats.calories_used = (stats.calories_used - TRAVEL_CALORIES_PER_DAY * days).max(0.0);
-    crate::replace_character_stats(ctx, stats);
+    ctx.db.character_stats().character_id().update(stats);
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 

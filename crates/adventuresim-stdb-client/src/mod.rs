@@ -1747,10 +1747,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
-        diff.character_attributes = cache.apply_diff_to_table::<CharacterAttributes>(
-            "character_attributes",
-            &self.character_attributes,
-        );
+        diff.character_attributes = cache
+            .apply_diff_to_table::<CharacterAttributes>(
+                "character_attributes",
+                &self.character_attributes,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_capability = cache
             .apply_diff_to_table::<CharacterCapability>(
                 "character_capability",
@@ -1763,10 +1765,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_condition,
             )
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_equip =
-            cache.apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip);
-        diff.character_limbs =
-            cache.apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs);
+        diff.character_equip = cache
+            .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_limbs = cache
+            .apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs)
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_morale_source = cache
             .apply_diff_to_table::<CharacterMoraleSource>(
                 "character_morale_source",
@@ -1780,9 +1784,11 @@ impl __sdk::DbUpdate for DbUpdate {
             )
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_skills = cache
-            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills);
-        diff.character_stats =
-            cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats);
+            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_stats = cache
+            .apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats)
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_strategic_condition = cache
             .apply_diff_to_table::<CharacterStrategicCondition>(
                 "character_strategic_condition",

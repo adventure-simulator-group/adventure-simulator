@@ -111,12 +111,20 @@ Before building or generating bindings, verify the active CLI with
 `spacetime --version`. Binding generation uses `spacetime generate
 --module-path` and intentionally excludes private tables.
 
-`just publish-reset` deletes all local module data. Use it only for disposable
-local smoke environments, followed by `just _seed-world`. For a database whose
-state must be preserved, take a verified backup, use `just publish` (without
-`--delete-data`), and review the schema migration plan emitted by SpacetimeDB
-before approving deployment. Never use the reset-and-seed workflow as a
-production upgrade procedure.
+The 1.x to 2.6.1 project upgrade is intentionally a clean reset: the game is
+pre-launch, so existing local and deployment data is not retained. Stop the
+old server, take an operator backup only if the old data may still be useful,
+and move its data directory aside or configure a new empty data directory.
+Then install/select SpacetimeDB 2.6.1, start the 2.6.1 server, and run
+`just publish-reset` followed by `just _seed-world`. This recreates the schema
+and seed data and permanently discards the database's previous contents. Keep
+the moved directory until the reset has been validated, then retire it under
+the operator's normal backup-retention policy.
+
+After this one-time reset, routine publishes should use `just publish` so data
+is preserved. Do not use `publish-reset` on a future public or player-bearing
+database unless data loss is explicitly approved and a verified recovery copy
+exists.
 
 ## Viabundus source data
 

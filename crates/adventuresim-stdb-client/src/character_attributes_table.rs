@@ -80,6 +80,23 @@ impl<'ctx> __sdk::Table for CharacterAttributesTableHandle<'ctx> {
     }
 }
 
+pub struct CharacterAttributesUpdateCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableWithPrimaryKey for CharacterAttributesTableHandle<'ctx> {
+    type UpdateCallbackId = CharacterAttributesUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> CharacterAttributesUpdateCallbackId {
+        CharacterAttributesUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: CharacterAttributesUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
 /// Access to the `character_id` unique index on the table `character_attributes`,
 /// which allows point queries on the field of the same name
 /// via the [`CharacterAttributesCharacterIdUnique::find`] method.

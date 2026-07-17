@@ -111,22 +111,13 @@ impl LiveState {
                 $table.on_delete(move |_, _| live.invalidate());
             }};
         }
-        macro_rules! invalidate_on_insert_or_delete {
-            ($table:expr) => {{
-                let live = state.clone();
-                $table.on_insert(move |_, _| live.invalidate());
-                let live = state.clone();
-                $table.on_delete(move |_, _| live.invalidate());
-            }};
-        }
-
         // These tables cover location/navigation, party state and requests,
         // recruitment, quest state, local conversations, and mission readiness.
         invalidate_on_changes!(state.0._connection.db.character());
-        invalidate_on_insert_or_delete!(state.0._connection.db.character_attributes());
-        invalidate_on_insert_or_delete!(state.0._connection.db.character_stats());
-        invalidate_on_insert_or_delete!(state.0._connection.db.character_skills());
-        invalidate_on_insert_or_delete!(state.0._connection.db.character_limbs());
+        invalidate_on_changes!(state.0._connection.db.character_attributes());
+        invalidate_on_changes!(state.0._connection.db.character_stats());
+        invalidate_on_changes!(state.0._connection.db.character_skills());
+        invalidate_on_changes!(state.0._connection.db.character_limbs());
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
         invalidate_on_changes!(state.0._connection.db.party());
         invalidate_on_changes!(state.0._connection.db.party_member());
@@ -140,7 +131,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
-        invalidate_on_insert_or_delete!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.character_equip());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_strategic_condition());

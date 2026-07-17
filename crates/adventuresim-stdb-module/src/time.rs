@@ -190,7 +190,7 @@ pub fn advance_character_time(
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.travel, minutes, activities);
-    crate::replace_character_skills(ctx, skills);
+    ctx.db.character_skills().character_id().update(skills);
     crate::condition::apply_travel_condition(
         ctx,
         character_id,
@@ -508,7 +508,7 @@ pub fn rest_at_settlement(
         .ok_or_else(|| "Character limb record not found".to_string())?;
     let convalescing = convalescence_minutes(&limbs).min(elapsed);
     heal_limbs(&mut limbs, elapsed);
-    crate::replace_character_limbs(ctx, limbs);
+    ctx.db.character_limbs().character_id().update(limbs);
 
     let training_elapsed = elapsed.saturating_sub(convalescing);
     if training_elapsed > 0 {
@@ -531,7 +531,7 @@ pub fn rest_at_settlement(
             training_elapsed,
             activities,
         );
-        crate::replace_character_skills(ctx, skills);
+        ctx.db.character_skills().character_id().update(skills);
         let risks =
             apply_activity_outcomes(ctx, character_id, &schedule.downtime, training_elapsed)?;
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
@@ -583,7 +583,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.downtime, elapsed, activities);
-    crate::replace_character_skills(ctx, skills);
+    ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     character_time.minutes = target_minutes;

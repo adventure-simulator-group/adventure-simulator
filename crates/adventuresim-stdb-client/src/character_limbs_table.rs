@@ -78,6 +78,23 @@ impl<'ctx> __sdk::Table for CharacterLimbsTableHandle<'ctx> {
     }
 }
 
+pub struct CharacterLimbsUpdateCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableWithPrimaryKey for CharacterLimbsTableHandle<'ctx> {
+    type UpdateCallbackId = CharacterLimbsUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> CharacterLimbsUpdateCallbackId {
+        CharacterLimbsUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: CharacterLimbsUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
 /// Access to the `character_id` unique index on the table `character_limbs`,
 /// which allows point queries on the field of the same name
 /// via the [`CharacterLimbsCharacterIdUnique::find`] method.
