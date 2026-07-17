@@ -6,6 +6,7 @@ pub mod composite;
 pub mod equipment;
 pub mod essential;
 pub mod skill;
+pub mod strategic_time;
 #[doc(hidden)]
 pub mod stub;
 
@@ -18,4 +19,5 @@ pub mod prelude {
     pub use crate::equipment::*;
     pub use crate::essential::*;
     pub use crate::skill::*;
+    pub use crate::strategic_time::*;
 }

@@ -1,13 +1,14 @@
-use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp, reducer, table};
+use adventuresim_core::strategic_time::{
+    MINUTES_PER_DAY, MINUTES_PER_YEAR, allocated_schedule_minutes,
+    convalescence_minutes as calculate_convalescence_minutes,
+    elapsed_official_minutes as calculate_elapsed_official_minutes, healed_health,
+    training_hours_increment,
+};
+use spacetimedb::{ReducerContext, ScheduleAt, Table, reducer, table};
 
 use crate::character::character;
 use crate::{CharacterLimbs, CharacterSkills, character_limbs, character_skills};
 
-pub const MINUTES_PER_DAY: u64 = 24 * 60;
-pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
-/// Natural recovery while taking full settlement downtime.  This is an MVP
-/// rate until the wound and treatment systems supply more detailed healing.
-pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
 pub const INN_GOLD_PER_DAY: u32 = 1;
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
@@ -61,7 +62,7 @@ pub struct CharacterTrainingSchedule {
 
 impl CharacterTrainingSchedule {
     pub fn allocated_minutes(&self) -> u64 {
-        [
+        allocated_schedule_minutes([
             self.melee_minutes,
             self.dodge_minutes,
             self.block_minutes,
@@ -74,10 +75,7 @@ impl CharacterTrainingSchedule {
             self.balance_minutes,
             self.surgeon_minutes,
             self.labor_minutes,
-        ]
-        .into_iter()
-        .map(u64::from)
-        .sum()
+        ])
     }
 }
 
@@ -91,14 +89,6 @@ pub fn initialize_time(ctx: &ReducerContext) {
     }
 }
 
-fn elapsed_official_minutes(clock: &WorldClock, now: Timestamp) -> u64 {
-    let elapsed_micros = now
-        .to_micros_since_unix_epoch()
-        .saturating_sub(clock.epoch_micros) as u128;
-    // One real week per 365-day game year: 84/73 seconds per game minute.
-    (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
-}
-
 pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
     if ctx.db.world_clock().id().find(0).is_none() {
         initialize_time(ctx);
@@ -109,7 +99,10 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
         .id()
         .find(0)
         .ok_or_else(|| "World clock is not initialized".to_string())?;
-    let official_minutes = elapsed_official_minutes(&clock, ctx.timestamp);
+    let official_minutes = calculate_elapsed_official_minutes(
+        clock.epoch_micros,
+        ctx.timestamp.to_micros_since_unix_epoch(),
+    );
     if official_minutes != clock.official_minutes {
         clock.official_minutes = official_minutes;
         ctx.db.world_clock().id().update(clock);
@@ -209,23 +202,20 @@ fn apply_training(
     schedule: &CharacterTrainingSchedule,
     elapsed: u64,
 ) {
-    let hours_per_day = |minutes: u16| f32::from(minutes) / 60.0;
-    let days = elapsed as f32 / MINUTES_PER_DAY as f32;
-    skills.melee_hours += days * hours_per_day(schedule.melee_minutes);
-    skills.dodge_hours += days * hours_per_day(schedule.dodge_minutes);
-    skills.block_hours += days * hours_per_day(schedule.block_minutes);
-    skills.ranged_hours += days * hours_per_day(schedule.ranged_minutes);
-    skills.will_hours += days * hours_per_day(schedule.will_minutes);
-    skills.charisma_hours += days * hours_per_day(schedule.charisma_minutes);
-    skills.medicine_hours += days * hours_per_day(schedule.medicine_minutes);
-    skills.faith_hours += days * hours_per_day(schedule.faith_minutes);
-    skills.stealth_hours += days * hours_per_day(schedule.stealth_minutes);
-    skills.balance_hours += days * hours_per_day(schedule.balance_minutes);
-    skills.surgeon_hours += days * hours_per_day(schedule.surgeon_minutes);
+    skills.melee_hours += training_hours_increment(elapsed, schedule.melee_minutes);
+    skills.dodge_hours += training_hours_increment(elapsed, schedule.dodge_minutes);
+    skills.block_hours += training_hours_increment(elapsed, schedule.block_minutes);
+    skills.ranged_hours += training_hours_increment(elapsed, schedule.ranged_minutes);
+    skills.will_hours += training_hours_increment(elapsed, schedule.will_minutes);
+    skills.charisma_hours += training_hours_increment(elapsed, schedule.charisma_minutes);
+    skills.medicine_hours += training_hours_increment(elapsed, schedule.medicine_minutes);
+    skills.faith_hours += training_hours_increment(elapsed, schedule.faith_minutes);
+    skills.stealth_hours += training_hours_increment(elapsed, schedule.stealth_minutes);
+    skills.balance_hours += training_hours_increment(elapsed, schedule.balance_minutes);
+    skills.surgeon_hours += training_hours_increment(elapsed, schedule.surgeon_minutes);
 }
 
 fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64) {
-    let recovery = elapsed as f32 / MINUTES_PER_DAY as f32 * HEALTH_RECOVERED_PER_DAY;
     for health in [
         &mut limbs.left_arm_health,
         &mut limbs.right_arm_health,
@@ -235,12 +225,12 @@ fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64) {
         &mut limbs.chest_health,
         &mut limbs.stomach_health,
     ] {
-        *health = (*health + recovery).min(1.0);
+        *health = healed_health(*health, elapsed);
     }
 }
 
 fn convalescence_minutes(limbs: &CharacterLimbs) -> u64 {
-    let lowest_health = [
+    calculate_convalescence_minutes([
         limbs.left_arm_health,
         limbs.right_arm_health,
         limbs.left_leg_health,
@@ -248,14 +238,7 @@ fn convalescence_minutes(limbs: &CharacterLimbs) -> u64 {
         limbs.head_health,
         limbs.chest_health,
         limbs.stomach_health,
-    ]
-    .into_iter()
-    .fold(1.0_f32, f32::min);
-    if lowest_health >= 1.0 {
-        0
-    } else {
-        ((1.0 - lowest_health) / HEALTH_RECOVERED_PER_DAY * MINUTES_PER_DAY as f32).ceil() as u64
-    }
+    ])
 }
 
 /// Spend completed game days at a settlement. Injuries receive all selected
@@ -426,98 +409,4 @@ pub fn update_training_schedule(
         .character_id()
         .update(schedule);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn clock(epoch_micros: i64) -> WorldClock {
-        WorldClock {
-            id: 0,
-            official_minutes: 0,
-            epoch_micros,
-        }
-    }
-
-    #[test]
-    fn one_real_week_is_one_game_year() {
-        let clock = clock(0);
-        let one_week_micros = 7 * 24 * 60 * 60 * 1_000_000i64;
-        assert_eq!(
-            elapsed_official_minutes(
-                &clock,
-                Timestamp::from_micros_since_unix_epoch(one_week_micros)
-            ),
-            MINUTES_PER_YEAR
-        );
-    }
-
-    #[test]
-    fn training_uses_the_daily_minute_allocation() {
-        let mut skills = CharacterSkills {
-            character_id: 1,
-            melee_hours: 0.0,
-            dodge_hours: 0.0,
-            block_hours: 0.0,
-            ranged_hours: 0.0,
-            will_hours: 0.0,
-            charisma_hours: 0.0,
-            medicine_hours: 0.0,
-            faith_hours: 0.0,
-            stealth_hours: 0.0,
-            balance_hours: 0.0,
-            surgeon_hours: 0.0,
-        };
-        let schedule = CharacterTrainingSchedule {
-            character_id: 1,
-            melee_minutes: 90,
-            dodge_minutes: 30,
-            block_minutes: 0,
-            ranged_minutes: 0,
-            will_minutes: 0,
-            charisma_minutes: 0,
-            medicine_minutes: 0,
-            faith_minutes: 0,
-            stealth_minutes: 0,
-            balance_minutes: 0,
-            surgeon_minutes: 0,
-            labor_minutes: 480,
-        };
-        apply_training(&mut skills, &schedule, MINUTES_PER_DAY * 2);
-        assert_eq!(skills.melee_hours, 3.0);
-        assert_eq!(skills.dodge_hours, 1.0);
-        assert_eq!(schedule.allocated_minutes(), 600);
-    }
-
-    #[test]
-    fn convalescence_blocks_training_until_the_slowest_limb_recovers() {
-        let limbs = CharacterLimbs {
-            character_id: 1,
-            left_arm_health: 0.9,
-            right_arm_health: 1.0,
-            left_leg_health: 1.0,
-            right_leg_health: 1.0,
-            head_health: 1.0,
-            chest_health: 1.0,
-            stomach_health: 1.0,
-        };
-        assert_eq!(convalescence_minutes(&limbs), MINUTES_PER_DAY * 2);
-    }
-
-    #[test]
-    fn healing_is_capped_at_full_health() {
-        let mut limbs = CharacterLimbs {
-            character_id: 1,
-            left_arm_health: 0.98,
-            right_arm_health: 1.0,
-            left_leg_health: 1.0,
-            right_leg_health: 1.0,
-            head_health: 1.0,
-            chest_health: 1.0,
-            stomach_health: 1.0,
-        };
-        heal_limbs(&mut limbs, MINUTES_PER_DAY);
-        assert_eq!(limbs.left_arm_health, 1.0);
-    }
 }

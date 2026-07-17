@@ -98,6 +98,12 @@ just normalise-viabundus # Write the 1544 strategic graph to target/
 just load-viabundus-world # Load it into a published local SpacetimeDB module
 ```
 
+`just test` runs the native test suites across the workspace. The
+SpacetimeDB module itself targets the SpacetimeDB host ABI, so validate that
+crate with `spacetime build`; its pure strategic calculations live in
+`adventuresim-core` and are covered by native unit tests. Reducer integration
+tests require a running SpacetimeDB environment.
+
 ## Viabundus source data
 
 The Viabundus v2 CSV download is a local development input for the strategic
