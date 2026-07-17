@@ -122,7 +122,7 @@ pub struct Settlement {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = settlement_alias, public)]
+#[table(accessor = settlement_alias, public)]
 pub struct SettlementAlias {
     #[primary_key]
     pub id: String,
@@ -134,7 +134,7 @@ pub struct SettlementAlias {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = settlement_description, public)]
+#[table(accessor = settlement_description, public)]
 pub struct SettlementDescription {
     #[primary_key]
     pub id: String,
