@@ -23,6 +23,12 @@ fixtures exercise the reader but are not a writable GeoPackage conformance
 suite. Do not describe a full-world hydrology audit as complete until the
 official archive has been run.
 
+`just plan-hydrology` performs a redacted `CLMS_TOKEN_FILE` preflight and
+prints the fixed v1.3 request contract. Because official archive/item IDs and
+the complete basin GeoPackage inventory are not pinned, `init-hydrology`
+refuses network acquisition. `verify-hydrology` validates a supplied strict
+local inventory; the source remains release-blocked.
+
 ## Parsed source features
 
 The compiler recognizes the official `River_Net_l`, `Canals_l`, `Ditches_l`,

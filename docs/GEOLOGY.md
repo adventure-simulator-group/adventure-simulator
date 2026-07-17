@@ -25,8 +25,10 @@ OGC empty geometry) to have exactly one usable index entry.
 
 The official WFS can return GeoJSON samples, but the full layer contains more
 than 240,000 features. Preparing a local indexed GeoPackage avoids repeatedly
-downloading or scanning the service. This manual preparation is intentionally
-not part of data initialization until the source is accepted.
+downloading or scanning the service. The accepted aggregate still lacks a
+committed exact size and SHA-256. `just plan-geology` prints the fixed contract,
+`init-geology` refuses acquisition, and `verify-geology` validates a strict
+local `source-inventory.json`. The source remains release-blocked.
 
 ## Imported model
 
