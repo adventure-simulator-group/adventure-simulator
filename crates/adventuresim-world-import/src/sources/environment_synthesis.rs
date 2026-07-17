@@ -98,6 +98,11 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
                 religious_status: religious.religious_status,
                 drought: drought.drought,
                 hydrology: wet.hydrology,
+                industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
+                    adventuresim_world_schema::IndustryEvidence::Fallback(
+                        adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+                    ),
+                ]).expect("stage placeholder is valid"),
                 scene_key: settlement.scene_key,
                 sources: settlement.sources,
             }

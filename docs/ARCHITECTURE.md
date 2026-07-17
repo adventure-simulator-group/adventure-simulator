@@ -26,7 +26,7 @@ artifact identity. Source coverage extents remain source-manifest concerns.
 The grid is compiler metadata, not a SpacetimeDB table shape: no grid columns or
 tactical coordinates are persisted.
 
-World schema v19 retains typed canonical
+World schema v20 retains typed canonical
 distribution manifests documented in `docs/SOURCE_MANIFESTS.md`. Their
 schema/rules/year/grid/source digest is the cache and build boundary and is
 retained by the import session alongside the complete artifact ID.
@@ -59,6 +59,9 @@ GLO-30 and combines it with EU-Hydro route context into bounded strategic
 profiles, landforms, risks, and encounter selectors. Those selectors are
 coarse planning facts; they never persist tactical positions, HP, damage,
 enemies, or ticks.
+Rules-v6 industry inference then attaches a bounded strategic production
+profile. Incident route accessibility may downgrade scale but never creates a
+resource; the evidence model is documented in `docs/INDUSTRIES.md`.
 Land-use sampled/normalized/fallback evidence remains private through this
 stage so a deterministic missing-HYDE profile cannot masquerade as direct.
 The generic draft is a typestate boundary: each enrichment

@@ -1,5 +1,10 @@
 # Trade
 
+The compiler supplies each imported settlement with canonical local production
+outputs and a marginal, local, or regional scale. Future trade simulation may
+consume these signals, but rules v6 does not create prices, inventory, or
+shipping flows.
+
 For the current strategic prototype, every settlement exposes the same unlimited
 merchant catalogue, including imported Viabundus settlements. Items have a base gold value; merchant buy and sell prices are
 derived from it with shared hidden profit-margin and sales-tax multipliers.

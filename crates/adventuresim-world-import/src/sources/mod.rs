@@ -7,6 +7,7 @@ pub mod environment_synthesis;
 pub mod forest_cover;
 pub mod geology;
 pub mod hydrology;
+pub mod industries;
 pub mod land_use;
 pub mod potential_vegetation;
 pub mod religion;

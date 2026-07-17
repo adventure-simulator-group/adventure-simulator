@@ -255,6 +255,11 @@ route-terrain stage. Its straight-line geometry, deterministic v5 rules, schema
 bounds, and remaining authenticated-source audit blockers are documented in
 `docs/ROUTE_TERRAIN.md`.
 
+Rules-v6 settlement industries are generated immediately after route terrain.
+Run `cargo test -p adventuresim-world-import sources::industries` for the
+deterministic synthetic evidence matrix. The complete official-world audit
+still requires every upstream distribution. See `docs/INDUSTRIES.md`.
+
 World schema v18 / inference rules v4 add typed canonical distribution
 manifests and a deterministic schema/rules/year/grid/source digest. The world
 compiler prints the sorted manifest and whether each source is reproducible.

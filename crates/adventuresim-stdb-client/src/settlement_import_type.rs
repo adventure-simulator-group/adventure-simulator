@@ -8,6 +8,7 @@ use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::historical_vegetation_type::HistoricalVegetation;
+use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_hydrology_type::SettlementHydrology;
@@ -37,6 +38,7 @@ pub struct SettlementImport {
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
+    pub industries: InferredIndustryProfile,
     pub scene_key: String,
     pub sources: String,
 }

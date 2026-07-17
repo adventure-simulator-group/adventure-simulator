@@ -10,6 +10,7 @@ use adventuresim_world_schema::{
 use crate::{Error, Result};
 
 pub fn validate(world: &CompiledWorld) -> Result<()> {
+    crate::sources::industries::validate_semantics(world)?;
     if world.metadata.schema_version != WORLD_SCHEMA_VERSION {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",
@@ -208,6 +209,12 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation("settlement IDs are not unique".into()));
     }
     for settlement in &world.settlements {
+        settlement.industries.validate().map_err(|reason| {
+            Error::Validation(format!(
+                "settlement {} has invalid industries: {reason}",
+                settlement.id
+            ))
+        })?;
         if !valid_sources_markdown(&settlement.sources) {
             return Err(Error::Validation(format!(
                 "settlement {} has invalid source notes",
@@ -261,6 +268,58 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 settlement.id
             )));
         }
+    }
+    let mut categories = [0usize; 10];
+    let mut derived = 0usize;
+    let mut fallback_outputs = 0usize;
+    let mut fallback_settlements = 0usize;
+    for settlement in &world.settlements {
+        let mut has_fallback = false;
+        for output in settlement.industries.outputs() {
+            match output {
+                adventuresim_world_schema::IndustryEvidence::Fallback(_) => {
+                    fallback_outputs += 1;
+                    has_fallback = true;
+                }
+                adventuresim_world_schema::IndustryEvidence::Derived(value) => {
+                    derived += 1;
+                    categories[match value {
+                        adventuresim_world_schema::DerivedIndustry::Agriculture(_) => 0,
+                        adventuresim_world_schema::DerivedIndustry::Fishing(_) => 1,
+                        adventuresim_world_schema::DerivedIndustry::Quarrying(_) => 2,
+                        adventuresim_world_schema::DerivedIndustry::Mining(_) => 3,
+                        adventuresim_world_schema::DerivedIndustry::Pottery(_) => 4,
+                        adventuresim_world_schema::DerivedIndustry::PeatCutting(_) => 5,
+                        adventuresim_world_schema::DerivedIndustry::Forestry(_) => 6,
+                        adventuresim_world_schema::DerivedIndustry::CharcoalBurning(_) => 7,
+                        adventuresim_world_schema::DerivedIndustry::Saltmaking(_) => 8,
+                        adventuresim_world_schema::DerivedIndustry::Construction(_) => 9,
+                    }] += 1;
+                }
+            }
+        }
+        fallback_settlements += usize::from(has_fallback);
+    }
+    if report.industry_settlements != world.settlements.len()
+        || report.industry_derived_outputs != derived
+        || report.industry_fallback_outputs != fallback_outputs
+        || report.industry_fallback_settlements != fallback_settlements
+        || [
+            report.industry_agriculture_outputs,
+            report.industry_fishing_outputs,
+            report.industry_quarrying_outputs,
+            report.industry_mining_outputs,
+            report.industry_pottery_outputs,
+            report.industry_peat_outputs,
+            report.industry_forestry_outputs,
+            report.industry_charcoal_outputs,
+            report.industry_saltmaking_outputs,
+            report.industry_construction_outputs,
+        ] != categories
+    {
+        return Err(Error::Validation(
+            "industry report counters do not reconcile with canonical settlements".into(),
+        ));
     }
     let alias_ids: HashSet<_> = world
         .settlement_aliases

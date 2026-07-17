@@ -60,6 +60,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub population_estimate: u32,
+    pub industries: adventuresim_world_schema::InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,
