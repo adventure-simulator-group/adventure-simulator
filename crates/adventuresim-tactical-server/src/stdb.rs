@@ -12,7 +12,8 @@ pub struct SpacetimeDbPlugin;
 impl Plugin for SpacetimeDbPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, connect_spacetimedb)
-            .add_systems(Update, update_spacetimedb);
+            .add_systems(Update, update_spacetimedb)
+            .add_systems(Last, disconnect_spacetimedb);
     }
 }
 
@@ -41,9 +42,9 @@ impl SpacetimeDb {
     ///
     /// For native subscriptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
     pub fn subscribe_connected_players(&self) -> SubscriptionHandle {
-        let mailbox = self.connected_players.clone();
+        let connected_players = self.connected_players.clone();
         self.conn.db.connected_players().on_insert(move |_ctx, row| {
-            mailbox.lock().unwrap().push(row.clone());
+            connected_players.lock().unwrap().push(row.clone());
         });
 
         self.conn
@@ -70,6 +71,20 @@ pub fn update_spacetimedb(stdb: Res<SpacetimeDb>) -> Result {
     Ok(())
 }
 
+/// On app exit, close the connection cleanly.
+fn disconnect_spacetimedb(mut exit: MessageReader<AppExit>, stdb: Res<SpacetimeDb>) {
+    if exit.read().next().is_none() {
+        return;
+    }
+
+    info!("Disconnecting from SpacetimeDB...");
+    if stdb.conn.disconnect().is_ok() {
+        // `disconnect` only queues the close; pump until the stream ends so
+        // queued reducer calls (e.g. mission results) reach the server first.
+        while stdb.conn.advance_one_message_blocking().is_ok() {}
+    }
+}
+
 fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
     let conn = DbConnection::builder()
@@ -79,8 +94,10 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
             info!("SpacetimeDB connected: {i}");
         })
         .on_connect_error(|_, err| {
-            // TODO: probably shouldn't insert resource if there is an error ?
             error!("SpacetimeDB connection failed: {err}");
+            // A mission server without its database is useless;
+            // die and let the orchestrator deal with it.
+            std::process::exit(1);
         })
         .on_disconnect(|_, err| {
             if let Some(err) = err {
