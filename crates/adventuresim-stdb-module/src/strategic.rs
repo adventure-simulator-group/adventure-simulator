@@ -1348,7 +1348,7 @@ pub struct BattleResult {
 /// Reproducible strategic-combat diagnostics retained whether the party wins
 /// or loses. Clients can show `summary` immediately and expand `log` on demand.
 #[derive(Clone, Debug)]
-#[table(name = autoresolve_report, public)]
+#[table(accessor = autoresolve_report, public)]
 pub struct AutoresolveReport {
     #[primary_key]
     pub quest_id: String,
