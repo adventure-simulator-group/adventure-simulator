@@ -33,6 +33,8 @@ enum NaturalCover {
 }
 
 pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWorld> {
+    crate::manifest::canonicalize(&mut draft.sources)?;
+    let manifest_digest = crate::manifest::digest(draft.year, draft.spatial_grid, &draft.sources)?;
     let mut direct = 0;
     let mut derived = 0;
     let mut fallback = 0;
@@ -111,6 +113,7 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
             inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
             spatial_grid: draft.spatial_grid,
             world_year: draft.year,
+            manifest_digest,
             sources: draft.sources,
             road_types: draft.road_types,
         },
@@ -497,8 +500,8 @@ mod tests {
     use crate::draft::{FinalizedSoilWorldDraft, LandUseEvidence};
     use adventuresim_world_schema::{
         DirectHistoricalVegetationCover, FerryRoute, FerryWaterway, LandUseFraction,
-        LandUseProfile, SourceProvenance, SpatialGridSpec, TravelEdgeImport, TravelEdgeKind,
-        TravelRoute, WorldBuildReport, WorldNodeImport,
+        LandUseProfile, SpatialGridSpec, TravelEdgeImport, TravelEdgeKind, TravelRoute,
+        WorldBuildReport, WorldNodeImport,
     };
 
     fn scores(winner: NaturalCover, advantage: i32) -> [(NaturalCover, i32); 6] {
@@ -639,11 +642,7 @@ mod tests {
         FinalizedSoilWorldDraft {
             year: 1544,
             spatial_grid: SpatialGridSpec::default(),
-            sources: vec![SourceProvenance {
-                name: "test".into(),
-                url: "https://example.invalid".into(),
-                license: "test".into(),
-            }],
+            sources: vec![crate::manifest::hydrology()],
             road_types: vec![TravelEdgeKind::Ferry],
             nodes: vec![
                 WorldNodeImport {

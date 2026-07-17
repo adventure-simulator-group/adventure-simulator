@@ -9,7 +9,7 @@ use std::{
 
 use adventuresim_world_schema::{
     ForestCover, PotentialVegetation, PotentialVegetationClass, PotentialVegetationPosterior,
-    SourceProvenance, SuitabilityBasisPoints,
+    SuitabilityBasisPoints,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -26,9 +26,6 @@ use crate::{
     spatial::SpatialProjection,
 };
 
-const SOURCE_NAME: &str = "Jung/IIASA Current and future European potential vegetation types v1.1";
-const SOURCE_URL: &str = "https://doi.org/10.5281/zenodo.14627466";
-const SOURCE_LICENSE: &str = "Creative Commons Attribution 4.0 International (CC BY 4.0)";
 const WIDTH: u32 = 5_583;
 const HEIGHT: u32 = 4_474;
 const WEST: f64 = 944_000.0;
@@ -167,7 +164,7 @@ fn enrich_verified(
     directory: &Path,
 ) -> Result<WorldDraft<PotentialVegetationSettlementDraft>> {
     if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), 0);
+        return finish(draft, Vec::new(), 0, directory);
     }
     let projection = SpatialProjection::new()?;
     let cell_size = f64::from(draft.spatial_grid.cell_size_meters().get());
@@ -227,13 +224,14 @@ fn enrich_verified(
             samples.push(PotentialVegetation::Inferred(infer_class(settlement)));
         }
     }
-    finish(draft, samples, files_read)
+    finish(draft, samples, files_read, directory)
 }
 
 fn finish(
     mut draft: WorldDraft<ForestSettlementDraft>,
     samples: Vec<PotentialVegetation>,
     files_read: usize,
+    directory: &Path,
 ) -> Result<WorldDraft<PotentialVegetationSettlementDraft>> {
     if samples.len() != draft.settlements.len() {
         return Err(Error::Validation(
@@ -258,11 +256,9 @@ fn finish(
         push_source_note(&mut forest, note);
         PotentialVegetationSettlementDraft { forest, potential_vegetation }
     }).collect();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if files_read > 0 {
+        draft.sources.push(crate::manifest::jung(directory)?);
+    }
     draft.report.potential_vegetation_raster_files_read = files_read;
     draft.report.potential_vegetation_samples = settlements.len();
     draft.report.potential_vegetation_posterior_samples = posterior;

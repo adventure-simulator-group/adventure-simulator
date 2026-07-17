@@ -9,8 +9,8 @@ use std::{
 
 use adventuresim_world_schema::{
     HabitatSuitability, InferredTreeSpeciesProfile, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-    NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass, SourceProvenance,
-    TreeSpeciesId, TreeSpeciesProfile,
+    NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass, TreeSpeciesId,
+    TreeSpeciesProfile,
 };
 use proj4rs::{proj::Proj, transform::transform};
 use tiff::{
@@ -28,9 +28,6 @@ use crate::{
     },
 };
 
-const SOURCE_NAME: &str = "EU-Trees4F v2 current-climate ensemble";
-const SOURCE_URL: &str = "https://doi.org/10.6084/m9.figshare.17032328";
-const SOURCE_LICENSE: &str = "CC0 1.0";
 const ARCHIVE_ROOT: &str = "ens_clim/";
 const CURRENT_STEM: &str = "_ens-clim_cur2005_";
 const EXPECTED_RASTERS: usize = 201;
@@ -112,7 +109,7 @@ pub(crate) fn enrich(
     archive_path: &Path,
 ) -> Result<WorldDraft<TreeSpeciesSettlementDraft>> {
     if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), 0, 0);
+        return finish(draft, Vec::new(), 0, 0, archive_path);
     }
     let file = File::open(archive_path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -199,7 +196,7 @@ pub(crate) fn enrich(
         };
         profiles.push(profile);
     }
-    finish(draft, profiles, rasters_read, fallbacks)
+    finish(draft, profiles, rasters_read, fallbacks, archive_path)
 }
 
 fn rank_modeled_candidates(
@@ -226,6 +223,7 @@ fn finish(
     profiles: Vec<TreeSpeciesProfile>,
     rasters_read: usize,
     fallbacks: usize,
+    archive_path: &Path,
 ) -> Result<WorldDraft<TreeSpeciesSettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
@@ -256,11 +254,9 @@ fn finish(
             }
         })
         .collect::<Vec<_>>();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if rasters_read > 0 {
+        draft.sources.push(crate::manifest::trees(archive_path)?);
+    }
     draft.report.tree_species_rasters_read = rasters_read;
     draft.report.tree_species_samples = settlements.len();
     draft.report.tree_species_fallback_samples = fallbacks;

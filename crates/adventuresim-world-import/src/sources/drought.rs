@@ -3,8 +3,7 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SourceProvenance,
-    SummerHydroclimate,
+    DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SummerHydroclimate,
 };
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
@@ -13,9 +12,6 @@ use crate::{
     draft::{DroughtSettlementDraft, ReligionSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "NOAA Old World Drought Atlas v1.0 (dataset DOI 10.25921/rjm6-mq74; Cook et al. paper DOI 10.1126/sciadv.1500561)";
-const SOURCE_URL: &str = "https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc";
-const SOURCE_LICENSE: &str = "NOAA/NCEI public-access dataset; citation requested";
 const LONGITUDES: usize = 114;
 const LATITUDES: usize = 88;
 const YEARS: usize = 2_013;
@@ -30,7 +26,7 @@ pub(crate) fn enrich(
 ) -> Result<WorldDraft<DroughtSettlementDraft>> {
     let grid = OwdaGrid::open(netcdf_path, draft.year)?;
     if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), grid.valid_cells.len(), 0, 0);
+        return finish(draft, Vec::new(), grid.valid_cells.len(), 0, 0, netcdf_path);
     }
     let mut neighbor_samples = 0;
     let mut fallbacks = 0;
@@ -69,6 +65,7 @@ pub(crate) fn enrich(
         grid.valid_cells.len(),
         neighbor_samples,
         fallbacks,
+        netcdf_path,
     )
 }
 
@@ -130,6 +127,7 @@ fn finish(
     cells_read: usize,
     neighbor_samples: usize,
     fallbacks: usize,
+    netcdf_path: &Path,
 ) -> Result<WorldDraft<DroughtSettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
@@ -141,11 +139,9 @@ fn finish(
         .zip(profiles)
         .map(|(religious, drought)| DroughtSettlementDraft { religious, drought })
         .collect();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if cells_read > 0 {
+        draft.sources.push(crate::manifest::drought(netcdf_path)?);
+    }
     draft.report.drought_grid_cells_read = cells_read;
     draft.report.drought_samples = settlements.len();
     draft.report.drought_neighbor_samples = neighbor_samples;

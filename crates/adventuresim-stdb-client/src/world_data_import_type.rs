@@ -11,6 +11,7 @@ pub struct WorldDataImport {
     pub owner: __sdk::Identity,
     pub schema_version: u32,
     pub artifact_id: String,
+    pub manifest_digest: String,
     pub sources: String,
     pub completed: bool,
 }

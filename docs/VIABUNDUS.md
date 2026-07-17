@@ -7,6 +7,12 @@ version 2 (released 25 April 2025), edited by Bart Holterman et al.
 - Project: <https://www.viabundus.eu>
 - License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 
+The initializer sidecar records the byte size and SHA-256 of each downloaded
+CSV. Import requires a bounded, deny-unknown v2 sidecar with the canonical
+Zenodo record, unique safe CSV names, and an inventory of every consumed CSV;
+it verifies consumed bytes before granting reproducible snapshot status.
+Legacy sidecars without sizes remain explicitly release-blocked.
+
 The upstream CSVs are downloaded locally into the Git-ignored `viabundus/`
 directory with `just init-viabundus`. The native Rust world compiler reads them
 from its source-specific `sources::viabundus` module, then enriches the draft

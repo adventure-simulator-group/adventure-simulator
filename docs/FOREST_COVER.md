@@ -34,6 +34,10 @@ mapping described here so a raw, stale, or differently prepared byte raster is
 not silently interpreted under this contract. Each used degree tile requires a
 pair named for its southwest corner:
 
+The marker is not a content inventory. Canonical provenance therefore remains
+release-blocked/non-reproducible until every consumed TCD/DLT tile has a checked
+size and SHA-256.
+
 - `TCD_N48_E002.tif`
 - `DLT_N48_E002.tif`
 

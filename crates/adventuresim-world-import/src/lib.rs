@@ -6,6 +6,7 @@
 pub mod builder;
 mod draft;
 pub mod error;
+mod manifest;
 mod sources;
 pub mod spatial;
 mod validation;

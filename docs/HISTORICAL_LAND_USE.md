@@ -6,7 +6,9 @@ the Global Environment), using the 1500 and 1600 CE slices around the game's
 
 - Dataset record: <https://doi.org/10.17026/dans-25g-gez3>
 - Method paper: <https://doi.org/10.5194/essd-9-927-2017>
-- Terms recorded by the repository: CC0 1.0
+- Conservative operational terms: CC BY 3.0 because the DANS record's CC0
+  signal conflicts with the bundled attribution-oriented README. This records
+  the stricter treatment and does not claim the conflict is legally resolved.
 
 The official archive is currently protected/restricted and the attempted
 download produced no source files. Consequently this integration is verified

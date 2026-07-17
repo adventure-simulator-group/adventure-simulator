@@ -524,6 +524,8 @@ pub struct WorldDataImport {
     pub owner: Identity,
     pub schema_version: u32,
     pub artifact_id: String,
+    /// Canonical source/rules/grid manifest digest for audit and cache boundaries.
+    pub manifest_digest: String,
     /// Unstructured Markdown describing the source distributions in this
     /// compiled artifact. Per-record inference details live on imported rows.
     pub sources: String,
@@ -538,6 +540,7 @@ pub fn begin_world_data_import(
     ctx: &ReducerContext,
     schema_version: u32,
     artifact_id: String,
+    manifest_digest: String,
     sources: String,
 ) -> Result<(), String> {
     if schema_version != WORLD_SCHEMA_VERSION {
@@ -547,6 +550,13 @@ pub fn begin_world_data_import(
     }
     if artifact_id.trim().is_empty() {
         return Err("World artifact ID must not be empty".into());
+    }
+    if manifest_digest.len() != 64
+        || !manifest_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err("World manifest digest must be 64 lowercase hexadecimal characters".into());
     }
     if !valid_sources_markdown(&sources) {
         return Err("World source notes are empty, too large, or contain a NUL byte".into());
@@ -558,6 +568,7 @@ pub fn begin_world_data_import(
         Some(import)
             if import.schema_version == schema_version
                 && import.artifact_id == artifact_id
+                && import.manifest_digest == manifest_digest
                 && import.sources == sources =>
         {
             if import.completed {
@@ -576,6 +587,7 @@ pub fn begin_world_data_import(
                 owner: ctx.sender(),
                 schema_version,
                 artifact_id,
+                manifest_digest,
                 sources,
                 completed: false,
             });

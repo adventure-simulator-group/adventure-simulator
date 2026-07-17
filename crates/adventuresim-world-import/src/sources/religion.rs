@@ -6,7 +6,7 @@ use std::path::Path;
 
 use adventuresim_world_schema::{
     CatholicLutheranChurch, CatholicReformedChurch, LutheranReformedChurch, OfficialReligion,
-    SettlementReligiousStatus, SourceProvenance, WesternChristianArrangement,
+    SettlementReligiousStatus, WesternChristianArrangement,
 };
 use serde::Deserialize;
 
@@ -15,10 +15,6 @@ use crate::{
     draft::{GeologySettlementDraft, ReligionSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "IEG Maps of Confessional Europe (1500 and 1555)";
-const SOURCE_URL: &str = "https://www.ieg-maps.uni-mainz.de/mapsp/mapconfession.htm";
-const SOURCE_LICENSE: &str =
-    "IEG map rights: © IEG Mainz / Andreas Kunz; project-curated intermediate";
 const SUPPORTED_YEAR: i32 = 1544;
 
 #[derive(Debug, Deserialize)]
@@ -302,11 +298,9 @@ pub(crate) fn enrich(
             }
         })
         .collect();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if !regions.is_empty() {
+        draft.sources.push(crate::manifest::religion(regions_path)?);
+    }
     draft.report.religion_regions_read = regions.len();
     draft.report.religion_samples = settlements.len();
     draft.report.religion_fallback_samples = fallbacks;
