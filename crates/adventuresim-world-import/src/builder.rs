@@ -59,7 +59,7 @@ impl WorldBuilder {
         forest_cover_directory: &Path,
         potential_vegetation_directory: &Path,
         tree_species_archive: &Path,
-        soil_directory: &Path,
+        soilgrids_directory: &Path,
         geology_geopackage: &Path,
         religion_regions: &Path,
         drought_netcdf: &Path,
@@ -71,11 +71,12 @@ impl WorldBuilder {
         let draft = forest_cover::enrich(draft, forest_cover_directory)?;
         let draft = potential_vegetation::enrich(draft, potential_vegetation_directory)?;
         let draft = tree_species::enrich(draft, tree_species_archive)?;
-        let draft = soil::enrich(draft, soil_directory)?;
+        let draft = soil::predict(draft, soilgrids_directory)?;
         let draft = geology::enrich(draft, geology_geopackage)?;
         let draft = religion::enrich(draft, religion_regions)?;
         let draft = drought::enrich(draft, drought_netcdf)?;
-        let world = hydrology::enrich(draft, hydrology_directory)?;
+        let draft = hydrology::enrich(draft, hydrology_directory)?;
+        let world = soil::finalize(draft)?;
         validation::validate(&world)?;
         Ok(world)
     }

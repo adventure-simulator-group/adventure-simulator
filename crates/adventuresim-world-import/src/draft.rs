@@ -1,8 +1,8 @@
 use adventuresim_world_schema::{
     DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, LandUseProfile,
-    PotentialVegetation, SettlementAliasImport, SettlementDescriptionImport, SoilProfile,
-    SourceProvenance, SpatialGridSpec, TravelEdgeKind, TreeSpeciesProfile, WorldBuildReport,
-    WorldNodeImport,
+    PotentialVegetation, SettlementAliasImport, SettlementDescriptionImport, SettlementHydrology,
+    SoilPrediction, SourceProvenance, SpatialGridSpec, TravelEdgeImport, TravelEdgeKind,
+    TreeSpeciesProfile, WorldBuildReport, WorldNodeImport,
 };
 
 #[derive(Debug)]
@@ -132,18 +132,18 @@ pub(crate) struct TreeSpeciesSettlementDraft {
 delegate_settlement_access!(TreeSpeciesSettlementDraft, vegetated);
 
 #[derive(Debug)]
-pub(crate) struct SoilSettlementDraft {
+pub(crate) struct SoilPredictionSettlementDraft {
     pub(crate) trees: TreeSpeciesSettlementDraft,
-    pub(crate) soil: SoilProfile,
+    pub(crate) prediction: SoilPrediction,
 }
-delegate_settlement_access!(SoilSettlementDraft, trees);
+delegate_settlement_access!(SoilPredictionSettlementDraft, trees);
 
 #[derive(Debug)]
 pub(crate) struct GeologySettlementDraft {
-    pub(crate) soil: SoilSettlementDraft,
+    pub(crate) predicted: SoilPredictionSettlementDraft,
     pub(crate) geology: adventuresim_world_schema::SurfaceGeology,
 }
-delegate_settlement_access!(GeologySettlementDraft, soil);
+delegate_settlement_access!(GeologySettlementDraft, predicted);
 
 #[derive(Debug)]
 pub(crate) struct ReligionSettlementDraft {
@@ -158,6 +158,29 @@ pub(crate) struct DroughtSettlementDraft {
     pub(crate) drought: DroughtProfile,
 }
 delegate_settlement_access!(DroughtSettlementDraft, religious);
+
+#[derive(Debug)]
+pub(crate) struct HydrologySettlementDraft {
+    pub(crate) drought: DroughtSettlementDraft,
+    pub(crate) hydrology: SettlementHydrology,
+}
+delegate_settlement_access!(HydrologySettlementDraft, drought);
+
+/// Hydrology resolves route geometry but intentionally leaves canonical soil
+/// construction to the final source-dependent stage.
+#[derive(Debug)]
+pub(crate) struct HydrologyWorldDraft {
+    pub(crate) year: i32,
+    pub(crate) spatial_grid: SpatialGridSpec,
+    pub(crate) sources: Vec<SourceProvenance>,
+    pub(crate) road_types: Vec<TravelEdgeKind>,
+    pub(crate) nodes: Vec<WorldNodeImport>,
+    pub(crate) edges: Vec<TravelEdgeImport>,
+    pub(crate) settlement_aliases: Vec<SettlementAliasImport>,
+    pub(crate) settlement_descriptions: Vec<SettlementDescriptionImport>,
+    pub(crate) settlements: Vec<HydrologySettlementDraft>,
+    pub(crate) report: WorldBuildReport,
+}
 
 #[cfg(test)]
 mod tests {

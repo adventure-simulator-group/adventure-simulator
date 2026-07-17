@@ -1,0 +1,72 @@
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+import json
+import subprocess
+
+SPEC = importlib.util.spec_from_file_location("init_soilgrids", Path(__file__).with_name("init_soilgrids.py"))
+module = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(module)
+
+
+class SoilGridsInitializerTests(unittest.TestCase):
+    def test_inventory_is_fixed_and_complete(self):
+        layers = module.layers()
+        self.assertEqual(len(layers), 207)
+        self.assertEqual(len({(x["property"], x["depth"], x["quantile"]) for x in layers}), 207)
+        self.assertTrue(all(x["source_url"].startswith("https://files.isric.org/soilgrids/latest/") for x in layers))
+        self.assertIn("sand_0-5cm_Q0.5.vrt", next(x["source_url"] for x in layers if x["property"] == "sand" and x["quantile"] == "Q0.50"))
+        self.assertIn("data_aggregated/1000m/wv0033", next(x["source_url"] for x in layers if x["property"] == "wv0033"))
+
+    def test_grid_size_is_bounded_and_aligned(self):
+        self.assertEqual(module.cell_size("1000"), 1000)
+        self.assertEqual(module.cell_size("5000"), 5000)
+        for value in ("0", "250", "500", "750", "100250"):
+            with self.assertRaises(Exception):
+                module.cell_size(value)
+        for extent in ((900001, 900000, 7400001, 5500000), (0, 0, 1000, 1000)):
+            with self.assertRaises(Exception):
+                module.validate_extent(extent, 1000)
+
+    def test_plan_is_non_shell_and_tap_aligned(self):
+        layer = module.layers()[0]
+        command = module.command(layer, Path("input.vrt"), Path("output.tif"), 1000)
+        self.assertEqual(command[0], "gdalwarp")
+        self.assertIn("-tap", command)
+        self.assertIn("-srcnodata", command)
+        self.assertIn("-dstnodata", command)
+        self.assertEqual(command[command.index("-ot") + 1], "Float32")
+        self.assertEqual(command[command.index("-t_srs") + 1], "EPSG:3035")
+
+    def test_vsicurl_preserves_master_url_for_relative_vrt_tiles(self):
+        url = module.layers()[0]["source_url"]
+        source = module.vsicurl(url)
+        self.assertEqual(source, "/vsicurl/" + url)
+        self.assertIn(source, module.command(module.layers()[0], source, Path("out.tif"), 1000))
+        with self.assertRaises(RuntimeError):
+            module.vsicurl("https://example.com/soilgrids/latest/data/x.vrt")
+
+    def test_verify_rejects_missing_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(FileNotFoundError):
+                module.verify(Path(directory), 1000)
+
+    @patch("subprocess.run")
+    def test_gdalinfo_contract_is_checked_before_publication(self, run):
+        info = {"size": [6500, 4600], "geoTransform": [900000, 1000, 0.0, 5500000, 0.0, -1000],
+            "coordinateSystem": {"wkt": 'PROJCRS["ETRS89 / LAEA Europe",ID["EPSG",3035]]'},
+            "bands": [{"type": "Float32", "noDataValue": "NaN"}],
+            "metadata": {"IMAGE_STRUCTURE": {"COMPRESSION": "DEFLATE"}}}
+        run.return_value = subprocess.CompletedProcess([], 0, stdout=json.dumps(info), stderr="")
+        module.validate_prepared(Path("fixture.tif"), 1000)
+        self.assertEqual(run.call_args.args[0][:2], ["gdalinfo", "-json"])
+        info["geoTransform"][0] += 1
+        run.return_value = subprocess.CompletedProcess([], 0, stdout=json.dumps(info), stderr="")
+        with self.assertRaises(RuntimeError):
+            module.validate_prepared(Path("fixture.tif"), 1000)
+
+
+if __name__ == "__main__":
+    unittest.main()

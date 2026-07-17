@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use adventuresim_world_schema::{
     GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
     IgneousRock, InferredGeologicSetting, MappedSurfaceGeology, MetamorphicRock, MixedLithology,
-    SedimentaryRock, SoilProfile, SoilSubstrate, SourceProvenance, SurfaceGeology,
-    SurfaceLithology, UnconsolidatedDeposit,
+    SedimentaryRock, SourceProvenance, SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit,
 };
 use geo::{Contains, Geometry, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -15,7 +14,7 @@ use rusqlite::{Connection, OpenFlags, params};
 
 use crate::{
     Error, Result,
-    draft::{GeologySettlementDraft, SoilSettlementDraft, WorldDraft, push_source_note},
+    draft::{GeologySettlementDraft, SoilPredictionSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "EGDI 1:1 Million pan-European Surface Geology";
@@ -27,7 +26,7 @@ const GEOMETRY_COLUMN: &str = "geom";
 const EXPECTED_SRS: i64 = 3034;
 
 pub(crate) fn enrich(
-    draft: WorldDraft<SoilSettlementDraft>,
+    draft: WorldDraft<SoilPredictionSettlementDraft>,
     geopackage: &Path,
 ) -> Result<WorldDraft<GeologySettlementDraft>> {
     if draft.settlements.is_empty() {
@@ -50,7 +49,7 @@ pub(crate) fn enrich(
 }
 
 fn finish(
-    mut draft: WorldDraft<SoilSettlementDraft>,
+    mut draft: WorldDraft<SoilPredictionSettlementDraft>,
     profiles: Vec<SurfaceGeology>,
     features_read: usize,
     fallbacks: usize,
@@ -63,15 +62,15 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(mut soil, geology)| {
+        .map(|(mut predicted, geology)| {
             push_source_note(
-                &mut soil,
+                &mut predicted,
                 match &geology {
                     SurfaceGeology::Mapped(_) => "**[EGDI pan-European Surface Geology](https://doi.org/10.22008/y9hj-va55):** Surface lithology and age come from containment in the indexed aggregate geologic-unit layer; missing source attributes may use the mapped record's explicit deterministic evidence classifications.",
                     SurfaceGeology::Inferred(_) => "**EGDI geology fallback:** No usable geologic unit covered the settlement, so a plausible geologic setting is deterministically inferred from the soil profile.",
                 },
             );
-            GeologySettlementDraft { soil, geology }
+            GeologySettlementDraft { predicted, geology }
         })
         .collect();
     draft.sources.push(SourceProvenance {
@@ -768,22 +767,28 @@ const fn infer_age(lithology: SurfaceLithology) -> GeologicEra {
     }
 }
 
-fn infer_setting(settlement: &SoilSettlementDraft) -> InferredGeologicSetting {
-    let substrate = match &settlement.soil {
-        SoilProfile::Mapped(profile) => profile.properties.substrate,
-        SoilProfile::Inferred(properties) => properties.substrate,
-    };
-    let lithology = match substrate {
-        SoilSubstrate::Organic(_) => SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Peat),
-        SoilSubstrate::RockOutcrop(_) => SurfaceLithology::Metamorphic(MetamorphicRock::Schist),
-        SoilSubstrate::Mineral(soil)
-            if soil.depth == adventuresim_world_schema::SoilDepth::Shallow =>
-        {
-            SurfaceLithology::Sedimentary(SedimentaryRock::Limestone)
-        }
-        SoilSubstrate::Mineral(_) | SoilSubstrate::OtherNonTextured(_) => {
-            SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone)
-        }
+fn infer_setting(settlement: &SoilPredictionSettlementDraft) -> InferredGeologicSetting {
+    let prediction = settlement.prediction;
+    let elevation = settlement
+        .trees
+        .vegetated
+        .forest
+        .land
+        .elevated
+        .elevation
+        .get();
+    let lithology = if prediction.histosol_probability.get() >= 5_000 {
+        SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Peat)
+    } else if prediction.leptosol_probability.get() >= 5_000 || elevation >= 900 {
+        SurfaceLithology::Metamorphic(MetamorphicRock::Schist)
+    } else if matches!(
+        prediction.texture,
+        adventuresim_world_schema::MineralSoilTexture::Fine
+            | adventuresim_world_schema::MineralSoilTexture::VeryFine
+    ) {
+        SurfaceLithology::Sedimentary(SedimentaryRock::Limestone)
+    } else {
+        SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone)
     };
     InferredGeologicSetting {
         lithology,

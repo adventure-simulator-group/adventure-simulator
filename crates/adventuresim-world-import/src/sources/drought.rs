@@ -41,7 +41,7 @@ pub(crate) fn enrich(
         .map(|religious| {
             let settlement = &religious
                 .geologic
-                .soil
+                .predicted
                 .trees
                 .vegetated
                 .forest

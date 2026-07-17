@@ -1,20 +1,20 @@
 use adventuresim_core::prelude::*;
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CrossingWatercourse,
-    DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
-    FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
-    InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    LanguageCode, MappedSoilProfile, MarineWaterAccess, MineralSoil, MineralSoilTexture,
+    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CationExchangeCapacity,
+    CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
+    ElevationMeters, FerryWaterway, FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId,
+    HabitatSuitability, InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction,
+    LandUseProfile, LanguageCode, MarineWaterAccess, MineralSoil, MineralSoilTexture,
     ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
-    ParentMaterialCode, PotentialVegetation, PotentialVegetationClass,
-    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
-    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
-    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
-    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
-    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-    TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
-    valid_bounded_source_text, valid_sources_markdown,
+    PotentialVegetation, PotentialVegetationClass, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
+    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
+    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
+    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
+    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport, valid_bounded_source_text,
+    valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -1026,31 +1026,10 @@ fn reconstruct_soil_profile(
         };
         Ok::<_, String>(properties)
     };
-    match profile {
-        SoilProfile::Inferred(properties) => {
-            Ok(SoilProfile::Inferred(reconstruct_properties(properties)?))
-        }
-        SoilProfile::Mapped(mapped) => {
-            let mapping_unit = SoilMappingUnit::new(
-                mapped.mapping_unit.smu(),
-                mapped.mapping_unit.dominant_stu(),
-                mapped.mapping_unit.dominance_percent(),
-            )
-            .ok_or_else(|| {
-                format!("Settlement {settlement_id} has an invalid soil mapping unit")
-            })?;
-            let parent_material =
-                ParentMaterialCode::new(mapped.parent_material.as_str().to_owned()).ok_or_else(
-                    || format!("Settlement {settlement_id} has an invalid parent-material code"),
-                )?;
-            Ok(SoilProfile::Mapped(MappedSoilProfile {
-                mapping_unit,
-                wrb_group: mapped.wrb_group,
-                parent_material,
-                properties: reconstruct_properties(mapped.properties)?,
-            }))
-        }
-    }
+    Ok(SoilProfile {
+        properties: reconstruct_properties(profile.properties)?,
+        ..profile
+    })
 }
 
 fn reconstruct_geology_profile(
@@ -4626,7 +4605,10 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     ])
                     .unwrap(),
                 ),
-                soil: SoilProfile::Inferred(SoilProperties {
+                soil: SoilProfile {
+                    wrb_group: adventuresim_world_schema::WrbReferenceGroup::Cambisol,
+                    parent_material: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                    properties: SoilProperties {
                     substrate: SoilSubstrate::Mineral(MineralSoil {
                         texture: MineralSoilTexture::Medium,
                         depth: SoilDepth::Deep,
@@ -4636,7 +4618,13 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     }),
                     water_regime: SoilWaterRegime::SeasonallyWet,
                     agricultural_limitation: AgriculturalLimitation::None,
-                }),
+                    },
+                    acidity: SoilAcidity::Acid,
+                    cation_exchange_capacity: CationExchangeCapacity::Medium,
+                    fertility: SoilFertility::Medium,
+                    confidence: SoilBasisPoints::new(2_500).unwrap(),
+                    evidence: SoilEvidence::DeterministicInference,
+                },
                 geology: SurfaceGeology::Inferred(InferredGeologicSetting {
                     lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
                     age: GeologicEra::Quaternary,

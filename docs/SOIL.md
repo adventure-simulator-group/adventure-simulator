@@ -1,77 +1,83 @@
-# Soil world data
+# SoilGrids prediction and soil finalization
 
-Settlement soil plausibility is sourced from the **European Soil Database
-v2.0** (ESDB), specifically its SGDBE polygon and attribute database plus the
-PTRDB pedotransfer-rules table.
+Settlement soil is based on [ISRIC SoilGrids](https://www.isric.org/explore/soilgrids),
+rolling version 2, under CC BY 4.0. Restricted legacy European vector data is
+not an accepted runtime or distributable input.
 
-- Dataset page: <https://esdac.jrc.ec.europa.eu/content/european-soil-database-v20-vector-and-attribute-data>
-- SGDBE dictionary: <https://esdac.jrc.ec.europa.eu/content/sgdbe-attributes>
-- PTRDB dictionary: <https://esdac.jrc.ec.europa.eu/content/ptrdb-attributes>
-- Distribution schema: <https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDB_Data_Distribution/ESDB_Data_full_distribution/ESDB_data_vx.cfm>
+The compiler consumes a prepared, content-addressed EPSG:3035 subset rather
+than making network calls. The fixed contract contains 250 m predictions for
+six depths (0–5, 5–15, 15–30, 30–60, 60–100, and 100–200 cm), and Q0.05,
+Q0.50, mean, and Q0.95 for sand, silt, clay, coarse fragments, organic carbon,
+pH, CEC, and bulk density. SoilGrids publishes the two water-retention products
+only as 1 km aggregated means, which are resampled onto the requested canonical
+grid without inventing unavailable quantiles. It also
+contains the most-probable WRB group and Histosols/Leptosols probabilities.
 
-The vector archive is not an anonymous download. It requires registration and
-acceptance of ESDAC's terms. Those terms do not grant this repository a general
-right to redistribute the archive or derived values and may be incompatible
-with commercial use. Do not commit the source files, compiled values derived
-from them, or add the download to the initialization script until the project
-has obtained suitable permission. The importer and synthetic tests are source
-code only; they do not include ESDAC data.
+## Preparing data
 
-## Required extracted layout
-
-After obtaining permission, extract the official
-`soilDB_shapefiles_and_attributes.zip` archive and pass its directory with
-`--soil-dir`. The default is
-`target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes/`.
-The importer currently requires:
-
-- `SGDBE4_0.shp`, `.shx`, `.dbf`, and `.prj`: 1:1,000,000 soil mapping units;
-- `STU_sgdbe.dbf`: soil classification and dominant parent material by STU;
-- `STU_ptrdb.dbf`: inferred physical properties by STU.
-
-The two `.access-page.html` files currently under the manually downloaded soil
-directory are ESDAC access-page redirects, not ZIP archives, and cannot be
-parsed as data.
-
-## Parsing and canonical model
-
-The source boundary requires the legacy GISCO Lambert azimuthal equal-area
-projection used by SGDBE; it must not be silently interpreted as EPSG:3035.
-Polygon records provide a soil mapping-unit ID, dominant soil typological-unit
-ID, and dominance percentage. Attribute tables are joined by STU.
-
-Mapped profiles retain those source IDs, an exhaustive WRB reference-group
-enum, dominant parent-material code, and typed gameplay properties: substrate
-and texture, depth to rock, available water capacity, topsoil organic carbon,
-stone content, dominant agricultural limitation, and annual water regime.
-The parser uses the physical DBF names (`WRBLV1`, `PARMADO`, and `AGLI1NNI`),
-not the longer logical attribute names shown in parts of the metadata. Source
-code domains are parsed exhaustively. Structurally unexpected fields or new
-non-placeholder codes fail the import rather than becoming `Unknown`.
-
-Material-dependent fields live inside substrate variants. Mineral and other
-non-textured substrates carry depth, water capacity, carbon, and stone content;
-organic substrate does not carry a separately contradictory carbon class; rock
-outcrop carries only stone content. This prevents canonical states such as a
-very deep, high-water-capacity rock outcrop.
-
-Documented no-information markers (`0`, `#`, or blank), WRB non-soil categories
-(town, water, marsh, glacier, disturbed ground, and rock outcrop), incomplete
-joins, and settlements outside polygon coverage instead produce a complete
-`Inferred` profile from already-typed elevation and potential vegetation. Wetland and mire
-formations favor wetter or organic soils; alpine terrain favors shallow stony
-or rocky soil; dry Mediterranean and steppe formations favor coarser, drier
-soil; all other settlements receive a temperate medium-textured fallback.
-These are intentionally plausible game-generation inputs, not historical
-claims about a named settlement.
-
-The official archive was unavailable during implementation. Normal tests build
-a synthetic shapefile plus both standalone DBF tables and exercise projection,
-joins, no-information handling, polygon sampling, and code domains. The ignored
-`full_source_boundary_reads_registered_distribution` test is the explicit
-end-to-end verification gate once an authorized archive is available:
+The initializer defaults to a plan because European preparation is large and
+requires GDAL:
 
 ```powershell
-$env:ESDB_DIR = "C:\path\to\soilDB_shapefiles_and_attributes"
-cargo test -p adventuresim-world-import full_source_boundary_reads_registered_distribution -- --ignored
+python scripts/init_soilgrids.py --grid-cell-size-meters 1000
+python scripts/init_soilgrids.py --prepare --grid-cell-size-meters 1000
+python scripts/init_soilgrids.py --verify-only --grid-cell-size-meters 1000
 ```
+
+Only strictly constructed official `files.isric.org` WebDAV/VRT URLs are used.
+GDAL opens the exact allowlisted master VRT through `/vsicurl/` so relative tile references
+remain attached to the official URL. Only the exact HTTPS host and
+`/soilgrids/latest/` path are accepted. Metadata-probe redirects are disabled
+and fail closed; a metadata redirect requires an explicit code/source-contract update. Preparation is
+fixed to the aligned EPSG:3035 Europe extent and invokes `gdalwarp` with
+`-t_srs EPSG:3035 -tr N N -tap`. The atomic manifest records retrieval time,
+source inventory, source and prepared sizes/SHA-256 hashes, extent, origin,
+CRS, and cell size. A complete generation is staged under a content-addressed
+directory and becomes active only when the root manifest pointer is atomically
+replaced, so a failed 207-file build cannot corrupt the prior generation. The
+Rust importer rechecks inventory, hashes, dimensions, nodata, Float32 band and
+compression shape, EPSG:3035 GeoKeys, transform, units, and canonical grid.
+
+`latest` is a mutable rolling publication, not an immutable source pin. The
+manifest therefore records `source_reproducibility: unpinned-rolling-latest`,
+observational source SHA-256/size, ETag and Last-Modified when supplied, and
+exact prepared hashes. Because rolling source bytes can change between the
+observation and GDAL requests, those source fields do not bind the prepared
+bytes. The prepared SHA-256 is the authoritative local snapshot; future raw
+reacquisition is not claimed reproducible.
+
+Preparation requires both `gdalwarp` and `gdalinfo`. Every staged TIFF must pass
+end-to-end JSON inspection (fixed size/extent, exact transform, EPSG:3035,
+single Float32 band, NaN nodata, and DEFLATE) plus a second prepared hash check
+before the active manifest is atomically replaced.
+
+The fixed continental extent currently fits the importer's 32-million-pixel
+bound only at exactly dividing sizes of 1 km or coarser (for example 1 km and
+5 km). Although the global `SpatialGridSpec` still permits 250 m, SoilGrids
+250/500 m preparation is rejected pending tiled ingestion; 750 m is rejected
+because it does not divide the extent exactly.
+
+The repository does not claim a complete official European audit until those
+layers are prepared. Plan and unit-test modes remain useful without GDAL.
+
+## Typestate and rules
+
+1. After Jung PNV and EU-Trees4F, depth values are thickness-weighted into
+   0–30 cm summaries; water capacity uses 0–100 cm. Quantiles are aggregated
+   separately and checked for ordering. Texture sums, units, nodata, ranges,
+   and grid identity are trust boundaries.
+2. A private prediction draft retains exhaustive WRB, Histosols/Leptosols
+   probabilities, texture, water, carbon, stones, acidity, CEC, fertility,
+   confidence, and modeled-or-inferred evidence.
+3. Geology consumes that prediction and elevation. Parent material in final
+   soil is typed geology lithology, never a free-form soil-source code.
+4. Religion and drought run; EU-Hydro returns a resolved hydrology draft.
+5. The soil finalizer combines prediction, geology, hydrology, Jung wetland
+   evidence, and elevation. Peat requires Histosols probability, wet PNV, and
+   hydrology together—organic carbon alone never creates peat. Shallow/rock
+   uses Leptosols plus geology/elevation. Drainage/flooding use WRB, retention,
+   and hydrology.
+
+Rules are deterministic and versioned. Slope/roughness refinement and a full
+prepared-source audit remain follow-up work for issue #68; this wave does not
+close the issue.

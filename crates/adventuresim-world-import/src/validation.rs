@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DroughtProfile, SettlementHydrology,
-    SoilProfile, SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    SoilEvidence, SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
     valid_sources_markdown,
 };
 
@@ -278,14 +278,16 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.settlements.len(),
         )
         || !soil_counts_are_consistent(
-            world.report.soil_polygons_read,
-            world.report.soil_attribute_rows_read,
+            world.report.soil_rasters_read,
+            world.report.soil_depth_layers_read,
             world.report.soil_samples,
             world.report.soil_fallback_samples,
             world
                 .settlements
                 .iter()
-                .filter(|settlement| matches!(settlement.soil, SoilProfile::Inferred(_)))
+                .filter(|settlement| {
+                    settlement.soil.evidence == SoilEvidence::DeterministicInference
+                })
                 .count(),
             world.settlements.len(),
         )
@@ -414,8 +416,8 @@ fn geology_counts_are_consistent(
 }
 
 fn soil_counts_are_consistent(
-    polygons: usize,
-    attribute_rows: usize,
+    rasters: usize,
+    depth_layers: usize,
     samples: usize,
     fallbacks: usize,
     actual_fallbacks: usize,
@@ -423,8 +425,9 @@ fn soil_counts_are_consistent(
 ) -> bool {
     samples == settlements
         && fallbacks == actual_fallbacks
-        && ((settlements == 0 && polygons == 0 && attribute_rows == 0)
-            || (settlements > 0 && polygons > 0 && attribute_rows > 0))
+        && depth_layers <= rasters
+        && ((settlements == 0 && rasters == 0 && depth_layers == 0)
+            || (settlements > 0 && rasters > 0 && depth_layers > 0))
 }
 
 fn tree_species_counts_are_consistent(
@@ -609,11 +612,11 @@ mod tests {
     }
 
     #[test]
-    fn soil_report_requires_source_tables_and_exact_fallback_count() {
-        assert!(soil_counts_are_consistent(10, 20, 3, 1, 1, 3));
+    fn soil_report_requires_source_rasters_and_exact_fallback_count() {
+        assert!(soil_counts_are_consistent(207, 204, 3, 1, 1, 3));
         assert!(soil_counts_are_consistent(0, 0, 0, 0, 0, 0));
-        assert!(!soil_counts_are_consistent(0, 20, 3, 1, 1, 3));
-        assert!(!soil_counts_are_consistent(10, 20, 3, 2, 1, 3));
+        assert!(!soil_counts_are_consistent(0, 204, 3, 1, 1, 3));
+        assert!(!soil_counts_are_consistent(207, 204, 3, 2, 1, 3));
     }
 
     #[test]

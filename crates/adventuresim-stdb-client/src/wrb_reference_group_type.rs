@@ -64,6 +64,8 @@ pub enum WrbReferenceGroup {
 
     Solonetz,
 
+    Stagnosol,
+
     Umbrisol,
 
     Vertisol,
