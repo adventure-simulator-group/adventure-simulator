@@ -72,6 +72,7 @@ pub(crate) fn enrich(
         draft.sources.push(source_provenance());
         return Ok(WorldDraft {
             year: draft.year,
+            spatial_grid: draft.spatial_grid,
             sources: draft.sources,
             road_types: draft.road_types,
             nodes: draft.nodes,
@@ -140,6 +141,7 @@ pub(crate) fn enrich(
     draft.report.land_use_normalized_samples = normalized_samples;
     Ok(WorldDraft {
         year: draft.year,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,

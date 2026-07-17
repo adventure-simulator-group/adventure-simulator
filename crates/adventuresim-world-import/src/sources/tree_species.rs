@@ -267,6 +267,7 @@ fn finish(
     draft.report.tree_species_candidates = candidate_count;
     Ok(WorldDraft {
         year: draft.year,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -974,7 +975,12 @@ mod tests {
     fn full_stage_enriches_all_viabundus_settlements() {
         let viabundus = std::env::var_os("VIABUNDUS_DIR").expect("set VIABUNDUS_DIR");
         let archive = std::env::var_os("EU_TREES4F_ARCHIVE").expect("set EU_TREES4F_ARCHIVE");
-        let mut raw = crate::sources::viabundus::compile(Path::new(&viabundus), 1544).unwrap();
+        let mut raw = crate::sources::viabundus::compile(
+            Path::new(&viabundus),
+            1544,
+            adventuresim_world_schema::SpatialGridSpec::default(),
+        )
+        .unwrap();
         let settlements = std::mem::take(&mut raw.settlements)
             .into_iter()
             .map(|settlement| PotentialVegetationSettlementDraft {
@@ -1001,6 +1007,7 @@ mod tests {
             .collect();
         let draft = WorldDraft {
             year: raw.year,
+            spatial_grid: raw.spatial_grid,
             sources: raw.sources,
             road_types: raw.road_types,
             nodes: raw.nodes,

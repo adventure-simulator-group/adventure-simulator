@@ -7,6 +7,7 @@ pub mod builder;
 mod draft;
 pub mod error;
 mod sources;
+pub mod spatial;
 mod validation;
 
 pub use builder::WorldBuilder;

@@ -116,6 +116,7 @@ pub(crate) fn enrich(
     draft.report.forest_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,

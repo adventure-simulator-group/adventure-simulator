@@ -163,6 +163,12 @@ Interrupted loads can be resumed with the identical compiled artifact. The
 module rejects a different artifact or any additional batches after completion;
 use `just publish-reset` before loading changed source data or a different year.
 
+The compiler defaults to the canonical 1,000 m spatial grid. Pass
+`--grid-cell-size-meters 250` (or another multiple of 250 from 250 through
+100,000) to deliberately build a different grid identity. See
+`docs/SPATIAL_GRID.md`; changing the size changes the artifact ID and therefore
+requires the normal explicit import reset when another artifact is active.
+
 The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing
 untrusted clients to connect.
