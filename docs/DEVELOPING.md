@@ -173,6 +173,20 @@ The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing
 untrusted clients to connect.
 
+### Remaining source initializer workflows
+
+The remaining accepted source workflows share `scripts/world_source_init.py`.
+Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is the
+only newly automated anonymous immutable download (`tree-species`); it is
+size/hash checked and atomically published. Religion is a validation-only
+workflow and never mirrors the rights-reserved IEG images. GLO-30
+(`glo30`), Copernicus forest (`forest-cover`), and EU-Hydro (`hydrology`)
+perform redacted credential-file preflights but refuse network acquisition
+until exact product inventories are committed. HYDE and EGDI likewise provide
+deterministic plans and strict local-inventory verification while remaining
+release-blocked. `init-*` never turns missing pins or conflicting rights into
+guesses. See each source document for its exact blocker and command names.
+
 The compiler also currently requires manually downloaded Copernicus DEM
 GLO-30 `*_DEM.tif` tiles in
 `target/world-data-sources/raw/elevation/`. See `docs/ELEVATION.md` for source,

@@ -10,10 +10,12 @@ the Global Environment), using the 1500 and 1600 CE slices around the game's
   signal conflicts with the bundled attribution-oriented README. This records
   the stricter treatment and does not claim the conflict is legally resolved.
 
-The official archive is currently protected/restricted and the attempted
-download produced no source files. Consequently this integration is verified
-against synthetic ESRI ASCII fixtures, not the full HYDE distribution, and it
-is not yet part of a data-initialization script.
+The official record exposes large archives but the seven consumed files do not
+have a committed exact size/SHA-256 inventory, and its CC0 and bundled
+attribution signals conflict. Consequently `just plan-hyde` is deterministic,
+`init-hyde` refuses acquisition, and `verify-hyde` only checks a supplied strict
+local inventory. The workflow does not resolve the rights conflict or claim a
+full-source audit.
 
 ## Manual preparation contract
 
