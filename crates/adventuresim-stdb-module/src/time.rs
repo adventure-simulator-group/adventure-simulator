@@ -1,8 +1,8 @@
-use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, allocated_schedule_minutes,
     elapsed_official_minutes as calculate_elapsed_official_minutes, training_hours_increment,
 };
+use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
 
 use crate::capability::StrategicEquipment;

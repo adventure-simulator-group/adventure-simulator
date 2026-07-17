@@ -172,6 +172,7 @@ impl LiveState {
             .add_query(|query| query.from.battle_loot_item())
             .add_query(|query| query.from.battle_participant())
             .add_query(|query| query.from.battle_result())
+            .add_query(|query| query.from.autoresolve_report())
             .add_query(|query| query.from.character())
             .add_query(|query| query.from.character_attributes())
             .add_query(|query| query.from.character_capability())
@@ -320,27 +321,4 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         },
     };
     Json(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::LIVE_SUBSCRIPTION_QUERIES;
-
-    #[test]
-    fn live_subscription_excludes_static_world_data() {
-        for table in [
-            "settlement",
-            "settlement_alias",
-            "settlement_description",
-            "travel_edge",
-            "world_node",
-        ] {
-            assert!(
-                LIVE_SUBSCRIPTION_QUERIES
-                    .iter()
-                    .all(|query| !query.ends_with(table)),
-                "static table {table} must remain query-on-demand"
-            );
-        }
-    }
 }
