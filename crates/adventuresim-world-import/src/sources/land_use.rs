@@ -25,26 +25,31 @@ const MAX_AXIS_VALUES: u64 = 2_000;
 const MAX_GRID_CELLS: usize = 1_000_000;
 
 const STATES: [StateFile; 5] = [
-    StateFile::new("gcrop", "cropland"),
-    StateFile::new("gpast", "pasture"),
-    StateFile::new("gurbn", "urban"),
-    StateFile::new("gothr", "primary land"),
-    StateFile::new("gsecd", "secondary land"),
+    StateFile::new("gcrop", "prop_crop", "cropland"),
+    StateFile::new("gpast", "prop_past", "pasture"),
+    StateFile::new("gurbn", "prop_urbn", "urban"),
+    StateFile::new("gothr", "prop_primary", "primary land"),
+    StateFile::new("gsecd", "prop_secd", "secondary land"),
 ];
 
 #[derive(Clone, Copy)]
 struct StateFile {
+    file_stem: &'static str,
     variable: &'static str,
     label: &'static str,
 }
 
 impl StateFile {
-    const fn new(variable: &'static str, label: &'static str) -> Self {
-        Self { variable, label }
+    const fn new(file_stem: &'static str, variable: &'static str, label: &'static str) -> Self {
+        Self {
+            file_stem,
+            variable,
+            label,
+        }
     }
 
     fn filename(self) -> String {
-        format!("LUHa_u2.v1_{}.nc4", self.variable)
+        format!("LUHa_u2.v1_{}.nc4", self.file_stem)
     }
 }
 
@@ -862,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn source_contract_requires_the_five_urban_inclusive_state_files() {
+    fn source_contract_requires_verified_files_and_variable_names() {
         assert_eq!(
             STATES.map(|state| state.filename()),
             [
@@ -871,6 +876,16 @@ mod tests {
                 "LUHa_u2.v1_gurbn.nc4",
                 "LUHa_u2.v1_gothr.nc4",
                 "LUHa_u2.v1_gsecd.nc4",
+            ]
+        );
+        assert_eq!(
+            STATES.map(|state| state.variable),
+            [
+                "prop_crop",
+                "prop_past",
+                "prop_urbn",
+                "prop_primary",
+                "prop_secd"
             ]
         );
         assert!(LuhGrid::open(Path::new("definitely-missing-luh1"), 1544).is_err());
