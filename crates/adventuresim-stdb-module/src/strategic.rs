@@ -435,7 +435,7 @@ pub struct Settlement {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = settlement_alias, public)]
+#[table(accessor = settlement_alias, public)]
 pub struct SettlementAlias {
     #[primary_key]
     pub id: String,
@@ -447,7 +447,7 @@ pub struct SettlementAlias {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = settlement_description, public)]
+#[table(accessor = settlement_description, public)]
 pub struct SettlementDescription {
     #[primary_key]
     pub id: String,
@@ -1487,7 +1487,7 @@ pub struct BattleResult {
 /// Reproducible strategic-combat diagnostics retained whether the party wins
 /// or loses. Clients can show `summary` immediately and expand `log` on demand.
 #[derive(Clone, Debug)]
-#[table(name = autoresolve_report, public)]
+#[table(accessor = autoresolve_report, public)]
 pub struct AutoresolveReport {
     #[primary_key]
     pub quest_id: String,

@@ -19,3 +19,51 @@ pub struct AutoresolveReport {
 impl __sdk::InModule for AutoresolveReport {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `AutoresolveReport`.
+///
+/// Provides typed access to columns for query building.
+pub struct AutoresolveReportCols {
+    pub quest_id: __sdk::__query_builder::Col<AutoresolveReport, String>,
+    pub party_id: __sdk::__query_builder::Col<AutoresolveReport, String>,
+    pub seed: __sdk::__query_builder::Col<AutoresolveReport, u64>,
+    pub victor: __sdk::__query_builder::Col<AutoresolveReport, String>,
+    pub rounds: __sdk::__query_builder::Col<AutoresolveReport, u32>,
+    pub summary: __sdk::__query_builder::Col<AutoresolveReport, String>,
+    pub log: __sdk::__query_builder::Col<AutoresolveReport, Vec<String>>,
+}
+
+impl __sdk::__query_builder::HasCols for AutoresolveReport {
+    type Cols = AutoresolveReportCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        AutoresolveReportCols {
+            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            seed: __sdk::__query_builder::Col::new(table_name, "seed"),
+            victor: __sdk::__query_builder::Col::new(table_name, "victor"),
+            rounds: __sdk::__query_builder::Col::new(table_name, "rounds"),
+            summary: __sdk::__query_builder::Col::new(table_name, "summary"),
+            log: __sdk::__query_builder::Col::new(table_name, "log"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `AutoresolveReport`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct AutoresolveReportIxCols {
+    pub party_id: __sdk::__query_builder::IxCol<AutoresolveReport, String>,
+    pub quest_id: __sdk::__query_builder::IxCol<AutoresolveReport, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for AutoresolveReport {
+    type IxCols = AutoresolveReportIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        AutoresolveReportIxCols {
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for AutoresolveReport {}

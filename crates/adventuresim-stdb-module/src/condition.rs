@@ -51,7 +51,7 @@ pub struct CharacterCondition {
 /// Durable strategic food and water state. Positive balances are short-term
 /// physiological reserves; negative balances represent unsupported need.
 #[derive(Clone, Debug)]
-#[table(name = character_needs, public)]
+#[table(accessor = character_needs, public)]
 pub struct CharacterNeeds {
     #[primary_key]
     pub character_id: u64,
