@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use adventuresim_world_import::WorldBuilder;
-use adventuresim_world_schema::SettlementDescriptionKind;
+use adventuresim_world_schema::{GeographicCoordinate, SettlementDescriptionKind, WorldBounds};
 
 fn fixture_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/viabundus")
@@ -31,4 +31,21 @@ fn parses_settlement_enrichment_into_domain_types() {
     assert_eq!(world.report.settlement_aliases, 1);
     assert_eq!(world.report.settlement_descriptions, 2);
     assert_eq!(world.report.deferred_settlement_descriptions["bridge"], 1);
+}
+
+#[test]
+fn world_bounds_limit_the_viabundus_seed_graph() {
+    let outside_lubeck = WorldBounds::new(
+        GeographicCoordinate::new(50.0, 8.0).unwrap(),
+        GeographicCoordinate::new(51.0, 9.0).unwrap(),
+    )
+    .unwrap();
+    let world = WorldBuilder::new(1544)
+        .with_world_bounds(outside_lubeck)
+        .build_from_viabundus(&fixture_directory())
+        .unwrap();
+
+    assert_eq!(world.report.nodes, 0);
+    assert_eq!(world.report.edges, 0);
+    assert_eq!(world.report.settlement_aliases, 0);
 }
