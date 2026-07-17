@@ -4,6 +4,7 @@ use std::path::Path;
 
 use adventuresim_world_schema::{
     DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SourceProvenance,
+    SummerHydroclimate,
 };
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
@@ -12,8 +13,8 @@ use crate::{
     draft::{DroughtSettlementDraft, ReligionSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "NOAA Old World Drought Atlas v1.0";
-const SOURCE_URL: &str = "https://www.ncei.noaa.gov/access/paleo-search/study/19419";
+const SOURCE_NAME: &str = "NOAA Old World Drought Atlas v1.0 (dataset DOI 10.25921/rjm6-mq74; Cook et al. paper DOI 10.1126/sciadv.1500561)";
+const SOURCE_URL: &str = "https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc";
 const SOURCE_LICENSE: &str = "NOAA/NCEI public-access dataset; citation requested";
 const LONGITUDES: usize = 114;
 const LATITUDES: usize = 88;
@@ -33,6 +34,7 @@ pub(crate) fn enrich(
     }
     let mut neighbor_samples = 0;
     let mut fallbacks = 0;
+    let year = draft.year;
     let profiles = draft
         .settlements
         .iter_mut()
@@ -49,23 +51,14 @@ pub(crate) fn enrich(
             match grid.sample(settlement.latitude, settlement.longitude) {
                 Some(sample) => {
                     neighbor_samples += usize::from(sample.used_neighbor);
-                    push_source_note(
-                        religious,
-                        if sample.used_neighbor {
-                            "**[NOAA Old World Drought Atlas](https://doi.org/10.25921/rjm6-mq74):** The containing cell lacked a complete reconstruction, so the 1525–1544 profile uses the nearest complete OWDA grid point within 1.5 degrees."
-                        } else {
-                            "**[NOAA Old World Drought Atlas](https://doi.org/10.25921/rjm6-mq74):** The 1544 summer PDSI and 1525–1544 summary are reconstructed directly from the containing OWDA grid point."
-                        },
-                    );
+                    push_source_note(religious, &source_note(year, sample));
                     DroughtProfile::Reconstructed(sample.history)
                 }
                 None => {
                     fallbacks += 1;
-                    push_source_note(
-                        religious,
-                        "**OWDA drought fallback:** No complete reconstruction was available within 1.5 degrees, so the canonical twenty-year profile is the documented neutral deterministic fallback.",
-                    );
-                    DroughtProfile::Inferred(neutral_history())
+                    let history = neutral_history();
+                    push_source_note(religious, &fallback_note(year, history));
+                    DroughtProfile::Inferred(history)
                 }
             }
         })
@@ -77,6 +70,58 @@ pub(crate) fn enrich(
         neighbor_samples,
         fallbacks,
     )
+}
+
+fn source_note(year: i32, sample: Sample) -> String {
+    let start = year - i32::from(DroughtHistory::WINDOW_YEARS) + 1;
+    let spatial = if sample.used_neighbor {
+        "the containing cell was missing, so the nearest complete grid point within the 1.5° cutoff was used"
+    } else {
+        "the containing grid point was used"
+    };
+    history_note(year, start, sample.history, spatial, "reconstructed")
+}
+
+fn fallback_note(year: i32, history: DroughtHistory) -> String {
+    let start = year - i32::from(DroughtHistory::WINDOW_YEARS) + 1;
+    history_note(
+        year,
+        start,
+        history,
+        "no complete grid point was available within the 1.5° cutoff; a neutral fallback was used",
+        "inferred",
+    )
+}
+
+fn history_note(
+    year: i32,
+    start: i32,
+    history: DroughtHistory,
+    spatial: &str,
+    classification: &str,
+) -> String {
+    format!(
+        "**[NOAA OWDA v1.0](https://doi.org/10.25921/rjm6-mq74), [Cook et al.](https://doi.org/10.1126/sciadv.1500561):** Regional 0.5° summer PDSI estimate, not an exact settlement observation; {spatial}. {year}: {current} milli-PDSI ({condition}); {start}–{year} mean: {mean} milli-PDSI, rounded to the nearest milli-unit, with {dry} drought (≤ -2000) and {wet} wet (≥ 2000) summers. Profile is {classification}; tree-ring reconstruction and spatial assignment remain uncertain.",
+        current = history.current_summer().milli_units(),
+        mean = history.twenty_year_mean().milli_units(),
+        dry = history.drought_summers(),
+        wet = history.wet_summers(),
+        condition = condition_name(history.current_summer().condition()),
+    )
+}
+
+const fn condition_name(condition: SummerHydroclimate) -> &'static str {
+    match condition {
+        SummerHydroclimate::ExtremeDrought => "extreme drought",
+        SummerHydroclimate::SevereDrought => "severe drought",
+        SummerHydroclimate::ModerateDrought => "moderate drought",
+        SummerHydroclimate::MildDrought => "mild drought",
+        SummerHydroclimate::NearNormal => "near normal",
+        SummerHydroclimate::MildlyWet => "mildly wet",
+        SummerHydroclimate::ModeratelyWet => "moderately wet",
+        SummerHydroclimate::VeryWet => "very wet",
+        SummerHydroclimate::ExtremelyWet => "extremely wet",
+    }
 }
 
 fn finish(
@@ -296,6 +341,7 @@ impl OwdaGrid {
                 latitude,
                 longitude_scale,
             ))
+            .then_with(|| left.cmp(right))
         })?;
         let distance = distance_squared(
             self.longitudes[nearest.0],
@@ -311,7 +357,7 @@ impl OwdaGrid {
     }
 
     fn cell(&self, longitude: usize, latitude: usize) -> Option<DroughtHistory> {
-        self.cells[longitude * LATITUDES + latitude]
+        self.cells[longitude * self.latitudes.len() + latitude]
     }
 }
 
@@ -488,6 +534,25 @@ mod tests {
     }
 
     #[test]
+    fn aggregation_rounds_half_milli_away_from_zero_and_includes_thresholds() {
+        let path = Path::new("owda.nc");
+        let mut positive = vec![parse_pdsi(path, 0.0).unwrap(); 20];
+        positive[0] = parse_pdsi(path, -2.0).unwrap();
+        positive[1] = parse_pdsi(path, 2.0).unwrap();
+        positive[19] = parse_pdsi(path, 0.01).unwrap();
+        let positive = history(&positive).unwrap();
+        assert_eq!(positive.twenty_year_mean().milli_units(), 1);
+        assert_eq!((positive.drought_summers(), positive.wet_summers()), (1, 1));
+
+        let mut negative = vec![parse_pdsi(path, 0.0).unwrap(); 20];
+        negative[19] = parse_pdsi(path, -0.01).unwrap();
+        assert_eq!(
+            history(&negative).unwrap().twenty_year_mean().milli_units(),
+            -1
+        );
+    }
+
+    #[test]
     fn source_values_must_be_finite_three_decimal_and_bounded() {
         let path = Path::new("owda.nc");
         assert_eq!(parse_pdsi(path, -11.996).unwrap().milli_units(), -11_996);
@@ -517,6 +582,84 @@ mod tests {
         let sample = grid.sample(0.25, -0.1).unwrap();
         assert!(sample.used_neighbor);
         assert_eq!(sample.history, history);
+    }
+
+    #[test]
+    fn missing_cell_uses_nearest_complete_cell_with_inclusive_cutoff() {
+        let history = DroughtHistory::new(
+            PalmerDroughtSeverityIndex::new(1_000).unwrap(),
+            PalmerDroughtSeverityIndex::new(50).unwrap(),
+            0,
+            0,
+        )
+        .unwrap();
+        let grid = OwdaGrid {
+            longitudes: vec![0.0, 1.5],
+            latitudes: vec![0.0],
+            cells: vec![None, Some(history)],
+            valid_cells: vec![(1, 0)],
+        };
+        assert_eq!(grid.sample(0.0, 0.0).unwrap().history, history);
+        assert!(grid.sample(0.0, -0.000_1).is_none());
+    }
+
+    #[test]
+    fn equal_distances_use_grid_index_order_deterministically() {
+        let left = neutral_history();
+        let right = DroughtHistory::new(
+            PalmerDroughtSeverityIndex::new(1_000).unwrap(),
+            PalmerDroughtSeverityIndex::new(50).unwrap(),
+            0,
+            0,
+        )
+        .unwrap();
+        let grid = OwdaGrid {
+            longitudes: vec![0.0, 1.0],
+            latitudes: vec![0.0],
+            cells: vec![Some(left), Some(right)],
+            valid_cells: vec![(1, 0), (0, 0)],
+        };
+        assert_eq!(grid.sample(0.0, 0.5).unwrap().history, left);
+    }
+
+    #[test]
+    fn neighbor_distance_scales_longitude_at_settlement_latitude() {
+        let longitude_neighbor = DroughtHistory::new(
+            PalmerDroughtSeverityIndex::new(1_000).unwrap(),
+            PalmerDroughtSeverityIndex::new(50).unwrap(),
+            0,
+            0,
+        )
+        .unwrap();
+        let latitude_neighbor = neutral_history();
+        let grid = OwdaGrid {
+            longitudes: vec![0.0, 2.0],
+            latitudes: vec![60.0, 61.2],
+            cells: vec![
+                None,
+                Some(latitude_neighbor),
+                Some(longitude_neighbor),
+                None,
+            ],
+            valid_cells: vec![(0, 1), (1, 0)],
+        };
+        assert_eq!(grid.sample(60.0, 0.0).unwrap().history, longitude_neighbor);
+    }
+
+    #[test]
+    fn provenance_uses_configured_year_and_both_dois() {
+        let note = source_note(
+            1600,
+            Sample {
+                history: neutral_history(),
+                used_neighbor: true,
+            },
+        );
+        assert!(note.contains("1581–1600"));
+        assert!(note.contains("10.25921/rjm6-mq74"));
+        assert!(note.contains("10.1126/sciadv.1500561"));
+        assert!(note.contains("not an exact settlement observation"));
+        assert!(!note.contains("1544"));
     }
 
     #[test]
@@ -558,16 +701,41 @@ mod tests {
         let mut direct = 0;
         let mut neighbors = 0;
         let mut fallbacks = 0;
+        let mut digest = blake3::Hasher::new();
         for settlement in draft.settlements {
-            match grid.sample(settlement.latitude, settlement.longitude) {
+            let (kind, history) = match grid.sample(settlement.latitude, settlement.longitude) {
                 Some(Sample {
+                    history,
                     used_neighbor: true,
-                    ..
-                }) => neighbors += 1,
-                Some(_) => direct += 1,
-                None => fallbacks += 1,
-            }
+                }) => {
+                    neighbors += 1;
+                    ("neighbor", history)
+                }
+                Some(Sample { history, .. }) => {
+                    direct += 1;
+                    ("direct", history)
+                }
+                None => {
+                    fallbacks += 1;
+                    ("fallback", neutral_history())
+                }
+            };
+            digest.update(
+                format!(
+                    "{}|{kind}|{}|{}|{}|{}\n",
+                    settlement.id,
+                    history.current_summer().milli_units(),
+                    history.twenty_year_mean().milli_units(),
+                    history.drought_summers(),
+                    history.wet_summers(),
+                )
+                .as_bytes(),
+            );
         }
         assert_eq!((direct, neighbors, fallbacks), (5_458, 583, 0));
+        assert_eq!(
+            digest.finalize().to_hex().as_str(),
+            "ee4f44df77ed25904955f2b46741ce1f257a0601fedf61bb442dee451d8abb82"
+        );
     }
 }
