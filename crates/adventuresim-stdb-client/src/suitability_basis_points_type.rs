@@ -4,16 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::euro_veg_map_unit_code_type::EuroVegMapUnitCode;
-use super::potential_vegetation_formation_type::PotentialVegetationFormation;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct MappedPotentialVegetation {
-    pub unit: EuroVegMapUnitCode,
-    pub formation: PotentialVegetationFormation,
+pub struct SuitabilityBasisPoints {
+    pub basis_points: u16,
 }
 
-impl __sdk::InModule for MappedPotentialVegetation {
+impl __sdk::InModule for SuitabilityBasisPoints {
     type Module = super::RemoteModule;
 }

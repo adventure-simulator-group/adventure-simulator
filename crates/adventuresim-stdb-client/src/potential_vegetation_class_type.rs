@@ -6,10 +6,21 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct EuroVegMapUnitCode {
-    pub code: String,
+#[derive(Copy, Eq, Hash)]
+pub enum PotentialVegetationClass {
+    WoodlandAndForest,
+
+    HeathlandAndShrub,
+
+    Grassland,
+
+    SparselyVegetatedAreas,
+
+    Wetlands,
+
+    MarineInletsAndTransitionalWaters,
 }
 
-impl __sdk::InModule for EuroVegMapUnitCode {
+impl __sdk::InModule for PotentialVegetationClass {
     type Module = super::RemoteModule;
 }

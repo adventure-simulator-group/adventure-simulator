@@ -1,62 +1,48 @@
 # Potential-natural-vegetation world data
 
-Settlement potential vegetation comes from **EuroVegMap 2.1, Map of the
-Natural Vegetation of Europe**. Unlike modern forest cover, this map describes
-the vegetation expected from site conditions, making it useful for plausible
-1544 reconstruction where later land conversion changed the landscape.
+Potential vegetation is sourced from Martin Jung/IIASA, **Current and future
+European potential vegetation types v1.1**, DOI
+[`10.5281/zenodo.14627466`](https://doi.org/10.5281/zenodo.14627466). The pinned
+version was published 2025-01-10 under CC BY 4.0 and covers continental Europe,
+including Turkey, at nominal 1 km grain.
 
-- Product page: <https://www.synbiosys.alterra.nl/eurovegmap/>
-- Distribution version: 2.1.0
-- Installer SHA-256: `6cd9d8d079cc9d86d0dceac6a88bd12878edfa7aacbd2e159240c98b9443bbad`
-- Redistribution terms: no explicit licence was found in the downloaded 2.1
-  distribution; keep the raw files local until terms are clarified
+Run `just init-jung-pnv` to download the categorical current raster plus the six
+current-class COGs into `target/world-data-sources/raw/jung-pnv/`. The atomic
+initializer pins every official filename, byte size, published MD5, and verified
+SHA-256, rejects oversized streams, and writes a deterministic adjacent
+`jung-pnv-manifest.json`. Rasters and the manifest are ignored local source data;
+they are never distributed with the repository. Use `--potential-vegetation-dir`
+to select another verified initialization directory.
 
-The official download is an Inno Setup installer. It is not part of the data
-initialization script while source suitability and redistribution terms are
-being evaluated. Extract or install it manually, then place its `Maps`
-directory at
-`target/world-data-sources/raw/potential-vegetation/Maps/`. The importer
-requires `Vegetation.shp`, its DBF/index companions, and `Vegetation.prj`.
-Override the location with `--potential-vegetation-dir`.
+The importer validates the actual source contract: 5,583 by 4,474 Float32 cells,
+1,000 m pixels, top-left `(944000, 5416000)`, 512-square Deflate tiles, NaN
+nodata, and the source's user-defined GeoTIFF keys carrying the EPSG:3035 LAEA
+parameters. Posterior COGs contain seven interleaved samples named
+`mean/sd/q05/q50/q95/mode/cv`; world compilation consumes the mean and validates
+the complete band contract. The categorical raster accepts only 1 through 6.
+Every import revalidates the manifest's record/version/license/file identities,
+the exact byte sizes, and SHA-256 values before opening a raster. COG tiles are
+decoded on demand with checked channel lengths and a byte-accounted cache capped
+at 64 MiB.
 
-## Parsing and canonical model
+Canonical cells receive nodata-aware area-weighted posterior means. When every
+class has a valid posterior, six independently quantized 0..10,000 basis-point
+scores are stored; they are not asserted to sum to 10,000. Otherwise the
+categorical raster is used, choosing greatest valid overlap with stable class
+ties. A cell with neither form of source evidence receives a deterministic
+non-unknown class inferred from already typed forest, elevation, latitude, and
+HYDE context. Reports reconcile posterior, categorical, and inferred outcomes
+exactly to settlement count.
 
-The source contains 19,059 polygons at 1:2.5 million scale. Its custom
-`ETRS89-LAEA5220` projection uses a Lambert azimuthal equal-area grid centered
-at 20° E, 52° N with false easting 5,071,000 m and false northing 3,210,000 m.
-The importer checks the exact bundled projection contract, uses pure-Rust
-`proj4rs` to project settlement coordinates, and uses the pure-Rust
-`shapefile` and `geo` crates for typed DBF and polygon parsing. No geospatial
-dependency enters the SpacetimeDB module.
+Inference-rules version 2 records the replacement of the former formation-level
+fallback with this closed six-class coverage inference. Together with world
+schema version 15, it prevents older artifacts or caches from sharing identity
+with Jung-derived results.
 
-A mapped settlement stores `PotentialVegetation::Mapped`, containing a
-validated `EuroVegMapUnitCode` such as `F27` and one of the source's exhaustive
-top-level formations:
+This branch changes source ingestion and canonical evidence only. Reconstructing
+`HistoricalVegetation1544` is intentionally deferred until the SoilGrids work in
+#68 supplies the post-hydrology inputs required by the final #67 synthesis.
 
-- polar/nival, tundra/alpine, or open woodland/subalpine;
-- coniferous/mixed, deciduous/mixed, thermophilous, hygrophilous, swamp/fen,
-  or floodplain forest and wetland formations;
-- Atlantic heath, Mediterranean sclerophyll, xerophytic scrub, forest steppe,
-  steppe, oroxerophytic vegetation, or desert;
-- coastal/halophytic, aquatic/reed, or mire vegetation.
-
-The source's lake, sea, upper-Danube support, non-European, and unkeyed salt
-polygons do not pretend to be vegetation units. A settlement hitting one of
-those polygons or lying outside mapped coverage receives
-`PotentialVegetation::Inferred(formation)`, deterministically selected from
-elevation, latitude, and typed forest cover. The enum records that distinction
-without an `Unknown` variant or a fabricated source code. The build report
-counts inferred samples.
-
-The official extracted files were read successfully in full: all 19,059
-records passed the source boundary, and 5,912 of the 6,041 active 1544
-Viabundus settlements resolved directly to mapped vegetation. This verifies
-the reader and cross-source coverage against the downloaded distribution, not
-the historical truth of every coarse polygon.
-
-Potential vegetation can guide biome and tactical scene selection, reconstruct
-plausible woodland where modern cover is sparse, constrain tree-species
-inference, and suggest woodland, heath, wetland, steppe, or Mediterranean
-products. The detailed mapping-unit code is retained so later integrations can
-join richer legend descriptions and species lists without flattening the
-source prematurely.
+Attribution/modification notice: Adventure Simulator downloads Jung's published
+v1.1 rasters unchanged, then projects settlement cells, area-aggregates posterior
+means, quantizes values, and applies documented categorical/inference fallbacks.

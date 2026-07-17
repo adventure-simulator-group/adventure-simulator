@@ -191,11 +191,10 @@ in `docs/FOREST_COVER.md` under
 `target/world-data-sources/raw/forest-cover/`. Override that directory with
 `--forest-cover-dir`.
 
-EuroVegMap potential vegetation is distributed in an installer. Extract or
-install version 2.1 manually and place its `Maps` directory under
-`target/world-data-sources/raw/potential-vegetation/Maps/`, as documented in
-`docs/POTENTIAL_VEGETATION.md`. Override it with
-`--potential-vegetation-dir`.
+Initialize the CC BY 4.0 Jung/IIASA European PNV v1.1 rasters with
+`just init-jung-pnv`. Verified local files are written under
+`target/world-data-sources/raw/jung-pnv/`, as documented in
+`docs/POTENTIAL_VEGETATION.md`. Override it with `--potential-vegetation-dir`.
 
 EU-Trees4F v2 tree-species suitability is read directly from the downloaded
 `target/world-data-sources/raw/tree-species/EU-Trees4F_ens-clim.zip`, as

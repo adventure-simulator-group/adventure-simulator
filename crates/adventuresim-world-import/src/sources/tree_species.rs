@@ -9,7 +9,7 @@ use std::{
 
 use adventuresim_world_schema::{
     HabitatSuitability, InferredTreeSpeciesProfile, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-    NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SourceProvenance,
+    NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass, SourceProvenance,
     TreeSpeciesId, TreeSpeciesProfile,
 };
 use proj4rs::{proj::Proj, transform::transform};
@@ -693,27 +693,13 @@ impl BinaryProjection {
 }
 
 fn infer_species(vegetation: &PotentialVegetation) -> InferredTreeSpeciesProfile {
-    use PotentialVegetationFormation as F;
-    let formation = match vegetation {
-        PotentialVegetation::Mapped(mapped) => mapped.formation(),
-        PotentialVegetation::Inferred(formation) => *formation,
-    };
-    let names: &[&str] = match formation {
-        F::PolarDesertAndNival | F::TundraAndAlpine => &["Betula_pubescens", "Pinus_sylvestris"],
-        F::OpenWoodlandAndSubalpine | F::ConiferousAndMixedForest => {
-            &["Abies_alba", "Picea_abies", "Pinus_sylvestris"]
-        }
-        F::Heath => &["Betula_pendula", "Pinus_sylvestris"],
-        F::DeciduousAndMixedForest => &["Fagus_sylvatica", "Quercus_robur", "Tilia_cordata"],
-        F::ThermophilousBroadleafForest => &["Carpinus_orientalis", "Quercus_pubescens"],
-        F::HygroThermophilousBroadleafForest => &["Alnus_glutinosa", "Fraxinus_angustifolia"],
-        F::MediterraneanSclerophyll => &["Olea_europaea", "Pinus_halepensis", "Quercus_ilex"],
-        F::XerophyticConiferAndScrub | F::Oroxerophytic => &["Juniperus_thurifera", "Pinus_nigra"],
-        F::ForestSteppe | F::Steppe => &["Pinus_sylvestris", "Quercus_pubescens"],
-        F::Desert => &["Juniperus_thurifera"],
-        F::CoastalAndHalophytic => &["Pinus_pinea", "Quercus_ilex"],
-        F::AquaticAndReed | F::Mire => &["Alnus_glutinosa", "Salix_alba"],
-        F::SwampAndFenForest | F::FloodplainAndWetland => {
+    use PotentialVegetationClass as V;
+    let names: &[&str] = match vegetation.class() {
+        V::WoodlandAndForest => &["Fagus_sylvatica", "Quercus_robur", "Tilia_cordata"],
+        V::HeathlandAndShrub => &["Betula_pendula", "Pinus_sylvestris"],
+        V::Grassland => &["Pinus_sylvestris", "Quercus_pubescens"],
+        V::SparselyVegetatedAreas => &["Betula_pubescens", "Pinus_sylvestris"],
+        V::Wetlands | V::MarineInletsAndTransitionalWaters => {
             &["Alnus_glutinosa", "Populus_nigra", "Salix_alba"]
         }
     };
@@ -723,7 +709,7 @@ fn infer_species(vegetation: &PotentialVegetation) -> InferredTreeSpeciesProfile
             .map(|name| TreeSpeciesId::new(*name).expect("fallback species names are valid"))
             .collect(),
     )
-    .expect("each formation has a non-empty unique fallback profile")
+    .expect("each vegetation class has a non-empty unique fallback profile")
 }
 
 fn tag<T>(value: tiff::TiffResult<T>, path: &Path) -> Result<T> {
@@ -755,7 +741,7 @@ mod tests {
 
     use adventuresim_world_schema::{
         ElevationMeters, ForestCover, HabitatSuitability, LandUseFraction, LandUseProfile,
-        ModeledTreeSpecies, NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation,
+        ModeledTreeSpecies, NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass,
         TreeSpeciesId, TreeSpeciesProfile,
     };
     use tiff::{
@@ -885,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    fn ranking_is_bounded_and_fallbacks_are_formation_specific() {
+    fn ranking_is_bounded_and_fallbacks_are_class_specific() {
         let candidates = EXPECTED_SPECIES
             .iter()
             .take(13)
@@ -908,17 +894,17 @@ mod tests {
             pair[0].suitability != pair[1].suitability || pair[0].species <= pair[1].species
         }));
 
-        let mediterranean = infer_species(&PotentialVegetation::Inferred(
-            PotentialVegetationFormation::MediterraneanSclerophyll,
+        let woodland = infer_species(&PotentialVegetation::Inferred(
+            PotentialVegetationClass::WoodlandAndForest,
         ));
         assert!(
-            mediterranean
+            woodland
                 .species()
                 .iter()
-                .any(|species| species.as_str() == "Quercus_ilex")
+                .any(|species| species.as_str() == "Quercus_robur")
         );
         let wetland = infer_species(&PotentialVegetation::Inferred(
-            PotentialVegetationFormation::FloodplainAndWetland,
+            PotentialVegetationClass::Wetlands,
         ));
         assert!(
             wetland
@@ -1001,7 +987,7 @@ mod tests {
                     forest_cover: ForestCover::Open,
                 },
                 potential_vegetation: PotentialVegetation::Inferred(
-                    PotentialVegetationFormation::DeciduousAndMixedForest,
+                    PotentialVegetationClass::WoodlandAndForest,
                 ),
             })
             .collect();

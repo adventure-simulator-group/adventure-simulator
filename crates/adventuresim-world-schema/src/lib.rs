@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 14;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 1;
+pub const WORLD_SCHEMA_VERSION: u32 = 15;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 2;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -517,145 +517,101 @@ pub enum SurfaceGeology {
     Inferred(InferredGeologicSetting),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct EuroVegMapUnitCode {
-    code: String,
+pub enum PotentialVegetationClass {
+    WoodlandAndForest,
+    HeathlandAndShrub,
+    Grassland,
+    SparselyVegetatedAreas,
+    Wetlands,
+    MarineInletsAndTransitionalWaters,
 }
 
-impl EuroVegMapUnitCode {
-    pub fn new(code: impl Into<String>) -> Option<Self> {
-        let code = code.into();
-        let mut chars = code.chars();
-        let first = chars.next()?;
-        if code.len() <= 20
-            && first.is_ascii_uppercase()
-            && chars.all(|character| character.is_ascii_alphanumeric() || character == '/')
-        {
-            Some(Self { code })
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SuitabilityBasisPoints {
+    basis_points: u16,
+}
+
+impl SuitabilityBasisPoints {
+    pub const fn new(value: u16) -> Option<Self> {
+        if value <= 10_000 {
+            Some(Self {
+                basis_points: value,
+            })
         } else {
             None
         }
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.code
+    pub const fn get(self) -> u16 {
+        self.basis_points
     }
 }
 
-impl<'de> Deserialize<'de> for EuroVegMapUnitCode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+impl<'de> Deserialize<'de> for SuitabilityBasisPoints {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
-            code: String,
+            basis_points: u16,
         }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.code).ok_or_else(|| serde::de::Error::custom("invalid EuroVegMap unit code"))
+        let value = Wire::deserialize(deserializer)?.basis_points;
+        Self::new(value)
+            .ok_or_else(|| serde::de::Error::custom("suitability exceeds 10000 basis points"))
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub enum PotentialVegetationFormation {
-    PolarDesertAndNival,
-    TundraAndAlpine,
-    OpenWoodlandAndSubalpine,
-    ConiferousAndMixedForest,
-    Heath,
-    DeciduousAndMixedForest,
-    ThermophilousBroadleafForest,
-    HygroThermophilousBroadleafForest,
-    MediterraneanSclerophyll,
-    XerophyticConiferAndScrub,
-    ForestSteppe,
-    Steppe,
-    Oroxerophytic,
-    Desert,
-    CoastalAndHalophytic,
-    AquaticAndReed,
-    Mire,
-    SwampAndFenForest,
-    FloodplainAndWetland,
+pub struct PotentialVegetationPosterior {
+    pub woodland_and_forest: SuitabilityBasisPoints,
+    pub heathland_and_shrub: SuitabilityBasisPoints,
+    pub grassland: SuitabilityBasisPoints,
+    pub sparsely_vegetated_areas: SuitabilityBasisPoints,
+    pub wetlands: SuitabilityBasisPoints,
+    pub marine_inlets_and_transitional_waters: SuitabilityBasisPoints,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct MappedPotentialVegetation {
-    unit: EuroVegMapUnitCode,
-    formation: PotentialVegetationFormation,
-}
-
-impl MappedPotentialVegetation {
-    pub fn new(unit: EuroVegMapUnitCode, formation: PotentialVegetationFormation) -> Option<Self> {
-        (formation_for_unit(unit.as_str()) == Some(formation)).then_some(Self { unit, formation })
-    }
-
-    pub fn unit(&self) -> &EuroVegMapUnitCode {
-        &self.unit
-    }
-
-    pub const fn formation(&self) -> PotentialVegetationFormation {
-        self.formation
-    }
-}
-
-impl<'de> Deserialize<'de> for MappedPotentialVegetation {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            unit: EuroVegMapUnitCode,
-            formation: PotentialVegetationFormation,
+impl PotentialVegetationPosterior {
+    pub fn dominant_class(&self) -> PotentialVegetationClass {
+        use PotentialVegetationClass::*;
+        let values = [
+            (WoodlandAndForest, self.woodland_and_forest.get()),
+            (HeathlandAndShrub, self.heathland_and_shrub.get()),
+            (Grassland, self.grassland.get()),
+            (SparselyVegetatedAreas, self.sparsely_vegetated_areas.get()),
+            (Wetlands, self.wetlands.get()),
+            (
+                MarineInletsAndTransitionalWaters,
+                self.marine_inlets_and_transitional_waters.get(),
+            ),
+        ];
+        let mut dominant = values[0];
+        for candidate in values.into_iter().skip(1) {
+            if candidate.1 > dominant.1 {
+                dominant = candidate;
+            }
         }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.unit, wire.formation).ok_or_else(|| {
-            serde::de::Error::custom("EuroVegMap unit code and formation do not agree")
-        })
-    }
-}
-
-fn formation_for_unit(code: &str) -> Option<PotentialVegetationFormation> {
-    use PotentialVegetationFormation as F;
-    match code {
-        "Glacier" => return Some(F::PolarDesertAndNival),
-        // EuroVegMap 2.1 assigns its descriptive River unit to formation F.
-        "River" => return Some(F::DeciduousAndMixedForest),
-        _ => {}
-    }
-    match code.as_bytes().first().copied()? {
-        b'A' => Some(F::PolarDesertAndNival),
-        b'B' => Some(F::TundraAndAlpine),
-        b'C' => Some(F::OpenWoodlandAndSubalpine),
-        b'D' => Some(F::ConiferousAndMixedForest),
-        b'E' => Some(F::Heath),
-        b'F' => Some(F::DeciduousAndMixedForest),
-        b'G' => Some(F::ThermophilousBroadleafForest),
-        b'H' => Some(F::HygroThermophilousBroadleafForest),
-        b'J' => Some(F::MediterraneanSclerophyll),
-        b'K' => Some(F::XerophyticConiferAndScrub),
-        b'L' => Some(F::ForestSteppe),
-        b'M' => Some(F::Steppe),
-        b'N' => Some(F::Oroxerophytic),
-        b'O' => Some(F::Desert),
-        b'P' => Some(F::CoastalAndHalophytic),
-        b'R' => Some(F::AquaticAndReed),
-        b'S' => Some(F::Mire),
-        b'T' => Some(F::SwampAndFenForest),
-        b'U' => Some(F::FloodplainAndWetland),
-        _ => None,
+        dominant.0
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum PotentialVegetation {
-    Mapped(MappedPotentialVegetation),
-    Inferred(PotentialVegetationFormation),
+    Posterior(PotentialVegetationPosterior),
+    Categorical(PotentialVegetationClass),
+    Inferred(PotentialVegetationClass),
+}
+
+impl PotentialVegetation {
+    pub fn class(&self) -> PotentialVegetationClass {
+        match self {
+            Self::Posterior(values) => values.dominant_class(),
+            Self::Categorical(class) | Self::Inferred(class) => *class,
+        }
+    }
 }
 
 pub const MAX_MODELED_TREE_SPECIES: usize = 12;
@@ -1960,9 +1916,11 @@ pub struct WorldBuildReport {
     pub forest_tiles_read: usize,
     pub forest_samples: usize,
     pub forest_fallback_samples: usize,
-    pub potential_vegetation_polygons_read: usize,
+    pub potential_vegetation_raster_files_read: usize,
     pub potential_vegetation_samples: usize,
-    pub potential_vegetation_fallback_samples: usize,
+    pub potential_vegetation_posterior_samples: usize,
+    pub potential_vegetation_categorical_samples: usize,
+    pub potential_vegetation_inferred_samples: usize,
     pub tree_species_rasters_read: usize,
     pub tree_species_samples: usize,
     pub tree_species_fallback_samples: usize,
@@ -2059,13 +2017,13 @@ mod tests {
     use std::str::FromStr;
 
     use super::{
-        CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, EuroVegMapUnitCode,
-        ForestCover, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LanguageCode,
-        MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+        CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, ForestCover, GeologicUnitId,
+        HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, LanguageCode, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
         NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode,
-        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
-        StoneContentPercent, SummerHydroclimate, TreeSpeciesId,
+        PotentialVegetation, PotentialVegetationClass, PotentialVegetationPosterior,
+        SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SuitabilityBasisPoints,
+        SummerHydroclimate, TreeSpeciesId,
     };
 
     #[test]
@@ -2193,55 +2151,24 @@ mod tests {
     }
 
     #[test]
-    fn eurovegmap_codes_parse_into_a_bounded_source_identifier() {
-        assert_eq!(EuroVegMapUnitCode::new("F27").unwrap().as_str(), "F27");
+    fn potential_vegetation_is_bounded_and_has_stable_ties() {
+        assert!(SuitabilityBasisPoints::new(10_000).is_some());
+        assert!(SuitabilityBasisPoints::new(10_001).is_none());
+        assert!(
+            serde_json::from_str::<SuitabilityBasisPoints>(r#"{"basis_points":10001}"#).is_err()
+        );
+        let q = SuitabilityBasisPoints::new(5_000).unwrap();
+        let vegetation = PotentialVegetation::Posterior(PotentialVegetationPosterior {
+            woodland_and_forest: q,
+            heathland_and_shrub: q,
+            grassland: q,
+            sparsely_vegetated_areas: q,
+            wetlands: q,
+            marine_inlets_and_transitional_waters: q,
+        });
         assert_eq!(
-            EuroVegMapUnitCode::new("S18/19").unwrap().as_str(),
-            "S18/19"
-        );
-        assert!(EuroVegMapUnitCode::new("").is_none());
-        assert!(EuroVegMapUnitCode::new("future-code").is_none());
-        assert!(serde_json::from_str::<EuroVegMapUnitCode>(r#"{"code":"bad code"}"#).is_err());
-    }
-
-    #[test]
-    fn mapped_vegetation_parses_unit_and_formation_as_one_invariant() {
-        let mapped = MappedPotentialVegetation::new(
-            EuroVegMapUnitCode::new("F27").unwrap(),
-            PotentialVegetationFormation::DeciduousAndMixedForest,
-        )
-        .unwrap();
-        assert_eq!(mapped.unit().as_str(), "F27");
-        assert_eq!(
-            mapped.formation(),
-            PotentialVegetationFormation::DeciduousAndMixedForest
-        );
-        assert!(
-            MappedPotentialVegetation::new(
-                EuroVegMapUnitCode::new("F27").unwrap(),
-                PotentialVegetationFormation::Steppe,
-            )
-            .is_none()
-        );
-        assert!(
-            serde_json::from_str::<MappedPotentialVegetation>(
-                r#"{"unit":{"code":"F27"},"formation":"Steppe"}"#
-            )
-            .is_err()
-        );
-        assert!(
-            MappedPotentialVegetation::new(
-                EuroVegMapUnitCode::new("Glacier").unwrap(),
-                PotentialVegetationFormation::PolarDesertAndNival,
-            )
-            .is_some()
-        );
-        assert!(
-            MappedPotentialVegetation::new(
-                EuroVegMapUnitCode::new("River").unwrap(),
-                PotentialVegetationFormation::DeciduousAndMixedForest,
-            )
-            .is_some()
+            vegetation.class(),
+            PotentialVegetationClass::WoodlandAndForest
         );
     }
 
