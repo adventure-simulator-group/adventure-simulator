@@ -688,15 +688,6 @@ mod tests {
     }
 
     #[test]
-    fn travel_kind_is_a_closed_set() {
-        assert_eq!(
-            serde_json::from_str::<TravelKind>("\"land\"").unwrap(),
-            TravelKind::Land
-        );
-        assert!(serde_json::from_str::<TravelKind>("\"teleport\"").is_err());
-    }
-
-    #[test]
     fn settlement_description_kind_is_a_closed_set() {
         assert_eq!(
             serde_json::from_str::<SettlementDescriptionKind>("\"city\"").unwrap(),

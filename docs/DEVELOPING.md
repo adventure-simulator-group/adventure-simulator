@@ -80,7 +80,7 @@ just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
 
 # Testing
-just test             # Run the Rust workspace and strategic browser behavior tests
+just test             # Run native Rust/browser tests and validate the SpacetimeDB module ABI
 just test-chat        # Run only the strategic chat behavior tests
 just tactical         # Run a single tactical server (for testing)
 just status           # Check service status
@@ -89,7 +89,7 @@ just stop             # Stop all services
 # Workspace verification
 just fmt              # Format all Rust workspace packages
 just check            # Check all Rust workspace packages
-just test             # Test all Rust workspace packages
+just test             # Test native Rust packages and build the SpacetimeDB module
 just lint             # Run Clippy with warnings denied
 
 # Building
@@ -108,9 +108,11 @@ just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
 ```
 
-`just test` runs the native test suites across the workspace. The
-SpacetimeDB module itself targets the SpacetimeDB host ABI, so validate that
-crate with `spacetime build`; its pure strategic calculations live in
+`just test` runs the strategic browser tests and the native Rust test suites,
+excluding `adventuresim-stdb-module`. It also runs `spacetime build` to validate
+that module against the SpacetimeDB host ABI. Native linking cannot provide that
+host ABI, and including the module would enable its shared schema feature for
+the entire workspace. Its pure strategic calculations live in
 `adventuresim-core` and are covered by native unit tests. Reducer integration
 tests require a running SpacetimeDB environment.
 
