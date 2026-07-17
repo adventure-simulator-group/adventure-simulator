@@ -33,8 +33,9 @@ just dev
 
 Open http://localhost:8080
 
-Ordinary `just dev` / `just web` startup publishes without deleting database
-data. Use `just web-reset` only when an intentional reset is required.
+Ordinary `just dev` / `just web` startup preserves database data when the schema
+is compatible and deletes it when a breaking schema change requires a reset.
+Use `just web-reset` when an unconditional reset is required.
 
 ## Full Development (with Tactical Servers)
 
@@ -51,6 +52,21 @@ just build-wasm
 ```
 
 Now when you click a location in the browser, a tactical server will automatically spawn.
+
+For native tactical testing from WSL on Windows, the equivalent of running
+`just dev`, `just tactical`, and `just client 0` in separate Linux terminals is:
+
+```bash
+just win-dev
+```
+
+This runs the strategic stack in WSL, cross-compiles and stages the tactical
+executables in `E:\adventure-sim-dev`, then starts one native Windows tactical
+server and client 0. Press Ctrl+C to stop the web process and Windows tactical
+processes; the detached SpacetimeDB and tactical dispatcher follow the normal
+`just dev` lifecycle and can be stopped with `just stop`. The recipe installs
+the pinned toolchain's `x86_64-pc-windows-gnu` Rust target when needed; the WSL
+package `gcc-mingw-w64-x86-64` must already be installed.
 
 ## Requirements
 
@@ -138,11 +154,12 @@ browser stack; it permanently discards the database's previous contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
 
-After this one-time reset, routine startup should use `just dev` / `just web`
-and routine publishes should use `just publish`, all of which preserve data.
-Do not use `web-reset` or `publish-reset` on a future public or player-bearing
-database unless data loss is explicitly approved and a verified recovery copy
-exists.
+After this one-time reset, routine startup should use `just dev` / `just web`;
+these preserve data for compatible changes but reset local data on breaking
+schema changes. Routine manual publishes should use `just publish`, which
+preserves data. Do not use `web`, `web-reset`, or `publish-reset` against a
+future public or player-bearing database unless data loss is explicitly
+approved and a verified recovery copy exists.
 
 ## Viabundus source data
 

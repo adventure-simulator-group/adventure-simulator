@@ -110,6 +110,7 @@ fn main() {
             Update,
             (
                 check_mission_timeout,
+                spawn_connected_players.after(stdb::update_spacetimedb),
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
@@ -146,19 +147,26 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
     }
 }
 
-fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
+fn setup_stdb_callbacks(conn: Res<SpacetimeDb>) {
     conn.subscribe_connected_players();
-    conn.on_insert(
-        RemoteTables::connected_players,
-        on_stdb_insert_connected_players,
-    );
 }
 
-fn on_stdb_insert_connected_players(
-    InRef(player): InRef<ConnectedPlayer>,
+fn spawn_connected_players(
+    conn: Res<SpacetimeDb>,
     mut cmd: Commands,
     q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
+) {
+    for player in conn.take_connected_players() {
+        spawn_connected_player(&player, &mut cmd, &q_loading, &q_scene);
+    }
+}
+
+fn spawn_connected_player(
+    player: &ConnectedPlayer,
+    cmd: &mut Commands,
+    q_loading: &Query<(Entity, &LoadingPlayer)>,
+    q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.character.temporary {
         cmd.spawn_empty().id()

@@ -1,11 +1,7 @@
-use std::{mem::MaybeUninit, sync::Arc};
+use std::sync::{Arc, Mutex};
 
 use adventuresim_stdb_client::*;
-use bevy::{
-    ecs::{system::RunSystemOnce, world::unsafe_world_cell::UnsafeWorldCell},
-    platform::cell::SyncUnsafeCell,
-    prelude::*,
-};
+use bevy::prelude::*;
 use spacetimedb_sdk::{DbContext, Identity, Table};
 
 use crate::Args;
@@ -20,11 +16,14 @@ impl Plugin for SpacetimeDbPlugin {
     }
 }
 
-// FIXME: frame tick and disconnect on shutown
+/// Connection to SpacetimeDB.
+///
+/// SDK callbacks never touch the Bevy world — they only push rows into a
+/// mailbox, which ordinary systems drain on their own schedule.
 #[derive(Resource)]
 pub struct SpacetimeDb {
     conn: DbConnection,
-    world: Arc<SyncUnsafeCell<MaybeUninit<UnsafeWorldCell<'static>>>>,
+    connected_players: Arc<Mutex<Vec<ConnectedPlayer>>>,
 }
 
 impl SpacetimeDb {
@@ -38,10 +37,15 @@ impl SpacetimeDb {
         self.conn.identity()
     }
 
-    /// Subscribe for spacetime db database changes.
+    /// Subscribe to `connected_players` and start collecting inserted rows.
     ///
-    /// For native subsctiptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
-    pub fn subscribe_connected_players(&mut self) -> SubscriptionHandle {
+    /// For native subscriptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
+    pub fn subscribe_connected_players(&self) -> SubscriptionHandle {
+        let mailbox = self.connected_players.clone();
+        self.conn.db.connected_players().on_insert(move |_ctx, row| {
+            mailbox.lock().unwrap().push(row.clone());
+        });
+
         self.conn
             .subscription_builder()
             .on_error(|ctx, error| {
@@ -54,58 +58,16 @@ impl SpacetimeDb {
             .subscribe()
     }
 
-    /// Create a new bevy system callback for new rows in a table.
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// fn system(mut conn: ResMut<SpacetimeDb>) {
-    ///     conn.on_insert(RemoteTables::character, |InRef(character): InRef<Character>, mut commands: Commands| {
-    ///         commands.spawn(Name::from(character.name.clone()));
-    ///     });
-    /// }
-    /// ```
-    pub fn on_insert<'a, T, TGet, S, M>(&'a mut self, table: TGet, system: S)
-    where
-        T: Table + 'a,
-        TGet: FnOnce(&'a RemoteTables) -> T,
-        S: IntoSystem<InRef<'static, T::Row>, (), M> + Send + Sync + 'static + Copy,
-    {
-        let table = table(&self.conn.db);
-        let world = self.world.clone();
-        table.on_insert(move |_ctx, new| {
-            debug!("on_insert: {}", std::any::type_name::<T::Row>());
-
-            // SAFETY: `world` is set and used within one system: `update_spacetimedb`.
-            //         Spacetime will call this callback only when the inner connection is mid-update,
-            //         which in our case is single instance of `tick_frame` call when the world is valid.
-            unsafe {
-                let world = world.get().as_mut().unwrap().assume_init_mut().world_mut();
-
-                // FIXME: `run_system_once_with` is extremely ineffecent,
-                //        we need to register the system once somehow
-                let system = IntoSystem::into_system(system);
-                world.run_system_once_with(system, new).unwrap();
-            }
-        });
+    /// Take every `connected_players` row inserted since the last call.
+    pub fn take_connected_players(&self) -> Vec<ConnectedPlayer> {
+        std::mem::take(&mut *self.connected_players.lock().unwrap())
     }
 }
 
-fn update_spacetimedb(world: &mut World) -> Result {
-    world.resource_scope::<SpacetimeDb, _>(|world, stdb| -> Result {
-        // SAFETY: `world` is only used in callbacks, which are invoked in the subsequent
-        //         `frame_tick` call. We limit access to spacetime db to ensure that callbacks
-        //         will always have valid world attached.
-        unsafe {
-            stdb.world
-                .get()
-                .as_mut()
-                .unwrap()
-                .write(std::mem::transmute(world.as_unsafe_world_cell()));
-        }
-        stdb.conn.frame_tick()?;
-        Ok(())
-    })
+/// Pump the connection; SDK callbacks fire here and fill the mailboxes.
+pub fn update_spacetimedb(stdb: Res<SpacetimeDb>) -> Result {
+    stdb.conn.frame_tick()?;
+    Ok(())
 }
 
 fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
@@ -131,7 +93,7 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
 
     commands.insert_resource(SpacetimeDb {
         conn,
-        world: Arc::new(SyncUnsafeCell::new(MaybeUninit::uninit())),
+        connected_players: default(),
     });
 
     Ok(())
