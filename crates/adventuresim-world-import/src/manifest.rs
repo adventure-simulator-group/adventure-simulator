@@ -929,7 +929,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "682682c499a4104e2f46c0d52155cc770280e5822bcc49c9ad8c7c4b74864f3b"
+            "ac4434675b2942630a74c4b3d3fca9bee0e96c183ec85985106c3b62e7aaa8ac"
         );
     }
 

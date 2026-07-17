@@ -158,6 +158,14 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+        edge.terrain
+            .validate_context(&edge.route, edge.length_m)
+            .map_err(|reason| {
+                Error::Validation(format!(
+                    "travel edge {} has invalid terrain: {reason}",
+                    edge.id
+                ))
+            })?;
         if let TravelRoute::Land(route) = &edge.route
             && route
                 .water_crossings
@@ -169,6 +177,26 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+    }
+    let sum = |f: fn(&adventuresim_world_schema::RouteTerrain) -> usize| {
+        world.edges.iter().map(|e| f(&e.terrain)).sum::<usize>()
+    };
+    if report.route_terrain_edges != world.edges.len()
+        || report.route_terrain_dem_samples
+            != world
+                .edges
+                .iter()
+                .map(|edge| edge.terrain.elevation_profile.samples().len() * 9)
+                .sum::<usize>()
+        || report.route_terrain_dem_fallbacks > report.route_terrain_dem_samples
+        || report.route_terrain_water_adjacencies != sum(|t| t.water_adjacencies.len())
+        || report.route_terrain_landforms != sum(|t| t.landforms.len())
+        || report.route_terrain_seasonal_risks != sum(|t| t.seasonal_risks.len())
+        || report.route_terrain_encounter_tags != sum(|t| t.encounter_tags.len())
+    {
+        return Err(Error::Validation(
+            "route-terrain report counters do not reconcile with canonical edges".into(),
+        ));
     }
 
     let settlement_ids: HashSet<_> = world

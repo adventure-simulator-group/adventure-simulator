@@ -10,6 +10,7 @@ pub mod hydrology;
 pub mod land_use;
 pub mod potential_vegetation;
 pub mod religion;
+pub mod route_terrain;
 pub mod soil;
 pub mod tree_species;
 pub mod viabundus;

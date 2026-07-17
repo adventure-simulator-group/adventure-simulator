@@ -285,6 +285,7 @@ fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
 }
 
 fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
+    let terrain = encode_route_terrain(&edge.terrain);
     let route = match &edge.route {
         TravelRoute::Land(route) => json!({ "Land": {
             "bridge": encode_endpoint(route.bridge),
@@ -306,10 +307,39 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
+        "terrain": terrain,
         "certainty": edge.certainty,
         "section": edge.section,
         "sources": edge.sources,
     }))
+}
+
+fn encode_route_terrain(terrain: &adventuresim_world_schema::RouteTerrain) -> Value {
+    use adventuresim_world_schema::{
+        DominantAspect, RouteEncounterTag, RouteLandformKind, RouteRiskSeverity,
+        RouteSeasonalHazard, RouteTerrainClass, RouteWaterFeatureKind,
+    };
+    let named = |name: &str| enum_unit(name);
+    json!({
+        "elevation_profile": { "samples": terrain.elevation_profile.samples().iter().map(|sample| json!({
+            "progress": { "permille": sample.progress.get() },
+            "elevation": { "meters": sample.elevation.get() },
+        })).collect::<Vec<_>>() },
+        "ascent": { "meters": terrain.ascent.get() },
+        "descent": { "meters": terrain.descent.get() },
+        "max_uphill_grade": { "permille": terrain.max_uphill_grade.get() },
+        "max_downhill_grade": { "permille": terrain.max_downhill_grade.get() },
+        "mean_slope": { "permille": terrain.mean_slope.get() },
+        "max_slope": { "permille": terrain.max_slope.get() },
+        "dominant_aspect": named(match terrain.dominant_aspect { DominantAspect::Flat=>"Flat", DominantAspect::North=>"North", DominantAspect::NorthEast=>"NorthEast", DominantAspect::East=>"East", DominantAspect::SouthEast=>"SouthEast", DominantAspect::South=>"South", DominantAspect::SouthWest=>"SouthWest", DominantAspect::West=>"West", DominantAspect::NorthWest=>"NorthWest" }),
+        "roughness": { "meters": terrain.roughness.get() },
+        "relief": { "meters": terrain.relief.get() },
+        "landforms": terrain.landforms.iter().map(|v| json!({ "progress": { "permille": v.progress.get() }, "kind": named(match v.kind { RouteLandformKind::Ridge=>"Ridge", RouteLandformKind::Valley=>"Valley", RouteLandformKind::LikelyPass=>"LikelyPass" }) })).collect::<Vec<_>>(),
+        "class": named(match terrain.class { RouteTerrainClass::Flat=>"Flat", RouteTerrainClass::Rolling=>"Rolling", RouteTerrainClass::Hilly=>"Hilly", RouteTerrainClass::Mountainous=>"Mountainous" }),
+        "water_adjacencies": terrain.water_adjacencies.iter().map(|v| json!({ "feature": named(match v.feature { RouteWaterFeatureKind::River=>"River", RouteWaterFeatureKind::Canal=>"Canal", RouteWaterFeatureKind::Ditch=>"Ditch", RouteWaterFeatureKind::Inland=>"Inland", RouteWaterFeatureKind::Tidal=>"Tidal", RouteWaterFeatureKind::Coastal=>"Coastal" }), "distance": { "meters": v.distance.get() } })).collect::<Vec<_>>(),
+        "seasonal_risks": terrain.seasonal_risks.iter().map(|v| json!({ "hazard": named(match v.hazard { RouteSeasonalHazard::SpringFlood=>"SpringFlood", RouteSeasonalHazard::AutumnMud=>"AutumnMud", RouteSeasonalHazard::WinterIce=>"WinterIce", RouteSeasonalHazard::WinterSnow=>"WinterSnow" }), "severity": named(match v.severity { RouteRiskSeverity::Low=>"Low", RouteRiskSeverity::Medium=>"Medium", RouteRiskSeverity::High=>"High" }) })).collect::<Vec<_>>(),
+        "encounter_tags": terrain.encounter_tags.iter().map(|v| named(match v { RouteEncounterTag::Flat=>"Flat", RouteEncounterTag::Rolling=>"Rolling", RouteEncounterTag::Hilly=>"Hilly", RouteEncounterTag::Mountainous=>"Mountainous", RouteEncounterTag::Steep=>"Steep", RouteEncounterTag::Rough=>"Rough", RouteEncounterTag::Ridge=>"Ridge", RouteEncounterTag::Valley=>"Valley", RouteEncounterTag::LikelyPass=>"LikelyPass", RouteEncounterTag::Bridge=>"Bridge", RouteEncounterTag::Ford=>"Ford", RouteEncounterTag::Ferry=>"Ferry", RouteEncounterTag::Riverbank=>"Riverbank", RouteEncounterTag::CanalBank=>"CanalBank", RouteEncounterTag::Lakeshore=>"Lakeshore", RouteEncounterTag::TidalShore=>"TidalShore", RouteEncounterTag::Coast=>"Coast", RouteEncounterTag::SpringFlood=>"SpringFlood", RouteEncounterTag::AutumnMud=>"AutumnMud", RouteEncounterTag::WinterIce=>"WinterIce", RouteEncounterTag::WinterSnow=>"WinterSnow" })).collect::<Vec<_>>(),
+    })
 }
 
 fn encode_crossing_watercourse(watercourse: CrossingWatercourse) -> Value {
@@ -1102,6 +1132,7 @@ mod tests {
             toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,
+            terrain: adventuresim_world_schema::RouteTerrain::stage_placeholder(),
             certainty: 1,
             section: String::new(),
             sources: "- Test source.".into(),
@@ -1116,6 +1147,14 @@ mod tests {
             serde_json::json!({ "some": { "From": [] } })
         );
         assert_eq!(batches[0][0]["sources"], "- Test source.");
+        assert_eq!(
+            batches[0][0]["terrain"]["class"],
+            serde_json::json!({ "Flat": [] })
+        );
+        assert_eq!(
+            batches[0][0]["terrain"]["encounter_tags"][0],
+            serde_json::json!({ "Flat": [] })
+        );
     }
 
     #[test]

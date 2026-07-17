@@ -678,6 +678,7 @@ mod tests {
                 toll: None,
                 length_m: 10,
                 slope_multiplier: 1.0,
+                terrain: adventuresim_world_schema::RouteTerrain::stage_placeholder(),
                 certainty: 1,
                 section: "test".into(),
                 sources: "- test".into(),
