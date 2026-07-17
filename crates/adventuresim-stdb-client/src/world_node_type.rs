@@ -34,6 +34,7 @@ pub struct WorldNodeCols {
     pub is_town: __sdk::__query_builder::Col<WorldNode, bool>,
     pub is_ferry: __sdk::__query_builder::Col<WorldNode, bool>,
     pub is_harbour: __sdk::__query_builder::Col<WorldNode, bool>,
+    pub sources: __sdk::__query_builder::Col<WorldNode, String>,
 }
 
 impl __sdk::__query_builder::HasCols for WorldNode {
@@ -48,6 +49,7 @@ impl __sdk::__query_builder::HasCols for WorldNode {
             is_town: __sdk::__query_builder::Col::new(table_name, "is_town"),
             is_ferry: __sdk::__query_builder::Col::new(table_name, "is_ferry"),
             is_harbour: __sdk::__query_builder::Col::new(table_name, "is_harbour"),
+            sources: __sdk::__query_builder::Col::new(table_name, "sources"),
         }
     }
 }

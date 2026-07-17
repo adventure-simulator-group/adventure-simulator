@@ -10,7 +10,9 @@ pub mod abandon_quest_reducer;
 pub mod accept_party_join_request_reducer;
 pub mod accept_quest_reducer;
 pub mod add_and_equip_item_reducer;
+pub mod agricultural_limitation_type;
 pub mod autoresolve_quest_reducer;
+pub mod available_water_capacity_type;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
@@ -21,7 +23,11 @@ pub mod battle_result_table;
 pub mod battle_result_type;
 pub mod begin_world_data_import_reducer;
 pub mod calibrate_weapon_precision_reducer;
+pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
+pub mod canopy_density_type;
+pub mod catholic_lutheran_church_type;
+pub mod catholic_reformed_church_type;
 pub mod change_inventory_item_reducer;
 pub mod character_attributes_table;
 pub mod character_attributes_type;
@@ -62,6 +68,8 @@ pub mod create_recruitment_role_reducer;
 pub mod create_tactical_server_for_request_reducer;
 pub mod create_tactical_server_reducer;
 pub mod create_temporary_character_reducer;
+pub mod crossing_traversal_type;
+pub mod crossing_watercourse_type;
 pub mod define_armor_reducer;
 pub mod define_clothing_reducer;
 pub mod define_item_reducer;
@@ -73,19 +81,42 @@ pub mod deposit_party_inventory_item_reducer;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod dismiss_party_action_request_reducer;
+pub mod dominant_leaf_type_type;
+pub mod drought_history_type;
+pub mod drought_profile_type;
 pub mod edge_endpoint_type;
+pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
 pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
+pub mod euro_veg_map_unit_code_type;
+pub mod ferry_route_type;
+pub mod ferry_waterway_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finish_world_data_import_reducer;
+pub mod flow_persistence_type;
+pub mod flowing_water_access_type;
+pub mod forest_cover_type;
+pub mod geologic_age_evidence_type;
+pub mod geologic_era_type;
+pub mod geologic_lithology_evidence_type;
+pub mod geologic_setting_type;
+pub mod geologic_unit_id_type;
+pub mod habitat_suitability_type;
+pub mod igneous_rock_type;
+pub mod import_settlement_aliases_reducer;
+pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
+pub mod inferred_geologic_setting_type;
+pub mod inferred_tree_species_profile_type;
+pub mod inland_water_access_type;
+pub mod inland_water_size_type;
 pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
@@ -95,13 +126,34 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
+pub mod land_route_type;
+pub mod land_use_fraction_type;
+pub mod land_use_profile_type;
+pub mod land_water_crossing_type;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
 pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_table;
 pub mod local_chat_message_type;
+pub mod lutheran_reformed_church_type;
+pub mod mapped_potential_vegetation_type;
+pub mod mapped_soil_profile_type;
+pub mod mapped_surface_geology_type;
+pub mod marine_water_access_type;
+pub mod metamorphic_rock_type;
+pub mod mineral_soil_texture_type;
+pub mod mineral_soil_type;
+pub mod mixed_lithology_type;
+pub mod modeled_tree_species_profile_type;
+pub mod modeled_tree_species_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod native_range_evidence_type;
+pub mod official_religion_type;
+pub mod organic_soil_type;
+pub mod other_non_textured_soil_type;
+pub mod palmer_drought_severity_index_type;
+pub mod parent_material_code_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
 pub mod party_inventory_item_table;
@@ -120,6 +172,8 @@ pub mod party_stake_table;
 pub mod party_stake_type;
 pub mod party_table;
 pub mod party_type;
+pub mod potential_vegetation_formation_type;
+pub mod potential_vegetation_type;
 pub mod quest_issuer_table;
 pub mod quest_issuer_type;
 pub mod quest_status_type;
@@ -141,10 +195,15 @@ pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
 pub mod resolve_religious_demand_reducer;
 pub mod rest_at_settlement_reducer;
+pub mod river_access_type;
+pub mod river_and_canal_access_type;
+pub mod river_watercourse_type;
+pub mod rock_outcrop_soil_type;
 pub mod save_recruitment_role_reducer;
 pub mod saved_recruitment_role_table;
 pub mod saved_recruitment_role_type;
 pub mod schedule_allocation_type;
+pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
@@ -152,17 +211,37 @@ pub mod seed_world_reducer;
 pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
+pub mod settlement_alias_batch_row_type;
+pub mod settlement_alias_table;
+pub mod settlement_alias_type;
+pub mod settlement_description_batch_row_type;
+pub mod settlement_description_kind_type;
+pub mod settlement_description_table;
+pub mod settlement_description_type;
+pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
+pub mod settlement_religious_status_type;
 pub mod settlement_table;
 pub mod settlement_type;
+pub mod soil_depth_type;
+pub mod soil_mapping_unit_type;
+pub mod soil_profile_type;
+pub mod soil_properties_type;
+pub mod soil_substrate_type;
+pub mod soil_water_regime_type;
+pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
+pub mod strahler_order_type;
 pub mod strategic_incident_table;
 pub mod strategic_incident_type;
+pub mod surface_geology_type;
+pub mod surface_lithology_type;
 pub mod synchronize_character_time_reducer;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod topsoil_organic_carbon_type;
 pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
 pub mod travel_edge_table;
@@ -170,13 +249,19 @@ pub mod travel_edge_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
+pub mod tree_species_id_type;
+pub mod tree_species_profile_type;
 pub mod turn_in_quest_reducer;
+pub mod unconsolidated_deposit_type;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
 pub mod vote_for_party_leader_reducer;
+pub mod water_distance_meters_type;
+pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
+pub mod woodland_type;
 pub mod world_clock_schedule_type;
 pub mod world_clock_table;
 pub mod world_clock_type;
@@ -185,12 +270,15 @@ pub mod world_data_import_type;
 pub mod world_node_import_type;
 pub mod world_node_table;
 pub mod world_node_type;
+pub mod wrb_reference_group_type;
 
 pub use abandon_quest_reducer::abandon_quest;
 pub use accept_party_join_request_reducer::accept_party_join_request;
 pub use accept_quest_reducer::accept_quest;
 pub use add_and_equip_item_reducer::add_and_equip_item;
+pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use autoresolve_quest_reducer::autoresolve_quest;
+pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
@@ -201,7 +289,11 @@ pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_world_data_import_reducer::begin_world_data_import;
 pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
+pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
+pub use canopy_density_type::CanopyDensity;
+pub use catholic_lutheran_church_type::CatholicLutheranChurch;
+pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use change_inventory_item_reducer::change_inventory_item;
 pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
@@ -242,6 +334,8 @@ pub use create_recruitment_role_reducer::create_recruitment_role;
 pub use create_tactical_server_for_request_reducer::create_tactical_server_for_request;
 pub use create_tactical_server_reducer::create_tactical_server;
 pub use create_temporary_character_reducer::create_temporary_character;
+pub use crossing_traversal_type::CrossingTraversal;
+pub use crossing_watercourse_type::CrossingWatercourse;
 pub use define_armor_reducer::define_armor;
 pub use define_clothing_reducer::define_clothing;
 pub use define_item_reducer::define_item;
@@ -253,19 +347,42 @@ pub use deposit_party_inventory_item_reducer::deposit_party_inventory_item;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
+pub use dominant_leaf_type_type::DominantLeafType;
+pub use drought_history_type::DroughtHistory;
+pub use drought_profile_type::DroughtProfile;
 pub use edge_endpoint_type::EdgeEndpoint;
+pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
 pub use end_tactical_server_by_instance_reducer::end_tactical_server_by_instance;
 pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_reducer::equip_item;
+pub use euro_veg_map_unit_code_type::EuroVegMapUnitCode;
+pub use ferry_route_type::FerryRoute;
+pub use ferry_waterway_type::FerryWaterway;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finish_world_data_import_reducer::finish_world_data_import;
+pub use flow_persistence_type::FlowPersistence;
+pub use flowing_water_access_type::FlowingWaterAccess;
+pub use forest_cover_type::ForestCover;
+pub use geologic_age_evidence_type::GeologicAgeEvidence;
+pub use geologic_era_type::GeologicEra;
+pub use geologic_lithology_evidence_type::GeologicLithologyEvidence;
+pub use geologic_setting_type::GeologicSetting;
+pub use geologic_unit_id_type::GeologicUnitId;
+pub use habitat_suitability_type::HabitatSuitability;
+pub use igneous_rock_type::IgneousRock;
+pub use import_settlement_aliases_reducer::import_settlement_aliases;
+pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
+pub use inferred_geologic_setting_type::InferredGeologicSetting;
+pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
+pub use inland_water_access_type::InlandWaterAccess;
+pub use inland_water_size_type::InlandWaterSize;
 pub use insert_new_character_reducer::insert_new_character;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
@@ -275,13 +392,34 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
+pub use land_route_type::LandRoute;
+pub use land_use_fraction_type::LandUseFraction;
+pub use land_use_profile_type::LandUseProfile;
+pub use land_water_crossing_type::LandWaterCrossing;
 pub use leave_mission_reducer::leave_mission;
 pub use leave_party_reducer::leave_party;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
+pub use lutheran_reformed_church_type::LutheranReformedChurch;
+pub use mapped_potential_vegetation_type::MappedPotentialVegetation;
+pub use mapped_soil_profile_type::MappedSoilProfile;
+pub use mapped_surface_geology_type::MappedSurfaceGeology;
+pub use marine_water_access_type::MarineWaterAccess;
+pub use metamorphic_rock_type::MetamorphicRock;
+pub use mineral_soil_texture_type::MineralSoilTexture;
+pub use mineral_soil_type::MineralSoil;
+pub use mixed_lithology_type::MixedLithology;
+pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
+pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use native_range_evidence_type::NativeRangeEvidence;
+pub use official_religion_type::OfficialReligion;
+pub use organic_soil_type::OrganicSoil;
+pub use other_non_textured_soil_type::OtherNonTexturedSoil;
+pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
+pub use parent_material_code_type::ParentMaterialCode;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_inventory_item_table::*;
@@ -300,6 +438,8 @@ pub use party_stake_table::*;
 pub use party_stake_type::PartyStake;
 pub use party_table::*;
 pub use party_type::Party;
+pub use potential_vegetation_formation_type::PotentialVegetationFormation;
+pub use potential_vegetation_type::PotentialVegetation;
 pub use quest_issuer_table::*;
 pub use quest_issuer_type::QuestIssuer;
 pub use quest_status_type::QuestStatus;
@@ -321,10 +461,15 @@ pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
 pub use rest_at_settlement_reducer::rest_at_settlement;
+pub use river_access_type::RiverAccess;
+pub use river_and_canal_access_type::RiverAndCanalAccess;
+pub use river_watercourse_type::RiverWatercourse;
+pub use rock_outcrop_soil_type::RockOutcropSoil;
 pub use save_recruitment_role_reducer::save_recruitment_role;
 pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
 pub use schedule_allocation_type::ScheduleAllocation;
+pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
@@ -332,17 +477,37 @@ pub use seed_world_reducer::seed_world;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
+pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
+pub use settlement_alias_table::*;
+pub use settlement_alias_type::SettlementAlias;
+pub use settlement_description_batch_row_type::SettlementDescriptionBatchRow;
+pub use settlement_description_kind_type::SettlementDescriptionKind;
+pub use settlement_description_table::*;
+pub use settlement_description_type::SettlementDescription;
+pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
+pub use settlement_religious_status_type::SettlementReligiousStatus;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
+pub use soil_depth_type::SoilDepth;
+pub use soil_mapping_unit_type::SoilMappingUnit;
+pub use soil_profile_type::SoilProfile;
+pub use soil_properties_type::SoilProperties;
+pub use soil_substrate_type::SoilSubstrate;
+pub use soil_water_regime_type::SoilWaterRegime;
+pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
+pub use strahler_order_type::StrahlerOrder;
 pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
+pub use surface_geology_type::SurfaceGeology;
+pub use surface_lithology_type::SurfaceLithology;
 pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_import_type::TravelEdgeImport;
 pub use travel_edge_table::*;
@@ -350,13 +515,19 @@ pub use travel_edge_type::TravelEdge;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_reducer::travel_to_quest;
 pub use travel_to_settlement_reducer::travel_to_settlement;
+pub use tree_species_id_type::TreeSpeciesId;
+pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use turn_in_quest_reducer::turn_in_quest;
+pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
 pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
+pub use water_distance_meters_type::WaterDistanceMeters;
+pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
+pub use woodland_type::Woodland;
 pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
 pub use world_clock_type::WorldClock;
@@ -365,6 +536,7 @@ pub use world_data_import_type::WorldDataImport;
 pub use world_node_import_type::WorldNodeImport;
 pub use world_node_table::*;
 pub use world_node_type::WorldNode;
+pub use wrb_reference_group_type::WrbReferenceGroup;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -400,6 +572,7 @@ pub enum Reducer {
     BeginWorldDataImport {
         schema_version: u32,
         artifact_id: String,
+        sources: String,
     },
     CalibrateWeaponPrecision,
     CancelMissionRequest {
@@ -546,6 +719,12 @@ pub enum Reducer {
     },
     FinishWorldDataImport {
         artifact_id: String,
+    },
+    ImportSettlementAliases {
+        aliases: Vec<SettlementAliasBatchRow>,
+    },
+    ImportSettlementDescriptions {
+        descriptions: Vec<SettlementDescriptionBatchRow>,
     },
     ImportSettlements {
         settlements: Vec<SettlementImport>,
@@ -795,6 +974,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
+            Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
+            Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
@@ -889,10 +1070,12 @@ impl __sdk::Reducer for Reducer {
             Reducer::BeginWorldDataImport {
                 schema_version,
                 artifact_id,
+                sources,
             } => {
                 __sats::bsatn::to_vec(&begin_world_data_import_reducer::BeginWorldDataImportArgs {
                     schema_version: schema_version.clone(),
                     artifact_id: artifact_id.clone(),
+                    sources: sources.clone(),
                 })
             }
             Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(
@@ -1165,6 +1348,16 @@ impl __sdk::Reducer for Reducer {
             Reducer::FinishWorldDataImport { artifact_id } => __sats::bsatn::to_vec(
                 &finish_world_data_import_reducer::FinishWorldDataImportArgs {
                     artifact_id: artifact_id.clone(),
+                },
+            ),
+            Reducer::ImportSettlementAliases { aliases } => __sats::bsatn::to_vec(
+                &import_settlement_aliases_reducer::ImportSettlementAliasesArgs {
+                    aliases: aliases.clone(),
+                },
+            ),
+            Reducer::ImportSettlementDescriptions { descriptions } => __sats::bsatn::to_vec(
+                &import_settlement_descriptions_reducer::ImportSettlementDescriptionsArgs {
+                    descriptions: descriptions.clone(),
                 },
             ),
             Reducer::ImportSettlements { settlements } => {
@@ -1599,6 +1792,8 @@ pub struct DbUpdate {
     religious_demand: __sdk::TableUpdate<ReligiousDemand>,
     saved_recruitment_role: __sdk::TableUpdate<SavedRecruitmentRole>,
     settlement: __sdk::TableUpdate<Settlement>,
+    settlement_alias: __sdk::TableUpdate<SettlementAlias>,
+    settlement_description: __sdk::TableUpdate<SettlementDescription>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
@@ -1725,6 +1920,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement" => db_update
                     .settlement
                     .append(settlement_table::parse_table_update(table_update)?),
+                "settlement_alias" => db_update
+                    .settlement_alias
+                    .append(settlement_alias_table::parse_table_update(table_update)?),
+                "settlement_description" => db_update.settlement_description.append(
+                    settlement_description_table::parse_table_update(table_update)?,
+                ),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(strategic_incident_table::parse_table_update(table_update)?),
@@ -1922,6 +2123,15 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.settlement = cache
             .apply_diff_to_table::<Settlement>("settlement", &self.settlement)
             .with_updates_by_pk(|row| &row.id);
+        diff.settlement_alias = cache
+            .apply_diff_to_table::<SettlementAlias>("settlement_alias", &self.settlement_alias)
+            .with_updates_by_pk(|row| &row.id);
+        diff.settlement_description = cache
+            .apply_diff_to_table::<SettlementDescription>(
+                "settlement_description",
+                &self.settlement_description,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.strategic_incident = cache
             .apply_diff_to_table::<StrategicIncident>(
                 "strategic_incident",
@@ -2069,6 +2279,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement" => db_update
                     .settlement
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_alias" => db_update
+                    .settlement_alias
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_description" => db_update
+                    .settlement_description
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2214,6 +2430,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement" => db_update
                     .settlement
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_alias" => db_update
+                    .settlement_alias
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_description" => db_update
+                    .settlement_description
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2287,6 +2509,8 @@ pub struct AppliedDiff<'r> {
     religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
     saved_recruitment_role: __sdk::TableAppliedDiff<'r, SavedRecruitmentRole>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
+    settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
+    settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
@@ -2468,6 +2692,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Settlement>("settlement", &self.settlement, event);
+        callbacks.invoke_table_row_callbacks::<SettlementAlias>(
+            "settlement_alias",
+            &self.settlement_alias,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementDescription>(
+            "settlement_description",
+            &self.settlement_description,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<StrategicIncident>(
             "strategic_incident",
             &self.strategic_incident,
@@ -3188,6 +3422,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         religious_demand_table::register_table(client_cache);
         saved_recruitment_role_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
+        settlement_alias_table::register_table(client_cache);
+        settlement_description_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
@@ -3234,6 +3470,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "religious_demand",
         "saved_recruitment_role",
         "settlement",
+        "settlement_alias",
+        "settlement_description",
         "strategic_incident",
         "tactical_server",
         "tactical_server_request",

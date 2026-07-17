@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct BeginWorldDataImportArgs {
     pub schema_version: u32,
     pub artifact_id: String,
+    pub sources: String,
 }
 
 impl From<BeginWorldDataImportArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<BeginWorldDataImportArgs> for super::Reducer {
         Self::BeginWorldDataImport {
             schema_version: args.schema_version,
             artifact_id: args.artifact_id,
+            sources: args.sources,
         }
     }
 }
@@ -39,8 +41,9 @@ pub trait begin_world_data_import {
         &self,
         schema_version: u32,
         artifact_id: String,
+        sources: String,
     ) -> __sdk::Result<()> {
-        self.begin_world_data_import_then(schema_version, artifact_id, |_, _| {})
+        self.begin_world_data_import_then(schema_version, artifact_id, sources, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible,
@@ -53,6 +56,7 @@ pub trait begin_world_data_import {
         &self,
         schema_version: u32,
         artifact_id: String,
+        sources: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -67,6 +71,7 @@ impl begin_world_data_import for super::RemoteReducers {
         &self,
         schema_version: u32,
         artifact_id: String,
+        sources: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,6 +83,7 @@ impl begin_world_data_import for super::RemoteReducers {
             BeginWorldDataImportArgs {
                 schema_version,
                 artifact_id,
+                sources,
             },
             callback,
         )
