@@ -16,3 +16,43 @@ pub struct CharacterNeeds {
 impl __sdk::InModule for CharacterNeeds {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterNeeds`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterNeedsCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterNeeds, u64>,
+    pub food_balance_kcal: __sdk::__query_builder::Col<CharacterNeeds, f32>,
+    pub water_balance_ml: __sdk::__query_builder::Col<CharacterNeeds, f32>,
+    pub carried_water_ml: __sdk::__query_builder::Col<CharacterNeeds, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterNeeds {
+    type Cols = CharacterNeedsCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterNeedsCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            food_balance_kcal: __sdk::__query_builder::Col::new(table_name, "food_balance_kcal"),
+            water_balance_ml: __sdk::__query_builder::Col::new(table_name, "water_balance_ml"),
+            carried_water_ml: __sdk::__query_builder::Col::new(table_name, "carried_water_ml"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterNeeds`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterNeedsIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterNeeds, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterNeeds {
+    type IxCols = CharacterNeedsIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterNeedsIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterNeeds {}

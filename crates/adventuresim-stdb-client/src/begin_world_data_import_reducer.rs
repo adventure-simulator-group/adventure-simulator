@@ -6,11 +6,17 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BeginWorldDataImportArgs {}
+pub(super) struct BeginWorldDataImportArgs {
+    pub schema_version: u32,
+    pub artifact_id: String,
+}
 
 impl From<BeginWorldDataImportArgs> for super::Reducer {
     fn from(args: BeginWorldDataImportArgs) -> Self {
-        Self::BeginWorldDataImport
+        Self::BeginWorldDataImport {
+            schema_version: args.schema_version,
+            artifact_id: args.artifact_id,
+        }
     }
 }
 
@@ -29,8 +35,12 @@ pub trait begin_world_data_import {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`begin_world_data_import:begin_world_data_import_then`] to run a callback after the reducer completes.
-    fn begin_world_data_import(&self) -> __sdk::Result<()> {
-        self.begin_world_data_import_then(|_, _| {})
+    fn begin_world_data_import(
+        &self,
+        schema_version: u32,
+        artifact_id: String,
+    ) -> __sdk::Result<()> {
+        self.begin_world_data_import_then(schema_version, artifact_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible,
@@ -41,6 +51,8 @@ pub trait begin_world_data_import {
     ///  and its status can be observed with the `callback`.
     fn begin_world_data_import_then(
         &self,
+        schema_version: u32,
+        artifact_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -53,6 +65,8 @@ pub trait begin_world_data_import {
 impl begin_world_data_import for super::RemoteReducers {
     fn begin_world_data_import_then(
         &self,
+        schema_version: u32,
+        artifact_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -60,7 +74,12 @@ impl begin_world_data_import for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(BeginWorldDataImportArgs {}, callback)
+        self.imp.invoke_reducer_with_callback(
+            BeginWorldDataImportArgs {
+                schema_version,
+                artifact_id,
+            },
+            callback,
+        )
     }
 }
