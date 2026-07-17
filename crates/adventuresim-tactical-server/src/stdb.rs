@@ -42,6 +42,7 @@ impl SpacetimeDb {
     ///
     /// For native subscriptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
     pub fn subscribe_connected_players(&self) -> SubscriptionHandle {
+        // This is the callback handler. Standard Arc<Mutex<>> pattern for sharing state between threads.
         let connected_players = self.connected_players.clone();
         self.conn.db.connected_players().on_insert(move |_ctx, row| {
             connected_players.lock().unwrap().push(row.clone());
