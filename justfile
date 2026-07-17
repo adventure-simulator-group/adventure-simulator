@@ -70,7 +70,7 @@ dev-full:
     @just web
 
 # Start the local browser stack.
-web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+web: preflight build-wasm spacetime-start publish _seed-world build-tactical
     @just _spawner-start
     @echo ""
     @echo "Starting strategic-web server..."
@@ -84,9 +84,25 @@ web: preflight build-wasm spacetime-start publish-reset _seed-world build-tactic
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
 
+# Start the browser stack after intentionally deleting and reseeding database data.
+# Use only for disposable development state or the approved pre-launch 1.x reset.
+web-reset: preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+    @just _spawner-start
+    @echo ""
+    @echo "Starting strategic-web server after a database reset..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
 # Start the browser stack behind locally trusted HTTPS. Caddy negotiates HTTP/2
 # (and HTTP/3 when available) while strategic-web remains internal on port 8080.
-web-secure: preflight caddy-preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
+web-secure: preflight caddy-preflight build-wasm spacetime-start publish _seed-world build-tactical
     #!/usr/bin/env bash
     set -euo pipefail
     just _spawner-start
@@ -129,11 +145,11 @@ web-damaged: preflight build-wasm spacetime-start publish-reset _seed-world _see
      cargo run -p strategic-web
 
 # Seed the world with initial settlements and quests
-_seed-world server=spacetime_url:
+_seed-world server=spacetime_url: spacetime-version-check
     @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
 
 # Create or reset the injured Wounded Demo character used to verify damage bars.
-_seed-damaged-character server=spacetime_url:
+_seed-damaged-character server=spacetime_url: spacetime-version-check
     @spacetime call --server {{server}} {{spacetime_module}} seed_damaged_character
 
 # Start SpacetimeDB if it is not already listening
@@ -223,7 +239,7 @@ normalise-viabundus:
 	@python3 scripts/import_viabundus.py
 
 # Load the normalised Viabundus road graph into the published local module.
-load-viabundus-world server=spacetime_url:
+load-viabundus-world server=spacetime_url: spacetime-version-check
 	@python3 scripts/import_viabundus.py --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner

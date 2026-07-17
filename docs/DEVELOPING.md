@@ -26,6 +26,9 @@ just dev
 
 Open http://localhost:8080
 
+Ordinary `just dev` / `just web` startup publishes without deleting database
+data. Use `just web-reset` only when an intentional reset is required.
+
 ## Full Development (with Tactical Servers)
 
 To run the complete stack with automatic tactical server spawning:
@@ -68,6 +71,7 @@ Now when you click a location in the browser, a tactical server will automatical
 ```bash
 # Development
 just dev              # Start the complete browser stack
+just web-reset        # Delete, reseed, and start the disposable browser stack
 just web-secure       # Start strategic-web at https://localhost:8443
 just secure-web-trust # Trust Caddy's local development CA (normally once)
 just web-damaged      # Start a fresh stack with an injured demo character
@@ -115,14 +119,15 @@ The 1.x to 2.6.1 project upgrade is intentionally a clean reset: the game is
 pre-launch, so existing local and deployment data is not retained. Stop the
 old server, take an operator backup only if the old data may still be useful,
 and move its data directory aside or configure a new empty data directory.
-Then install/select SpacetimeDB 2.6.1, start the 2.6.1 server, and run
-`just publish-reset` followed by `just _seed-world`. This recreates the schema
-and seed data and permanently discards the database's previous contents. Keep
+Then install/select SpacetimeDB 2.6.1 and run `just web-reset`. That explicit
+startup path starts the 2.6.1 server, reset-publishes, reseeds, and launches the
+browser stack; it permanently discards the database's previous contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
 
-After this one-time reset, routine publishes should use `just publish` so data
-is preserved. Do not use `publish-reset` on a future public or player-bearing
+After this one-time reset, routine startup should use `just dev` / `just web`
+and routine publishes should use `just publish`, all of which preserve data.
+Do not use `web-reset` or `publish-reset` on a future public or player-bearing
 database unless data loss is explicitly approved and a verified recovery copy
 exists.
 
