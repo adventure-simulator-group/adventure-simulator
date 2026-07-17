@@ -474,7 +474,7 @@ async fn recruitment_panel_fragment(
     let checks = PartyCheckSummary {
         medicine: adventuresim_core::capability::aggregate_party_check(medicine.iter().copied()),
         surgery: adventuresim_core::capability::aggregate_party_check(surgery.iter().copied()),
-        charisma: adventuresim_core::capability::aggregate_party_check(charisma.iter().copied()),
+        charisma: adventuresim_core::capability::aggregate_party_charisma(charisma.iter().copied()),
         faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
     };
     let mut panels = Vec::new();
@@ -538,27 +538,27 @@ async fn recruitment_panel_fragment(
                     .unwrap_or_default()
                     .into_iter()
                     .next();
-                let contribution =
-                    capability
-                        .as_ref()
-                        .map_or_default(|candidate| PartyCheckSummary {
-                            medicine: adventuresim_core::capability::aggregate_party_contribution(
-                                &medicine,
-                                candidate.medicine,
-                            ),
-                            surgery: adventuresim_core::capability::aggregate_party_contribution(
-                                &surgery,
-                                candidate.surgery,
-                            ),
-                            charisma: adventuresim_core::capability::aggregate_party_contribution(
+                let contribution = capability.as_ref().map_or_default(|candidate| {
+                    PartyCheckSummary {
+                        medicine: adventuresim_core::capability::aggregate_party_contribution(
+                            &medicine,
+                            candidate.medicine,
+                        ),
+                        surgery: adventuresim_core::capability::aggregate_party_contribution(
+                            &surgery,
+                            candidate.surgery,
+                        ),
+                        charisma:
+                            adventuresim_core::capability::aggregate_party_charisma_contribution(
                                 &charisma,
                                 candidate.charisma,
                             ),
-                            faith: adventuresim_core::capability::aggregate_party_contribution(
-                                &faith,
-                                candidate.faith,
-                            ),
-                        });
+                        faith: adventuresim_core::capability::aggregate_party_contribution(
+                            &faith,
+                            candidate.faith,
+                        ),
+                    }
+                });
                 applicants.push(RecruitmentApplicant {
                     request: request.clone(),
                     character,

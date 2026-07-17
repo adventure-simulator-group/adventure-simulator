@@ -122,6 +122,13 @@ def normalise(raw_dir: Path, year: int) -> dict[str, Any]:
                 "population_estimate": estimate[1] * 1_000 if estimate else 0,
                 # Terrain-scene selection remains a tactical content decision.
                 "scene_key": "hills",
+                # Stable placeholder distribution until individual 1544 church
+                # affiliations are curated from historical sources.
+                "religion_id": (
+                    "western_church",
+                    "reformed",
+                    "old_faith",
+                )[node_id % 3],
             }
         )
 

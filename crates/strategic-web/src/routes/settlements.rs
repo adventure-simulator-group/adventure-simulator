@@ -3,7 +3,7 @@
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
-    response::{Html, IntoResponse, Redirect},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use futures_util::future::join_all;
@@ -17,10 +17,12 @@ use super::inventory_forms::{
 use super::travel::{TravelDestination, connected_destinations};
 use crate::session::Session;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterLimbs, CharacterMoraleSource, CharacterNotoriety, CharacterSkills,
+    CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
     ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
-    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, Settlement, TravelEdge,
+    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -37,6 +39,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/settlements/{id}/service-quests",
             get(service_quest_offers),
+        )
+        .route(
+            "/api/settlements/{id}/religion",
+            get(religion_dialogue).post(set_religion),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
@@ -90,6 +96,14 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
+            post(renounce_religion),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/religious-demand/{demand_id}",
+            post(resolve_religious_demand),
         )
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
@@ -539,7 +553,7 @@ fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
         ),
         "religion" => (
             "Priest",
-            "Peace be with you. I fear our prayers alone cannot mend this:",
+            "God give you peace. I must ask your aid concerning",
         ),
         _ => (
             "Merchant",
@@ -795,6 +809,23 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let condition = get_strategic_condition(&state, character_id).await;
+    let morale_sources = get_morale_sources(&state, character_id).await;
+    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+        .await
+        .and_then(|condition| condition.religion_id);
+    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+        .await
+        .map_or(0.0, |notoriety| notoriety.value);
+    let religious_demand = state
+        .db
+        .query::<ReligiousDemand>(&format!(
+            "SELECT * FROM religious_demand WHERE character_id = {character_id} AND status = 'pending'"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
     Html(
         party_personal_page(
             &location,
@@ -804,11 +835,41 @@ async fn party_personal(
             attributes.first(),
             skills.first(),
             limbs.first(),
+            condition.as_ref(),
+            &morale_sources,
+            religion.as_deref(),
             schedule.first(),
+            religious_demand.as_ref(),
+            notoriety,
             session.theme(),
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct ReligiousDemandForm {
+    choice: String,
+}
+
+async fn resolve_religious_demand(
+    State(state): State<AppState>,
+    Path((kind, id, character_id, demand_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+    Form(form): Form<ReligiousDemandForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id)
+        && let Err(error) = state
+            .db
+            .call(
+                "resolve_religious_demand",
+                &[json!(demand_id), json!(form.choice)],
+            )
+            .await
+    {
+        tracing::warn!(%error, character_id, demand_id, "failed to resolve religious demand");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 #[derive(Deserialize)]
@@ -825,6 +886,24 @@ struct TrainingScheduleForm {
     balance_minutes: u16,
     surgeon_minutes: u16,
     labor_minutes: u16,
+    prayer_minutes: u16,
+    thievery_minutes: u16,
+    raiding_minutes: u16,
+    travel_melee_minutes: u16,
+    travel_dodge_minutes: u16,
+    travel_block_minutes: u16,
+    travel_ranged_minutes: u16,
+    travel_will_minutes: u16,
+    travel_charisma_minutes: u16,
+    travel_medicine_minutes: u16,
+    travel_faith_minutes: u16,
+    travel_stealth_minutes: u16,
+    travel_balance_minutes: u16,
+    travel_surgeon_minutes: u16,
+    travel_labor_minutes: u16,
+    travel_prayer_minutes: u16,
+    travel_thievery_minutes: u16,
+    travel_raiding_minutes: u16,
 }
 
 async fn update_training_schedule(
@@ -852,6 +931,24 @@ async fn update_training_schedule(
                     json!(form.balance_minutes),
                     json!(form.surgeon_minutes),
                     json!(form.labor_minutes),
+                    json!(form.prayer_minutes),
+                    json!(form.thievery_minutes),
+                    json!(form.raiding_minutes),
+                    json!(form.travel_melee_minutes),
+                    json!(form.travel_dodge_minutes),
+                    json!(form.travel_block_minutes),
+                    json!(form.travel_ranged_minutes),
+                    json!(form.travel_will_minutes),
+                    json!(form.travel_charisma_minutes),
+                    json!(form.travel_medicine_minutes),
+                    json!(form.travel_faith_minutes),
+                    json!(form.travel_stealth_minutes),
+                    json!(form.travel_balance_minutes),
+                    json!(form.travel_surgeon_minutes),
+                    json!(form.travel_labor_minutes),
+                    json!(form.travel_prayer_minutes),
+                    json!(form.travel_thievery_minutes),
+                    json!(form.travel_raiding_minutes),
                 ],
             )
             .await;
@@ -1292,6 +1389,14 @@ async fn party_stats(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let condition = get_strategic_condition(&state, character_id).await;
+    let morale_sources = get_morale_sources(&state, character_id).await;
+    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+        .await
+        .and_then(|condition| condition.religion_id);
+    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+        .await
+        .map_or(0.0, |notoriety| notoriety.value);
     Html(
         party_stats_page(
             &location,
@@ -1302,12 +1407,43 @@ async fn party_stats(
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
+            condition.as_ref(),
+            &morale_sources,
+            religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
+            notoriety,
             session.theme(),
         )
         .into_string(),
     )
+}
+
+async fn get_strategic_condition(
+    state: &AppState,
+    character_id: u64,
+) -> Option<CharacterStrategicCondition> {
+    if let Err(error) = state
+        .db
+        .call("refresh_strategic_condition", &[json!(character_id)])
+        .await
+    {
+        tracing::warn!(%error, character_id, "failed to refresh strategic condition");
+        return None;
+    }
+    query_single(state, "character_strategic_condition", character_id).await
+}
+
+async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<CharacterMoraleSource> {
+    let mut sources: Vec<CharacterMoraleSource> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_morale_source WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    sources.sort_by(|left, right| right.magnitude.abs().total_cmp(&left.magnitude.abs()));
+    sources
 }
 
 #[derive(Deserialize)]
@@ -1542,14 +1678,14 @@ async fn rest(
     Path((id, kind)): Path<(String, String)>,
     session: Session,
     Form(form): Form<RestForm>,
-) -> Html<String> {
+) -> Response {
     let at_inn = match kind.as_str() {
         "inn" => true,
         "temple" => false,
-        _ => return Html("<h1>Rest service not found</h1>".to_string()),
+        _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
     };
     let Some(character_id) = session.character_id_u64() else {
-        return Html("<h1>Choose a character first</h1>".to_string());
+        return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
@@ -1559,6 +1695,8 @@ async fn rest(
     let before_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
+    let before_notoriety =
+        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
     if let Err(error) = state
         .db
         .call(
@@ -1567,7 +1705,7 @@ async fn rest(
         )
         .await
     {
-        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>"));
+        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>")).into_response();
     }
 
     let settlements: Vec<Settlement> = state
@@ -1576,9 +1714,15 @@ async fn rest(
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string());
+        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
     };
     let active_character = get_active_character(&state, Some(character_id)).await;
+    if let Some(quest_id) = active_character
+        .as_ref()
+        .and_then(|(character, _)| character.current_quest_location_id.as_deref())
+    {
+        return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+    }
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -1590,6 +1734,8 @@ async fn rest(
     let after_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
+    let after_notoriety =
+        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
     let summary = rest_summary(
         before_character.as_ref().map(|(character, _)| character),
         active_character.as_ref().map(|(character, _)| character),
@@ -1599,6 +1745,8 @@ async fn rest(
         after_skills.as_ref(),
         before_time.as_ref(),
         after_time.as_ref(),
+        before_notoriety.as_ref(),
+        after_notoriety.as_ref(),
     );
     let logged_in_as = active_character
         .as_ref()
@@ -1618,6 +1766,7 @@ async fn rest(
         )
         .into_string(),
     )
+    .into_response()
 }
 
 async fn query_single<T: serde::de::DeserializeOwned>(
@@ -1645,6 +1794,8 @@ fn rest_summary(
     after_skills: Option<&CharacterSkills>,
     before_time: Option<&crate::spacetimedb::CharacterTime>,
     after_time: Option<&crate::spacetimedb::CharacterTime>,
+    before_notoriety: Option<&CharacterNotoriety>,
+    after_notoriety: Option<&CharacterNotoriety>,
 ) -> RestSummary {
     let days = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes) / 1_440
@@ -1652,6 +1803,12 @@ fn rest_summary(
     let gold_spent = before_character
         .zip(after_character)
         .map_or(0, |(before, after)| before.gold.saturating_sub(after.gold));
+    let gold_earned = before_character
+        .zip(after_character)
+        .map_or(0, |(before, after)| after.gold.saturating_sub(before.gold));
+    let notoriety_gained = after_notoriety.map_or(0.0, |after| {
+        after.value - before_notoriety.map_or(0.0, |before| before.value)
+    });
     let healed = match (before_limbs, after_limbs) {
         (Some(before), Some(after)) => limb_deltas(before, after),
         _ => vec![],
@@ -1663,6 +1820,8 @@ fn rest_summary(
     RestSummary {
         days,
         gold_spent,
+        gold_earned,
+        notoriety_gained,
         healed,
         trained,
     }
@@ -1727,7 +1886,15 @@ async fn travel(
     .await;
     match outcome {
         Ok(super::PartyActionOutcome::Executed) => {
-            Redirect::to(&format!("/locations/settlement/{id}"))
+            match super::data::character(&state, character_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|character| character.current_quest_location_id)
+            {
+                Some(quest_id) => Redirect::to(&format!("/locations/quest/{quest_id}")),
+                None => Redirect::to(&format!("/locations/settlement/{id}")),
+            }
         }
         Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
         Err(_) => Redirect::to("/"),
@@ -1764,6 +1931,152 @@ async fn religion(
     session: Session,
 ) -> Html<String> {
     render_service_page(state, id, session, religion_page).await
+}
+
+#[derive(Deserialize)]
+struct ReligionForm {
+    religion_id: String,
+}
+
+#[derive(Serialize)]
+struct ReligionDialogue {
+    religion_id: Option<String>,
+    priest_religion_id: String,
+    can_choose: bool,
+}
+
+async fn religion_dialogue(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<ReligionDialogue> {
+    let settlement = state
+        .db
+        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let priest_religion_id = settlement
+        .as_ref()
+        .map(|settlement| settlement.religion_id.clone())
+        .unwrap_or_default();
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Json(ReligionDialogue {
+            religion_id: None,
+            priest_religion_id,
+            can_choose: false,
+        });
+    };
+    let can_choose =
+        settlement.is_some() && character.current_settlement_id.as_deref() == Some(id.as_str());
+    let condition = state
+        .db
+        .query::<CharacterCondition>(&format!(
+            "SELECT * FROM character_condition WHERE character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    Json(ReligionDialogue {
+        religion_id: condition.and_then(|condition| condition.religion_id),
+        priest_religion_id,
+        can_choose,
+    })
+}
+
+#[derive(Serialize)]
+struct ReligionChange {
+    changed: bool,
+    religion_id: Option<String>,
+    message: &'static str,
+}
+
+async fn set_religion(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<ReligionForm>,
+) -> Json<ReligionChange> {
+    let religion_id = form.religion_id.trim();
+    let settlement = state
+        .db
+        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(settlement) = settlement else {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "There is no church here to receive your profession.",
+        });
+    };
+    if religion_id != settlement.religion_id {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "This priest can receive you only into his own faith.",
+        });
+    }
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "Choose a character before speaking with the priest.",
+        });
+    };
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "You must be at this church to make a profession of faith.",
+        });
+    }
+    match state
+        .db
+        .call(
+            "set_character_religion",
+            &[json!(character.id), json!(religion_id)],
+        )
+        .await
+    {
+        Ok(()) => Json(ReligionChange {
+            changed: true,
+            religion_id: (!religion_id.is_empty()).then(|| religion_id.to_string()),
+            message: "Your profession has been recorded.",
+        }),
+        Err(error) => {
+            tracing::warn!(%error, character_id = character.id, "failed to set character religion");
+            Json(ReligionChange {
+                changed: false,
+                religion_id: None,
+                message: "The priest cannot receive your profession just now.",
+            })
+        }
+    }
+}
+
+async fn renounce_religion(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if session.character_id_u64() == Some(character_id) {
+        if let Err(error) = state
+            .db
+            .call("set_character_religion", &[json!(character_id), json!("")])
+            .await
+        {
+            tracing::warn!(%error, character_id, "failed to renounce character religion");
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
 }
 
 type ServiceRenderer = fn(

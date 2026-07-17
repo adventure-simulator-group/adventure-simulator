@@ -8,9 +8,31 @@ The server stores an epoch rather than updating the clock table continuously. Wh
 
 Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters are not yet required to have matching times to join or remain in the same party.
 
-The only implemented downtime effect is skill training. A character has a 24-hour daily budget with integer-minute allocations for every skill and labor. Leisure is the unallocated remainder and includes sleep. Server-side progression applies each skill's saved daily minutes proportionally over elapsed game time. Labor and leisure have no gameplay effects yet.
+Implemented schedule effects include skill training, activities, and strategic-condition recovery. Every character saves two independent 24-hour daily plans: one for settlement downtime and one for strategic travel. Both plans have integer-minute allocations for every skill plus Prayer, Labor, Thievery, and Raiding. Each plan has its own unallocated Leisure remainder, including sleep. Server-side progression selects the downtime plan while resting or catching up in a settlement and the travel plan while moving between locations, then applies its daily minutes proportionally over elapsed game time.
 
-At a settlement, a player may spend whole days resting at an inn or temple, moving that character's personal time forward even if it passes official time. Rest first convalesces every injured body part at 5 percentage points per day; only the days left after the slowest injury has fully recovered apply the saved training schedule. Inn rest costs 1 gold per completed day. Temple rest is free sanctuary intended for characters down on their luck; a future karma system will account for taking undue advantage of it.
+Activities combine reduced-rate training with another strategic result:
+
+- **Prayer** recites and practices prayers rather than studying doctrine. It trains Faith at 25% speed, adds a saturating daily-prayer morale source, and covers a Fervor-scaled prayer obligation. The downtime allocation governs ordinary settlement life. During travel, the travel allocation is checked proportionally over the journey; insufficient prayer records a recent morale penalty.
+- **Labor** earns personal gold from effective Strength and Endurance checks during settlement downtime and trains Will at 25% speed in either plan.
+- **Thievery** earns more gold in more populous settlements during downtime and trains Stealth at 25% speed in either plan. Stealth improves the take while reducing both notoriety and the continuous chance of discovery.
+- **Raiding** earns gold during downtime and trains weapon-appropriate combat skills at 25% speed in either plan. Equipped ranged weapons train Ranged; other weapons train Melee; heavier armor adds Block practice while lighter armor adds Dodge practice. Downtime Raiding produces high notoriety and a high retaliation chance.
+
+Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
+
+Thievery and Raiding discovery is resolved whenever settlement downtime advances, including explicit rest and off-screen catch-up. The continuous exposure formulas are:
+
+```rs
+thievery_discovery = 1 - exp(-0.12 * hours * population_scale / (1 + stealth));
+raiding_retaliation = 1 - exp(-0.35 * hours);
+```
+
+Raiding is checked first because an organized retaliation supersedes a watch patrol. On discovery, the activity reuses the same temporary quest-backed combat interruption as the religious settlement incident. **Caught Red-Handed** pits the party against the town watch; **Retaliation at Dawn** pits it against armed retainers. Both offer tactical combat, autoresolve, or retreat through the encounter map. The party's real active quest is restored after victory or retreat.
+
+At a settlement, a player may spend whole days resting at an inn or temple, moving that character's personal time forward even if it passes official time. Rest first convalesces every injured body part at 5 percentage points per day, restores 1% of maximum blood volume per day, and reduces the current fatigue reservoir; only the days left after the slowest injury has fully recovered apply the saved training schedule. Inn rest costs 1 gold per completed day. Temple rest is free sanctuary intended for characters down on their luck; a future karma system will account for taking undue advantage of it.
+
+Strategic travel adds calories to the fatigue reservoir at the current marching calibration of 6,000 calories per full day. This is intentionally an interim energy model: food consumption and day-boundary metabolism will eventually replace the reservoir. Recent morale events decay against each character's absolute strategic minute, so resting and travel both move them toward expiry.
+
+The calendar treats Day 7 and every seventh day thereafter as Sunday. A religious character who is in a settlement on Sunday receives an explicit call to keep a full day of worship and rest. Traveling during any part of Sunday counts as refusing that call. The server applies the same continuous Fervor- and party-Charisma-based morale penalty once for that Sunday, including when a journey begins Saturday night and ends Monday morning. A pending Sunday demand is automatically resolved as refused when the party departs; already resolved Sundays cannot be penalized twice.
 
 Throughout this wiki, the term "official time" refers to the *most current* time according to the server. Your character can be exactly one year behind official time, beyond that they will have to catch up with downtime (resting or training) before you can do anything else. Characters can move ahead of official time through settlement downtime; party time synchronization and its UI will be refined later.
 

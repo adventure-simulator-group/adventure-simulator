@@ -61,6 +61,7 @@ pub struct Settlement {
     pub population_level: i32,
     pub population_estimate: u32,
     pub scene_key: String,
+    pub religion_id: String,
     pub source_node_id: Option<u64>,
 }
 
@@ -448,8 +449,7 @@ pub struct CharacterTime {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterTrainingSchedule {
-    pub character_id: u64,
+pub struct ScheduleAllocation {
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,
@@ -462,6 +462,22 @@ pub struct CharacterTrainingSchedule {
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
     pub labor_minutes: u16,
+    pub prayer_minutes: u16,
+    pub thievery_minutes: u16,
+    pub raiding_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterTrainingSchedule {
+    pub character_id: u64,
+    pub downtime: ScheduleAllocation,
+    pub travel: ScheduleAllocation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterNotoriety {
+    pub character_id: u64,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -481,6 +497,54 @@ pub struct CharacterLimbs {
     pub head_health: f32,
     pub chest_health: f32,
     pub stomach_health: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterCondition {
+    pub character_id: u64,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub religion_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterStrategicCondition {
+    pub character_id: u64,
+    pub morale: f32,
+    pub morale_bonus: f32,
+    pub morale_bonus_cap: f32,
+    pub fervor: f32,
+    pub pain: f32,
+    pub blood_loss: f32,
+    pub fear: f32,
+    pub fatigue: f32,
+    pub incapacitation: f32,
+    pub check_multiplier: f32,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterMoraleSource {
+    pub id: String,
+    pub character_id: u64,
+    pub kind: String,
+    pub label: String,
+    pub magnitude: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReligiousDemand {
+    pub id: u64,
+    pub character_id: u64,
+    pub kind: String,
+    pub title: String,
+    pub description: String,
+    pub fervor: f32,
+    pub status: String,
+    pub created_at_minute: u64,
+    pub resolved_at_minute: Option<u64>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

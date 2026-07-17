@@ -4,22 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::schedule_allocation_type::ScheduleAllocation;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterTrainingSchedule {
     pub character_id: u64,
-    pub melee_minutes: u16,
-    pub dodge_minutes: u16,
-    pub block_minutes: u16,
-    pub ranged_minutes: u16,
-    pub will_minutes: u16,
-    pub charisma_minutes: u16,
-    pub medicine_minutes: u16,
-    pub faith_minutes: u16,
-    pub stealth_minutes: u16,
-    pub balance_minutes: u16,
-    pub surgeon_minutes: u16,
-    pub labor_minutes: u16,
+    pub downtime: ScheduleAllocation,
+    pub travel: ScheduleAllocation,
 }
 
 impl __sdk::InModule for CharacterTrainingSchedule {

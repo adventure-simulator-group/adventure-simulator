@@ -6,18 +6,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Settlement {
-    pub id: String,
-    pub name: String,
-    pub coord_x: f64,
-    pub coord_y: f64,
-    pub population_level: i32,
-    pub population_estimate: u32,
-    pub scene_key: String,
-    pub religion_id: String,
-    pub source_node_id: Option<u64>,
+pub struct StrategicIncident {
+    pub quest_id: String,
+    pub party_id: String,
+    pub settlement_id: String,
+    pub instigator_id: u64,
+    pub previous_active_quest_id: Option<String>,
+    pub kind: String,
+    pub status: String,
 }
 
-impl __sdk::InModule for Settlement {
+impl __sdk::InModule for StrategicIncident {
     type Module = super::RemoteModule;
 }

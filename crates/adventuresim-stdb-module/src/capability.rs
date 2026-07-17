@@ -3,8 +3,9 @@ use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::item::item as _;
 use crate::{
-    CharacterAttributes, CharacterEquip, CharacterSkills, InventoryItem, Item, ItemKind,
-    character_attributes, character_equip, character_skills, inventory_item,
+    CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
+    InventoryItem, Item, ItemKind, character_attributes, character_equip, character_limbs,
+    character_skills, character_stats, inventory_item,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -82,11 +83,23 @@ pub fn evaluate_character(
         .character_id()
         .find(character_id)
         .ok_or("Character equipment not found")?;
+    let body = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character limbs not found")?;
+    let essentials = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
     let equipment = StrategicEquipment::load(ctx, character_id, &equip);
     Ok(evaluate_capabilities(
         &attributes,
-        &HealthyBody,
-        &NeutralEssentials,
+        &body,
+        &essentials,
         &equipment,
         &skills,
     ))
@@ -122,11 +135,17 @@ pub fn refresh_capabilities(ctx: &ReducerContext, character_id: u64) -> Result<(
     refresh_character_capability(ctx, character_id).map(|_| ())
 }
 
-struct HealthyBody;
-
-impl PlayerBody for HealthyBody {
-    fn body_part_health(&self, _part: BodyPart) -> f32 {
-        1.0
+impl PlayerBody for CharacterLimbs {
+    fn body_part_health(&self, part: BodyPart) -> f32 {
+        match part {
+            BodyPart::LeftArm => self.left_arm_health,
+            BodyPart::RightArm => self.right_arm_health,
+            BodyPart::LeftLeg => self.left_leg_health,
+            BodyPart::RightLeg => self.right_leg_health,
+            BodyPart::Chest => self.chest_health,
+            BodyPart::Stomach => self.stomach_health,
+            BodyPart::Head => self.head_health,
+        }
     }
 
     fn body_weight(&self) -> f32 {
@@ -138,15 +157,13 @@ impl PlayerBody for HealthyBody {
     }
 }
 
-struct NeutralEssentials;
-
-impl PlayerEssentials for NeutralEssentials {
+impl PlayerEssentials for CharacterStats {
     fn calories_used_today(&self) -> f32 {
-        0.0
+        self.calories_used
     }
 
     fn focus_level(&self) -> f32 {
-        1.0
+        self.focus
     }
 }
 
@@ -196,7 +213,7 @@ impl PlayerSkills for CharacterSkills {
     }
 }
 
-struct StrategicEquipment {
+pub(crate) struct StrategicEquipment {
     weapon: Option<Item>,
     shield: Option<Item>,
     armor: [Option<Item>; 7],
@@ -204,7 +221,7 @@ struct StrategicEquipment {
 }
 
 impl StrategicEquipment {
-    fn load(ctx: &ReducerContext, character_id: u64, equip: &CharacterEquip) -> Self {
+    pub(crate) fn load(ctx: &ReducerContext, character_id: u64, equip: &CharacterEquip) -> Self {
         let definition = |inventory_id: Option<u64>| {
             inventory_id
                 .and_then(|id| ctx.db.inventory_item().id().find(id))

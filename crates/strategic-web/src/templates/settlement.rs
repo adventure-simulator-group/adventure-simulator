@@ -14,8 +14,8 @@ use super::{
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party,
-    PartyInventoryItem, Settlement,
+    CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
+    InventoryQuantityTarget, Party, PartyInventoryItem, Settlement,
 };
 
 #[derive(Clone, Debug)]
@@ -106,6 +106,8 @@ pub enum MerchantShop {
 pub struct RestSummary {
     pub days: u64,
     pub gold_spent: u32,
+    pub gold_earned: u32,
+    pub notoriety_gained: f32,
     pub healed: Vec<(String, f32)>,
     pub trained: Vec<(String, f32)>,
 }
@@ -487,7 +489,12 @@ pub fn party_personal_page(
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
+    religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
+    notoriety: f32,
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -502,9 +509,41 @@ pub fn party_personal_page(
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
-        aside class="right-sidebar" { (character_bio_rail(active_character)) }
+        aside class="right-sidebar" {
+            (strategic_condition_rail(condition, morale_sources))
+            @if let Some(demand) = religious_demand {
+                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+            }
+            (character_bio_rail(active_character, religion_id, notoriety, true, &location.base_path()))
+        }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
+}
+
+fn religious_demand_rail(
+    demand: &crate::spacetimedb::ReligiousDemand,
+    location_path: &str,
+    character_id: u64,
+) -> Markup {
+    let action = format!(
+        "{location_path}/party/{character_id}/religious-demand/{}",
+        demand.id
+    );
+    html! {
+        (sidebar_section("Conviction demands", html! {
+            article class="religious-demand" {
+                h3 { (&demand.title) }
+                p { (&demand.description) }
+                p class="text-muted small-copy" {
+                    "Observe and bear the practical cost, or decline. Party Charisma automatically reduces the morale cost of neglect and can remove it entirely."
+                }
+                form method="post" action=(action) class="religious-demand-actions" {
+                    button type="submit" name="choice" value="observe" class="btn btn-primary" { "Observe" }
+                    button type="submit" name="choice" value="refuse" class="btn btn-danger" { "Do not observe" }
+                }
+            }
+        }))
+    }
 }
 
 /// Selected party member stats and biography.
@@ -517,8 +556,12 @@ pub fn party_stats_page(
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
+    notoriety: f32,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -535,7 +578,14 @@ pub fn party_stats_page(
             (player_chat_area(selected, active_character))
         }
         aside class="right-sidebar" {
-            (character_bio_rail(selected))
+            (strategic_condition_rail(condition, morale_sources))
+            (character_bio_rail(
+                selected,
+                religion_id,
+                notoriety,
+                selected.id == active_character.id,
+                &location.base_path(),
+            ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
                     @if active_party.is_some_and(|party| party.leader_id == selected.id) {
@@ -616,11 +666,11 @@ fn service_page(
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
-                            div class="service-placeholder-list" {
-                                span { "Sanctuary services" }
-                                span class="badge badge-warning" { "TODO" }
+                            p { "Faith: " strong { (religion_name(Some(&settlement.religion_id))) } }
+                            @if active_character.is_some() {
+                                p class="small-copy" { "Speak with the priest below to profess this church's faith. Renunciation is available only from your biography." }
                             }
-                            p class="text-muted small-copy" { (todo) }
+                            p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
                     }
                     (rest_service_menu("Temple", &settlement.id, "temple", healing_days, rest_summary))
@@ -1060,7 +1110,7 @@ fn party_skills_rail(
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
                     }
-                    script src="/static/training-schedule.js?v=hourglass-handle-1" {}
+                    script src="/static/training-schedule.js?v=dual-context-1" {}
                 } @else {
                     (skills_table(skills, head_health, upper_health, lower_health, None))
                 }
@@ -1086,24 +1136,36 @@ fn skills_table(
                     col class="party-skill-meter-column";
                     @if schedule.is_some() {
                         col class="party-skill-time-column";
+                        col class="party-skill-time-column";
                     }
                 }
+                @if schedule.is_some() {
+                    thead { tr class="schedule-context-heading" {
+                        th colspan="3" { }
+                        th scope="col" title="Daily plan used while resting or waiting in a settlement" { "Downtime" }
+                        th scope="col" title="Daily plan used while traveling between locations" { "Travel" }
+                    } }
+                }
                 tbody {
-                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| s.will_minutes)))
-                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| s.charisma_minutes)))
-                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| s.medicine_minutes)))
-                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| s.faith_minutes)))
-                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| s.melee_minutes)))
-                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| s.ranged_minutes)))
-                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| s.dodge_minutes)))
-                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| s.block_minutes)))
-                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| s.stealth_minutes)))
-                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| s.balance_minutes)))
-                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| s.surgeon_minutes)))
+                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
+                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
+                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
+                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
+                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
+                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
+                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
+                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
+                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
+                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
+                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
                     @if let Some(schedule) = schedule {
-                        tr class="schedule-divider" { td colspan="4" {} }
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.labor_minutes, true))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false))
+                        tr class="schedule-divider" { td colspan="5" {} }
+                        tr class="schedule-section-heading" { td colspan="5" { "Activities" } }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, "travel_prayer_minutes", schedule.travel.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, "travel_labor_minutes", schedule.travel.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed in either plan."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, "travel_thievery_minutes", schedule.travel.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery; either plan trains Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, "travel_raiding_minutes", schedule.travel.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation; either plan trains with equipped weapons and armor."))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, "travel_leisure_minutes", 0, false, "Unallocated time in each plan for sleep and personal needs."))
                     }
             }
         }
@@ -1116,7 +1178,7 @@ fn party_skill_row(
     hours: f32,
     half_hours: f32,
     health: f32,
-    schedule_minutes: Option<u16>,
+    schedule_minutes: Option<(u16, u16)>,
 ) -> Markup {
     let rank = 5.0 * hours / (hours + half_hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
@@ -1132,16 +1194,22 @@ fn party_skill_row(
                     span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                     span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
                     span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
-                    @if let Some(minutes) = schedule_minutes {
-                        (schedule_handle(name, &format!("{}_minutes", icon), minutes))
+                    @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
+                        (schedule_handle(name, &format!("{}_minutes", icon), downtime_minutes, "downtime"))
+                        (schedule_handle(name, &format!("travel_{}_minutes", icon), travel_minutes, "travel"))
                     }
                 }
             }
-            @if let Some(minutes) = schedule_minutes {
+            @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
                 td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
                     (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
                     (schedule_step_button("Increase daily allocation", 15))
+                }
+                td class="party-skill-allocation travel-allocation" data-schedule-value=(format!("travel_{}_minutes", icon)) {
+                    (schedule_step_button("Decrease travel allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
+                    (schedule_step_button("Increase travel allocation", 15))
                 }
             }
         }
@@ -1151,28 +1219,40 @@ fn party_skill_row(
 fn schedule_special_row(
     label: &str,
     icon: &str,
-    name: &str,
-    minutes: u16,
+    downtime_name: &str,
+    downtime_minutes: u16,
+    travel_name: &str,
+    travel_minutes: u16,
     editable: bool,
+    description: &str,
 ) -> Markup {
     html! {
-        tr class="party-skill-row schedule-special-row" {
+        tr class="party-skill-row schedule-special-row" title=(description) {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
             td class="party-skill-name" { strong { (label) } }
             td class="party-skill-meter" {
                 div class="skill-rank-bar schedule-special-track" {
                 @if editable {
-                    (schedule_handle(label, name, minutes))
+                    (schedule_handle(label, downtime_name, downtime_minutes, "downtime"))
+                    (schedule_handle(label, travel_name, travel_minutes, "travel"))
                 } @else {
-                    span class="schedule-leisure-fill" data-leisure-fill {}
+                    span class="schedule-leisure-fill" data-leisure-fill="downtime" {}
+                    span class="schedule-leisure-fill travel-leisure-fill" data-leisure-fill="travel" {}
                 }
                 }
             }
-            td class="party-skill-allocation" data-schedule-value=(name) {
+            td class="party-skill-allocation" data-schedule-value=(downtime_name) {
                 @if editable {
                     (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(minutes)) }
+                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
                     (schedule_step_button("Increase daily allocation", 15))
+                } @else { span data-schedule-display { "0h" } }
+            }
+            td class="party-skill-allocation travel-allocation" data-schedule-value=(travel_name) {
+                @if editable {
+                    (schedule_step_button("Decrease travel allocation", -15))
+                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
+                    (schedule_step_button("Increase travel allocation", 15))
                 } @else { span data-schedule-display { "0h" } }
             }
         }
@@ -1198,12 +1278,12 @@ fn schedule_icon(label: &str, icon: &str) -> Markup {
     }
 }
 
-fn schedule_handle(label: &str, name: &str, minutes: u16) -> Markup {
+fn schedule_handle(label: &str, name: &str, minutes: u16, context: &str) -> Markup {
     html! {
         input type="hidden" name=(name) value=(minutes) data-schedule-input;
-        button type="button" class="schedule-handle" data-schedule-handle data-schedule-name=(name)
-            aria-label=(format!("{} daily allocation", label)) aria-valuemin="0" aria-valuemax="1440"
-            aria-valuenow=(minutes) title=(format!("{} per day", format_schedule_hours(minutes)))
+        button type="button" class=(format!("schedule-handle schedule-handle-{context}")) data-schedule-handle data-schedule-name=(name)
+            aria-label=(format!("{} {} allocation", label, context)) aria-valuemin="0" aria-valuemax="1440"
+            aria-valuenow=(minutes) title=(format!("{} per {} day", format_schedule_hours(minutes), context))
             data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
 }
@@ -1260,11 +1340,121 @@ pub(crate) fn character_visual_preview(character: &Character) -> Markup {
     )
 }
 
-fn character_bio_rail(character: &Character) -> Markup {
+fn religion_name(religion_id: Option<&str>) -> &'static str {
+    match religion_id {
+        Some("western_church") => "Western Church",
+        Some("reformed") => "Reformed",
+        Some("old_faith") => "Old Faith",
+        Some(_) => "Unknown faith",
+        None => "None",
+    }
+}
+
+fn character_bio_rail(
+    character: &Character,
+    religion_id: Option<&str>,
+    notoriety: f32,
+    can_renounce: bool,
+    location_path: &str,
+) -> Markup {
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
+                div { dt { "Notoriety" } dd title="Tracked now; consequences will be added later." { (format!("{notoriety:.1}")) } }
+                div class="character-religion" {
+                    dt { "Religion" }
+                    dd {
+                        (religion_name(religion_id))
+                        @if can_renounce && religion_id.is_some() {
+                            form method="post" action=(format!("{location_path}/party/{}/religion/renounce", character.id)) class="character-religion-action" {
+                                button type="submit" class="btn btn-danger" title="Renounce this faith" { "Renounce" }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+    }
+}
+
+fn strategic_condition_rail(
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+) -> Markup {
+    let Some(condition) = condition else {
+        return html! {};
+    };
+    let percent = |value: f32| format!("{:.0}%", value.max(0.0) * 100.0);
+    let fear_fill = (condition.fear.clamp(0.0, 1.0) * 100.0).round();
+    let bonus_fill = if condition.morale_bonus_cap > 0.0 {
+        (condition.morale_bonus / condition.morale_bonus_cap * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+    .round();
+    let meter_style = format!("--morale-fear: {fear_fill}%; --morale-bonus: {bonus_fill}%");
+    html! {
+        (sidebar_section("Condition", html! {
+            div class="morale-meter" tabindex="0" style=(meter_style) aria-label=(format!(
+                "Morale {:.1}; fear {}; personal share of party morale restoration {:.1}%",
+                condition.morale,
+                percent(condition.fear),
+                condition.morale_bonus * 100.0,
+            )) {
+                div class="morale-meter-heading" {
+                    strong { "Morale" }
+                    span { (format!("{:+.1}", condition.morale)) }
+                }
+                div class="morale-meter-track" aria-hidden="true" {
+                    span class="morale-meter-fear" {}
+                    span class="morale-meter-neutral" {}
+                    span class="morale-meter-bonus" {}
+                }
+                div class="morale-meter-labels" {
+                    span { "100% fear" }
+                    span { "Neutral" }
+                    span { (format!("{:.1}% ally lift", condition.morale_bonus * 100.0)) }
+                }
+                div class="morale-source-popup" role="tooltip" {
+                    strong { "Morale sources" }
+                    @if morale_sources.is_empty() {
+                        p { "No current morale effects." }
+                    } @else {
+                        ul {
+                            @for source in morale_sources {
+                                li class=(if source.magnitude >= 0.0 { "positive" } else { "negative" }) {
+                                    span { (&source.label) }
+                                    strong { (format!("{:+.1}", source.magnitude)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
+                div class="fervor-meter-heading" {
+                    strong { "Fervor" }
+                    span { (percent(condition.fervor)) }
+                }
+                div class="fervor-meter-track" aria-hidden="true" { span {} }
+                div class="fervor-meter-labels" {
+                    span { "Calm" }
+                    span { "Fervent" }
+                    span { "Frenzy" }
+                }
+                p class="fervor-help" role="tooltip" {
+                    "Faith, a strong same-faith cohort, and surplus morale raise Fervor. Party Charisma restrains it. Higher Fervor makes conviction demands and settlement incidents more likely."
+                }
+            }
+            dl class="character-bio strategic-condition-summary" {
+                div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
+                div { dt { "Incapacitation" } dd { (percent(condition.incapacitation)) } }
+                div { dt { "Pain" } dd { (percent(condition.pain)) } }
+                div { dt { "Blood loss" } dd { (percent(condition.blood_loss)) } }
+                div { dt { "Fear" } dd { (percent(condition.fear)) } }
+                div { dt { "Fatigue" } dd { (percent(condition.fatigue)) } }
+                div { dt { "Check effectiveness" } dd { (percent(condition.check_multiplier)) } }
             }
         }))
     }
@@ -1448,7 +1638,7 @@ pub(crate) fn party_portrait_overlay(
                                 format!("{}/party/{}/stats", location_path, member.id)
                             })
                             title=(format!("Inspect {}", member.name)) {
-                            (incapacitation_wheel_placeholder())
+                            (incapacitation_wheel(member.id))
                             span class="party-portrait-initial" {
                                 span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                                 span class="party-portrait-name" { (&member.name) }
@@ -1480,13 +1670,13 @@ pub(crate) fn party_portrait_overlay(
     }
 }
 
-/// Temporary presentation data until combat/incapacitation state is available to the strategic UI.
-fn incapacitation_wheel_placeholder() -> Markup {
+fn incapacitation_wheel(character_id: u64) -> Markup {
     html! {
         span class="incapacitation-wheel"
+            data-strategic-condition-wheel=(character_id)
             role="img"
-            aria-label="Incapacitation placeholder: 12% imbalance, 10% exhaustion, 8% pain, 14% blood loss, 9% fear, 11% fatigue"
-            title="Placeholder incapacitation: imbalance 12%, exhaustion 10%, pain 8%, blood loss 14%, fear 9%, fatigue 11%" {}
+            aria-label="Loading strategic condition"
+            title="Loading strategic condition" {}
     }
 }
 
@@ -1702,6 +1892,8 @@ fn rest_service_menu(
                     }
                     p { (summary.days) " day" @if summary.days != 1 { "s" } " passed." }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
+                    @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
+                    @if summary.notoriety_gained > 0.0 { p { "+" (format!("{:.1}", summary.notoriety_gained)) " notoriety gained." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }

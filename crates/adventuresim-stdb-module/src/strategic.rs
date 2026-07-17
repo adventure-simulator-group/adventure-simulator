@@ -1,9 +1,11 @@
+use adventuresim_core::morale::fervor_event_occurs;
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
     },
+    condition::character_condition,
     item::{InventoryItem, inventory_item, item},
     tactical::tactical_server_request,
     time::advance_character_time,
@@ -18,6 +20,18 @@ const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
+const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+
+fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+    let character_ids: Vec<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .map(|membership| membership.character_id)
+        .collect();
+    crate::condition::require_characters_ready(ctx, &character_ids)
+}
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestStatus {
@@ -38,6 +52,8 @@ pub struct Settlement {
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
     pub scene_key: String,
+    /// The single faith represented by this settlement's church and priest.
+    pub religion_id: String,
     /// Viabundus node that supplies this settlement, if it was imported from
     /// the historical world dataset. Demo settlements deliberately leave this
     /// empty.
@@ -123,6 +139,7 @@ pub struct SettlementImport {
     /// Viabundus records this approximation in thousands of inhabitants; zero means absent.
     pub population_estimate: u32,
     pub scene_key: String,
+    pub religion_id: String,
 }
 
 /// Start a world import. This must be called before sending any import batch.
@@ -246,6 +263,7 @@ pub fn import_settlements(
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
             scene_key: settlement.scene_key,
+            religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -292,6 +310,22 @@ pub struct QuestIssuer {
     pub settlement_id: String,
     #[index(btree)]
     pub service_id: String,
+}
+
+/// A quest-backed strategic interruption which offers tactical combat,
+/// autoresolve, or retreat through the normal encounter flow.
+#[derive(Clone, Debug)]
+#[table(name = strategic_incident, public)]
+pub struct StrategicIncident {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub settlement_id: String,
+    pub instigator_id: u64,
+    pub previous_active_quest_id: Option<String>,
+    pub kind: String,
+    pub status: String,
 }
 
 #[derive(Clone, Debug)]
@@ -1901,6 +1935,13 @@ pub(crate) fn record_battle_result(
             quest_id: quest_id.to_string(),
             character_id: member.character_id,
         });
+        crate::condition::record_morale_event(
+            ctx,
+            member.character_id,
+            "victory",
+            5.0 + quest.difficulty.max(0) as f32,
+            Some(quest_id.to_string()),
+        )?;
     }
     let mut combined: HashMap<String, u32> = HashMap::new();
     for (item_id, quantity) in dropped_items {
@@ -2964,6 +3005,254 @@ fn straight_line_distance_m(
     }
 }
 
+struct IncidentSpec<'a> {
+    kind: &'a str,
+    title: &'a str,
+    description: String,
+    enemy_type: &'a str,
+    difficulty: i32,
+}
+
+fn create_strategic_incident(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement: &Settlement,
+    instigator_id: u64,
+    quest_id: String,
+    spec: IncidentSpec<'_>,
+) -> Result<Option<String>, String> {
+    let Some(mut party) = ctx.db.party().id().find(&party_id.to_string()) else {
+        return Ok(None);
+    };
+    if party.current_settlement_id.as_deref() != Some(&settlement.id) {
+        return Ok(None);
+    }
+    if ctx
+        .db
+        .strategic_incident()
+        .party_id()
+        .filter(party_id)
+        .any(|incident| incident.status == "pending")
+    {
+        return Ok(None);
+    }
+    ctx.db.quest().insert(Quest {
+        id: quest_id.clone(),
+        title: spec.title.into(),
+        description: spec.description.clone(),
+        difficulty: spec.difficulty,
+        gold_reward: 0,
+        xp_reward: 0,
+        settlement_id: settlement.id.clone(),
+        status: QuestStatus::Accepted,
+        accepted_by: Some(party_id.into()),
+        enemy_type: spec.enemy_type.into(),
+        enemy_count: ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(party_id)
+            .count()
+            .max(2) as i32,
+        location_description: spec.description,
+        location_scene_key: settlement.scene_key.clone(),
+        location_coord_x: settlement.coord_x,
+        location_coord_y: settlement.coord_y,
+        coordinates_are_geographic: settlement.source_node_id.is_some(),
+        distance_m: 0,
+    });
+    ctx.db.strategic_incident().insert(StrategicIncident {
+        quest_id: quest_id.clone(),
+        party_id: party_id.into(),
+        settlement_id: settlement.id.clone(),
+        instigator_id,
+        previous_active_quest_id: party.active_quest_id.clone(),
+        kind: spec.kind.into(),
+        status: "pending".into(),
+    });
+
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+            member.current_settlement_id = None;
+            member.current_quest_location_id = Some(quest_id.clone());
+            ctx.db.character().id().update(member);
+        }
+    }
+    party.current_settlement_id = None;
+    party.current_quest_location_id = Some(quest_id.clone());
+    party.active_quest_id = Some(quest_id.clone());
+    ctx.db.party().id().update(party);
+    Ok(Some(quest_id))
+}
+
+fn maybe_trigger_religious_incident(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement: &Settlement,
+) -> Result<Option<String>, String> {
+    if ctx
+        .db
+        .strategic_incident()
+        .party_id()
+        .filter(party_id)
+        .any(|incident| incident.kind == "religious" && incident.settlement_id == settlement.id)
+    {
+        return Ok(None);
+    }
+    let mut instigator = None;
+    for membership in ctx.db.party_member().party_id().filter(party_id) {
+        crate::condition::initialize_character_condition(ctx, membership.character_id)?;
+        let religion = ctx
+            .db
+            .character_condition()
+            .character_id()
+            .find(membership.character_id)
+            .and_then(|condition| condition.religion_id);
+        if religion
+            .as_deref()
+            .is_none_or(|faith| faith == settlement.religion_id)
+        {
+            continue;
+        }
+        let condition =
+            crate::condition::refresh_character_strategic_condition(ctx, membership.character_id)?;
+        if instigator
+            .as_ref()
+            .is_none_or(|(_, fervor)| condition.fervor > *fervor)
+        {
+            instigator = Some((membership.character_id, condition.fervor));
+        }
+    }
+    let Some((instigator_id, instigator_fervor)) = instigator else {
+        return Ok(None);
+    };
+    let roll = (ctx.random::<u64>() >> 40) as f32 / ((1_u32 << 24) as f32);
+    if !fervor_event_occurs(instigator_fervor, roll) {
+        return Ok(None);
+    }
+    let quest_id = format!("religious-incident-{party_id}-{}", settlement.id);
+    create_strategic_incident(
+        ctx,
+        party_id,
+        settlement,
+        instigator_id,
+        quest_id,
+        IncidentSpec {
+            kind: "religious",
+            title: "A Quarrel at the Gate",
+            description: format!(
+                "At the gate of {}, a loud insult against the local faith has drawn an angry crowd. Combat is imminent, but the party can still withdraw and travel away.",
+                settlement.name
+            ),
+            enemy_type: "angry townsfolk",
+            difficulty: 1,
+        },
+    )
+}
+
+pub(crate) fn maybe_trigger_activity_incident(
+    ctx: &ReducerContext,
+    character_id: u64,
+    risks: crate::time::ActivityRisks,
+) -> Result<Option<String>, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let Some(party_id) = character.party_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(settlement_id) = character.current_settlement_id.as_ref() else {
+        return Ok(None);
+    };
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id)
+        .ok_or("Character's settlement not found")?;
+    let roll = |ctx: &ReducerContext| (ctx.random::<u64>() >> 40) as f32 / ((1_u32 << 24) as f32);
+    let outcome = if fervor_event_occurs(risks.raiding_retaliation, roll(ctx)) {
+        Some((
+            "raiding",
+            "Retaliation at Dawn",
+            "The people raided from the surrounding countryside have tracked the party back to town. An armed band closes in; fight them or flee by road.",
+            "armed retainers",
+            2,
+        ))
+    } else if fervor_event_occurs(risks.thievery_discovery, roll(ctx)) {
+        Some((
+            "thievery",
+            "Caught Red-Handed",
+            "A theft has been discovered and the watch has cornered the party near the market. Fight through them or abandon the settlement.",
+            "town watch",
+            1,
+        ))
+    } else {
+        None
+    };
+    let Some((kind, title, description, enemy_type, difficulty)) = outcome else {
+        return Ok(None);
+    };
+    let quest_id = format!(
+        "{kind}-incident-{party_id}-{}-{}",
+        settlement.id,
+        ctx.random::<u64>()
+    );
+    create_strategic_incident(
+        ctx,
+        party_id,
+        &settlement,
+        character_id,
+        quest_id,
+        IncidentSpec {
+            kind,
+            title,
+            description: description.into(),
+            enemy_type,
+            difficulty,
+        },
+    )
+}
+
+fn finish_strategic_incident(
+    ctx: &ReducerContext,
+    quest_id: &str,
+    status: &str,
+) -> Result<(), String> {
+    let Some(mut incident) = ctx
+        .db
+        .strategic_incident()
+        .quest_id()
+        .find(&quest_id.to_string())
+    else {
+        return Ok(());
+    };
+    if incident.status != "pending" {
+        return Ok(());
+    }
+    incident.status = status.into();
+    ctx.db
+        .strategic_incident()
+        .quest_id()
+        .update(incident.clone());
+    if let Some(mut party) = ctx.db.party().id().find(&incident.party_id)
+        && party.active_quest_id.as_deref() == Some(quest_id)
+    {
+        party.active_quest_id = incident.previous_active_quest_id;
+        ctx.db.party().id().update(party);
+    }
+    if status == "avoided"
+        && let Some(mut quest) = ctx.db.quest().id().find(&quest_id.to_string())
+    {
+        quest.status = QuestStatus::Completed;
+        ctx.db.quest().id().update(quest);
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn travel_to_quest(
     ctx: &ReducerContext,
@@ -2994,6 +3283,7 @@ pub fn travel_to_quest(
     if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
         return Err("Travel to the quest must begin at its posting settlement".into());
     }
+    require_party_ready(ctx, &party_id)?;
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
     for membership in ctx.db.party_member().party_id().filter(&party_id) {
@@ -3020,11 +3310,30 @@ pub fn travel_to_settlement(
         return Err("Settlement not found".into());
     };
 
-    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
+    let mut party = character
+        .party_id
+        .as_ref()
+        .map(|party_id| {
+            ctx.db
+                .party()
+                .id()
+                .find(party_id)
+                .ok_or_else(|| "Party not found".to_string())
+        })
+        .transpose()?;
+    if let Some(party) = party.as_ref() {
+        if party.leader_id != character_id {
+            return Err("Only the party leader can travel".into());
+        }
+        require_party_ready(ctx, &party.id)?;
+    } else {
+        crate::condition::require_character_ready(ctx, character_id)?;
+    }
 
-    if let Some(origin_id) = &character.current_settlement_id {
+    let travel_minutes = if let Some(origin_id) = &character.current_settlement_id {
         let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
             return Err("Character's current settlement does not exist".into());
         };
@@ -3039,17 +3348,13 @@ pub fn travel_to_settlement(
             else {
                 return Err("That settlement is not directly connected by land or ferry".into());
             };
-            advance_character_time(ctx, character_id, journey_minutes(distance_m))?;
+            journey_minutes(distance_m)
         } else {
             let distance_km = ((origin.coord_x - destination.coord_x).powi(2)
                 + (origin.coord_y - destination.coord_y).powi(2))
             .sqrt()
             .ceil() as u64;
-            advance_character_time(
-                ctx,
-                character_id,
-                journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER)),
-            )?;
+            journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER))
         }
     } else if let Some(quest_id) = &character.current_quest_location_id {
         let Some(quest) = ctx.db.quest().id().find(quest_id) else {
@@ -3062,59 +3367,53 @@ pub fn travel_to_settlement(
             destination.coord_y,
             quest.coordinates_are_geographic && destination.source_node_id.is_some(),
         );
-        advance_character_time(ctx, character_id, quest_journey_minutes(distance_m))?;
+        quest_journey_minutes(distance_m)
     } else {
         return Err("Character is not at a known location".into());
-    }
+    };
 
     let departing_quest = character.current_quest_location_id.clone();
-    character.current_settlement_id = Some(settlement_id.clone());
-    character.current_quest_location_id = None;
-    let party_id = character.party_id.clone();
-    ctx.db.character().id().update(character);
+    let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
+        ctx.db
+            .party_member()
+            .party_id()
+            .filter(&party.id)
+            .map(|membership| membership.character_id)
+            .collect()
+    } else {
+        vec![character_id]
+    };
+    for traveler_id in traveler_ids {
+        advance_character_time(ctx, traveler_id, travel_minutes)?;
+        let mut traveler = ctx
+            .db
+            .character()
+            .id()
+            .find(traveler_id)
+            .ok_or("Party member not found")?;
+        traveler.current_settlement_id = Some(settlement_id.clone());
+        traveler.current_quest_location_id = None;
+        ctx.db.character().id().update(traveler);
+    }
 
-    if let Some(party_id) = party_id {
-        if let Some(mut party) = ctx.db.party().id().find(&party_id) {
-            if party.leader_id == character_id {
-                if departing_quest.is_some() {
-                    let members: Vec<_> =
-                        ctx.db.party_member().party_id().filter(&party_id).collect();
-                    for membership in members {
-                        if membership.character_id == character_id {
-                            continue;
-                        }
-                        if let Some(mut member) =
-                            ctx.db.character().id().find(membership.character_id)
-                        {
-                            let quest = ctx
-                                .db
-                                .quest()
-                                .id()
-                                .find(departing_quest.as_ref().unwrap())
-                                .ok_or("Party's quest location does not exist")?;
-                            let distance_m = straight_line_distance_m(
-                                quest.location_coord_x,
-                                quest.location_coord_y,
-                                destination.coord_x,
-                                destination.coord_y,
-                                quest.coordinates_are_geographic
-                                    && destination.source_node_id.is_some(),
-                            );
-                            advance_character_time(
-                                ctx,
-                                member.id,
-                                quest_journey_minutes(distance_m),
-                            )?;
-                            member.current_settlement_id = Some(settlement_id.clone());
-                            member.current_quest_location_id = None;
-                            ctx.db.character().id().update(member);
-                        }
-                    }
-                }
-                party.current_settlement_id = Some(settlement_id);
-                party.current_quest_location_id = None;
-                ctx.db.party().id().update(party);
-            }
+    if let Some(ref mut party) = party {
+        party.current_settlement_id = Some(settlement_id.clone());
+        party.current_quest_location_id = None;
+        ctx.db.party().id().update(party.clone());
+        let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
+            ctx.db
+                .strategic_incident()
+                .quest_id()
+                .find(quest_id)
+                .is_some()
+        });
+        if let Some(quest_id) = departing_quest.as_deref()
+            && fled_incident
+        {
+            finish_strategic_incident(ctx, quest_id, "avoided")?;
+        }
+        if !fled_incident {
+            maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
         }
     }
 
@@ -3155,6 +3454,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
+    finish_strategic_incident(ctx, &quest_id, "resolved")?;
     Ok(())
 }
 
@@ -3251,6 +3551,7 @@ pub fn autoresolve_quest(
     {
         return Err("Party must be at its active quest location".into());
     }
+    require_party_ready(ctx, &party_id)?;
 
     let quest = ctx
         .db
@@ -3258,16 +3559,9 @@ pub fn autoresolve_quest(
         .id()
         .find(&quest_id)
         .ok_or("Quest not found")?;
-    // The current enemy generator equips its placeholder enemies with clubs.
-    let dropped_item = "club";
-    record_battle_result(
-        ctx,
-        &party_id,
-        &quest_id,
-        &format!("autoresolve-{quest_id}"),
-        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
-        true,
-    )?;
+    if ctx.db.battle_result().quest_id().find(&quest_id).is_some() {
+        return Ok(());
+    }
 
     for member in ctx.db.party_member().party_id().filter(&party_id) {
         if let Some(mut limbs) = ctx
@@ -3276,7 +3570,10 @@ pub fn autoresolve_quest(
             .character_id()
             .find(member.character_id)
         {
-            let damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            let condition =
+                crate::condition::refresh_character_strategic_condition(ctx, member.character_id)?;
+            let base_damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
+            let damage = base_damage * (2.0 - condition.check_multiplier);
             match ctx.random::<u64>() % 7 {
                 0 => limbs.left_arm_health = (limbs.left_arm_health - damage).max(0.0),
                 1 => limbs.right_arm_health = (limbs.right_arm_health - damage).max(0.0),
@@ -3287,8 +3584,24 @@ pub fn autoresolve_quest(
                 _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
             }
             ctx.db.character_limbs().character_id().update(limbs);
+            crate::condition::apply_blood_loss(
+                ctx,
+                member.character_id,
+                damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
+            )?;
+            crate::capability::refresh_character_capability(ctx, member.character_id)?;
         }
     }
+    // The current enemy generator equips its placeholder enemies with clubs.
+    let dropped_item = "club";
+    record_battle_result(
+        ctx,
+        &party_id,
+        &quest_id,
+        &format!("autoresolve-{quest_id}"),
+        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        true,
+    )?;
     complete_quest(ctx, quest_id)
 }
 
@@ -3304,12 +3617,36 @@ pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Resul
 #[reducer]
 pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
     let settlements = [
-        ("riverdale", "Riverdale", 0.0, 0.0, 3, "hills"),
-        ("ironforge", "Ironforge", 100.0, 50.0, 4, "desert"),
-        ("willowmere", "Willowmere", -50.0, 75.0, 2, "hills"),
+        (
+            "riverdale",
+            "Riverdale",
+            0.0,
+            0.0,
+            3,
+            "hills",
+            "western_church",
+        ),
+        (
+            "ironforge",
+            "Ironforge",
+            100.0,
+            50.0,
+            4,
+            "desert",
+            "reformed",
+        ),
+        (
+            "willowmere",
+            "Willowmere",
+            -50.0,
+            75.0,
+            2,
+            "hills",
+            "old_faith",
+        ),
     ];
 
-    for (id, name, x, y, pop, scene) in settlements {
+    for (id, name, x, y, pop, scene, religion_id) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
@@ -3319,6 +3656,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 population_level: pop,
                 population_estimate: 0,
                 scene_key: scene.into(),
+                religion_id: religion_id.into(),
                 source_node_id: None,
             });
         }

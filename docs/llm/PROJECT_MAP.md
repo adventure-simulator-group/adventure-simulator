@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (359)
+## Files (381)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -33,6 +33,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-character-creator/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-character-creator/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-core/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-core/src/activity.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/attribute.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/body.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
@@ -41,6 +42,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/essential.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
@@ -67,14 +69,22 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_attributes_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_capability_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_capability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_condition_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_condition_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_equip_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_equip_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_limbs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_limbs_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_morale_source_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_morale_source_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_notoriety_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_notoriety_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_skills_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_skills_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_stats_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_stats_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_strategic_condition_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_strategic_condition_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_time_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_time_type.rs` — Generated SpacetimeDB data type.
@@ -129,6 +139,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/local_chat_message_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/morale_event_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/morale_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_action_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_action_request_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_inventory_item_table.rs` — Generated SpacetimeDB table interface.
@@ -155,8 +167,11 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/record_local_npc_message_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/recruitment_requirements_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/refresh_capabilities_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/refresh_strategic_condition_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/refresh_world_clock_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reject_party_join_request_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/religious_demand_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/religious_demand_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/remove_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rename_saved_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_general_party_join_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -164,20 +179,25 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_for_scene_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_to_join_party_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/resolve_religious_demand_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rest_at_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/save_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/saved_recruitment_role_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/saved_recruitment_role_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/schedule_allocation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/seed_bot_join_requests_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_damaged_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_party_companions_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_world_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/send_local_chat_message_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/set_character_religion_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/set_inventory_quantity_target_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/store_battle_loot_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/strategic_incident_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/strategic_incident_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/synchronize_character_time_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_type.rs` — Generated SpacetimeDB data type.
@@ -210,6 +230,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/README.md` — Component overview and usage notes.
 - `crates/adventuresim-stdb-module/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/character.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/condition.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
@@ -328,6 +349,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
+- `crates/strategic-web/static/strategic-condition.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.

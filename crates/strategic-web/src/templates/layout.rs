@@ -131,7 +131,7 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=quest-status-2";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=typed-frontend-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=dual-context-schedule-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=typed-frontend-1";
 
                 // Datastar
@@ -145,9 +145,10 @@ fn page_shell(
                     script src="/static/party-trade.js?v=live-control-init-1" {}
                     script src="/static/party-notifications.js?v=party-requests-2" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-2" defer {}
-                    script src="/static/service-quests.js?v=quest-links-live-3" defer {}
+                    script src="/static/service-quests.js?v=settlement-faith-1" defer {}
                     script src="/static/chat-resize.js?v=chat-resize-1" defer {}
                     script src="/static/local-chat.js?v=quest-links-live-2" defer {}
+                    script src="/static/strategic-condition.js?v=strategic-condition-1" defer {}
                 }
             }
             body {

@@ -13,7 +13,7 @@ pub fn elapsed_official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
 }
 
 /// Sum the daily minutes assigned to training and labor activities.
-pub fn allocated_schedule_minutes(daily_minutes: [u16; 12]) -> u64 {
+pub fn allocated_schedule_minutes<const N: usize>(daily_minutes: [u16; N]) -> u64 {
     daily_minutes.into_iter().map(u64::from).sum()
 }
 

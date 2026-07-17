@@ -1,7 +1,7 @@
 //! Character route handlers
 
 use axum::{
-    Form, Router,
+    Form, Json, Router,
     extract::{Path, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -11,7 +11,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, set_character_cookie};
-use crate::spacetimedb::Character;
+use crate::spacetimedb::{Character, CharacterStrategicCondition};
 use crate::templates::character::{character_new_page, characters_list_page};
 
 pub fn routes() -> Router<AppState> {
@@ -20,7 +20,32 @@ pub fn routes() -> Router<AppState> {
         .route("/characters/new", get(new_character_form))
         .route("/characters", post(create_character))
         .route("/characters/{id}/select", post(select_character))
+        .route("/api/characters/{id}/condition", get(character_condition))
         .route("/characters/switch", post(switch_character))
+}
+
+async fn character_condition(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+) -> Json<Option<CharacterStrategicCondition>> {
+    if let Err(error) = state
+        .db
+        .call("refresh_strategic_condition", &[json!(id)])
+        .await
+    {
+        tracing::warn!(%error, character_id = id, "failed to refresh strategic condition");
+        return Json(None);
+    }
+    Json(
+        state
+            .db
+            .query_one(&format!(
+                "SELECT * FROM character_strategic_condition WHERE character_id = {id}"
+            ))
+            .await
+            .ok()
+            .flatten(),
+    )
 }
 
 #[derive(Deserialize)]

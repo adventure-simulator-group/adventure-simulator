@@ -430,7 +430,7 @@ pub fn aggregate_check_bars(
                 ("Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, contribution.map_or(0.0, |value| value.charisma)),
                 ("Faith", "faith", "faith", checks.faith, party.faith_target, contribution.map_or(0.0, |value| value.faith)),
             ] {
-                @if contribution.is_none() || (added > 0.005 && current < 4.995) {
+                @if contribution.is_none() || added.abs() > 0.005 {
                     (aggregate_check_control(party, label, icon, field, current, target, added, can_manage))
                 }
             }
@@ -453,7 +453,7 @@ fn aggregate_check_control(
     let deficient = target > 0.0 && current + 0.001 < target;
     let current_width = (current.clamp(0.0, 5.0) / 5.0) * 100.0;
     let projected = (current + contribution).clamp(0.0, 5.0);
-    let contribution_width = ((projected - current.clamp(0.0, 5.0)) / 5.0) * 100.0;
+    let contribution_width = ((projected - current.clamp(0.0, 5.0)).abs() / 5.0) * 100.0;
     let target_position = (target / 5.0) * 100.0;
     html! {
         div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
@@ -492,19 +492,19 @@ fn party_check_target_form(
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
-                title=(if contribution > 0.005 {
-                    format!("{label}: {current:.1} + {contribution:.1} = {:.1}; target {target:.0}", current + contribution)
+                title=(if contribution.abs() > 0.005 {
+                    format!("{label}: {current:.1} {contribution:+.1} = {:.1}; target {target:.0}", current + contribution)
                 } else {
                     format!("{label}: {current:.1}; target {target:.0}")
                 }) {
                 span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
-                @if contribution > 0.005 {
-                    span class="party-check-contribution"
-                        style=(format!("left:{current_width:.1}%;width:{contribution_width:.1}%")) {}
+                @if contribution.abs() > 0.005 {
+                    span class=(if contribution > 0.0 { "party-check-contribution" } else { "party-check-contribution party-check-contribution-negative" })
+                        style=(format!("left:{:.1}%;width:{contribution_width:.1}%", if contribution > 0.0 { current_width } else { current_width - contribution_width })) {}
                 }
                 span class="party-check-exact" {
-                    @if contribution > 0.005 {
-                        (format!("{label}: {current:.1} + {contribution:.1} = {:.1} · target {target:.0}", current + contribution))
+                    @if contribution.abs() > 0.005 {
+                        (format!("{label}: {current:.1} {contribution:+.1} = {:.1} · target {target:.0}", current + contribution))
                     } @else {
                         (format!("{label}: {current:.1} · target {target:.0}"))
                     }
