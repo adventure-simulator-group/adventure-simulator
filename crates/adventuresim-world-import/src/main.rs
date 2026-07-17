@@ -8,14 +8,14 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, CrossingTraversal,
     CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
     FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover, GeologicAgeEvidence,
-    GeologicEra, GeologicLithologyEvidence, IgneousRock, InlandWaterSize, MarineWaterAccess,
-    MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SedimentaryRock, SettlementAliasImport,
+    GeologicEra, GeologicLithologyEvidence, GridCellSizeMeters, IgneousRock, InlandWaterSize,
+    MarineWaterAccess, MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence,
+    PotentialVegetation, PotentialVegetationFormation, SedimentaryRock, SettlementAliasImport,
     SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
     SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
-    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
-    TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport,
-    WrbReferenceGroup,
+    SpatialGridSpec, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement,
+    WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -52,6 +52,8 @@ struct Args {
     hydrology_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
+    #[arg(long, default_value_t = GridCellSizeMeters::default())]
+    grid_cell_size_meters: GridCellSizeMeters,
     #[arg(long)]
     output: Option<PathBuf>,
     #[arg(long)]
@@ -80,19 +82,21 @@ fn run(args: Args) -> Result<()> {
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
     }
-    let world = WorldBuilder::new(args.year).build_from_sources(
-        &args.viabundus_dir,
-        &args.elevation_dir,
-        &args.land_use_dir,
-        &args.forest_cover_dir,
-        &args.potential_vegetation_dir,
-        &args.tree_species_archive,
-        &args.soil_dir,
-        &args.geology_geopackage,
-        &args.religion_regions,
-        &args.drought_netcdf,
-        &args.hydrology_dir,
-    )?;
+    let world = WorldBuilder::new(args.year)
+        .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
+        .build_from_sources(
+            &args.viabundus_dir,
+            &args.elevation_dir,
+            &args.land_use_dir,
+            &args.forest_cover_dir,
+            &args.potential_vegetation_dir,
+            &args.tree_species_archive,
+            &args.soil_dir,
+            &args.geology_geopackage,
+            &args.religion_regions,
+            &args.drought_netcdf,
+            &args.hydrology_dir,
+        )?;
     let output = args
         .output
         .clone()
@@ -858,25 +862,64 @@ fn default_output(year: i32) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use adventuresim_world_schema::{
-        AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
-        DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
-        ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
-        GeologicUnitId, HabitatSuitability, IgneousRock, InferredGeologicSetting,
+        AgriculturalLimitation, AvailableWaterCapacity, CURRENT_INFERENCE_RULES_VERSION,
+        CanopyDensity, CompiledWorld, DominantLeafType, DroughtHistory, DroughtProfile,
+        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, GeologicAgeEvidence,
+        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
+        GridCellSizeMeters, HabitatSuitability, IgneousRock, InferredGeologicSetting,
         InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
         MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology, MineralSoil,
         MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
         OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
         PotentialVegetationFormation, SettlementDescriptionImport, SettlementDescriptionKind,
         SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
-        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
-        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
+        SoilProperties, SoilSubstrate, SoilWaterRegime, SpatialGridSpec, StoneContentPercent,
+        SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+        TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
+        WorldBuildReport, WorldMetadata, WrbReferenceGroup,
     };
+    use clap::Parser;
 
     use super::{
-        MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
+        Args, MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
         encode_settlement_description, encode_travel_edge, serialize_batches,
     };
+
+    #[test]
+    fn cli_validates_grid_cell_size_at_the_trust_boundary() {
+        let args =
+            Args::try_parse_from(["world-import", "--grid-cell-size-meters", "250"]).unwrap();
+        assert_eq!(args.grid_cell_size_meters.get(), 250);
+        for value in ["0", "251", "100001", "not-a-number"] {
+            assert!(
+                Args::try_parse_from(["world-import", "--grid-cell-size-meters", value]).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn grid_spec_is_part_of_serialized_world_artifact_identity() {
+        let world = |cell_size| CompiledWorld {
+            metadata: WorldMetadata {
+                schema_version: WORLD_SCHEMA_VERSION,
+                inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+                spatial_grid: SpatialGridSpec::new(GridCellSizeMeters::new(cell_size).unwrap()),
+                world_year: 1544,
+                sources: Vec::new(),
+                road_types: Vec::new(),
+            },
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            settlements: Vec::new(),
+            settlement_aliases: Vec::new(),
+            settlement_descriptions: Vec::new(),
+            report: WorldBuildReport::default(),
+        };
+        let default_bytes = serde_json::to_vec(&world(1_000)).unwrap();
+        let fine_bytes = serde_json::to_vec(&world(250)).unwrap();
+        assert_ne!(default_bytes, fine_bytes);
+        assert_ne!(blake3::hash(&default_bytes), blake3::hash(&fine_bytes));
+    }
 
     #[test]
     fn encodes_shared_enum_for_spacetimedb_sats_json() {

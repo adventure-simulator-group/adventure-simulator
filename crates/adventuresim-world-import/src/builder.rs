@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, WorldBuildReport,
+    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, SpatialGridSpec,
+    WorldBuildReport,
 };
 
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
 #[derive(Clone, Copy, Debug)]
 pub struct WorldBuilder {
     year: i32,
+    spatial_grid: SpatialGridSpec,
 }
 
 /// Viabundus-only enrichment output used to inspect source-boundary behavior
@@ -28,12 +30,20 @@ pub struct ViabundusEnrichment {
 }
 
 impl WorldBuilder {
-    pub const fn new(year: i32) -> Self {
-        Self { year }
+    pub fn new(year: i32) -> Self {
+        Self {
+            year,
+            spatial_grid: SpatialGridSpec::default(),
+        }
+    }
+
+    pub const fn with_spatial_grid(mut self, spatial_grid: SpatialGridSpec) -> Self {
+        self.spatial_grid = spatial_grid;
+        self
     }
 
     pub fn build_from_viabundus(self, directory: &Path) -> Result<ViabundusEnrichment> {
-        let draft = viabundus::compile(directory, self.year)?;
+        let draft = viabundus::compile(directory, self.year, self.spatial_grid)?;
         Ok(ViabundusEnrichment {
             settlement_aliases: draft.settlement_aliases,
             settlement_descriptions: draft.settlement_descriptions,
@@ -55,7 +65,7 @@ impl WorldBuilder {
         drought_netcdf: &Path,
         hydrology_directory: &Path,
     ) -> Result<CompiledWorld> {
-        let draft = viabundus::compile(viabundus_directory, self.year)?;
+        let draft = viabundus::compile(viabundus_directory, self.year, self.spatial_grid)?;
         let draft = elevation::enrich(draft, elevation_directory)?;
         let draft = land_use::enrich(draft, land_use_directory)?;
         let draft = forest_cover::enrich(draft, forest_cover_directory)?;

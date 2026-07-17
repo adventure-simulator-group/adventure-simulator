@@ -19,6 +19,13 @@ import types shared by the compiler and strategic module. The strategic module
 accepts those records through reducers but never parses raw datasets or depends
 on native geospatial libraries.
 
+Every gridded enrichment shares the canonical `SpatialGridSpec` described in
+`docs/SPATIAL_GRID.md`. The complete spec and inference-rules version are
+serialized in world metadata, so either changing alters the content-addressed
+artifact identity. Source coverage extents remain source-manifest concerns.
+The grid is compiler metadata, not a SpacetimeDB table shape: no grid columns or
+tactical coordinates are persisted.
+
 Source modules first parse into importer-only draft types. The outer builder
 enriches that draft in dependency order and only then constructs the canonical
 world schema. For example, Viabundus supplies settlement identity and road
@@ -51,7 +58,8 @@ display/debug payload rather than a structured provenance API. No debug view
 renders it yet; any future renderer must treat it as untrusted Markdown and
 sanitize generated HTML.
 
-Each compiled artifact is identified by a content hash. An interrupted load may
+Each compiled artifact is identified by a content hash over its serialized
+metadata and records. An interrupted load may
 resume only with the same artifact; a different artifact requires a database
 reset. Successful loads explicitly complete their import session so later
 batches cannot mutate an already-loaded world.

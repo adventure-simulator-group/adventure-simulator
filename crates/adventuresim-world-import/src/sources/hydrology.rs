@@ -11,16 +11,15 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CanalWatercourse, CompiledWorld, CrossingTraversal, CrossingWatercourse, EdgeEndpoint,
-    EdgeProgressPermille, FerryRoute, FerryWaterway, FlowPersistence, FlowingWaterAccess,
-    InlandWaterAccess, InlandWaterSize, LandRoute, LandWaterCrossing, MarineWaterAccess,
-    RiverAccess, RiverAndCanalAccess, RiverWatercourse, SettlementHydrology, SettlementImport,
-    SourceProvenance, StrahlerOrder, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION,
-    WaterDistanceMeters, WorldMetadata,
+    CURRENT_INFERENCE_RULES_VERSION, CanalWatercourse, CompiledWorld, CrossingTraversal,
+    CrossingWatercourse, EdgeEndpoint, EdgeProgressPermille, FerryRoute, FerryWaterway,
+    FlowPersistence, FlowingWaterAccess, InlandWaterAccess, InlandWaterSize, LandRoute,
+    LandWaterCrossing, MarineWaterAccess, RiverAccess, RiverAndCanalAccess, RiverWatercourse,
+    SettlementHydrology, SettlementImport, SourceProvenance, StrahlerOrder, TravelEdgeImport,
+    TravelRoute, WORLD_SCHEMA_VERSION, WaterDistanceMeters, WorldMetadata,
 };
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
-use proj4rs::{proj::Proj, transform::transform};
 use rusqlite::{Connection, OpenFlags, params};
 
 use crate::{
@@ -29,6 +28,7 @@ use crate::{
         DroughtSettlementDraft, SettlementDraftAccess, TravelEdgeDraft, TravelRouteDraft,
         WorldDraft, push_source_note,
     },
+    spatial::SpatialProjection,
 };
 
 const SOURCE_NAME: &str = "Copernicus EU-Hydro River Network Database v1.3";
@@ -46,11 +46,17 @@ pub(crate) fn enrich(
     mut draft: WorldDraft<DroughtSettlementDraft>,
     source_directory: &Path,
 ) -> Result<CompiledWorld> {
-    let projection = HydrologyProjection::new()?;
+    let projection = SpatialProjection::new()?;
     let projected_nodes = draft
         .nodes
         .iter()
-        .map(|node| Ok((node.id, projection.project(node.latitude, node.longitude)?)))
+        .map(|node| {
+            let coordinate = projection.project(node.latitude, node.longitude)?;
+            Ok((
+                node.id,
+                Point::new(coordinate.easting_meters(), coordinate.northing_meters()),
+            ))
+        })
         .collect::<Result<HashMap<_, _>>>()?;
     let bounds = world_bounds(projected_nodes.values().copied());
     let database = HydrologyDatabase::open(source_directory, bounds)?;
@@ -126,6 +132,8 @@ pub(crate) fn enrich(
     Ok(CompiledWorld {
         metadata: WorldMetadata {
             schema_version: WORLD_SCHEMA_VERSION,
+            inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+            spatial_grid: draft.spatial_grid,
             world_year: draft.year,
             sources: draft.sources,
             road_types: draft.road_types,
@@ -192,39 +200,6 @@ fn finish_settlement(
 
 fn base_settlement(draft: &DroughtSettlementDraft) -> &crate::draft::SettlementDraft {
     draft.base_settlement()
-}
-
-struct HydrologyProjection {
-    geographic: Proj,
-    projected: Proj,
-}
-
-impl HydrologyProjection {
-    fn new() -> Result<Self> {
-        Ok(Self {
-            geographic: Proj::from_proj_string(
-                "+proj=longlat +datum=WGS84 +ellps=WGS84 +no_defs +type=crs",
-            )?,
-            projected: Proj::from_proj_string(
-                "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs",
-            )?,
-        })
-    }
-
-    fn project(&self, latitude: f64, longitude: f64) -> Result<Point<f64>> {
-        if !latitude.is_finite()
-            || !longitude.is_finite()
-            || !(-90.0..=90.0).contains(&latitude)
-            || !(-180.0..=180.0).contains(&longitude)
-        {
-            return Err(Error::Validation(format!(
-                "invalid coordinate ({latitude}, {longitude}) for EU-Hydro"
-            )));
-        }
-        let mut coordinate = (longitude.to_radians(), latitude.to_radians(), 0.0);
-        transform(&self.geographic, &self.projected, &mut coordinate)?;
-        Ok(Point::new(coordinate.0, coordinate.1))
-    }
 }
 
 #[derive(Clone, Copy)]

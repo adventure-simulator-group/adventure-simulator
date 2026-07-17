@@ -7,7 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 13;
+pub const WORLD_SCHEMA_VERSION: u32 = 14;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 1;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1744,9 +1745,187 @@ impl TravelRoute {
     }
 }
 
+/// The only canonical projected coordinate system used by world-data stages.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum SpatialGridCrs {
+    /// EPSG:3035, ETRS89 / LAEA Europe.
+    Etrs89LaeaEurope,
+}
+
+/// Validated square grid cell size in integer metres.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct GridCellSizeMeters(u32);
+
+impl GridCellSizeMeters {
+    pub const MIN: u32 = 250;
+    pub const MAX: u32 = 100_000;
+    pub const DEFAULT: u32 = 1_000;
+
+    pub fn new(meters: u32) -> Result<Self, SpatialGridSpecError> {
+        if !(Self::MIN..=Self::MAX).contains(&meters) || meters % 250 != 0 {
+            return Err(SpatialGridSpecError::InvalidCellSize(meters));
+        }
+        Ok(Self(meters))
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl Default for GridCellSizeMeters {
+    fn default() -> Self {
+        Self(Self::DEFAULT)
+    }
+}
+
+impl FromStr for GridCellSizeMeters {
+    type Err = SpatialGridSpecError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let meters = value
+            .parse::<u32>()
+            .map_err(|_| SpatialGridSpecError::InvalidCellSizeText(value.into()))?;
+        Self::new(meters)
+    }
+}
+
+impl fmt::Display for GridCellSizeMeters {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl<'de> Deserialize<'de> for GridCellSizeMeters {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(u32::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SpatialGridSpecError {
+    InvalidCellSize(u32),
+    InvalidCellSizeText(String),
+    NonCanonicalOrigin { easting_m: i64, northing_m: i64 },
+    RectangularCells { width_m: u32, height_m: u32 },
+}
+
+impl fmt::Display for SpatialGridSpecError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCellSize(value) => write!(
+                formatter,
+                "grid cell size {value} must be 250..=100000 metres and divisible by 250"
+            ),
+            Self::InvalidCellSizeText(value) => write!(
+                formatter,
+                "grid cell size {value:?} is not an unsigned integer number of metres"
+            ),
+            Self::NonCanonicalOrigin {
+                easting_m,
+                northing_m,
+            } => write!(
+                formatter,
+                "grid origin ({easting_m}, {northing_m}) must be the canonical (0, 0) metres"
+            ),
+            Self::RectangularCells { width_m, height_m } => write!(
+                formatter,
+                "grid cells must be square, not {width_m} by {height_m} metres"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SpatialGridSpecError {}
+
+/// Complete identity of the canonical, origin-aligned square spatial grid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct SpatialGridSpec {
+    crs: SpatialGridCrs,
+    origin_easting_m: i64,
+    origin_northing_m: i64,
+    cell_width_m: GridCellSizeMeters,
+    cell_height_m: GridCellSizeMeters,
+}
+
+impl SpatialGridSpec {
+    pub fn new(cell_size: GridCellSizeMeters) -> Self {
+        Self {
+            crs: SpatialGridCrs::Etrs89LaeaEurope,
+            origin_easting_m: 0,
+            origin_northing_m: 0,
+            cell_width_m: cell_size,
+            cell_height_m: cell_size,
+        }
+    }
+
+    pub const fn crs(self) -> SpatialGridCrs {
+        self.crs
+    }
+    pub const fn origin_easting_m(self) -> i64 {
+        self.origin_easting_m
+    }
+    pub const fn origin_northing_m(self) -> i64 {
+        self.origin_northing_m
+    }
+    pub const fn cell_size_meters(self) -> GridCellSizeMeters {
+        self.cell_width_m
+    }
+}
+
+impl Default for SpatialGridSpec {
+    fn default() -> Self {
+        Self::new(GridCellSizeMeters::default())
+    }
+}
+
+impl<'de> Deserialize<'de> for SpatialGridSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            crs: SpatialGridCrs,
+            origin_easting_m: i64,
+            origin_northing_m: i64,
+            cell_width_m: GridCellSizeMeters,
+            cell_height_m: GridCellSizeMeters,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if wire.crs != SpatialGridCrs::Etrs89LaeaEurope {
+            return Err(serde::de::Error::custom("unsupported spatial grid CRS"));
+        }
+        if (wire.origin_easting_m, wire.origin_northing_m) != (0, 0) {
+            return Err(serde::de::Error::custom(
+                SpatialGridSpecError::NonCanonicalOrigin {
+                    easting_m: wire.origin_easting_m,
+                    northing_m: wire.origin_northing_m,
+                },
+            ));
+        }
+        if wire.cell_width_m != wire.cell_height_m {
+            return Err(serde::de::Error::custom(
+                SpatialGridSpecError::RectangularCells {
+                    width_m: wire.cell_width_m.get(),
+                    height_m: wire.cell_height_m.get(),
+                },
+            ));
+        }
+        Ok(Self::new(wire.cell_width_m))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WorldMetadata {
     pub schema_version: u32,
+    pub inference_rules_version: u32,
+    pub spatial_grid: SpatialGridSpec,
     pub world_year: i32,
     pub sources: Vec<SourceProvenance>,
     pub road_types: Vec<TravelEdgeKind>,
@@ -2147,6 +2326,50 @@ mod tests {
         assert_eq!(LanguageCode::from_str("deu").unwrap().as_str(), "deu");
         assert!(LanguageCode::from_str("DE").is_err());
         assert!(serde_json::from_str::<LanguageCode>("\"english\"").is_err());
+    }
+
+    #[test]
+    fn spatial_grid_sizes_cover_only_the_canonical_range_and_increment() {
+        use super::GridCellSizeMeters;
+        assert_eq!(GridCellSizeMeters::default().get(), 1_000);
+        assert_eq!(GridCellSizeMeters::new(250).unwrap().get(), 250);
+        assert_eq!(GridCellSizeMeters::new(100_000).unwrap().get(), 100_000);
+        for invalid in [0, 249, 251, 99_999, 100_001] {
+            assert!(GridCellSizeMeters::new(invalid).is_err());
+        }
+        assert!(serde_json::from_str::<GridCellSizeMeters>("251").is_err());
+    }
+
+    #[test]
+    fn spatial_grid_wire_values_cannot_bypass_invariants() {
+        use super::SpatialGridSpec;
+        let canonical = serde_json::to_value(SpatialGridSpec::default()).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SpatialGridSpec>(canonical.clone()).unwrap(),
+            SpatialGridSpec::default()
+        );
+
+        let mutate = |field: &str, value| {
+            let mut wire = canonical.clone();
+            wire[field] = value;
+            serde_json::from_value::<SpatialGridSpec>(wire)
+        };
+        assert!(mutate("crs", serde_json::json!("Wgs84")).is_err());
+        assert!(mutate("origin_easting_m", serde_json::json!(1)).is_err());
+        assert!(mutate("origin_northing_m", serde_json::json!(-1)).is_err());
+        assert!(mutate("cell_height_m", serde_json::json!(2_000)).is_err());
+        assert!(mutate("cell_width_m", serde_json::json!(0)).is_err());
+    }
+
+    #[test]
+    fn old_world_metadata_cannot_default_new_identity_fields() {
+        let old = serde_json::json!({
+            "schema_version": 13,
+            "world_year": 1544,
+            "sources": [],
+            "road_types": []
+        });
+        assert!(serde_json::from_value::<super::WorldMetadata>(old).is_err());
     }
 }
 

@@ -84,6 +84,7 @@ fn finish(
     draft.report.geology_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,

@@ -95,6 +95,7 @@ fn finish(
     draft.report.potential_vegetation_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -584,9 +585,13 @@ mod tests {
         }
 
         let viabundus = std::env::var_os("VIABUNDUS_DIR").expect("set VIABUNDUS_DIR");
-        let settlements = crate::sources::viabundus::compile(Path::new(&viabundus), 1544)
-            .unwrap()
-            .settlements;
+        let settlements = crate::sources::viabundus::compile(
+            Path::new(&viabundus),
+            1544,
+            adventuresim_world_schema::SpatialGridSpec::default(),
+        )
+        .unwrap()
+        .settlements;
         let mapped = settlements
             .iter()
             .filter(|settlement| {
