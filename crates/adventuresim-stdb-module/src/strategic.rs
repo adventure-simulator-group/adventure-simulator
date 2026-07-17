@@ -4,18 +4,18 @@ use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CationExchangeCapacity,
     CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
     ElevationMeters, FerryWaterway, FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId,
-    HabitatSuitability, HistoricalVegetation, InferredGeologicSetting, InferredTreeSpeciesProfile,
-    LandUseFraction, LandUseProfile, LanguageCode, MarineWaterAccess, MineralSoil,
-    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
-    PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
-    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
-    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
-    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
-    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, historical_vegetation_matches_context, valid_bounded_source_text,
-    valid_sources_markdown,
+    HabitatSuitability, HistoricalVegetation, IndustryInferenceContext, InferredGeologicSetting,
+    InferredIndustryProfile, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
+    LanguageCode, MarineWaterAccess, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
+    ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
+    PotentialVegetationClass, ProductionScale, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
+    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
+    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
+    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
+    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport, historical_vegetation_matches_context,
+    industry_profile_is_canonical, valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -421,6 +421,7 @@ pub struct Settlement {
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
+    pub industries: InferredIndustryProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -618,6 +619,7 @@ pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Re
     if import.artifact_id != artifact_id {
         return Err("Cannot finish a different world artifact".into());
     }
+    validate_final_settlement_industries(ctx)?;
     import.completed = true;
     ctx.db.world_data_import().id().update(import);
     Ok(())
@@ -663,6 +665,7 @@ pub fn import_travel_edges(
         return Err("Travel-edge batch is empty".into());
     }
     for edge in edges {
+        validate_travel_edge_endpoints(edge.id, edge.from_node_id, edge.to_node_id)?;
         if ctx.db.world_node().id().find(edge.from_node_id).is_none()
             || ctx.db.world_node().id().find(edge.to_node_id).is_none()
         {
@@ -797,6 +800,15 @@ pub fn import_settlements(
         let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
         let drought = reconstruct_drought_profile(&settlement.id, settlement.drought)?;
         validate_settlement_hydrology(&settlement.id, settlement.hydrology)?;
+        settlement.industries.validate().map_err(|reason| {
+            format!(
+                "Settlement {} has invalid industries: {reason}",
+                settlement.id
+            )
+        })?;
+        // Route batches are resumable and may arrive before or after settlement
+        // batches. Exact industry/profile equality is therefore checked against
+        // the final edge table by `finish_world_data_import`.
         if !historical_vegetation_matches_context(
             historical_vegetation,
             land_use,
@@ -847,6 +859,7 @@ pub fn import_settlements(
             religious_status: settlement.religious_status,
             drought,
             hydrology: settlement.hydrology,
+            industries: settlement.industries,
             source_node_id: Some(settlement.source_node_id),
             sources: settlement.sources,
         };
@@ -857,6 +870,85 @@ pub fn import_settlements(
             ctx.db.settlement().insert(row);
         }
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
+    }
+    Ok(())
+}
+
+fn validate_travel_edge_endpoints(
+    edge_id: u64,
+    from_node_id: u64,
+    to_node_id: u64,
+) -> Result<(), String> {
+    if from_node_id == to_node_id {
+        Err(format!(
+            "Travel edge {edge_id} connects a world node to itself"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn industry_scale_from_incident_routes(
+    route_count: usize,
+    best_class: Option<adventuresim_world_schema::RouteTerrainClass>,
+    max_slope_permille: u16,
+) -> ProductionScale {
+    if route_count >= 2
+        && best_class
+            .is_some_and(|class| class <= adventuresim_world_schema::RouteTerrainClass::Rolling)
+        && max_slope_permille <= 250
+    {
+        ProductionScale::Regional
+    } else if route_count == 0 {
+        ProductionScale::Marginal
+    } else {
+        ProductionScale::Local
+    }
+}
+
+fn max_industry_scale_for_node(ctx: &ReducerContext, node_id: u64) -> ProductionScale {
+    let mut route_count = 0usize;
+    let mut best_class: Option<adventuresim_world_schema::RouteTerrainClass> = None;
+    let mut max_slope = 0u16;
+    for edge in ctx
+        .db
+        .travel_edge()
+        .iter()
+        .filter(|edge| edge.from_node_id == node_id || edge.to_node_id == node_id)
+    {
+        route_count += 1;
+        best_class =
+            Some(best_class.map_or(edge.terrain.class, |best| best.min(edge.terrain.class)));
+        max_slope = max_slope.max(edge.terrain.max_slope.get());
+    }
+    industry_scale_from_incident_routes(route_count, best_class, max_slope)
+}
+
+fn validate_final_settlement_industries(ctx: &ReducerContext) -> Result<(), String> {
+    for settlement in ctx.db.settlement().iter() {
+        let Some(source_node_id) = settlement.source_node_id else {
+            continue;
+        };
+        let max_scale = max_industry_scale_for_node(ctx, source_node_id);
+        if !industry_profile_is_canonical(
+            &settlement.industries,
+            IndustryInferenceContext {
+                elevation: settlement.elevation,
+                drought: settlement.drought,
+                land_use: settlement.land_use,
+                historical_vegetation: settlement.historical_vegetation,
+                soil: settlement.soil,
+                geology: &settlement.geology,
+                hydrology: settlement.hydrology,
+                population_estimate: settlement.population_estimate,
+                max_scale,
+            },
+        ) {
+            return Err(format!(
+                "Settlement {} industries do not match the final travel-edge graph",
+                settlement.id
+            ));
+        }
     }
     Ok(())
 }
@@ -899,6 +991,7 @@ fn validate_travel_route(edge_id: u64, route: &TravelRoute) -> Result<(), String
 
 #[cfg(test)]
 mod route_terrain_boundary_tests {
+    use super::{industry_scale_from_incident_routes, validate_travel_edge_endpoints};
     use adventuresim_world_schema::{LandRoute, RouteSlopePermille, RouteTerrain, TravelRoute};
 
     #[test]
@@ -915,6 +1008,39 @@ mod route_terrain_boundary_tests {
             std::panic::catch_unwind(|| terrain.validate_context(&route, 1_000))
                 .unwrap()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn final_route_scale_catches_late_edges_and_edge_downgrades() {
+        use adventuresim_world_schema::{ProductionScale, RouteTerrainClass};
+
+        assert_eq!(
+            industry_scale_from_incident_routes(0, None, 0),
+            ProductionScale::Marginal,
+            "a settlement imported before its edges is initially isolated"
+        );
+        assert_eq!(
+            industry_scale_from_incident_routes(2, Some(RouteTerrainClass::Flat), 250),
+            ProductionScale::Regional,
+            "late finalized edges can establish connected access"
+        );
+        assert_eq!(
+            industry_scale_from_incident_routes(2, Some(RouteTerrainClass::Flat), 251),
+            ProductionScale::Local,
+            "updating an incident edge to a steeper route downgrades the final cap"
+        );
+    }
+
+    #[test]
+    fn self_loops_are_rejected_and_cannot_manufacture_connected_access() {
+        use adventuresim_world_schema::ProductionScale;
+
+        assert!(validate_travel_edge_endpoints(1, 7, 7).is_err());
+        assert!(validate_travel_edge_endpoints(2, 7, 7).is_err());
+        assert_eq!(
+            industry_scale_from_incident_routes(0, None, 0),
+            ProductionScale::Marginal
         );
     }
 }
@@ -4702,6 +4828,11 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     .unwrap(),
                 ),
                 hydrology: SettlementHydrology::default(),
+                industries: InferredIndustryProfile::new(vec![
+                    adventuresim_world_schema::IndustryEvidence::Fallback(
+                        adventuresim_world_schema::FallbackIndustry::WoodlandFuelwood,
+                    ),
+                ]).unwrap(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,

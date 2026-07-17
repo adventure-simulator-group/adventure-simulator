@@ -1,4 +1,9 @@
 # Services
+Imported settlements carry a bounded strategic industry profile derived from
+land use, hydrology, soil, geology, historical woodland, population, and route
+accessibility. It describes plausible production rather than stock on hand;
+accessibility can reduce scale but cannot invent resources.
+
 Settlement and quest destinations share the same strategic **location** shell. A settlement's base location view shows population statistics and historical alternative names on the left and a short population-based description on the right. Imported settlements may also expose a plain-text Viabundus settlement/city description in a collapsed section labeled with its source language. Its Map tab lists road-connected destinations on the left; selecting one shows that settlement's description, distance, journey time, and travel action on the right. Settlement services remain separate tabs and are available only at settlement locations.
 
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.

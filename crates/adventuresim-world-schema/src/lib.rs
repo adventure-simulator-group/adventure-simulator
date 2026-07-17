@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 19;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 5;
+pub const WORLD_SCHEMA_VERSION: u32 = 20;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 6;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1749,6 +1749,684 @@ pub struct SettlementHydrology {
     pub marine: Option<MarineWaterAccess>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ProductionScale {
+    Marginal,
+    Local,
+    Regional,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum AgriculturalCommodity {
+    Grain,
+    Flax,
+    Wool,
+    Dairy,
+    Hides,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FishCommodity {
+    Freshwater,
+    Estuarine,
+    Marine,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum QuarryCommodity {
+    Limestone,
+    Chalk,
+    Sandstone,
+    Slate,
+    Granite,
+    Basalt,
+    Marble,
+    Quartzite,
+    OtherHardStone,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum MinedCommodity {
+    Coal,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum PotteryCommodity {
+    Clay,
+    Earthenware,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ForestCommodity {
+    Hardwood,
+    Softwood,
+    Mixed,
+    Fuelwood,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SaltSource {
+    Evaporite,
+    SalineSoil,
+    CoastalBrine,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ConstructionCommodity {
+    DimensionStone,
+    Sand,
+    Gravel,
+    Brick,
+    RoofTile,
+    Timber,
+}
+
+macro_rules! commodity_industry_record {
+    ($name:ident, $field:ident, $commodity:ty) => {
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+        #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+        pub struct $name {
+            pub $field: $commodity,
+            pub scale: ProductionScale,
+        }
+    };
+}
+commodity_industry_record!(AgricultureIndustry, commodity, AgriculturalCommodity);
+commodity_industry_record!(FishingIndustry, commodity, FishCommodity);
+commodity_industry_record!(QuarryingIndustry, commodity, QuarryCommodity);
+commodity_industry_record!(MiningIndustry, commodity, MinedCommodity);
+commodity_industry_record!(PotteryIndustry, commodity, PotteryCommodity);
+commodity_industry_record!(ForestryIndustry, commodity, ForestCommodity);
+commodity_industry_record!(SaltmakingIndustry, source, SaltSource);
+commodity_industry_record!(ConstructionIndustry, commodity, ConstructionCommodity);
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct PeatCuttingIndustry {
+    pub scale: ProductionScale,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct CharcoalBurningIndustry {
+    pub scale: ProductionScale,
+}
+
+/// Evidence-bearing production output. Commodity domains are nested in their
+/// industries, so impossible industry/commodity pairs cannot be represented.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DerivedIndustry {
+    Agriculture(AgricultureIndustry),
+    Fishing(FishingIndustry),
+    Quarrying(QuarryingIndustry),
+    Mining(MiningIndustry),
+    Pottery(PotteryIndustry),
+    PeatCutting(PeatCuttingIndustry),
+    Forestry(ForestryIndustry),
+    CharcoalBurning(CharcoalBurningIndustry),
+    Saltmaking(SaltmakingIndustry),
+    Construction(ConstructionIndustry),
+}
+
+impl DerivedIndustry {
+    pub const fn scale(self) -> ProductionScale {
+        match self {
+            Self::Agriculture(v) => v.scale,
+            Self::Fishing(v) => v.scale,
+            Self::Quarrying(v) => v.scale,
+            Self::Mining(v) => v.scale,
+            Self::Pottery(v) => v.scale,
+            Self::PeatCutting(v) => v.scale,
+            Self::Forestry(v) => v.scale,
+            Self::CharcoalBurning(v) => v.scale,
+            Self::Saltmaking(v) => v.scale,
+            Self::Construction(v) => v.scale,
+        }
+    }
+}
+
+/// Restricted last-resort outputs. A fallback cannot claim arbitrary scale,
+/// deposits, or unsupported metal production.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FallbackIndustry {
+    FreshwaterFishing,
+    GrazingDairy,
+    CroplandGrain,
+    WoodlandFuelwood,
+    CommonAggregate,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum IndustryEvidence {
+    Derived(DerivedIndustry),
+    Fallback(FallbackIndustry),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct InferredIndustryProfile {
+    outputs: Vec<IndustryEvidence>,
+}
+
+impl InferredIndustryProfile {
+    pub const MAX_OUTPUTS: usize = 24;
+
+    pub fn new(mut outputs: Vec<IndustryEvidence>) -> Option<Self> {
+        if outputs.is_empty() || outputs.len() > Self::MAX_OUTPUTS {
+            return None;
+        }
+        outputs.sort_unstable();
+        if outputs.windows(2).any(|pair| pair[0] == pair[1]) {
+            return None;
+        }
+        Some(Self { outputs })
+    }
+
+    pub fn outputs(&self) -> &[IndustryEvidence] {
+        &self.outputs
+    }
+
+    /// Constructor-independent validation for raw SpacetimeDB decoding.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.outputs.is_empty() {
+            return Err("industry profile is empty".into());
+        }
+        if self.outputs.len() > Self::MAX_OUTPUTS {
+            return Err("industry profile exceeds 24 outputs".into());
+        }
+        if self.outputs.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err("industry outputs are duplicated or not canonically ordered".into());
+        }
+        if self.outputs.iter().any(|v| matches!(v, IndustryEvidence::Derived(d) if d.scale() == ProductionScale::Regional && matches!(d, DerivedIndustry::PeatCutting(_)))) {
+            return Err("regional peat cutting is outside the rules-v6 model".into());
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for InferredIndustryProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct IndustryOutputSequence(Vec<IndustryEvidence>);
+        impl<'de> Deserialize<'de> for IndustryOutputSequence {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                deserializer.deserialize_seq(ProfileVisitor).map(Self)
+            }
+        }
+        struct ProfileVisitor;
+        impl<'de> serde::de::Visitor<'de> for ProfileVisitor {
+            type Value = Vec<IndustryEvidence>;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an industry output sequence of at most 24 values")
+            }
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut outputs = Vec::with_capacity(
+                    seq.size_hint()
+                        .unwrap_or(0)
+                        .min(InferredIndustryProfile::MAX_OUTPUTS),
+                );
+                while let Some(value) = seq.next_element()? {
+                    if outputs.len() == InferredIndustryProfile::MAX_OUTPUTS {
+                        return Err(serde::de::Error::custom(
+                            "industry profile exceeds 24 outputs",
+                        ));
+                    }
+                    outputs.push(value);
+                }
+                Ok(outputs)
+            }
+        }
+        #[derive(Deserialize)]
+        struct Wire {
+            outputs: IndustryOutputSequence,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let profile = InferredIndustryProfile {
+            outputs: wire.outputs.0,
+        };
+        profile.validate().map_err(serde::de::Error::custom)?;
+        Ok(profile)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IndustryInferenceContext<'a> {
+    pub elevation: ElevationMeters,
+    pub drought: DroughtProfile,
+    pub land_use: LandUseProfile,
+    pub historical_vegetation: HistoricalVegetation,
+    pub soil: SoilProfile,
+    pub geology: &'a SurfaceGeology,
+    pub hydrology: SettlementHydrology,
+    pub population_estimate: u32,
+    pub max_scale: ProductionScale,
+}
+
+/// Single canonical rules-v6 implementation. Compilation and both import
+/// boundaries compare the complete result, including order and scales.
+pub fn infer_industries(
+    c: IndustryInferenceContext<'_>,
+) -> Result<InferredIndustryProfile, String> {
+    let mut out = Vec::new();
+    let add = |out: &mut Vec<_>, value| out.push(IndustryEvidence::Derived(value));
+    let crop = c.land_use.cropland().basis_points();
+    let grazing = c.land_use.grazing().basis_points();
+    let built = c.land_use.built_up().basis_points();
+    let wet = matches!(
+        c.soil.properties.water_regime,
+        SoilWaterRegime::LongSeasonWet | SoilWaterRegime::PermanentlyWet
+    );
+    let mean = match c.drought {
+        DroughtProfile::Reconstructed(v) | DroughtProfile::Inferred(v) => {
+            v.twenty_year_mean().milli_units()
+        }
+    };
+    let dry = mean <= -2_000 || c.soil.properties.water_regime == SoilWaterRegime::UsuallyDry;
+    let fertile = !matches!(
+        c.soil.fertility,
+        SoilFertility::VeryLow | SoilFertility::Low
+    );
+    if crop >= 1_500
+        && fertile
+        && !dry
+        && c.soil.properties.agricultural_limitation != AgriculturalLimitation::Flooded
+    {
+        add(
+            &mut out,
+            DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Grain,
+                scale: canonical_industry_scale(
+                    crop.saturating_add(industry_pop_score(c.population_estimate)),
+                    c.max_scale,
+                ),
+            }),
+        );
+        if crop >= 3_000
+            && matches!(
+                c.soil.fertility,
+                SoilFertility::High | SoilFertility::VeryHigh
+            )
+            && !wet
+            && c.elevation.get() <= 300
+        {
+            add(
+                &mut out,
+                DerivedIndustry::Agriculture(AgricultureIndustry {
+                    commodity: AgriculturalCommodity::Flax,
+                    scale: canonical_industry_scale(
+                        crop.saturating_add(industry_pop_score(c.population_estimate))
+                            .saturating_sub(500),
+                        c.max_scale,
+                    ),
+                }),
+            );
+        }
+    }
+    if grazing >= 1_500 {
+        let scale = canonical_industry_scale(
+            grazing.saturating_add(industry_pop_score(c.population_estimate)),
+            c.max_scale,
+        );
+        for commodity in [
+            AgriculturalCommodity::Wool,
+            AgriculturalCommodity::Dairy,
+            AgriculturalCommodity::Hides,
+        ] {
+            add(
+                &mut out,
+                DerivedIndustry::Agriculture(AgricultureIndustry { commodity, scale }),
+            );
+        }
+    }
+    let mut freshwater = false;
+    if let Some(flowing) = c.hydrology.flowing {
+        let river = match flowing {
+            FlowingWaterAccess::River(v) => v,
+            FlowingWaterAccess::RiverAndCanal(v) => v.river,
+        };
+        if river.distance.get() <= 5_000 {
+            add(
+                &mut out,
+                DerivedIndustry::Fishing(FishingIndustry {
+                    commodity: FishCommodity::Freshwater,
+                    scale: canonical_industry_scale(
+                        u16::from(river.order.get())
+                            .saturating_mul(1_000)
+                            .saturating_add(industry_pop_score(c.population_estimate)),
+                        c.max_scale,
+                    ),
+                }),
+            );
+            freshwater = true;
+        }
+    }
+    if !freshwater && let Some(inland) = c.hydrology.inland.filter(|v| v.distance.get() <= 10_000) {
+        let size = match inland.size {
+            InlandWaterSize::Pond => 1_500,
+            InlandWaterSize::Lake => 4_000,
+            InlandWaterSize::GreatLake => 7_000,
+        };
+        add(
+            &mut out,
+            DerivedIndustry::Fishing(FishingIndustry {
+                commodity: FishCommodity::Freshwater,
+                scale: canonical_industry_scale(
+                    size + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        );
+    }
+    match c.hydrology.marine {
+        Some(MarineWaterAccess::Tidal(d)) if d.get() <= 10_000 => add(
+            &mut out,
+            DerivedIndustry::Fishing(FishingIndustry {
+                commodity: FishCommodity::Estuarine,
+                scale: canonical_industry_scale(
+                    5_000 + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        ),
+        Some(MarineWaterAccess::OpenCoast(d)) if d.get() <= 10_000 => add(
+            &mut out,
+            DerivedIndustry::Fishing(FishingIndustry {
+                commodity: FishCommodity::Marine,
+                scale: canonical_industry_scale(
+                    5_000 + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        ),
+        _ => {}
+    }
+    let lith = canonical_industry_lithology(c.geology);
+    if let Some(commodity) = canonical_quarry(lith) {
+        add(
+            &mut out,
+            DerivedIndustry::Quarrying(QuarryingIndustry {
+                commodity,
+                scale: canonical_industry_scale(
+                    5_000 + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        );
+    }
+    if lith == SurfaceLithology::Sedimentary(SedimentaryRock::Coal) {
+        add(
+            &mut out,
+            DerivedIndustry::Mining(MiningIndustry {
+                commodity: MinedCommodity::Coal,
+                scale: canonical_industry_scale(
+                    6_000 + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        );
+    }
+    let clay = matches!(c.soil.properties.substrate, SoilSubstrate::Mineral(v) if matches!(v.texture, MineralSoilTexture::Fine | MineralSoilTexture::VeryFine))
+        || matches!(
+            lith,
+            SurfaceLithology::Unconsolidated(
+                UnconsolidatedDeposit::Clay | UnconsolidatedDeposit::Alluvium
+            ) | SurfaceLithology::Sedimentary(SedimentaryRock::Mudstone | SedimentaryRock::Marl)
+        );
+    if clay {
+        add(
+            &mut out,
+            DerivedIndustry::Pottery(PotteryIndustry {
+                commodity: if built >= 500 || c.population_estimate >= 1_000 {
+                    PotteryCommodity::Earthenware
+                } else {
+                    PotteryCommodity::Clay
+                },
+                scale: canonical_industry_scale(
+                    3_500 + industry_pop_score(c.population_estimate),
+                    c.max_scale,
+                ),
+            }),
+        );
+        if built >= 500 {
+            add(
+                &mut out,
+                DerivedIndustry::Construction(ConstructionIndustry {
+                    commodity: ConstructionCommodity::Brick,
+                    scale: canonical_industry_scale(
+                        4_000 + industry_pop_score(c.population_estimate),
+                        c.max_scale,
+                    ),
+                }),
+            );
+        }
+        if built >= 1_000 {
+            add(
+                &mut out,
+                DerivedIndustry::Construction(ConstructionIndustry {
+                    commodity: ConstructionCommodity::RoofTile,
+                    scale: canonical_industry_scale(
+                        4_000 + industry_pop_score(c.population_estimate),
+                        c.max_scale,
+                    ),
+                }),
+            );
+        }
+    }
+    let peat_parent = matches!(c.soil.wrb_group, WrbReferenceGroup::Histosol)
+        || matches!(c.soil.properties.substrate, SoilSubstrate::Organic(_))
+        || lith == SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Peat);
+    if peat_parent
+        && wet
+        && (c.hydrology.has_freshwater() || canonical_historical_wet(c.historical_vegetation))
+    {
+        add(
+            &mut out,
+            DerivedIndustry::PeatCutting(PeatCuttingIndustry {
+                scale: canonical_industry_scale(3_500, c.max_scale).min(ProductionScale::Local),
+            }),
+        );
+    }
+    if let Some(leaf) = canonical_historical_woodland(c.historical_vegetation) {
+        let commodity = match leaf {
+            DominantLeafType::Broadleaf => ForestCommodity::Hardwood,
+            DominantLeafType::Coniferous => ForestCommodity::Softwood,
+            DominantLeafType::Mixed => ForestCommodity::Mixed,
+        };
+        let scale = canonical_industry_scale(
+            4_500 + industry_pop_score(c.population_estimate),
+            c.max_scale,
+        );
+        add(
+            &mut out,
+            DerivedIndustry::Forestry(ForestryIndustry { commodity, scale }),
+        );
+        add(
+            &mut out,
+            DerivedIndustry::Forestry(ForestryIndustry {
+                commodity: ForestCommodity::Fuelwood,
+                scale,
+            }),
+        );
+        add(
+            &mut out,
+            DerivedIndustry::Construction(ConstructionIndustry {
+                commodity: ConstructionCommodity::Timber,
+                scale,
+            }),
+        );
+        if built >= 500 || c.population_estimate >= 1_000 {
+            add(
+                &mut out,
+                DerivedIndustry::CharcoalBurning(CharcoalBurningIndustry {
+                    scale: canonical_industry_scale(
+                        4_000 + industry_pop_score(c.population_estimate),
+                        c.max_scale,
+                    ),
+                }),
+            );
+        }
+    }
+    let fuel = out.iter().any(|v| {
+        matches!(
+            v,
+            IndustryEvidence::Derived(
+                DerivedIndustry::Forestry(ForestryIndustry {
+                    commodity: ForestCommodity::Fuelwood,
+                    ..
+                }) | DerivedIndustry::PeatCutting(_)
+            )
+        )
+    });
+    let salt_source = if lith == SurfaceLithology::Sedimentary(SedimentaryRock::Evaporite) {
+        Some((SaltSource::Evaporite, 6_000))
+    } else if c.soil.properties.agricultural_limitation == AgriculturalLimitation::Saline {
+        Some((SaltSource::SalineSoil, 3_500))
+    } else if fuel
+        && matches!(c.hydrology.marine, Some(MarineWaterAccess::OpenCoast(d)) if d.get() <= 5_000)
+    {
+        Some((SaltSource::CoastalBrine, 3_500))
+    } else {
+        None
+    };
+    if let Some((source, score)) = salt_source {
+        add(
+            &mut out,
+            DerivedIndustry::Saltmaking(SaltmakingIndustry {
+                source,
+                scale: canonical_industry_scale(score, c.max_scale),
+            }),
+        );
+    }
+    let construction_scale = canonical_industry_scale(
+        4_000 + industry_pop_score(c.population_estimate),
+        c.max_scale,
+    );
+    match lith {
+        SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Sand) => add(
+            &mut out,
+            DerivedIndustry::Construction(ConstructionIndustry {
+                commodity: ConstructionCommodity::Sand,
+                scale: construction_scale,
+            }),
+        ),
+        SurfaceLithology::Unconsolidated(
+            UnconsolidatedDeposit::Gravel
+            | UnconsolidatedDeposit::MixedSediment
+            | UnconsolidatedDeposit::Alluvium,
+        ) => add(
+            &mut out,
+            DerivedIndustry::Construction(ConstructionIndustry {
+                commodity: ConstructionCommodity::Gravel,
+                scale: construction_scale,
+            }),
+        ),
+        _ if canonical_quarry(lith).is_some() => add(
+            &mut out,
+            DerivedIndustry::Construction(ConstructionIndustry {
+                commodity: ConstructionCommodity::DimensionStone,
+                scale: construction_scale,
+            }),
+        ),
+        _ => {}
+    }
+    if out.is_empty() {
+        out.push(IndustryEvidence::Fallback(
+            if c.hydrology.has_freshwater() {
+                FallbackIndustry::FreshwaterFishing
+            } else if grazing > 0 {
+                FallbackIndustry::GrazingDairy
+            } else if crop > 0 {
+                FallbackIndustry::CroplandGrain
+            } else if canonical_historical_woodland(c.historical_vegetation).is_some() {
+                FallbackIndustry::WoodlandFuelwood
+            } else {
+                FallbackIndustry::CommonAggregate
+            },
+        ));
+    }
+    InferredIndustryProfile::new(out)
+        .ok_or_else(|| "canonical industry inference produced invalid output".into())
+}
+
+pub fn industry_profile_is_canonical(
+    profile: &InferredIndustryProfile,
+    context: IndustryInferenceContext<'_>,
+) -> bool {
+    infer_industries(context).is_ok_and(|expected| expected == *profile)
+}
+fn industry_pop_score(population: u32) -> u16 {
+    u16::try_from(population / 5).unwrap_or(u16::MAX).min(2_000)
+}
+fn canonical_industry_scale(score: u16, cap: ProductionScale) -> ProductionScale {
+    (if score >= 7_000 {
+        ProductionScale::Regional
+    } else if score >= 4_000 {
+        ProductionScale::Local
+    } else {
+        ProductionScale::Marginal
+    })
+    .min(cap)
+}
+fn canonical_industry_lithology(g: &SurfaceGeology) -> SurfaceLithology {
+    match g {
+        SurfaceGeology::Mapped(v) => match v.setting.lithology {
+            GeologicLithologyEvidence::Mapped(l) | GeologicLithologyEvidence::Inferred(l) => l,
+        },
+        SurfaceGeology::Inferred(v) => v.lithology,
+    }
+}
+fn canonical_quarry(l: SurfaceLithology) -> Option<QuarryCommodity> {
+    match l {
+        SurfaceLithology::Sedimentary(SedimentaryRock::Limestone | SedimentaryRock::Dolostone) => {
+            Some(QuarryCommodity::Limestone)
+        }
+        SurfaceLithology::Sedimentary(SedimentaryRock::Chalk) => Some(QuarryCommodity::Chalk),
+        SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone) => {
+            Some(QuarryCommodity::Sandstone)
+        }
+        SurfaceLithology::Metamorphic(MetamorphicRock::Slate) => Some(QuarryCommodity::Slate),
+        SurfaceLithology::Igneous(IgneousRock::Granite | IgneousRock::Granitoid) => {
+            Some(QuarryCommodity::Granite)
+        }
+        SurfaceLithology::Igneous(IgneousRock::Basalt) => Some(QuarryCommodity::Basalt),
+        SurfaceLithology::Metamorphic(MetamorphicRock::Marble) => Some(QuarryCommodity::Marble),
+        SurfaceLithology::Metamorphic(MetamorphicRock::Quartzite) => {
+            Some(QuarryCommodity::Quartzite)
+        }
+        SurfaceLithology::Igneous(_)
+        | SurfaceLithology::Metamorphic(_)
+        | SurfaceLithology::Mixed(_) => Some(QuarryCommodity::OtherHardStone),
+        _ => None,
+    }
+}
+fn canonical_historical_wet(v: HistoricalVegetation) -> bool {
+    matches!(v, HistoricalVegetation::Derived(d) if matches!(d.cover, DerivedHistoricalVegetationCover::Wetland(_) | DerivedHistoricalVegetationCover::TransitionalWater))
+}
+fn canonical_historical_woodland(v: HistoricalVegetation) -> Option<DominantLeafType> {
+    match v {
+        HistoricalVegetation::Derived(d) => match d.cover {
+            DerivedHistoricalVegetationCover::Woodland(v) => Some(v.dominant),
+            _ => None,
+        },
+        HistoricalVegetation::Fallback(f) => match f.cover {
+            FallbackHistoricalVegetationCover::Woodland(v) => Some(v.dominant),
+            _ => None,
+        },
+        HistoricalVegetation::Direct(_) => None,
+    }
+}
+
 impl SettlementHydrology {
     pub const fn has_freshwater(self) -> bool {
         self.flowing.is_some() || self.inland.is_some()
@@ -2910,6 +3588,20 @@ pub struct WorldBuildReport {
     pub route_terrain_landforms: usize,
     pub route_terrain_seasonal_risks: usize,
     pub route_terrain_encounter_tags: usize,
+    pub industry_settlements: usize,
+    pub industry_derived_outputs: usize,
+    pub industry_fallback_settlements: usize,
+    pub industry_fallback_outputs: usize,
+    pub industry_agriculture_outputs: usize,
+    pub industry_fishing_outputs: usize,
+    pub industry_quarrying_outputs: usize,
+    pub industry_mining_outputs: usize,
+    pub industry_pottery_outputs: usize,
+    pub industry_peat_outputs: usize,
+    pub industry_forestry_outputs: usize,
+    pub industry_charcoal_outputs: usize,
+    pub industry_saltmaking_outputs: usize,
+    pub industry_construction_outputs: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -2976,6 +3668,7 @@ pub struct SettlementImport {
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
+    pub industries: InferredIndustryProfile,
     pub scene_key: String,
     pub sources: String,
 }
@@ -2993,6 +3686,48 @@ mod tests {
         SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
         TreeSpeciesId,
     };
+
+    #[test]
+    fn industry_profiles_are_nonempty_bounded_unique_and_canonical() {
+        use super::{FallbackIndustry as F, IndustryEvidence as E, InferredIndustryProfile as P};
+        assert!(P::new(vec![]).is_none());
+        assert!(P::new(vec![E::Fallback(F::CommonAggregate); 25]).is_none());
+        assert!(
+            P::new(vec![
+                E::Fallback(F::CommonAggregate),
+                E::Fallback(F::CommonAggregate)
+            ])
+            .is_none()
+        );
+        let p = P::new(vec![
+            E::Fallback(F::WoodlandFuelwood),
+            E::Fallback(F::CommonAggregate),
+        ])
+        .unwrap();
+        assert_eq!(
+            p.outputs(),
+            &[
+                E::Fallback(F::WoodlandFuelwood),
+                E::Fallback(F::CommonAggregate)
+            ]
+        );
+    }
+
+    #[test]
+    fn industry_profile_serde_rejects_constructor_bypasses() {
+        use super::{FallbackIndustry as F, IndustryEvidence as E, InferredIndustryProfile as P};
+        let value = serde_json::json!({"outputs": [E::Fallback(F::CommonAggregate)]});
+        assert!(serde_json::from_value::<P>(value).is_ok());
+        assert!(serde_json::from_value::<P>(serde_json::json!({"outputs": []})).is_err());
+        let duplicate = serde_json::json!({"outputs": [E::Fallback(F::CommonAggregate), E::Fallback(F::CommonAggregate)]});
+        assert!(serde_json::from_value::<P>(duplicate).is_err());
+        let reversed = serde_json::json!({"outputs": [E::Fallback(F::CommonAggregate), E::Fallback(F::WoodlandFuelwood)]});
+        assert!(serde_json::from_value::<P>(reversed).is_err());
+        let mut raw = P { outputs: vec![] };
+        assert!(raw.validate().is_err());
+        raw.outputs = vec![E::Fallback(F::CommonAggregate); 25];
+        assert!(raw.validate().is_err());
+    }
 
     #[test]
     fn source_markdown_is_nonempty_nul_free_and_bounded() {

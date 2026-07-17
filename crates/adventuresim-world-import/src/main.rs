@@ -402,9 +402,46 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "religious_status": encode_religious_status(settlement.religious_status),
         "drought": encode_drought(settlement.drought),
         "hydrology": encode_hydrology(settlement.hydrology),
+        "industries": encode_industries(&settlement.industries),
         "scene_key": settlement.scene_key,
         "sources": settlement.sources,
     }))
+}
+
+fn encode_industries(profile: &adventuresim_world_schema::InferredIndustryProfile) -> Value {
+    use adventuresim_world_schema::{
+        AgriculturalCommodity as A, ConstructionCommodity as C, DerivedIndustry as D,
+        FallbackIndustry as F, FishCommodity as Fish, ForestCommodity as Forest,
+        IndustryEvidence as E, MinedCommodity, PotteryCommodity as P, ProductionScale as S,
+        QuarryCommodity as Q, SaltSource as Salt,
+    };
+    let unit = |name: &str| enum_unit(name);
+    let scale = |v| {
+        unit(match v {
+            S::Marginal => "Marginal",
+            S::Local => "Local",
+            S::Regional => "Regional",
+        })
+    };
+    let outputs = profile.outputs().iter().map(|e| match e {
+        E::Fallback(v) => json!({ "Fallback": unit(match v { F::FreshwaterFishing=>"FreshwaterFishing", F::GrazingDairy=>"GrazingDairy", F::CroplandGrain=>"CroplandGrain", F::WoodlandFuelwood=>"WoodlandFuelwood", F::CommonAggregate=>"CommonAggregate" }) }),
+        E::Derived(v) => {
+            let inner = match v {
+                D::Agriculture(v) => json!({"Agriculture":{"commodity":unit(match v.commodity { A::Grain=>"Grain", A::Flax=>"Flax", A::Wool=>"Wool", A::Dairy=>"Dairy", A::Hides=>"Hides"}),"scale":scale(v.scale)}}),
+                D::Fishing(v) => json!({"Fishing":{"commodity":unit(match v.commodity { Fish::Freshwater=>"Freshwater", Fish::Estuarine=>"Estuarine", Fish::Marine=>"Marine"}),"scale":scale(v.scale)}}),
+                D::Quarrying(v) => json!({"Quarrying":{"commodity":unit(match v.commodity { Q::Limestone=>"Limestone",Q::Chalk=>"Chalk",Q::Sandstone=>"Sandstone",Q::Slate=>"Slate",Q::Granite=>"Granite",Q::Basalt=>"Basalt",Q::Marble=>"Marble",Q::Quartzite=>"Quartzite",Q::OtherHardStone=>"OtherHardStone"}),"scale":scale(v.scale)}}),
+                D::Mining(v) => json!({"Mining":{"commodity":unit(match v.commodity { MinedCommodity::Coal=>"Coal"}),"scale":scale(v.scale)}}),
+                D::Pottery(v) => json!({"Pottery":{"commodity":unit(match v.commodity { P::Clay=>"Clay",P::Earthenware=>"Earthenware"}),"scale":scale(v.scale)}}),
+                D::PeatCutting(v) => json!({"PeatCutting":{"scale":scale(v.scale)}}),
+                D::Forestry(v) => json!({"Forestry":{"commodity":unit(match v.commodity { Forest::Hardwood=>"Hardwood",Forest::Softwood=>"Softwood",Forest::Mixed=>"Mixed",Forest::Fuelwood=>"Fuelwood"}),"scale":scale(v.scale)}}),
+                D::CharcoalBurning(v) => json!({"CharcoalBurning":{"scale":scale(v.scale)}}),
+                D::Saltmaking(v) => json!({"Saltmaking":{"source":unit(match v.source { Salt::Evaporite=>"Evaporite",Salt::SalineSoil=>"SalineSoil",Salt::CoastalBrine=>"CoastalBrine"}),"scale":scale(v.scale)}}),
+                D::Construction(v) => json!({"Construction":{"commodity":unit(match v.commodity { C::DimensionStone=>"DimensionStone",C::Sand=>"Sand",C::Gravel=>"Gravel",C::Brick=>"Brick",C::RoofTile=>"RoofTile",C::Timber=>"Timber"}),"scale":scale(v.scale)}}),
+            };
+            json!({"Derived": inner})
+        }
+    }).collect::<Vec<_>>();
+    json!({"outputs": outputs})
 }
 
 fn encode_hydrology(hydrology: adventuresim_world_schema::SettlementHydrology) -> Value {
@@ -1343,6 +1380,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_industries_for_spacetimedb_sats_json() {
+        let settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["industries"],
+            serde_json::json!({"outputs": [{"Fallback": {"CommonAggregate": []}}]})
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -1412,6 +1458,11 @@ mod tests {
                 .unwrap(),
             ),
             hydrology: adventuresim_world_schema::SettlementHydrology::default(),
+            industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
+                adventuresim_world_schema::IndustryEvidence::Fallback(
+                    adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+                ),
+            ]).unwrap(),
             scene_key: "village".into(),
             sources: "- Test source.".into(),
         }
