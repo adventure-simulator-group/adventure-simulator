@@ -36,15 +36,16 @@ another enriched draft with a typed open-or-wooded state. Jung/IIASA European
 PNV v1.1 then adds typed posterior, categorical, or inferred potential
 vegetation. EU-Trees4F consumes that source-independent class accessor,
 adds a nonempty modeled-or-inferred tree-species profile, and constructs another
-enriched draft. ESDB consumes all of those environmental inputs and adds a
-complete mapped-or-inferred soil profile. EGDI surface geology then uses an
+enriched draft. SoilGrids consumes all of those environmental inputs and adds a
+typed source-prediction draft. EGDI surface geology then uses that prediction and an
 indexed local GeoPackage to attach a typed mapped-or-inferred lithology and age
 setting. The IEG stage then parses a curated 1544 legal-religion
 intermediate into an established, parity, multi-confessional, or municipally
 determined typed status. NOAA OWDA adds a bounded current-summer PDSI and typed
-twenty-year drought/wetness history. EU-Hydro is the final typestate stage: it
-adds settlement water access, converts draft roads into typed land crossings
-or ferry waterways, and only then constructs the canonical world records.
+twenty-year drought/wetness history. EU-Hydro adds settlement water access and
+converts draft roads into typed land crossings or ferry waterways, returning a
+private hydrology draft. The soil finalizer then combines prediction, geology,
+Jung wetland evidence, elevation, and hydrology into canonical world records.
 The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents

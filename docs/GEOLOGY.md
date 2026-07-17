@@ -57,7 +57,7 @@ lithology becomes plausible sandstone. Missing ages are inferred from
 lithology: unconsolidated deposits are Quaternary, coal is Carboniferous,
 other sedimentary rock is Jurassic, crystalline igneous/metamorphic rock is
 Precambrian, and mixed rock is Paleogene. Settlements outside source coverage
-receive a complete inferred setting based first on their imported soil, with
+receive a complete inferred setting based first on their SoilGrids prediction, with
 sandstone as the general fallback.
 
 These categories provide quarry/building-stone, clay, chalk, slate, salt,

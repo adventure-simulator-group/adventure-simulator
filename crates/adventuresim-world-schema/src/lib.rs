@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 15;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 2;
+pub const WORLD_SCHEMA_VERSION: u32 = 16;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 3;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -964,57 +964,6 @@ pub struct SoilProperties {
     pub agricultural_limitation: AgriculturalLimitation,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct SoilMappingUnit {
-    smu: u32,
-    dominant_stu: u32,
-    dominance_percent: u8,
-}
-
-impl SoilMappingUnit {
-    pub const fn new(smu: u32, dominant_stu: u32, dominance_percent: u8) -> Option<Self> {
-        if smu > 0 && dominant_stu > 0 && dominance_percent >= 1 && dominance_percent <= 100 {
-            Some(Self {
-                smu,
-                dominant_stu,
-                dominance_percent,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub const fn smu(self) -> u32 {
-        self.smu
-    }
-
-    pub const fn dominant_stu(self) -> u32 {
-        self.dominant_stu
-    }
-
-    pub const fn dominance_percent(self) -> u8 {
-        self.dominance_percent
-    }
-}
-
-impl<'de> Deserialize<'de> for SoilMappingUnit {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            smu: u32,
-            dominant_stu: u32,
-            dominance_percent: u8,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.smu, wire.dominant_stu, wire.dominance_percent)
-            .ok_or_else(|| serde::de::Error::custom("invalid ESDB soil mapping unit"))
-    }
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum WrbReferenceGroup {
@@ -1046,59 +995,110 @@ pub enum WrbReferenceGroup {
     Regosol,
     Solonchak,
     Solonetz,
+    Stagnosol,
     Umbrisol,
     Vertisol,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+/// A bounded probability or confidence value in basis points.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct ParentMaterialCode {
-    code: String,
+pub struct SoilBasisPoints {
+    value: u16,
 }
 
-impl ParentMaterialCode {
-    pub fn new(code: impl Into<String>) -> Option<Self> {
-        let code = code.into();
-        (!code.is_empty()
-            && code.len() <= 16
-            && code.bytes().all(|byte| byte.is_ascii_alphanumeric()))
-        .then_some(Self { code })
+impl SoilBasisPoints {
+    pub const fn new(value: u16) -> Option<Self> {
+        if value <= 10_000 {
+            Some(Self { value })
+        } else {
+            None
+        }
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.code
+    pub const fn get(self) -> u16 {
+        self.value
     }
 }
 
-impl<'de> Deserialize<'de> for ParentMaterialCode {
+impl<'de> Deserialize<'de> for SoilBasisPoints {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct Wire {
-            code: String,
+            value: u16,
         }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.code)
-            .ok_or_else(|| serde::de::Error::custom("invalid ESDB parent-material code"))
+        Self::new(Wire::deserialize(deserializer)?.value)
+            .ok_or_else(|| serde::de::Error::custom("soil basis points must be 0..=10000"))
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct MappedSoilProfile {
-    pub mapping_unit: SoilMappingUnit,
-    pub wrb_group: WrbReferenceGroup,
-    pub parent_material: ParentMaterialCode,
-    pub properties: SoilProperties,
+pub enum SoilAcidity {
+    StronglyAcid,
+    Acid,
+    Neutral,
+    Alkaline,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub enum SoilProfile {
-    Mapped(MappedSoilProfile),
-    Inferred(SoilProperties),
+pub enum CationExchangeCapacity {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+    VeryHigh,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilFertility {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+    VeryHigh,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SoilEvidence {
+    SoilGridsPrediction,
+    DeterministicInference,
+}
+
+/// Source prediction retained through geology and hydrology finalization.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SoilPrediction {
+    pub wrb_group: WrbReferenceGroup,
+    pub histosol_probability: SoilBasisPoints,
+    pub leptosol_probability: SoilBasisPoints,
+    pub texture: MineralSoilTexture,
+    pub available_water: AvailableWaterCapacity,
+    pub organic_carbon: TopsoilOrganicCarbon,
+    pub stones: StoneContentPercent,
+    pub acidity: SoilAcidity,
+    pub cation_exchange_capacity: CationExchangeCapacity,
+    pub fertility: SoilFertility,
+    pub confidence: SoilBasisPoints,
+    pub evidence: SoilEvidence,
+}
+
+/// Canonical soil after predictions are resolved against geology and hydrology.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SoilProfile {
+    pub wrb_group: WrbReferenceGroup,
+    pub parent_material: SurfaceLithology,
+    pub properties: SoilProperties,
+    pub acidity: SoilAcidity,
+    pub cation_exchange_capacity: CationExchangeCapacity,
+    pub fertility: SoilFertility,
+    pub confidence: SoilBasisPoints,
+    pub evidence: SoilEvidence,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -1925,8 +1925,8 @@ pub struct WorldBuildReport {
     pub tree_species_samples: usize,
     pub tree_species_fallback_samples: usize,
     pub tree_species_candidates: usize,
-    pub soil_polygons_read: usize,
-    pub soil_attribute_rows_read: usize,
+    pub soil_rasters_read: usize,
+    pub soil_depth_layers_read: usize,
     pub soil_samples: usize,
     pub soil_fallback_samples: usize,
     pub geology_features_read: usize,
@@ -2020,10 +2020,10 @@ mod tests {
         CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, ForestCover, GeologicUnitId,
         HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
         LandUseProfile, LanguageCode, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode,
-        PotentialVegetation, PotentialVegetationClass, PotentialVegetationPosterior,
-        SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SuitabilityBasisPoints,
-        SummerHydroclimate, TreeSpeciesId,
+        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
+        PotentialVegetationClass, PotentialVegetationPosterior, SettlementReligiousStatus,
+        SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
+        TreeSpeciesId,
     };
 
     #[test]
@@ -2212,15 +2212,11 @@ mod tests {
     }
 
     #[test]
-    fn soil_source_identifiers_and_percentages_are_bounded() {
-        assert!(SoilMappingUnit::new(1, 2, 75).is_some());
-        assert!(SoilMappingUnit::new(0, 2, 75).is_none());
-        assert!(SoilMappingUnit::new(1, 2, 0).is_none());
-        assert!(SoilMappingUnit::new(1, 2, 101).is_none());
+    fn soil_uncertainty_and_percentages_are_bounded() {
+        assert_eq!(SoilBasisPoints::new(10_000).unwrap().get(), 10_000);
+        assert!(SoilBasisPoints::new(10_001).is_none());
         assert!(StoneContentPercent::new(100).is_some());
         assert!(StoneContentPercent::new(101).is_none());
-        assert!(ParentMaterialCode::new("110").is_some());
-        assert!(ParentMaterialCode::new("bad-code").is_none());
     }
 
     #[test]
