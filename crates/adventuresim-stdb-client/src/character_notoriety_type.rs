@@ -14,3 +14,39 @@ pub struct CharacterNotoriety {
 impl __sdk::InModule for CharacterNotoriety {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterNotoriety`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterNotorietyCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterNotoriety, u64>,
+    pub value: __sdk::__query_builder::Col<CharacterNotoriety, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterNotoriety {
+    type Cols = CharacterNotorietyCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterNotorietyCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            value: __sdk::__query_builder::Col::new(table_name, "value"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterNotoriety`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterNotorietyIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterNotoriety, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterNotoriety {
+    type IxCols = CharacterNotorietyIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterNotorietyIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterNotoriety {}

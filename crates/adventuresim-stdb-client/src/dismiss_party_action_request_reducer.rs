@@ -24,8 +24,6 @@ impl __sdk::InModule for DismissPartyActionRequestArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DismissPartyActionRequestCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `dismiss_party_action_request`.
 ///
@@ -35,87 +33,49 @@ pub trait dismiss_party_action_request {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_dismiss_party_action_request`] callbacks.
-    fn dismiss_party_action_request(&self, leader_id: u64, request_id: u64) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `dismiss_party_action_request`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`dismiss_party_action_request:dismiss_party_action_request_then`] to run a callback after the reducer completes.
+    fn dismiss_party_action_request(&self, leader_id: u64, request_id: u64) -> __sdk::Result<()> {
+        self.dismiss_party_action_request_then(leader_id, request_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `dismiss_party_action_request` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DismissPartyActionRequestCallbackId`] can be passed to [`Self::remove_on_dismiss_party_action_request`]
-    /// to cancel the callback.
-    fn on_dismiss_party_action_request(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn dismiss_party_action_request_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64) + Send + 'static,
-    ) -> DismissPartyActionRequestCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_dismiss_party_action_request`],
-    /// causing it not to run in the future.
-    fn remove_on_dismiss_party_action_request(&self, callback: DismissPartyActionRequestCallbackId);
+        leader_id: u64,
+        request_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl dismiss_party_action_request for super::RemoteReducers {
-    fn dismiss_party_action_request(&self, leader_id: u64, request_id: u64) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "dismiss_party_action_request",
+    fn dismiss_party_action_request_then(
+        &self,
+        leader_id: u64,
+        request_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DismissPartyActionRequestArgs {
                 leader_id,
                 request_id,
             },
+            callback,
         )
-    }
-    fn on_dismiss_party_action_request(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64) + Send + 'static,
-    ) -> DismissPartyActionRequestCallbackId {
-        DismissPartyActionRequestCallbackId(self.imp.on_reducer(
-            "dismiss_party_action_request",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DismissPartyActionRequest {
-                                    leader_id,
-                                    request_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, leader_id, request_id)
-            }),
-        ))
-    }
-    fn remove_on_dismiss_party_action_request(
-        &self,
-        callback: DismissPartyActionRequestCallbackId,
-    ) {
-        self.imp
-            .remove_on_reducer("dismiss_party_action_request", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `dismiss_party_action_request`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_dismiss_party_action_request {
-    /// Set the call-reducer flags for the reducer `dismiss_party_action_request` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn dismiss_party_action_request(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_dismiss_party_action_request for super::SetReducerFlags {
-    fn dismiss_party_action_request(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("dismiss_party_action_request", flags);
     }
 }

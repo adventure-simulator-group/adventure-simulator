@@ -28,8 +28,6 @@ impl __sdk::InModule for EndTacticalServerByInstanceArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct EndTacticalServerByInstanceCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `end_tactical_server_by_instance`.
 ///
@@ -39,104 +37,57 @@ pub trait end_tactical_server_by_instance {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_end_tactical_server_by_instance`] callbacks.
-    fn end_tactical_server_by_instance(
-        &self,
-        server: TacticalServer,
-        success: bool,
-        xp_gained: i32,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `end_tactical_server_by_instance`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`EndTacticalServerByInstanceCallbackId`] can be passed to [`Self::remove_on_end_tactical_server_by_instance`]
-    /// to cancel the callback.
-    fn on_end_tactical_server_by_instance(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &TacticalServer, &bool, &i32) + Send + 'static,
-    ) -> EndTacticalServerByInstanceCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_end_tactical_server_by_instance`],
-    /// causing it not to run in the future.
-    fn remove_on_end_tactical_server_by_instance(
-        &self,
-        callback: EndTacticalServerByInstanceCallbackId,
-    );
-}
-
-impl end_tactical_server_by_instance for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`end_tactical_server_by_instance:end_tactical_server_by_instance_then`] to run a callback after the reducer completes.
     fn end_tactical_server_by_instance(
         &self,
         server: TacticalServer,
         success: bool,
         xp_gained: i32,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "end_tactical_server_by_instance",
+        self.end_tactical_server_by_instance_then(server, success, xp_gained, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `end_tactical_server_by_instance` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn end_tactical_server_by_instance_then(
+        &self,
+        server: TacticalServer,
+        success: bool,
+        xp_gained: i32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl end_tactical_server_by_instance for super::RemoteReducers {
+    fn end_tactical_server_by_instance_then(
+        &self,
+        server: TacticalServer,
+        success: bool,
+        xp_gained: i32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             EndTacticalServerByInstanceArgs {
                 server,
                 success,
                 xp_gained,
             },
+            callback,
         )
-    }
-    fn on_end_tactical_server_by_instance(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &TacticalServer, &bool, &i32)
-        + Send
-        + 'static,
-    ) -> EndTacticalServerByInstanceCallbackId {
-        EndTacticalServerByInstanceCallbackId(self.imp.on_reducer(
-            "end_tactical_server_by_instance",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::EndTacticalServerByInstance {
-                                    server,
-                                    success,
-                                    xp_gained,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, server, success, xp_gained)
-            }),
-        ))
-    }
-    fn remove_on_end_tactical_server_by_instance(
-        &self,
-        callback: EndTacticalServerByInstanceCallbackId,
-    ) {
-        self.imp
-            .remove_on_reducer("end_tactical_server_by_instance", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `end_tactical_server_by_instance`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_end_tactical_server_by_instance {
-    /// Set the call-reducer flags for the reducer `end_tactical_server_by_instance` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn end_tactical_server_by_instance(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_end_tactical_server_by_instance for super::SetReducerFlags {
-    fn end_tactical_server_by_instance(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("end_tactical_server_by_instance", flags);
     }
 }

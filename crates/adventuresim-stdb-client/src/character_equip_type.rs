@@ -22,3 +22,55 @@ pub struct CharacterEquip {
 impl __sdk::InModule for CharacterEquip {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterEquip`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterEquipCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterEquip, u64>,
+    pub left_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub right_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub left_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub right_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub left_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub right_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub head_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub chest_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub stomach_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterEquip {
+    type Cols = CharacterEquipCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterEquipCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            left_hand_item_id: __sdk::__query_builder::Col::new(table_name, "left_hand_item_id"),
+            right_hand_item_id: __sdk::__query_builder::Col::new(table_name, "right_hand_item_id"),
+            left_arm_armor_id: __sdk::__query_builder::Col::new(table_name, "left_arm_armor_id"),
+            right_arm_armor_id: __sdk::__query_builder::Col::new(table_name, "right_arm_armor_id"),
+            left_leg_armor_id: __sdk::__query_builder::Col::new(table_name, "left_leg_armor_id"),
+            right_leg_armor_id: __sdk::__query_builder::Col::new(table_name, "right_leg_armor_id"),
+            head_armor_id: __sdk::__query_builder::Col::new(table_name, "head_armor_id"),
+            chest_armor_id: __sdk::__query_builder::Col::new(table_name, "chest_armor_id"),
+            stomach_armor_id: __sdk::__query_builder::Col::new(table_name, "stomach_armor_id"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterEquip`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterEquipIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterEquip, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterEquip {
+    type IxCols = CharacterEquipIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterEquipIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterEquip {}

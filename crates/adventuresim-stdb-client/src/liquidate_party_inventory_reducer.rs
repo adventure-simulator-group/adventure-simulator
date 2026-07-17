@@ -28,8 +28,6 @@ impl __sdk::InModule for LiquidatePartyInventoryArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct LiquidatePartyInventoryCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `liquidate_party_inventory`.
 ///
@@ -39,33 +37,8 @@ pub trait liquidate_party_inventory {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_liquidate_party_inventory`] callbacks.
-    fn liquidate_party_inventory(
-        &self,
-        character_id: u64,
-        settlement_id: String,
-        party_inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `liquidate_party_inventory`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`LiquidatePartyInventoryCallbackId`] can be passed to [`Self::remove_on_liquidate_party_inventory`]
-    /// to cancel the callback.
-    fn on_liquidate_party_inventory(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
-    ) -> LiquidatePartyInventoryCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_liquidate_party_inventory`],
-    /// causing it not to run in the future.
-    fn remove_on_liquidate_party_inventory(&self, callback: LiquidatePartyInventoryCallbackId);
-}
-
-impl liquidate_party_inventory for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`liquidate_party_inventory:liquidate_party_inventory_then`] to run a callback after the reducer completes.
     fn liquidate_party_inventory(
         &self,
         character_id: u64,
@@ -73,76 +46,58 @@ impl liquidate_party_inventory for super::RemoteReducers {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "liquidate_party_inventory",
+        self.liquidate_party_inventory_then(
+            character_id,
+            settlement_id,
+            party_inventory_item_ids,
+            quantities,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `liquidate_party_inventory` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn liquidate_party_inventory_then(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl liquidate_party_inventory for super::RemoteReducers {
+    fn liquidate_party_inventory_then(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             LiquidatePartyInventoryArgs {
                 character_id,
                 settlement_id,
                 party_inventory_item_ids,
                 quantities,
             },
+            callback,
         )
-    }
-    fn on_liquidate_party_inventory(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
-    ) -> LiquidatePartyInventoryCallbackId {
-        LiquidatePartyInventoryCallbackId(self.imp.on_reducer(
-            "liquidate_party_inventory",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::LiquidatePartyInventory {
-                                    character_id,
-                                    settlement_id,
-                                    party_inventory_item_ids,
-                                    quantities,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    character_id,
-                    settlement_id,
-                    party_inventory_item_ids,
-                    quantities,
-                )
-            }),
-        ))
-    }
-    fn remove_on_liquidate_party_inventory(&self, callback: LiquidatePartyInventoryCallbackId) {
-        self.imp
-            .remove_on_reducer("liquidate_party_inventory", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `liquidate_party_inventory`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_liquidate_party_inventory {
-    /// Set the call-reducer flags for the reducer `liquidate_party_inventory` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn liquidate_party_inventory(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_liquidate_party_inventory for super::SetReducerFlags {
-    fn liquidate_party_inventory(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("liquidate_party_inventory", flags);
     }
 }

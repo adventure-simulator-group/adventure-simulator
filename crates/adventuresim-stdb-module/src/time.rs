@@ -18,7 +18,7 @@ pub const INN_GOLD_PER_DAY: u32 = 1;
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
 #[derive(Clone, Debug)]
-#[table(name = world_clock, public)]
+#[table(accessor = world_clock, public)]
 pub struct WorldClock {
     #[primary_key]
     pub id: u64,
@@ -30,7 +30,7 @@ pub struct WorldClock {
 /// dropping a table. New clocks are derived on demand and no longer schedule
 /// a write every second.
 #[derive(Clone, Debug)]
-#[table(name = world_clock_schedule, scheduled(refresh_world_clock))]
+#[table(accessor = world_clock_schedule, scheduled(refresh_world_clock))]
 pub struct WorldClockSchedule {
     #[primary_key]
     pub scheduled_id: u64,
@@ -38,7 +38,7 @@ pub struct WorldClockSchedule {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = character_time, public)]
+#[table(accessor = character_time, public)]
 pub struct CharacterTime {
     #[primary_key]
     pub character_id: u64,
@@ -68,7 +68,7 @@ pub struct ScheduleAllocation {
 
 /// Separate daily plans for settlement downtime and strategic travel.
 #[derive(Clone, Debug)]
-#[table(name = character_training_schedule, public)]
+#[table(accessor = character_training_schedule, public)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,
@@ -77,7 +77,7 @@ pub struct CharacterTrainingSchedule {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = character_notoriety, public)]
+#[table(accessor = character_notoriety, public)]
 pub struct CharacterNotoriety {
     #[primary_key]
     pub character_id: u64,
@@ -139,7 +139,7 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
 
 #[reducer]
 fn refresh_world_clock(ctx: &ReducerContext, schedule: WorldClockSchedule) -> Result<(), String> {
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.database_identity() {
         return Err("World clock may only be refreshed by its scheduler".into());
     }
     // Remove scheduler rows created by older module versions. The authoritative
@@ -190,7 +190,7 @@ pub fn advance_character_time(
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.travel, minutes, activities);
-    ctx.db.character_skills().character_id().update(skills);
+    crate::replace_character_skills(ctx, skills);
     crate::condition::apply_travel_condition(
         ctx,
         character_id,
@@ -508,7 +508,7 @@ pub fn rest_at_settlement(
         .ok_or_else(|| "Character limb record not found".to_string())?;
     let convalescing = convalescence_minutes(&limbs).min(elapsed);
     heal_limbs(&mut limbs, elapsed);
-    ctx.db.character_limbs().character_id().update(limbs);
+    crate::replace_character_limbs(ctx, limbs);
 
     let training_elapsed = elapsed.saturating_sub(convalescing);
     if training_elapsed > 0 {
@@ -531,7 +531,7 @@ pub fn rest_at_settlement(
             training_elapsed,
             activities,
         );
-        ctx.db.character_skills().character_id().update(skills);
+        crate::replace_character_skills(ctx, skills);
         let risks =
             apply_activity_outcomes(ctx, character_id, &schedule.downtime, training_elapsed)?;
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
@@ -583,7 +583,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.downtime, elapsed, activities);
-    ctx.db.character_skills().character_id().update(skills);
+    crate::replace_character_skills(ctx, skills);
     let risks = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     character_time.minutes = target_minutes;

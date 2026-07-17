@@ -8,7 +8,7 @@ use crate::{
 
 /// General character info
 #[derive(Clone, Debug)]
-#[table(name = character, public)]
+#[table(accessor = character, public)]
 pub struct Character {
     #[primary_key]
     pub id: u64,
@@ -34,7 +34,7 @@ pub struct Character {
 
 /// [`Character`] attributes
 #[derive(Clone, Debug)]
-#[table(name = character_attributes, public)]
+#[table(accessor = character_attributes, public)]
 pub struct CharacterAttributes {
     #[index(direct)]
     #[unique]
@@ -59,7 +59,7 @@ pub struct CharacterAttributes {
 
 /// [`Character`] stats
 #[derive(Clone, Debug)]
-#[table(name = character_stats, public)]
+#[table(accessor = character_stats, public)]
 pub struct CharacterStats {
     #[index(direct)]
     #[unique]
@@ -70,7 +70,7 @@ pub struct CharacterStats {
 
 /// [`Character`] skills
 #[derive(Clone, Debug)]
-#[table(name = character_skills, public)]
+#[table(accessor = character_skills, public)]
 pub struct CharacterSkills {
     #[index(direct)]
     #[unique]
@@ -90,7 +90,7 @@ pub struct CharacterSkills {
 
 /// [`Character`] limbs
 #[derive(Clone, Debug)]
-#[table(name = character_limbs, public)]
+#[table(accessor = character_limbs, public)]
 pub struct CharacterLimbs {
     #[index(direct)]
     #[unique]
@@ -106,7 +106,7 @@ pub struct CharacterLimbs {
 
 /// [`Character`] equipment
 #[derive(Clone, Debug)]
-#[table(name = character_equip, public)]
+#[table(accessor = character_equip, public)]
 pub struct CharacterEquip {
     #[index(direct)]
     #[unique]
@@ -122,6 +122,65 @@ pub struct CharacterEquip {
     pub head_armor_id: Option<u64>,
     pub chest_armor_id: Option<u64>,
     pub stomach_armor_id: Option<u64>,
+}
+
+// SpacetimeDB 2 only exposes `update` through primary keys. These legacy tables
+// intentionally retain their data-compatible unique `character_id` columns, so
+// reducers replace rows explicitly. A reducer is transactional, making each
+// delete+insert pair atomic and preserving the rollback behavior of `update`.
+pub(crate) fn replace_character_attributes(ctx: &ReducerContext, row: CharacterAttributes) {
+    assert!(
+        ctx.db
+            .character_attributes()
+            .character_id()
+            .delete(row.character_id),
+        "character attributes must exist before replacement"
+    );
+    ctx.db.character_attributes().insert(row);
+}
+
+pub(crate) fn replace_character_stats(ctx: &ReducerContext, row: CharacterStats) {
+    assert!(
+        ctx.db
+            .character_stats()
+            .character_id()
+            .delete(row.character_id),
+        "character stats must exist before replacement"
+    );
+    ctx.db.character_stats().insert(row);
+}
+
+pub(crate) fn replace_character_skills(ctx: &ReducerContext, row: CharacterSkills) {
+    assert!(
+        ctx.db
+            .character_skills()
+            .character_id()
+            .delete(row.character_id),
+        "character skills must exist before replacement"
+    );
+    ctx.db.character_skills().insert(row);
+}
+
+pub(crate) fn replace_character_limbs(ctx: &ReducerContext, row: CharacterLimbs) {
+    assert!(
+        ctx.db
+            .character_limbs()
+            .character_id()
+            .delete(row.character_id),
+        "character limbs must exist before replacement"
+    );
+    ctx.db.character_limbs().insert(row);
+}
+
+pub(crate) fn replace_character_equip(ctx: &ReducerContext, row: CharacterEquip) {
+    assert!(
+        ctx.db
+            .character_equip()
+            .character_id()
+            .delete(row.character_id),
+        "character equipment must exist before replacement"
+    );
+    ctx.db.character_equip().insert(row);
 }
 
 impl CharacterEquip {
@@ -221,7 +280,7 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     limbs.head_health = 0.75;
     limbs.chest_health = 0.85;
     limbs.stomach_health = 0.70;
-    ctx.db.character_limbs().character_id().update(limbs);
+    replace_character_limbs(ctx, limbs);
 
     Ok(())
 }
@@ -402,7 +461,7 @@ pub fn equip_item(
         ItemSlot::None => {}
     }
 
-    ctx.db.character_equip().character_id().update(equip);
+    replace_character_equip(ctx, equip);
     Ok(())
 }
 

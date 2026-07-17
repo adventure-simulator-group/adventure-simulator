@@ -20,3 +20,51 @@ pub struct WorldNode {
 impl __sdk::InModule for WorldNode {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `WorldNode`.
+///
+/// Provides typed access to columns for query building.
+pub struct WorldNodeCols {
+    pub id: __sdk::__query_builder::Col<WorldNode, u64>,
+    pub parent_node_id: __sdk::__query_builder::Col<WorldNode, Option<u64>>,
+    pub latitude: __sdk::__query_builder::Col<WorldNode, f64>,
+    pub longitude: __sdk::__query_builder::Col<WorldNode, f64>,
+    pub is_settlement: __sdk::__query_builder::Col<WorldNode, bool>,
+    pub is_town: __sdk::__query_builder::Col<WorldNode, bool>,
+    pub is_ferry: __sdk::__query_builder::Col<WorldNode, bool>,
+    pub is_harbour: __sdk::__query_builder::Col<WorldNode, bool>,
+}
+
+impl __sdk::__query_builder::HasCols for WorldNode {
+    type Cols = WorldNodeCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        WorldNodeCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            parent_node_id: __sdk::__query_builder::Col::new(table_name, "parent_node_id"),
+            latitude: __sdk::__query_builder::Col::new(table_name, "latitude"),
+            longitude: __sdk::__query_builder::Col::new(table_name, "longitude"),
+            is_settlement: __sdk::__query_builder::Col::new(table_name, "is_settlement"),
+            is_town: __sdk::__query_builder::Col::new(table_name, "is_town"),
+            is_ferry: __sdk::__query_builder::Col::new(table_name, "is_ferry"),
+            is_harbour: __sdk::__query_builder::Col::new(table_name, "is_harbour"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `WorldNode`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct WorldNodeIxCols {
+    pub id: __sdk::__query_builder::IxCol<WorldNode, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for WorldNode {
+    type IxCols = WorldNodeIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        WorldNodeIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for WorldNode {}

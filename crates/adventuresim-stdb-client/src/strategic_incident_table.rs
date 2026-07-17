@@ -80,11 +80,6 @@ impl<'ctx> __sdk::Table for StrategicIncidentTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<StrategicIncident>("strategic_incident");
-    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
-}
 pub struct StrategicIncidentUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for StrategicIncidentTableHandle<'ctx> {
@@ -100,17 +95,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for StrategicIncidentTableHandle<'ctx> {
     fn remove_on_update(&self, callback: StrategicIncidentUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<StrategicIncident>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<StrategicIncident>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `quest_id` unique index on the table `strategic_incident`,
@@ -140,5 +124,38 @@ impl<'ctx> StrategicIncidentQuestIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<StrategicIncident> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<StrategicIncident>("strategic_incident");
+    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<StrategicIncident>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<StrategicIncident>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `StrategicIncident`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait strategic_incidentQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `StrategicIncident`.
+    fn strategic_incident(&self) -> __sdk::__query_builder::Table<StrategicIncident>;
+}
+
+impl strategic_incidentQueryTableAccess for __sdk::QueryTableAccessor {
+    fn strategic_incident(&self) -> __sdk::__query_builder::Table<StrategicIncident> {
+        __sdk::__query_builder::Table::new("strategic_incident")
     }
 }

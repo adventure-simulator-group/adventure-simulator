@@ -4,9 +4,9 @@ use strum::{EnumCount, VariantArray};
 /// [`Item`] that is in the inventory
 #[derive(Clone, Debug)]
 #[table(
-    name = inventory_item, public,
-    index(name = character_and_item_id, btree(columns = [character_id, item_id])),
-    index(name = character_and_id, btree(columns = [character_id, id])),
+    accessor = inventory_item, public,
+    index(accessor = character_and_item_id, btree(columns = [character_id, item_id])),
+    index(accessor = character_and_id, btree(columns = [character_id, id])),
 )]
 pub struct InventoryItem {
     #[primary_key]
@@ -53,7 +53,7 @@ pub enum ItemSlot {
 
 /// Item stats
 #[derive(Clone, Debug, Default)]
-#[table(name = item, public)]
+#[table(accessor = item, public)]
 pub struct Item {
     #[primary_key]
     pub id: String,

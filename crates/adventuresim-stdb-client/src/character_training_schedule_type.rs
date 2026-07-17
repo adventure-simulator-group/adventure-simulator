@@ -17,3 +17,41 @@ pub struct CharacterTrainingSchedule {
 impl __sdk::InModule for CharacterTrainingSchedule {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterTrainingSchedule`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterTrainingScheduleCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterTrainingSchedule, u64>,
+    pub downtime: __sdk::__query_builder::Col<CharacterTrainingSchedule, ScheduleAllocation>,
+    pub travel: __sdk::__query_builder::Col<CharacterTrainingSchedule, ScheduleAllocation>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterTrainingSchedule {
+    type Cols = CharacterTrainingScheduleCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterTrainingScheduleCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            downtime: __sdk::__query_builder::Col::new(table_name, "downtime"),
+            travel: __sdk::__query_builder::Col::new(table_name, "travel"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterTrainingSchedule`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterTrainingScheduleIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterTrainingSchedule, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterTrainingSchedule {
+    type IxCols = CharacterTrainingScheduleIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterTrainingScheduleIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterTrainingSchedule {}

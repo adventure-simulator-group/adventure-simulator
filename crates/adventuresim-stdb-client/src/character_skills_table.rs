@@ -78,23 +78,6 @@ impl<'ctx> __sdk::Table for CharacterSkillsTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<CharacterSkills>("character_skills");
-    _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<CharacterSkills>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<CharacterSkills>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `character_id` unique index on the table `character_skills`,
 /// which allows point queries on the field of the same name
 /// via the [`CharacterSkillsCharacterIdUnique::find`] method.
@@ -122,5 +105,38 @@ impl<'ctx> CharacterSkillsCharacterIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<CharacterSkills> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<CharacterSkills>("character_skills");
+    _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<CharacterSkills>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<CharacterSkills>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterSkills`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait character_skillsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterSkills`.
+    fn character_skills(&self) -> __sdk::__query_builder::Table<CharacterSkills>;
+}
+
+impl character_skillsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn character_skills(&self) -> __sdk::__query_builder::Table<CharacterSkills> {
+        __sdk::__query_builder::Table::new("character_skills")
     }
 }

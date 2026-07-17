@@ -78,12 +78,6 @@ impl<'ctx> __sdk::Table for TacticalServerTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<TacticalServer>("tactical_server");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-    _table.add_unique_constraint::<String>("mission_id", |row| &row.mission_id);
-}
 pub struct TacticalServerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for TacticalServerTableHandle<'ctx> {
@@ -99,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for TacticalServerTableHandle<'ctx> {
     fn remove_on_update(&self, callback: TacticalServerUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<TacticalServer>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<TacticalServer>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `identity` unique index on the table `tactical_server`,
@@ -171,5 +154,39 @@ impl<'ctx> TacticalServerMissionIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<TacticalServer> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<TacticalServer>("tactical_server");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+    _table.add_unique_constraint::<String>("mission_id", |row| &row.mission_id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<TacticalServer>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<TacticalServer>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `TacticalServer`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait tactical_serverQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `TacticalServer`.
+    fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer>;
+}
+
+impl tactical_serverQueryTableAccess for __sdk::QueryTableAccessor {
+    fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer> {
+        __sdk::__query_builder::Table::new("tactical_server")
     }
 }

@@ -79,11 +79,6 @@ impl<'ctx> __sdk::Table for QuestTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<Quest>("quest");
-    _table.add_unique_constraint::<String>("id", |row| &row.id);
-}
 pub struct QuestUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for QuestTableHandle<'ctx> {
@@ -99,17 +94,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for QuestTableHandle<'ctx> {
     fn remove_on_update(&self, callback: QuestUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Quest>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Quest>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `quest`,
@@ -139,5 +123,38 @@ impl<'ctx> QuestIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<Quest> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<Quest>("quest");
+    _table.add_unique_constraint::<String>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Quest>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<Quest>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Quest`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait questQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Quest`.
+    fn quest(&self) -> __sdk::__query_builder::Table<Quest>;
+}
+
+impl questQueryTableAccess for __sdk::QueryTableAccessor {
+    fn quest(&self) -> __sdk::__query_builder::Table<Quest> {
+        __sdk::__query_builder::Table::new("quest")
     }
 }

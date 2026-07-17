@@ -22,8 +22,6 @@ impl __sdk::InModule for SeedBotJoinRequestsArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SeedBotJoinRequestsCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `seed_bot_join_requests`.
 ///
@@ -33,82 +31,46 @@ pub trait seed_bot_join_requests {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_seed_bot_join_requests`] callbacks.
-    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `seed_bot_join_requests`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`seed_bot_join_requests:seed_bot_join_requests_then`] to run a callback after the reducer completes.
+    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()> {
+        self.seed_bot_join_requests_then(recruitment_role_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `seed_bot_join_requests` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SeedBotJoinRequestsCallbackId`] can be passed to [`Self::remove_on_seed_bot_join_requests`]
-    /// to cancel the callback.
-    fn on_seed_bot_join_requests(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn seed_bot_join_requests_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> SeedBotJoinRequestsCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_seed_bot_join_requests`],
-    /// causing it not to run in the future.
-    fn remove_on_seed_bot_join_requests(&self, callback: SeedBotJoinRequestsCallbackId);
+        recruitment_role_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl seed_bot_join_requests for super::RemoteReducers {
-    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "seed_bot_join_requests",
+    fn seed_bot_join_requests_then(
+        &self,
+        recruitment_role_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             SeedBotJoinRequestsArgs {
                 recruitment_role_id,
             },
+            callback,
         )
-    }
-    fn on_seed_bot_join_requests(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> SeedBotJoinRequestsCallbackId {
-        SeedBotJoinRequestsCallbackId(self.imp.on_reducer(
-            "seed_bot_join_requests",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::SeedBotJoinRequests {
-                                    recruitment_role_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, recruitment_role_id)
-            }),
-        ))
-    }
-    fn remove_on_seed_bot_join_requests(&self, callback: SeedBotJoinRequestsCallbackId) {
-        self.imp
-            .remove_on_reducer("seed_bot_join_requests", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `seed_bot_join_requests`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_seed_bot_join_requests {
-    /// Set the call-reducer flags for the reducer `seed_bot_join_requests` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn seed_bot_join_requests(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_seed_bot_join_requests for super::SetReducerFlags {
-    fn seed_bot_join_requests(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("seed_bot_join_requests", flags);
     }
 }

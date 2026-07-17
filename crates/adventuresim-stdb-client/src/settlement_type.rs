@@ -21,3 +21,56 @@ pub struct Settlement {
 impl __sdk::InModule for Settlement {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Settlement`.
+///
+/// Provides typed access to columns for query building.
+pub struct SettlementCols {
+    pub id: __sdk::__query_builder::Col<Settlement, String>,
+    pub name: __sdk::__query_builder::Col<Settlement, String>,
+    pub coord_x: __sdk::__query_builder::Col<Settlement, f64>,
+    pub coord_y: __sdk::__query_builder::Col<Settlement, f64>,
+    pub population_level: __sdk::__query_builder::Col<Settlement, i32>,
+    pub population_estimate: __sdk::__query_builder::Col<Settlement, u32>,
+    pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
+    pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
+    pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
+}
+
+impl __sdk::__query_builder::HasCols for Settlement {
+    type Cols = SettlementCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        SettlementCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            coord_x: __sdk::__query_builder::Col::new(table_name, "coord_x"),
+            coord_y: __sdk::__query_builder::Col::new(table_name, "coord_y"),
+            population_level: __sdk::__query_builder::Col::new(table_name, "population_level"),
+            population_estimate: __sdk::__query_builder::Col::new(
+                table_name,
+                "population_estimate",
+            ),
+            scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
+            religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
+            source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Settlement`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct SettlementIxCols {
+    pub id: __sdk::__query_builder::IxCol<Settlement, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for Settlement {
+    type IxCols = SettlementIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        SettlementIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for Settlement {}

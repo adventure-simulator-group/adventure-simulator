@@ -24,8 +24,6 @@ impl __sdk::InModule for DisbandPartyArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DisbandPartyCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `disband_party`.
 ///
@@ -35,82 +33,49 @@ pub trait disband_party {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_disband_party`] callbacks.
-    fn disband_party(&self, leader_id: u64, party_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `disband_party`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`disband_party:disband_party_then`] to run a callback after the reducer completes.
+    fn disband_party(&self, leader_id: u64, party_id: String) -> __sdk::Result<()> {
+        self.disband_party_then(leader_id, party_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `disband_party` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DisbandPartyCallbackId`] can be passed to [`Self::remove_on_disband_party`]
-    /// to cancel the callback.
-    fn on_disband_party(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn disband_party_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> DisbandPartyCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_disband_party`],
-    /// causing it not to run in the future.
-    fn remove_on_disband_party(&self, callback: DisbandPartyCallbackId);
+        leader_id: u64,
+        party_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl disband_party for super::RemoteReducers {
-    fn disband_party(&self, leader_id: u64, party_id: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "disband_party",
+    fn disband_party_then(
+        &self,
+        leader_id: u64,
+        party_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DisbandPartyArgs {
                 leader_id,
                 party_id,
             },
+            callback,
         )
-    }
-    fn on_disband_party(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> DisbandPartyCallbackId {
-        DisbandPartyCallbackId(self.imp.on_reducer(
-            "disband_party",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DisbandParty {
-                                    leader_id,
-                                    party_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, leader_id, party_id)
-            }),
-        ))
-    }
-    fn remove_on_disband_party(&self, callback: DisbandPartyCallbackId) {
-        self.imp.remove_on_reducer("disband_party", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `disband_party`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_disband_party {
-    /// Set the call-reducer flags for the reducer `disband_party` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn disband_party(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_disband_party for super::SetReducerFlags {
-    fn disband_party(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("disband_party", flags);
     }
 }

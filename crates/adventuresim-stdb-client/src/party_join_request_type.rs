@@ -17,3 +17,57 @@ pub struct PartyJoinRequest {
 impl __sdk::InModule for PartyJoinRequest {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyJoinRequest`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyJoinRequestCols {
+    pub id: __sdk::__query_builder::Col<PartyJoinRequest, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyJoinRequest, String>,
+    pub recruitment_role_id: __sdk::__query_builder::Col<PartyJoinRequest, u64>,
+    pub character_id: __sdk::__query_builder::Col<PartyJoinRequest, u64>,
+    pub meets_requirements: __sdk::__query_builder::Col<PartyJoinRequest, bool>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyJoinRequest {
+    type Cols = PartyJoinRequestCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyJoinRequestCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            recruitment_role_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "recruitment_role_id",
+            ),
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            meets_requirements: __sdk::__query_builder::Col::new(table_name, "meets_requirements"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyJoinRequest`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyJoinRequestIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<PartyJoinRequest, u64>,
+    pub id: __sdk::__query_builder::IxCol<PartyJoinRequest, u64>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyJoinRequest, String>,
+    pub recruitment_role_id: __sdk::__query_builder::IxCol<PartyJoinRequest, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyJoinRequest {
+    type IxCols = PartyJoinRequestIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyJoinRequestIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            recruitment_role_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "recruitment_role_id",
+            ),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyJoinRequest {}

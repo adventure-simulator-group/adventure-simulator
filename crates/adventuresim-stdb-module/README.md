@@ -46,6 +46,11 @@ Tactical state lives in the `tactical-server` game state and is discarded when m
 
 ## Publishing
 
+Use the repository-pinned SpacetimeDB CLI 2.6.1. For persistent databases,
+take a verified backup and review the proposed schema migration before a plain
+publish. Reset publishing deletes data and is only for disposable local smoke
+environments.
+
 ```bash
 # Start SpacetimeDB
 spacetime start

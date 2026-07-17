@@ -16,3 +16,45 @@ pub struct BattleLootItem {
 impl __sdk::InModule for BattleLootItem {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `BattleLootItem`.
+///
+/// Provides typed access to columns for query building.
+pub struct BattleLootItemCols {
+    pub id: __sdk::__query_builder::Col<BattleLootItem, u64>,
+    pub quest_id: __sdk::__query_builder::Col<BattleLootItem, String>,
+    pub item_id: __sdk::__query_builder::Col<BattleLootItem, String>,
+    pub quantity: __sdk::__query_builder::Col<BattleLootItem, u32>,
+}
+
+impl __sdk::__query_builder::HasCols for BattleLootItem {
+    type Cols = BattleLootItemCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        BattleLootItemCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            item_id: __sdk::__query_builder::Col::new(table_name, "item_id"),
+            quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `BattleLootItem`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct BattleLootItemIxCols {
+    pub id: __sdk::__query_builder::IxCol<BattleLootItem, u64>,
+    pub quest_id: __sdk::__query_builder::IxCol<BattleLootItem, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for BattleLootItem {
+    type IxCols = BattleLootItemIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        BattleLootItemIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for BattleLootItem {}

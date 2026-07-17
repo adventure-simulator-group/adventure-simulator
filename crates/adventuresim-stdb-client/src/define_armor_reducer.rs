@@ -38,8 +38,6 @@ impl __sdk::InModule for DefineArmorArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DefineArmorCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `define_armor`.
 ///
@@ -49,46 +47,8 @@ pub trait define_armor {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_define_armor`] callbacks.
-    fn define_armor(
-        &self,
-        item_id: String,
-        weight: f32,
-        slot: ItemSlot,
-        coverage: f32,
-        resistance: f32,
-        padding: f32,
-        flexibility: f32,
-        range_of_motion: f32,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `define_armor`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DefineArmorCallbackId`] can be passed to [`Self::remove_on_define_armor`]
-    /// to cancel the callback.
-    fn on_define_armor(
-        &self,
-        callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &ItemSlot,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-        ) + Send
-        + 'static,
-    ) -> DefineArmorCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_define_armor`],
-    /// causing it not to run in the future.
-    fn remove_on_define_armor(&self, callback: DefineArmorCallbackId);
-}
-
-impl define_armor for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`define_armor:define_armor_then`] to run a callback after the reducer completes.
     fn define_armor(
         &self,
         item_id: String,
@@ -100,8 +60,63 @@ impl define_armor for super::RemoteReducers {
         flexibility: f32,
         range_of_motion: f32,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "define_armor",
+        self.define_armor_then(
+            item_id,
+            weight,
+            slot,
+            coverage,
+            resistance,
+            padding,
+            flexibility,
+            range_of_motion,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `define_armor` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn define_armor_then(
+        &self,
+        item_id: String,
+        weight: f32,
+        slot: ItemSlot,
+        coverage: f32,
+        resistance: f32,
+        padding: f32,
+        flexibility: f32,
+        range_of_motion: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl define_armor for super::RemoteReducers {
+    fn define_armor_then(
+        &self,
+        item_id: String,
+        weight: f32,
+        slot: ItemSlot,
+        coverage: f32,
+        resistance: f32,
+        padding: f32,
+        flexibility: f32,
+        range_of_motion: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DefineArmorArgs {
                 item_id,
                 weight,
@@ -112,83 +127,7 @@ impl define_armor for super::RemoteReducers {
                 flexibility,
                 range_of_motion,
             },
+            callback,
         )
-    }
-    fn on_define_armor(
-        &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &ItemSlot,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-        ) + Send
-        + 'static,
-    ) -> DefineArmorCallbackId {
-        DefineArmorCallbackId(self.imp.on_reducer(
-            "define_armor",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DefineArmor {
-                                    item_id,
-                                    weight,
-                                    slot,
-                                    coverage,
-                                    resistance,
-                                    padding,
-                                    flexibility,
-                                    range_of_motion,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    item_id,
-                    weight,
-                    slot,
-                    coverage,
-                    resistance,
-                    padding,
-                    flexibility,
-                    range_of_motion,
-                )
-            }),
-        ))
-    }
-    fn remove_on_define_armor(&self, callback: DefineArmorCallbackId) {
-        self.imp.remove_on_reducer("define_armor", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `define_armor`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_define_armor {
-    /// Set the call-reducer flags for the reducer `define_armor` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn define_armor(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_define_armor for super::SetReducerFlags {
-    fn define_armor(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("define_armor", flags);
     }
 }

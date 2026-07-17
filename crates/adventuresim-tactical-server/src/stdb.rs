@@ -41,7 +41,7 @@ impl SpacetimeDb {
     /// Subscribe for spacetime db database changes.
     ///
     /// For native subsctiptions, see: https://spacetimedb.com/docs/sdks/rust/quickstart/#subscribe-to-queries.
-    pub fn subscribe(&mut self, queries: impl IntoQueries) -> SubscriptionHandle {
+    pub fn subscribe_connected_players(&mut self) -> SubscriptionHandle {
         self.conn
             .subscription_builder()
             .on_error(|ctx, error| {
@@ -50,7 +50,8 @@ impl SpacetimeDb {
                     ctx.event
                 );
             })
-            .subscribe(queries.into_queries())
+            .add_query(|query| query.from.connected_players())
+            .subscribe()
     }
 
     /// Create a new bevy system callback for new rows in a table.
@@ -90,38 +91,6 @@ impl SpacetimeDb {
     }
 }
 
-/// Trait for types that can be used with [`SpacetimeDb::subscribe`].
-///
-/// NOTE: This exists in spacetimedb-sdk, but is private :(
-///       so we have our own small stripped version of it
-pub trait IntoQueries {
-    fn into_queries(self) -> Box<[Box<str>]>;
-}
-
-impl IntoQueries for &'static str {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        Box::new([self.into()])
-    }
-}
-
-impl<const N: usize> IntoQueries for [&'static str; N] {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        self.into_iter().map(Box::from).collect()
-    }
-}
-
-impl IntoQueries for String {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        Box::new([self.into()])
-    }
-}
-
-impl<const N: usize> IntoQueries for [String; N] {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        self.into_iter().map(Box::from).collect()
-    }
-}
-
 fn update_spacetimedb(world: &mut World) -> Result {
     world.resource_scope::<SpacetimeDb, _>(|world, stdb| -> Result {
         // SAFETY: `world` is only used in callbacks, which are invoked in the subsequent
@@ -143,7 +112,7 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     info!("Connecting to SpacetimeDB: {}", args.spacetimedb_url);
     let conn = DbConnection::builder()
         .with_uri(&args.spacetimedb_url)
-        .with_module_name(&args.spacetimedb_module)
+        .with_database_name(&args.spacetimedb_module)
         .on_connect(move |_, i, _| {
             info!("SpacetimeDB connected: {i}");
         })

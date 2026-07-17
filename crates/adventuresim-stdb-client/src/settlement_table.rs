@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for SettlementTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<Settlement>("settlement");
-    _table.add_unique_constraint::<String>("id", |row| &row.id);
-}
 pub struct SettlementUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SettlementTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SettlementTableHandle<'ctx> {
     fn remove_on_update(&self, callback: SettlementUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Settlement>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Settlement>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `settlement`,
@@ -138,5 +122,38 @@ impl<'ctx> SettlementIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<Settlement> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<Settlement>("settlement");
+    _table.add_unique_constraint::<String>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Settlement>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<Settlement>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Settlement`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait settlementQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Settlement`.
+    fn settlement(&self) -> __sdk::__query_builder::Table<Settlement>;
+}
+
+impl settlementQueryTableAccess for __sdk::QueryTableAccessor {
+    fn settlement(&self) -> __sdk::__query_builder::Table<Settlement> {
+        __sdk::__query_builder::Table::new("settlement")
     }
 }

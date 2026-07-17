@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for BattleResultTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BattleResult>("battle_result");
-    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
-}
 pub struct BattleResultUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for BattleResultTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for BattleResultTableHandle<'ctx> {
     fn remove_on_update(&self, callback: BattleResultUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<BattleResult>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<BattleResult>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `quest_id` unique index on the table `battle_result`,
@@ -138,5 +122,38 @@ impl<'ctx> BattleResultQuestIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<BattleResult> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<BattleResult>("battle_result");
+    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<BattleResult>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<BattleResult>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BattleResult`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait battle_resultQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BattleResult`.
+    fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult>;
+}
+
+impl battle_resultQueryTableAccess for __sdk::QueryTableAccessor {
+    fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult> {
+        __sdk::__query_builder::Table::new("battle_result")
     }
 }

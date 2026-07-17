@@ -18,8 +18,6 @@ impl __sdk::InModule for SeedDamagedCharacterArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SeedDamagedCharacterCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `seed_damaged_character`.
 ///
@@ -29,75 +27,40 @@ pub trait seed_damaged_character {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_seed_damaged_character`] callbacks.
-    fn seed_damaged_character(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `seed_damaged_character`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`seed_damaged_character:seed_damaged_character_then`] to run a callback after the reducer completes.
+    fn seed_damaged_character(&self) -> __sdk::Result<()> {
+        self.seed_damaged_character_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `seed_damaged_character` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SeedDamagedCharacterCallbackId`] can be passed to [`Self::remove_on_seed_damaged_character`]
-    /// to cancel the callback.
-    fn on_seed_damaged_character(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn seed_damaged_character_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> SeedDamagedCharacterCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_seed_damaged_character`],
-    /// causing it not to run in the future.
-    fn remove_on_seed_damaged_character(&self, callback: SeedDamagedCharacterCallbackId);
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl seed_damaged_character for super::RemoteReducers {
-    fn seed_damaged_character(&self) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("seed_damaged_character", SeedDamagedCharacterArgs {})
-    }
-    fn on_seed_damaged_character(
+    fn seed_damaged_character_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> SeedDamagedCharacterCallbackId {
-        SeedDamagedCharacterCallbackId(self.imp.on_reducer(
-            "seed_damaged_character",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::SeedDamagedCharacter {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_seed_damaged_character(&self, callback: SeedDamagedCharacterCallbackId) {
-        self.imp
-            .remove_on_reducer("seed_damaged_character", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `seed_damaged_character`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_seed_damaged_character {
-    /// Set the call-reducer flags for the reducer `seed_damaged_character` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn seed_damaged_character(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_seed_damaged_character for super::SetReducerFlags {
-    fn seed_damaged_character(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("seed_damaged_character", flags);
+            .invoke_reducer_with_callback(SeedDamagedCharacterArgs {}, callback)
     }
 }

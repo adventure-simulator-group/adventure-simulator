@@ -14,6 +14,7 @@ use std::{
 };
 
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey};
+use adventuresim_stdb_client::*;
 use adventuresim_stdb_client::{
     DbConnection, battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
@@ -79,7 +80,7 @@ impl LiveState {
         let (changes, _) = broadcast::channel(64);
         let connection = DbConnection::builder()
             .with_uri(host)
-            .with_module_name(database)
+            .with_database_name(database)
             .with_token(token)
             .on_connect(move |_ctx, identity, _| {
                 tracing::info!(%identity, "live SpacetimeDB subscription connected");
@@ -169,7 +170,50 @@ impl LiveState {
                 }
             })
             .on_error(|_, error| tracing::error!(%error, "live SpacetimeDB subscription error"))
-            .subscribe_to_all_tables();
+            .add_query(|query| query.from.battle_loot_item())
+            .add_query(|query| query.from.battle_participant())
+            .add_query(|query| query.from.battle_result())
+            .add_query(|query| query.from.character())
+            .add_query(|query| query.from.character_attributes())
+            .add_query(|query| query.from.character_capability())
+            .add_query(|query| query.from.character_condition())
+            .add_query(|query| query.from.character_equip())
+            .add_query(|query| query.from.character_limbs())
+            .add_query(|query| query.from.character_morale_source())
+            .add_query(|query| query.from.character_notoriety())
+            .add_query(|query| query.from.character_skills())
+            .add_query(|query| query.from.character_stats())
+            .add_query(|query| query.from.character_strategic_condition())
+            .add_query(|query| query.from.character_time())
+            .add_query(|query| query.from.character_training_schedule())
+            .add_query(|query| query.from.connected_players())
+            .add_query(|query| query.from.inventory_item())
+            .add_query(|query| query.from.inventory_quantity_target())
+            .add_query(|query| query.from.item())
+            .add_query(|query| query.from.local_chat_message())
+            .add_query(|query| query.from.morale_event())
+            .add_query(|query| query.from.party())
+            .add_query(|query| query.from.party_action_request())
+            .add_query(|query| query.from.party_inventory_item())
+            .add_query(|query| query.from.party_inventory_state())
+            .add_query(|query| query.from.party_join_request())
+            .add_query(|query| query.from.party_leader_vote())
+            .add_query(|query| query.from.party_member())
+            .add_query(|query| query.from.party_recruitment_role())
+            .add_query(|query| query.from.party_stake())
+            .add_query(|query| query.from.quest())
+            .add_query(|query| query.from.quest_issuer())
+            .add_query(|query| query.from.religious_demand())
+            .add_query(|query| query.from.saved_recruitment_role())
+            .add_query(|query| query.from.settlement())
+            .add_query(|query| query.from.strategic_incident())
+            .add_query(|query| query.from.tactical_server())
+            .add_query(|query| query.from.tactical_server_request())
+            .add_query(|query| query.from.travel_edge())
+            .add_query(|query| query.from.world_clock())
+            .add_query(|query| query.from.world_data_import())
+            .add_query(|query| query.from.world_node())
+            .subscribe();
         state.0._connection.run_threaded();
         Ok(state)
     }

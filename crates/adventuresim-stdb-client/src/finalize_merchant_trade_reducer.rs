@@ -34,8 +34,6 @@ impl __sdk::InModule for FinalizeMerchantTradeArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct FinalizeMerchantTradeCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `finalize_merchant_trade`.
 ///
@@ -45,44 +43,8 @@ pub trait finalize_merchant_trade {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_finalize_merchant_trade`] callbacks.
-    fn finalize_merchant_trade(
-        &self,
-        character_id: u64,
-        settlement_id: String,
-        buy_item_ids: Vec<String>,
-        buy_quantities: Vec<u32>,
-        sell_inventory_ids: Vec<u64>,
-        sell_quantities: Vec<u32>,
-        party_scope: bool,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `finalize_merchant_trade`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`FinalizeMerchantTradeCallbackId`] can be passed to [`Self::remove_on_finalize_merchant_trade`]
-    /// to cancel the callback.
-    fn on_finalize_merchant_trade(
-        &self,
-        callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &String,
-            &Vec<String>,
-            &Vec<u32>,
-            &Vec<u64>,
-            &Vec<u32>,
-            &bool,
-        ) + Send
-        + 'static,
-    ) -> FinalizeMerchantTradeCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_finalize_merchant_trade`],
-    /// causing it not to run in the future.
-    fn remove_on_finalize_merchant_trade(&self, callback: FinalizeMerchantTradeCallbackId);
-}
-
-impl finalize_merchant_trade for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`finalize_merchant_trade:finalize_merchant_trade_then`] to run a callback after the reducer completes.
     fn finalize_merchant_trade(
         &self,
         character_id: u64,
@@ -93,8 +55,60 @@ impl finalize_merchant_trade for super::RemoteReducers {
         sell_quantities: Vec<u32>,
         party_scope: bool,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "finalize_merchant_trade",
+        self.finalize_merchant_trade_then(
+            character_id,
+            settlement_id,
+            buy_item_ids,
+            buy_quantities,
+            sell_inventory_ids,
+            sell_quantities,
+            party_scope,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `finalize_merchant_trade` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn finalize_merchant_trade_then(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl finalize_merchant_trade for super::RemoteReducers {
+    fn finalize_merchant_trade_then(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             FinalizeMerchantTradeArgs {
                 character_id,
                 settlement_id,
@@ -104,82 +118,7 @@ impl finalize_merchant_trade for super::RemoteReducers {
                 sell_quantities,
                 party_scope,
             },
+            callback,
         )
-    }
-    fn on_finalize_merchant_trade(
-        &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &String,
-            &Vec<String>,
-            &Vec<u32>,
-            &Vec<u64>,
-            &Vec<u32>,
-            &bool,
-        ) + Send
-        + 'static,
-    ) -> FinalizeMerchantTradeCallbackId {
-        FinalizeMerchantTradeCallbackId(self.imp.on_reducer(
-            "finalize_merchant_trade",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::FinalizeMerchantTrade {
-                                    character_id,
-                                    settlement_id,
-                                    buy_item_ids,
-                                    buy_quantities,
-                                    sell_inventory_ids,
-                                    sell_quantities,
-                                    party_scope,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    character_id,
-                    settlement_id,
-                    buy_item_ids,
-                    buy_quantities,
-                    sell_inventory_ids,
-                    sell_quantities,
-                    party_scope,
-                )
-            }),
-        ))
-    }
-    fn remove_on_finalize_merchant_trade(&self, callback: FinalizeMerchantTradeCallbackId) {
-        self.imp
-            .remove_on_reducer("finalize_merchant_trade", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `finalize_merchant_trade`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_finalize_merchant_trade {
-    /// Set the call-reducer flags for the reducer `finalize_merchant_trade` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn finalize_merchant_trade(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_finalize_merchant_trade for super::SetReducerFlags {
-    fn finalize_merchant_trade(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("finalize_merchant_trade", flags);
     }
 }

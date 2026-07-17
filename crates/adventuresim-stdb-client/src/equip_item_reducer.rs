@@ -28,8 +28,6 @@ impl __sdk::InModule for EquipItemArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct EquipItemCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `equip_item`.
 ///
@@ -39,94 +37,57 @@ pub trait equip_item {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_equip_item`] callbacks.
-    fn equip_item(
-        &self,
-        character_id: u64,
-        inventory_item_id: u64,
-        destination: ItemSlot,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `equip_item`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`EquipItemCallbackId`] can be passed to [`Self::remove_on_equip_item`]
-    /// to cancel the callback.
-    fn on_equip_item(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &ItemSlot) + Send + 'static,
-    ) -> EquipItemCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_equip_item`],
-    /// causing it not to run in the future.
-    fn remove_on_equip_item(&self, callback: EquipItemCallbackId);
-}
-
-impl equip_item for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`equip_item:equip_item_then`] to run a callback after the reducer completes.
     fn equip_item(
         &self,
         character_id: u64,
         inventory_item_id: u64,
         destination: ItemSlot,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "equip_item",
+        self.equip_item_then(character_id, inventory_item_id, destination, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `equip_item` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn equip_item_then(
+        &self,
+        character_id: u64,
+        inventory_item_id: u64,
+        destination: ItemSlot,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl equip_item for super::RemoteReducers {
+    fn equip_item_then(
+        &self,
+        character_id: u64,
+        inventory_item_id: u64,
+        destination: ItemSlot,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             EquipItemArgs {
                 character_id,
                 inventory_item_id,
                 destination,
             },
+            callback,
         )
-    }
-    fn on_equip_item(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &ItemSlot) + Send + 'static,
-    ) -> EquipItemCallbackId {
-        EquipItemCallbackId(self.imp.on_reducer(
-            "equip_item",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::EquipItem {
-                                    character_id,
-                                    inventory_item_id,
-                                    destination,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, inventory_item_id, destination)
-            }),
-        ))
-    }
-    fn remove_on_equip_item(&self, callback: EquipItemCallbackId) {
-        self.imp.remove_on_reducer("equip_item", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `equip_item`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_equip_item {
-    /// Set the call-reducer flags for the reducer `equip_item` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn equip_item(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_equip_item for super::SetReducerFlags {
-    fn equip_item(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("equip_item", flags);
     }
 }

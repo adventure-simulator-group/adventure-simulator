@@ -24,8 +24,6 @@ impl __sdk::InModule for AbandonQuestArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AbandonQuestCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `abandon_quest`.
 ///
@@ -35,82 +33,49 @@ pub trait abandon_quest {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_abandon_quest`] callbacks.
-    fn abandon_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `abandon_quest`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`abandon_quest:abandon_quest_then`] to run a callback after the reducer completes.
+    fn abandon_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
+        self.abandon_quest_then(character_id, quest_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `abandon_quest` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AbandonQuestCallbackId`] can be passed to [`Self::remove_on_abandon_quest`]
-    /// to cancel the callback.
-    fn on_abandon_quest(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn abandon_quest_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> AbandonQuestCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_abandon_quest`],
-    /// causing it not to run in the future.
-    fn remove_on_abandon_quest(&self, callback: AbandonQuestCallbackId);
+        character_id: u64,
+        quest_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl abandon_quest for super::RemoteReducers {
-    fn abandon_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "abandon_quest",
+    fn abandon_quest_then(
+        &self,
+        character_id: u64,
+        quest_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             AbandonQuestArgs {
                 character_id,
                 quest_id,
             },
+            callback,
         )
-    }
-    fn on_abandon_quest(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> AbandonQuestCallbackId {
-        AbandonQuestCallbackId(self.imp.on_reducer(
-            "abandon_quest",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::AbandonQuest {
-                                    character_id,
-                                    quest_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, quest_id)
-            }),
-        ))
-    }
-    fn remove_on_abandon_quest(&self, callback: AbandonQuestCallbackId) {
-        self.imp.remove_on_reducer("abandon_quest", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `abandon_quest`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_abandon_quest {
-    /// Set the call-reducer flags for the reducer `abandon_quest` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn abandon_quest(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_abandon_quest for super::SetReducerFlags {
-    fn abandon_quest(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("abandon_quest", flags);
     }
 }

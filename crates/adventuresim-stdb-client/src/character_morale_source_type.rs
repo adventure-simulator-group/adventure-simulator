@@ -17,3 +17,47 @@ pub struct CharacterMoraleSource {
 impl __sdk::InModule for CharacterMoraleSource {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterMoraleSource`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterMoraleSourceCols {
+    pub id: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
+    pub character_id: __sdk::__query_builder::Col<CharacterMoraleSource, u64>,
+    pub kind: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
+    pub label: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
+    pub magnitude: __sdk::__query_builder::Col<CharacterMoraleSource, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterMoraleSource {
+    type Cols = CharacterMoraleSourceCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterMoraleSourceCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            label: __sdk::__query_builder::Col::new(table_name, "label"),
+            magnitude: __sdk::__query_builder::Col::new(table_name, "magnitude"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterMoraleSource`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterMoraleSourceIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterMoraleSource, u64>,
+    pub id: __sdk::__query_builder::IxCol<CharacterMoraleSource, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterMoraleSource {
+    type IxCols = CharacterMoraleSourceIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterMoraleSourceIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterMoraleSource {}

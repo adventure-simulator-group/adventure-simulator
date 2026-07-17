@@ -15,3 +15,41 @@ pub struct CharacterStats {
 impl __sdk::InModule for CharacterStats {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterStats`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterStatsCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterStats, u64>,
+    pub calories_used: __sdk::__query_builder::Col<CharacterStats, f32>,
+    pub focus: __sdk::__query_builder::Col<CharacterStats, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterStats {
+    type Cols = CharacterStatsCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterStatsCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            calories_used: __sdk::__query_builder::Col::new(table_name, "calories_used"),
+            focus: __sdk::__query_builder::Col::new(table_name, "focus"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterStats`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterStatsIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterStats, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterStats {
+    type IxCols = CharacterStatsIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterStatsIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterStats {}

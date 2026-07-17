@@ -1,10 +1,11 @@
 # adventuresim-stdb-client
 
-Auto-generated SpacetimeDB SDK client bindings for the strategic module.
+SpacetimeDB SDK client bindings for the strategic module.
 
 ## Generated Code
 
-The `src/` directory contains auto-generated bindings. **Do not edit these files manually.**
+The generated files in `src/` are exposed through the handwritten `src/lib.rs`
+facade. **Do not edit generated files manually.**
 
 Regenerate with:
 
@@ -23,8 +24,9 @@ Or manually:
 spacetime generate \
   --lang rust \
   --out-dir crates/adventuresim-stdb-client/src \
-  --project-path crates/adventuresim-stdb-module && \
+  --module-path crates/adventuresim-stdb-module && \
 cargo fmt --package adventuresim-stdb-client
 ```
 
-Regenerate whenever the SpacetimeDB module schema changes (tables, reducers).
+Use the pinned SpacetimeDB CLI 2.6.1 and regenerate whenever the module schema
+changes (tables, views, reducers). Private tables are intentionally omitted.

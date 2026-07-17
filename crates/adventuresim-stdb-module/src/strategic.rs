@@ -41,7 +41,7 @@ pub enum QuestStatus {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = settlement, public)]
+#[table(accessor = settlement, public)]
 pub struct Settlement {
     #[primary_key]
     pub id: String,
@@ -63,7 +63,7 @@ pub struct Settlement {
 /// A navigational point in the imported Viabundus network. This contains the
 /// topology required for strategic routing, not tactical state or map artwork.
 #[derive(Clone, Debug)]
-#[table(name = world_node, public)]
+#[table(accessor = world_node, public)]
 pub struct WorldNode {
     #[primary_key]
     pub id: u64,
@@ -79,7 +79,7 @@ pub struct WorldNode {
 /// An active 1544 land-network segment. Geometry remains an offline map asset;
 /// the strategic database needs only endpoint topology and travel metadata.
 #[derive(Clone, Debug)]
-#[table(name = travel_edge, public)]
+#[table(accessor = travel_edge, public)]
 pub struct TravelEdge {
     #[primary_key]
     pub id: u64,
@@ -97,7 +97,7 @@ pub struct TravelEdge {
 /// The identity that started the one-time local world-data import. All later
 /// batches must come from the same identity.
 #[derive(Clone, Debug)]
-#[table(name = world_data_import, public)]
+#[table(accessor = world_data_import, public)]
 pub struct WorldDataImport {
     #[primary_key]
     pub id: u8,
@@ -148,12 +148,12 @@ pub struct SettlementImport {
 #[reducer]
 pub fn begin_world_data_import(ctx: &ReducerContext) -> Result<(), String> {
     match ctx.db.world_data_import().id().find(0) {
-        Some(import) if import.owner == ctx.sender => Ok(()),
+        Some(import) if import.owner == ctx.sender() => Ok(()),
         Some(_) => Err("World data import is owned by another identity".into()),
         None => {
             ctx.db.world_data_import().insert(WorldDataImport {
                 id: 0,
-                owner: ctx.sender,
+                owner: ctx.sender(),
             });
             Ok(())
         }
@@ -164,7 +164,7 @@ fn require_world_import_owner(ctx: &ReducerContext) -> Result<(), String> {
     let Some(import) = ctx.db.world_data_import().id().find(0) else {
         return Err("Call begin_world_data_import before loading world data".into());
     };
-    if import.owner != ctx.sender {
+    if import.owner != ctx.sender() {
         return Err("Only the world data import owner may load batches".into());
     }
     Ok(())
@@ -278,7 +278,7 @@ pub fn import_settlements(
 }
 
 #[derive(Clone, Debug)]
-#[table(name = quest, public)]
+#[table(accessor = quest, public)]
 pub struct Quest {
     #[primary_key]
     pub id: String,
@@ -302,7 +302,7 @@ pub struct Quest {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = quest_issuer, public)]
+#[table(accessor = quest_issuer, public)]
 pub struct QuestIssuer {
     #[primary_key]
     pub quest_id: String,
@@ -315,7 +315,7 @@ pub struct QuestIssuer {
 /// A quest-backed strategic interruption which offers tactical combat,
 /// autoresolve, or retreat through the normal encounter flow.
 #[derive(Clone, Debug)]
-#[table(name = strategic_incident, public)]
+#[table(accessor = strategic_incident, public)]
 pub struct StrategicIncident {
     #[primary_key]
     pub quest_id: String,
@@ -329,7 +329,7 @@ pub struct StrategicIncident {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party, public)]
+#[table(accessor = party, public)]
 pub struct Party {
     #[primary_key]
     pub id: String,
@@ -350,7 +350,7 @@ pub struct Party {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_member, public)]
+#[table(accessor = party_member, public)]
 pub struct PartyMember {
     #[primary_key]
     #[auto_inc]
@@ -364,7 +364,7 @@ pub struct PartyMember {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_inventory_item, public)]
+#[table(accessor = party_inventory_item, public)]
 pub struct PartyInventoryItem {
     #[primary_key]
     #[auto_inc]
@@ -380,8 +380,8 @@ pub struct PartyInventoryItem {
 /// owned by the leader character so they survive party disbanding/recreation.
 #[derive(Clone, Debug)]
 #[table(
-    name = inventory_quantity_target, public,
-    index(name = owner_and_scope, btree(columns = [owner_character_id, party_scope])),
+    accessor = inventory_quantity_target, public,
+    index(accessor = owner_and_scope, btree(columns = [owner_character_id, party_scope])),
 )]
 pub struct InventoryQuantityTarget {
     #[primary_key]
@@ -446,7 +446,7 @@ pub fn set_inventory_quantity_target(
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_stake, public)]
+#[table(accessor = party_stake, public)]
 pub struct PartyStake {
     #[primary_key]
     #[auto_inc]
@@ -459,7 +459,7 @@ pub struct PartyStake {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_inventory_state, public)]
+#[table(accessor = party_inventory_state, public)]
 pub struct PartyInventoryState {
     #[primary_key]
     pub party_id: String,
@@ -467,7 +467,7 @@ pub struct PartyInventoryState {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = battle_result, public)]
+#[table(accessor = battle_result, public)]
 pub struct BattleResult {
     #[primary_key]
     pub quest_id: String,
@@ -477,7 +477,7 @@ pub struct BattleResult {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = battle_loot_item, public)]
+#[table(accessor = battle_loot_item, public)]
 pub struct BattleLootItem {
     #[primary_key]
     #[auto_inc]
@@ -489,7 +489,7 @@ pub struct BattleLootItem {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = battle_participant, public)]
+#[table(accessor = battle_participant, public)]
 pub struct BattleParticipant {
     #[primary_key]
     #[auto_inc]
@@ -547,7 +547,7 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_recruitment_role, public)]
+#[table(accessor = party_recruitment_role, public)]
 pub struct PartyRecruitmentRole {
     #[primary_key]
     #[auto_inc]
@@ -562,7 +562,7 @@ pub struct PartyRecruitmentRole {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = saved_recruitment_role, public)]
+#[table(accessor = saved_recruitment_role, public)]
 pub struct SavedRecruitmentRole {
     #[primary_key]
     #[auto_inc]
@@ -576,7 +576,7 @@ pub struct SavedRecruitmentRole {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_join_request, public)]
+#[table(accessor = party_join_request, public)]
 pub struct PartyJoinRequest {
     #[primary_key]
     #[auto_inc]
@@ -593,7 +593,7 @@ pub struct PartyJoinRequest {
 /// A party member's proposed use of authority normally reserved for the leader.
 /// `payload` is JSON so approval can replay the original typed reducer call.
 #[derive(Clone, Debug)]
-#[table(name = party_action_request, public)]
+#[table(accessor = party_action_request, public)]
 pub struct PartyActionRequest {
     #[primary_key]
     #[auto_inc]
@@ -608,7 +608,7 @@ pub struct PartyActionRequest {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = party_leader_vote, public)]
+#[table(accessor = party_leader_vote, public)]
 pub struct PartyLeaderVote {
     #[primary_key]
     pub id: String,
@@ -620,7 +620,7 @@ pub struct PartyLeaderVote {
 }
 
 #[derive(Clone, Debug)]
-#[table(name = local_chat_message, public)]
+#[table(accessor = local_chat_message, public)]
 pub struct LocalChatMessage {
     #[primary_key]
     #[auto_inc]
@@ -1731,7 +1731,7 @@ pub fn seed_bot_join_requests(
                 equip.chest_armor_id = None;
                 equip.stomach_armor_id = None;
                 equip.head_armor_id = None;
-                ctx.db.character_equip().character_id().update(equip);
+                crate::replace_character_equip(ctx, equip);
             } else if requirements.melee {
                 crate::character::add_and_equip_item(
                     ctx,
@@ -1750,11 +1750,11 @@ pub fn seed_bot_join_requests(
                 let mut equip = ctx.db.character_equip().character_id().find(id).unwrap();
                 equip.left_hand_item_id = None;
                 equip.right_hand_item_id = None;
-                ctx.db.character_equip().character_id().update(equip);
+                crate::replace_character_equip(ctx, equip);
             }
         }
-        ctx.db.character_attributes().character_id().update(attrs);
-        ctx.db.character_skills().character_id().update(skills);
+        crate::replace_character_attributes(ctx, attrs);
+        crate::replace_character_skills(ctx, skills);
         request_to_join_party(ctx, id, recruitment_role_id)?;
     }
     Ok(())
@@ -3583,7 +3583,7 @@ pub fn autoresolve_quest(
                 5 => limbs.chest_health = (limbs.chest_health - damage).max(0.0),
                 _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
             }
-            ctx.db.character_limbs().character_id().update(limbs);
+            crate::replace_character_limbs(ctx, limbs);
             crate::condition::apply_blood_loss(
                 ctx,
                 member.character_id,

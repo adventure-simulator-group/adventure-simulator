@@ -147,7 +147,7 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
 }
 
 fn setup_stdb_callbacks(mut conn: ResMut<SpacetimeDb>) {
-    conn.subscribe("SELECT * FROM connected_players");
+    conn.subscribe_connected_players();
     conn.on_insert(
         RemoteTables::connected_players,
         on_stdb_insert_connected_players,

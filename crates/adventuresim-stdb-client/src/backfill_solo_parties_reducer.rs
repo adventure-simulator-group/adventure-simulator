@@ -18,8 +18,6 @@ impl __sdk::InModule for BackfillSoloPartiesArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct BackfillSoloPartiesCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `backfill_solo_parties`.
 ///
@@ -29,75 +27,40 @@ pub trait backfill_solo_parties {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_backfill_solo_parties`] callbacks.
-    fn backfill_solo_parties(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `backfill_solo_parties`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`backfill_solo_parties:backfill_solo_parties_then`] to run a callback after the reducer completes.
+    fn backfill_solo_parties(&self) -> __sdk::Result<()> {
+        self.backfill_solo_parties_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `backfill_solo_parties` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`BackfillSoloPartiesCallbackId`] can be passed to [`Self::remove_on_backfill_solo_parties`]
-    /// to cancel the callback.
-    fn on_backfill_solo_parties(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn backfill_solo_parties_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> BackfillSoloPartiesCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_backfill_solo_parties`],
-    /// causing it not to run in the future.
-    fn remove_on_backfill_solo_parties(&self, callback: BackfillSoloPartiesCallbackId);
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl backfill_solo_parties for super::RemoteReducers {
-    fn backfill_solo_parties(&self) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("backfill_solo_parties", BackfillSoloPartiesArgs {})
-    }
-    fn on_backfill_solo_parties(
+    fn backfill_solo_parties_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> BackfillSoloPartiesCallbackId {
-        BackfillSoloPartiesCallbackId(self.imp.on_reducer(
-            "backfill_solo_parties",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::BackfillSoloParties {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_backfill_solo_parties(&self, callback: BackfillSoloPartiesCallbackId) {
-        self.imp
-            .remove_on_reducer("backfill_solo_parties", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `backfill_solo_parties`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_backfill_solo_parties {
-    /// Set the call-reducer flags for the reducer `backfill_solo_parties` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn backfill_solo_parties(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_backfill_solo_parties for super::SetReducerFlags {
-    fn backfill_solo_parties(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("backfill_solo_parties", flags);
+            .invoke_reducer_with_callback(BackfillSoloPartiesArgs {}, callback)
     }
 }

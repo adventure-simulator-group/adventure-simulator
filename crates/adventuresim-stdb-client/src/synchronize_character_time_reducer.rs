@@ -22,8 +22,6 @@ impl __sdk::InModule for SynchronizeCharacterTimeArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SynchronizeCharacterTimeCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `synchronize_character_time`.
 ///
@@ -33,77 +31,42 @@ pub trait synchronize_character_time {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_synchronize_character_time`] callbacks.
-    fn synchronize_character_time(&self, character_id: u64) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `synchronize_character_time`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`synchronize_character_time:synchronize_character_time_then`] to run a callback after the reducer completes.
+    fn synchronize_character_time(&self, character_id: u64) -> __sdk::Result<()> {
+        self.synchronize_character_time_then(character_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `synchronize_character_time` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SynchronizeCharacterTimeCallbackId`] can be passed to [`Self::remove_on_synchronize_character_time`]
-    /// to cancel the callback.
-    fn on_synchronize_character_time(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn synchronize_character_time_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> SynchronizeCharacterTimeCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_synchronize_character_time`],
-    /// causing it not to run in the future.
-    fn remove_on_synchronize_character_time(&self, callback: SynchronizeCharacterTimeCallbackId);
+        character_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl synchronize_character_time for super::RemoteReducers {
-    fn synchronize_character_time(&self, character_id: u64) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "synchronize_character_time",
-            SynchronizeCharacterTimeArgs { character_id },
-        )
-    }
-    fn on_synchronize_character_time(
+    fn synchronize_character_time_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> SynchronizeCharacterTimeCallbackId {
-        SynchronizeCharacterTimeCallbackId(self.imp.on_reducer(
-            "synchronize_character_time",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::SynchronizeCharacterTime { character_id },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id)
-            }),
-        ))
-    }
-    fn remove_on_synchronize_character_time(&self, callback: SynchronizeCharacterTimeCallbackId) {
-        self.imp
-            .remove_on_reducer("synchronize_character_time", callback.0)
-    }
-}
+        character_id: u64,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `synchronize_character_time`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_synchronize_character_time {
-    /// Set the call-reducer flags for the reducer `synchronize_character_time` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn synchronize_character_time(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_synchronize_character_time for super::SetReducerFlags {
-    fn synchronize_character_time(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("synchronize_character_time", flags);
+            .invoke_reducer_with_callback(SynchronizeCharacterTimeArgs { character_id }, callback)
     }
 }

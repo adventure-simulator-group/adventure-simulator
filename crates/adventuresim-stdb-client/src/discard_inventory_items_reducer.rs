@@ -26,8 +26,6 @@ impl __sdk::InModule for DiscardInventoryItemsArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DiscardInventoryItemsCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `discard_inventory_items`.
 ///
@@ -37,98 +35,57 @@ pub trait discard_inventory_items {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_discard_inventory_items`] callbacks.
-    fn discard_inventory_items(
-        &self,
-        character_id: u64,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `discard_inventory_items`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DiscardInventoryItemsCallbackId`] can be passed to [`Self::remove_on_discard_inventory_items`]
-    /// to cancel the callback.
-    fn on_discard_inventory_items(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &Vec<u64>, &Vec<u32>) + Send + 'static,
-    ) -> DiscardInventoryItemsCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_discard_inventory_items`],
-    /// causing it not to run in the future.
-    fn remove_on_discard_inventory_items(&self, callback: DiscardInventoryItemsCallbackId);
-}
-
-impl discard_inventory_items for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`discard_inventory_items:discard_inventory_items_then`] to run a callback after the reducer completes.
     fn discard_inventory_items(
         &self,
         character_id: u64,
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "discard_inventory_items",
+        self.discard_inventory_items_then(character_id, inventory_item_ids, quantities, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `discard_inventory_items` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn discard_inventory_items_then(
+        &self,
+        character_id: u64,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl discard_inventory_items for super::RemoteReducers {
+    fn discard_inventory_items_then(
+        &self,
+        character_id: u64,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DiscardInventoryItemsArgs {
                 character_id,
                 inventory_item_ids,
                 quantities,
             },
+            callback,
         )
-    }
-    fn on_discard_inventory_items(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &Vec<u64>, &Vec<u32>)
-        + Send
-        + 'static,
-    ) -> DiscardInventoryItemsCallbackId {
-        DiscardInventoryItemsCallbackId(self.imp.on_reducer(
-            "discard_inventory_items",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DiscardInventoryItems {
-                                    character_id,
-                                    inventory_item_ids,
-                                    quantities,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, inventory_item_ids, quantities)
-            }),
-        ))
-    }
-    fn remove_on_discard_inventory_items(&self, callback: DiscardInventoryItemsCallbackId) {
-        self.imp
-            .remove_on_reducer("discard_inventory_items", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `discard_inventory_items`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_discard_inventory_items {
-    /// Set the call-reducer flags for the reducer `discard_inventory_items` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn discard_inventory_items(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_discard_inventory_items for super::SetReducerFlags {
-    fn discard_inventory_items(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("discard_inventory_items", flags);
     }
 }

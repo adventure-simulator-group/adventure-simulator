@@ -11,7 +11,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     spacetimedb = {
-      url = "github:clockworklabs/SpacetimeDB/v1.11.3";
+      url = "github:clockworklabs/SpacetimeDB/v2.6.1";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         rust-overlay.follows = "rust-overlay";

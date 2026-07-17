@@ -59,8 +59,8 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
 wasm-bindgen = "=0.2.108"
-spacetimedb = "=1.11.3"
-spacetimedb-sdk = "=1.11.3"
+spacetimedb = "=2.6.1"
+spacetimedb-sdk = "=2.6.1"
 
 [workspace.lints.clippy]
 type_complexity = "allow"

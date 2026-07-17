@@ -16,3 +16,47 @@ pub struct PartyStake {
 impl __sdk::InModule for PartyStake {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyStake`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyStakeCols {
+    pub id: __sdk::__query_builder::Col<PartyStake, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyStake, String>,
+    pub character_id: __sdk::__query_builder::Col<PartyStake, u64>,
+    pub value: __sdk::__query_builder::Col<PartyStake, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyStake {
+    type Cols = PartyStakeCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyStakeCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            value: __sdk::__query_builder::Col::new(table_name, "value"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyStake`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyStakeIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<PartyStake, u64>,
+    pub id: __sdk::__query_builder::IxCol<PartyStake, u64>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyStake, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyStake {
+    type IxCols = PartyStakeIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyStakeIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyStake {}

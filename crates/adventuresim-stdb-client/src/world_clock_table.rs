@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for WorldClockTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<WorldClock>("world_clock");
-    _table.add_unique_constraint::<u64>("id", |row| &row.id);
-}
 pub struct WorldClockUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for WorldClockTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for WorldClockTableHandle<'ctx> {
     fn remove_on_update(&self, callback: WorldClockUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<WorldClock>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<WorldClock>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `world_clock`,
@@ -138,5 +122,38 @@ impl<'ctx> WorldClockIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<WorldClock> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<WorldClock>("world_clock");
+    _table.add_unique_constraint::<u64>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<WorldClock>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<WorldClock>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `WorldClock`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait world_clockQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `WorldClock`.
+    fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock>;
+}
+
+impl world_clockQueryTableAccess for __sdk::QueryTableAccessor {
+    fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock> {
+        __sdk::__query_builder::Table::new("world_clock")
     }
 }

@@ -24,3 +24,59 @@ pub struct CharacterSkills {
 impl __sdk::InModule for CharacterSkills {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterSkills`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterSkillsCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterSkills, u64>,
+    pub melee_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub dodge_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub block_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub ranged_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub will_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub charisma_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub medicine_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub faith_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub stealth_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub balance_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub surgeon_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterSkills {
+    type Cols = CharacterSkillsCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterSkillsCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            melee_hours: __sdk::__query_builder::Col::new(table_name, "melee_hours"),
+            dodge_hours: __sdk::__query_builder::Col::new(table_name, "dodge_hours"),
+            block_hours: __sdk::__query_builder::Col::new(table_name, "block_hours"),
+            ranged_hours: __sdk::__query_builder::Col::new(table_name, "ranged_hours"),
+            will_hours: __sdk::__query_builder::Col::new(table_name, "will_hours"),
+            charisma_hours: __sdk::__query_builder::Col::new(table_name, "charisma_hours"),
+            medicine_hours: __sdk::__query_builder::Col::new(table_name, "medicine_hours"),
+            faith_hours: __sdk::__query_builder::Col::new(table_name, "faith_hours"),
+            stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
+            balance_hours: __sdk::__query_builder::Col::new(table_name, "balance_hours"),
+            surgeon_hours: __sdk::__query_builder::Col::new(table_name, "surgeon_hours"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterSkills`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterSkillsIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterSkills, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterSkills {
+    type IxCols = CharacterSkillsIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterSkillsIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterSkills {}

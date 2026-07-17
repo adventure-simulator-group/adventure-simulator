@@ -31,7 +31,7 @@ fn enemy_fear_multiplier(enemy_type: &str) -> f32 {
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
-#[table(name = character_condition, public)]
+#[table(accessor = character_condition, public)]
 pub struct CharacterCondition {
     #[primary_key]
     pub character_id: u64,
@@ -43,7 +43,7 @@ pub struct CharacterCondition {
 
 /// A recent success or setback which decays linearly over strategic time.
 #[derive(Clone, Debug)]
-#[table(name = morale_event, public)]
+#[table(accessor = morale_event, public)]
 pub struct MoraleEvent {
     #[primary_key]
     #[auto_inc]
@@ -60,7 +60,7 @@ pub struct MoraleEvent {
 
 /// Refreshable server-authoritative projection used by strategic clients.
 #[derive(Clone, Debug, PartialEq)]
-#[table(name = character_strategic_condition, public)]
+#[table(accessor = character_strategic_condition, public)]
 pub struct CharacterStrategicCondition {
     #[primary_key]
     pub character_id: u64,
@@ -82,7 +82,7 @@ pub struct CharacterStrategicCondition {
 
 /// A signed contribution to the character's current projected morale.
 #[derive(Clone, Debug)]
-#[table(name = character_morale_source, public)]
+#[table(accessor = character_morale_source, public)]
 pub struct CharacterMoraleSource {
     #[primary_key]
     pub id: String,
@@ -95,7 +95,7 @@ pub struct CharacterMoraleSource {
 
 /// A strategic choice created when conviction begins demanding costly action.
 #[derive(Clone, Debug)]
-#[table(name = religious_demand, public)]
+#[table(accessor = religious_demand, public)]
 pub struct ReligiousDemand {
     #[primary_key]
     #[auto_inc]
@@ -847,7 +847,7 @@ pub fn resolve_religious_demand(
         .id()
         .find(demand.character_id)
         .ok_or("Character not found")?;
-    if character.server != ctx.sender {
+    if character.server != ctx.sender() {
         return Err("Only this character's player may answer the demand".into());
     }
     if !matches!(choice.as_str(), "observe" | "refuse") {
@@ -987,7 +987,7 @@ pub fn apply_travel_condition(
         .find(character_id)
         .ok_or("Character stats not found")?;
     stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
-    ctx.db.character_stats().character_id().update(stats);
+    crate::replace_character_stats(ctx, stats);
 
     refuse_expired_holy_day_demands(ctx, character_id, true)?;
     let condition = refresh_character_strategic_condition_projection(ctx, character_id)?;
@@ -1080,7 +1080,7 @@ pub fn apply_rest_condition(
         .find(character_id)
         .ok_or("Character stats not found")?;
     stats.calories_used = (stats.calories_used - TRAVEL_CALORIES_PER_DAY * days).max(0.0);
-    ctx.db.character_stats().character_id().update(stats);
+    crate::replace_character_stats(ctx, stats);
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 

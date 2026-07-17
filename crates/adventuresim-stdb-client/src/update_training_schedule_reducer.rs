@@ -82,8 +82,6 @@ impl __sdk::InModule for UpdateTrainingScheduleArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateTrainingScheduleCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_training_schedule`.
 ///
@@ -93,92 +91,8 @@ pub trait update_training_schedule {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_update_training_schedule`] callbacks.
-    fn update_training_schedule(
-        &self,
-        character_id: u64,
-        melee_minutes: u16,
-        dodge_minutes: u16,
-        block_minutes: u16,
-        ranged_minutes: u16,
-        will_minutes: u16,
-        charisma_minutes: u16,
-        medicine_minutes: u16,
-        faith_minutes: u16,
-        stealth_minutes: u16,
-        balance_minutes: u16,
-        surgeon_minutes: u16,
-        labor_minutes: u16,
-        prayer_minutes: u16,
-        thievery_minutes: u16,
-        raiding_minutes: u16,
-        travel_melee_minutes: u16,
-        travel_dodge_minutes: u16,
-        travel_block_minutes: u16,
-        travel_ranged_minutes: u16,
-        travel_will_minutes: u16,
-        travel_charisma_minutes: u16,
-        travel_medicine_minutes: u16,
-        travel_faith_minutes: u16,
-        travel_stealth_minutes: u16,
-        travel_balance_minutes: u16,
-        travel_surgeon_minutes: u16,
-        travel_labor_minutes: u16,
-        travel_prayer_minutes: u16,
-        travel_thievery_minutes: u16,
-        travel_raiding_minutes: u16,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `update_training_schedule`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`UpdateTrainingScheduleCallbackId`] can be passed to [`Self::remove_on_update_training_schedule`]
-    /// to cancel the callback.
-    fn on_update_training_schedule(
-        &self,
-        callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-        ) + Send
-        + 'static,
-    ) -> UpdateTrainingScheduleCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_update_training_schedule`],
-    /// causing it not to run in the future.
-    fn remove_on_update_training_schedule(&self, callback: UpdateTrainingScheduleCallbackId);
-}
-
-impl update_training_schedule for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`update_training_schedule:update_training_schedule_then`] to run a callback after the reducer completes.
     fn update_training_schedule(
         &self,
         character_id: u64,
@@ -213,8 +127,132 @@ impl update_training_schedule for super::RemoteReducers {
         travel_thievery_minutes: u16,
         travel_raiding_minutes: u16,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "update_training_schedule",
+        self.update_training_schedule_then(
+            character_id,
+            melee_minutes,
+            dodge_minutes,
+            block_minutes,
+            ranged_minutes,
+            will_minutes,
+            charisma_minutes,
+            medicine_minutes,
+            faith_minutes,
+            stealth_minutes,
+            balance_minutes,
+            surgeon_minutes,
+            labor_minutes,
+            prayer_minutes,
+            thievery_minutes,
+            raiding_minutes,
+            travel_melee_minutes,
+            travel_dodge_minutes,
+            travel_block_minutes,
+            travel_ranged_minutes,
+            travel_will_minutes,
+            travel_charisma_minutes,
+            travel_medicine_minutes,
+            travel_faith_minutes,
+            travel_stealth_minutes,
+            travel_balance_minutes,
+            travel_surgeon_minutes,
+            travel_labor_minutes,
+            travel_prayer_minutes,
+            travel_thievery_minutes,
+            travel_raiding_minutes,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn update_training_schedule_then(
+        &self,
+        character_id: u64,
+        melee_minutes: u16,
+        dodge_minutes: u16,
+        block_minutes: u16,
+        ranged_minutes: u16,
+        will_minutes: u16,
+        charisma_minutes: u16,
+        medicine_minutes: u16,
+        faith_minutes: u16,
+        stealth_minutes: u16,
+        balance_minutes: u16,
+        surgeon_minutes: u16,
+        labor_minutes: u16,
+        prayer_minutes: u16,
+        thievery_minutes: u16,
+        raiding_minutes: u16,
+        travel_melee_minutes: u16,
+        travel_dodge_minutes: u16,
+        travel_block_minutes: u16,
+        travel_ranged_minutes: u16,
+        travel_will_minutes: u16,
+        travel_charisma_minutes: u16,
+        travel_medicine_minutes: u16,
+        travel_faith_minutes: u16,
+        travel_stealth_minutes: u16,
+        travel_balance_minutes: u16,
+        travel_surgeon_minutes: u16,
+        travel_labor_minutes: u16,
+        travel_prayer_minutes: u16,
+        travel_thievery_minutes: u16,
+        travel_raiding_minutes: u16,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl update_training_schedule for super::RemoteReducers {
+    fn update_training_schedule_then(
+        &self,
+        character_id: u64,
+        melee_minutes: u16,
+        dodge_minutes: u16,
+        block_minutes: u16,
+        ranged_minutes: u16,
+        will_minutes: u16,
+        charisma_minutes: u16,
+        medicine_minutes: u16,
+        faith_minutes: u16,
+        stealth_minutes: u16,
+        balance_minutes: u16,
+        surgeon_minutes: u16,
+        labor_minutes: u16,
+        prayer_minutes: u16,
+        thievery_minutes: u16,
+        raiding_minutes: u16,
+        travel_melee_minutes: u16,
+        travel_dodge_minutes: u16,
+        travel_block_minutes: u16,
+        travel_ranged_minutes: u16,
+        travel_will_minutes: u16,
+        travel_charisma_minutes: u16,
+        travel_medicine_minutes: u16,
+        travel_faith_minutes: u16,
+        travel_stealth_minutes: u16,
+        travel_balance_minutes: u16,
+        travel_surgeon_minutes: u16,
+        travel_labor_minutes: u16,
+        travel_prayer_minutes: u16,
+        travel_thievery_minutes: u16,
+        travel_raiding_minutes: u16,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             UpdateTrainingScheduleArgs {
                 character_id,
                 melee_minutes,
@@ -248,154 +286,7 @@ impl update_training_schedule for super::RemoteReducers {
                 travel_thievery_minutes,
                 travel_raiding_minutes,
             },
+            callback,
         )
-    }
-    fn on_update_training_schedule(
-        &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-            &u16,
-        ) + Send
-        + 'static,
-    ) -> UpdateTrainingScheduleCallbackId {
-        UpdateTrainingScheduleCallbackId(self.imp.on_reducer(
-            "update_training_schedule",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::UpdateTrainingSchedule {
-                                    character_id,
-                                    melee_minutes,
-                                    dodge_minutes,
-                                    block_minutes,
-                                    ranged_minutes,
-                                    will_minutes,
-                                    charisma_minutes,
-                                    medicine_minutes,
-                                    faith_minutes,
-                                    stealth_minutes,
-                                    balance_minutes,
-                                    surgeon_minutes,
-                                    labor_minutes,
-                                    prayer_minutes,
-                                    thievery_minutes,
-                                    raiding_minutes,
-                                    travel_melee_minutes,
-                                    travel_dodge_minutes,
-                                    travel_block_minutes,
-                                    travel_ranged_minutes,
-                                    travel_will_minutes,
-                                    travel_charisma_minutes,
-                                    travel_medicine_minutes,
-                                    travel_faith_minutes,
-                                    travel_stealth_minutes,
-                                    travel_balance_minutes,
-                                    travel_surgeon_minutes,
-                                    travel_labor_minutes,
-                                    travel_prayer_minutes,
-                                    travel_thievery_minutes,
-                                    travel_raiding_minutes,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    character_id,
-                    melee_minutes,
-                    dodge_minutes,
-                    block_minutes,
-                    ranged_minutes,
-                    will_minutes,
-                    charisma_minutes,
-                    medicine_minutes,
-                    faith_minutes,
-                    stealth_minutes,
-                    balance_minutes,
-                    surgeon_minutes,
-                    labor_minutes,
-                    prayer_minutes,
-                    thievery_minutes,
-                    raiding_minutes,
-                    travel_melee_minutes,
-                    travel_dodge_minutes,
-                    travel_block_minutes,
-                    travel_ranged_minutes,
-                    travel_will_minutes,
-                    travel_charisma_minutes,
-                    travel_medicine_minutes,
-                    travel_faith_minutes,
-                    travel_stealth_minutes,
-                    travel_balance_minutes,
-                    travel_surgeon_minutes,
-                    travel_labor_minutes,
-                    travel_prayer_minutes,
-                    travel_thievery_minutes,
-                    travel_raiding_minutes,
-                )
-            }),
-        ))
-    }
-    fn remove_on_update_training_schedule(&self, callback: UpdateTrainingScheduleCallbackId) {
-        self.imp
-            .remove_on_reducer("update_training_schedule", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `update_training_schedule`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_update_training_schedule {
-    /// Set the call-reducer flags for the reducer `update_training_schedule` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn update_training_schedule(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_update_training_schedule for super::SetReducerFlags {
-    fn update_training_schedule(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("update_training_schedule", flags);
     }
 }

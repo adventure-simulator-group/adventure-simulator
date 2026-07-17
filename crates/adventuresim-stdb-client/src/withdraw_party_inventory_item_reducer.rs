@@ -26,8 +26,6 @@ impl __sdk::InModule for WithdrawPartyInventoryItemArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct WithdrawPartyInventoryItemCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `withdraw_party_inventory_item`.
 ///
@@ -37,102 +35,62 @@ pub trait withdraw_party_inventory_item {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_withdraw_party_inventory_item`] callbacks.
-    fn withdraw_party_inventory_item(
-        &self,
-        character_id: u64,
-        party_inventory_item_id: u64,
-        quantity: u32,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `withdraw_party_inventory_item`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`WithdrawPartyInventoryItemCallbackId`] can be passed to [`Self::remove_on_withdraw_party_inventory_item`]
-    /// to cancel the callback.
-    fn on_withdraw_party_inventory_item(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &u32) + Send + 'static,
-    ) -> WithdrawPartyInventoryItemCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_withdraw_party_inventory_item`],
-    /// causing it not to run in the future.
-    fn remove_on_withdraw_party_inventory_item(
-        &self,
-        callback: WithdrawPartyInventoryItemCallbackId,
-    );
-}
-
-impl withdraw_party_inventory_item for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`withdraw_party_inventory_item:withdraw_party_inventory_item_then`] to run a callback after the reducer completes.
     fn withdraw_party_inventory_item(
         &self,
         character_id: u64,
         party_inventory_item_id: u64,
         quantity: u32,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "withdraw_party_inventory_item",
+        self.withdraw_party_inventory_item_then(
+            character_id,
+            party_inventory_item_id,
+            quantity,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `withdraw_party_inventory_item` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn withdraw_party_inventory_item_then(
+        &self,
+        character_id: u64,
+        party_inventory_item_id: u64,
+        quantity: u32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl withdraw_party_inventory_item for super::RemoteReducers {
+    fn withdraw_party_inventory_item_then(
+        &self,
+        character_id: u64,
+        party_inventory_item_id: u64,
+        quantity: u32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             WithdrawPartyInventoryItemArgs {
                 character_id,
                 party_inventory_item_id,
                 quantity,
             },
+            callback,
         )
-    }
-    fn on_withdraw_party_inventory_item(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &u32) + Send + 'static,
-    ) -> WithdrawPartyInventoryItemCallbackId {
-        WithdrawPartyInventoryItemCallbackId(self.imp.on_reducer(
-            "withdraw_party_inventory_item",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::WithdrawPartyInventoryItem {
-                                    character_id,
-                                    party_inventory_item_id,
-                                    quantity,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, party_inventory_item_id, quantity)
-            }),
-        ))
-    }
-    fn remove_on_withdraw_party_inventory_item(
-        &self,
-        callback: WithdrawPartyInventoryItemCallbackId,
-    ) {
-        self.imp
-            .remove_on_reducer("withdraw_party_inventory_item", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `withdraw_party_inventory_item`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_withdraw_party_inventory_item {
-    /// Set the call-reducer flags for the reducer `withdraw_party_inventory_item` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn withdraw_party_inventory_item(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_withdraw_party_inventory_item for super::SetReducerFlags {
-    fn withdraw_party_inventory_item(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("withdraw_party_inventory_item", flags);
     }
 }

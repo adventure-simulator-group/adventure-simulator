@@ -195,7 +195,7 @@ build-strategic:
 # Generate SpacetimeDB SDK client bindings
 generate-db-client:
 	@echo "Generating SpacetimeDB client bindings..."
-	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --project-path "{{strategic_dir}}"
+	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --module-path "{{strategic_dir}}"
 	@cargo fmt --package adventuresim-stdb-client
 	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
 

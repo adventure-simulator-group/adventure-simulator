@@ -44,8 +44,6 @@ impl __sdk::InModule for DefineWeaponArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DefineWeaponCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `define_weapon`.
 ///
@@ -55,54 +53,8 @@ pub trait define_weapon {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_define_weapon`] callbacks.
-    fn define_weapon(
-        &self,
-        item_id: String,
-        weight: f32,
-        accuracy: f32,
-        penetration: f32,
-        reach: f32,
-        balance: f32,
-        precise: bool,
-        melee: bool,
-        ranged: bool,
-        blunt: bool,
-        slash: bool,
-        pierce: bool,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `define_weapon`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DefineWeaponCallbackId`] can be passed to [`Self::remove_on_define_weapon`]
-    /// to cancel the callback.
-    fn on_define_weapon(
-        &self,
-        callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-        ) + Send
-        + 'static,
-    ) -> DefineWeaponCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_define_weapon`],
-    /// causing it not to run in the future.
-    fn remove_on_define_weapon(&self, callback: DefineWeaponCallbackId);
-}
-
-impl define_weapon for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`define_weapon:define_weapon_then`] to run a callback after the reducer completes.
     fn define_weapon(
         &self,
         item_id: String,
@@ -118,8 +70,75 @@ impl define_weapon for super::RemoteReducers {
         slash: bool,
         pierce: bool,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "define_weapon",
+        self.define_weapon_then(
+            item_id,
+            weight,
+            accuracy,
+            penetration,
+            reach,
+            balance,
+            precise,
+            melee,
+            ranged,
+            blunt,
+            slash,
+            pierce,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `define_weapon` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn define_weapon_then(
+        &self,
+        item_id: String,
+        weight: f32,
+        accuracy: f32,
+        penetration: f32,
+        reach: f32,
+        balance: f32,
+        precise: bool,
+        melee: bool,
+        ranged: bool,
+        blunt: bool,
+        slash: bool,
+        pierce: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl define_weapon for super::RemoteReducers {
+    fn define_weapon_then(
+        &self,
+        item_id: String,
+        weight: f32,
+        accuracy: f32,
+        penetration: f32,
+        reach: f32,
+        balance: f32,
+        precise: bool,
+        melee: bool,
+        ranged: bool,
+        blunt: bool,
+        slash: bool,
+        pierce: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DefineWeaponArgs {
                 item_id,
                 weight,
@@ -134,95 +153,7 @@ impl define_weapon for super::RemoteReducers {
                 slash,
                 pierce,
             },
+            callback,
         )
-    }
-    fn on_define_weapon(
-        &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &String,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &f32,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-            &bool,
-        ) + Send
-        + 'static,
-    ) -> DefineWeaponCallbackId {
-        DefineWeaponCallbackId(self.imp.on_reducer(
-            "define_weapon",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DefineWeapon {
-                                    item_id,
-                                    weight,
-                                    accuracy,
-                                    penetration,
-                                    reach,
-                                    balance,
-                                    precise,
-                                    melee,
-                                    ranged,
-                                    blunt,
-                                    slash,
-                                    pierce,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    item_id,
-                    weight,
-                    accuracy,
-                    penetration,
-                    reach,
-                    balance,
-                    precise,
-                    melee,
-                    ranged,
-                    blunt,
-                    slash,
-                    pierce,
-                )
-            }),
-        ))
-    }
-    fn remove_on_define_weapon(&self, callback: DefineWeaponCallbackId) {
-        self.imp.remove_on_reducer("define_weapon", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `define_weapon`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_define_weapon {
-    /// Set the call-reducer flags for the reducer `define_weapon` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn define_weapon(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_define_weapon for super::SetReducerFlags {
-    fn define_weapon(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("define_weapon", flags);
     }
 }

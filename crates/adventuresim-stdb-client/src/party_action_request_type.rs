@@ -18,3 +18,51 @@ pub struct PartyActionRequest {
 impl __sdk::InModule for PartyActionRequest {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyActionRequest`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyActionRequestCols {
+    pub id: __sdk::__query_builder::Col<PartyActionRequest, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyActionRequest, String>,
+    pub requester_id: __sdk::__query_builder::Col<PartyActionRequest, u64>,
+    pub action_kind: __sdk::__query_builder::Col<PartyActionRequest, String>,
+    pub summary: __sdk::__query_builder::Col<PartyActionRequest, String>,
+    pub payload: __sdk::__query_builder::Col<PartyActionRequest, String>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyActionRequest {
+    type Cols = PartyActionRequestCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyActionRequestCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            requester_id: __sdk::__query_builder::Col::new(table_name, "requester_id"),
+            action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
+            summary: __sdk::__query_builder::Col::new(table_name, "summary"),
+            payload: __sdk::__query_builder::Col::new(table_name, "payload"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyActionRequest`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyActionRequestIxCols {
+    pub id: __sdk::__query_builder::IxCol<PartyActionRequest, u64>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyActionRequest, String>,
+    pub requester_id: __sdk::__query_builder::IxCol<PartyActionRequest, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyActionRequest {
+    type IxCols = PartyActionRequestIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyActionRequestIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            requester_id: __sdk::__query_builder::IxCol::new(table_name, "requester_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyActionRequest {}

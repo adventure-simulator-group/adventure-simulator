@@ -47,7 +47,9 @@ Now when you click a location in the browser, a tactical server will automatical
 - Rustup (the repository's `rust-toolchain.toml` automatically selects the
   pinned nightly toolchain and required components)
 - just (`cargo install just`)
-- SpacetimeDB CLI (`curl -sSf https://install.spacetimedb.com | bash`)
+- SpacetimeDB CLI 2.6.1:
+  `curl -sSf https://install.spacetimedb.com | bash`, then
+  `spacetime version install 2.6.1` and `spacetime version use 2.6.1`
 - Python 3
 - wasm-bindgen (`cargo install wasm-bindgen-cli`) - for WASM builds
 - Caddy (for the HTTPS HTTP/2 development entry point)
@@ -103,6 +105,18 @@ SpacetimeDB module itself targets the SpacetimeDB host ABI, so validate that
 crate with `spacetime build`; its pure strategic calculations live in
 `adventuresim-core` and are covered by native unit tests. Reducer integration
 tests require a running SpacetimeDB environment.
+
+The workspace pins both the module crate and Rust SDK to SpacetimeDB 2.6.1.
+Before building or generating bindings, verify the active CLI with
+`spacetime --version`. Binding generation uses `spacetime generate
+--module-path` and intentionally excludes private tables.
+
+`just publish-reset` deletes all local module data. Use it only for disposable
+local smoke environments, followed by `just _seed-world`. For a database whose
+state must be preserved, take a verified backup, use `just publish` (without
+`--delete-data`), and review the schema migration plan emitted by SpacetimeDB
+before approving deployment. Never use the reset-and-seed workflow as a
+production upgrade procedure.
 
 ## Viabundus source data
 

@@ -191,6 +191,8 @@ When the tactical mission ends (timeout, victory, or defeat):
 
 ```bash
 curl -sSL https://install.spacetimedb.com | sh
+spacetime version install 2.6.1
+spacetime version use 2.6.1
 ```
 
 ### 2. Start SpacetimeDB
@@ -205,6 +207,12 @@ spacetime start
 cd crates/adventuresim-stdb-module
 spacetime publish adventuresim-stdb-module
 ```
+
+The repository's module and SDK are pinned to SpacetimeDB 2.6.1 and should be
+built, published, and used to generate bindings with the matching CLI. A local
+`publish-reset` is appropriate only for disposable development data. Before
+publishing this schema to a persistent database, back up the database and
+review SpacetimeDB's proposed migration; publish without deleting data.
 
 ### 4. Open the UI
 
