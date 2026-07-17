@@ -19,3 +19,47 @@ pub struct SettlementDescription {
 impl __sdk::InModule for SettlementDescription {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `SettlementDescription`.
+///
+/// Provides typed access to columns for query building.
+pub struct SettlementDescriptionCols {
+    pub id: __sdk::__query_builder::Col<SettlementDescription, String>,
+    pub settlement_id: __sdk::__query_builder::Col<SettlementDescription, String>,
+    pub kind: __sdk::__query_builder::Col<SettlementDescription, SettlementDescriptionKind>,
+    pub language: __sdk::__query_builder::Col<SettlementDescription, Option<String>>,
+    pub body: __sdk::__query_builder::Col<SettlementDescription, String>,
+}
+
+impl __sdk::__query_builder::HasCols for SettlementDescription {
+    type Cols = SettlementDescriptionCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        SettlementDescriptionCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            language: __sdk::__query_builder::Col::new(table_name, "language"),
+            body: __sdk::__query_builder::Col::new(table_name, "body"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `SettlementDescription`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct SettlementDescriptionIxCols {
+    pub id: __sdk::__query_builder::IxCol<SettlementDescription, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<SettlementDescription, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for SettlementDescription {
+    type IxCols = SettlementDescriptionIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        SettlementDescriptionIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for SettlementDescription {}

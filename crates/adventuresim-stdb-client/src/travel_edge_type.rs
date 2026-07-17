@@ -33,13 +33,13 @@ pub struct TravelEdgeCols {
     pub id: __sdk::__query_builder::Col<TravelEdge, u64>,
     pub from_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
     pub to_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
-    pub kind: __sdk::__query_builder::Col<TravelEdge, String>,
-    pub bridge_at: __sdk::__query_builder::Col<TravelEdge, Option<EdgeEndpoint>>,
+    pub route: __sdk::__query_builder::Col<TravelEdge, TravelRoute>,
     pub toll_at: __sdk::__query_builder::Col<TravelEdge, Option<EdgeEndpoint>>,
     pub length_m: __sdk::__query_builder::Col<TravelEdge, u32>,
     pub slope_multiplier: __sdk::__query_builder::Col<TravelEdge, f32>,
     pub certainty: __sdk::__query_builder::Col<TravelEdge, u8>,
     pub section: __sdk::__query_builder::Col<TravelEdge, String>,
+    pub sources: __sdk::__query_builder::Col<TravelEdge, String>,
 }
 
 impl __sdk::__query_builder::HasCols for TravelEdge {
@@ -49,13 +49,13 @@ impl __sdk::__query_builder::HasCols for TravelEdge {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             from_node_id: __sdk::__query_builder::Col::new(table_name, "from_node_id"),
             to_node_id: __sdk::__query_builder::Col::new(table_name, "to_node_id"),
-            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
-            bridge_at: __sdk::__query_builder::Col::new(table_name, "bridge_at"),
+            route: __sdk::__query_builder::Col::new(table_name, "route"),
             toll_at: __sdk::__query_builder::Col::new(table_name, "toll_at"),
             length_m: __sdk::__query_builder::Col::new(table_name, "length_m"),
             slope_multiplier: __sdk::__query_builder::Col::new(table_name, "slope_multiplier"),
             certainty: __sdk::__query_builder::Col::new(table_name, "certainty"),
             section: __sdk::__query_builder::Col::new(table_name, "section"),
+            sources: __sdk::__query_builder::Col::new(table_name, "sources"),
         }
     }
 }

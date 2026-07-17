@@ -17,3 +17,47 @@ pub struct SettlementAlias {
 impl __sdk::InModule for SettlementAlias {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `SettlementAlias`.
+///
+/// Provides typed access to columns for query building.
+pub struct SettlementAliasCols {
+    pub id: __sdk::__query_builder::Col<SettlementAlias, String>,
+    pub settlement_id: __sdk::__query_builder::Col<SettlementAlias, String>,
+    pub name: __sdk::__query_builder::Col<SettlementAlias, String>,
+    pub prefix: __sdk::__query_builder::Col<SettlementAlias, Option<String>>,
+    pub language: __sdk::__query_builder::Col<SettlementAlias, Option<String>>,
+}
+
+impl __sdk::__query_builder::HasCols for SettlementAlias {
+    type Cols = SettlementAliasCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        SettlementAliasCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            prefix: __sdk::__query_builder::Col::new(table_name, "prefix"),
+            language: __sdk::__query_builder::Col::new(table_name, "language"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `SettlementAlias`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct SettlementAliasIxCols {
+    pub id: __sdk::__query_builder::IxCol<SettlementAlias, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<SettlementAlias, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for SettlementAlias {
+    type IxCols = SettlementAliasIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        SettlementAliasIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for SettlementAlias {}
