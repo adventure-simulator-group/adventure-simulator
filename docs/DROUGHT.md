@@ -4,16 +4,26 @@ Settlement hydroclimate is sourced from the **NOAA Old World Drought Atlas
 (OWDA) v1.0**, a tree-ring reconstruction of annual summer Palmer Drought
 Severity Index (PDSI) across Europe and the Mediterranean.
 
-- NOAA study: <https://www.ncei.noaa.gov/access/paleo-search/study/19419>
+- Pinned release: OWDA v1.0, dataset DOI
+  [`10.25921/rjm6-mq74`](https://doi.org/10.25921/rjm6-mq74).
+- Authoritative file URL:
+  <https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc>
 - Publication: Cook et al. (2015), *Old World megadroughts and pluvials during
-  the Common Era*, DOI `10.1126/sciadv.1500561`.
+  the Common Era*, DOI
+  [`10.1126/sciadv.1500561`](https://doi.org/10.1126/sciadv.1500561).
+- Pinned file: exactly `228226363` bytes; SHA-256
+  `c044aa52e9e81932841b642b6977fa6f84beb9fe73c3db502b90f4295b1d65bd`.
 - Grid: 0.5 degree point grid, 114 longitudes by 88 latitudes.
 - Time coverage: AD 0 through 2012.
 - Compiler input: NetCDF-4 classic-model/HDF5.
 
-Place `owda.nc` at `target/world-data-sources/raw/climate/owda.nc`, or override
-the path with `--drought-netcdf`. This remains a manually prepared input until
-the integration is accepted. The importer uses a pure-Rust, read-only NetCDF-4
+Run `just init-owda` to download or verify the pinned file at
+`target/world-data-sources/raw/climate/owda.nc`. Preparation is atomic: a
+temporary sibling is size- and checksum-verified before replacement. An
+adjacent ignored `.owda-source.json` records the version, URL, both DOIs, size,
+and checksum. A mismatched existing cache fails closed; use
+`python scripts/init_owda.py --force` only to replace it. Override the compiler
+path with `--drought-netcdf`. The importer uses a pure-Rust, read-only NetCDF-4
 decoder; no NetCDF/HDF5 native library enters the shared schema or database
 module.
 
@@ -57,6 +67,18 @@ beyond that limit receives a neutral inferred profile. An audit of all 6,041
 Viabundus settlements active in 1544 produced 5,458 direct samples, 583 nearest
 neighbors, and no fallbacks.
 
-The data can directly affect current harvests, water stress, fire risk, forage,
-and river conditions. The twenty-year history can inform reserves, prices,
-migration pressure, and whether a single dry or wet summer is locally unusual.
+The data can directly affect current harvests, seasonal moisture and yields,
+water stress and availability, fire risk, forage, river conditions, and travel.
+The twenty-year history can inform reserves, prices, migration pressure, and
+whether a single dry or wet summer is locally unusual. Selected-year drought
+does **not** permanently assign or alter a settlement's biome.
+
+## Attribution and redistribution boundary
+
+The repository and compiled world contain only bounded per-settlement derived
+values: selected-year PDSI, twenty-year mean, drought/wet counts, and the
+reconstruction/inference classification with concise provenance. They do not
+contain source grids, annual series, the complete NetCDF file, journal prose or
+figures, or rendered journal/source maps. Reusers should cite both the NOAA
+dataset DOI and Cook et al. paper DOI above. The local source cache remains
+ignored and must not be committed or redistributed through this repository.
