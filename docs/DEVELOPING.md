@@ -163,6 +163,30 @@ Interrupted loads can be resumed with the identical compiled artifact. The
 module rejects a different artifact or any additional batches after completion;
 use `just publish-reset` before loading changed source data or a different year.
 
+### Selecting a world extent
+
+By default the compiler retains the full active Viabundus coverage. To build a
+bounded world, create a JSON file with southwest and northeast WGS84 corners,
+then pass it explicitly:
+
+```json
+{
+  "south_west": { "latitude": 47.0, "longitude": -5.0 },
+  "north_east": { "latitude": 61.0, "longitude": 24.0 }
+}
+```
+
+```powershell
+cargo run --package adventuresim-world-import -- --world-bounds .\world-bounds.json
+```
+
+Replace the example coordinates with the intended playable extent. Bounds are
+inclusive, must not cross the antimeridian, are stored in compiled-world
+metadata, and change the world artifact. Viabundus uses them to limit the
+settlement/road seed graph; environmental stages consequently operate only on
+that selected graph. Future source downloaders use the same bounds to derive
+their source-specific tile inventories. See `docs/WORLD_BOUNDS.md`.
+
 The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing
 untrusted clients to connect.
@@ -173,11 +197,11 @@ GLO-30 `*_DEM.tif` tiles in
 licensing, parsing, and fallback details. You can override either input with
 `--viabundus-dir` or `--elevation-dir`.
 
-Historical land use currently has a tested parser but no accessible full local
-dataset. Preparing the seven corrected HYDE 3.2.1 ESRI ASCII files documented in
-`docs/HISTORICAL_LAND_USE.md` under
-`target/world-data-sources/raw/historical-land-use/` is required before the
-stacked compiler can complete. Override that directory with `--land-use-dir`.
+Historical land use requires five manually acquired LUH1 urban-inclusive
+NetCDF-4 state files documented in `docs/HISTORICAL_LAND_USE.md`, placed under
+`target/world-data-sources/raw/luh1-land-use/`. The importer samples the
+requested annual year directly from the modelled 0.5-degree reconstruction.
+Override that directory with `--land-use-dir`.
 
 Forest cover likewise has a tested boundary but no authenticated full local
 download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented

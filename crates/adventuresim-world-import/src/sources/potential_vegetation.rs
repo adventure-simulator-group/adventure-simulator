@@ -75,7 +75,7 @@ fn finish(
                     &mut forest,
                     match &potential_vegetation {
                         PotentialVegetation::Mapped(_) => "**[EuroVegMap 2.1](https://www.synbiosys.alterra.nl/eurovegmap/):** Potential-natural-vegetation unit and formation come from polygon containment in the source map.",
-                        PotentialVegetation::Inferred(_) => "**EuroVegMap fallback:** No source polygon contained this settlement, so formation is deterministically inferred from forest cover, dominant leaf type, elevation, and HYDE land use.",
+                        PotentialVegetation::Inferred(_) => "**EuroVegMap fallback:** No source polygon contained this settlement, so formation is deterministically inferred from forest cover, dominant leaf type, elevation, and LUH1 land use.",
                     },
                 );
                 PotentialVegetationSettlementDraft {
@@ -95,6 +95,7 @@ fn finish(
     draft.report.potential_vegetation_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -584,7 +585,7 @@ mod tests {
         }
 
         let viabundus = std::env::var_os("VIABUNDUS_DIR").expect("set VIABUNDUS_DIR");
-        let settlements = crate::sources::viabundus::compile(Path::new(&viabundus), 1544)
+        let settlements = crate::sources::viabundus::compile(Path::new(&viabundus), 1544, None)
             .unwrap()
             .settlements;
         let mapped = settlements

@@ -1,12 +1,14 @@
 use adventuresim_world_schema::{
     DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, LandUseProfile,
     PotentialVegetation, SettlementAliasImport, SettlementDescriptionImport, SoilProfile,
-    SourceProvenance, TravelEdgeKind, TreeSpeciesProfile, WorldBuildReport, WorldNodeImport,
+    SourceProvenance, TravelEdgeKind, TreeSpeciesProfile, WorldBounds, WorldBuildReport,
+    WorldNodeImport,
 };
 
 #[derive(Debug)]
 pub(crate) struct WorldDraft<S> {
     pub(crate) year: i32,
+    pub(crate) world_bounds: Option<WorldBounds>,
     pub(crate) sources: Vec<SourceProvenance>,
     pub(crate) road_types: Vec<TravelEdgeKind>,
     pub(crate) nodes: Vec<WorldNodeImport>,

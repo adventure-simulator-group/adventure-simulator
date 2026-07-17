@@ -1,131 +1,79 @@
-//! HYDE 3.2.1 historical land-use sampling for the 1544 world.
+//! LUH1 annual historical land-use sampling.
+//!
+//! LUH1 is a half-degree, modelled global reconstruction.  We deliberately do
+//! not assume a particular production grid shape here: the five state files
+//! must instead prove that they use the same coordinates and annual time axis.
 
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use adventuresim_world_schema::{LandUseFraction, LandUseProfile, SourceProvenance};
+use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
 use crate::{
     Error, Result,
     draft::{ElevatedSettlementDraft, LandUseSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "History Database of the Global Environment 3.2.1";
-const SOURCE_URL: &str = "https://doi.org/10.17026/dans-25g-gez3";
-const SOURCE_LICENSE: &str = "CC0-1.0";
-const START_YEAR: i32 = 1500;
-const END_YEAR: i32 = 1600;
-const HYDE_COLUMNS: usize = 4_320;
-const HYDE_ROWS: usize = 2_160;
-const HYDE_CELL_SIZE: f64 = 1.0 / 12.0;
-const MAX_NORMALIZABLE_OVERLAP: f64 = 1.05;
+const SOURCE_NAME: &str = "LUH1: Harmonized Global Land Use for Years 1500-2100, V1";
+const SOURCE_URL: &str = "https://doi.org/10.3334/ORNLDAAC/1248";
+const MAX_NORMALIZABLE_OVERFILL: f64 = 1.000_001;
+const AXIS_EPSILON: f64 = 1e-9;
 
-const RASTERS: [(&str, &str, LandUseComponent); 7] = [
-    ("garea_cr.asc", "cell area", LandUseComponent::CellArea),
-    (
-        "cropland1500AD.asc",
-        "1500 cropland",
-        LandUseComponent::CroplandStart,
-    ),
-    (
-        "cropland1600AD.asc",
-        "1600 cropland",
-        LandUseComponent::CroplandEnd,
-    ),
-    (
-        "grazing1500AD.asc",
-        "1500 grazing",
-        LandUseComponent::GrazingStart,
-    ),
-    (
-        "grazing1600AD.asc",
-        "1600 grazing",
-        LandUseComponent::GrazingEnd,
-    ),
-    (
-        "urban1500AD.asc",
-        "1500 built-up",
-        LandUseComponent::BuiltUpStart,
-    ),
-    (
-        "urban1600AD.asc",
-        "1600 built-up",
-        LandUseComponent::BuiltUpEnd,
-    ),
+const STATES: [StateFile; 5] = [
+    StateFile::new("gcrop", "cropland"),
+    StateFile::new("gpast", "pasture"),
+    StateFile::new("gurbn", "urban"),
+    StateFile::new("gothr", "primary land"),
+    StateFile::new("gsecd", "secondary land"),
 ];
+
+#[derive(Clone, Copy)]
+struct StateFile {
+    variable: &'static str,
+    label: &'static str,
+}
+
+impl StateFile {
+    const fn new(variable: &'static str, label: &'static str) -> Self {
+        Self { variable, label }
+    }
+
+    fn filename(self) -> String {
+        format!("LUHa_u2.v1_{}.nc4", self.variable)
+    }
+}
 
 pub(crate) fn enrich(
     mut draft: WorldDraft<ElevatedSettlementDraft>,
     directory: &Path,
 ) -> Result<WorldDraft<LandUseSettlementDraft>> {
-    if !(START_YEAR..=END_YEAR).contains(&draft.year) {
-        return Err(Error::Validation(format!(
-            "HYDE interpolation supports {START_YEAR}..={END_YEAR}, not {}",
-            draft.year
-        )));
-    }
-    if draft.settlements.is_empty() {
-        draft.sources.push(source_provenance());
-        return Ok(WorldDraft {
-            year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-            nodes: draft.nodes,
-            edges: draft.edges,
-            settlement_aliases: draft.settlement_aliases,
-            settlement_descriptions: draft.settlement_descriptions,
-            settlements: Vec::new(),
-            report: draft.report,
-        });
-    }
-    let coordinates: Vec<_> = draft
-        .settlements
-        .iter()
-        .map(|settlement| {
-            (
-                settlement.settlement.latitude,
-                settlement.settlement.longitude,
-            )
-        })
-        .collect();
-    let mut values = vec![LandUseSourceValues::default(); coordinates.len()];
-    for (filename, label, component) in RASTERS {
-        let path = require(directory, filename)?;
-        let samples = AsciiGrid::sample_hyde(&path, &coordinates)?;
-        for (target, sample) in values.iter_mut().zip(samples) {
-            target.set(component, sample, label)?;
-        }
-    }
-
-    let interpolation = f64::from(draft.year - START_YEAR) / f64::from(END_YEAR - START_YEAR);
-    let mut fallback_samples = 0;
-    let mut normalized_samples = 0;
-    let elevated_settlements = std::mem::take(&mut draft.settlements);
-    let settlements = elevated_settlements
+    let grid = LuhGrid::open(directory, draft.year)?;
+    let mut fallbacks = 0;
+    let mut normalized = 0;
+    let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
-        .zip(values)
-        .map(|(mut elevated, values)| {
-            let (land_use, note) = match values.profile(interpolation)? {
-                Some((profile, normalized)) => {
-                    normalized_samples += usize::from(normalized);
+        .map(|mut elevated| {
+            let sample = grid.sample(
+                elevated.settlement.latitude,
+                elevated.settlement.longitude,
+            )?;
+            let (land_use, note) = match sample.profile()? {
+                Some((profile, was_normalized)) => {
+                    normalized += usize::from(was_normalized);
                     (
                         profile,
-                        if normalized {
-                            "**[HYDE 3.2.1](https://doi.org/10.17026/DANS-25G-GEZ3):** Land-use fractions are linearly interpolated to the world year from source cells; overlapping human-use fractions were deterministically normalized to an exhaustive profile."
+                        if was_normalized {
+                            "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. Tiny floating-point state overfill was deterministically normalized into an exhaustive profile."
                         } else {
-                            "**[HYDE 3.2.1](https://doi.org/10.17026/DANS-25G-GEZ3):** Land-use fractions are linearly interpolated to the world year from the source grid cells."
+                            "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. It is a regional grid estimate, not an exact settlement observation."
                         },
                     )
                 }
                 None => {
-                    fallback_samples += 1;
+                    fallbacks += 1;
                     (
                         fallback_profile(&elevated),
-                        "**HYDE land-use fallback:** The source cells had no usable profile, so cropland and grazing are deterministically seeded by the Viabundus node, built-up land by settlement population level, and the remainder is natural land.",
+                        "**LUH1 land-use fallback:** The otherwise valid LUH1 state cell was nodata or contained no terrestrial state. Cropland and pasture are deterministically seeded by the Viabundus node, built-up land by settlement population level, and the remainder is natural land.",
                     )
                 }
             };
@@ -133,13 +81,15 @@ pub(crate) fn enrich(
             Ok(LandUseSettlementDraft { elevated, land_use })
         })
         .collect::<Result<Vec<_>>>()?;
+
     draft.sources.push(source_provenance());
-    draft.report.land_use_rasters_read = RASTERS.len();
+    draft.report.land_use_rasters_read = STATES.len();
     draft.report.land_use_samples = settlements.len();
-    draft.report.land_use_fallback_samples = fallback_samples;
-    draft.report.land_use_normalized_samples = normalized_samples;
+    draft.report.land_use_fallback_samples = fallbacks;
+    draft.report.land_use_normalized_samples = normalized;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -155,140 +105,118 @@ fn source_provenance() -> SourceProvenance {
     SourceProvenance {
         name: SOURCE_NAME.into(),
         url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
+        // The official LUH1 catalogue asks users to cite the source, but we
+        // have not verified a redistributable licence statement for the files.
+        license: "Licence not stated by the LUH1 catalogue; citation required".into(),
     }
 }
 
-#[derive(Clone, Copy)]
-enum LandUseComponent {
-    CellArea,
-    CroplandStart,
-    CroplandEnd,
-    GrazingStart,
-    GrazingEnd,
-    BuiltUpStart,
-    BuiltUpEnd,
+#[derive(Clone, Copy, Debug)]
+struct LandUseStates {
+    crop: Option<f64>,
+    pasture: Option<f64>,
+    urban: Option<f64>,
+    primary: Option<f64>,
+    secondary: Option<f64>,
 }
 
-#[derive(Clone, Copy, Default)]
-struct LandUseSourceValues {
-    cell_area: Option<f64>,
-    cropland_start: Option<f64>,
-    cropland_end: Option<f64>,
-    grazing_start: Option<f64>,
-    grazing_end: Option<f64>,
-    built_up_start: Option<f64>,
-    built_up_end: Option<f64>,
-}
-
-impl LandUseSourceValues {
-    fn set(
-        &mut self,
-        component: LandUseComponent,
-        value: Option<f64>,
-        label: &'static str,
-    ) -> Result<()> {
-        if value.is_some_and(|value| !value.is_finite() || value < 0.0) {
+impl LandUseStates {
+    fn profile(self) -> Result<Option<(LandUseProfile, bool)>> {
+        let Some([crop, pasture, urban, primary, secondary]) = self.values() else {
+            return Ok(None);
+        };
+        let values = [crop, pasture, urban, primary, secondary];
+        if values.iter().all(|value| *value == 0.0) {
+            return Ok(None);
+        }
+        if values
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0 || *value > 1.0)
+        {
+            return Err(Error::Validation(
+                "LUH1 state sample must be a finite fraction between zero and one".into(),
+            ));
+        }
+        let total = values.iter().sum::<f64>();
+        if total > MAX_NORMALIZABLE_OVERFILL {
             return Err(Error::Validation(format!(
-                "HYDE {label} sample is negative or non-finite"
+                "LUH1 state fractions sum to {total}, which exceeds the small floating-point tolerance"
             )));
         }
-        match component {
-            LandUseComponent::CellArea => self.cell_area = value,
-            LandUseComponent::CroplandStart => self.cropland_start = value,
-            LandUseComponent::CroplandEnd => self.cropland_end = value,
-            LandUseComponent::GrazingStart => self.grazing_start = value,
-            LandUseComponent::GrazingEnd => self.grazing_end = value,
-            LandUseComponent::BuiltUpStart => self.built_up_start = value,
-            LandUseComponent::BuiltUpEnd => self.built_up_end = value,
+        if total < 1.0 - AXIS_EPSILON {
+            return Err(Error::Validation(format!(
+                "LUH1 terrestrial state fractions sum to {total}, not one"
+            )));
         }
-        Ok(())
+        let normalized = total > 1.0;
+        let scale = if normalized { total } else { 1.0 };
+        profile_from_components(
+            crop / scale,
+            pasture / scale,
+            urban / scale,
+            (primary + secondary) / scale,
+        )
+        .map(|profile| Some((profile, normalized)))
     }
 
-    fn profile(self, interpolation: f64) -> Result<Option<(LandUseProfile, bool)>> {
-        let Some(area) = self.cell_area.filter(|area| *area > 0.0) else {
-            return Ok(None);
-        };
-        let Some((
-            cropland_start,
-            cropland_end,
-            grazing_start,
-            grazing_end,
-            built_start,
-            built_end,
-        )) = self
-            .cropland_start
-            .zip(self.cropland_end)
-            .zip(self.grazing_start.zip(self.grazing_end))
-            .zip(self.built_up_start.zip(self.built_up_end))
-            .map(|(((cs, ce), (gs, ge)), (bs, be))| (cs, ce, gs, ge, bs, be))
-        else {
-            return Ok(None);
-        };
-        let crop = interpolate(cropland_start, cropland_end, interpolation) / area;
-        let grazing = interpolate(grazing_start, grazing_end, interpolation) / area;
-        let built = interpolate(built_start, built_end, interpolation) / area;
-        profile_from_fractions(crop, grazing, built).map(Some)
+    fn values(self) -> Option<[f64; 5]> {
+        Some([
+            self.crop?,
+            self.pasture?,
+            self.urban?,
+            self.primary?,
+            self.secondary?,
+        ])
     }
 }
 
-fn interpolate(start: f64, end: f64, amount: f64) -> f64 {
-    start + (end - start) * amount
-}
-
-fn profile_from_fractions(
-    cropland: f64,
-    grazing: f64,
-    built_up: f64,
-) -> Result<(LandUseProfile, bool)> {
-    let mut fractions = [cropland, grazing, built_up];
-    if !fractions
+fn profile_from_components(
+    crop: f64,
+    pasture: f64,
+    urban: f64,
+    natural: f64,
+) -> Result<LandUseProfile> {
+    let mut basis_points =
+        [crop, pasture, urban].map(|fraction| (fraction * 10_000.0).round() as u16);
+    let natural_points = (natural * 10_000.0).round() as u16;
+    let total = basis_points
         .iter()
-        .all(|value| value.is_finite() && *value >= 0.0)
-    {
-        return Err(Error::Validation(
-            "HYDE derived land-use fractions are negative or non-finite".into(),
-        ));
-    }
-    let total = fractions.iter().sum::<f64>();
-    if !total.is_finite() || total > MAX_NORMALIZABLE_OVERLAP {
-        return Err(Error::Validation(format!(
-            "HYDE land-use areas exceed cell area by more than {:.0}%",
-            (MAX_NORMALIZABLE_OVERLAP - 1.0) * 100.0
-        )));
-    }
-    let normalized = total > 1.0;
-    if total > 1.0 {
-        for fraction in &mut fractions {
-            *fraction /= total;
+        .map(|value| u32::from(*value))
+        .sum::<u32>()
+        + u32::from(natural_points);
+    if total != 10_000 {
+        // The source contract already established that this is at most normal
+        // rounding error. Put its deterministic remainder in natural land.
+        let managed = basis_points
+            .iter()
+            .map(|value| u32::from(*value))
+            .sum::<u32>();
+        if managed > 10_000 {
+            let largest = basis_points
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, value)| *value)
+                .map(|(index, _)| index)
+                .expect("three managed components");
+            basis_points[largest] -= (managed - 10_000) as u16;
         }
     }
-    let mut basis_points = fractions.map(|fraction| (fraction * 10_000.0).round() as u16);
     let managed = basis_points
         .iter()
         .map(|value| u32::from(*value))
         .sum::<u32>();
-    if managed > 10_000 {
-        let excess = (managed - 10_000) as u16;
-        let largest = basis_points
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, value)| *value)
-            .map(|(index, _)| index)
-            .unwrap();
-        basis_points[largest] -= excess;
-    }
-    let natural = 10_000 - basis_points.iter().sum::<u16>();
-    Ok((
-        LandUseProfile::new(
-            LandUseFraction::new(basis_points[0]).unwrap(),
-            LandUseFraction::new(basis_points[1]).unwrap(),
-            LandUseFraction::new(basis_points[2]).unwrap(),
-            LandUseFraction::new(natural).unwrap(),
-        )
-        .unwrap(),
-        normalized,
-    ))
+    let natural = 10_000u16.checked_sub(managed as u16).ok_or_else(|| {
+        Error::Validation("LUH1 rounded land-use fractions exceed an exhaustive profile".into())
+    })?;
+    LandUseProfile::new(
+        LandUseFraction::new(basis_points[0]).expect("bounded basis points"),
+        LandUseFraction::new(basis_points[1]).expect("bounded basis points"),
+        LandUseFraction::new(basis_points[2]).expect("bounded basis points"),
+        LandUseFraction::new(natural).expect("bounded basis points"),
+    )
+    .ok_or_else(|| {
+        Error::Validation("LUH1 states do not form an exhaustive land-use profile".into())
+    })
 }
 
 fn fallback_profile(settlement: &ElevatedSettlementDraft) -> LandUseProfile {
@@ -306,6 +234,307 @@ fn fallback_profile(settlement: &ElevatedSettlementDraft) -> LandUseProfile {
     .unwrap()
 }
 
+struct LuhGrid {
+    longitudes: Vec<f64>,
+    latitudes: Vec<f64>,
+    states: Vec<LandUseStates>,
+}
+
+impl LuhGrid {
+    fn open(directory: &Path, year: i32) -> Result<Self> {
+        let mut reference: Option<(Vec<f64>, Vec<f64>, Vec<f64>)> = None;
+        let mut component_values: Vec<Vec<Option<f64>>> = Vec::with_capacity(STATES.len());
+        for state in STATES {
+            let path = require(directory, &state.filename())?;
+            let component = read_component(&path, state, year)?;
+            if let Some((longitudes, latitudes, times)) = &reference {
+                require_same_axis(&path, "longitude", longitudes, &component.longitudes)?;
+                require_same_axis(&path, "latitude", latitudes, &component.latitudes)?;
+                require_same_axis(&path, "time", times, &component.times)?;
+            } else {
+                reference = Some((
+                    component.longitudes.clone(),
+                    component.latitudes.clone(),
+                    component.times.clone(),
+                ));
+            }
+            component_values.push(component.values);
+        }
+        let (longitudes, latitudes, _) = reference.expect("five required LUH1 states");
+        let cells = longitudes
+            .len()
+            .checked_mul(latitudes.len())
+            .ok_or_else(|| {
+                Error::Validation("LUH1 grid dimensions overflow the address space".into())
+            })?;
+        if component_values.iter().any(|values| values.len() != cells) {
+            return Err(Error::Validation(
+                "LUH1 component slice dimensions do not match the coordinate grid".into(),
+            ));
+        }
+        let states = (0..cells)
+            .map(|index| LandUseStates {
+                crop: component_values[0][index],
+                pasture: component_values[1][index],
+                urban: component_values[2][index],
+                primary: component_values[3][index],
+                secondary: component_values[4][index],
+            })
+            .collect();
+        Ok(Self {
+            longitudes,
+            latitudes,
+            states,
+        })
+    }
+
+    fn sample(&self, latitude: f64, longitude: f64) -> Result<LandUseStates> {
+        let longitude = nearest_axis_index(&self.longitudes, longitude).ok_or_else(|| {
+            Error::Validation(format!("longitude {longitude} is outside the LUH1 grid"))
+        })?;
+        let latitude = nearest_axis_index(&self.latitudes, latitude).ok_or_else(|| {
+            Error::Validation(format!("latitude {latitude} is outside the LUH1 grid"))
+        })?;
+        Ok(self.states[longitude * self.latitudes.len() + latitude])
+    }
+}
+
+struct Component {
+    longitudes: Vec<f64>,
+    latitudes: Vec<f64>,
+    times: Vec<f64>,
+    values: Vec<Option<f64>>,
+}
+
+fn read_component(path: &Path, state: StateFile, year: i32) -> Result<Component> {
+    let file = nc(path, NcFile::open(path))?;
+    if !matches!(file.format(), NcFormat::Nc4 | NcFormat::Nc4Classic) {
+        return Err(invalid(
+            path,
+            "format",
+            format!("{:?}", file.format()),
+            "expected a NetCDF-4 LUH1 state file",
+        ));
+    }
+    let variable = nc(path, file.variable(state.variable))?;
+    if !matches!(variable.dtype, NcType::Float | NcType::Double) {
+        return Err(invalid(
+            path,
+            state.variable,
+            format!("{:?}", variable.dtype),
+            "expected a floating-point LUH1 state variable",
+        ));
+    }
+    let dimensions: Vec<_> = variable
+        .dimensions
+        .iter()
+        .map(|dimension| dimension.name.as_str())
+        .collect();
+    if dimensions.len() != 3
+        || !dimensions.contains(&"time")
+        || !dimensions.contains(&"lat")
+        || !dimensions.contains(&"lon")
+    {
+        return Err(invalid(
+            path,
+            state.variable,
+            format!("{dimensions:?}"),
+            "expected dimensions containing time, lat, and lon exactly once",
+        ));
+    }
+    let longitudes = read_axis(&file, path, "lon")?;
+    let latitudes = read_axis(&file, path, "lat")?;
+    let times = read_axis(&file, path, "time")?;
+    let time_index = times
+        .iter()
+        .position(|value| *value == f64::from(year))
+        .ok_or_else(|| {
+            Error::Validation(format!(
+                "{} does not contain requested annual LUH1 year {year}",
+                path.display()
+            ))
+        })?;
+    let dimension_index = |name: &str| {
+        dimensions
+            .iter()
+            .position(|dimension| *dimension == name)
+            .expect("validated dimension")
+    };
+    let mut selections = vec![
+        NcSliceInfoElem::Slice {
+            start: 0,
+            end: 0,
+            step: 1
+        };
+        3
+    ];
+    for (name, length) in [
+        ("time", times.len()),
+        ("lat", latitudes.len()),
+        ("lon", longitudes.len()),
+    ] {
+        selections[dimension_index(name)] = if name == "time" {
+            NcSliceInfoElem::Index(time_index as u64)
+        } else {
+            NcSliceInfoElem::Slice {
+                start: 0,
+                end: length as u64,
+                step: 1,
+            }
+        };
+    }
+    let raw = nc(
+        path,
+        file.read_variable_slice_as_f64(state.variable, &NcSliceInfo { selections }),
+    )?;
+    let expected_shape: Vec<_> = dimensions
+        .iter()
+        .filter(|name| **name != "time")
+        .map(|name| {
+            if *name == "lon" {
+                longitudes.len()
+            } else {
+                latitudes.len()
+            }
+        })
+        .collect();
+    if raw.shape() != expected_shape {
+        return Err(invalid(
+            path,
+            state.variable,
+            format!("{:?}", raw.shape()),
+            "unexpected LUH1 annual slice shape",
+        ));
+    }
+    let fill = variable
+        .attribute("_FillValue")
+        .and_then(|attribute| attribute.value.as_f64());
+    let missing = variable
+        .attribute("missing_value")
+        .and_then(|attribute| attribute.value.as_f64());
+    let mut values = vec![None; longitudes.len() * latitudes.len()];
+    let spatial_dimensions: Vec<_> = dimensions
+        .iter()
+        .copied()
+        .filter(|name| *name != "time")
+        .collect();
+    for longitude in 0..longitudes.len() {
+        for latitude in 0..latitudes.len() {
+            let raw_index = if spatial_dimensions == ["lon", "lat"] {
+                [longitude, latitude]
+            } else {
+                [latitude, longitude]
+            };
+            let value = raw[raw_index];
+            let is_missing = value.is_nan()
+                || fill.is_some_and(|marker| value == marker)
+                || missing.is_some_and(|marker| value == marker);
+            if !is_missing && (!value.is_finite() || !(0.0..=1.0).contains(&value)) {
+                return Err(invalid(
+                    path,
+                    state.variable,
+                    value.to_string(),
+                    "expected a finite LUH1 fraction between zero and one or nodata",
+                ));
+            }
+            values[longitude * latitudes.len() + latitude] = (!is_missing).then_some(value);
+        }
+    }
+    let usable = values.iter().filter_map(|value| *value).count();
+    if usable == 0 {
+        return Err(Error::Validation(format!(
+            "{} has no numeric {} values for year {year}",
+            path.display(),
+            state.label
+        )));
+    }
+    Ok(Component {
+        longitudes,
+        latitudes,
+        times,
+        values,
+    })
+}
+
+fn read_axis(file: &NcFile, path: &Path, name: &'static str) -> Result<Vec<f64>> {
+    let variable = nc(path, file.variable(name))?;
+    if variable.dimensions.len() != 1
+        || variable.dimensions[0].name != name
+        || !matches!(variable.dtype, NcType::Float | NcType::Double)
+    {
+        return Err(invalid(
+            path,
+            name,
+            format!("{:?}", variable.dtype),
+            "expected a one-dimensional floating-point coordinate variable",
+        ));
+    }
+    let values: Vec<_> = nc(path, file.read_variable_as_f64(name))?
+        .iter()
+        .copied()
+        .collect();
+    if values.is_empty()
+        || (name != "time" && values.len() < 2)
+        || values.iter().any(|value| !value.is_finite())
+        || !strictly_monotonic(&values)
+    {
+        return Err(invalid(
+            path,
+            name,
+            format!("{} values", values.len()),
+            "expected finite, strictly monotonic coordinates",
+        ));
+    }
+    Ok(values)
+}
+
+fn require_same_axis(
+    path: &Path,
+    label: &'static str,
+    expected: &[f64],
+    actual: &[f64],
+) -> Result<()> {
+    if expected.len() != actual.len()
+        || expected
+            .iter()
+            .zip(actual)
+            .any(|(left, right)| (left - right).abs() > AXIS_EPSILON)
+    {
+        return Err(invalid(
+            path,
+            label,
+            format!("{} values", actual.len()),
+            "coordinate axis differs from the other LUH1 state files",
+        ));
+    }
+    Ok(())
+}
+
+fn strictly_monotonic(values: &[f64]) -> bool {
+    values.windows(2).all(|pair| pair[0] < pair[1])
+        || values.windows(2).all(|pair| pair[0] > pair[1])
+}
+
+fn nearest_axis_index(axis: &[f64], value: f64) -> Option<usize> {
+    value.is_finite().then_some(())?;
+    let index = axis
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| (*left - value).abs().total_cmp(&(*right - value).abs()))?
+        .0;
+    let half_step = match index {
+        0 => (axis[1] - axis[0]).abs() / 2.0,
+        index if index + 1 == axis.len() => (axis[index] - axis[index - 1]).abs() / 2.0,
+        index => {
+            ((axis[index] - axis[index - 1])
+                .abs()
+                .min((axis[index + 1] - axis[index]).abs()))
+                / 2.0
+        }
+    };
+    ((axis[index] - value).abs() <= half_step + AXIS_EPSILON).then_some(index)
+}
+
 fn require(directory: &Path, filename: &str) -> Result<PathBuf> {
     let path = directory.join(filename);
     path.is_file()
@@ -313,293 +542,155 @@ fn require(directory: &Path, filename: &str) -> Result<PathBuf> {
         .ok_or(Error::MissingSource(path))
 }
 
-struct AsciiGrid;
-
-impl AsciiGrid {
-    fn sample_hyde(path: &Path, coordinates: &[(f64, f64)]) -> Result<Vec<Option<f64>>> {
-        Self::sample(path, coordinates, true)
-    }
-
-    fn sample(
-        path: &Path,
-        coordinates: &[(f64, f64)],
-        require_hyde_grid: bool,
-    ) -> Result<Vec<Option<f64>>> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
-        let header = GridHeader::parse(path, &mut reader)?;
-        if require_hyde_grid {
-            header.require_hyde(path)?;
-        }
-        let mut requested: HashMap<usize, Vec<usize>> = HashMap::new();
-        for (index, &(latitude, longitude)) in coordinates.iter().enumerate() {
-            let cell = header.cell(path, latitude, longitude)?;
-            requested.entry(cell).or_default().push(index);
-        }
-        let mut samples = vec![None; coordinates.len()];
-        let mut token_index = 0usize;
-        for line in reader.lines() {
-            let line = line?;
-            for token in line.split_whitespace() {
-                if token_index >= header.cell_count()? {
-                    return Err(Error::Validation(format!(
-                        "{} has too many raster cells",
-                        path.display()
-                    )));
-                }
-                let parsed = token.parse::<f64>().map_err(|error| Error::InvalidField {
-                    path: path.into(),
-                    field: "raster cell",
-                    value: token.into(),
-                    message: error.to_string(),
-                })?;
-                let value = if parsed == header.nodata {
-                    None
-                } else if !parsed.is_finite() || parsed < 0.0 {
-                    return Err(Error::InvalidField {
-                        path: path.into(),
-                        field: "raster cell",
-                        value: token.into(),
-                        message: "HYDE cells must be non-negative finite areas or nodata".into(),
-                    });
-                } else {
-                    Some(parsed)
-                };
-                if let Some(targets) = requested.get(&token_index) {
-                    for &target in targets {
-                        samples[target] = value;
-                    }
-                }
-                token_index += 1;
-            }
-        }
-        if token_index != header.cell_count()? {
-            return Err(Error::Validation(format!(
-                "{} contains {token_index} raster cells, expected {}",
-                path.display(),
-                header.cell_count()?
-            )));
-        }
-        Ok(samples)
-    }
+fn nc<T>(path: &Path, result: netcdf_reader::Result<T>) -> Result<T> {
+    result.map_err(|source| Error::Netcdf {
+        path: path.to_path_buf(),
+        source: Box::new(source),
+    })
 }
 
-struct GridHeader {
-    columns: usize,
-    rows: usize,
-    west: f64,
-    south: f64,
-    cell_size: f64,
-    nodata: f64,
-}
-
-impl GridHeader {
-    fn parse(path: &Path, reader: &mut impl BufRead) -> Result<Self> {
-        let mut fields = HashMap::new();
-        for _ in 0..6 {
-            let mut line = String::new();
-            if reader.read_line(&mut line)? == 0 {
-                return Err(Error::Validation(format!(
-                    "{} has an incomplete ESRI ASCII header",
-                    path.display()
-                )));
-            }
-            let mut parts = line.split_whitespace();
-            let key = parts.next().unwrap_or_default().to_ascii_lowercase();
-            let value = parts.next().ok_or_else(|| {
-                Error::Validation(format!(
-                    "{} has a malformed ESRI ASCII header",
-                    path.display()
-                ))
-            })?;
-            if parts.next().is_some() || fields.insert(key, value.to_string()).is_some() {
-                return Err(Error::Validation(format!(
-                    "{} has a malformed or duplicate ESRI ASCII header",
-                    path.display()
-                )));
-            }
-        }
-        let parse_float = |key: &'static str| -> Result<f64> {
-            fields
-                .get(key)
-                .ok_or_else(|| Error::Validation(format!("{} is missing {key}", path.display())))?
-                .parse()
-                .map_err(|error: std::num::ParseFloatError| Error::InvalidField {
-                    path: path.into(),
-                    field: key,
-                    value: fields[key].clone(),
-                    message: error.to_string(),
-                })
-        };
-        let parse_usize = |key: &'static str| -> Result<usize> {
-            fields
-                .get(key)
-                .ok_or_else(|| Error::Validation(format!("{} is missing {key}", path.display())))?
-                .parse()
-                .map_err(|error: std::num::ParseIntError| Error::InvalidField {
-                    path: path.into(),
-                    field: key,
-                    value: fields[key].clone(),
-                    message: error.to_string(),
-                })
-        };
-        let columns = parse_usize("ncols")?;
-        let rows = parse_usize("nrows")?;
-        let west = parse_float("xllcorner")?;
-        let south = parse_float("yllcorner")?;
-        let cell_size = parse_float("cellsize")?;
-        let nodata = parse_float("nodata_value")?;
-        if columns == 0
-            || rows == 0
-            || cell_size <= 0.0
-            || ![west, south, cell_size, nodata]
-                .iter()
-                .all(|value| value.is_finite())
-        {
-            return Err(Error::Validation(format!(
-                "{} has invalid ESRI ASCII dimensions or coordinates",
-                path.display()
-            )));
-        }
-        Ok(Self {
-            columns,
-            rows,
-            west,
-            south,
-            cell_size,
-            nodata,
-        })
-    }
-
-    fn cell_count(&self) -> Result<usize> {
-        self.columns.checked_mul(self.rows).ok_or_else(|| {
-            Error::Validation("ESRI ASCII grid dimensions overflow the address space".into())
-        })
-    }
-
-    fn require_hyde(&self, path: &Path) -> Result<()> {
-        let epsilon = 1e-9;
-        if self.columns != HYDE_COLUMNS
-            || self.rows != HYDE_ROWS
-            || (self.west + 180.0).abs() > epsilon
-            || (self.south + 90.0).abs() > epsilon
-            || (self.cell_size - HYDE_CELL_SIZE).abs() > epsilon
-        {
-            return Err(Error::Validation(format!(
-                "{} is not a global 5-arcminute HYDE 3.2.1 grid",
-                path.display()
-            )));
-        }
-        Ok(())
-    }
-
-    fn cell(&self, path: &Path, latitude: f64, longitude: f64) -> Result<usize> {
-        let column = ((longitude - self.west) / self.cell_size).floor();
-        let north = self.south + self.cell_size * self.rows as f64;
-        let row = ((north - latitude) / self.cell_size).floor();
-        if !latitude.is_finite()
-            || !longitude.is_finite()
-            || column < 0.0
-            || row < 0.0
-            || column >= self.columns as f64
-            || row >= self.rows as f64
-        {
-            return Err(Error::Validation(format!(
-                "coordinate ({latitude}, {longitude}) is outside {}",
-                path.display()
-            )));
-        }
-        Ok(row as usize * self.columns + column as usize)
+fn invalid(path: &Path, field: &'static str, value: String, message: &'static str) -> Error {
+    Error::InvalidField {
+        path: path.to_path_buf(),
+        field,
+        value,
+        message: message.into(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::path::Path;
 
-    use super::{AsciiGrid, GridHeader, LandUseSourceValues, profile_from_fractions};
+    use super::{LandUseStates, LuhGrid, STATES, nearest_axis_index, require_same_axis};
 
     #[test]
-    fn ascii_grid_samples_north_to_south_and_preserves_nodata() {
-        let path = std::env::temp_dir().join(format!(
-            "adventuresim-hyde-{}.asc",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::write(
-            &path,
-            "ncols 2\nnrows 2\nxllcorner 0\nyllcorner 0\ncellsize 1\nNODATA_value -9999\n1 2\n3 -9999\n",
-        )
+    fn annual_luh_states_map_directly_into_an_exhaustive_profile() {
+        let (profile, normalized) = LandUseStates {
+            crop: Some(0.2),
+            pasture: Some(0.3),
+            urban: Some(0.01),
+            primary: Some(0.4),
+            secondary: Some(0.09),
+        }
+        .profile()
+        .unwrap()
         .unwrap();
-        let samples = AsciiGrid::sample(&path, &[(1.5, 0.5), (0.5, 1.5)], false).unwrap();
-        fs::remove_file(path).unwrap();
-        assert_eq!(samples, vec![Some(1.0), None]);
-    }
-
-    #[test]
-    fn source_areas_interpolate_into_an_exhaustive_profile() {
-        let values = LandUseSourceValues {
-            cell_area: Some(100.0),
-            cropland_start: Some(10.0),
-            cropland_end: Some(30.0),
-            grazing_start: Some(20.0),
-            grazing_end: Some(20.0),
-            built_up_start: Some(1.0),
-            built_up_end: Some(1.0),
-        };
-        let (profile, normalized) = values.profile(0.44).unwrap().unwrap();
         assert!(!normalized);
-        assert_eq!(profile.cropland().basis_points(), 1_880);
-        assert_eq!(profile.grazing().basis_points(), 2_000);
+        assert_eq!(profile.cropland().basis_points(), 2_000);
+        assert_eq!(profile.grazing().basis_points(), 3_000);
         assert_eq!(profile.built_up().basis_points(), 100);
-        assert_eq!(profile.natural().basis_points(), 6_020);
+        assert_eq!(profile.natural().basis_points(), 4_900);
     }
 
     #[test]
-    fn source_boundary_requires_the_hyde_global_five_arcminute_grid() {
-        let hyde = GridHeader {
-            columns: 4_320,
-            rows: 2_160,
-            west: -180.0,
-            south: -90.0,
-            cell_size: 1.0 / 12.0,
-            nodata: -9_999.0,
-        };
-        assert!(hyde.require_hyde(std::path::Path::new("hyde.asc")).is_ok());
-        let wrong_resolution = GridHeader {
-            columns: 360,
-            rows: 180,
-            cell_size: 1.0,
-            ..hyde
-        };
+    fn nodata_or_all_zero_terrestrial_states_use_the_documented_fallback() {
         assert!(
-            wrong_resolution
-                .require_hyde(std::path::Path::new("renamed.asc"))
-                .is_err()
+            LandUseStates {
+                crop: None,
+                pasture: Some(0.0),
+                urban: Some(0.0),
+                primary: Some(0.0),
+                secondary: Some(0.0)
+            }
+            .profile()
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            LandUseStates {
+                crop: Some(0.0),
+                pasture: Some(0.0),
+                urban: Some(0.0),
+                primary: Some(0.0),
+                secondary: Some(0.0)
+            }
+            .profile()
+            .unwrap()
+            .is_none()
         );
     }
 
     #[test]
-    fn overlapping_source_areas_are_normalized_without_invalid_totals() {
-        let (profile, normalized) = profile_from_fractions(0.7, 0.3, 0.01).unwrap();
-        assert!(normalized);
-        let total = profile.cropland().basis_points()
-            + profile.grazing().basis_points()
-            + profile.built_up().basis_points()
-            + profile.natural().basis_points();
-        assert_eq!(total, 10_000);
-        assert_eq!(profile.natural().basis_points(), 0);
+    fn malformed_or_materially_non_exhaustive_states_are_rejected() {
+        assert!(
+            LandUseStates {
+                crop: Some(0.5),
+                pasture: Some(0.5),
+                urban: Some(0.2),
+                primary: Some(0.0),
+                secondary: Some(0.0)
+            }
+            .profile()
+            .is_err()
+        );
+        assert!(
+            LandUseStates {
+                crop: Some(0.5),
+                pasture: Some(0.0),
+                urban: Some(0.0),
+                primary: Some(0.0),
+                secondary: Some(0.0)
+            }
+            .profile()
+            .is_err()
+        );
     }
 
     #[test]
-    fn malformed_overfull_or_non_finite_areas_are_rejected() {
-        assert!(profile_from_fractions(1.0, 1.0, 0.0).is_err());
-        assert!(profile_from_fractions(f64::MAX, f64::MAX, 0.0).is_err());
-        assert!(profile_from_fractions(f64::NAN, 0.0, 0.0).is_err());
+    fn tiny_floating_point_overfill_is_normalized_but_material_overfill_is_not() {
+        let (profile, normalized) = LandUseStates {
+            crop: Some(0.2),
+            pasture: Some(0.3),
+            urban: Some(0.1),
+            primary: Some(0.3),
+            secondary: Some(0.100_000_000_1),
+        }
+        .profile()
+        .unwrap()
+        .unwrap();
+        assert!(normalized);
+        assert_eq!(
+            profile.cropland().basis_points()
+                + profile.grazing().basis_points()
+                + profile.built_up().basis_points()
+                + profile.natural().basis_points(),
+            10_000
+        );
+    }
+
+    #[test]
+    fn sampling_uses_coordinate_cell_footprints_without_a_fixed_grid_contract() {
+        assert_eq!(nearest_axis_index(&[0.25, 0.75, 1.25], 0.5), Some(0));
+        assert_eq!(nearest_axis_index(&[0.25, 0.75, 1.25], 1.5), Some(2));
+        assert_eq!(nearest_axis_index(&[0.25, 0.75, 1.25], -0.01), None);
+    }
+
+    #[test]
+    fn source_contract_requires_the_five_urban_inclusive_state_files() {
+        assert_eq!(
+            STATES.map(|state| state.filename()),
+            [
+                "LUHa_u2.v1_gcrop.nc4",
+                "LUHa_u2.v1_gpast.nc4",
+                "LUHa_u2.v1_gurbn.nc4",
+                "LUHa_u2.v1_gothr.nc4",
+                "LUHa_u2.v1_gsecd.nc4",
+            ]
+        );
+        assert!(LuhGrid::open(Path::new("definitely-missing-luh1"), 1544).is_err());
+    }
+
+    #[test]
+    fn components_with_different_coordinate_axes_are_rejected() {
+        assert!(
+            require_same_axis(
+                Path::new("gsecd.nc4"),
+                "latitude",
+                &[0.25, 0.75],
+                &[0.25, 1.25],
+            )
+            .is_err()
+        );
     }
 }

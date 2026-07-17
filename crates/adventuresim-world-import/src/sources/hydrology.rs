@@ -127,6 +127,7 @@ pub(crate) fn enrich(
         metadata: WorldMetadata {
             schema_version: WORLD_SCHEMA_VERSION,
             world_year: draft.year,
+            world_bounds: draft.world_bounds,
             sources: draft.sources,
             road_types: draft.road_types,
         },

@@ -14,8 +14,8 @@ use adventuresim_world_schema::{
     SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
     SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
     SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
-    TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport,
-    WrbReferenceGroup,
+    TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldBounds,
+    WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -32,6 +32,7 @@ struct Args {
     viabundus_dir: PathBuf,
     #[arg(long, default_value_os_t = default_elevation_directory())]
     elevation_dir: PathBuf,
+    /// Directory containing the five LUHa_u2.v1 NetCDF-4 state files.
     #[arg(long, default_value_os_t = default_land_use_directory())]
     land_use_dir: PathBuf,
     #[arg(long, default_value_os_t = default_forest_cover_directory())]
@@ -52,6 +53,9 @@ struct Args {
     hydrology_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
+    /// JSON file defining the southwest and northeast WGS84 corners of the world to compile.
+    #[arg(long, value_name = "PATH")]
+    world_bounds: Option<PathBuf>,
     #[arg(long)]
     output: Option<PathBuf>,
     #[arg(long)]
@@ -80,7 +84,16 @@ fn run(args: Args) -> Result<()> {
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
     }
-    let world = WorldBuilder::new(args.year).build_from_sources(
+    let world_bounds = args
+        .world_bounds
+        .as_deref()
+        .map(read_world_bounds)
+        .transpose()?;
+    let mut builder = WorldBuilder::new(args.year);
+    if let Some(world_bounds) = world_bounds {
+        builder = builder.with_world_bounds(world_bounds);
+    }
+    let world = builder.build_from_sources(
         &args.viabundus_dir,
         &args.elevation_dir,
         &args.land_use_dir,
@@ -110,6 +123,14 @@ fn run(args: Args) -> Result<()> {
         load_world(&world, &artifact_id, &args)?;
     }
     Ok(())
+}
+
+fn read_world_bounds(path: &std::path::Path) -> Result<WorldBounds> {
+    let bytes = std::fs::read(path)?;
+    serde_json::from_slice(&bytes).map_err(|source| Error::JsonSource {
+        path: path.into(),
+        source,
+    })
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
@@ -816,7 +837,7 @@ fn default_elevation_directory() -> PathBuf {
 }
 
 fn default_land_use_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/historical-land-use")
+    repository_root().join("target/world-data-sources/raw/luh1-land-use")
 }
 
 fn default_forest_cover_directory() -> PathBuf {

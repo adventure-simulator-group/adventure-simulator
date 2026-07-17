@@ -152,6 +152,7 @@ fn finish(
     draft.report.drought_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -666,6 +667,7 @@ mod tests {
     fn empty_world_still_requires_the_source() {
         let draft = WorldDraft {
             year: 1544,
+            world_bounds: None,
             sources: Vec::new(),
             road_types: Vec::new(),
             nodes: Vec::new(),
@@ -697,7 +699,7 @@ mod tests {
         let owda = std::env::var_os("OWDA_NETCDF").expect("set OWDA_NETCDF");
         let viabundus = std::env::var_os("VIABUNDUS_DIR").expect("set VIABUNDUS_DIR");
         let grid = OwdaGrid::open(Path::new(&owda), 1544).unwrap();
-        let draft = crate::sources::viabundus::compile(Path::new(&viabundus), 1544).unwrap();
+        let draft = crate::sources::viabundus::compile(Path::new(&viabundus), 1544, None).unwrap();
         let mut direct = 0;
         let mut neighbors = 0;
         let mut fallbacks = 0;

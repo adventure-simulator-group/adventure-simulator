@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (525)
+## Files (527)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -498,6 +498,7 @@ development, or wiki document before changing a subsystem.
 - `docs/SOIL.md` — Project documentation.
 - `docs/TREE_SPECIES.md` — Project documentation.
 - `docs/VIABUNDUS.md` — Project documentation.
+- `docs/WORLD_BOUNDS.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
@@ -536,3 +537,4 @@ development, or wiki document before changing a subsystem.
 - `wiki/strategic/Travel.md` — Project documentation.
 - `wiki/tactical/Combat.md` — Project documentation.
 - `wiki/tactical/Stealth.md` — Project documentation.
+- `world-bounds.hamburg-test.json` — Repository support file.

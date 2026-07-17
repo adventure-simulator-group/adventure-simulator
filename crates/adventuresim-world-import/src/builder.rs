@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, WorldBuildReport,
+    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, WorldBounds,
+    WorldBuildReport,
 };
 
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
 #[derive(Clone, Copy, Debug)]
 pub struct WorldBuilder {
     year: i32,
+    world_bounds: Option<WorldBounds>,
 }
 
 /// Viabundus-only enrichment output used to inspect source-boundary behavior
@@ -29,11 +31,19 @@ pub struct ViabundusEnrichment {
 
 impl WorldBuilder {
     pub const fn new(year: i32) -> Self {
-        Self { year }
+        Self {
+            year,
+            world_bounds: None,
+        }
+    }
+
+    pub const fn with_world_bounds(mut self, world_bounds: WorldBounds) -> Self {
+        self.world_bounds = Some(world_bounds);
+        self
     }
 
     pub fn build_from_viabundus(self, directory: &Path) -> Result<ViabundusEnrichment> {
-        let draft = viabundus::compile(directory, self.year)?;
+        let draft = viabundus::compile(directory, self.year, self.world_bounds)?;
         Ok(ViabundusEnrichment {
             settlement_aliases: draft.settlement_aliases,
             settlement_descriptions: draft.settlement_descriptions,
@@ -55,7 +65,12 @@ impl WorldBuilder {
         drought_netcdf: &Path,
         hydrology_directory: &Path,
     ) -> Result<CompiledWorld> {
-        let draft = viabundus::compile(viabundus_directory, self.year)?;
+        let draft = viabundus::compile(viabundus_directory, self.year, self.world_bounds)?;
+        if draft.settlements.is_empty() {
+            return Err(crate::Error::Validation(
+                "world bounds selected no active Viabundus settlements".into(),
+            ));
+        }
         let draft = elevation::enrich(draft, elevation_directory)?;
         let draft = land_use::enrich(draft, land_use_directory)?;
         let draft = forest_cover::enrich(draft, forest_cover_directory)?;

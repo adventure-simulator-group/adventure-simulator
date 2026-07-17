@@ -7,7 +7,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 13;
+pub const WORLD_SCHEMA_VERSION: u32 = 14;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1744,10 +1744,123 @@ impl TravelRoute {
     }
 }
 
+/// A WGS84 coordinate used to define the selected strategic-world extent.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct GeographicCoordinate {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl GeographicCoordinate {
+    pub fn new(latitude: f64, longitude: f64) -> Option<Self> {
+        (latitude.is_finite()
+            && longitude.is_finite()
+            && (-90.0..=90.0).contains(&latitude)
+            && (-180.0..=180.0).contains(&longitude))
+        .then_some(Self {
+            latitude,
+            longitude,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for GeographicCoordinate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            latitude: f64,
+            longitude: f64,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.latitude, wire.longitude).ok_or_else(|| {
+            serde::de::Error::custom(
+                "latitude must be within -90..=90 and longitude within -180..=180",
+            )
+        })
+    }
+}
+
+/// Inclusive WGS84 world extent defined by its southwest and northeast corners.
+///
+/// Antimeridian-crossing worlds are intentionally not supported yet. The first
+/// strategic world is European, and refusing wrapped longitudes keeps source
+/// tile selection deterministic until that behavior is designed explicitly.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct WorldBounds {
+    pub south_west: GeographicCoordinate,
+    pub north_east: GeographicCoordinate,
+}
+
+impl WorldBounds {
+    pub fn new(south_west: GeographicCoordinate, north_east: GeographicCoordinate) -> Option<Self> {
+        (south_west.latitude < north_east.latitude && south_west.longitude < north_east.longitude)
+            .then_some(Self {
+                south_west,
+                north_east,
+            })
+    }
+
+    pub fn contains(self, latitude: f64, longitude: f64) -> bool {
+        latitude.is_finite()
+            && longitude.is_finite()
+            && (self.south_west.latitude..=self.north_east.latitude).contains(&latitude)
+            && (self.south_west.longitude..=self.north_east.longitude).contains(&longitude)
+    }
+
+    /// Returns the southwest origins of every WGS84 one-degree tile that
+    /// intersects this extent. Copernicus readers can map these origins to
+    /// their source-specific tile names without inventing an independent
+    /// coverage calculation.
+    pub fn intersecting_one_degree_tiles(self) -> Vec<GeographicCoordinate> {
+        let south = self.south_west.latitude.floor() as i16;
+        let north = self.north_east.latitude.ceil() as i16 - 1;
+        let west = self.south_west.longitude.floor() as i16;
+        let east = self.north_east.longitude.ceil() as i16 - 1;
+        let mut tiles = Vec::with_capacity(
+            usize::from((north - south + 1) as u16) * usize::from((east - west + 1) as u16),
+        );
+        for latitude in south..=north {
+            for longitude in west..=east {
+                tiles.push(GeographicCoordinate {
+                    latitude: f64::from(latitude),
+                    longitude: f64::from(longitude),
+                });
+            }
+        }
+        tiles
+    }
+}
+
+impl<'de> Deserialize<'de> for WorldBounds {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            south_west: GeographicCoordinate,
+            north_east: GeographicCoordinate,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.south_west, wire.north_east).ok_or_else(|| {
+            serde::de::Error::custom(
+                "south_west must be strictly south and west of north_east; antimeridian wrapping is unsupported",
+            )
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WorldMetadata {
     pub schema_version: u32,
     pub world_year: i32,
+    #[serde(default)]
+    pub world_bounds: Option<WorldBounds>,
     pub sources: Vec<SourceProvenance>,
     pub road_types: Vec<TravelEdgeKind>,
 }
@@ -1820,6 +1933,35 @@ pub struct CompiledWorld {
     pub settlement_aliases: Vec<SettlementAliasImport>,
     pub settlement_descriptions: Vec<SettlementDescriptionImport>,
     pub report: WorldBuildReport,
+}
+
+#[cfg(test)]
+mod world_bounds_tests {
+    use super::{GeographicCoordinate, WorldBounds};
+
+    fn coordinate(latitude: f64, longitude: f64) -> GeographicCoordinate {
+        GeographicCoordinate::new(latitude, longitude).unwrap()
+    }
+
+    #[test]
+    fn bounds_include_edges_and_enumerate_intersecting_degree_tiles() {
+        let bounds = WorldBounds::new(coordinate(47.25, -5.0), coordinate(48.0, -3.1)).unwrap();
+
+        assert!(bounds.contains(47.25, -5.0));
+        assert!(bounds.contains(48.0, -3.1));
+        assert!(!bounds.contains(48.01, -3.1));
+        assert_eq!(
+            bounds.intersecting_one_degree_tiles(),
+            vec![coordinate(47.0, -5.0), coordinate(47.0, -4.0),],
+        );
+    }
+
+    #[test]
+    fn bounds_reject_degenerate_or_wrapped_longitudes() {
+        assert!(WorldBounds::new(coordinate(48.0, 10.0), coordinate(48.0, 11.0)).is_none());
+        assert!(WorldBounds::new(coordinate(48.0, 10.0), coordinate(49.0, 10.0)).is_none());
+        assert!(WorldBounds::new(coordinate(48.0, 10.0), coordinate(49.0, 9.0)).is_none());
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

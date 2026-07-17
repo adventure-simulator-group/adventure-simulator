@@ -100,6 +100,7 @@ pub(crate) fn enrich(
     draft.report.elevation_fallback_samples = fallback_samples;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,

@@ -312,6 +312,7 @@ pub(crate) fn enrich(
     draft.report.religion_fallback_samples = fallbacks;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,

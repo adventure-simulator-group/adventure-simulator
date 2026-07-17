@@ -267,6 +267,7 @@ fn finish(
     draft.report.tree_species_candidates = candidate_count;
     Ok(WorldDraft {
         year: draft.year,
+        world_bounds: draft.world_bounds,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -974,7 +975,8 @@ mod tests {
     fn full_stage_enriches_all_viabundus_settlements() {
         let viabundus = std::env::var_os("VIABUNDUS_DIR").expect("set VIABUNDUS_DIR");
         let archive = std::env::var_os("EU_TREES4F_ARCHIVE").expect("set EU_TREES4F_ARCHIVE");
-        let mut raw = crate::sources::viabundus::compile(Path::new(&viabundus), 1544).unwrap();
+        let mut raw =
+            crate::sources::viabundus::compile(Path::new(&viabundus), 1544, None).unwrap();
         let settlements = std::mem::take(&mut raw.settlements)
             .into_iter()
             .map(|settlement| PotentialVegetationSettlementDraft {
@@ -1001,6 +1003,7 @@ mod tests {
             .collect();
         let draft = WorldDraft {
             year: raw.year,
+            world_bounds: raw.world_bounds,
             sources: raw.sources,
             road_types: raw.road_types,
             nodes: raw.nodes,

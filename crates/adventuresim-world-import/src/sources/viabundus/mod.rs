@@ -4,7 +4,7 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    EdgeEndpoint, SourceProvenance, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
+    EdgeEndpoint, SourceProvenance, TravelEdgeKind, WorldBounds, WorldBuildReport, WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -81,7 +81,11 @@ struct RawPopulation {
     inhabitants: String,
 }
 
-pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<SettlementDraft>> {
+pub(crate) fn compile(
+    directory: &Path,
+    year: i32,
+    world_bounds: Option<WorldBounds>,
+) -> Result<WorldDraft<SettlementDraft>> {
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
     let population_path = require(directory, "population.csv")?;
@@ -182,9 +186,16 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             increment(&mut excluded_edges, "self-loop".into());
             continue;
         }
-        endpoint_ids.extend([from_node_id, to_node_id]);
         let from_node = &nodes_by_id[&from_node_id];
         let to_node = &nodes_by_id[&to_node_id];
+        if world_bounds.is_some_and(|bounds| {
+            !bounds.contains(from_node.latitude, from_node.longitude)
+                || !bounds.contains(to_node.latitude, to_node.longitude)
+        }) {
+            increment(&mut excluded_edges, "outside-world-bounds".into());
+            continue;
+        }
+        endpoint_ids.extend([from_node_id, to_node_id]);
         let route = match kind {
             TravelEdgeKind::Ferry => TravelRouteDraft::Ferry,
             TravelEdgeKind::Land => TravelRouteDraft::Land {
@@ -224,7 +235,10 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
     let mut settlement_node_ids = HashSet::new();
     let mut settlements = Vec::new();
     for node in nodes_by_id.values() {
-        if !node.is_settlement || !node.settlement_interval.contains(year) {
+        if !node.is_settlement
+            || !node.settlement_interval.contains(year)
+            || world_bounds.is_some_and(|bounds| !bounds.contains(node.latitude, node.longitude))
+        {
             continue;
         }
         settlement_node_ids.insert(node.id);
@@ -310,6 +324,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
 
     Ok(WorldDraft {
         year,
+        world_bounds,
         sources: vec![SourceProvenance {
             name: SOURCE_NAME.into(),
             url: SOURCE_DOI.into(),
