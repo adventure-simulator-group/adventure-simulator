@@ -32,14 +32,24 @@ pub fn characters_list_page(
                         @let is_current = current_character_id == Some(character.id);
                         (panel(&character.name, html! {
                             div class="stat-grid" {
+                                div class="stat-item" {
+                                    span class="stat-label" { "Status" }
+                                    span class="stat-value" {
+                                        @if character.alive { "Alive" } @else { span class="badge badge-danger" { "Dead" } }
+                                    }
+                                }
                                 div class="stat-item" { span class="stat-label" { "Gold" } span class="stat-value" { (gold_display(character.gold)) } }
                             }
                             @if is_current {
-                                p class="text-accent small-copy" { "Currently selected" }
+                                p class="text-accent small-copy" {
+                                    @if character.alive { "Currently selected" } @else { "Currently viewed" }
+                                }
                             }
                             form action=(format!("/characters/{}/select", character.id)) method="post" class="mt-1" {
                                 button type="submit" class="btn btn-primary btn-block" {
-                                    @if is_current { "Continue" } @else { "Play as " (&character.name) }
+                                    @if !character.alive { "View " (&character.name) }
+                                    @else if is_current { "Continue" }
+                                    @else { "Play as " (&character.name) }
                                 }
                             }
                         }))
@@ -56,6 +66,36 @@ pub fn characters_list_page(
     };
 
     entry_layout("Select Adventurer", content, theme)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::characters_list_page;
+    use crate::spacetimedb::Character;
+
+    #[test]
+    fn dead_character_is_labeled_and_uses_view_wording() {
+        let character = Character {
+            id: 7,
+            name: "Fallen Adventurer".into(),
+            xp: 0,
+            level: 1,
+            gold: 100,
+            current_settlement_id: Some("ironforge".into()),
+            current_quest_location_id: None,
+            party_id: Some("solo-7".into()),
+            age_years: 30,
+            alive: false,
+            temporary: false,
+        };
+
+        let markup = characters_list_page(&[character], Some(7), "light").into_string();
+        assert!(markup.contains("Dead"));
+        assert!(markup.contains("Currently viewed"));
+        assert!(markup.contains("View Fallen Adventurer"));
+        assert!(!markup.contains("Play as Fallen Adventurer"));
+        assert!(!markup.contains(">Continue<"));
+    }
 }
 
 /// Character creation form.
