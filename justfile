@@ -238,6 +238,10 @@ init-viabundus:
 init-owda:
 	@python3 scripts/init_owda.py
 
+# Download and verify Jung/IIASA European PNV v1.1 COGs.
+init-jung-pnv:
+	@python3 scripts/init_jung_pnv.py
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

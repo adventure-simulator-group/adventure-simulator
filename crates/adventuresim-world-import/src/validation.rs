@@ -248,9 +248,11 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.settlements.len(),
         )
         || !potential_vegetation_counts_are_consistent(
-            world.report.potential_vegetation_polygons_read,
+            world.report.potential_vegetation_raster_files_read,
             world.report.potential_vegetation_samples,
-            world.report.potential_vegetation_fallback_samples,
+            world.report.potential_vegetation_posterior_samples,
+            world.report.potential_vegetation_categorical_samples,
+            world.report.potential_vegetation_inferred_samples,
             world.settlements.len(),
         )
         || !tree_species_counts_are_consistent(
@@ -443,14 +445,16 @@ fn tree_species_counts_are_consistent(
 }
 
 fn potential_vegetation_counts_are_consistent(
-    polygons: usize,
+    rasters: usize,
     samples: usize,
-    fallbacks: usize,
+    posterior: usize,
+    categorical: usize,
+    inferred: usize,
     settlements: usize,
 ) -> bool {
     samples == settlements
-        && fallbacks <= samples
-        && ((settlements == 0 && polygons == 0) || (settlements > 0 && polygons > 0))
+        && posterior + categorical + inferred == samples
+        && ((settlements == 0 && rasters == 0) || (settlements > 0 && rasters == 7))
 }
 
 fn forest_counts_are_consistent(
@@ -570,11 +574,17 @@ mod tests {
 
     #[test]
     fn potential_vegetation_report_requires_source_polygons_and_all_samples() {
-        assert!(potential_vegetation_counts_are_consistent(19_059, 3, 1, 3));
-        assert!(potential_vegetation_counts_are_consistent(0, 0, 0, 0));
-        assert!(!potential_vegetation_counts_are_consistent(0, 3, 0, 3));
-        assert!(!potential_vegetation_counts_are_consistent(19_059, 2, 0, 3));
-        assert!(!potential_vegetation_counts_are_consistent(19_059, 3, 4, 3));
+        assert!(potential_vegetation_counts_are_consistent(7, 3, 1, 1, 1, 3));
+        assert!(potential_vegetation_counts_are_consistent(0, 0, 0, 0, 0, 0));
+        assert!(!potential_vegetation_counts_are_consistent(
+            0, 3, 1, 1, 1, 3
+        ));
+        assert!(!potential_vegetation_counts_are_consistent(
+            7, 2, 1, 0, 1, 3
+        ));
+        assert!(!potential_vegetation_counts_are_consistent(
+            7, 3, 2, 2, 0, 3
+        ));
     }
 
     #[test]
