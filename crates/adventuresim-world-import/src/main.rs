@@ -841,7 +841,7 @@ fn encode_historical_vegetation(vegetation: HistoricalVegetation) -> Value {
     };
     match vegetation {
         HistoricalVegetation::Direct(v) => {
-            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::HydeDominantLandUse => "HydeDominantLandUse" }) } })
+            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::Luh1DominantLandUse => "Luh1DominantLandUse" }) } })
         }
         HistoricalVegetation::Derived(v) => {
             json!({ "Derived": { "cover": derived_cover(v.cover), "method": enum_unit(match v.method { D::MultiSourceRulesV4 => "MultiSourceRulesV4", D::MultiSourceRulesV4TieBreak => "MultiSourceRulesV4TieBreak" }) } })

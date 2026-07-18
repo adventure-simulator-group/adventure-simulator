@@ -46,8 +46,9 @@ against a malicious or noncanonical client.
   combined output remains unresolved.
 - **Copernicus DEM:** retain the prescribed Copernicus/WorldDEM production
   credit and European Commission/ESA no-liability notice.
-- **HYDE:** cite the DANS record. Its CC0 and attribution-oriented rights
-  signals conflict; this is recorded, not resolved.
+- **LUH1:** cite the ORNL DAAC record and follow its current acquisition
+  terms. The raw NetCDF state files are rights-reserved and are not
+  redistributed by this project.
 - **Copernicus forest and EU-Hydro:** credit the European Union/Copernicus,
   identify project modifications, and do not imply endorsement.
 - **Jung PNV, SoilGrids, and EGDI:** retain CC BY 4.0 attribution and identify
@@ -59,14 +60,14 @@ against a malicious or noncanonical client.
 - **NOAA OWDA:** cite NCEI and Cook et al.; compiled output remains bounded
   per-settlement derived data, not the grid or annual series.
 
-Current release blockers are explicit: GLO-30 tile selection, HYDE grids, EGDI,
-and EU-Hydro lack checked complete content inventories. The forest marker pins
-only the preparation format, so forest remains non-reproducible until every
-consumed raster is inventoried and hashed. SoilGrids is a rolling service whose
-strict prepared manifest supplies the actual retrieval timestamp and snapshot
-identity; that does not make raw `latest` reacquisition reproducible. These
-entries do not claim legal resolution or
-reproducibility that is not present.
+Current release blockers are explicit: GLO-30 tile selection, the manually
+acquired LUH1 NetCDF files, EGDI, and EU-Hydro lack checked complete content
+inventories. The forest marker pins only the preparation format, so forest
+remains non-reproducible until every consumed raster is inventoried and hashed.
+SoilGrids is a rolling service whose strict prepared manifest supplies the
+actual retrieval timestamp and snapshot identity; that does not make raw
+`latest` reacquisition reproducible. These entries do not claim legal
+resolution or reproducibility that is not present.
 
 `scripts/world_source_init.py` provides bounded plan/init/verify workflows for
 these accepted sources. Only the immutable EU-Trees4F archive is acquired; the
