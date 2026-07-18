@@ -44,6 +44,11 @@ active compiler input, the IEG checked-in marker, reviewed layouts, and its
 canonical per-component file inventory. `--partial` exists only for explicitly labelled test or
 non-developer archives and must not be published as the developer release.
 
+The Viabundus component includes only the five audited CSVs consumed by the
+importer plus its official source sidecar. The sidecar may describe additional
+supplementary CSVs in the upstream release; those files are intentionally not
+copied into the bundle.
+
 The policy is explicit and fail-closed for every current compiler input:
 Viabundus, HYDE 3.5, GLO-30, Copernicus forest, Jung PNV, EU-Trees4F,
 prepared SoilGrids, EGDI, curated IEG religion, OWDA-derived profiles, and

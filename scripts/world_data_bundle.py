@@ -21,9 +21,13 @@ import zipfile
 
 SCHEMA = 1
 CHUNK = 1024 * 1024
-MAX_ARCHIVE_BYTES = 16 * 1024 * 1024 * 1024
+# A complete public bundle already contains more than 14 GiB of GLO-30 tiles.
+# These bounds protect extractors without making a valid full release
+# impossible. ZIP64 is deliberately enabled by the writer and accepted by the
+# verifier.
+MAX_ARCHIVE_BYTES = 64 * 1024 * 1024 * 1024
 MAX_MEMBER_BYTES = 4 * 1024 * 1024 * 1024
-MAX_TOTAL_BYTES = 12 * 1024 * 1024 * 1024
+MAX_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 MAX_RATIO = 200
 WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
@@ -398,6 +402,13 @@ def build(output: Path, components: list[tuple[str, Path]], include_checked_in: 
         version, form, destination = POLICY[source]
         files = []
         for relative, path in regular_files(root):
+            # Viabundus publishes several supplementary CSVs. The importer
+            # deliberately consumes only its audited five-file subset; retain
+            # the official sidecar but do not accidentally redistribute
+            # unrelated supplementary material merely because it shares a
+            # download directory.
+            if source == "viabundus-v2" and relative not in REQUIRED_FILES[source]:
+                continue
             if any(token in relative.casefold() for token in PROHIBITED):
                 fail("bundle input includes prohibited LUH1, IEG map, or raw OWDA material")
             files.append({"path": relative, "size": path.stat().st_size, "sha256": sha256(path)})

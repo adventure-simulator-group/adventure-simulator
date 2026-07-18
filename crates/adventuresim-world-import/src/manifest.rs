@@ -149,7 +149,11 @@ pub(crate) fn viabundus(directory: &Path) -> Result<SourceProvenance> {
             .copied()
             .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>();
-        if sidecar.files.len() != VIABUNDUS_FILES.len() || names != expected_names {
+        // The official Viabundus release contains supplementary CSVs.  The
+        // importer has an intentionally smaller audited input subset, so the
+        // sidecar may inventory additional upstream files as long as it covers
+        // every CSV the importer actually consumes.
+        if !expected_names.is_subset(&names) {
             return Err(Error::Validation(
                 "Viabundus sidecar does not inventory every consumed CSV".into(),
             ));
@@ -1002,12 +1006,7 @@ mod tests {
             size: Some(1),
         });
         write_viabundus(&root, &sidecar);
-        assert!(
-            viabundus(&root)
-                .unwrap_err()
-                .to_string()
-                .contains("inventory")
-        );
+        assert!(viabundus(&root).unwrap().content_identity.is_reproducible());
         sidecar = viabundus_fixture(&root);
         sidecar.files[0].name = "../nodes.csv".into();
         write_viabundus(&root, &sidecar);
