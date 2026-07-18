@@ -410,7 +410,6 @@
   -webkit-mask: url('/static/icons/character/repair.png') center / contain no-repeat;
   mask: url('/static/icons/character/repair.png') center / contain no-repeat;
 }
-.durability-header-label { display: block; }
 .repair-all-form { display: inline-block; }
 
 .smith-wares-column {
@@ -555,10 +554,6 @@
 .smith-player-inventory-table .inventory-gold {
   min-width: 0;
   padding-inline: 0.08rem;
-}
-.smith-player-inventory-table th.inventory-column-durability {
-  font-size: 0.55rem;
-  letter-spacing: -0.035em;
 }
 .smith-player-inventory-table .inventory-durability .condition-bar {
   width: 3.15rem;

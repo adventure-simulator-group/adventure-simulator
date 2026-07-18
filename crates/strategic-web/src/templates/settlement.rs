@@ -1519,7 +1519,7 @@ fn completed_repair_condition_bar(
 
 fn repair_all_header(settlement: &Settlement, service_id: &str) -> Markup {
     html! {
-        span class="durability-header-label" { "Durability" }
+        span class="sr-only" { "Durability" }
         form class="repair-all-form" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
             button type="submit" class="repair-all-button" title="Entrust all eligible items for repair" aria-label="Repair all eligible items" {
                 span class="repair-action-icon" aria-hidden="true" {}
@@ -2877,10 +2877,17 @@ mod tests {
 
     #[test]
     fn smith_player_inventory_uses_the_compact_six_column_table() {
-        let rendered =
-            trade_inventory_table(true, Some(html! { "Durability" }), html! {}).into_string();
+        let rendered = trade_inventory_table(
+            true,
+            Some(repair_all_header(&settlement(), "weapons")),
+            html! {},
+        )
+        .into_string();
         assert!(rendered.contains("smith-player-inventory-table"));
         assert!(rendered.contains("inventory-column-durability"));
+        assert!(rendered.contains("Repair all eligible items"));
+        assert!(rendered.contains("class=\"sr-only\">Durability</span>"));
+        assert!(!rendered.contains("durability-header-label"));
     }
 
     #[test]

@@ -74,6 +74,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(dev_stack.seed("http://localhost:1", "db"), 7)
 
     @mock.patch.object(dev_stack, "run_checked")
+    def test_seed_includes_damaged_demo_character(self, run_checked):
+        run_checked.return_value = mock.Mock(returncode=0, stdout="")
+
+        self.assertEqual(
+            dev_stack.seed("http://localhost:1", "db", include_damaged_demo=True),
+            0,
+        )
+
+        self.assertEqual(
+            [call.args[0][-1] for call in run_checked.call_args_list],
+            ["seed_world", "seed_damaged_character"],
+        )
+
+    @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=1, stdout="failed\n")
         ordinary = io.StringIO()

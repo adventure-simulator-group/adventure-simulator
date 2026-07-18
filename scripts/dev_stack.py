@@ -129,12 +129,17 @@ def publish(server: str, database: str) -> int:
     return result.returncode
 
 
-def seed(server: str, database: str) -> int:
-    result = run_checked(["spacetime", "call", "--server", server, database, "seed_world"])
-    sys.stdout.write(result.stdout)
-    if result.returncode:
-        print("seed_world failed; refusing to hide the reducer error.", file=sys.stderr)
-    return result.returncode
+def seed(server: str, database: str, include_damaged_demo: bool = False) -> int:
+    reducers = ["seed_world"]
+    if include_damaged_demo:
+        reducers.append("seed_damaged_character")
+    for reducer in reducers:
+        result = run_checked(["spacetime", "call", "--server", server, database, reducer])
+        sys.stdout.write(result.stdout)
+        if result.returncode:
+            print(f"{reducer} failed; refusing to hide the reducer error.", file=sys.stderr)
+            return result.returncode
+    return 0
 
 
 def binding_differences(expected: Path, actual: Path) -> list[str]:
@@ -613,7 +618,7 @@ def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
             code = reset_publish(capability)
             if code:
                 return code
-            code = seed(server, str(values["database"]))
+            code = seed(server, str(values["database"]), include_damaged_demo=True)
             if code:
                 return code
             spawner_config = spawner_identity(name, server, str(values["database"]), "127.0.0.1", int(values["tactical_port"]))
