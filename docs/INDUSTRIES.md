@@ -1,12 +1,12 @@
 # Strategic industries and commodities
 
-World schema v20 and inference rules v6 attach a nonempty, bounded
+World schema v21 and inference rules v6 attach a nonempty, bounded
 `InferredIndustryProfile` to every imported settlement. The profile describes
 plausible local production in 1544; it is strategic world data, not a tactical
 simulation or a market inventory.
 
 Industry inference runs after route-terrain finalization. It consumes only the
-canonical HYDE land-use reconstruction, historical vegetation, finalized
+canonical LUH1 land-use reconstruction, historical vegetation, finalized
 SoilGrids/EGDI soil and lithology, OWDA moisture, EU-Hydro access, settlement
 population, and incident finalized routes. Scores and thresholds use integers
 and basis points. Outputs are sorted, unique, and limited to 24 per settlement.

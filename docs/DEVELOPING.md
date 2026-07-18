@@ -34,7 +34,42 @@ just dev
 Open http://localhost:8080
 
 Ordinary `just dev` / `just web` startup publishes without deleting database
-data. Use `just web-reset` only when an intentional reset is required.
+data. Publication failures stop startup before the seed reducer, tactical
+spawner, or web process starts and print the server/database identity plus
+recovery choices. Canonical reset recipes are intentionally disabled.
+
+For a disposable demo or worktree, use an explicit isolated profile:
+
+```bash
+just web-isolated renderer-demo 23100
+```
+
+The profile name is restricted to lowercase letters, digits, and hyphens, and
+the base port must leave room for the web and tactical ports. The recipe derives
+a stable fingerprint from the resolved worktree path and includes it in the
+database name and profile directory. State lives below the current user's local
+runtime/cache directory rather than shared `/tmp`; directories and metadata are
+owner-only and symlinks/path escapes are rejected. Thus the same human-readable
+profile in two worktrees still has distinct database, data, logs, and process
+identities. The three loopback ports remain explicit, and startup fails if any
+is already occupied.
+
+The Python lifecycle process holds an exclusive profile lock from the first
+port check through web-server exit. It records each child process's resolved
+executable and OS creation token, checks that identity throughout readiness and
+immediately before reset-publish, and uses the same identity for cleanup. It
+will not treat an unrelated listener as its SpacetimeDB or signal a reused PID.
+Only this guarded workflow may pass
+`--delete-data=always`; it rejects remote servers, non-loopback binds, mismatched
+database names, and unsafe profile strings. It stops its own SpacetimeDB and
+spawner when the foreground web process exits. The isolated database files are
+retained under the fingerprinted profile directory for inspection and are reset
+the next time that exact worktree/profile is run.
+
+The public `dev_stack.py publish` command is always non-destructive. Reset
+publication is not a CLI option: it is an internal lifecycle operation that
+requires the held profile lock and re-verifies the captured standalone listener
+identity immediately before invoking SpacetimeDB.
 
 ## Full Development (with Tactical Servers)
 
@@ -51,6 +86,21 @@ just build-wasm
 ```
 
 Now when you click a location in the browser, a tactical server will automatically spawn.
+
+For native tactical testing from WSL on Windows, the equivalent of running
+`just dev`, `just tactical`, and `just client 0` in separate Linux terminals is:
+
+```bash
+just win-dev
+```
+
+This runs the strategic stack in WSL, cross-compiles and stages the tactical
+executables in `E:\adventure-sim-dev`, then starts one native Windows tactical
+server and client 0. Press Ctrl+C to stop the web process and Windows tactical
+processes; the detached SpacetimeDB and tactical dispatcher follow the normal
+`just dev` lifecycle and can be stopped with `just stop`. The recipe installs
+the pinned toolchain's `x86_64-pc-windows-gnu` Rust target when needed; the WSL
+package `gcc-mingw-w64-x86-64` must already be installed.
 
 ## Requirements
 
@@ -79,16 +129,17 @@ Now when you click a location in the browser, a tactical server will automatical
 ```bash
 # Development
 just dev              # Start the complete browser stack
-just web-reset        # Delete, reseed, and start the disposable browser stack
+just web-isolated     # Reset and start an explicitly isolated local profile
 just web-secure       # Start strategic-web at https://localhost:8443
 just secure-web-trust # Trust Caddy's local development CA (normally once)
-just web-damaged      # Start a fresh stack with an injured demo character
+just web-damaged      # Refuses canonical reset; seed damage in an isolated profile
 just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
 
 # Testing
 just test             # Run native Rust/browser tests and validate the SpacetimeDB module ABI
 just test-chat        # Run only the strategic chat behavior tests
+just test-dev-stack   # Test local workflow policy without writing bytecode
 just tactical         # Run a single tactical server (for testing)
 just status           # Check service status
 just stop             # Stop all services
@@ -105,8 +156,9 @@ just build-all        # Build everything
 
 # Database
 just publish          # Publish SpacetimeDB module
-just publish-reset    # Publish and clear database
+just publish-reset    # Refuses canonical database deletion
 just generate-db-client # Regenerate and format the Rust client bindings
+just verify-db-client   # Fail if committed bindings differ from the module ABI
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
@@ -126,23 +178,38 @@ tests require a running SpacetimeDB environment.
 The workspace pins both the module crate and Rust SDK to SpacetimeDB 2.6.1.
 Before building or generating bindings, verify the active CLI with
 `spacetime --version`. Binding generation uses `spacetime generate
---module-path` and intentionally excludes private tables.
+--module-path` and intentionally excludes private tables. Both native tactical
+and WASM builds run `just verify-db-client`, which generates and formats into a
+temporary directory and compares the result without changing the checkout.
 
 The 1.x to 2.6.1 project upgrade is intentionally a clean reset: the game is
 pre-launch, so existing local and deployment data is not retained. Stop the
 old server, take an operator backup only if the old data may still be useful,
 and move its data directory aside or configure a new empty data directory.
-Then install/select SpacetimeDB 2.6.1 and run `just web-reset`. That explicit
-startup path starts the 2.6.1 server, reset-publishes, reseeds, and launches the
-browser stack; it permanently discards the database's previous contents. Keep
+Then install/select SpacetimeDB 2.6.1 and use an explicitly isolated profile,
+or perform a separately reviewed operator migration. `web-isolated` starts a
+profile-owned server, reset-publishes, reseeds, and launches the browser stack;
+it permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
 
 After this one-time reset, routine startup should use `just dev` / `just web`
 and routine publishes should use `just publish`, all of which preserve data.
-Do not use `web-reset` or `publish-reset` on a future public or player-bearing
-database unless data loss is explicitly approved and a verified recovery copy
-exists.
+`web-reset` and `publish-reset` refuse to run. Never pass destructive publish
+flags manually against a public or player-bearing database unless data loss is
+explicitly approved and a verified recovery copy exists.
+
+`seed_world` is itself idempotent: it inserts only missing demo rows. The local
+workflow now propagates every reducer failure instead of treating arbitrary
+errors as evidence that seeding already happened.
+
+Spawner metadata contains the resolved repository, profile, server/database,
+bind/port configuration, hashes of both tactical binaries, actual executable,
+PID, and OS process-creation token. Start, reuse, and stop are serialized under
+the profile lifecycle lock. A live process with missing or different metadata
+is rejected, so a worktree cannot silently reuse another checkout's dispatcher,
+an out-of-date build, or a recycled PID. Confirmed-dead metadata is safely
+replaced.
 
 ## Viabundus source data
 
@@ -191,9 +258,9 @@ size/hash checked and atomically published. Religion is a validation-only
 workflow and never mirrors the rights-reserved IEG images. GLO-30
 (`glo30`), Copernicus forest (`forest-cover`), and EU-Hydro (`hydrology`)
 perform redacted credential-file preflights but refuse network acquisition
-until exact product inventories are committed. HYDE and EGDI likewise provide
+until exact product inventories are committed. LUH1 and EGDI likewise provide
 deterministic plans and strict local-inventory verification while remaining
-release-blocked. `init-*` never turns missing pins or conflicting rights into
+release-blocked. `init-*` never turns missing pins or rights restrictions into
 guesses. See each source document for its exact blocker and command names.
 
 The compiler also currently requires manually downloaded Copernicus DEM
@@ -202,11 +269,12 @@ GLO-30 `*_DEM.tif` tiles in
 licensing, parsing, and fallback details. You can override either input with
 `--viabundus-dir` or `--elevation-dir`.
 
-Historical land use currently has a tested parser but no accessible full local
-dataset. Preparing the seven corrected HYDE 3.2.1 ESRI ASCII files documented in
-`docs/HISTORICAL_LAND_USE.md` under
-`target/world-data-sources/raw/historical-land-use/` is required before the
-stacked compiler can complete. Override that directory with `--land-use-dir`.
+Historical land use uses the LUH1 `LUHa_u2.v1` annual state files described in
+`docs/HISTORICAL_LAND_USE.md`. Obtain the five rights-reserved NetCDF files
+through the official route, place them under
+`target/world-data-sources/raw/luh1-land-use/`, then run `just verify-luh1`.
+The stacked compiler requires them; override that directory with
+`--land-use-dir`.
 
 Forest cover likewise has a tested boundary but no authenticated full local
 download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
@@ -279,7 +347,7 @@ or legal conclusions.
 World schema v17 / inference rules v4 add the final 1544 environmental
 synthesis. Its direct/derived/fallback and tie-break counters must reconcile to
 settlement count during validation. A complete official all-source audit is not
-available until the HYDE, forest, SoilGrids, and EU-Hydro inputs above exist
+available until the LUH1, forest, SoilGrids, and EU-Hydro inputs above exist
 locally; unit tests use bounded synthetic evidence and make no coverage claim.
 
 ## Strategic UI

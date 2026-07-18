@@ -169,26 +169,26 @@ class InitializerTests(unittest.TestCase):
     def test_traversal_symlink_duplicate_and_extra_inventory_fail(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            contract = init.CONTRACTS["hyde"]
-            self.inventory(root, "hyde", [{"name": "../escape", "size": 1, "sha256": "0" * 64}])
+            contract = init.CONTRACTS["luh1"]
+            self.inventory(root, "luh1", [{"name": "../escape", "size": 1, "sha256": "0" * 64}])
             with self.assertRaises(RuntimeError):
                 init.load_inventory(root, contract)
-            duplicate = [{"name": "garea_cr.asc", "size": 1, "sha256": "0" * 64}] * 2
-            self.inventory(root, "hyde", duplicate)
+            duplicate = [{"name": "LUHa_u2.v1_gcrop.nc4", "size": 1, "sha256": "0" * 64}] * 2
+            self.inventory(root, "luh1", duplicate)
             with self.assertRaisesRegex(RuntimeError, "duplicate"):
                 init.load_inventory(root, contract)
-            self.inventory(root, "hyde", [{"name": "extra.asc", "size": 1, "sha256": "0" * 64}])
+            self.inventory(root, "luh1", [{"name": "extra.nc4", "size": 1, "sha256": "0" * 64}])
             with self.assertRaisesRegex(RuntimeError, "missing or adds"):
                 init.load_inventory(root, contract)
             outside = root.parent / "outside-world-source-test"
             outside.write_bytes(b"x")
-            link = root / "garea_cr.asc"
+            link = root / "LUHa_u2.v1_gcrop.nc4"
             try:
                 os.symlink(outside, link)
             except OSError:
                 self.skipTest("symlinks unavailable")
             with self.assertRaisesRegex(RuntimeError, "symbolic"):
-                init.safe_child(root, "garea_cr.asc")
+                init.safe_child(root, "LUHa_u2.v1_gcrop.nc4")
             outside.unlink(missing_ok=True)
 
     def test_secret_preflight_is_redacted_and_absence_is_explicit(self):
@@ -208,7 +208,7 @@ class InitializerTests(unittest.TestCase):
             Path(credential).unlink(missing_ok=True)
 
     def test_manifest_order_is_deterministic(self):
-        contract = init.CONTRACTS["hyde"]
+        contract = init.CONTRACTS["luh1"]
         value = init.canonical_manifest(contract, [
             {"name": "z", "size": 1, "sha256": "0" * 64},
             {"name": "a", "size": 1, "sha256": "1" * 64},
@@ -219,7 +219,7 @@ class InitializerTests(unittest.TestCase):
     def test_contract_ids_and_versions_match_compiler_manifests(self):
         expected = {
             "glo30": ("copernicus-dem-glo30", "GLO-30"),
-            "hyde": ("hyde-3-2-1", "3.2.1"),
+            "luh1": ("luh1-luha-u2-v1", "LUHa_u2.v1"),
             "forest": ("clms-forest-2018", "2018"),
             "trees4f": ("eu-trees4f-v2", "2"),
             "egdi": ("egdi-surface-geology-1m", "EGDI-GE-1M-SURFACE"),

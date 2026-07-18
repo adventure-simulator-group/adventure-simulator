@@ -89,7 +89,7 @@ pub(crate) fn enrich(
             push_source_note(
                 &mut land,
                 if fallback {
-                    "**[Copernicus HRL Forests](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover):** At least one TCD/DLT source value was missing or reserved; forest density/type uses the documented deterministic HYDE/elevation fallback."
+                    "**[Copernicus HRL Forests](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover):** At least one TCD/DLT source value was missing or reserved; forest density/type uses the documented deterministic LUH1/elevation fallback."
                 } else {
                     "**[Copernicus HRL Forests](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover):** Forest density and dominant leaf type are sampled from the prepared 2018 TCD/DLT rasters."
                 },

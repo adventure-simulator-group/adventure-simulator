@@ -13,6 +13,10 @@ Regenerate with:
 just generate-db-client
 ```
 
+`just verify-db-client` performs the same generation in a temporary directory,
+formats it, and fails on any difference. Native tactical and WASM builds depend
+on this non-mutating freshness guard.
+
 This recipe formats the package immediately after successful generation, so
 checked-in bindings remain compatible with the repository's pinned Rust
 toolchain. If generation fails, formatting is not run and the recipe returns
