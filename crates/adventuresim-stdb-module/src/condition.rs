@@ -731,23 +731,13 @@ fn base_morale(
     }
 
     for event in ctx.db.morale_event().character_id().filter(character_id) {
-        let mut duration = event
+        let duration = event
             .expires_at_minute
             .saturating_sub(event.occurred_at_minute);
-        if event.magnitude < 0.0 {
-            duration = crate::personality::negative_event_duration(&personality, duration);
-        }
         let age = current_minute.saturating_sub(event.occurred_at_minute);
         let effect = event.magnitude * morale_event_decay(age, duration);
         if effect != 0.0 {
-            let stimulus = match event.kind.as_str() {
-                "victory" => crate::personality::MoraleStimulus::Victory,
-                "defeat" => crate::personality::MoraleStimulus::Defeat,
-                kind if kind.contains("religious") || kind.contains("prayer") => {
-                    crate::personality::MoraleStimulus::Religious
-                }
-                _ => crate::personality::MoraleStimulus::Other,
-            };
+            let stimulus = crate::personality::morale_event_stimulus(&event.kind);
             add_source(
                 format!("event-{}", event.id),
                 "event".into(),
@@ -1226,13 +1216,14 @@ pub fn record_morale_event(
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
+    let duration = stored_morale_event_duration(ctx, character_id, magnitude);
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
         kind: kind.into(),
         magnitude,
         occurred_at_minute,
-        expires_at_minute: occurred_at_minute + RECENT_MORALE_DURATION_MINUTES,
+        expires_at_minute: occurred_at_minute.saturating_add(duration),
         source_id,
     });
     refresh_character_strategic_condition(ctx, character_id)?;
@@ -1250,15 +1241,27 @@ fn insert_morale_event_without_refresh(
         return;
     }
     let occurred_at_minute = character_minute(ctx, character_id);
+    let duration = stored_morale_event_duration(ctx, character_id, magnitude);
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
         kind: kind.into(),
         magnitude,
         occurred_at_minute,
-        expires_at_minute: occurred_at_minute + RECENT_MORALE_DURATION_MINUTES,
+        expires_at_minute: occurred_at_minute.saturating_add(duration),
         source_id: Some(source_id),
     });
+}
+
+fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitude: f32) -> u64 {
+    if magnitude < 0.0 {
+        crate::personality::negative_event_duration(
+            &crate::personality::personality_or_neutral(ctx, character_id),
+            RECENT_MORALE_DURATION_MINUTES,
+        )
+    } else {
+        RECENT_MORALE_DURATION_MINUTES
+    }
 }
 
 fn party_charisma(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {

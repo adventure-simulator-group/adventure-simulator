@@ -57,7 +57,7 @@ The party budget is divided among positive-morale members in proportion to their
 
 Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Charisma` limit. Hovering or focusing the meter shows every named contribution and its signed value.
 
-The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, time-stamped morale events, and static personality. Personality is strategic identity, never tactical tick state. A missing legacy personality row is safely treated as fully neutral.
+The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, time-stamped morale events, and static personality. A negative event's persisted expiration already includes its Sanguine or Brooding duration adjustment, so `expires_at_minute` is authoritative rather than a projection-only reinterpretation. Personality is assigned before ordinary NPC events are recorded and is immutable thereafter. Personality is strategic identity, never tactical tick state. A missing legacy personality row is safely treated as fully neutral.
 
 # Religion
 

@@ -201,6 +201,20 @@ pub enum MoraleStimulus {
     Other,
 }
 
+/// Classify durable event kinds once so religious events cannot silently miss
+/// Conviction merely because their label does not contain "religious".
+pub fn morale_event_stimulus(kind: &str) -> MoraleStimulus {
+    match kind {
+        "victory" => MoraleStimulus::Victory,
+        "defeat" => MoraleStimulus::Defeat,
+        "holy_day_observed" | "religious_observance_neglected" | "travel_prayer_neglected" => {
+            MoraleStimulus::Religious
+        }
+        kind if kind.contains("religious") || kind.contains("prayer") => MoraleStimulus::Religious,
+        _ => MoraleStimulus::Other,
+    }
+}
+
 /// Apply a character's semantic reaction to one raw stimulus. Returned names
 /// are suitable for appending to the existing source label.
 pub fn react_raw(
@@ -297,7 +311,10 @@ pub fn ally_restoration_multiplier(
 
 /// Idempotently gives legacy characters a safe neutral profile.
 #[reducer]
-pub fn backfill_character_personalities(ctx: &ReducerContext) {
+pub fn backfill_character_personalities(ctx: &ReducerContext) -> Result<(), String> {
+    if ctx.sender() != ctx.database_identity() {
+        return Err("Character personalities may only be backfilled by the database itself".into());
+    }
     let ids: Vec<_> = ctx
         .db
         .character()
@@ -307,6 +324,7 @@ pub fn backfill_character_personalities(ctx: &ReducerContext) {
     for id in ids {
         initialize_personality(ctx, id, false);
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -382,5 +400,16 @@ mod tests {
         assert_eq!((8.0_f32 * multiplier).min(10.0), 10.0);
         p.sociability = Sociability::Solitary;
         assert_eq!(ally_restoration_multiplier(&p).0, 0.5);
+    }
+
+    #[test]
+    fn observed_holy_days_receive_conviction_reactions_and_annotations() {
+        let mut p = CharacterPersonality::neutral(1);
+        p.conviction = Conviction::Zealous;
+        let stimulus = morale_event_stimulus("holy_day_observed");
+        assert_eq!(stimulus, MoraleStimulus::Religious);
+        let (magnitude, annotations) = react_raw(&p, stimulus, 2.0);
+        assert_eq!(magnitude, 3.0);
+        assert_eq!(annotations, ["Zealous"]);
     }
 }
