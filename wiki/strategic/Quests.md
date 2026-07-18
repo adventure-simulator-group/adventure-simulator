@@ -29,3 +29,12 @@ The active quest remains in the left side of every location header. A red exclam
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations
 TODO: come up with a first-pass starting point to use to assess party power level.
+
+### Automated strategic-loop coverage
+
+The opt-in reducer-backed NPC simulator exercises the quest lifecycle through
+the same strategic reducers as a player: party join request/accept, quest
+acceptance, provisioned travel and camps, autoresolve, loot storage, return,
+turn-in, liquidation, and equipment purchase/equip. Its defeat policy retreats
+and heals at a settlement before a bounded retry, so it also detects loops that
+would otherwise repeatedly autoresolve an incapacitated party.

@@ -5,6 +5,11 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 - **Strategic Layer**: SpacetimeDB for character progression, inventory, parties, missions
 - **Tactical Layer**: Bevy/Lightyear game servers for real-time combat (in-memory state only)
 
+Native strategic balance experiments are described in
+[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md). They reuse pure
+authoritative progression functions from `adventuresim-core` and do not create
+production NPC rows or persist tactical state.
+
 ## Key Principle
 
 **Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the adventuresim-tactical-server game state.**
