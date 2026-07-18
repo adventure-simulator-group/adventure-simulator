@@ -4,14 +4,16 @@ use adventuresim_world_schema::{
     DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
     FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
     InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
+    LanguageCode, MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
     MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
     PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementHydrology, SettlementImport, SettlementReligiousStatus,
-    SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, valid_sources_markdown,
+    PotentialVegetationFormation, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
+    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit,
+    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent,
+    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+    TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
+    WorldNodeImport, valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -117,6 +119,48 @@ pub struct Settlement {
     /// Unstructured Markdown explaining source evidence and deterministic
     /// inferences. Reserved for a future debug view.
     pub sources: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_alias, public)]
+pub struct SettlementAlias {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    pub name: String,
+    pub prefix: Option<String>,
+    pub language: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_description, public)]
+pub struct SettlementDescription {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    pub kind: SettlementDescriptionKind,
+    pub language: Option<String>,
+    pub body: String,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct SettlementAliasBatchRow {
+    pub id: String,
+    pub settlement_id: String,
+    pub name: String,
+    pub prefix: Option<String>,
+    pub language: Option<String>,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct SettlementDescriptionBatchRow {
+    pub id: String,
+    pub settlement_id: String,
+    pub kind: SettlementDescriptionKind,
+    pub language: Option<String>,
+    pub body: String,
 }
 
 /// A navigational point in the imported Viabundus network. This contains the
@@ -531,6 +575,70 @@ fn validate_travel_route(edge_id: u64, route: &TravelRoute) -> Result<(), String
     Ok(())
 }
 
+#[reducer]
+pub fn import_settlement_aliases(
+    ctx: &ReducerContext,
+    aliases: Vec<SettlementAliasBatchRow>,
+) -> Result<(), String> {
+    require_active_world_import(ctx)?;
+    if aliases.is_empty() {
+        return Err("Settlement-alias batch is empty".into());
+    }
+    for alias in aliases {
+        if alias.id.trim().is_empty() {
+            return Err("Settlement alias ID must not be empty".into());
+        }
+        if ctx
+            .db
+            .settlement()
+            .id()
+            .find(&alias.settlement_id)
+            .is_none()
+        {
+            return Err(format!(
+                "Settlement alias {} references an unknown settlement",
+                alias.id
+            ));
+        }
+        if !valid_bounded_source_text(&alias.name, SETTLEMENT_ALIAS_NAME_MAX_BYTES) {
+            return Err(format!(
+                "Settlement alias {} name must be trimmed, NUL-free, and at most {} bytes",
+                alias.id, SETTLEMENT_ALIAS_NAME_MAX_BYTES
+            ));
+        }
+        if let Some(prefix) = &alias.prefix
+            && !valid_bounded_source_text(prefix, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES)
+        {
+            return Err(format!(
+                "Settlement alias {} prefix must be trimmed, NUL-free, and at most {} bytes",
+                alias.id, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES
+            ));
+        }
+        let language = alias
+            .language
+            .map(|value| {
+                value
+                    .parse::<LanguageCode>()
+                    .map(String::from)
+                    .map_err(|error| format!("Settlement alias {}: {error}", alias.id))
+            })
+            .transpose()?;
+        let row = SettlementAlias {
+            id: alias.id,
+            settlement_id: alias.settlement_id,
+            name: alias.name,
+            prefix: alias.prefix,
+            language,
+        };
+        if ctx.db.settlement_alias().id().find(&row.id).is_some() {
+            ctx.db.settlement_alias().id().update(row);
+        } else {
+            ctx.db.settlement_alias().insert(row);
+        }
+    }
+    Ok(())
+}
+
 fn valid_crossing_watercourse(watercourse: CrossingWatercourse) -> bool {
     match watercourse {
         CrossingWatercourse::River(river) => valid_river_watercourse(river),
@@ -670,6 +778,62 @@ fn reconstruct_geology_profile(
         }
         SurfaceGeology::Inferred(setting) => Ok(SurfaceGeology::Inferred(setting)),
     }
+}
+
+#[reducer]
+pub fn import_settlement_descriptions(
+    ctx: &ReducerContext,
+    descriptions: Vec<SettlementDescriptionBatchRow>,
+) -> Result<(), String> {
+    require_active_world_import(ctx)?;
+    if descriptions.is_empty() {
+        return Err("Settlement-description batch is empty".into());
+    }
+    for description in descriptions {
+        if description.id.trim().is_empty() {
+            return Err("Settlement description ID must not be empty".into());
+        }
+        if ctx
+            .db
+            .settlement()
+            .id()
+            .find(&description.settlement_id)
+            .is_none()
+        {
+            return Err(format!(
+                "Settlement description {} references an unknown settlement",
+                description.id
+            ));
+        }
+        if !valid_bounded_source_text(&description.body, SETTLEMENT_DESCRIPTION_MAX_BYTES) {
+            return Err(format!(
+                "Settlement description {} body must be trimmed, NUL-free, and at most {} bytes",
+                description.id, SETTLEMENT_DESCRIPTION_MAX_BYTES
+            ));
+        }
+        let language = description
+            .language
+            .map(|value| {
+                value
+                    .parse::<LanguageCode>()
+                    .map(String::from)
+                    .map_err(|error| format!("Settlement description {}: {error}", description.id))
+            })
+            .transpose()?;
+        let row = SettlementDescription {
+            id: description.id,
+            settlement_id: description.settlement_id,
+            kind: description.kind,
+            language,
+            body: description.body,
+        };
+        if ctx.db.settlement_description().id().find(&row.id).is_some() {
+            ctx.db.settlement_description().id().update(row);
+        } else {
+            ctx.db.settlement_description().insert(row);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

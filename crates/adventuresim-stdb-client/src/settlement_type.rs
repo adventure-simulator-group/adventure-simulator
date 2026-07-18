@@ -55,9 +55,19 @@ pub struct SettlementCols {
     pub population_level: __sdk::__query_builder::Col<Settlement, i32>,
     pub population_estimate: __sdk::__query_builder::Col<Settlement, u32>,
     pub elevation: __sdk::__query_builder::Col<Settlement, ElevationMeters>,
+    pub land_use: __sdk::__query_builder::Col<Settlement, LandUseProfile>,
+    pub forest_cover: __sdk::__query_builder::Col<Settlement, ForestCover>,
+    pub potential_vegetation: __sdk::__query_builder::Col<Settlement, PotentialVegetation>,
+    pub tree_species: __sdk::__query_builder::Col<Settlement, TreeSpeciesProfile>,
+    pub soil: __sdk::__query_builder::Col<Settlement, SoilProfile>,
+    pub geology: __sdk::__query_builder::Col<Settlement, SurfaceGeology>,
+    pub religious_status: __sdk::__query_builder::Col<Settlement, SettlementReligiousStatus>,
+    pub drought: __sdk::__query_builder::Col<Settlement, DroughtProfile>,
+    pub hydrology: __sdk::__query_builder::Col<Settlement, SettlementHydrology>,
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
     pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
+    pub sources: __sdk::__query_builder::Col<Settlement, String>,
 }
 
 impl __sdk::__query_builder::HasCols for Settlement {
@@ -74,9 +84,22 @@ impl __sdk::__query_builder::HasCols for Settlement {
                 "population_estimate",
             ),
             elevation: __sdk::__query_builder::Col::new(table_name, "elevation"),
+            land_use: __sdk::__query_builder::Col::new(table_name, "land_use"),
+            forest_cover: __sdk::__query_builder::Col::new(table_name, "forest_cover"),
+            potential_vegetation: __sdk::__query_builder::Col::new(
+                table_name,
+                "potential_vegetation",
+            ),
+            tree_species: __sdk::__query_builder::Col::new(table_name, "tree_species"),
+            soil: __sdk::__query_builder::Col::new(table_name, "soil"),
+            geology: __sdk::__query_builder::Col::new(table_name, "geology"),
+            religious_status: __sdk::__query_builder::Col::new(table_name, "religious_status"),
+            drought: __sdk::__query_builder::Col::new(table_name, "drought"),
+            hydrology: __sdk::__query_builder::Col::new(table_name, "hydrology"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
             source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),
+            sources: __sdk::__query_builder::Col::new(table_name, "sources"),
         }
     }
 }

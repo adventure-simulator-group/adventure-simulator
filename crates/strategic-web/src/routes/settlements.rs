@@ -25,13 +25,14 @@ use super::travel::{
     connected_destinations,
 };
 use crate::session::Session;
+use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterSkills,
     CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
     ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
     Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
-    TravelEdge,
+    SettlementAlias, SettlementDescription, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
@@ -137,8 +138,15 @@ async fn show_settlement_location(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let (settlements, active_character) = tokio::join!(
+    let settlement_literal = sql_string_literal(&id);
+    let alias_sql =
+        format!("SELECT * FROM settlement_alias WHERE settlement_id = {settlement_literal}");
+    let description_sql =
+        format!("SELECT * FROM settlement_description WHERE settlement_id = {settlement_literal}");
+    let (settlements, aliases, descriptions, active_character) = tokio::join!(
         state.db.query::<Settlement>("SELECT * FROM settlement"),
+        state.db.query::<SettlementAlias>(&alias_sql),
+        state.db.query::<SettlementDescription>(&description_sql),
         get_active_character(&state, session.character_id_u64()),
     );
     let settlements = settlements.unwrap_or_default();
@@ -153,9 +161,29 @@ async fn show_settlement_location(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let aliases = aliases.unwrap_or_else(|error| {
+        tracing::warn!(%error, settlement_id = %id, "failed to load settlement aliases");
+        Vec::new()
+    });
+    let descriptions = descriptions.unwrap_or_else(|error| {
+        tracing::warn!(%error, settlement_id = %id, "failed to load settlement descriptions");
+        Vec::new()
+    });
+    let mut aliases: Vec<_> = aliases
+        .into_iter()
+        .filter(|alias| alias.settlement_id == id)
+        .collect();
+    aliases.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut descriptions: Vec<_> = descriptions
+        .into_iter()
+        .filter(|description| description.settlement_id == id)
+        .collect();
+    descriptions.sort_by(|left, right| left.id.cmp(&right.id));
     Html(
         settlement_overview_page(
             settlement,
+            &aliases,
+            &descriptions,
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             logged_in_as.as_deref(),

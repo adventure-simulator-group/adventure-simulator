@@ -146,9 +146,69 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             )));
         }
     }
+    let alias_ids: HashSet<_> = world
+        .settlement_aliases
+        .iter()
+        .map(|alias| alias.id.as_str())
+        .collect();
+    if alias_ids.len() != world.settlement_aliases.len() {
+        return Err(Error::Validation(
+            "settlement alias IDs are not unique".into(),
+        ));
+    }
+    for alias in &world.settlement_aliases {
+        if alias.id.trim().is_empty() {
+            return Err(Error::Validation(
+                "settlement alias ID must not be empty".into(),
+            ));
+        }
+        if !settlement_ids.contains(alias.settlement_id.as_str()) {
+            return Err(Error::Validation(format!(
+                "settlement alias {} references an unknown settlement",
+                alias.id
+            )));
+        }
+        if alias.name.trim().is_empty() {
+            return Err(Error::Validation(format!(
+                "settlement alias {} has no name",
+                alias.id
+            )));
+        }
+    }
+    let description_ids: HashSet<_> = world
+        .settlement_descriptions
+        .iter()
+        .map(|description| description.id.as_str())
+        .collect();
+    if description_ids.len() != world.settlement_descriptions.len() {
+        return Err(Error::Validation(
+            "settlement description IDs are not unique".into(),
+        ));
+    }
+    for description in &world.settlement_descriptions {
+        if description.id.trim().is_empty() {
+            return Err(Error::Validation(
+                "settlement description ID must not be empty".into(),
+            ));
+        }
+        if !settlement_ids.contains(description.settlement_id.as_str()) {
+            return Err(Error::Validation(format!(
+                "settlement description {} references an unknown settlement",
+                description.id
+            )));
+        }
+        if description.body.trim().is_empty() {
+            return Err(Error::Validation(format!(
+                "settlement description {} has no body",
+                description.id
+            )));
+        }
+    }
     if world.report.nodes != world.nodes.len()
         || world.report.edges != world.edges.len()
         || world.report.settlements != world.settlements.len()
+        || world.report.settlement_aliases != world.settlement_aliases.len()
+        || world.report.settlement_descriptions != world.settlement_descriptions.len()
         || world.report.route_crossings
             != world
                 .edges

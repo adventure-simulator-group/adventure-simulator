@@ -1,0 +1,5 @@
+id,nodesid,language,pertainsto,description
+1,1,deu,settlement,&lt;b&gt;Eine Stadt&lt;/b&gt; &amp; Burg.
+2,1,nld,city,Een handelsstad.
+3,1,deu,bridge,Eine Brücke.
+4,2,deu,settlement,Kein importierter Ort.

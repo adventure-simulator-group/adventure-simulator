@@ -150,7 +150,8 @@ local download. The command records the source URLs and SHA-256 checksums in
 `viabundus/.viabundus-source.json`.
 
 `just compile-world` retains active 1544 land and ferry segments, all nodes
-needed to connect those segments, and active settlements. The Rust world
+needed to connect those segments, active settlements and their alternative
+names, and typed settlement/city descriptions. The Rust world
 compiler writes a deterministic, schema-versioned artifact to
 `target/world-1544.json`, validates its references and invariants, and emits a
 build report. Canonical nodes, edges, and settlements include a bounded,

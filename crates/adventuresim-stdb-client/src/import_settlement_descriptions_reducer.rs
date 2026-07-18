@@ -4,59 +4,53 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::settlement_description_batch_row_type::SettlementDescriptionBatchRow;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BeginWorldDataImportArgs {
-    pub schema_version: u32,
-    pub artifact_id: String,
-    pub sources: String,
+pub(super) struct ImportSettlementDescriptionsArgs {
+    pub descriptions: Vec<SettlementDescriptionBatchRow>,
 }
 
-impl From<BeginWorldDataImportArgs> for super::Reducer {
-    fn from(args: BeginWorldDataImportArgs) -> Self {
-        Self::BeginWorldDataImport {
-            schema_version: args.schema_version,
-            artifact_id: args.artifact_id,
-            sources: args.sources,
+impl From<ImportSettlementDescriptionsArgs> for super::Reducer {
+    fn from(args: ImportSettlementDescriptionsArgs) -> Self {
+        Self::ImportSettlementDescriptions {
+            descriptions: args.descriptions,
         }
     }
 }
 
-impl __sdk::InModule for BeginWorldDataImportArgs {
+impl __sdk::InModule for ImportSettlementDescriptionsArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `begin_world_data_import`.
+/// Extension trait for access to the reducer `import_settlement_descriptions`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait begin_world_data_import {
-    /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible.
+pub trait import_settlement_descriptions {
+    /// Request that the remote module invoke the reducer `import_settlement_descriptions` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`begin_world_data_import:begin_world_data_import_then`] to run a callback after the reducer completes.
-    fn begin_world_data_import(
+    /// /// Use [`import_settlement_descriptions:import_settlement_descriptions_then`] to run a callback after the reducer completes.
+    fn import_settlement_descriptions(
         &self,
-        schema_version: u32,
-        artifact_id: String,
-        sources: String,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
     ) -> __sdk::Result<()> {
-        self.begin_world_data_import_then(schema_version, artifact_id, sources, |_, _| {})
+        self.import_settlement_descriptions_then(descriptions, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `import_settlement_descriptions` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn begin_world_data_import_then(
+    fn import_settlement_descriptions_then(
         &self,
-        schema_version: u32,
-        artifact_id: String,
-        sources: String,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,12 +60,10 @@ pub trait begin_world_data_import {
     ) -> __sdk::Result<()>;
 }
 
-impl begin_world_data_import for super::RemoteReducers {
-    fn begin_world_data_import_then(
+impl import_settlement_descriptions for super::RemoteReducers {
+    fn import_settlement_descriptions_then(
         &self,
-        schema_version: u32,
-        artifact_id: String,
-        sources: String,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -80,11 +72,7 @@ impl begin_world_data_import for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            BeginWorldDataImportArgs {
-                schema_version,
-                artifact_id,
-                sources,
-            },
+            ImportSettlementDescriptionsArgs { descriptions },
             callback,
         )
     }

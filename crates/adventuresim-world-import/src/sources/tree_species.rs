@@ -271,6 +271,8 @@ fn finish(
         road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
+        settlement_aliases: draft.settlement_aliases,
+        settlement_descriptions: draft.settlement_descriptions,
         settlements,
         report: draft.report,
     })
@@ -1003,6 +1005,8 @@ mod tests {
             road_types: raw.road_types,
             nodes: raw.nodes,
             edges: raw.edges,
+            settlement_aliases: raw.settlement_aliases,
+            settlement_descriptions: raw.settlement_descriptions,
             settlements,
             report: raw.report,
         };

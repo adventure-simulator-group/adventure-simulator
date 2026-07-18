@@ -3,6 +3,8 @@
 //! Keep this crate lightweight. Readers for CSV, raster, and vector formats
 //! belong in `adventuresim-world-import`, not here or in the database module.
 
+use std::{fmt, str::FromStr};
+
 use serde::{Deserialize, Serialize};
 
 pub const WORLD_SCHEMA_VERSION: u32 = 13;
@@ -15,6 +17,15 @@ pub fn valid_sources_markdown(value: &str) -> bool {
     !value.trim().is_empty()
         && value.chars().count() <= MAX_SOURCES_MARKDOWN_CHARS
         && !value.contains('\0')
+}
+
+pub const SETTLEMENT_ALIAS_NAME_MAX_BYTES: usize = 256;
+pub const SETTLEMENT_ALIAS_PREFIX_MAX_BYTES: usize = 128;
+pub const SETTLEMENT_DESCRIPTION_MAX_BYTES: usize = 8_192;
+
+/// Validates bounded, canonical external text before it enters compiled world data.
+pub fn valid_bounded_source_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty() && value == value.trim() && value.len() <= max_bytes && !value.contains('\0')
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1386,6 +1397,61 @@ pub enum ElevationBand {
     Alpine,
 }
 
+/// An ISO 639-3 language code parsed at the source boundary.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct LanguageCode {
+    code: String,
+}
+
+impl LanguageCode {
+    pub fn as_str(&self) -> &str {
+        &self.code
+    }
+}
+
+impl FromStr for LanguageCode {
+    type Err = InvalidLanguageCode;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let value = value.trim();
+        if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_lowercase()) {
+            Ok(Self { code: value.into() })
+        } else {
+            Err(InvalidLanguageCode(value.into()))
+        }
+    }
+}
+
+impl TryFrom<String> for LanguageCode {
+    type Error = InvalidLanguageCode;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl From<LanguageCode> for String {
+    fn from(value: LanguageCode) -> Self {
+        value.code
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvalidLanguageCode(String);
+
+impl fmt::Display for InvalidLanguageCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "expected a lowercase ISO 639-3 code, got {:?}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InvalidLanguageCode {}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "lowercase")]
@@ -1698,6 +1764,9 @@ pub struct WorldBuildReport {
     pub nodes: usize,
     pub edges: usize,
     pub settlements: usize,
+    pub settlement_aliases: usize,
+    pub settlement_descriptions: usize,
+    pub deferred_settlement_descriptions: std::collections::BTreeMap<String, usize>,
     pub settlements_connected_to_road_network: usize,
     pub route_crossings: usize,
     pub toll_edges: usize,
@@ -1748,6 +1817,8 @@ pub struct CompiledWorld {
     pub nodes: Vec<WorldNodeImport>,
     pub edges: Vec<TravelEdgeImport>,
     pub settlements: Vec<SettlementImport>,
+    pub settlement_aliases: Vec<SettlementAliasImport>,
+    pub settlement_descriptions: Vec<SettlementDescriptionImport>,
     pub report: WorldBuildReport,
 }
 
@@ -1806,14 +1877,16 @@ pub struct SettlementImport {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::{
         CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, EuroVegMapUnitCode,
         ForestCover, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
-        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetationFormation,
-        SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SummerHydroclimate,
-        TreeSpeciesId,
+        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LanguageCode,
+        MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode,
+        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
+        StoneContentPercent, SummerHydroclimate, TreeSpeciesId,
     };
 
     #[test]
@@ -1824,6 +1897,18 @@ mod tests {
         assert!(!super::valid_sources_markdown(
             &"x".repeat(super::MAX_SOURCES_MARKDOWN_CHARS + 1)
         ));
+    }
+
+    #[test]
+    fn external_settlement_text_is_bounded_and_nul_free() {
+        let limit = super::SETTLEMENT_ALIAS_NAME_MAX_BYTES;
+        assert!(super::valid_bounded_source_text(&"a".repeat(limit), limit));
+        assert!(!super::valid_bounded_source_text(
+            &"a".repeat(limit + 1),
+            limit
+        ));
+        assert!(!super::valid_bounded_source_text("name\0hidden", limit));
+        assert!(!super::valid_bounded_source_text(" padded ", limit));
     }
 
     #[test]
@@ -2056,4 +2141,46 @@ mod tests {
             serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1001}"#).is_err()
         );
     }
+
+    #[test]
+    fn language_codes_are_parsed_into_a_closed_representation() {
+        assert_eq!(LanguageCode::from_str("deu").unwrap().as_str(), "deu");
+        assert!(LanguageCode::from_str("DE").is_err());
+        assert!(serde_json::from_str::<LanguageCode>("\"english\"").is_err());
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SettlementAliasImport {
+    pub id: String,
+    pub settlement_id: String,
+    pub name: String,
+    pub prefix: Option<String>,
+    pub language: Option<LanguageCode>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "lowercase")]
+pub enum SettlementDescriptionKind {
+    Settlement,
+    City,
+}
+
+impl SettlementDescriptionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Settlement => "settlement",
+            Self::City => "city",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SettlementDescriptionImport {
+    pub id: String,
+    pub settlement_id: String,
+    pub kind: SettlementDescriptionKind,
+    pub language: Option<LanguageCode>,
+    pub body: String,
 }

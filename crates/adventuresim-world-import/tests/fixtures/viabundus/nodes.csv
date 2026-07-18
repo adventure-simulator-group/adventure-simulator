@@ -1,0 +1,3 @@
+id,parentid,name,longitude,latitude,Is_Settlement,Is_Town,Is_Ferry,Is_Harbour,Is_Bridge,Bridge_From,Bridge_To,Is_Toll,Toll_From,Toll_To,Settlement_From,Settlement_To
+1,null,Lübeck,10.6864,53.8655,y,y,n,y,n,null,null,n,null,null,1200,null
+2,null,Road junction,10.7,53.9,n,n,n,n,n,null,null,n,null,null,null,null

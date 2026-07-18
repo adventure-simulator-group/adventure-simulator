@@ -13,9 +13,12 @@ from its source-specific `sources::viabundus` module, then enriches the draft
 with required values from the other initialized sources. `just compile-world`
 writes the validated, schema-versioned artifact to
 `target/world-1544.json`. The generated strategic graph contains
-only the source attributes required to route between settlements in 1544:
-nodes, active land/ferry edges, and settlement metadata, including each
-settlement's approximate population estimate. It is an adapted
+the source attributes required to route between and identify settlements in
+1544: nodes, active land/ferry edges, settlement metadata, active alternative
+names, and settlement/city descriptions. Description HTML entities are decoded
+and source markup is removed by the Viabundus parser, so only plain text enters
+the source-independent world schema. Each settlement also retains its
+approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
@@ -30,6 +33,11 @@ source model and reported, but do not invent an active feature interval.
 
 Each imported settlement has the prototype's shared merchant services, and
 newly created characters start at a random loaded settlement.
+The settlement overview lists historical aliases and exposes one deterministic
+historical description with its source language; population-based English
+flavor text remains the primary description. Non-settlement description
+categories such as bridges, tolls, and ferries remain deferred and are counted
+by category in the compiler build report.
 
 The import does not claim that every represented line is an exact historical
 road. Viabundus' `certainty` value is preserved on each travel edge so gameplay

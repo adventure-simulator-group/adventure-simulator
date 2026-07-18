@@ -66,6 +66,32 @@ pub struct Settlement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementAlias {
+    pub id: String,
+    pub settlement_id: String,
+    pub name: String,
+    pub prefix: Option<String>,
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementDescription {
+    pub id: String,
+    pub settlement_id: String,
+    pub kind: SettlementDescriptionKind,
+    pub language: Option<String>,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SettlementDescriptionKind {
+    #[serde(alias = "settlement")]
+    Settlement,
+    #[serde(alias = "city")]
+    City,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TravelEdge {
     pub id: u64,
     pub from_node_id: u64,
@@ -646,5 +672,23 @@ mod tests {
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
         );
+    }
+
+    #[test]
+    fn travel_kind_is_a_closed_set() {
+        assert_eq!(
+            serde_json::from_str::<TravelKind>("\"land\"").unwrap(),
+            TravelKind::Land
+        );
+        assert!(serde_json::from_str::<TravelKind>("\"teleport\"").is_err());
+    }
+
+    #[test]
+    fn settlement_description_kind_is_a_closed_set() {
+        assert_eq!(
+            serde_json::from_str::<SettlementDescriptionKind>("\"city\"").unwrap(),
+            SettlementDescriptionKind::City
+        );
+        assert!(serde_json::from_str::<SettlementDescriptionKind>("\"bridge\"").is_err());
     }
 }
