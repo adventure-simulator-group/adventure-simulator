@@ -11,6 +11,9 @@ pub const PARTY_CHARISMA_BASELINE: f32 = 2.5;
 pub const PARTY_CHARISMA_SUPPORT_WEIGHT: f32 = 0.5;
 pub const PARTY_CHARISMA_COORDINATION_LIMIT: f32 = 1.125;
 pub const PARTY_CHARISMA_COORDINATION_DECAY: f32 = 1.0 / 3.0;
+pub const MAX_PARTY_CHECK: f32 = 5.0;
+/// Each medical supporter has half the influence of the previous contributor.
+pub const BOUNDED_PARTY_CHECK_SUPPORT_DECAY: f32 = 0.5;
 
 /// Combines party-wide skill checks with diminishing returns. The strongest
 /// contributor counts fully, the next at half value, the third at one third,
@@ -31,6 +34,38 @@ pub fn aggregate_party_check(values: impl IntoIterator<Item = f32>) -> f32 {
 pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
     let before = aggregate_party_check(current.iter().copied());
     let after = aggregate_party_check(current.iter().copied().chain([candidate]));
+    (after - before).max(0.0)
+}
+
+/// Combines a lead practitioner's check with geometrically diminishing support.
+///
+/// Values are sorted strongest-first. The leader has full weight, followed by
+/// weights of 1/2, 1/4, 1/8, and so on. Combining the contributors as
+/// complementary fractions of the five-point scale keeps the result bounded
+/// without clamping it. With the 1/2 decay, all supporters together can have
+/// at most the influence of one additional copy of the leader.
+pub fn aggregate_bounded_party_check(values: impl IntoIterator<Item = f32>) -> f32 {
+    let mut values: Vec<f32> = values
+        .into_iter()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| value.min(MAX_PARTY_CHECK))
+        .collect();
+    values.sort_by(|left, right| right.total_cmp(left));
+
+    let unfilled_fraction = values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let weight = BOUNDED_PARTY_CHECK_SUPPORT_DECAY.powi(index as i32);
+            (1.0 - value / MAX_PARTY_CHECK).powf(weight)
+        })
+        .product::<f32>();
+    MAX_PARTY_CHECK * (1.0 - unfilled_fraction)
+}
+
+pub fn aggregate_bounded_party_contribution(current: &[f32], candidate: f32) -> f32 {
+    let before = aggregate_bounded_party_check(current.iter().copied());
+    let after = aggregate_bounded_party_check(current.iter().copied().chain([candidate]));
     (after - before).max(0.0)
 }
 
@@ -413,6 +448,23 @@ mod tests {
         let current = [2.0, 4.0, 3.0];
         assert!((aggregate_party_check(current) - (4.0 + 1.5 + 2.0 / 3.0)).abs() < 0.001);
         assert!((aggregate_party_contribution(&current, 5.0) - 7.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn bounded_checks_approach_quality_dependent_limits() {
+        for (check, expected_limit) in [(1.0, 1.8), (2.0, 3.2), (3.0, 4.2), (4.0, 4.8)] {
+            let large_party = aggregate_bounded_party_check([check; 64]);
+            assert!((large_party - expected_limit).abs() < 0.001);
+            assert!(large_party < MAX_PARTY_CHECK);
+        }
+    }
+
+    #[test]
+    fn bounded_checks_preserve_solo_values_and_reward_skilled_support() {
+        assert!((aggregate_bounded_party_check([3.25]) - 3.25).abs() < 0.001);
+        assert!((aggregate_bounded_party_check([4.0, 4.0]) - 4.5528).abs() < 0.001);
+        assert!(aggregate_bounded_party_check([4.0, 2.0, 2.0, 2.0]) < 4.4);
+        assert!(aggregate_bounded_party_contribution(&[4.0], 4.0) > 0.5);
     }
 
     #[test]

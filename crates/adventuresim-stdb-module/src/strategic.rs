@@ -1,4 +1,4 @@
-use adventuresim_core::morale::fervor_event_occurs;
+use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
@@ -21,6 +21,38 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+const SURGERY_CHECK_PER_HEALTH_DAMAGE: f32 = 20.0;
+
+/// Untreated autoresolve wounds can deteriorate by as much as their original
+/// damage. Every five percentage points of damage require one point of the
+/// party Surgery check to prevent deterioration completely.
+fn post_battle_wound_deterioration(damage: f32, surgery_check: f32) -> f32 {
+    let damage = damage.max(0.0);
+    let required_check = (damage * SURGERY_CHECK_PER_HEALTH_DAMAGE).clamp(0.0, 5.0);
+    if required_check == 0.0 {
+        return 0.0;
+    }
+    let untreated_fraction =
+        ((required_check - surgery_check.clamp(0.0, 5.0)) / required_check).clamp(0.0, 1.0);
+    damage * untreated_fraction
+}
+
+#[cfg(test)]
+mod healing_tests {
+    use super::post_battle_wound_deterioration;
+
+    #[test]
+    fn surgery_prevents_deterioration_when_it_meets_wound_severity() {
+        assert!((post_battle_wound_deterioration(0.20, 4.0)).abs() < f32::EPSILON);
+        assert!((post_battle_wound_deterioration(0.05, 1.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn surgery_shortfall_proportionally_worsens_the_wound() {
+        assert!((post_battle_wound_deterioration(0.20, 2.0) - 0.10).abs() < f32::EPSILON);
+        assert!((post_battle_wound_deterioration(0.20, 0.0) - 0.20).abs() < f32::EPSILON);
+    }
+}
 
 fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
     let character_ids: Vec<_> = ctx
@@ -3563,33 +3595,46 @@ pub fn autoresolve_quest(
         return Ok(());
     }
 
-    for member in ctx.db.party_member().party_id().filter(&party_id) {
-        if let Some(mut limbs) = ctx
-            .db
-            .character_limbs()
-            .character_id()
-            .find(member.character_id)
-        {
+    let member_ids: Vec<u64> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .map(|member| member.character_id)
+        .collect();
+    let surgery_checks = member_ids
+        .iter()
+        .map(|member_id| {
+            crate::capability::evaluate_character(ctx, *member_id)
+                .map(|capabilities| capabilities.surgery)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let surgery_check = aggregate_bounded_party_check(surgery_checks);
+
+    for member_id in member_ids {
+        if let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member_id) {
             let condition =
-                crate::condition::refresh_character_strategic_condition(ctx, member.character_id)?;
+                crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
             let base_damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
             let damage = base_damage * (2.0 - condition.check_multiplier);
+            let deterioration = post_battle_wound_deterioration(damage, surgery_check);
+            let final_damage = damage + deterioration;
             match ctx.random::<u64>() % 7 {
-                0 => limbs.left_arm_health = (limbs.left_arm_health - damage).max(0.0),
-                1 => limbs.right_arm_health = (limbs.right_arm_health - damage).max(0.0),
-                2 => limbs.left_leg_health = (limbs.left_leg_health - damage).max(0.0),
-                3 => limbs.right_leg_health = (limbs.right_leg_health - damage).max(0.0),
-                4 => limbs.head_health = (limbs.head_health - damage).max(0.0),
-                5 => limbs.chest_health = (limbs.chest_health - damage).max(0.0),
-                _ => limbs.stomach_health = (limbs.stomach_health - damage).max(0.0),
+                0 => limbs.left_arm_health = (limbs.left_arm_health - final_damage).max(0.0),
+                1 => limbs.right_arm_health = (limbs.right_arm_health - final_damage).max(0.0),
+                2 => limbs.left_leg_health = (limbs.left_leg_health - final_damage).max(0.0),
+                3 => limbs.right_leg_health = (limbs.right_leg_health - final_damage).max(0.0),
+                4 => limbs.head_health = (limbs.head_health - final_damage).max(0.0),
+                5 => limbs.chest_health = (limbs.chest_health - final_damage).max(0.0),
+                _ => limbs.stomach_health = (limbs.stomach_health - final_damage).max(0.0),
             }
             ctx.db.character_limbs().character_id().update(limbs);
             crate::condition::apply_blood_loss(
                 ctx,
-                member.character_id,
-                damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
+                member_id,
+                final_damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
             )?;
-            crate::capability::refresh_character_capability(ctx, member.character_id)?;
+            crate::capability::refresh_character_capability(ctx, member_id)?;
         }
     }
     // The current enemy generator equips its placeholder enemies with clubs.
