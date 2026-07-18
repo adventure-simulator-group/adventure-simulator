@@ -208,6 +208,12 @@ EGDI surface geology is read from the indexed EPSG:3034 GeoPackage at
 675 MB file and a real spatial sample have been verified; it remains a manually
 prepared input until the integration is accepted.
 
+IEG official-religion maps require a curated geographic intermediate because
+the published 1500 and 1555 images do not contain machine-readable territory
+boundaries. The checked-in 1544 intermediate and its intentionally approximate
+interpretation are documented in `docs/RELIGION.md`; override its location with
+`--religion-regions`.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients

@@ -214,7 +214,6 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             population_level: population_level(estimate),
             population_estimate: population_estimate(&population_path, estimate)?,
             scene_key: "hills".into(),
-            religion_id: ["western_church", "reformed", "old_faith"][(node.id % 3) as usize].into(),
         });
     }
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
@@ -303,6 +302,9 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
             geology_features_read: 0,
             geology_samples: 0,
             geology_fallback_samples: 0,
+            religion_regions_read: 0,
+            religion_samples: 0,
+            religion_fallback_samples: 0,
             excluded_edges,
         },
         nodes,

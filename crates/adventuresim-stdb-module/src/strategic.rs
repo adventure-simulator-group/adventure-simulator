@@ -4,11 +4,12 @@ use adventuresim_world_schema::{
     ElevationMeters, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
     InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
     MappedPotentialVegetation, MappedSoilProfile, MineralSoil, MineralSoilTexture,
-    ModeledTreeSpecies, ModeledTreeSpeciesProfile, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
-    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
-    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-    TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, ParentMaterialCode,
+    PotentialVegetation, PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus,
+    SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
+    Woodland, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -101,6 +102,7 @@ pub struct Settlement {
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
+    pub religious_status: SettlementReligiousStatus,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -443,7 +445,8 @@ pub fn import_settlements(
             soil,
             geology,
             scene_key: settlement.scene_key,
-            religion_id: settlement.religion_id,
+            religion_id: settlement.religious_status.church().faith_id().into(),
+            religious_status: settlement.religious_status,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -3909,7 +3912,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             0.0,
             3,
             "hills",
-            "western_church",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::RomanCatholic,
+            },
         ),
         (
             "ironforge",
@@ -3918,7 +3923,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             50.0,
             4,
             "desert",
-            "reformed",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::Reformed,
+            },
         ),
         (
             "willowmere",
@@ -3927,11 +3934,13 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             75.0,
             2,
             "hills",
-            "old_faith",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::EasternOrthodox,
+            },
         ),
     ];
 
-    for (id, name, x, y, pop, scene, religion_id) in settlements {
+    for (id, name, x, y, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
@@ -3976,8 +3985,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
                     age: GeologicEra::Quaternary,
                 }),
+                religious_status,
                 scene_key: scene.into(),
-                religion_id: religion_id.into(),
+                religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,
             });
         }

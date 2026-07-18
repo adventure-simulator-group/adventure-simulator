@@ -3,11 +3,10 @@
 use std::path::{Path, PathBuf};
 
 use adventuresim_world_schema::{
-    CompiledWorld, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
-    GeologicUnitId, IgneousRock, InferredGeologicSetting, MappedSurfaceGeology, MetamorphicRock,
-    MixedLithology, SedimentaryRock, SettlementImport, SoilProfile, SoilSubstrate,
-    SourceProvenance, SurfaceGeology, SurfaceLithology, UnconsolidatedDeposit,
-    WORLD_SCHEMA_VERSION, WorldMetadata,
+    GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
+    IgneousRock, InferredGeologicSetting, MappedSurfaceGeology, MetamorphicRock, MixedLithology,
+    SedimentaryRock, SoilProfile, SoilSubstrate, SourceProvenance, SurfaceGeology,
+    SurfaceLithology, UnconsolidatedDeposit,
 };
 use geo::{Contains, Geometry, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -16,7 +15,7 @@ use rusqlite::{Connection, OpenFlags, params};
 
 use crate::{
     Error, Result,
-    draft::{SoilSettlementDraft, WorldDraft},
+    draft::{GeologySettlementDraft, SoilSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "EGDI 1:1 Million pan-European Surface Geology";
@@ -30,7 +29,7 @@ const EXPECTED_SRS: i64 = 3034;
 pub(crate) fn enrich(
     draft: WorldDraft<SoilSettlementDraft>,
     geopackage: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<GeologySettlementDraft>> {
     if draft.settlements.is_empty() {
         return finish(draft, Vec::new(), 0, 0);
     }
@@ -55,7 +54,7 @@ fn finish(
     profiles: Vec<SurfaceGeology>,
     features_read: usize,
     fallbacks: usize,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<GeologySettlementDraft>> {
     if profiles.len() != draft.settlements.len() {
         return Err(Error::Validation(
             "geology profiles do not match settlements".into(),
@@ -64,32 +63,7 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(soil, geology)| {
-            let trees = soil.trees;
-            let vegetated = trees.vegetated;
-            let forest = vegetated.forest;
-            let land = forest.land;
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: forest.forest_cover,
-                potential_vegetation: vegetated.potential_vegetation,
-                tree_species: trees.tree_species,
-                soil: soil.soil,
-                geology,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            }
-        })
+        .map(|(soil, geology)| GeologySettlementDraft { soil, geology })
         .collect();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),
@@ -99,13 +73,10 @@ fn finish(
     draft.report.geology_features_read = features_read;
     draft.report.geology_samples = draft.report.settlements;
     draft.report.geology_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,

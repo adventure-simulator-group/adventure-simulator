@@ -5,7 +5,133 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 9;
+pub const WORLD_SCHEMA_VERSION: u32 = 10;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum OfficialReligion {
+    RomanCatholic,
+    Lutheran,
+    Reformed,
+    Anglican,
+    ProtestantUnspecified,
+    EasternOrthodox,
+    Islamic,
+}
+
+impl OfficialReligion {
+    /// Stable identifier used by the current single-church gameplay systems.
+    pub const fn faith_id(self) -> &'static str {
+        match self {
+            Self::RomanCatholic => "roman_catholic",
+            Self::Lutheran => "lutheran",
+            Self::Reformed => "reformed",
+            Self::Anglican => "anglican",
+            Self::ProtestantUnspecified => "protestant",
+            Self::EasternOrthodox => "eastern_orthodox",
+            Self::Islamic => "islamic",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum CatholicLutheranChurch {
+    RomanCatholic,
+    Lutheran,
+}
+
+impl CatholicLutheranChurch {
+    pub const fn religion(self) -> OfficialReligion {
+        match self {
+            Self::RomanCatholic => OfficialReligion::RomanCatholic,
+            Self::Lutheran => OfficialReligion::Lutheran,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum CatholicReformedChurch {
+    RomanCatholic,
+    Reformed,
+}
+
+impl CatholicReformedChurch {
+    pub const fn religion(self) -> OfficialReligion {
+        match self {
+            Self::RomanCatholic => OfficialReligion::RomanCatholic,
+            Self::Reformed => OfficialReligion::Reformed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum LutheranReformedChurch {
+    Lutheran,
+    Reformed,
+}
+
+impl LutheranReformedChurch {
+    pub const fn religion(self) -> OfficialReligion {
+        match self {
+            Self::Lutheran => OfficialReligion::Lutheran,
+            Self::Reformed => OfficialReligion::Reformed,
+        }
+    }
+}
+
+/// A bounded set of legally recognized western confessions and the church
+/// currently represented by the settlement's single-church gameplay model.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum WesternChristianArrangement {
+    CatholicLutheran { church: CatholicLutheranChurch },
+    CatholicReformed { church: CatholicReformedChurch },
+    LutheranReformed { church: LutheranReformedChurch },
+}
+
+impl WesternChristianArrangement {
+    pub const fn church(self) -> OfficialReligion {
+        match self {
+            Self::CatholicLutheran { church } => church.religion(),
+            Self::CatholicReformed { church } => church.religion(),
+            Self::LutheranReformed { church } => church.religion(),
+        }
+    }
+}
+
+/// Official legal status reconstructed for the territory, not a claim about
+/// every inhabitant's private belief.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SettlementReligiousStatus {
+    Established {
+        religion: OfficialReligion,
+    },
+    Parity {
+        arrangement: WesternChristianArrangement,
+    },
+    MultiConfessional {
+        arrangement: WesternChristianArrangement,
+    },
+    LocallyDetermined {
+        church: OfficialReligion,
+    },
+}
+
+impl SettlementReligiousStatus {
+    pub const fn church(self) -> OfficialReligion {
+        match self {
+            Self::Established { religion } => religion,
+            Self::Parity { arrangement } | Self::MultiConfessional { arrangement } => {
+                arrangement.church()
+            }
+            Self::LocallyDetermined { church } => church,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -1162,6 +1288,9 @@ pub struct WorldBuildReport {
     pub geology_features_read: usize,
     pub geology_samples: usize,
     pub geology_fallback_samples: usize,
+    pub religion_regions_read: usize,
+    pub religion_samples: usize,
+    pub religion_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -1218,8 +1347,8 @@ pub struct SettlementImport {
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
+    pub religious_status: SettlementReligiousStatus,
     pub scene_key: String,
-    pub religion_id: String,
 }
 
 #[cfg(test)]
@@ -1228,9 +1357,21 @@ mod tests {
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
         GeologicUnitId, HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile,
         LandUseFraction, LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies,
-        ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode,
-        PotentialVegetationFormation, SoilMappingUnit, StoneContentPercent, TreeSpeciesId,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion, ParentMaterialCode,
+        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
+        StoneContentPercent, TreeSpeciesId,
     };
+
+    #[test]
+    fn religious_status_derives_the_single_church_faith() {
+        let status = SettlementReligiousStatus::MultiConfessional {
+            arrangement: super::WesternChristianArrangement::CatholicLutheran {
+                church: super::CatholicLutheranChurch::Lutheran,
+            },
+        };
+        assert_eq!(status.church(), OfficialReligion::Lutheran);
+        assert_eq!(status.church().faith_id(), "lutheran");
+    }
 
     #[test]
     fn elevations_parse_into_bounded_values_and_bands() {

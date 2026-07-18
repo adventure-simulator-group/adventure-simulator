@@ -31,7 +31,9 @@ adds a nonempty modeled-or-inferred tree-species profile, and constructs another
 enriched draft. ESDB consumes all of those environmental inputs and adds a
 complete mapped-or-inferred soil profile. EGDI surface geology then uses an
 indexed local GeoPackage to attach a typed mapped-or-inferred lithology and age
-setting before constructing the canonical settlement record.
+setting. The IEG stage finally parses a curated 1544 legal-religion
+intermediate into an established, parity, multi-confessional, or municipally
+determined typed status before constructing the canonical settlement record.
 The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents

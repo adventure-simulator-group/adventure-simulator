@@ -1377,7 +1377,13 @@ pub(crate) fn character_visual_preview(character: &Character) -> Markup {
 fn religion_name(religion_id: Option<&str>) -> &'static str {
     match religion_id {
         Some("western_church") => "Western Church",
+        Some("roman_catholic") => "Roman Catholic",
+        Some("lutheran") => "Lutheran",
         Some("reformed") => "Reformed",
+        Some("anglican") => "Anglican",
+        Some("protestant") => "Protestant",
+        Some("eastern_orthodox") => "Eastern Orthodox",
+        Some("islamic") => "Islamic",
         Some("old_faith") => "Old Faith",
         Some(_) => "Unknown faith",
         None => "None",
@@ -1975,6 +1981,21 @@ mod tests {
     fn location_kind_rejects_unknown_path_segments() {
         assert_eq!("quest".parse(), Ok(LocationKind::Quest));
         assert!("merchant".parse::<LocationKind>().is_err());
+    }
+
+    #[test]
+    fn canonical_imported_religions_have_ui_labels() {
+        for (id, label) in [
+            ("roman_catholic", "Roman Catholic"),
+            ("lutheran", "Lutheran"),
+            ("reformed", "Reformed"),
+            ("anglican", "Anglican"),
+            ("protestant", "Protestant"),
+            ("eastern_orthodox", "Eastern Orthodox"),
+            ("islamic", "Islamic"),
+        ] {
+            assert_eq!(religion_name(Some(id)), label);
+        }
     }
     use super::*;
 
