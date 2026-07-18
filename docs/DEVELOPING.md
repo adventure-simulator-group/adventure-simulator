@@ -39,11 +39,25 @@ just web-isolated renderer-demo 23100
 
 The profile name is restricted to lowercase letters, digits, and hyphens, and
 the base port must leave room for the web and tactical ports. The recipe derives
-a distinct database name, SpacetimeDB data directory, run/PID directory, and
-three loopback ports from those values. Only this guarded workflow may pass
+a stable fingerprint from the resolved worktree path and includes it in the
+database name and profile directory. State lives below the current user's local
+runtime/cache directory rather than shared `/tmp`; directories and metadata are
+owner-only and symlinks/path escapes are rejected. Thus the same human-readable
+profile in two worktrees still has distinct database, data, logs, and process
+identities. The three loopback ports remain explicit, and startup fails if any
+is already occupied.
+
+The Python lifecycle process holds an exclusive profile lock from the first
+port check through web-server exit. It records each child process's resolved
+executable and OS creation token, checks that identity throughout readiness and
+immediately before reset-publish, and uses the same identity for cleanup. It
+will not treat an unrelated listener as its SpacetimeDB or signal a reused PID.
+Only this guarded workflow may pass
 `--delete-data=always`; it rejects remote servers, non-loopback binds, mismatched
 database names, and unsafe profile strings. It stops its own SpacetimeDB and
-spawner when the foreground web process exits.
+spawner when the foreground web process exits. The isolated database files are
+retained under the fingerprinted profile directory for inspection and are reset
+the next time that exact worktree/profile is run.
 
 ## Full Development (with Tactical Servers)
 
@@ -161,11 +175,13 @@ explicitly approved and a verified recovery copy exists.
 workflow now propagates every reducer failure instead of treating arbitrary
 errors as evidence that seeding already happened.
 
-Spawner PID files have a sidecar identity containing the resolved repository,
-profile, server/database, bind/port configuration, and hashes of both tactical
-binaries. A live PID with a missing or different identity is rejected, so a
-worktree cannot silently reuse another checkout's dispatcher or an out-of-date
-build. Dead PIDs are cleaned and replaced.
+Spawner metadata contains the resolved repository, profile, server/database,
+bind/port configuration, hashes of both tactical binaries, actual executable,
+PID, and OS process-creation token. Start, reuse, and stop are serialized under
+the profile lifecycle lock. A live process with missing or different metadata
+is rejected, so a worktree cannot silently reuse another checkout's dispatcher,
+an out-of-date build, or a recycled PID. Confirmed-dead metadata is safely
+replaced.
 
 ## Viabundus source data
 

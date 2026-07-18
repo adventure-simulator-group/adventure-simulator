@@ -88,43 +88,7 @@ web: preflight spacetime-start publish _seed-world build-wasm build-tactical
 # Start a disposable, worktree-safe stack. Every destructive target is derived
 # from the validated profile and loopback base port.
 web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-client build-wasm build-tactical
-    #!/usr/bin/env bash
-    set -euo pipefail
-    PROFILE_JSON="$({{python_bin}} scripts/dev_stack.py profile --name '{{profile}}' --base-port '{{base_port}}')"
-    value() { {{python_bin}} -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1" <<<"$PROFILE_JSON"; }
-    DATABASE="$(value database)"
-    DATA_DIR="$(value data_dir)"
-    RUN_PATH="$(value run_dir)"
-    STDB_PORT="$(value spacetime_port)"
-    WEB_PORT="$(value web_port)"
-    TACTICAL_PORT="$(value tactical_port)"
-    SERVER="http://127.0.0.1:${STDB_PORT}"
-    mkdir -p "$DATA_DIR" "$RUN_PATH"
-    cleanup() {
-        just _spawner-stop "$RUN_PATH" || true
-        if [[ -f "$RUN_PATH/spacetime.pid" ]]; then
-            STDB_PID="$(cat "$RUN_PATH/spacetime.pid")"
-            kill "$STDB_PID" 2>/dev/null || true
-        fi
-    }
-    trap cleanup EXIT INT TERM
-    spacetime start --non-interactive --listen-addr "127.0.0.1:${STDB_PORT}" --data-dir "$DATA_DIR" >"$RUN_PATH/spacetime.log" 2>&1 &
-    echo $! >"$RUN_PATH/spacetime.pid"
-    for _ in $(seq 1 50); do
-        {{python_bin}} -c 'import socket,sys; s=socket.socket(); s.settimeout(.1); r=s.connect_ex(("127.0.0.1", int(sys.argv[1]))); s.close(); raise SystemExit(r)' "$STDB_PORT" && break
-        sleep .1
-    done
-    {{python_bin}} -c 'import socket,sys; s=socket.socket(); s.settimeout(.2); r=s.connect_ex(("127.0.0.1", int(sys.argv[1]))); s.close(); raise SystemExit(r)' "$STDB_PORT" || { echo "isolated SpacetimeDB failed; see $RUN_PATH/spacetime.log" >&2; exit 1; }
-    {{python_bin}} scripts/dev_stack.py publish --server "$SERVER" --database "$DATABASE" --reset-profile '{{profile}}' --base-port '{{base_port}}'
-    {{python_bin}} scripts/dev_stack.py seed --server "$SERVER" --database "$DATABASE"
-    just _spawner-start 127.0.0.1 "$TACTICAL_PORT" "$RUN_PATH" '{{profile}}' "$SERVER" "$DATABASE"
-    echo "Starting isolated profile '{{profile}}' at http://127.0.0.1:${WEB_PORT}"
-    SPACETIMEDB_HOST="$SERVER" \
-    SPACETIMEDB_DATABASE="$DATABASE" \
-    BIND_ADDRESS="127.0.0.1:${WEB_PORT}" \
-    STATIC_DIR={{strategic_web_dir}}/static \
-    TACTICAL_STATIC_DIR={{strategic_static}} \
-    cargo run -p strategic-web
+    @{{python_bin}} scripts/dev_stack.py run-profile {{quote(profile)}} {{quote(base_port)}}
 
 # Canonical database deletion is deliberately unavailable. Use web-isolated.
 web-reset:
@@ -236,11 +200,7 @@ status:
     else \
         echo "SpacetimeDB: not running"; \
     fi
-    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
-        echo "Tactical spawner: running (pid $(cat "{{spawner_pid}}"))"; \
-    else \
-        echo "Tactical spawner: not running"; \
-    fi
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner status
 
 # Build the strategic SpacetimeDB module
 build-strategic: spacetime-version-check
@@ -358,37 +318,12 @@ spawner: build-tactical
 		--base-port {{tactical_port}}
 
 # Start the tactical spawner in the background.
-_spawner-start host="127.0.0.1" base_port=tactical_web_port run_path=run_dir profile="canonical" server=spacetime_url database=spacetime_module:
-    @mkdir -p "{{run_path}}"
-    @identity_status=0; {{python_bin}} scripts/dev_stack.py check-spawner --identity-file "{{run_path}}/spawner.identity.json" --pid-file "{{run_path}}/spawner.pid" --profile "{{profile}}" --server "{{server}}" --database "{{database}}" --host "{{host}}" --base-port "{{base_port}}" || identity_status=$$?; \
-      if [ "$$identity_status" -eq 0 ]; then exit 0; fi; \
-      if [ "$$identity_status" -eq 2 ]; then exit 2; fi; \
-      rm -f "{{run_path}}/spawner.pid"; \
-      {{python_bin}} scripts/dev_stack.py write-spawner --identity-file "{{run_path}}/spawner.identity.json" --profile "{{profile}}" --server "{{server}}" --database "{{database}}" --host "{{host}}" --base-port "{{base_port}}"; \
-        RUST_LOG=info setsid "$(pwd)/target/debug/adventuresim-tactical-server-dispatcher" \
-            --spacetimedb-url {{server}} \
-            --spacetimedb-module {{database}} \
-            --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
-            --base-port {{base_port}} \
-            --host {{host}} >"{{run_path}}/spawner.log" 2>&1 < /dev/null & \
-        echo $$! > "{{run_path}}/spawner.pid"; \
-        sleep 1; \
-        if ! kill -0 "$(cat "{{run_path}}/spawner.pid")" 2>/dev/null; then \
-            echo "Tactical spawner failed to start. See {{run_path}}/spawner.log"; \
-            exit 1; \
-        fi; \
-        echo "Tactical spawner running; log: {{run_path}}/spawner.log"
+_spawner-start:
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner start
 
 # Stop the tactical spawner.
-_spawner-stop run_path=run_dir:
-    @if [ -f "{{run_path}}/spawner.pid" ] && kill -0 "$(cat "{{run_path}}/spawner.pid")" 2>/dev/null; then \
-        kill "$(cat "{{run_path}}/spawner.pid")"; \
-        rm -f "{{run_path}}/spawner.pid" "{{run_path}}/spawner.identity.json"; \
-        echo "Tactical spawner stopped"; \
-    else \
-        rm -f "{{run_path}}/spawner.pid" "{{run_path}}/spawner.identity.json"; \
-        echo "Tactical spawner not running"; \
-    fi
+_spawner-stop:
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner stop
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills" bots="3":
