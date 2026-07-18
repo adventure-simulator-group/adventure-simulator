@@ -36,6 +36,7 @@ const FORMAT: &str = "adventuresim-soilgrids-2.0-0-5cm-v1";
 const MANIFEST: &str = "soilgrids-manifest.json";
 const LAYERS: [&str; 6] = ["sand", "silt", "clay", "soc", "cfvo", "bdod"];
 const NODATA: i16 = i16::MIN;
+const MAX_RASTER_PIXELS: u64 = 16_000_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,7 +58,7 @@ pub(crate) fn enrich(
         )
     })?;
     read_manifest(directory, &bounds)?;
-    let rasters = SoilRasters::read(directory)?;
+    let rasters = SoilRasters::read(directory, &bounds)?;
     let mut fallbacks = 0;
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
@@ -137,7 +138,7 @@ struct SoilRasters {
 }
 
 impl SoilRasters {
-    fn read(directory: &Path) -> Result<Self> {
+    fn read(directory: &Path, bounds: &WorldBounds) -> Result<Self> {
         let mut decoded = LAYERS
             .into_iter()
             .map(|layer| Raster::read(&require(directory, &format!("{layer}_0-5cm_mean.tif"))?))
@@ -150,6 +151,9 @@ impl SoilRasters {
                 "SoilGrids layers do not share one exact GeoTIFF grid".into(),
             ));
         }
+        first
+            .grid
+            .validate_bounds(bounds, first.width, first.height)?;
         let values: [Vec<i16>; 6] = std::array::from_fn(|index| {
             if index == 0 {
                 first.values.clone()
@@ -201,9 +205,9 @@ impl Raster {
             path: path.into(),
             source,
         })?;
-        if width == 0 || height == 0 {
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_RASTER_PIXELS {
             return Err(Error::Validation(format!(
-                "{} is an empty SoilGrids raster",
+                "{} has an invalid or oversized SoilGrids raster dimension",
                 path.display()
             )));
         }
@@ -285,6 +289,41 @@ impl Grid {
             x_scale: scale[0],
             y_scale: scale[1],
         })
+    }
+
+    fn validate_bounds(self, bounds: &WorldBounds, width: u32, height: u32) -> Result<()> {
+        let value = serde_json::to_value(bounds)?;
+        let south = value["south_west"]["latitude"]
+            .as_f64()
+            .ok_or_else(|| Error::Validation("invalid SoilGrids south bound".into()))?;
+        let west = value["south_west"]["longitude"]
+            .as_f64()
+            .ok_or_else(|| Error::Validation("invalid SoilGrids west bound".into()))?;
+        let north = value["north_east"]["latitude"]
+            .as_f64()
+            .ok_or_else(|| Error::Validation("invalid SoilGrids north bound".into()))?;
+        let east = value["north_east"]["longitude"]
+            .as_f64()
+            .ok_or_else(|| Error::Validation("invalid SoilGrids east bound".into()))?;
+        let raster_east = self.west + self.x_scale * f64::from(width);
+        let raster_south = self.north - self.y_scale * f64::from(height);
+        let epsilon = 1e-9;
+        // WCS may snap a request to source pixels. Permit at most one source
+        // pixel on each side, while rejecting a global or wrong-envelope TIFF.
+        if self.west < west - self.x_scale - epsilon
+            || self.west > west + self.x_scale + epsilon
+            || self.north < north - self.y_scale - epsilon
+            || self.north > north + self.y_scale + epsilon
+            || raster_east < east - self.x_scale - epsilon
+            || raster_east > east + self.x_scale + epsilon
+            || raster_south < south - self.y_scale - epsilon
+            || raster_south > south + self.y_scale + epsilon
+        {
+            return Err(Error::Validation(
+                "SoilGrids GeoTIFF envelope does not match its manifest world bounds".into(),
+            ));
+        }
+        Ok(())
     }
     fn pixel(self, latitude: f64, longitude: f64, width: u32, height: u32) -> Option<(u32, u32)> {
         if !latitude.is_finite() || !longitude.is_finite() {
