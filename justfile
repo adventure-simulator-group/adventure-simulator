@@ -69,8 +69,8 @@ dev:
 dev-full:
     @just web
 
-# Start the local browser stack.
-web: preflight build-wasm spacetime-start publish _seed-world build-tactical
+# Start the local browser stack, resetting local data only for breaking schema changes.
+web: preflight build-wasm spacetime-start publish-on-conflict _seed-world build-tactical
     @just _spawner-start
     @echo ""
     @echo "Starting strategic-web server..."
@@ -198,6 +198,10 @@ spacetime-stop:
 # Publish the strategic module (optional target can be provided: just publish target=localhost)
 publish server=spacetime_url: spacetime-version-check
     @cd "{{strategic_dir}}" && spacetime publish --server {{server}} {{spacetime_module}}
+
+# Publish locally, clearing data only when a breaking schema change requires it.
+publish-on-conflict: spacetime-version-check
+    @cd "{{strategic_dir}}" && spacetime publish --delete-data=on-conflict --server {{spacetime_url}} {{spacetime_module}}
 
 # Publish and clear the module database
 publish-reset server=spacetime_url: spacetime-version-check
@@ -386,9 +390,9 @@ certs sans="127.0.0.1,localhost":
     @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
     @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
 
-# Windows development recipe
-# Local dev with native Windows exes (GPU accelerated, no WSLg, no UDP issues)
-# Cross-compiles server + client to Windows, stages to E:\adventure-sim-dev, runs both
+# Windows tactical development recipe
+# Runs the strategic stack in WSL, then stages and runs the tactical server and
+# client 0 as native Windows executables (GPU accelerated, no WSLg/UDP issues).
 win-dev:
     #!/usr/bin/env bash
     set -e
@@ -398,15 +402,57 @@ win-dev:
     SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
     CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-client.exe"
 
+    command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || {
+        echo "Missing MinGW linker: install gcc-mingw-w64-x86-64" >&2
+        exit 1
+    }
+    if ! rustup target list --installed | grep -Fxq "$WIN_TARGET"; then
+        echo "Installing Rust target ${WIN_TARGET}..."
+        rustup target add "$WIN_TARGET"
+    fi
+
+    kill_windows_processes() {
+        (cd /mnt/c && cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1") || true
+        (cd /mnt/c && cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1") || true
+    }
+
     # Kill any leftover instances
-    cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
-    cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1" || true
+    kill_windows_processes
     sleep 0.5
 
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill_windows_processes
+        kill -- -"$DEV_PID" 2>/dev/null || true
+        wait "$DEV_PID" 2>/dev/null || true
+    }
+
+    echo "Starting strategic development stack..."
+    setsid just dev &
+    DEV_PID=$!
+    trap cleanup EXIT INT TERM
+
+    echo "Waiting for strategic web server..."
+    for _ in {1..300}; do
+        if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{web_port}})); s.close(); sys.exit(code != 0)'; then
+            break
+        fi
+        if ! kill -0 "$DEV_PID" 2>/dev/null; then
+            echo "Strategic development stack exited before becoming ready" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+    if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{web_port}})); s.close(); sys.exit(code != 0)'; then
+        echo "Timed out waiting for strategic web server" >&2
+        exit 1
+    fi
+
     echo "Building server (Windows)..."
-    cargo build -p adventuresim-tactical-server --target $WIN_TARGET --profile win-dev 2>&1
+    cargo build -p adventuresim-tactical-server --features debug --target "$WIN_TARGET" --profile win-dev 2>&1
     echo "Building client (Windows)..."
-    cargo build -p adventuresim-tactical-client --target $WIN_TARGET --profile win-dev 2>&1
+    cargo build -p adventuresim-tactical-client --features debug --target "$WIN_TARGET" --profile win-dev 2>&1
 
     echo "Staging to E:\\adventure-sim-dev..."
     mkdir -p "$STAGE_DIR"
@@ -418,32 +464,21 @@ win-dev:
         [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
     done
 
-    cleanup() {
-        echo ""
-        echo "Shutting down..."
-        kill $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
-        wait $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
-    }
-    trap cleanup EXIT INT TERM
-
     echo "Starting server..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-server.exe \
+        --addr 0.0.0.0:{{tactical_port}} \
         --mission-id test-mission \
         --scene-key hills \
-        --no-timeout \
         --spacetimedb-url http://localhost:{{spacetime_port}} \
-        --spacetimedb-module {{spacetime_module}} &
+        --spacetimedb-module {{spacetime_module}} \
+        --bots 3 \
+        --no-timeout &
     SERVER_PID=$!
     sleep 3
 
     echo "Starting client 0..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 0 --server-addr 127.0.0.1:{{tactical_port}} &
-    CLIENT0_PID=$!
-    sleep 1
-
-    echo "Starting client 1..."
-    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
-    CLIENT1_PID=$!
+    CLIENT_PID=$!
 
     wait
 

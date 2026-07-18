@@ -297,8 +297,8 @@ migration: stop the old server, retain an operator backup if wanted, move the
 old data directory aside or provision a new empty one, select 2.6.1, and run
 `just web-reset`. That explicit startup resets, reseeds, and permanently
 discards prior database contents. Once the reset is complete, return to
-`just dev` / `just web` and plain `just publish`; ordinary startup and module
-updates are non-destructive.
+`just dev` / `just web`, which reset local data only for breaking schema
+changes, and plain `just publish`, which remains non-destructive.
 
 ### 4. Open the UI
 
