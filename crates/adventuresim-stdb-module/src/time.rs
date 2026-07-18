@@ -638,6 +638,16 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_time()
         .character_id()
         .update(character_time);
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|character| character.current_settlement_id.is_some())
+    {
+        crate::condition::replenish_needs_at_settlement(ctx, character_id)?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+    }
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(forced_catch_up)
 }

@@ -4,11 +4,12 @@ use std::collections::BTreeMap;
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
+use crate::item::item;
 use crate::strategic::{quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
-    character_training_schedule, party_member,
+    character_training_schedule, inventory_item, party_member,
 };
 
 pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
@@ -16,7 +17,13 @@ pub const BLOOD_ML_PER_KG: f32 = 70.0;
 pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
-const TRAVEL_CALORIES_PER_DAY: f32 = 6_000.0;
+pub const TRAVEL_CALORIES_PER_DAY: f32 = STRATEGIC_TRAVEL_KCAL_PER_DAY;
+pub const TRAVEL_WATER_ML_PER_DAY: f32 = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
+pub const FOOD_RESERVE_KCAL: f32 = TRAVEL_CALORIES_PER_DAY;
+pub const HYDRATION_RESERVE_ML: f32 = TRAVEL_WATER_ML_PER_DAY;
+pub const PROVISION_BUFFER_PERCENT: u64 = STRATEGIC_PROVISION_BUFFER_PERCENT;
+pub const TRAVEL_RATION_ID: &str = STANDARD_TRAVEL_RATION_ID;
+pub const WATERSKIN_ID: &str = STANDARD_WATERSKIN_ID;
 
 fn enemy_fear_multiplier(enemy_type: &str) -> f32 {
     let enemy = enemy_type.to_ascii_lowercase();
@@ -39,6 +46,18 @@ pub struct CharacterCondition {
     pub current_blood_ml: f32,
     pub maximum_blood_ml: f32,
     pub religion_id: Option<String>,
+}
+
+/// Durable strategic food and water state. Positive balances are short-term
+/// physiological reserves; negative balances represent unsupported need.
+#[derive(Clone, Debug)]
+#[table(accessor = character_needs, public)]
+pub struct CharacterNeeds {
+    #[primary_key]
+    pub character_id: u64,
+    pub food_balance_kcal: f32,
+    pub water_balance_ml: f32,
+    pub carried_water_ml: f32,
 }
 
 /// A recent success or setback which decays linearly over strategic time.
@@ -75,6 +94,11 @@ pub struct CharacterStrategicCondition {
     pub blood_loss: f32,
     pub fear: f32,
     pub fatigue: f32,
+    pub hunger: f32,
+    pub thirst: f32,
+    pub food_days: f32,
+    pub water_days: f32,
+    pub water_capacity_ml: u32,
     pub incapacitation: f32,
     pub check_multiplier: f32,
     pub status: String,
@@ -132,6 +156,214 @@ pub fn initialize_character_condition(
             religion_id: None,
         });
     }
+    if ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        ctx.db.character_needs().insert(CharacterNeeds {
+            character_id,
+            food_balance_kcal: FOOD_RESERVE_KCAL,
+            water_balance_ml: HYDRATION_RESERVE_ML,
+            carried_water_ml: 0.0,
+        });
+    }
+    Ok(())
+}
+
+fn inventory_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) -> u32 {
+    ctx.db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, item_id))
+        .map(|entry| entry.quantity)
+        .sum()
+}
+
+fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
+    let capacity_per_container = ctx
+        .db
+        .item()
+        .id()
+        .find(WATERSKIN_ID.to_string())
+        .map_or(0, |item| item.water_capacity_ml);
+    inventory_quantity(ctx, character_id, WATERSKIN_ID).saturating_mul(capacity_per_container)
+}
+
+fn consume_inventory(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    mut quantity: u32,
+) -> u32 {
+    let requested = quantity;
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, item_id))
+        .collect();
+    for mut stack in stacks {
+        if quantity == 0 {
+            break;
+        }
+        let consumed = stack.quantity.min(quantity);
+        quantity -= consumed;
+        stack.quantity -= consumed;
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+    }
+    requested - quantity
+}
+
+fn provision_units(
+    planning_minutes: u64,
+    food_balance_kcal: f32,
+    water_balance_ml: f32,
+    ration_kcal: f32,
+    waterskin_capacity_ml: u32,
+) -> (u32, u32) {
+    let units = ProvisioningInputs {
+        planning_minutes,
+        buffer_percent: PROVISION_BUFFER_PERCENT,
+        food_balance_kcal,
+        water_balance_ml,
+        travel_kcal_per_day: TRAVEL_CALORIES_PER_DAY,
+        travel_water_ml_per_day: TRAVEL_WATER_ML_PER_DAY,
+        ration_kcal,
+        waterskin_capacity_ml,
+    }
+    .required_units();
+    (units.rations, units.waterskins)
+}
+
+pub fn replenish_needs_at_settlement(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+    needs.food_balance_kcal = FOOD_RESERVE_KCAL;
+    needs.water_balance_ml = HYDRATION_RESERVE_ML;
+    needs.carried_water_ml = water_capacity_ml(ctx, character_id) as f32;
+    ctx.db.character_needs().character_id().update(needs);
+    Ok(())
+}
+
+/// Purchase enough personal provisions for the supplied planning duration and
+/// fill all owned water containers. The duration should include the expected
+/// return leg where the destination cannot resupply the party.
+pub fn provision_character_for_travel(
+    ctx: &ReducerContext,
+    character_id: u64,
+    planning_minutes: u64,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+    let ration = ctx
+        .db
+        .item()
+        .id()
+        .find(TRAVEL_RATION_ID.to_string())
+        .ok_or("Travel ration item is not defined")?;
+    let waterskin = ctx
+        .db
+        .item()
+        .id()
+        .find(WATERSKIN_ID.to_string())
+        .ok_or("Waterskin item is not defined")?;
+    let (required_rations, required_waterskins) = provision_units(
+        planning_minutes,
+        needs.food_balance_kcal,
+        needs.water_balance_ml,
+        ration.nutrition_kcal,
+        waterskin.water_capacity_ml,
+    );
+    let owned_rations = inventory_quantity(ctx, character_id, TRAVEL_RATION_ID);
+    let rations_to_buy = required_rations.saturating_sub(owned_rations);
+    let owned_waterskins = inventory_quantity(ctx, character_id, WATERSKIN_ID);
+    let waterskins_to_buy = required_waterskins.saturating_sub(owned_waterskins);
+
+    let cost = rations_to_buy
+        .saturating_mul(ration.base_value.unwrap_or(0))
+        .saturating_add(waterskins_to_buy.saturating_mul(waterskin.base_value.unwrap_or(0)));
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if character.gold < cost {
+        return Err(format!(
+            "{} needs {cost} gold for food and water provisions but has only {}",
+            character.name, character.gold
+        ));
+    }
+    character.gold -= cost;
+    ctx.db.character().id().update(character);
+    crate::add_inventory_item(ctx, character_id, TRAVEL_RATION_ID, rations_to_buy);
+    crate::add_inventory_item(ctx, character_id, WATERSKIN_ID, waterskins_to_buy);
+
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+    needs.carried_water_ml = water_capacity_ml(ctx, character_id) as f32;
+    ctx.db.character_needs().character_id().update(needs);
+    Ok(())
+}
+
+fn apply_travel_needs(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+
+    needs.food_balance_kcal -= elapsed_days * TRAVEL_CALORIES_PER_DAY;
+    let ration_kcal = ctx
+        .db
+        .item()
+        .id()
+        .find(TRAVEL_RATION_ID.to_string())
+        .map_or(TRAVEL_CALORIES_PER_DAY, |item| item.nutrition_kcal);
+    if needs.food_balance_kcal < 0.0 && ration_kcal > 0.0 {
+        let wanted = ((-needs.food_balance_kcal) / ration_kcal).ceil() as u32;
+        let eaten = consume_inventory(ctx, character_id, TRAVEL_RATION_ID, wanted);
+        needs.food_balance_kcal += eaten as f32 * ration_kcal;
+    }
+
+    needs.water_balance_ml -= elapsed_days * TRAVEL_WATER_ML_PER_DAY;
+    if needs.water_balance_ml < 0.0 {
+        let drunk = (-needs.water_balance_ml).min(needs.carried_water_ml);
+        needs.carried_water_ml -= drunk;
+        needs.water_balance_ml += drunk;
+    }
+    ctx.db.character_needs().character_id().update(needs);
     Ok(())
 }
 
@@ -594,11 +826,29 @@ fn evaluate_strategic_condition(
     let blood_loss =
         blood_loss_incapacitation(condition.current_blood_ml, condition.maximum_blood_ml);
     let fatigue_ratio = stats.fatigue_by_parts(&attributes, &limbs);
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+    let water_capacity = water_capacity_ml(ctx, character_id);
+    if needs.carried_water_ml > water_capacity as f32 {
+        needs.carried_water_ml = water_capacity as f32;
+        ctx.db
+            .character_needs()
+            .character_id()
+            .update(needs.clone());
+    }
+    let hunger = hunger_incapacitation(needs.food_balance_kcal, TRAVEL_CALORIES_PER_DAY);
+    let thirst = thirst_incapacitation(needs.water_balance_ml, TRAVEL_WATER_ML_PER_DAY);
     let incapacitation = StrategicIncapacitation {
         pain,
         blood_loss,
         fear: fear_incapacitation(morale),
         fatigue: fatigue_incapacitation(fatigue_ratio),
+        hunger,
+        thirst,
     };
     let status = match incapacitation.status() {
         IncapacitationStatus::Ready => "ready",
@@ -616,6 +866,13 @@ fn evaluate_strategic_condition(
             blood_loss: incapacitation.blood_loss,
             fear: incapacitation.fear,
             fatigue: incapacitation.fatigue,
+            hunger: incapacitation.hunger,
+            thirst: incapacitation.thirst,
+            food_days: (needs.food_balance_kcal.max(0.0) / TRAVEL_CALORIES_PER_DAY)
+                + inventory_quantity(ctx, character_id, TRAVEL_RATION_ID) as f32,
+            water_days: (needs.water_balance_ml.max(0.0) + needs.carried_water_ml)
+                / TRAVEL_WATER_ML_PER_DAY,
+            water_capacity_ml: water_capacity,
             incapacitation: incapacitation.total(),
             check_multiplier: incapacitation.check_multiplier(),
             status: status.into(),
@@ -980,6 +1237,7 @@ pub fn apply_travel_condition(
     elapsed_minutes: u64,
     prayer_minutes: u16,
 ) -> Result<(), String> {
+    apply_travel_needs(ctx, character_id, elapsed_minutes)?;
     let mut stats = ctx
         .db
         .character_stats()
@@ -1058,6 +1316,7 @@ pub fn apply_rest_condition(
     elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
+    replenish_needs_at_settlement(ctx, character_id)?;
     let days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut condition = ctx
         .db

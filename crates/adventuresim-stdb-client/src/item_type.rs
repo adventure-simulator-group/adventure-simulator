@@ -31,6 +31,8 @@ pub struct Item {
     pub slash: bool,
     pub pierce: bool,
     pub base_value: Option<u32>,
+    pub nutrition_kcal: f32,
+    pub water_capacity_ml: u32,
 }
 
 impl __sdk::InModule for Item {

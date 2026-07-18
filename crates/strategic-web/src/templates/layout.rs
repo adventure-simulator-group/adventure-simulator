@@ -148,7 +148,7 @@ fn page_shell(
                     script src="/static/service-quests.js?v=settlement-faith-1" defer {}
                     script src="/static/chat-resize.js?v=chat-resize-1" defer {}
                     script src="/static/local-chat.js?v=quest-links-live-2" defer {}
-                    script src="/static/strategic-condition.js?v=strategic-condition-1" defer {}
+                    script src="/static/strategic-condition.js?v=strategic-condition-2" defer {}
                 }
             }
             body {

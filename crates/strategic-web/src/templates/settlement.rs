@@ -11,7 +11,7 @@ use super::{
     empty_state, population_description, quest_location_layout_with_session,
     settlement_layout_with_session, sidebar_section,
 };
-use crate::routes::travel::TravelDestination;
+use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterEquip, CharacterLimbs,
     CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
@@ -194,6 +194,7 @@ pub fn settlement_map_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     can_travel: bool,
+    provision_forecast: Option<&TravelProvisionForecast>,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -206,7 +207,7 @@ pub fn settlement_map_page(
             (visual_stage("map", &settlement.name, "TODO: settlement map"))
             (settlement_chat_area(&settlement.name, active_character))
         }
-        (map_destination_detail(selected, can_travel))
+        (map_destination_detail(selected, can_travel, true, provision_forecast))
     };
     settlement_layout_with_session(
         &format!("{} map", settlement.name),
@@ -255,6 +256,8 @@ pub(crate) fn map_destination_list(
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
     can_travel: bool,
+    provisioning_available: bool,
+    provision_forecast: Option<&TravelProvisionForecast>,
 ) -> Markup {
     html! {
         aside class="right-sidebar" {
@@ -262,7 +265,12 @@ pub(crate) fn map_destination_detail(
                 (sidebar_section(&destination.name, html! {
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) {
-                            button type="submit" class="btn btn-primary btn-block" { "Travel" }
+                            @if provisioning_available {
+                                button type="submit" name="provisioning" value="provision" class="btn btn-primary btn-block" { "Provision and travel" }
+                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-danger btn-block" { "Travel underprovisioned" }
+                            } @else {
+                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-primary btn-block" { "Travel" }
+                            }
                         }
                     }
                     p { (&destination.description) }
@@ -271,11 +279,37 @@ pub(crate) fn map_destination_detail(
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                     }
+                    @if can_travel && provisioning_available {
+                        (travel_provision_forecast(provision_forecast))
+                    }
                 }))
             } @else {
                 (sidebar_section("Destination", html! {
                     p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
                 }))
+            }
+        }
+    }
+}
+
+fn travel_provision_forecast(forecast: Option<&TravelProvisionForecast>) -> Markup {
+    html! {
+        div class="travel-provision-forecast" {
+            strong { "Provision forecast" }
+            @if let Some(forecast) = forecast {
+                @for traveler in &forecast.travelers {
+                    p class="text-muted small-copy" {
+                        (&traveler.name) ": "
+                        (traveler.rations_to_buy) " ration" @if traveler.rations_to_buy != 1 { "s" }
+                        " · " (traveler.waterskins_to_buy) " waterskin" @if traveler.waterskins_to_buy != 1 { "s" }
+                        " · " (traveler.cost) " gold"
+                    }
+                }
+                p class="text-muted small-copy" {
+                    "Party total: " (forecast.total_cost) " gold · includes 30% reserve"
+                }
+            } @else {
+                p class="text-muted small-copy" { "Provision costs are temporarily unavailable." }
             }
         }
     }
@@ -1454,6 +1488,10 @@ fn strategic_condition_rail(
                 div { dt { "Blood loss" } dd { (percent(condition.blood_loss)) } }
                 div { dt { "Fear" } dd { (percent(condition.fear)) } }
                 div { dt { "Fatigue" } dd { (percent(condition.fatigue)) } }
+                div { dt { "Hunger" } dd { (percent(condition.hunger)) } }
+                div { dt { "Thirst" } dd { (percent(condition.thirst)) } }
+                div { dt { "Food" } dd { (format!("{:.1} travel days", condition.food_days.max(0.0))) } }
+                div { dt { "Water" } dd { (format!("{:.1} travel days / {:.1} L capacity", condition.water_days.max(0.0), condition.water_capacity_ml as f32 / 1_000.0)) } }
                 div { dt { "Check effectiveness" } dd { (percent(condition.check_multiplier)) } }
             }
         }))
@@ -1934,9 +1972,8 @@ mod tests {
     }
     use super::*;
 
-    #[test]
-    fn active_quest_destination_has_red_status_badge() {
-        let destination = TravelDestination {
+    fn quest_destination() -> TravelDestination {
+        TravelDestination {
             id: "quest-location".to_string(),
             name: "Bandit camp".to_string(),
             description: "A camp beside the road.".to_string(),
@@ -1946,7 +1983,12 @@ mod tests {
             journey_minutes: 48,
             quest_in_progress: true,
             turn_in_ready: false,
-        };
+        }
+    }
+
+    #[test]
+    fn active_quest_destination_has_red_status_badge() {
+        let destination = quest_destination();
 
         let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
             .into_string();
@@ -1954,5 +1996,15 @@ mod tests {
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("Active quest destination"));
         assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn quest_location_travel_does_not_offer_unavailable_provisioning() {
+        let destination = quest_destination();
+        let markup = map_destination_detail(Some(&destination), true, false, None).into_string();
+
+        assert!(markup.contains("value=\"underprovisioned\""));
+        assert!(!markup.contains("Provision and travel"));
+        assert!(!markup.contains("Provision forecast"));
     }
 }

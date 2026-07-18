@@ -1,6 +1,7 @@
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
+use crate::condition::character_needs as _;
 use crate::item::item as _;
 use crate::{
     CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
@@ -250,7 +251,7 @@ impl StrategicEquipment {
             definition(equip.stomach_armor_id),
             definition(equip.head_armor_id),
         ];
-        let inventory_weight = ctx
+        let dry_inventory_weight: f32 = ctx
             .db
             .inventory_item()
             .character_id()
@@ -263,11 +264,17 @@ impl StrategicEquipment {
                     .map(|item| item.weight * inventory.quantity as f32)
             })
             .sum();
+        let carried_water_weight = ctx
+            .db
+            .character_needs()
+            .character_id()
+            .find(character_id)
+            .map_or(0.0, |needs| carried_water_weight_kg(needs.carried_water_ml));
         Self {
             weapon,
             shield,
             armor,
-            inventory_weight,
+            inventory_weight: dry_inventory_weight + carried_water_weight,
         }
     }
 
@@ -282,6 +289,21 @@ impl StrategicEquipment {
             BodyPart::Head => 6,
         };
         self.armor[index].as_ref()
+    }
+}
+
+fn carried_water_weight_kg(carried_water_ml: f32) -> f32 {
+    carried_water_ml.max(0.0) / 1_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::carried_water_weight_kg;
+
+    #[test]
+    fn carried_water_contributes_one_kilogram_per_litre() {
+        assert_eq!(carried_water_weight_kg(4_000.0), 4.0);
+        assert_eq!(carried_water_weight_kg(-1.0), 0.0);
     }
 }
 

@@ -1,8 +1,14 @@
 //! Settlement route handlers
 
+use adventuresim_core::prelude::{
+    ProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
+    STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
+    STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+};
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
@@ -14,11 +20,14 @@ use super::AppState;
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
-use super::travel::{TravelDestination, connected_destinations};
+use super::travel::{
+    TravelDestination, TravelForm, TravelProvisionForecast, TravelerProvisionForecast,
+    connected_destinations,
+};
 use crate::session::Session;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterMoraleSource, CharacterNotoriety, CharacterSkills,
+    CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterSkills,
     CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
     ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
     Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
@@ -246,6 +255,22 @@ async fn settlement_map(
     let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
     });
+    let provision_forecast = if can_travel {
+        if let Some(destination) = query
+            .destination
+            .as_deref()
+            .and_then(|id| destinations.iter().find(|destination| destination.id == id))
+        {
+            travel_provision_forecast(&state, &party_members, destination)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     Html(
         settlement_map_page(
             settlement,
@@ -254,6 +279,7 @@ async fn settlement_map(
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             can_travel,
+            provision_forecast.as_ref(),
             active_character
                 .as_ref()
                 .map(|(character, _)| character.name.as_str()),
@@ -261,6 +287,89 @@ async fn settlement_map(
         )
         .into_string(),
     )
+}
+
+async fn travel_provision_forecast(
+    state: &AppState,
+    travelers: &[Character],
+    destination: &TravelDestination,
+) -> Result<Option<TravelProvisionForecast>, String> {
+    let items: Vec<ItemDefinition> = state
+        .db
+        .query("SELECT * FROM item")
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(ration) = items
+        .iter()
+        .find(|item| item.id == STANDARD_TRAVEL_RATION_ID)
+    else {
+        return Ok(None);
+    };
+    let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
+        return Ok(None);
+    };
+    let planning_minutes = if destination.quest_in_progress {
+        destination.journey_minutes.saturating_mul(2)
+    } else {
+        destination.journey_minutes
+    };
+    let mut forecast = TravelProvisionForecast::default();
+    for traveler in travelers {
+        let Some(needs) = state
+            .db
+            .query_one::<CharacterNeeds>(&format!(
+                "SELECT * FROM character_needs WHERE character_id = {}",
+                traveler.id
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(None);
+        };
+        let inventory: Vec<InventoryItem> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM inventory_item WHERE character_id = {}",
+                traveler.id
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+        let required = ProvisioningInputs {
+            planning_minutes,
+            buffer_percent: STRATEGIC_PROVISION_BUFFER_PERCENT,
+            food_balance_kcal: needs.food_balance_kcal,
+            water_balance_ml: needs.water_balance_ml,
+            travel_kcal_per_day: STRATEGIC_TRAVEL_KCAL_PER_DAY,
+            travel_water_ml_per_day: STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+            ration_kcal: ration.nutrition_kcal,
+            waterskin_capacity_ml: waterskin.water_capacity_ml,
+        }
+        .required_units();
+        let owned = |item_id: &str| {
+            inventory
+                .iter()
+                .filter(|entry| entry.item_id == item_id)
+                .map(|entry| entry.qty)
+                .sum::<u32>()
+        };
+        let rations_to_buy = required
+            .rations
+            .saturating_sub(owned(STANDARD_TRAVEL_RATION_ID));
+        let waterskins_to_buy = required
+            .waterskins
+            .saturating_sub(owned(STANDARD_WATERSKIN_ID));
+        let cost = rations_to_buy
+            .saturating_mul(ration.base_value.unwrap_or(0))
+            .saturating_add(waterskins_to_buy.saturating_mul(waterskin.base_value.unwrap_or(0)));
+        forecast.total_cost = forecast.total_cost.saturating_add(cost);
+        forecast.travelers.push(TravelerProvisionForecast {
+            name: traveler.name.clone(),
+            rations_to_buy,
+            waterskins_to_buy,
+            cost,
+        });
+    }
+    Ok(Some(forecast))
 }
 
 #[derive(Serialize)]
@@ -1871,9 +1980,10 @@ async fn travel(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Redirect {
+    Form(form): Form<TravelForm>,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters");
+        return Redirect::to("/characters").into_response();
     };
 
     let outcome = super::execute_or_request_party_action(
@@ -1881,6 +1991,7 @@ async fn travel(
         character_id,
         super::PartyAction::TravelToSettlement {
             settlement_id: id.clone(),
+            provisioning: form.provisioning,
         },
     )
     .await;
@@ -1895,9 +2006,12 @@ async fn travel(
                 Some(quest_id) => Redirect::to(&format!("/locations/quest/{quest_id}")),
                 None => Redirect::to(&format!("/locations/settlement/{id}")),
             }
+            .into_response()
         }
-        Ok(super::PartyActionOutcome::Requested) => Redirect::to("/?party-requested=travel"),
-        Err(_) => Redirect::to("/"),
+        Ok(super::PartyActionOutcome::Requested) => {
+            Redirect::to("/?party-requested=travel").into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
     }
 }
 
