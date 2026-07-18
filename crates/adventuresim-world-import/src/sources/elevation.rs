@@ -15,7 +15,7 @@ use tiff::{
 
 use crate::{
     Error, Result,
-    draft::{ElevatedSettlementDraft, SettlementDraft, WorldDraft},
+    draft::{ElevatedSettlementDraft, SettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "Copernicus DEM GLO-30";
@@ -65,6 +65,14 @@ pub(crate) fn enrich(
             let (column, row) = raster.pixel(settlement.latitude, settlement.longitude)?;
             let (elevation, used_fallback) = raster.elevation_near(column, row);
             fallback_samples += usize::from(used_fallback);
+            push_source_note(
+                &mut draft.settlements[index],
+                if used_fallback {
+                    "**[Copernicus DEM GLO-30](https://doi.org/10.5270/ESA-c5d3d65):** The nominal raster pixel was void, so elevation uses the deterministic nearest-valid-pixel search (or sea-level terminal fallback if the local search window was entirely void)."
+                } else {
+                    "**[Copernicus DEM GLO-30](https://doi.org/10.5270/ESA-c5d3d65):** Elevation is sampled directly from the settlement's GLO-30 raster pixel."
+                },
+            );
             samples[index] = Some(elevation);
         }
     }

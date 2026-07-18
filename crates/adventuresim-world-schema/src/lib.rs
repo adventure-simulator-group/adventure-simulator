@@ -5,7 +5,17 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 12;
+pub const WORLD_SCHEMA_VERSION: u32 = 13;
+pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
+
+/// Source and inference notes are deliberately unstructured Markdown for a
+/// future debug view. Keep the payload bounded even though the contents are
+/// not parsed into canonical provenance types.
+pub fn valid_sources_markdown(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.chars().count() <= MAX_SOURCES_MARKDOWN_CHARS
+        && !value.contains('\0')
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -1752,6 +1762,7 @@ pub struct WorldNodeImport {
     pub is_town: bool,
     pub is_ferry: bool,
     pub is_harbour: bool,
+    pub sources: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1766,6 +1777,7 @@ pub struct TravelEdgeImport {
     pub slope_multiplier: f32,
     pub certainty: u8,
     pub section: String,
+    pub sources: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1789,6 +1801,7 @@ pub struct SettlementImport {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub scene_key: String,
+    pub sources: String,
 }
 
 #[cfg(test)]
@@ -1802,6 +1815,16 @@ mod tests {
         SettlementReligiousStatus, SoilMappingUnit, StoneContentPercent, SummerHydroclimate,
         TreeSpeciesId,
     };
+
+    #[test]
+    fn source_markdown_is_nonempty_nul_free_and_bounded() {
+        assert!(super::valid_sources_markdown("- **Source:** Direct value."));
+        assert!(!super::valid_sources_markdown("   \n"));
+        assert!(!super::valid_sources_markdown("- Source\0hidden"));
+        assert!(!super::valid_sources_markdown(
+            &"x".repeat(super::MAX_SOURCES_MARKDOWN_CHARS + 1)
+        ));
+    }
 
     #[test]
     fn religious_status_derives_the_single_church_faith() {

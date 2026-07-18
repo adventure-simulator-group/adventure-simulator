@@ -19,7 +19,7 @@ use proj4rs::{proj::Proj, transform::transform};
 
 use crate::{
     Error, Result,
-    draft::{SoilSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft},
+    draft::{SoilSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "European Soil Database v2.0 (SGDBE/PTRDB)";
@@ -79,7 +79,16 @@ fn finish(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(profiles)
-        .map(|(trees, soil)| SoilSettlementDraft { trees, soil })
+        .map(|(mut trees, soil)| {
+            push_source_note(
+                &mut trees,
+                match &soil {
+                    SoilProfile::Mapped(_) => "**[European Soil Database v2](https://esdac.jrc.ec.europa.eu/content/european-soil-database-v20-vector-and-attribute-data):** Soil properties come from source polygon containment and joined SGDBE/PTRDB attributes.",
+                    SoilProfile::Inferred(_) => "**ESDB soil fallback:** No usable mapping unit covered the settlement, so soil properties are deterministically inferred from potential vegetation, elevation, and related environmental inputs.",
+                },
+            );
+            SoilSettlementDraft { trees, soil }
+        })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
         name: SOURCE_NAME.into(),

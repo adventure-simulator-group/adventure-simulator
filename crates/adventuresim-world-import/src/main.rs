@@ -111,10 +111,26 @@ fn run(args: Args) -> Result<()> {
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
+    let sources = world
+        .metadata
+        .sources
+        .iter()
+        .map(|source| {
+            format!(
+                "- **[{}]({}):** {}",
+                source.name, source.url, source.license
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     call_reducer(
         args,
         "begin_world_data_import",
-        &[json!(world.metadata.schema_version), json!(artifact_id)],
+        &[
+            json!(world.metadata.schema_version),
+            json!(artifact_id),
+            json!(sources),
+        ],
     )?;
 
     for (label, reducer, batches) in [
@@ -190,6 +206,7 @@ fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
         "is_town": node.is_town,
         "is_ferry": node.is_ferry,
         "is_harbour": node.is_harbour,
+        "sources": node.sources,
     }))
 }
 
@@ -217,6 +234,7 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "slope_multiplier": edge.slope_multiplier,
         "certainty": edge.certainty,
         "section": edge.section,
+        "sources": edge.sources,
     }))
 }
 
@@ -280,6 +298,7 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "drought": encode_drought(settlement.drought),
         "hydrology": encode_hydrology(settlement.hydrology),
         "scene_key": settlement.scene_key,
+        "sources": settlement.sources,
     }))
 }
 
@@ -814,6 +833,7 @@ mod tests {
             slope_multiplier: 1.0,
             certainty: 1,
             section: String::new(),
+            sources: "- Test source.".into(),
         };
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(
@@ -824,11 +844,16 @@ mod tests {
             batches[0][0]["toll"],
             serde_json::json!({ "some": { "From": [] } })
         );
+        assert_eq!(batches[0][0]["sources"], "- Test source.");
     }
 
     #[test]
     fn encodes_all_forest_variants_for_spacetimedb_sats_json() {
         let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["sources"],
+            "- Test source."
+        );
         assert_eq!(
             encode_settlement(&settlement).unwrap()["forest_cover"],
             serde_json::json!({ "Open": [] })
@@ -1062,6 +1087,7 @@ mod tests {
             ),
             hydrology: adventuresim_world_schema::SettlementHydrology::default(),
             scene_key: "village".into(),
+            sources: "- Test source.".into(),
         }
     }
 

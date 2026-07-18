@@ -18,7 +18,7 @@ use tiff::{
 
 use crate::{
     Error, Result,
-    draft::{ForestSettlementDraft, LandUseSettlementDraft, WorldDraft},
+    draft::{ForestSettlementDraft, LandUseSettlementDraft, WorldDraft, push_source_note},
 };
 
 const SOURCE_NAME: &str = "Copernicus Land Monitoring Service Forest 2018";
@@ -83,15 +83,27 @@ pub(crate) fn enrich(
                 settlement.elevated.elevation.get(),
             );
             fallbacks += usize::from(fallback);
-            covers[index] = Some(cover);
+            covers[index] = Some((cover, fallback));
         }
     }
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(covers)
-        .map(|(land, cover)| ForestSettlementDraft {
-            land,
-            forest_cover: cover.expect("every settlement was grouped into a forest tile"),
+        .map(|(mut land, cover)| {
+            let (forest_cover, fallback) =
+                cover.expect("every settlement was grouped into a forest tile");
+            push_source_note(
+                &mut land,
+                if fallback {
+                    "**[Copernicus HRL Forests](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover):** At least one TCD/DLT source value was missing or reserved; forest density/type uses the documented deterministic HYDE/elevation fallback."
+                } else {
+                    "**[Copernicus HRL Forests](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover):** Forest density and dominant leaf type are sampled from the prepared 2018 TCD/DLT rasters."
+                },
+            );
+            ForestSettlementDraft {
+                land,
+                forest_cover,
+            }
         })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
