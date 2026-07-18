@@ -15,7 +15,7 @@ use adventuresim_world_schema::{
     SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
     SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
     TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement, WorldBounds,
-    WorldNodeImport, WrbReferenceGroup,
+    WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -590,12 +590,9 @@ fn encode_soil(profile: &SoilProfile) -> Value {
         })
     };
     match profile {
-        SoilProfile::Mapped(mapped) => json!({ "Mapped": {
-            "mapping_unit": { "smu": mapped.mapping_unit.smu(), "dominant_stu": mapped.mapping_unit.dominant_stu(), "dominance_percent": mapped.mapping_unit.dominance_percent() },
-            "wrb_group": enum_unit(wrb_name(mapped.wrb_group)),
-            "parent_material": { "code": mapped.parent_material.as_str() },
-            "properties": properties(&mapped.properties),
-        }}),
+        SoilProfile::Modeled(modeled) => {
+            json!({ "Modeled": { "properties": properties(&modeled.properties) }})
+        }
         SoilProfile::Inferred(inferred) => json!({ "Inferred": properties(inferred) }),
     }
 }
@@ -648,42 +645,6 @@ fn encode_soil_substrate(substrate: SoilSubstrate) -> Value {
         SoilSubstrate::OtherNonTextured(soil) => json!({ "OtherNonTextured": {
             "depth": depth(soil.depth), "available_water": water(soil.available_water), "organic_carbon": carbon(soil.organic_carbon), "stones": { "percent": soil.stones.percent() }
         }}),
-    }
-}
-
-fn wrb_name(group: WrbReferenceGroup) -> &'static str {
-    use WrbReferenceGroup as W;
-    match group {
-        W::Albeluvisol => "Albeluvisol",
-        W::Acrisol => "Acrisol",
-        W::Alisol => "Alisol",
-        W::Andosol => "Andosol",
-        W::Arenosol => "Arenosol",
-        W::Anthrosol => "Anthrosol",
-        W::Chernozem => "Chernozem",
-        W::Calcisol => "Calcisol",
-        W::Cambisol => "Cambisol",
-        W::Cryosol => "Cryosol",
-        W::Durisol => "Durisol",
-        W::Fluvisol => "Fluvisol",
-        W::Ferralsol => "Ferralsol",
-        W::Gleysol => "Gleysol",
-        W::Gypsisol => "Gypsisol",
-        W::Histosol => "Histosol",
-        W::Kastanozem => "Kastanozem",
-        W::Leptosol => "Leptosol",
-        W::Luvisol => "Luvisol",
-        W::Lixisol => "Lixisol",
-        W::Nitisol => "Nitisol",
-        W::Phaeozem => "Phaeozem",
-        W::Planosol => "Planosol",
-        W::Plinthosol => "Plinthosol",
-        W::Podzol => "Podzol",
-        W::Regosol => "Regosol",
-        W::Solonchak => "Solonchak",
-        W::Solonetz => "Solonetz",
-        W::Umbrisol => "Umbrisol",
-        W::Vertisol => "Vertisol",
     }
 }
 
@@ -853,7 +814,7 @@ fn default_tree_species_archive() -> PathBuf {
 }
 
 fn default_soil_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes")
+    repository_root().join("target/world-data-sources/raw/soilgrids")
 }
 
 fn default_geology_geopackage() -> PathBuf {
@@ -884,14 +845,14 @@ mod tests {
         ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GeologicSetting,
         GeologicUnitId, HabitatSuitability, IgneousRock, InferredGeologicSetting,
         InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
-        MappedPotentialVegetation, MappedSoilProfile, MappedSurfaceGeology, MineralSoil,
-        MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
-        OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
+        MappedPotentialVegetation, MappedSurfaceGeology, MineralSoil, MineralSoilTexture,
+        ModeledSoilProfile, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
+        OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
         PotentialVegetationFormation, SettlementDescriptionImport, SettlementDescriptionKind,
-        SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
-        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
-        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
-        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
+        SettlementImport, SettlementReligiousStatus, SoilDepth, SoilProfile, SoilProperties,
+        SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
+        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+        UnconsolidatedDeposit, Woodland,
     };
 
     use super::{
@@ -1022,7 +983,7 @@ mod tests {
     }
 
     #[test]
-    fn encodes_mapped_and_inferred_soil_profiles_for_spacetimedb_sats_json() {
+    fn encodes_modeled_and_inferred_soil_profiles_for_spacetimedb_sats_json() {
         let mut settlement = settlement(ForestCover::Open);
         assert_eq!(
             encode_settlement(&settlement).unwrap()["soil"]["Inferred"]["substrate"]["Mineral"]["texture"],
@@ -1031,19 +992,11 @@ mod tests {
         let SoilProfile::Inferred(properties) = settlement.soil.clone() else {
             unreachable!()
         };
-        settlement.soil = SoilProfile::Mapped(MappedSoilProfile {
-            mapping_unit: SoilMappingUnit::new(10, 100, 75).unwrap(),
-            wrb_group: WrbReferenceGroup::Cambisol,
-            parent_material: ParentMaterialCode::new("110").unwrap(),
-            properties,
-        });
+        settlement.soil = SoilProfile::Modeled(ModeledSoilProfile { properties });
         assert_eq!(
-            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["mapping_unit"],
-            serde_json::json!({ "smu": 10, "dominant_stu": 100, "dominance_percent": 75 })
-        );
-        assert_eq!(
-            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["wrb_group"],
-            serde_json::json!({ "Cambisol": [] })
+            encode_settlement(&settlement).unwrap()["soil"]["Modeled"]["properties"]["substrate"]["Mineral"]
+                ["texture"],
+            serde_json::json!({ "Medium": [] })
         );
     }
 

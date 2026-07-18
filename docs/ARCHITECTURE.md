@@ -38,8 +38,10 @@ an enriched draft. Copernicus forest cover consumes that draft and constructs
 another enriched draft with a typed open-or-wooded state. EuroVegMap then adds
 typed mapped-or-inferred potential vegetation. EU-Trees4F consumes that state,
 adds a nonempty modeled-or-inferred tree-species profile, and constructs another
-enriched draft. ESDB consumes all of those environmental inputs and adds a
-complete mapped-or-inferred soil profile. EGDI surface geology then uses an
+enriched draft. SoilGrids consumes all of those environmental inputs and adds a
+complete modeled-or-inferred soil profile. SoilGrids modelled physical values
+remain distinct from deterministic fallbacks; soil wetness is not claimed as
+hydrology because hydrology is enriched later. EGDI surface geology then uses an
 indexed local GeoPackage to attach a typed mapped-or-inferred lithology and age
 setting. The IEG stage then parses a curated 1544 legal-religion
 intermediate into an established, parity, multi-confessional, or municipally

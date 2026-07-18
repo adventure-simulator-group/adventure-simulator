@@ -1,77 +1,21 @@
 # Soil world data
 
-Settlement soil plausibility is sourced from the **European Soil Database
-v2.0** (ESDB), specifically its SGDBE polygon and attribute database plus the
-PTRDB pedotransfer-rules table.
+Settlement soil is derived from [ISRIC SoilGrids 2.0](https://www.isric.org/explore/soilgrids), a modern model baseline under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is not a historical observation of 1544: its physical predictions are used as a reproducible baseline, with attribution retained in compiled-world provenance.
 
-- Dataset page: <https://esdac.jrc.ec.europa.eu/content/european-soil-database-v20-vector-and-attribute-data>
-- SGDBE dictionary: <https://esdac.jrc.ec.europa.eu/content/sgdbe-attributes>
-- PTRDB dictionary: <https://esdac.jrc.ec.europa.eu/content/ptrdb-attributes>
-- Distribution schema: <https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDB_Data_Distribution/ESDB_Data_full_distribution/ESDB_data_vx.cfm>
+## Preparation contract
 
-The vector archive is not an anonymous download. It requires registration and
-acceptance of ESDAC's terms. Those terms do not grant this repository a general
-right to redistribute the archive or derived values and may be incompatible
-with commercial use. Do not commit the source files, compiled values derived
-from them, or add the download to the initialization script until the project
-has obtained suitable permission. The importer and synthetic tests are source
-code only; they do not include ESDAC data.
+Run `just init-soilgrids bounds=world-bounds.hamburg-test.json`. The preparer calls SoilGrids' official WCS 2.0.1 endpoint for one exact WGS84 subset per layer, rather than the paused REST API or a project-invented tile scheme. It writes an atomically replaced, git-ignored cache at `target/world-data-sources/raw/soilgrids/`:
 
-## Required extracted layout
+- `sand_0-5cm_mean.tif`, `silt_0-5cm_mean.tif`, `clay_0-5cm_mean.tif`
+- `soc_0-5cm_mean.tif`, `cfvo_0-5cm_mean.tif`, `bdod_0-5cm_mean.tif`
+- `soilgrids-manifest.json`
 
-After obtaining permission, extract the official
-`soilDB_shapefiles_and_attributes.zip` archive and pass its directory with
-`--soil-dir`. The default is
-`target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes/`.
-The importer currently requires:
+The strict manifest binds the cache to the source URL, cache format, exact ordered six-layer contract, and canonical `WorldBounds`. Existing outputs are refused unless `--force` is supplied; replacement occurs only after every download and validation succeeds. Do not commit the GeoTIFFs.
 
-- `SGDBE4_0.shp`, `.shx`, `.dbf`, and `.prj`: 1:1,000,000 soil mapping units;
-- `STU_sgdbe.dbf`: soil classification and dominant parent material by STU;
-- `STU_ptrdb.dbf`: inferred physical properties by STU.
+The compiler defaults to this cache (`--soil-dir` overrides it) and requires `--world-bounds` so it can reject a cache prepared for different bounds. Every raster must be a matching single-band Int16 EPSG:4326 RasterPixelIsArea GeoTIFF. Missing/malformed manifest or layers are errors. A valid cache pixel with nodata in any required layer produces a full inferred fallback, never a mixed profile.
 
-The two `.access-page.html` files currently under the manually downloaded soil
-directory are ESDAC access-page redirects, not ZIP archives, and cannot be
-parsed as data.
+## Modelled and inferred properties
 
-## Parsing and canonical model
+Valid 0--5 cm source samples are stored as `SoilProfile::Modeled`; these directly determine texture (sand/silt/clay), topsoil organic-carbon class (SOC), stone content (coarse fragments), and deterministic water-capacity class (texture, bulk density, and stones). ISRIC's documented integer conversion factors are applied: texture and coarse fragments divide by ten to percent, SOC divides by ten to g/kg, and bulk density divides by 100 to kg/dm³. Soil depth, water regime, and agricultural limitation remain explicit deterministic inferences from potential vegetation, elevation, and the physical sample. This stage intentionally does not use hydrology, which is enriched later in the pipeline.
 
-The source boundary requires the legacy GISCO Lambert azimuthal equal-area
-projection used by SGDBE; it must not be silently interpreted as EPSG:3035.
-Polygon records provide a soil mapping-unit ID, dominant soil typological-unit
-ID, and dominance percentage. Attribute tables are joined by STU.
-
-Mapped profiles retain those source IDs, an exhaustive WRB reference-group
-enum, dominant parent-material code, and typed gameplay properties: substrate
-and texture, depth to rock, available water capacity, topsoil organic carbon,
-stone content, dominant agricultural limitation, and annual water regime.
-The parser uses the physical DBF names (`WRBLV1`, `PARMADO`, and `AGLI1NNI`),
-not the longer logical attribute names shown in parts of the metadata. Source
-code domains are parsed exhaustively. Structurally unexpected fields or new
-non-placeholder codes fail the import rather than becoming `Unknown`.
-
-Material-dependent fields live inside substrate variants. Mineral and other
-non-textured substrates carry depth, water capacity, carbon, and stone content;
-organic substrate does not carry a separately contradictory carbon class; rock
-outcrop carries only stone content. This prevents canonical states such as a
-very deep, high-water-capacity rock outcrop.
-
-Documented no-information markers (`0`, `#`, or blank), WRB non-soil categories
-(town, water, marsh, glacier, disturbed ground, and rock outcrop), incomplete
-joins, and settlements outside polygon coverage instead produce a complete
-`Inferred` profile from already-typed elevation and potential vegetation. Wetland and mire
-formations favor wetter or organic soils; alpine terrain favors shallow stony
-or rocky soil; dry Mediterranean and steppe formations favor coarser, drier
-soil; all other settlements receive a temperate medium-textured fallback.
-These are intentionally plausible game-generation inputs, not historical
-claims about a named settlement.
-
-The official archive was unavailable during implementation. Normal tests build
-a synthetic shapefile plus both standalone DBF tables and exercise projection,
-joins, no-information handling, polygon sampling, and code domains. The ignored
-`full_source_boundary_reads_registered_distribution` test is the explicit
-end-to-end verification gate once an authorized archive is available:
-
-```powershell
-$env:ESDB_DIR = "C:\path\to\soilDB_shapefiles_and_attributes"
-cargo test -p adventuresim-world-import full_source_boundary_reads_registered_distribution -- --ignored
-```
+`SoilProfile::Inferred` is reserved for source nodata/out-of-coverage and uses only the documented potential-vegetation/elevation fallback. The distinction lets downstream systems and diagnostics avoid presenting a modelled modern baseline as a historical direct observation.

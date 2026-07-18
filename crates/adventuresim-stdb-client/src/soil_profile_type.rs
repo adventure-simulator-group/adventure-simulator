@@ -4,13 +4,13 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::mapped_soil_profile_type::MappedSoilProfile;
+use super::modeled_soil_profile_type::ModeledSoilProfile;
 use super::soil_properties_type::SoilProperties;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum SoilProfile {
-    Mapped(MappedSoilProfile),
+    Modeled(ModeledSoilProfile),
 
     Inferred(SoilProperties),
 }

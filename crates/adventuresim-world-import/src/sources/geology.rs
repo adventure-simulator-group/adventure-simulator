@@ -770,7 +770,7 @@ const fn infer_age(lithology: SurfaceLithology) -> GeologicEra {
 
 fn infer_setting(settlement: &SoilSettlementDraft) -> InferredGeologicSetting {
     let substrate = match &settlement.soil {
-        SoilProfile::Mapped(profile) => profile.properties.substrate,
+        SoilProfile::Modeled(profile) => profile.properties.substrate,
         SoilProfile::Inferred(properties) => properties.substrate,
     };
     let lithology = match substrate {

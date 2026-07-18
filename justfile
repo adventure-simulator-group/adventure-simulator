@@ -242,6 +242,10 @@ init-owda:
 init-forest-cover bounds:
 	@cargo run --package adventuresim-world-import --bin prepare-forest-cover -- --world-bounds "{{bounds}}"
 
+# Download and prepare a canonical-bounds SoilGrids 2.0 WCS cache.
+init-soilgrids bounds:
+	@cargo run --package adventuresim-world-import --bin prepare-soilgrids -- --world-bounds "{{bounds}}"
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

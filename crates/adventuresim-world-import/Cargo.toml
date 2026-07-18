@@ -10,6 +10,10 @@ default-run = "adventuresim-world-import"
 name = "prepare-forest-cover"
 path = "src/bin/prepare_forest_cover.rs"
 
+[[bin]]
+name = "prepare-soilgrids"
+path = "src/bin/prepare_soilgrids.rs"
+
 [dependencies]
 adventuresim-world-schema.workspace = true
 blake3.workspace = true

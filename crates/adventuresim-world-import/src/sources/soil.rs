@@ -1,93 +1,82 @@
-//! European Soil Database v2 polygon and attribute sampling.
+//! Bounded SoilGrids 2.0 0--5 cm physical-property sampling.
+//!
+//! The cache contract deliberately keeps a modeled sample distinct from an
+//! inferred fallback.  SoilGrids provides modern, modelled physical values;
+//! depth, wetness, and agricultural limits remain deterministic game rules
+//! because this pipeline stage runs before hydrology.
 
 use std::{
-    collections::BTreeMap,
-    fs,
+    fs::File,
+    io::{BufReader, Read, Seek},
     path::{Path, PathBuf},
 };
 
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, MappedSoilProfile, MineralSoil,
-    MineralSoilTexture, OrganicSoil, OtherNonTexturedSoil, ParentMaterialCode,
-    PotentialVegetationFormation, RockOutcropSoil, SoilDepth, SoilMappingUnit, SoilProfile,
-    SoilProperties, SoilSubstrate, SoilWaterRegime, SourceProvenance, StoneContentPercent,
-    TopsoilOrganicCarbon, WrbReferenceGroup,
+    AgriculturalLimitation, AvailableWaterCapacity, MineralSoil, MineralSoilTexture,
+    ModeledSoilProfile, OrganicSoil, PotentialVegetation, PotentialVegetationFormation,
+    RockOutcropSoil, SoilDepth, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    SourceProvenance, StoneContentPercent, TopsoilOrganicCarbon, WorldBounds,
 };
-use dbase::{FieldValue, Record};
-use geo::{BoundingRect, Intersects, MultiPolygon, Point, Rect};
-use proj4rs::{proj::Proj, transform::transform};
+use serde::Deserialize;
+use serde_json::Value;
+use tiff::{
+    decoder::{Decoder, DecodingResult},
+    tags::Tag,
+};
 
 use crate::{
     Error, Result,
     draft::{SoilSettlementDraft, TreeSpeciesSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "European Soil Database v2.0 (SGDBE/PTRDB)";
-const SOURCE_URL: &str =
-    "https://esdac.jrc.ec.europa.eu/content/european-soil-database-v20-vector-and-attribute-data";
-const SOURCE_LICENSE: &str =
-    "ESDAC registration and project-specific permission required; redistribution not granted";
-const SHAPEFILE_NAME: &str = "SGDBE4_0.shp";
-const PROJECTION_NAME: &str = "SGDBE4_0.prj";
-const SGDBE_ATTRIBUTES: &str = "STU_sgdbe.dbf";
-const PTRDB_ATTRIBUTES: &str = "STU_ptrdb.dbf";
-const BUCKET_METERS: f64 = 100_000.0;
-const MAX_BUCKETS_PER_FEATURE: i64 = 10_000;
-const EXPECTED_PROJECTION: &str = "PROJCS[\"User_Defined_Lambert_Azimuthal_Equal_Area\",GEOGCS[\"GCS_User_Defined\",DATUM[\"D_User_Defined\",SPHEROID[\"User_Defined_Spheroid\",6378388.0,0.0]],PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Lambert_Azimuthal_Equal_Area\"],PARAMETER[\"False_Easting\",0.0],PARAMETER[\"False_Northing\",0.0],PARAMETER[\"Central_Meridian\",9.0],PARAMETER[\"Latitude_Of_Origin\",48.0],UNIT[\"Meter\",1.0]]";
+const SOURCE_NAME: &str = "ISRIC SoilGrids 2.0";
+const SOURCE_URL: &str = "https://maps.isric.org/";
+const SOURCE_LICENSE: &str = "CC BY 4.0; attribution required";
+const FORMAT: &str = "adventuresim-soilgrids-2.0-0-5cm-v1";
+const MANIFEST: &str = "soilgrids-manifest.json";
+const LAYERS: [&str; 6] = ["sand", "silt", "clay", "soc", "cfvo", "bdod"];
+const NODATA: i16 = i16::MIN;
 
-pub(crate) fn enrich(
-    draft: WorldDraft<TreeSpeciesSettlementDraft>,
-    directory: &Path,
-) -> Result<WorldDraft<SoilSettlementDraft>> {
-    if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), 0, 0, 0);
-    }
-    let map = SoilMap::read(directory)?;
-    let projection = SoilProjection::new()?;
-    let mut profiles = Vec::with_capacity(draft.settlements.len());
-    let mut fallbacks = 0;
-    for settlement in &draft.settlements {
-        let base = &settlement.vegetated.forest.land.elevated.settlement;
-        let point = projection.project(base.latitude, base.longitude)?;
-        let profile = map.sample(point).unwrap_or_else(|| {
-            fallbacks += 1;
-            SoilProfile::Inferred(infer_properties(settlement))
-        });
-        profiles.push(profile);
-    }
-    finish(
-        draft,
-        profiles,
-        map.polygons_read,
-        map.attribute_rows_read,
-        fallbacks,
-    )
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreparedManifest {
+    format: String,
+    source_url: String,
+    layers: Vec<String>,
+    world_bounds: Value,
 }
 
-fn finish(
+pub(crate) fn enrich(
     mut draft: WorldDraft<TreeSpeciesSettlementDraft>,
-    profiles: Vec<SoilProfile>,
-    polygons_read: usize,
-    attribute_rows_read: usize,
-    fallbacks: usize,
+    directory: &Path,
 ) -> Result<WorldDraft<SoilSettlementDraft>> {
-    if profiles.len() != draft.settlements.len() {
-        return Err(Error::Validation(
-            "soil profiles do not match settlements".into(),
-        ));
-    }
+    let bounds = draft.world_bounds.clone().ok_or_else(|| {
+        Error::Validation(
+            "SoilGrids requires canonical --world-bounds so the prepared cache can be verified"
+                .into(),
+        )
+    })?;
+    read_manifest(directory, &bounds)?;
+    let rasters = SoilRasters::read(directory)?;
+    let mut fallbacks = 0;
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
-        .zip(profiles)
-        .map(|(mut trees, soil)| {
-            push_source_note(
-                &mut trees,
-                match &soil {
-                    SoilProfile::Mapped(_) => "**[European Soil Database v2](https://esdac.jrc.ec.europa.eu/content/european-soil-database-v20-vector-and-attribute-data):** Soil properties come from source polygon containment and joined SGDBE/PTRDB attributes.",
-                    SoilProfile::Inferred(_) => "**ESDB soil fallback:** No usable mapping unit covered the settlement, so soil properties are deterministically inferred from potential vegetation, elevation, and related environmental inputs.",
+        .map(|mut trees| {
+            let base = &trees.vegetated.forest.land.elevated.settlement;
+            let profile = rasters.sample(base.latitude, base.longitude).map_or_else(
+                || {
+                    fallbacks += 1;
+                    SoilProfile::Inferred(infer_properties(&trees))
                 },
+                |sample| SoilProfile::Modeled(ModeledSoilProfile {
+                    properties: modeled_properties(&trees, sample),
+                }),
             );
-            SoilSettlementDraft { trees, soil }
+            push_source_note(&mut trees, match profile {
+                SoilProfile::Modeled(_) => "**[ISRIC SoilGrids 2.0](https://maps.isric.org/):** Modern modelled 0--5 cm sand, silt, clay, organic carbon, coarse fragments, and bulk density were sampled from the verified bounded cache. Soil depth, wetness, and agricultural limitation are deterministic inferences; this stage has no hydrology input.",
+                SoilProfile::Inferred(_) => "**SoilGrids fallback:** At least one required local raster value was nodata or outside coverage, so the complete soil profile is deterministically inferred from potential vegetation and elevation rather than partially fabricated.",
+            });
+            SoilSettlementDraft { trees, soil: profile }
         })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
@@ -95,8 +84,7 @@ fn finish(
         url: SOURCE_URL.into(),
         license: SOURCE_LICENSE.into(),
     });
-    draft.report.soil_polygons_read = polygons_read;
-    draft.report.soil_attribute_rows_read = attribute_rows_read;
+    draft.report.soilgrids_rasters_read = LAYERS.len();
     draft.report.soil_samples = settlements.len();
     draft.report.soil_fallback_samples = fallbacks;
     Ok(WorldDraft {
@@ -113,15 +101,363 @@ fn finish(
     })
 }
 
+fn read_manifest(directory: &Path, bounds: &WorldBounds) -> Result<()> {
+    let path = require(directory, MANIFEST)?;
+    let manifest: PreparedManifest = serde_json::from_reader(BufReader::new(File::open(&path)?))
+        .map_err(|source| Error::JsonSource {
+            path: path.clone(),
+            source,
+        })?;
+    let expected_bounds = serde_json::to_value(bounds)?;
+    if manifest.format != FORMAT
+        || manifest.source_url != SOURCE_URL
+        || manifest.layers != LAYERS
+        || manifest.world_bounds != expected_bounds
+    {
+        return Err(Error::Validation(format!(
+            "{} does not bind this cache to the SoilGrids 2.0 six-layer world-bounds contract",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn require(directory: &Path, name: &str) -> Result<PathBuf> {
+    let path = directory.join(name);
+    path.is_file()
+        .then_some(path.clone())
+        .ok_or(Error::MissingSource(path))
+}
+
+struct SoilRasters {
+    grid: Grid,
+    values: [Vec<i16>; 6],
+    width: u32,
+    height: u32,
+}
+
+impl SoilRasters {
+    fn read(directory: &Path) -> Result<Self> {
+        let mut decoded = LAYERS
+            .into_iter()
+            .map(|layer| Raster::read(&require(directory, &format!("{layer}_0-5cm_mean.tif"))?))
+            .collect::<Result<Vec<_>>>()?;
+        let first = decoded.remove(0);
+        if decoded.iter().any(|other| {
+            other.width != first.width || other.height != first.height || other.grid != first.grid
+        }) {
+            return Err(Error::Validation(
+                "SoilGrids layers do not share one exact GeoTIFF grid".into(),
+            ));
+        }
+        let values: [Vec<i16>; 6] = std::array::from_fn(|index| {
+            if index == 0 {
+                first.values.clone()
+            } else {
+                decoded[index - 1].values.clone()
+            }
+        });
+        Ok(Self {
+            grid: first.grid,
+            values,
+            width: first.width,
+            height: first.height,
+        })
+    }
+
+    fn sample(&self, latitude: f64, longitude: f64) -> Option<PhysicalSample> {
+        let (column, row) = self
+            .grid
+            .pixel(latitude, longitude, self.width, self.height)?;
+        let index = row as usize * self.width as usize + column as usize;
+        let values: [i16; 6] = std::array::from_fn(|layer| self.values[layer][index]);
+        (!values.contains(&NODATA) && values.iter().all(|value| *value >= 0)).then_some(
+            PhysicalSample {
+                sand: values[0] as u16,
+                silt: values[1] as u16,
+                clay: values[2] as u16,
+                soc: values[3] as u16,
+                cfvo: values[4] as u16,
+                bdod: values[5] as u16,
+            },
+        )
+    }
+}
+
+struct Raster {
+    grid: Grid,
+    values: Vec<i16>,
+    width: u32,
+    height: u32,
+}
+impl Raster {
+    fn read(path: &Path) -> Result<Self> {
+        let mut decoder =
+            Decoder::new(BufReader::new(File::open(path)?)).map_err(|source| Error::Tiff {
+                path: path.into(),
+                source,
+            })?;
+        let (width, height) = decoder.dimensions().map_err(|source| Error::Tiff {
+            path: path.into(),
+            source,
+        })?;
+        if width == 0 || height == 0 {
+            return Err(Error::Validation(format!(
+                "{} is an empty SoilGrids raster",
+                path.display()
+            )));
+        }
+        let values = match decoder.read_image().map_err(|source| Error::Tiff {
+            path: path.into(),
+            source,
+        })? {
+            DecodingResult::I16(values) if values.len() == width as usize * height as usize => {
+                values
+            }
+            _ => {
+                return Err(Error::Validation(format!(
+                    "{} is not a single-band Int16 SoilGrids GeoTIFF",
+                    path.display()
+                )));
+            }
+        };
+        Ok(Self {
+            grid: Grid::parse(&mut decoder, path, width, height)?,
+            values,
+            width,
+            height,
+        })
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct Grid {
+    west: f64,
+    north: f64,
+    x_scale: f64,
+    y_scale: f64,
+}
+impl Grid {
+    fn parse(
+        reader: &mut Decoder<impl Read + Seek>,
+        path: &Path,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
+        let scale = tag(reader.get_tag_f64_vec(Tag::ModelPixelScaleTag), path)?;
+        let tie = tag(reader.get_tag_f64_vec(Tag::ModelTiepointTag), path)?;
+        let keys = tag(reader.get_tag_u16_vec(Tag::GeoKeyDirectoryTag), path)?;
+        if scale.len() != 3
+            || tie.len() != 6
+            || geo_key(&keys, 1024) != Some(2)
+            || geo_key(&keys, 1025) != Some(1)
+            || geo_key(&keys, 2048) != Some(4326)
+        {
+            return Err(Error::Validation(format!(
+                "{} is not an EPSG:4326 RasterPixelIsArea GeoTIFF",
+                path.display()
+            )));
+        }
+        let values = [scale[0], scale[1], tie[0], tie[1], tie[3], tie[4]];
+        if !values.iter().all(|value| value.is_finite()) || scale[0] <= 0.0 || scale[1] <= 0.0 {
+            return Err(Error::Validation(format!(
+                "{} has invalid SoilGrids georeferencing",
+                path.display()
+            )));
+        }
+        let west = tie[3] - tie[0] * scale[0];
+        let north = tie[4] + tie[1] * scale[1];
+        if !(west.is_finite()
+            && north.is_finite()
+            && west >= -180.0
+            && west + scale[0] * f64::from(width) <= 180.0
+            && north <= 90.0
+            && north - scale[1] * f64::from(height) >= -90.0)
+        {
+            return Err(Error::Validation(format!(
+                "{} has impossible WGS84 coverage",
+                path.display()
+            )));
+        }
+        Ok(Self {
+            west,
+            north,
+            x_scale: scale[0],
+            y_scale: scale[1],
+        })
+    }
+    fn pixel(self, latitude: f64, longitude: f64, width: u32, height: u32) -> Option<(u32, u32)> {
+        if !latitude.is_finite() || !longitude.is_finite() {
+            return None;
+        }
+        let col_coordinate = (longitude - self.west) / self.x_scale;
+        let row_coordinate = (self.north - latitude) / self.y_scale;
+        let mut col = col_coordinate.floor();
+        let mut row = row_coordinate.floor();
+        // A canonical bounds edge is inclusive.  The final source pixel owns its east/south edge.
+        if (col_coordinate - f64::from(width)).abs() <= f64::EPSILON {
+            col -= 1.0;
+        }
+        if (row_coordinate - f64::from(height)).abs() <= f64::EPSILON {
+            row -= 1.0;
+        }
+        (col >= 0.0 && row >= 0.0 && col < f64::from(width) && row < f64::from(height))
+            .then_some((col as u32, row as u32))
+    }
+}
+fn tag<T>(value: tiff::TiffResult<T>, path: &Path) -> Result<T> {
+    value.map_err(|source| Error::Tiff {
+        path: path.into(),
+        source,
+    })
+}
+fn geo_key(keys: &[u16], requested: u16) -> Option<u16> {
+    let [1, 1, _, count, entries @ ..] = keys else {
+        return None;
+    };
+    if entries.len() != usize::from(*count) * 4 {
+        return None;
+    }
+    entries.as_chunks::<4>().0.iter().find_map(|entry| {
+        (entry[0] == requested && entry[1] == 0 && entry[2] == 1).then_some(entry[3])
+    })
+}
+
+#[derive(Clone, Copy)]
+struct PhysicalSample {
+    sand: u16,
+    silt: u16,
+    clay: u16,
+    soc: u16,
+    cfvo: u16,
+    bdod: u16,
+}
+
+fn modeled_properties(
+    settlement: &TreeSpeciesSettlementDraft,
+    sample: PhysicalSample,
+) -> SoilProperties {
+    // SoilGrids stores texture as g/kg with a conversion factor of ten to
+    // g/100g (percent); cfvo is likewise tenths of a volumetric percent.
+    let clay_percent = sample.clay / 10;
+    let sand_percent = sample.sand / 10;
+    let stone_percent = (sample.cfvo / 10).min(100) as u8;
+    let texture = texture_from_source(sample.sand, sample.silt, sample.clay);
+    let carbon = carbon_from_soc(sample.soc);
+    let water = modeled_water_capacity(clay_percent, sand_percent, sample.bdod, stone_percent);
+    let (depth, water_regime, agricultural_limitation) =
+        contextual_inference(settlement, stone_percent);
+    SoilProperties {
+        substrate: SoilSubstrate::Mineral(MineralSoil {
+            texture,
+            depth,
+            available_water: water,
+            organic_carbon: carbon,
+            stones: StoneContentPercent::new(stone_percent).unwrap(),
+        }),
+        water_regime,
+        agricultural_limitation,
+    }
+}
+fn texture_from_source(sand_raw: u16, silt_raw: u16, clay_raw: u16) -> MineralSoilTexture {
+    match (clay_raw / 10, sand_raw / 10, silt_raw / 10) {
+        (60.., _, _) => MineralSoilTexture::VeryFine,
+        (35..=59, _, _) => MineralSoilTexture::Fine,
+        (18..=34, _, _) | (_, _, 50..) => MineralSoilTexture::MediumFine,
+        (_, 85.., _) => MineralSoilTexture::Coarse,
+        _ => MineralSoilTexture::Medium,
+    }
+}
+fn carbon_from_soc(soc_raw: u16) -> TopsoilOrganicCarbon {
+    match soc_raw / 10 {
+        0..=9 => TopsoilOrganicCarbon::VeryLow,
+        10..=19 => TopsoilOrganicCarbon::Low,
+        20..=59 => TopsoilOrganicCarbon::Medium,
+        _ => TopsoilOrganicCarbon::High,
+    }
+}
+fn modeled_water_capacity(
+    clay: u16,
+    sand: u16,
+    bdod_raw: u16,
+    stones: u8,
+) -> AvailableWaterCapacity {
+    let mut score = if sand >= 85 || clay < 10 {
+        1_i8
+    } else if clay <= 30 {
+        2
+    } else if clay <= 55 {
+        3
+    } else {
+        2
+    };
+    if bdod_raw >= 160 {
+        score -= 1;
+    }
+    if stones >= 15 {
+        score -= 1;
+    }
+    if stones >= 35 {
+        score -= 1;
+    }
+    match score.clamp(0, 4) {
+        0 => AvailableWaterCapacity::VeryLow,
+        1 => AvailableWaterCapacity::Low,
+        2 => AvailableWaterCapacity::Medium,
+        3 => AvailableWaterCapacity::High,
+        _ => AvailableWaterCapacity::VeryHigh,
+    }
+}
+fn contextual_inference(
+    settlement: &TreeSpeciesSettlementDraft,
+    stones: u8,
+) -> (SoilDepth, SoilWaterRegime, AgriculturalLimitation) {
+    use PotentialVegetationFormation as V;
+    let formation = match &settlement.vegetated.potential_vegetation {
+        PotentialVegetation::Mapped(mapped) => mapped.formation(),
+        PotentialVegetation::Inferred(formation) => *formation,
+    };
+    let elevation = settlement.vegetated.forest.land.elevated.elevation.get();
+    let wet = matches!(
+        formation,
+        V::Mire | V::SwampAndFenForest | V::AquaticAndReed | V::FloodplainAndWetland
+    );
+    let depth = if elevation >= 900 || stones >= 50 {
+        SoilDepth::Shallow
+    } else if stones >= 25 {
+        SoilDepth::Moderate
+    } else {
+        SoilDepth::Deep
+    };
+    let regime = if wet {
+        SoilWaterRegime::LongSeasonWet
+    } else if matches!(
+        formation,
+        V::MediterraneanSclerophyll | V::XerophyticConiferAndScrub | V::Steppe | V::Desert
+    ) {
+        SoilWaterRegime::UsuallyDry
+    } else {
+        SoilWaterRegime::SeasonallyWet
+    };
+    let limit = if wet {
+        AgriculturalLimitation::ShallowWaterTable
+    } else if elevation >= 900 || stones >= 50 {
+        AgriculturalLimitation::ShallowRock
+    } else if stones >= 25 {
+        AgriculturalLimitation::Gravelly
+    } else {
+        AgriculturalLimitation::None
+    };
+    (depth, regime, limit)
+}
 fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
     use PotentialVegetationFormation as V;
     let formation = match &settlement.vegetated.potential_vegetation {
-        adventuresim_world_schema::PotentialVegetation::Mapped(mapped) => mapped.formation(),
-        adventuresim_world_schema::PotentialVegetation::Inferred(formation) => *formation,
+        PotentialVegetation::Mapped(mapped) => mapped.formation(),
+        PotentialVegetation::Inferred(formation) => *formation,
     };
     let elevation = settlement.vegetated.forest.land.elevated.elevation.get();
-    let stones =
-        |percent| StoneContentPercent::new(percent).expect("fallback percentage is bounded");
+    let stones = |value| StoneContentPercent::new(value).unwrap();
     match formation {
         V::Mire | V::SwampAndFenForest => SoilProperties {
             substrate: SoilSubstrate::Organic(OrganicSoil {
@@ -177,821 +513,68 @@ fn infer_properties(settlement: &TreeSpeciesSettlementDraft) -> SoilProperties {
     }
 }
 
-struct SoilProjection {
-    geographic: Proj,
-    projected: Proj,
-}
-
-impl SoilProjection {
-    fn new() -> Result<Self> {
-        Ok(Self {
-            geographic: Proj::from_proj_string(
-                "+proj=longlat +datum=WGS84 +ellps=WGS84 +no_defs +type=crs",
-            )?,
-            projected: Proj::from_proj_string(
-                "+proj=laea +lat_0=48 +lon_0=9 +x_0=0 +y_0=0 +R=6378388 +units=m +no_defs +type=crs",
-            )?,
-        })
-    }
-
-    fn project(&self, latitude: f64, longitude: f64) -> Result<Point<f64>> {
-        if !latitude.is_finite()
-            || !longitude.is_finite()
-            || !(-90.0..=90.0).contains(&latitude)
-            || !(-180.0..=180.0).contains(&longitude)
-        {
-            return Err(Error::Validation(format!(
-                "invalid coordinate ({latitude}, {longitude}) for ESDB"
-            )));
-        }
-        let mut coordinate = (longitude.to_radians(), latitude.to_radians(), 0.0);
-        transform(&self.geographic, &self.projected, &mut coordinate)?;
-        Ok(Point::new(coordinate.0, coordinate.1))
-    }
-}
-
-struct SoilMap {
-    features: Vec<SoilFeature>,
-    buckets: BTreeMap<(i32, i32), Vec<usize>>,
-    profiles: BTreeMap<u32, SoilAttributeProfile>,
-    polygons_read: usize,
-    attribute_rows_read: usize,
-}
-
-impl SoilMap {
-    fn read(directory: &Path) -> Result<Self> {
-        validate_projection(directory)?;
-        let sgdbe = read_sgdbe(&require(directory, SGDBE_ATTRIBUTES)?)?;
-        let ptrdb = read_ptrdb(&require(directory, PTRDB_ATTRIBUTES)?)?;
-        let attribute_rows_read = sgdbe.rows_read + ptrdb.rows_read;
-        let profiles = join_profiles(sgdbe.complete, ptrdb.complete)?;
-        let path = require(directory, SHAPEFILE_NAME)?;
-        let mut reader =
-            shapefile::Reader::from_path(&path).map_err(|source| Error::Shapefile {
-                path: path.clone(),
-                source,
-            })?;
-        if reader.header().shape_type != shapefile::ShapeType::Polygon {
-            return Err(Error::Validation(format!(
-                "{} is not a polygon shapefile",
-                path.display()
-            )));
-        }
-        let mut features = Vec::new();
-        let mut polygons_read = 0;
-        for item in reader.iter_shapes_and_records_as::<shapefile::Polygon, Record>() {
-            let (shape, record) = item.map_err(|source| Error::Shapefile {
-                path: path.clone(),
-                source,
-            })?;
-            polygons_read += 1;
-            let mapping = parse_mapping_unit(&record, &path)?;
-            let geometry = MultiPolygon::<f64>::try_from(shape).map_err(|message| {
-                Error::Validation(format!(
-                    "invalid ESDB polygon geometry in {}: {message}",
-                    path.display()
-                ))
-            })?;
-            let bounds = geometry.bounding_rect().ok_or_else(|| {
-                Error::Validation(format!("empty ESDB polygon in {}", path.display()))
-            })?;
-            features.push(SoilFeature {
-                mapping,
-                geometry,
-                bounds,
-            });
-        }
-        if features.is_empty() {
-            return Err(Error::Validation(format!(
-                "{} contains no soil polygons",
-                path.display()
-            )));
-        }
-        let buckets = build_buckets(&features)?;
-        Ok(Self {
-            features,
-            buckets,
-            profiles,
-            polygons_read,
-            attribute_rows_read,
-        })
-    }
-
-    fn sample(&self, point: Point<f64>) -> Option<SoilProfile> {
-        let key = bucket(point.x(), point.y())?;
-        self.buckets
-            .get(&key)?
-            .iter()
-            .filter_map(|&index| {
-                let feature = &self.features[index];
-                (bounds_intersect(feature.bounds, point) && feature.geometry.intersects(&point))
-                    .then_some(feature)
-            })
-            .min_by_key(|feature| feature.mapping.smu())
-            .and_then(|feature| {
-                self.profiles
-                    .get(&feature.mapping.dominant_stu())
-                    .cloned()
-                    .map(|profile| {
-                        SoilProfile::Mapped(MappedSoilProfile {
-                            mapping_unit: feature.mapping,
-                            wrb_group: profile.wrb_group,
-                            parent_material: profile.parent_material,
-                            properties: profile.properties,
-                        })
-                    })
-            })
-    }
-}
-
-struct SoilFeature {
-    mapping: SoilMappingUnit,
-    geometry: MultiPolygon<f64>,
-    bounds: Rect<f64>,
-}
-
-fn parse_mapping_unit(record: &Record, path: &Path) -> Result<SoilMappingUnit> {
-    let smu = required_u32(record, "SMU", path)?;
-    let stu = required_u32(record, "STU_DOM", path)?;
-    let percent = required_u8(record, "PCAREA", path)?;
-    SoilMappingUnit::new(smu, stu, percent).ok_or_else(|| {
-        invalid_field(
-            path,
-            "PCAREA",
-            &percent.to_string(),
-            "mapping unit IDs and dominance must be positive",
-        )
-    })
-}
-
-#[derive(Clone)]
-struct SgdbeRow {
-    wrb: WrbReferenceGroup,
-    parent: ParentMaterialCode,
-    water_regime: SoilWaterRegime,
-}
-
-fn read_sgdbe(path: &Path) -> Result<TableRows<SgdbeRow>> {
-    read_dbf(path, |record| {
-        let stu = required_u32(record, "STU", path)?;
-        let Some(wrb_value) = source_token(record, "WRBLV1", path)? else {
-            return Ok((stu, None));
-        };
-        let Some(wrb) = parse_wrb_group(&wrb_value, path)? else {
-            return Ok((stu, None));
-        };
-        let Some(parent_value) = source_token(record, "PARMADO", path)? else {
-            return Ok((stu, None));
-        };
-        let Some(water_value) = source_token(record, "WR", path)? else {
-            return Ok((stu, None));
-        };
-        let parent = ParentMaterialCode::new(parent_value.clone()).ok_or_else(|| {
-            invalid_field(
-                path,
-                "PARMADO",
-                &parent_value,
-                "invalid parent-material code",
-            )
-        })?;
-        let water_regime = parse_water_regime(&water_value, path)?;
-        Ok((
-            stu,
-            Some(SgdbeRow {
-                wrb,
-                parent,
-                water_regime,
-            }),
-        ))
-    })
-}
-
-#[derive(Clone, Copy)]
-struct PtrdbRow {
-    substrate: SoilSubstrate,
-    agricultural_limitation: AgriculturalLimitation,
-}
-
-fn read_ptrdb(path: &Path) -> Result<TableRows<PtrdbRow>> {
-    read_dbf(path, |record| {
-        let stu = required_u32(record, "STU", path)?;
-        let fields = ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"]
-            .into_iter()
-            .map(|field| source_token(record, field, path))
-            .collect::<Result<Vec<_>>>()?;
-        let [
-            texture_value,
-            peat_value,
-            depth_value,
-            water_value,
-            carbon_value,
-            stones_value,
-            limitation_value,
-        ]: [Option<String>; 7] = fields
-            .try_into()
-            .expect("seven PTRDB fields were requested");
-        let (
-            Some(texture_value),
-            Some(peat_value),
-            Some(depth_value),
-            Some(water_value),
-            Some(carbon_value),
-            Some(stones_value),
-            Some(limitation_value),
-        ) = (
-            texture_value,
-            peat_value,
-            depth_value,
-            water_value,
-            carbon_value,
-            stones_value,
-            limitation_value,
-        )
-        else {
-            return Ok((stu, None));
-        };
-        let texture = parse_texture(&texture_value, path)?;
-        let peat = parse_peat(&peat_value, path)?;
-        let depth = parse_depth(&depth_value, path)?;
-        let available_water = parse_water(&water_value, path)?;
-        let organic_carbon = parse_carbon(&carbon_value, path)?;
-        let stones = parse_stones(&stones_value, path)?;
-        let agricultural_limitation = parse_limitation(&limitation_value, path)?;
-        let substrate = match (peat, texture) {
-            (true, _) | (false, SourceTexture::Organic) => SoilSubstrate::Organic(OrganicSoil {
-                depth,
-                available_water,
-                stones,
-            }),
-            (false, SourceTexture::Mineral(texture)) => SoilSubstrate::Mineral(MineralSoil {
-                texture,
-                depth,
-                available_water,
-                organic_carbon,
-                stones,
-            }),
-            (false, SourceTexture::RockOutcrop) => {
-                SoilSubstrate::RockOutcrop(RockOutcropSoil { stones })
-            }
-            (false, SourceTexture::OtherNonTextured) => {
-                SoilSubstrate::OtherNonTextured(OtherNonTexturedSoil {
-                    depth,
-                    available_water,
-                    organic_carbon,
-                    stones,
-                })
-            }
-        };
-        Ok((
-            stu,
-            Some(PtrdbRow {
-                substrate,
-                agricultural_limitation,
-            }),
-        ))
-    })
-}
-
-#[derive(Clone)]
-struct SoilAttributeProfile {
-    wrb_group: WrbReferenceGroup,
-    parent_material: ParentMaterialCode,
-    properties: SoilProperties,
-}
-
-fn join_profiles(
-    sgdbe: BTreeMap<u32, SgdbeRow>,
-    ptrdb: BTreeMap<u32, PtrdbRow>,
-) -> Result<BTreeMap<u32, SoilAttributeProfile>> {
-    let mut profiles = BTreeMap::new();
-    for (stu, geography) in sgdbe {
-        if let Some(properties) = ptrdb.get(&stu) {
-            profiles.insert(
-                stu,
-                SoilAttributeProfile {
-                    wrb_group: geography.wrb,
-                    parent_material: geography.parent,
-                    properties: SoilProperties {
-                        substrate: properties.substrate,
-                        water_regime: geography.water_regime,
-                        agricultural_limitation: properties.agricultural_limitation,
-                    },
-                },
-            );
-        }
-    }
-    if profiles.is_empty() {
-        return Err(Error::Validation(
-            "ESDB SGDBE and PTRDB tables have no complete matching STU rows".into(),
-        ));
-    }
-    Ok(profiles)
-}
-
-struct TableRows<T> {
-    complete: BTreeMap<u32, T>,
-    rows_read: usize,
-}
-
-fn read_dbf<T>(
-    path: &Path,
-    mut parse: impl FnMut(&Record) -> Result<(u32, Option<T>)>,
-) -> Result<TableRows<T>> {
-    let mut reader = dbase::Reader::from_path(path).map_err(|source| Error::Dbase {
-        path: path.into(),
-        source,
-    })?;
-    let mut rows = BTreeMap::new();
-    let mut seen = BTreeMap::new();
-    let mut rows_read = 0;
-    for record in reader.iter_records() {
-        rows_read += 1;
-        let record = record.map_err(|source| Error::Dbase {
-            path: path.into(),
-            source,
-        })?;
-        let (id, row) = parse(&record)?;
-        if seen.insert(id, ()).is_some() {
-            return Err(Error::Validation(format!(
-                "duplicate STU {id} in {}",
-                path.display()
-            )));
-        }
-        if let Some(row) = row {
-            rows.insert(id, row);
-        }
-    }
-    if rows_read == 0 {
-        return Err(Error::Validation(format!(
-            "{} contains no attribute rows",
-            path.display()
-        )));
-    }
-    Ok(TableRows {
-        complete: rows,
-        rows_read,
-    })
-}
-
-#[derive(Clone, Copy)]
-enum SourceTexture {
-    Mineral(MineralSoilTexture),
-    Organic,
-    RockOutcrop,
-    OtherNonTextured,
-}
-
-fn parse_texture(value: &str, path: &Path) -> Result<SourceTexture> {
-    Ok(match value {
-        "1" => SourceTexture::Mineral(MineralSoilTexture::Coarse),
-        "2" => SourceTexture::Mineral(MineralSoilTexture::Medium),
-        "3" => SourceTexture::Mineral(MineralSoilTexture::MediumFine),
-        "4" => SourceTexture::Mineral(MineralSoilTexture::Fine),
-        "5" => SourceTexture::Mineral(MineralSoilTexture::VeryFine),
-        "6" => SourceTexture::OtherNonTextured,
-        "7" => SourceTexture::RockOutcrop,
-        "8" => SourceTexture::Organic,
-        _ => {
-            return Err(invalid_field(
-                path,
-                "TEXT",
-                value,
-                "unrecognized PTRDB texture",
-            ));
-        }
-    })
-}
-
-fn parse_wrb_group(value: &str, path: &Path) -> Result<Option<WrbReferenceGroup>> {
-    use WrbReferenceGroup as W;
-    Ok(Some(match value {
-        "AB" => W::Albeluvisol,
-        "AC" => W::Acrisol,
-        "AL" => W::Alisol,
-        "AN" => W::Andosol,
-        "AR" => W::Arenosol,
-        "AT" => W::Anthrosol,
-        "CH" => W::Chernozem,
-        "CL" => W::Calcisol,
-        "CM" => W::Cambisol,
-        "CR" => W::Cryosol,
-        "DU" => W::Durisol,
-        "FL" => W::Fluvisol,
-        "FR" => W::Ferralsol,
-        "GL" => W::Gleysol,
-        "GY" => W::Gypsisol,
-        "HS" => W::Histosol,
-        "KS" => W::Kastanozem,
-        "LP" => W::Leptosol,
-        "LV" => W::Luvisol,
-        "LX" => W::Lixisol,
-        "NT" => W::Nitisol,
-        "PH" => W::Phaeozem,
-        "PL" => W::Planosol,
-        "PT" => W::Plinthosol,
-        "PZ" => W::Podzol,
-        "RG" => W::Regosol,
-        "SC" => W::Solonchak,
-        "SN" => W::Solonetz,
-        "UM" => W::Umbrisol,
-        "VR" => W::Vertisol,
-        "1" | "2" | "3" | "4" | "5" | "6" => return Ok(None),
-        _ => {
-            return Err(invalid_field(
-                path,
-                "WRBLV1",
-                value,
-                "unrecognized WRB reference group",
-            ));
-        }
-    }))
-}
-
-fn parse_peat(value: &str, path: &Path) -> Result<bool> {
-    match value {
-        "Y" => Ok(true),
-        "N" => Ok(false),
-        _ => Err(invalid_field(path, "PEAT", value, "expected Y or N")),
-    }
-}
-fn parse_depth(value: &str, path: &Path) -> Result<SoilDepth> {
-    match value {
-        "S" => Ok(SoilDepth::Shallow),
-        "M" => Ok(SoilDepth::Moderate),
-        "D" => Ok(SoilDepth::Deep),
-        "V" => Ok(SoilDepth::VeryDeep),
-        _ => Err(invalid_field(
-            path,
-            "DR",
-            value,
-            "unrecognized depth-to-rock class",
-        )),
-    }
-}
-fn parse_water(value: &str, path: &Path) -> Result<AvailableWaterCapacity> {
-    match value {
-        "L" => Ok(AvailableWaterCapacity::Low),
-        "M" => Ok(AvailableWaterCapacity::Medium),
-        "H" => Ok(AvailableWaterCapacity::High),
-        "VH" => Ok(AvailableWaterCapacity::VeryHigh),
-        _ => Err(invalid_field(
-            path,
-            "AWC_TOP",
-            value,
-            "unrecognized available-water class",
-        )),
-    }
-}
-fn parse_carbon(value: &str, path: &Path) -> Result<TopsoilOrganicCarbon> {
-    match value {
-        "V" => Ok(TopsoilOrganicCarbon::VeryLow),
-        "L" => Ok(TopsoilOrganicCarbon::Low),
-        "M" => Ok(TopsoilOrganicCarbon::Medium),
-        "H" => Ok(TopsoilOrganicCarbon::High),
-        _ => Err(invalid_field(
-            path,
-            "OC_TOP",
-            value,
-            "unrecognized organic-carbon class",
-        )),
-    }
-}
-fn parse_water_regime(value: &str, path: &Path) -> Result<SoilWaterRegime> {
-    match value {
-        "1" => Ok(SoilWaterRegime::UsuallyDry),
-        "2" => Ok(SoilWaterRegime::SeasonallyWet),
-        "3" => Ok(SoilWaterRegime::LongSeasonWet),
-        "4" => Ok(SoilWaterRegime::PermanentlyWet),
-        _ => Err(invalid_field(
-            path,
-            "WR",
-            value,
-            "unrecognized SGDBE water-regime class",
-        )),
-    }
-}
-fn parse_stones(value: &str, path: &Path) -> Result<StoneContentPercent> {
-    let percent = match value {
-        "00" | "0" => 0,
-        "10" => 10,
-        "15" => 15,
-        "20" => 20,
-        _ => {
-            return Err(invalid_field(
-                path,
-                "VS",
-                value,
-                "unrecognized stone-volume class",
-            ));
-        }
-    };
-    Ok(StoneContentPercent::new(percent).expect("documented percentage is bounded"))
-}
-fn parse_limitation(value: &str, path: &Path) -> Result<AgriculturalLimitation> {
-    Ok(match value {
-        "1" => AgriculturalLimitation::None,
-        "2" => AgriculturalLimitation::Gravelly,
-        "3" => AgriculturalLimitation::Stony,
-        "4" => AgriculturalLimitation::ShallowRock,
-        "5" => AgriculturalLimitation::Concretionary,
-        "6" => AgriculturalLimitation::CementedCalcic,
-        "7" => AgriculturalLimitation::Saline,
-        "8" => AgriculturalLimitation::Sodic,
-        "9" => AgriculturalLimitation::GlacierOrSnow,
-        "10" => AgriculturalLimitation::Disturbed,
-        "20" => AgriculturalLimitation::Fragic,
-        "21" => AgriculturalLimitation::Drained,
-        "22" => AgriculturalLimitation::Flooded,
-        "30" => AgriculturalLimitation::Eroded,
-        "31" => AgriculturalLimitation::ShallowWaterTable,
-        _ => {
-            return Err(invalid_field(
-                path,
-                "AGLI1NNI",
-                value,
-                "unrecognized agricultural limitation",
-            ));
-        }
-    })
-}
-
-fn source_token(record: &Record, field: &'static str, path: &Path) -> Result<Option<String>> {
-    let token = match record.get(field) {
-        Some(FieldValue::Character(Some(value))) => value.trim().to_owned(),
-        Some(FieldValue::Numeric(Some(value))) if value.is_finite() && value.fract() == 0.0 => {
-            format!("{value:.0}")
-        }
-        Some(value) => {
-            return Err(invalid_field(
-                path,
-                field,
-                &format!("{value:?}"),
-                "expected a populated character or integral numeric field",
-            ));
-        }
-        None => return Err(invalid_field(path, field, "", "field is missing")),
-    };
-    Ok((!token.is_empty() && token != "#" && token != "0").then_some(token))
-}
-
-fn required_u32(record: &Record, field: &'static str, path: &Path) -> Result<u32> {
-    let value = source_token(record, field, path)?
-        .ok_or_else(|| invalid_field(path, field, "", "identifier has no information"))?;
-    value
-        .parse()
-        .map_err(|_| invalid_field(path, field, &value, "expected a positive integer"))
-}
-fn required_u8(record: &Record, field: &'static str, path: &Path) -> Result<u8> {
-    let value = source_token(record, field, path)?
-        .ok_or_else(|| invalid_field(path, field, "", "percentage has no information"))?;
-    value
-        .parse()
-        .map_err(|_| invalid_field(path, field, &value, "expected an integer percentage"))
-}
-
-fn build_buckets(features: &[SoilFeature]) -> Result<BTreeMap<(i32, i32), Vec<usize>>> {
-    let mut buckets = BTreeMap::new();
-    for (index, feature) in features.iter().enumerate() {
-        let min = bucket(feature.bounds.min().x, feature.bounds.min().y)
-            .ok_or_else(|| Error::Validation("non-finite ESDB bounds".into()))?;
-        let max = bucket(feature.bounds.max().x, feature.bounds.max().y)
-            .ok_or_else(|| Error::Validation("non-finite ESDB bounds".into()))?;
-        let width = i64::from(max.0) - i64::from(min.0) + 1;
-        let height = i64::from(max.1) - i64::from(min.1) + 1;
-        let cells = width
-            .checked_mul(height)
-            .ok_or_else(|| Error::Validation("ESDB bucket coverage overflow".into()))?;
-        if width <= 0 || height <= 0 || cells > MAX_BUCKETS_PER_FEATURE {
-            return Err(Error::Validation(format!(
-                "ESDB mapping unit {} has implausible bounds",
-                feature.mapping.smu()
-            )));
-        }
-        for x in min.0..=max.0 {
-            for y in min.1..=max.1 {
-                buckets.entry((x, y)).or_insert_with(Vec::new).push(index);
-            }
-        }
-    }
-    Ok(buckets)
-}
-
-fn bucket(x: f64, y: f64) -> Option<(i32, i32)> {
-    let x = (x / BUCKET_METERS).floor();
-    let y = (y / BUCKET_METERS).floor();
-    (x.is_finite()
-        && y.is_finite()
-        && x >= f64::from(i32::MIN)
-        && x <= f64::from(i32::MAX)
-        && y >= f64::from(i32::MIN)
-        && y <= f64::from(i32::MAX))
-    .then_some((x as i32, y as i32))
-}
-fn bounds_intersect(bounds: Rect<f64>, point: Point<f64>) -> bool {
-    point.x() >= bounds.min().x
-        && point.x() <= bounds.max().x
-        && point.y() >= bounds.min().y
-        && point.y() <= bounds.max().y
-}
-
-fn validate_projection(directory: &Path) -> Result<()> {
-    let path = require(directory, PROJECTION_NAME)?;
-    let actual = fs::read_to_string(&path)?;
-    let compact = |value: &str| {
-        value
-            .chars()
-            .filter(|character| !character.is_ascii_whitespace())
-            .collect::<String>()
-    };
-    if compact(&actual) != compact(EXPECTED_PROJECTION) {
-        return Err(Error::Validation(format!(
-            "{} is not the ESDB legacy GISCO LAEA projection",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-fn require(directory: &Path, filename: &str) -> Result<PathBuf> {
-    let path = directory.join(filename);
-    path.is_file()
-        .then_some(path.clone())
-        .ok_or(Error::MissingSource(path))
-}
-fn invalid_field(path: &Path, field: &'static str, value: &str, message: &str) -> Error {
-    Error::InvalidField {
-        path: path.into(),
-        field,
-        value: value.into(),
-        message: message.into(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use dbase::{FieldName, FieldValue, Record, TableWriterBuilder};
-    use shapefile::{Point as ShapePoint, Polygon, PolygonRing, Writer};
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
+    use super::{
+        Grid, NODATA, PhysicalSample, carbon_from_soc, modeled_water_capacity, texture_from_source,
     };
-
+    use adventuresim_world_schema::{
+        AvailableWaterCapacity, MineralSoilTexture, TopsoilOrganicCarbon,
+    };
     #[test]
-    fn documented_ptrdb_code_domains_parse_without_unknown_variants() {
-        let path = Path::new("STU_ptrdb.dbf");
-        for code in ["1", "2", "3", "4", "5", "6", "7", "8"] {
-            assert!(parse_texture(code, path).is_ok());
-        }
-        for code in [
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "20", "21", "22", "30", "31",
-        ] {
-            assert!(parse_limitation(code, path).is_ok());
-        }
-        assert!(parse_texture("0", path).is_err());
-        assert!(parse_limitation("future", path).is_err());
-        assert!(parse_water("VL", path).is_err());
-        assert_eq!(
-            parse_wrb_group("CM", path).unwrap(),
-            Some(WrbReferenceGroup::Cambisol)
-        );
-        assert_eq!(parse_wrb_group("3", path).unwrap(), None);
-        assert!(parse_wrb_group("FUTURE", path).is_err());
-    }
-
-    #[test]
-    fn legacy_projection_maps_its_origin_to_zero() {
-        let point = SoilProjection::new().unwrap().project(48.0, 9.0).unwrap();
-        assert!(point.x().abs() < 0.001);
-        assert!(point.y().abs() < 0.001);
-    }
-
-    #[test]
-    fn synthetic_distribution_joins_tables_samples_polygons_and_skips_no_information() {
-        let directory = fixture_directory("join");
-        write_shape(&directory);
-        write_sgdbe(&directory);
-        write_ptrdb(&directory);
-
-        let map = SoilMap::read(&directory).unwrap();
-        assert_eq!(map.polygons_read, 2);
-        assert_eq!(map.attribute_rows_read, 4);
-        assert_eq!(map.profiles.len(), 1);
-        let SoilProfile::Mapped(profile) = map.sample(Point::new(50_000.0, 50_000.0)).unwrap()
-        else {
-            panic!("expected mapped soil")
+    fn grid_keeps_inclusive_outer_edge_in_final_pixel() {
+        let grid = Grid {
+            west: 9.0,
+            north: 54.0,
+            x_scale: 0.5,
+            y_scale: 0.5,
         };
-        assert_eq!(profile.mapping_unit.smu(), 10);
-        assert_eq!(profile.mapping_unit.dominant_stu(), 100);
-        assert_eq!(profile.mapping_unit.dominance_percent(), 75);
-        assert_eq!(profile.wrb_group, WrbReferenceGroup::Cambisol);
-        assert_eq!(profile.parent_material.as_str(), "110");
-        assert!(matches!(
-            profile.properties.substrate,
-            SoilSubstrate::Mineral(MineralSoil {
-                texture: MineralSoilTexture::Medium,
-                ..
-            })
-        ));
-        assert_eq!(
-            profile.properties.water_regime,
-            SoilWaterRegime::LongSeasonWet
-        );
-        assert_eq!(map.sample(Point::new(250_000.0, 50_000.0)), None);
-        fs::remove_dir_all(directory).unwrap();
+        assert_eq!(grid.pixel(53.0, 10.0, 2, 2), Some((1, 1)));
+        assert_eq!(grid.pixel(52.99, 10.0, 2, 2), None);
     }
-
-    fn fixture_directory(label: &str) -> PathBuf {
-        let directory = std::env::temp_dir().join(format!(
-            "adventuresim-esdb-{label}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&directory).unwrap();
-        fs::write(directory.join(PROJECTION_NAME), EXPECTED_PROJECTION).unwrap();
-        directory
-    }
-
-    fn write_shape(directory: &Path) {
-        let table = TableWriterBuilder::new()
-            .add_numeric_field(FieldName::try_from("SMU").unwrap(), 10, 0)
-            .add_numeric_field(FieldName::try_from("STU_DOM").unwrap(), 10, 0)
-            .add_numeric_field(FieldName::try_from("PCAREA").unwrap(), 3, 0);
-        let mut writer = Writer::from_path(directory.join(SHAPEFILE_NAME), table).unwrap();
-        for (smu, stu, west) in [(10, 100, 0.0), (20, 200, 200_000.0)] {
-            let mut record = Record::default();
-            record.insert("SMU".into(), FieldValue::Numeric(Some(f64::from(smu))));
-            record.insert("STU_DOM".into(), FieldValue::Numeric(Some(f64::from(stu))));
-            record.insert("PCAREA".into(), FieldValue::Numeric(Some(75.0)));
-            writer
-                .write_shape_and_record(&rectangle(west, 0.0, west + 100_000.0, 100_000.0), &record)
-                .unwrap();
-        }
-    }
-
-    fn write_sgdbe(directory: &Path) {
-        let mut writer = TableWriterBuilder::new()
-            .add_numeric_field(FieldName::try_from("STU").unwrap(), 10, 0)
-            .add_character_field(FieldName::try_from("WRBLV1").unwrap(), 8)
-            .add_character_field(FieldName::try_from("PARMADO").unwrap(), 12)
-            .add_character_field(FieldName::try_from("WR").unwrap(), 1)
-            .build_with_file_dest(directory.join(SGDBE_ATTRIBUTES))
-            .unwrap();
-        for (stu, wrb, parent, water) in [(100, "CM", "110", "3"), (200, "#", "0", "0")] {
-            let mut record = Record::default();
-            record.insert("STU".into(), FieldValue::Numeric(Some(f64::from(stu))));
-            record.insert("WRBLV1".into(), FieldValue::Character(Some(wrb.into())));
-            record.insert("PARMADO".into(), FieldValue::Character(Some(parent.into())));
-            record.insert("WR".into(), FieldValue::Character(Some(water.into())));
-            writer.write_record(&record).unwrap();
-        }
-        writer.finalize().unwrap();
-    }
-
-    fn write_ptrdb(directory: &Path) {
-        let mut table =
-            TableWriterBuilder::new().add_numeric_field(FieldName::try_from("STU").unwrap(), 10, 0);
-        for field in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"] {
-            table = table.add_character_field(FieldName::try_from(field).unwrap(), 4);
-        }
-        let mut writer = table
-            .build_with_file_dest(directory.join(PTRDB_ATTRIBUTES))
-            .unwrap();
-        for (stu, values) in [
-            (100, ["2", "N", "D", "H", "M", "10", "1"]),
-            (200, ["0", "N", "#", "#", "#", "00", "0"]),
-        ] {
-            let mut record = Record::default();
-            record.insert("STU".into(), FieldValue::Numeric(Some(f64::from(stu))));
-            for (field, value) in ["TEXT", "PEAT", "DR", "AWC_TOP", "OC_TOP", "VS", "AGLI1NNI"]
-                .into_iter()
-                .zip(values)
-            {
-                record.insert(field.into(), FieldValue::Character(Some(value.into())));
-            }
-            writer.write_record(&record).unwrap();
-        }
-        writer.finalize().unwrap();
-    }
-
-    fn rectangle(west: f64, south: f64, east: f64, north: f64) -> Polygon {
-        Polygon::new(PolygonRing::Outer(vec![
-            ShapePoint::new(west, south),
-            ShapePoint::new(west, north),
-            ShapePoint::new(east, north),
-            ShapePoint::new(east, south),
-        ]))
-    }
-
     #[test]
-    #[ignore = "requires registered, extracted ESDB v2 vector archive in ESDB_DIR"]
-    fn full_source_boundary_reads_registered_distribution() {
-        let directory = std::env::var_os("ESDB_DIR").expect("set ESDB_DIR");
-        let map = SoilMap::read(Path::new(&directory)).unwrap();
-        assert!(map.polygons_read > 0);
-        assert!(map.attribute_rows_read > 0);
-        assert!(!map.profiles.is_empty());
+    fn physical_nodata_is_reserved_for_complete_fallback() {
+        assert_eq!(NODATA, i16::MIN);
+        let source = PhysicalSample {
+            sand: 1,
+            silt: 1,
+            clay: 1,
+            soc: 1,
+            cfvo: 0,
+            bdod: 1,
+        };
+        assert_eq!(source.cfvo, 0);
+    }
+    #[test]
+    fn capacity_thresholds_apply_density_and_stones() {
+        assert_eq!(
+            modeled_water_capacity(30, 40, 150, 0),
+            AvailableWaterCapacity::Medium
+        );
+        assert_eq!(
+            modeled_water_capacity(30, 40, 160, 35),
+            AvailableWaterCapacity::VeryLow
+        );
+    }
+    #[test]
+    fn physical_unit_conversion_boundaries_are_direct_and_exhaustive() {
+        assert_eq!(texture_from_source(850, 0, 170), MineralSoilTexture::Coarse);
+        assert_eq!(
+            texture_from_source(849, 499, 170),
+            MineralSoilTexture::Medium
+        );
+        assert_eq!(
+            texture_from_source(400, 499, 180),
+            MineralSoilTexture::MediumFine
+        );
+        assert_eq!(texture_from_source(400, 499, 350), MineralSoilTexture::Fine);
+        assert_eq!(
+            texture_from_source(400, 499, 600),
+            MineralSoilTexture::VeryFine
+        );
+        assert_eq!(carbon_from_soc(99), TopsoilOrganicCarbon::VeryLow);
+        assert_eq!(carbon_from_soc(100), TopsoilOrganicCarbon::Low);
+        assert_eq!(carbon_from_soc(200), TopsoilOrganicCarbon::Medium);
+        assert_eq!(carbon_from_soc(600), TopsoilOrganicCarbon::High);
     }
 }

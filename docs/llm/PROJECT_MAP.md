@@ -186,7 +186,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/lutheran_reformed_church_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mapped_potential_vegetation_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/mapped_soil_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mapped_surface_geology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/marine_water_access_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/metamorphic_rock_type.rs` — Generated SpacetimeDB data type.
@@ -194,6 +193,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mineral_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/modeled_soil_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/morale_event_table.rs` — Generated SpacetimeDB table interface.
@@ -203,7 +203,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/organic_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/other_non_textured_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/palmer_drought_severity_index_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/parent_material_code_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_action_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_action_request_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_inventory_item_table.rs` — Generated SpacetimeDB table interface.
@@ -279,7 +278,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/settlement_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_depth_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/soil_mapping_unit_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_properties_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_substrate_type.rs` — Generated SpacetimeDB data type.
@@ -325,7 +323,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/world_node_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_node_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_node_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/wrb_reference_group_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-module/.gitignore` — Repository support file.
 - `crates/adventuresim-stdb-module/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-module/README.md` — Component overview and usage notes.
@@ -370,6 +367,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-world-import/src/bin/prepare_forest_cover.rs` — Rust source module.
+- `crates/adventuresim-world-import/src/bin/prepare_soilgrids.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/builder.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/draft.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/error.rs` — Rust source module for this component.

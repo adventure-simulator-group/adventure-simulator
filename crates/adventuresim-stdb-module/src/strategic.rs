@@ -5,16 +5,16 @@ use adventuresim_world_schema::{
     DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
     FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
     InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    LanguageCode, MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
-    MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
-    PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
-    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
-    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit,
-    SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent,
-    SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
-    TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
-    WorldNodeImport, valid_bounded_source_text, valid_sources_markdown,
+    LanguageCode, MappedPotentialVegetation, MarineWaterAccess, MineralSoil, MineralSoilTexture,
+    ModeledSoilProfile, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
+    PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationFormation,
+    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
+    SettlementImport, SettlementReligiousStatus, SoilDepth, SoilProfile, SoilProperties,
+    SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
+    TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -1052,26 +1052,9 @@ fn reconstruct_soil_profile(
         SoilProfile::Inferred(properties) => {
             Ok(SoilProfile::Inferred(reconstruct_properties(properties)?))
         }
-        SoilProfile::Mapped(mapped) => {
-            let mapping_unit = SoilMappingUnit::new(
-                mapped.mapping_unit.smu(),
-                mapped.mapping_unit.dominant_stu(),
-                mapped.mapping_unit.dominance_percent(),
-            )
-            .ok_or_else(|| {
-                format!("Settlement {settlement_id} has an invalid soil mapping unit")
-            })?;
-            let parent_material =
-                ParentMaterialCode::new(mapped.parent_material.as_str().to_owned()).ok_or_else(
-                    || format!("Settlement {settlement_id} has an invalid parent-material code"),
-                )?;
-            Ok(SoilProfile::Mapped(MappedSoilProfile {
-                mapping_unit,
-                wrb_group: mapped.wrb_group,
-                parent_material,
-                properties: reconstruct_properties(mapped.properties)?,
-            }))
-        }
+        SoilProfile::Modeled(mapped) => Ok(SoilProfile::Modeled(ModeledSoilProfile {
+            properties: reconstruct_properties(mapped.properties)?,
+        })),
     }
 }
 

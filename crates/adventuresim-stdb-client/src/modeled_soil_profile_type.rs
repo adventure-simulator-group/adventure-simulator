@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::soil_properties_type::SoilProperties;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SoilMappingUnit {
-    pub smu: u32,
-    pub dominant_stu: u32,
-    pub dominance_percent: u8,
+pub struct ModeledSoilProfile {
+    pub properties: SoilProperties,
 }
 
-impl __sdk::InModule for SoilMappingUnit {
+impl __sdk::InModule for ModeledSoilProfile {
     type Module = super::RemoteModule;
 }

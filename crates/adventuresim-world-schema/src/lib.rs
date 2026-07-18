@@ -7,7 +7,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 14;
+pub const WORLD_SCHEMA_VERSION: u32 = 15;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1007,140 +1007,18 @@ pub struct SoilProperties {
     pub agricultural_limitation: AgriculturalLimitation,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct SoilMappingUnit {
-    smu: u32,
-    dominant_stu: u32,
-    dominance_percent: u8,
-}
-
-impl SoilMappingUnit {
-    pub const fn new(smu: u32, dominant_stu: u32, dominance_percent: u8) -> Option<Self> {
-        if smu > 0 && dominant_stu > 0 && dominance_percent >= 1 && dominance_percent <= 100 {
-            Some(Self {
-                smu,
-                dominant_stu,
-                dominance_percent,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub const fn smu(self) -> u32 {
-        self.smu
-    }
-
-    pub const fn dominant_stu(self) -> u32 {
-        self.dominant_stu
-    }
-
-    pub const fn dominance_percent(self) -> u8 {
-        self.dominance_percent
-    }
-}
-
-impl<'de> Deserialize<'de> for SoilMappingUnit {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            smu: u32,
-            dominant_stu: u32,
-            dominance_percent: u8,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.smu, wire.dominant_stu, wire.dominance_percent)
-            .ok_or_else(|| serde::de::Error::custom("invalid ESDB soil mapping unit"))
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub enum WrbReferenceGroup {
-    Albeluvisol,
-    Acrisol,
-    Alisol,
-    Andosol,
-    Arenosol,
-    Anthrosol,
-    Chernozem,
-    Calcisol,
-    Cambisol,
-    Cryosol,
-    Durisol,
-    Fluvisol,
-    Ferralsol,
-    Gleysol,
-    Gypsisol,
-    Histosol,
-    Kastanozem,
-    Leptosol,
-    Luvisol,
-    Lixisol,
-    Nitisol,
-    Phaeozem,
-    Planosol,
-    Plinthosol,
-    Podzol,
-    Regosol,
-    Solonchak,
-    Solonetz,
-    Umbrisol,
-    Vertisol,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct ParentMaterialCode {
-    code: String,
-}
-
-impl ParentMaterialCode {
-    pub fn new(code: impl Into<String>) -> Option<Self> {
-        let code = code.into();
-        (!code.is_empty()
-            && code.len() <= 16
-            && code.bytes().all(|byte| byte.is_ascii_alphanumeric()))
-        .then_some(Self { code })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.code
-    }
-}
-
-impl<'de> Deserialize<'de> for ParentMaterialCode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            code: String,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.code)
-            .ok_or_else(|| serde::de::Error::custom("invalid ESDB parent-material code"))
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub struct MappedSoilProfile {
-    pub mapping_unit: SoilMappingUnit,
-    pub wrb_group: WrbReferenceGroup,
-    pub parent_material: ParentMaterialCode,
+pub struct ModeledSoilProfile {
     pub properties: SoilProperties,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum SoilProfile {
-    Mapped(MappedSoilProfile),
+    /// A valid six-layer SoilGrids 2.0 physical sample under the prepared-cache contract.
+    Modeled(ModeledSoilProfile),
+    /// A deliberately deterministic profile used only when the valid SoilGrids raster is nodata.
     Inferred(SoilProperties),
 }
 
@@ -1901,8 +1779,7 @@ pub struct WorldBuildReport {
     pub tree_species_samples: usize,
     pub tree_species_fallback_samples: usize,
     pub tree_species_candidates: usize,
-    pub soil_polygons_read: usize,
-    pub soil_attribute_rows_read: usize,
+    pub soilgrids_rasters_read: usize,
     pub soil_samples: usize,
     pub soil_fallback_samples: usize,
     pub geology_features_read: usize,
@@ -2026,9 +1903,9 @@ mod tests {
         ForestCover, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
         InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LanguageCode,
         MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, ParentMaterialCode,
-        PotentialVegetationFormation, SettlementReligiousStatus, SoilMappingUnit,
-        StoneContentPercent, SummerHydroclimate, TreeSpeciesId,
+        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex,
+        PotentialVegetationFormation, SettlementReligiousStatus, StoneContentPercent,
+        SummerHydroclimate, TreeSpeciesId,
     };
 
     #[test]
@@ -2248,15 +2125,9 @@ mod tests {
     }
 
     #[test]
-    fn soil_source_identifiers_and_percentages_are_bounded() {
-        assert!(SoilMappingUnit::new(1, 2, 75).is_some());
-        assert!(SoilMappingUnit::new(0, 2, 75).is_none());
-        assert!(SoilMappingUnit::new(1, 2, 0).is_none());
-        assert!(SoilMappingUnit::new(1, 2, 101).is_none());
+    fn soil_percentages_are_bounded() {
         assert!(StoneContentPercent::new(100).is_some());
         assert!(StoneContentPercent::new(101).is_none());
-        assert!(ParentMaterialCode::new("110").is_some());
-        assert!(ParentMaterialCode::new("bad-code").is_none());
     }
 
     #[test]
