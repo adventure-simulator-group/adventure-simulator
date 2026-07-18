@@ -32,6 +32,17 @@ fn recorded_manifest_replays_to_same_digest() {
     let replayed = replay(original.manifest.clone()).unwrap();
     assert_eq!(original.canonical_digest, replayed.canonical_digest);
     assert_eq!(digest(&replayed).unwrap(), replayed.canonical_digest);
+    let decoded: SimulationReport =
+        serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
+    assert_eq!(digest(&decoded).unwrap(), original.canonical_digest);
+}
+
+#[test]
+fn canonical_digest_quantizes_subprecision_float_noise() {
+    let report = run(config(70, 2, 30)).unwrap();
+    let mut noisy = report.clone();
+    noisy.metrics[0].notoriety += 0.000_001;
+    assert_eq!(digest(&report).unwrap(), digest(&noisy).unwrap());
 }
 
 #[test]
@@ -79,7 +90,8 @@ fn matched_pair_changes_only_declared_activity_fields() {
     let mut thief = thief;
     thief.agent_id = 1;
     let report = run_profiles(config(9, 2, 365), vec![labor, thief]).unwrap();
-    assert_ne!(report.metrics[0].wealth, report.metrics[1].wealth);
+    assert_eq!(report.metrics[0].notoriety, 0.0);
+    assert!(report.metrics[1].notoriety > 0.0);
 }
 
 #[test]
@@ -117,6 +129,84 @@ fn invalid_schedule_and_decision_cap_are_rejected_before_run() {
     let mut capped = config(1, 2, 2);
     capped.max_decisions = 3;
     assert!(run(capped).is_err());
+}
+
+#[test]
+fn generated_profiles_exclude_raiding_and_custom_raiding_is_rejected() {
+    for id in 0..100 {
+        assert_eq!(generate_profile(17, id).schedule.raiding, 0);
+    }
+    let mut profile = generate_profile(1, 0);
+    profile.schedule.raiding = 60;
+    let error = run_profiles(config(1, 1, 1), vec![profile])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("raiding execution is unsupported"));
+}
+
+#[test]
+fn dedicated_precision_changes_thievery_outcome() {
+    let mut low = generate_profile(31, 0);
+    low.schedule = adventuresim_core::strategic_schedule::DailySchedule {
+        thievery: 720,
+        ..Default::default()
+    };
+    low.preferred_activity = ActivityPreference::Thievery;
+    low.initial_skills.stealth = 0.0;
+    low.attributes.precision = 0.5;
+    let mut high = low.clone();
+    high.agent_id = 1;
+    high.attributes.precision = 5.0;
+    let report = run_profiles(config(31, 2, 30), vec![low, high]).unwrap();
+    assert!(report.metrics[1].wealth > report.metrics[0].wealth);
+    assert!(report.metrics[1].notoriety < report.metrics[0].notoriety);
+}
+
+#[test]
+fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
+    let mut profile = generate_profile(1, 0);
+    profile.initial_skills.melee = MAX_INITIAL_SKILL_HOURS + 1.0;
+    assert!(run_profiles(config(1, 1, 1), vec![profile]).is_err());
+
+    let mut bounded = config(2, 1, 1);
+    bounded.max_trace_events = 1;
+    let mut report = run(bounded).unwrap();
+    report.trace.push(report.trace[0].clone());
+    assert!(validate_report(&report).is_err());
+    assert!(digest(&report).is_err());
+}
+
+#[test]
+fn bounded_skill_state_remains_finite_for_maximum_duration() {
+    let mut profile = generate_profile(88, 0);
+    profile.initial_skills = adventuresim_core::strategic_schedule::SkillHours {
+        melee: MAX_INITIAL_SKILL_HOURS,
+        dodge: MAX_INITIAL_SKILL_HOURS,
+        block: MAX_INITIAL_SKILL_HOURS,
+        ranged: MAX_INITIAL_SKILL_HOURS,
+        will: MAX_INITIAL_SKILL_HOURS,
+        charisma: MAX_INITIAL_SKILL_HOURS,
+        medicine: MAX_INITIAL_SKILL_HOURS,
+        faith: MAX_INITIAL_SKILL_HOURS,
+        stealth: MAX_INITIAL_SKILL_HOURS,
+        balance: MAX_INITIAL_SKILL_HOURS,
+        surgeon: MAX_INITIAL_SKILL_HOURS,
+    };
+    let report = run_profiles(config(88, 1, MAX_DAYS), vec![profile]).unwrap();
+    assert!(report.metrics[0].skill_hours.is_finite());
+    assert!(report.metrics[0].total_skill_hours_gained.is_finite());
+}
+
+#[test]
+fn input_size_and_report_frontier_are_canonical() {
+    assert!(validate_input_len(MAX_INPUT_BYTES).is_ok());
+    assert!(validate_input_len(MAX_INPUT_BYTES + 1).is_err());
+    let a = run(config(55, 8, 100)).unwrap();
+    let b = run(config(55, 8, 100)).unwrap();
+    assert_eq!(a.pareto_frontier, b.pareto_frontier);
+    assert!(!a.pareto_frontier.agent_ids.is_empty());
+    assert_eq!(a.canonical_digest, b.canonical_digest);
+    assert!(human_summary(&a).contains("Pareto frontier"));
 }
 
 #[test]

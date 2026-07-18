@@ -249,4 +249,24 @@ mod tests {
         assert!(outcome.notoriety_gained > 0.0);
         assert!((0.0..=1.0).contains(&outcome.thievery_discovery_chance));
     }
+
+    #[test]
+    fn rounded_activity_income_documents_aggregate_interval_difference() {
+        let schedule = DailySchedule {
+            labor: 60,
+            ..Default::default()
+        };
+        let inputs = ActivityOutcomeInputs {
+            strength_check: 3.0,
+            endurance_check: 2.0,
+            ..Default::default()
+        };
+        let aggregate = settlement_activity_outcome(schedule, 30 * MINUTES_PER_DAY, inputs);
+        let repeated = (0..30)
+            .map(|_| settlement_activity_outcome(schedule, MINUTES_PER_DAY, inputs).gold_earned)
+            .sum::<u32>();
+        assert_ne!(aggregate.gold_earned, repeated);
+        assert_eq!(aggregate.gold_earned, 19);
+        assert_eq!(repeated, 30);
+    }
 }

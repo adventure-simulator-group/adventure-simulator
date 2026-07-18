@@ -102,11 +102,10 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         left_leg_agility: bounded(coordination, 0.35, &mut rng),
         right_leg_agility: bounded(coordination, 0.35, &mut rng),
     };
-    let preferred_activity = match rng.next_u64() % 4 {
+    let preferred_activity = match rng.next_u64() % 3 {
         0 => ActivityPreference::Labor,
         1 => ActivityPreference::Prayer,
-        2 => ActivityPreference::Thievery,
-        _ => ActivityPreference::Raiding,
+        _ => ActivityPreference::Thievery,
     };
     let style = match rng.next_u64() % 4 {
         0 => EquipmentStyle::Unarmored,

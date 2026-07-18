@@ -1,6 +1,10 @@
 use adventuresim_strategic_sim::*;
 use clap::{Parser, Subcommand};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 #[derive(Parser)]
 #[command(about = "Deterministic strategic NPC balance simulator")]
@@ -53,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             days,
         } => {
             let config = if let Some(path) = config {
-                serde_json::from_slice(&fs::read(path)?)?
+                serde_json::from_slice(&read_bounded(&path)?)?
             } else {
                 SimulationConfig {
                     seed,
@@ -68,9 +72,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             emit(run(config)?, output)?
         }
         Command::Replay { report, output } => {
-            let recorded: SimulationReport = serde_json::from_slice(&fs::read(report)?)?;
-            if digest(&recorded)? != recorded.canonical_digest {
-                return Err("recorded report digest is invalid".into());
+            let recorded: SimulationReport = serde_json::from_slice(&read_bounded(&report)?)?;
+            let computed = digest(&recorded)?;
+            if computed != recorded.canonical_digest {
+                return Err(format!(
+                    "recorded report digest is invalid: stored {}, computed {computed}",
+                    recorded.canonical_digest
+                )
+                .into());
             }
             let rerun = replay(recorded.manifest.clone())?;
             if rerun.canonical_digest != recorded.canonical_digest {
@@ -101,6 +110,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     eprintln!("{}", human_summary(&report));
     Ok(())
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    validate_input_len(bytes.len() as u64)?;
+    Ok(bytes)
 }
 
 fn emit(

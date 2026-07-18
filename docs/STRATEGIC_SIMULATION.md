@@ -20,14 +20,23 @@ canonical ordering requires a format-version bump.
 The canonical BLAKE3 digest covers the manifest and all canonical report data;
 the digest field itself is blanked before hashing. `replay` reruns the recorded
 manifest and verifies both the stored report and reproduced digest. There is no
-performance or wall-clock metadata in the canonical report.
+performance or wall-clock metadata in the canonical report. Reproducibility is
+guaranteed for the same simulator format. Canonical hashing quantizes floating
+values to four decimal places so harmless JSON and cross-platform subprecision
+differences do not change the digest; stored balance metrics retain their full
+precision. A future fixed-point game-state migration can strengthen guarantees
+beyond that explicit tolerance. Config and report inputs are streamed with a 64 MiB limit,
+and their vector bounds are revalidated before hashing or replay.
 
-Daily scheduling is intentional. It prevents long rest calls from changing
-decision cadence and gives future incident policies a single granularity. Pure
+Daily scheduling is intentional and represents repeated one-day player actions.
+It gives future incident policies a single canonical decision granularity. Pure
 schedule training and settlement activity calculations live in
 `adventuresim-core`; both the SpacetimeDB module and simulator call those same
-functions. Gold from labor, thievery, and raiding is an intentional economic
-source. Future purchases, provisions, lodging, and losses will be explicit
+functions. The live reducer's bulk rest currently trains and then evaluates one
+aggregate activity interval; rounded income and single incident interruption
+can therefore differ from repeated one-day actions. Bulk-rest strategy testing
+is follow-up work rather than part of this first-slice contract. Gold from labor
+and thievery is an intentional economic source. Future purchases, provisions, lodging, and losses will be explicit
 sinks; the runner therefore does not assert naive currency conservation.
 
 ## Profiles and results
@@ -40,7 +49,9 @@ fields are recorded for later slices and do not yet affect settlement choices.
 
 Reports include a bounded decision trace, bounded periodic snapshots, terminal
 reason, wealth, final and gained skill hours, activity and leisure time,
-notoriety, and cumulative risk exposure. Risk exposure is a metric, not a fake
+notoriety, and cumulative risk exposure. Reports also contain the typed Pareto
+frontier that maximizes wealth and skill-hour gain while minimizing notoriety
+and risk exposure; the human summary prints its stable agent IDs. Risk exposure is a metric, not a fake
 combat or incident outcome. Pareto utilities require typed maximize/minimize
 objectives, preserve exact ties, and reject nonfinite values. The `matched`
 command holds a profile and seed constant while changing only its declared
@@ -58,6 +69,8 @@ This increment deliberately has:
 
 - no live SpacetimeDB/reducer adapter;
 - no quest, travel, trade, equipment purchase, recovery, or provisioning actions;
+- no native Raiding execution until an authoritative equipped-capability observation exists (generated schedules exclude it and custom schedules are rejected);
+- no parity claim for live bulk multi-day rest, whose aggregate rounding and incident interruption semantics differ from repeated one-day actions;
 - no shared-world population competition;
 - no strategic-web dialogue or session end-to-end coverage;
 - no tactical ticks and no persistent production NPC rows.

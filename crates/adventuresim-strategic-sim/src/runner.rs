@@ -1,4 +1,7 @@
-use crate::{AgentProfile, EquipmentStyle, FORMAT_VERSION, SimulationConfig, generate_profile};
+use crate::{
+    AgentProfile, FORMAT_VERSION, Objective, ParetoPoint, SimulationConfig, generate_profile,
+    nondominated,
+};
 use adventuresim_core::{
     attribute::{LimbAttribute, PlayerAttributes, SimpleAttribute},
     body::{BodyPart, LimbWeights},
@@ -21,6 +24,8 @@ pub enum SimulationError {
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
 }
+
+pub const MAX_INITIAL_SKILL_HOURS: f32 = 1_000_000.0;
 
 /// Observation/intent seam for a future reducer-backed implementation. The native
 /// backend currently supports settlement downtime only; no quest model is invented here.
@@ -86,12 +91,11 @@ impl StrategicBackend for NativeSettlementBackend {
         _: StrategicIntent,
     ) -> Result<DayResult, String> {
         let before = state.day;
-        let training_profile = training_profile(state.profile.equipment.style);
         apply_schedule_training(
             &mut state.skills,
             state.profile.schedule,
             MINUTES_PER_DAY,
-            training_profile,
+            ActivityTrainingProfile::default(),
         );
         let checks = Checks {
             attrs: &state.profile.attributes,
@@ -104,7 +108,7 @@ impl StrategicBackend for NativeSettlementBackend {
                 strength_check: checks.strength(),
                 endurance_check: state.profile.attributes.endurance,
                 stealth_check: checks.skill(Skill::Stealth),
-                combat_check: checks.skill(Skill::Melee).max(checks.skill(Skill::Ranged)),
+                combat_check: 0.0,
                 population_scale: self.population_scale,
             },
         );
@@ -151,7 +155,7 @@ pub struct Snapshot {
     pub agent_id: u32,
     pub gold: u32,
     pub notoriety: f32,
-    pub total_skill_hours: f32,
+    pub total_skill_hours: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -166,11 +170,34 @@ pub struct AgentMetrics {
     pub agent_id: u32,
     pub wealth: u32,
     pub skill_hours: SkillHours,
-    pub total_skill_hours_gained: f32,
+    pub total_skill_hours_gained: f64,
     pub activity_minutes: u64,
     pub leisure_minutes: u64,
     pub notoriety: f32,
     pub cumulative_risk_exposure: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportMetric {
+    Wealth,
+    SkillHoursGained,
+    Notoriety,
+    RiskExposure,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParetoObjective {
+    pub metric: ReportMetric,
+    pub direction: Objective,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportFrontier {
+    pub objectives: Vec<ParetoObjective>,
+    pub agent_ids: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -184,6 +211,7 @@ pub struct SimulationReport {
     pub snapshots_truncated: bool,
     pub terminal_reason: TerminalReason,
     pub metrics: Vec<AgentMetrics>,
+    pub pareto_frontier: ReportFrontier,
     pub canonical_digest: String,
 }
 
@@ -245,6 +273,12 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
         if profile.schedule.allocated_minutes() > MINUTES_PER_DAY {
             return Err(SimulationError::InvalidConfig(format!(
                 "agent {} schedule exceeds 1440 minutes",
+                profile.agent_id
+            )));
+        }
+        if profile.schedule.raiding > 0 {
+            return Err(SimulationError::InvalidConfig(format!(
+                "agent {} assigns raiding minutes, but native raiding execution is unsupported until equipped capabilities are authoritative",
                 profile.agent_id
             )));
         }
@@ -316,7 +350,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
                         agent_id: state.profile.agent_id,
                         gold: state.gold,
                         notoriety: state.notoriety,
-                        total_skill_hours: state.skills.values().into_iter().sum(),
+                        total_skill_hours: total_skill_hours(state.skills),
                     });
                 }
             }
@@ -339,20 +373,16 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
                 agent_id: state.profile.agent_id,
                 wealth: state.gold,
                 skill_hours: state.skills,
-                total_skill_hours_gained: state.skills.values().into_iter().sum::<f32>()
-                    - state
-                        .profile
-                        .initial_skills
-                        .values()
-                        .into_iter()
-                        .sum::<f32>(),
+                total_skill_hours_gained: total_skill_hours(state.skills)
+                    - total_skill_hours(state.profile.initial_skills),
                 activity_minutes: activity_daily * u64::from(config.days),
                 leisure_minutes: (MINUTES_PER_DAY - allocated) * u64::from(config.days),
                 notoriety: state.notoriety,
                 cumulative_risk_exposure: risks[state.profile.agent_id as usize],
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let pareto_frontier = report_frontier(&metrics)?;
     let trace_truncated = sequence > u64::from(config.max_trace_events);
     let expected_snapshots = ((config.days - 1) / config.snapshot_interval_days + 1) as u64
         * u64::from(config.population);
@@ -365,6 +395,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
         snapshots_truncated: expected_snapshots > u64::from(config.max_snapshots),
         terminal_reason: TerminalReason::Completed,
         metrics,
+        pareto_frontier,
         canonical_digest: String::new(),
     };
     report.canonical_digest = digest(&report)?;
@@ -372,11 +403,202 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
 }
 
 pub fn digest(report: &SimulationReport) -> Result<String, serde_json::Error> {
+    validate_report(report).map_err(|message| {
+        serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            message,
+        ))
+    })?;
     let mut canonical = report.clone();
     canonical.canonical_digest.clear();
+    quantize_canonical_floats(&mut canonical);
     Ok(blake3::hash(&serde_json::to_vec(&canonical)?)
         .to_hex()
         .to_string())
+}
+
+const DIGEST_DECIMAL_SCALE: f64 = 10_000.0;
+
+fn q32(value: f32) -> f32 {
+    ((f64::from(value) * DIGEST_DECIMAL_SCALE).round() / DIGEST_DECIMAL_SCALE) as f32
+}
+
+fn q64(value: f64) -> f64 {
+    (value * DIGEST_DECIMAL_SCALE).round() / DIGEST_DECIMAL_SCALE
+}
+
+/// Quantization affects only the canonical digest view. Stored metrics retain
+/// their full precision while sub-ULP JSON/platform differences hash identically.
+fn quantize_canonical_floats(report: &mut SimulationReport) {
+    report.manifest.config.population_scale = q32(report.manifest.config.population_scale);
+    for profile in &mut report.manifest.profiles {
+        let a = &mut profile.attributes;
+        a.endurance = q32(a.endurance);
+        a.immunity = q32(a.immunity);
+        a.gut = q32(a.gut);
+        a.precision = q32(a.precision);
+        a.intelligence = q32(a.intelligence);
+        a.instinct = q32(a.instinct);
+        a.eyesight = q32(a.eyesight);
+        a.hearing = q32(a.hearing);
+        a.left_arm_strength = q32(a.left_arm_strength);
+        a.right_arm_strength = q32(a.right_arm_strength);
+        a.left_leg_strength = q32(a.left_leg_strength);
+        a.right_leg_strength = q32(a.right_leg_strength);
+        a.left_arm_agility = q32(a.left_arm_agility);
+        a.right_arm_agility = q32(a.right_arm_agility);
+        a.left_leg_agility = q32(a.left_leg_agility);
+        a.right_leg_agility = q32(a.right_leg_agility);
+        quantize_skills(&mut profile.initial_skills);
+        profile.activity_vs_quest_propensity = q32(profile.activity_vs_quest_propensity);
+        profile.risk_tolerance = q32(profile.risk_tolerance);
+        profile.recovery_health_threshold = q32(profile.recovery_health_threshold);
+        profile.equipment.protection_weight = q32(profile.equipment.protection_weight);
+        profile.equipment.mobility_weight = q32(profile.equipment.mobility_weight);
+        profile.equipment.price_weight = q32(profile.equipment.price_weight);
+        profile.equipment.reach_weight = q32(profile.equipment.reach_weight);
+        profile.spending_propensity = q32(profile.spending_propensity);
+    }
+    for event in &mut report.trace {
+        event.notoriety_gained = q32(event.notoriety_gained);
+    }
+    for snapshot in &mut report.snapshots {
+        snapshot.notoriety = q32(snapshot.notoriety);
+        snapshot.total_skill_hours = q64(snapshot.total_skill_hours);
+    }
+    for metric in &mut report.metrics {
+        quantize_skills(&mut metric.skill_hours);
+        metric.total_skill_hours_gained = q64(metric.total_skill_hours_gained);
+        metric.notoriety = q32(metric.notoriety);
+        metric.cumulative_risk_exposure = q32(metric.cumulative_risk_exposure);
+    }
+}
+
+fn quantize_skills(skills: &mut SkillHours) {
+    skills.melee = q32(skills.melee);
+    skills.dodge = q32(skills.dodge);
+    skills.block = q32(skills.block);
+    skills.ranged = q32(skills.ranged);
+    skills.will = q32(skills.will);
+    skills.charisma = q32(skills.charisma);
+    skills.medicine = q32(skills.medicine);
+    skills.faith = q32(skills.faith);
+    skills.stealth = q32(skills.stealth);
+    skills.balance = q32(skills.balance);
+    skills.surgeon = q32(skills.surgeon);
+}
+
+fn total_skill_hours(skills: SkillHours) -> f64 {
+    skills.values().into_iter().map(f64::from).sum()
+}
+
+fn frontier_objectives() -> Vec<ParetoObjective> {
+    vec![
+        ParetoObjective {
+            metric: ReportMetric::Wealth,
+            direction: Objective::Maximize,
+        },
+        ParetoObjective {
+            metric: ReportMetric::SkillHoursGained,
+            direction: Objective::Maximize,
+        },
+        ParetoObjective {
+            metric: ReportMetric::Notoriety,
+            direction: Objective::Minimize,
+        },
+        ParetoObjective {
+            metric: ReportMetric::RiskExposure,
+            direction: Objective::Minimize,
+        },
+    ]
+}
+
+fn report_frontier(metrics: &[AgentMetrics]) -> Result<ReportFrontier, SimulationError> {
+    let objectives = frontier_objectives();
+    let points = metrics
+        .iter()
+        .map(|metric| ParetoPoint {
+            id: metric.agent_id,
+            values: vec![
+                f64::from(metric.wealth),
+                q64(metric.total_skill_hours_gained),
+                f64::from(q32(metric.notoriety)),
+                f64::from(q32(metric.cumulative_risk_exposure)),
+            ],
+        })
+        .collect::<Vec<_>>();
+    let directions = objectives
+        .iter()
+        .map(|objective| objective.direction)
+        .collect::<Vec<_>>();
+    let agent_ids = nondominated(&points, &directions).map_err(|error| {
+        SimulationError::InvalidConfig(format!("Pareto analysis failed: {error}"))
+    })?;
+    Ok(ReportFrontier {
+        objectives,
+        agent_ids,
+    })
+}
+
+/// Validate all report-controlled vector and numeric bounds before canonical hashing.
+pub fn validate_report(report: &SimulationReport) -> Result<(), String> {
+    if report.version != FORMAT_VERSION || report.manifest.version != FORMAT_VERSION {
+        return Err("unsupported report or manifest version".into());
+    }
+    report.manifest.config.validate()?;
+    let config = &report.manifest.config;
+    if report.manifest.profiles.len() != config.population as usize
+        || report.metrics.len() != config.population as usize
+    {
+        return Err("report population vector length mismatch".into());
+    }
+    if report.trace.len() > config.max_trace_events as usize
+        || report.trace.len() > crate::MAX_TRACE_EVENTS as usize
+        || report.snapshots.len() > config.max_snapshots as usize
+        || report.snapshots.len() > crate::MAX_SNAPSHOTS as usize
+        || report.pareto_frontier.agent_ids.len() > config.population as usize
+    {
+        return Err("report vector exceeds configured or global bounds".into());
+    }
+    if report.pareto_frontier.objectives != frontier_objectives() {
+        return Err("report Pareto objectives do not match format contract".into());
+    }
+    for (expected, profile) in report.manifest.profiles.iter().enumerate() {
+        if profile.agent_id as usize != expected
+            || profile.schedule.allocated_minutes() > MINUTES_PER_DAY
+        {
+            return Err("report profile order or schedule allocation is invalid".into());
+        }
+        validate_profile(profile)?;
+        if profile.schedule.raiding > 0 {
+            return Err("report contains unsupported raiding schedule".into());
+        }
+    }
+    if report
+        .trace
+        .iter()
+        .any(|event| !event.notoriety_gained.is_finite())
+        || report.snapshots.iter().any(|snapshot| {
+            !snapshot.notoriety.is_finite() || !snapshot.total_skill_hours.is_finite()
+        })
+        || report.metrics.iter().any(|metric| {
+            !metric.skill_hours.is_finite()
+                || !metric.total_skill_hours_gained.is_finite()
+                || !metric.notoriety.is_finite()
+                || !metric.cumulative_risk_exposure.is_finite()
+        })
+    {
+        return Err("report contains nonfinite canonical metrics".into());
+    }
+    if report
+        .pareto_frontier
+        .agent_ids
+        .iter()
+        .any(|id| *id >= config.population)
+    {
+        return Err("report Pareto frontier contains an invalid agent id".into());
+    }
+    Ok(())
 }
 
 fn invariant(message: impl Into<String>, recent: &VecDeque<DecisionEvent>) -> SimulationError {
@@ -450,20 +672,17 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
     if p.initial_skills
         .values()
         .into_iter()
-        .any(|hours| hours < 0.0)
+        .any(|hours| !(0.0..=MAX_INITIAL_SKILL_HOURS).contains(&hours))
     {
-        return Err(format!("agent {} has negative skill hours", p.agent_id));
+        return Err(format!(
+            "agent {} skill hours are outside 0..={MAX_INITIAL_SKILL_HOURS}",
+            p.agent_id
+        ));
+    }
+    if !total_skill_hours(p.initial_skills).is_finite() {
+        return Err(format!("agent {} has a nonfinite skill total", p.agent_id));
     }
     Ok(())
-}
-
-fn training_profile(style: EquipmentStyle) -> ActivityTrainingProfile {
-    ActivityTrainingProfile {
-        raiding_melee: style != EquipmentStyle::Ranged,
-        raiding_ranged: style == EquipmentStyle::Ranged,
-        raiding_block: style == EquipmentStyle::Heavy,
-        raiding_dodge: style != EquipmentStyle::Heavy,
-    }
 }
 
 struct Checks<'a> {
@@ -534,6 +753,14 @@ impl PlayerAttributes for crate::Attributes {
             SimpleAttribute::Hearing => self.hearing,
         }
     }
+
+    fn raw_precision(&self) -> f32 {
+        self.precision
+    }
+
+    fn has_dedicated_precision(&self) -> bool {
+        true
+    }
 }
 
 pub fn human_summary(report: &SimulationReport) -> String {
@@ -551,11 +778,12 @@ pub fn human_summary(report: &SimulationReport) -> String {
         .sum::<f64>()
         / n;
     format!(
-        "{} agents for {} days; mean wealth {:.1}; mean notoriety {:.2}; digest {}",
+        "{} agents for {} days; mean wealth {:.1}; mean notoriety {:.2}; Pareto frontier {:?}; digest {}",
         report.metrics.len(),
         report.manifest.config.days,
         wealth,
         notoriety,
+        report.pareto_frontier.agent_ids,
         report.canonical_digest
     )
 }
