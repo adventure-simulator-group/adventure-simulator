@@ -1454,6 +1454,27 @@ fn condition_bar(
     }
 }
 
+fn completed_repair_condition_bar(
+    condition: Option<&crate::spacetimedb::ItemCondition>,
+    smith_skill: u8,
+) -> Markup {
+    let Some(condition) = condition else {
+        return condition_bar(None, None);
+    };
+    let mut repaired = condition.clone();
+    let mut bins = [
+        &mut repaired.tier_1,
+        &mut repaired.tier_2,
+        &mut repaired.tier_3,
+        &mut repaired.tier_4,
+        &mut repaired.tier_5,
+    ];
+    for amount in bins.iter_mut().take(smith_skill.min(5) as usize) {
+        **amount = 0.0;
+    }
+    condition_bar(Some(&repaired), None)
+}
+
 fn repair_all_header(settlement: &Settlement, service_id: &str) -> Markup {
     html! {
         span class="durability-header-label" { "Durability" }
@@ -1561,7 +1582,10 @@ fn repair_custody_panel(
                                     }
                                     }
                                 }
-                                td class="inventory-durability" { (condition_bar(condition, Some(order.smith_skill))) }
+                                td class="inventory-durability" {
+                                    @if ready { (completed_repair_condition_bar(condition, order.smith_skill)) }
+                                    @else { (condition_bar(condition, Some(order.smith_skill))) }
+                                }
                                 td class="repair-column-eta" { @if ready { "Ready" } @else { (format!("{}h {}m", remaining / 60, remaining % 60)) } }
                                 td class="inventory-gold" title="Quoted full-job cost, paid on retrieval" { (order.quoted_cost) }
                             }
@@ -2765,6 +2789,22 @@ mod tests {
     }
 
     #[test]
+    fn completed_repair_bar_projects_the_condition_before_retrieval() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.1,
+            tier_2: 0.2,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+
+        let rendered = completed_repair_condition_bar(Some(&condition), 3).into_string();
+        assert!(rendered.contains("Full durability"));
+        assert!(rendered.contains("width:100%"));
+    }
+
+    #[test]
     fn smith_player_inventory_uses_the_compact_six_column_table() {
         let rendered =
             trade_inventory_table(true, Some(html! { "Durability" }), html! {}).into_string();
@@ -3071,7 +3111,14 @@ mod tests {
         assert!(css.contains("max-height: 50%;"));
         assert!(css.contains("@keyframes repairable-damage-pulse"));
         assert!(css.contains("@media (prefers-reduced-motion: reduce)"));
-        assert!(css.contains("repeating-linear-gradient"));
+        let repairable_rule = css
+            .split(".condition-repairable {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("repairable condition segments need a style rule");
+        assert!(!repairable_rule.contains("background-image"));
+        assert!(css.contains("0%, 58%, 82%, 100%"));
+        assert!(css.contains("66%, 74%"));
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
         assert!(css.contains("overflow-x: hidden;"));
@@ -3079,6 +3126,8 @@ mod tests {
         assert!(css.contains(".smith-player-inventory-table"));
         assert!(css.contains("width: 3.65rem;"));
         assert!(css.contains(".repair-custody-item-heading"));
+        assert!(css.contains("width: calc(100% + 4.55rem);"));
+        assert!(css.contains("right: -4.55rem;"));
         assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
         assert!(utilities.contains(".smith-wares-scroll .inventory-row-actions"));
         assert!(utilities.contains(".smith-wares-scroll .inventory-footer-actions"));

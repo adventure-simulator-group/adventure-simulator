@@ -350,16 +350,15 @@
 }
 .condition-bar > span { display: block; min-width: 0; }
 .condition-green { background: #4c9b55; }
-.condition-yellow { background: #d5a936; }
-.condition-red { background: #9f3e3e; }
+.condition-yellow { --condition-color: #d5a936; background-color: var(--condition-color); }
+.condition-red { --condition-color: #9f3e3e; background-color: var(--condition-color); }
 .condition-repairable {
-  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / 72%) 3px 4px);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 58%);
-  animation: repairable-damage-pulse 1.2s ease-in-out infinite;
+  animation: repairable-damage-pulse 1.6s linear infinite;
 }
 @keyframes repairable-damage-pulse {
-  0%, 100% { filter: brightness(1); }
-  50% { background: #fff; filter: brightness(1.25); }
+  0%, 58%, 82%, 100% { background-color: var(--condition-color); filter: brightness(1); }
+  66%, 74% { background-color: #fff; filter: brightness(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
   .condition-repairable { animation: none; }
@@ -406,7 +405,7 @@
 .smith-wares-column {
   display: flex;
   flex-direction: column;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 .smith-wares-column > .sidebar-section {
   min-height: 0;
@@ -459,7 +458,7 @@
 }
 .repair-custody-header { position: relative; display: flex; align-items: center; justify-content: space-between; }
 .repair-custody-panel h3 { margin: 0; padding: 0.55rem var(--padding); font-size: var(--font-size-sm); }
-.repair-retrieve-all-form { display: inline-block; margin-inline-start: 0.35rem; }
+.repair-retrieve-all-form { display: contents; }
 .repair-custody-item-heading {
   display: flex;
   min-width: 0;
@@ -469,15 +468,24 @@
   white-space: nowrap;
 }
 .repair-custody-table thead .repair-retrieve-all {
-  position: relative;
-  top: auto;
-  right: auto;
-  width: 2rem;
-  height: 1.5rem;
-  opacity: 0.75;
-  transform: none;
+  position: absolute;
+  top: 50%;
+  right: -4.55rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  opacity: 0.8;
+  transform: translateY(-50%);
 }
-.repair-custody-scroll { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.repair-custody-scroll {
+  box-sizing: border-box;
+  width: calc(100% + 4.55rem);
+  min-height: 0;
+  padding-right: 4.55rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
 .repair-custody-list { margin-top: auto; }
 .repair-custody-table { table-layout: auto; }
 .repair-column-eta { min-width: 3.6rem; padding-inline: 0.25rem; text-align: center; white-space: nowrap; }
