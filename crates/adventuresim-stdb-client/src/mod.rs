@@ -71,6 +71,7 @@ pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod claim_simulation_run_reducer;
+pub mod committed_cut_type;
 pub mod complete_quest_reducer;
 pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
@@ -110,6 +111,8 @@ pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
+pub mod disease_notice_table;
+pub mod disease_notice_type;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
@@ -156,6 +159,7 @@ pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
 pub mod industry_evidence_type;
+pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
 pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
@@ -291,6 +295,7 @@ pub mod schedule_allocation_type;
 pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
+pub mod seed_disease_demo_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
@@ -308,6 +313,8 @@ pub mod settlement_description_table;
 pub mod settlement_description_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
+pub mod settlement_outbreak_table;
+pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
 pub mod settlement_smith_table;
 pub mod settlement_smith_type;
@@ -350,6 +357,7 @@ pub mod travel_edge_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
+pub mod treat_disease_reducer;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod turn_in_quest_reducer;
@@ -438,6 +446,7 @@ pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use claim_simulation_run_reducer::claim_simulation_run;
+pub use committed_cut_type::CommittedCut;
 pub use complete_quest_reducer::complete_quest;
 pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
@@ -477,6 +486,8 @@ pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMeth
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
+pub use disease_notice_table::*;
+pub use disease_notice_type::DiseaseNotice;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
@@ -523,6 +534,7 @@ pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
 pub use industry_evidence_type::IndustryEvidence;
+pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
 pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
@@ -658,6 +670,7 @@ pub use schedule_allocation_type::ScheduleAllocation;
 pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
+pub use seed_disease_demo_reducer::seed_disease_demo;
 pub use seed_party_companions_reducer::seed_party_companions;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
@@ -675,6 +688,8 @@ pub use settlement_description_table::*;
 pub use settlement_description_type::SettlementDescription;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
+pub use settlement_outbreak_table::*;
+pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
 pub use settlement_smith_table::*;
 pub use settlement_smith_type::SettlementSmith;
@@ -717,6 +732,7 @@ pub use travel_edge_type::TravelEdge;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_reducer::travel_to_quest;
 pub use travel_to_settlement_reducer::travel_to_settlement;
+pub use treat_disease_reducer::treat_disease;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use turn_in_quest_reducer::turn_in_quest;
@@ -1063,6 +1079,9 @@ pub enum Reducer {
         recruitment_role_id: u64,
     },
     SeedDamagedCharacter,
+    SeedDiseaseDemo {
+        character_id: u64,
+    },
     SeedPartyCompanions {
         leader_id: u64,
     },
@@ -1125,6 +1144,11 @@ pub enum Reducer {
         character_id: u64,
         settlement_id: String,
         provision: bool,
+    },
+    TreatDisease {
+        doctor_id: u64,
+        target_id: u64,
+        infection_id: u64,
     },
     TurnInQuest {
         character_id: u64,
@@ -1249,6 +1273,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
+            Reducer::SeedDiseaseDemo { .. } => "seed_disease_demo",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
@@ -1263,6 +1288,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
+            Reducer::TreatDisease { .. } => "treat_disease",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
@@ -1839,7 +1865,12 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::SeedDamagedCharacter => __sats::bsatn::to_vec(&seed_damaged_character_reducer::SeedDamagedCharacterArgs {
                 }),
-Reducer::SeedPartyCompanions{
+Reducer::SeedDiseaseDemo{
+                character_id,
+}             => __sats::bsatn::to_vec(&seed_disease_demo_reducer::SeedDiseaseDemoArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::SeedPartyCompanions{
                 leader_id,
 }             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
                 leader_id: leader_id.clone(),
@@ -1952,6 +1983,15 @@ Reducer::SendLocalChatMessage{
                 settlement_id: settlement_id.clone(),
                 provision: provision.clone(),
 }),
+            Reducer::TreatDisease{
+                doctor_id,
+                target_id,
+                infection_id,
+}             => __sats::bsatn::to_vec(&treat_disease_reducer::TreatDiseaseArgs {
+                doctor_id: doctor_id.clone(),
+                target_id: target_id.clone(),
+                infection_id: infection_id.clone(),
+}),
             Reducer::TurnInQuest{
                 character_id,
                 quest_id,
@@ -2049,6 +2089,7 @@ pub struct DbUpdate {
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    disease_notice: __sdk::TableUpdate<DiseaseNotice>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
@@ -2074,6 +2115,7 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
+    settlement_outbreak: __sdk::TableUpdate<SettlementOutbreak>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
@@ -2155,6 +2197,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "disease_notice" => db_update
+                    .disease_notice
+                    .append(disease_notice_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -2230,6 +2275,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
+                    .append(settlement_outbreak_table::parse_table_update(table_update)?),
                 "settlement_smith" => db_update
                     .settlement_smith
                     .append(settlement_smith_table::parse_table_update(table_update)?),
@@ -2376,6 +2424,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_training_schedule,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.disease_notice = cache
+            .apply_diff_to_table::<DiseaseNotice>("disease_notice", &self.disease_notice)
+            .with_updates_by_pk(|row| &row.id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -2473,6 +2524,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<SettlementDescription>(
                 "settlement_description",
                 &self.settlement_description,
+            )
+            .with_updates_by_pk(|row| &row.id);
+        diff.settlement_outbreak = cache
+            .apply_diff_to_table::<SettlementOutbreak>(
+                "settlement_outbreak",
+                &self.settlement_outbreak,
             )
             .with_updates_by_pk(|row| &row.id);
         diff.settlement_smith = cache
@@ -2586,6 +2643,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "disease_notice" => db_update
+                    .disease_notice
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2660,6 +2720,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_description" => db_update
                     .settlement_description
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
@@ -2767,6 +2830,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "disease_notice" => db_update
+                    .disease_notice
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2842,6 +2908,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2908,6 +2977,7 @@ pub struct AppliedDiff<'r> {
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    disease_notice: __sdk::TableAppliedDiff<'r, DiseaseNotice>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -2933,6 +3003,7 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
+    settlement_outbreak: __sdk::TableAppliedDiff<'r, SettlementOutbreak>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
@@ -3057,6 +3128,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.connected_players,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<DiseaseNotice>(
+            "disease_notice",
+            &self.disease_notice,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
@@ -3160,6 +3236,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementOutbreak>(
+            "settlement_outbreak",
+            &self.settlement_outbreak,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SettlementSmith>(
@@ -3881,6 +3962,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        disease_notice_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -3906,6 +3988,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
+        settlement_outbreak_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
@@ -3939,6 +4022,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_time",
         "character_training_schedule",
         "connected_players",
+        "disease_notice",
         "inventory_item",
         "inventory_quantity_target",
         "item",
@@ -3964,6 +4048,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
+        "settlement_outbreak",
         "settlement_smith",
         "simulation_character",
         "simulation_run",

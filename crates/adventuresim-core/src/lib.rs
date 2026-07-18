@@ -7,6 +7,7 @@ pub mod capability;
 pub mod combat;
 pub mod composite;
 pub mod durability;
+pub mod disease;
 pub mod equipment;
 pub mod essential;
 pub mod leadership;
@@ -29,6 +30,7 @@ pub mod prelude {
     pub use crate::combat::*;
     pub use crate::composite::PlayerInfo;
     pub use crate::durability::*;
+    pub use crate::disease::*;
     pub use crate::equipment::*;
     pub use crate::essential::*;
     pub use crate::morale::*;

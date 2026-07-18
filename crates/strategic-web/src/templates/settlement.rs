@@ -22,6 +22,7 @@ use super::{
     population_description, quest_location_layout_with_session, settlement_layout_with_session,
     sidebar_section, stat_icon_path,
 };
+use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
@@ -913,6 +914,7 @@ pub fn party_personal_page(
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    medical: &MedicalPresentation,
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -929,6 +931,7 @@ pub fn party_personal_page(
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
             }
@@ -981,6 +984,7 @@ pub fn party_stats_page(
     selected_party: Option<&Party>,
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    medical: &MedicalPresentation,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -998,6 +1002,7 @@ pub fn party_stats_page(
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
             (character_bio_rail(
                 selected,
                 religion_id,
@@ -2183,11 +2188,13 @@ pub(crate) fn character_stats_panel(
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
 ) -> Markup {
     html! {
         (character_summary_rail(capability))
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
         (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None, None))
+        (medical_rail(medical, "", 0, character.id, false))
     }
 }
 
@@ -2477,6 +2484,36 @@ fn strategic_condition_rail(
             }
         }))
     }
+}
+
+fn medical_rail(
+    medical: &MedicalPresentation,
+    location_path: &str,
+    doctor_id: u64,
+    target_id: u64,
+    allow_treatment: bool,
+) -> Markup {
+    html! {
+        (sidebar_section("Symptoms", html! {
+            @if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
+        }))
+        @if let Some(vitals)=medical.vitals {
+            (sidebar_section("Vitals", html! {
+                div class="humour-vitals" aria-label="Four humours" {
+                    (humour_bar("Sanguine", "Blood and circulation", vitals.sanguine, "sanguine"))
+                    (humour_bar("Phlegmatic", "Breath", vitals.phlegmatic, "phlegmatic"))
+                    (humour_bar("Choleric", "Heat and digestion", vitals.choleric, "choleric"))
+                    (humour_bar("Melancholic", "Sense and reason", vitals.melancholic, "melancholic"))
+                }
+                @if !medical.diagnoses.is_empty(){div class="medical-diagnoses" {h3 {"Diagnosed conditions"}@for diagnosis in &medical.diagnoses {article {strong {(diagnosis.period_name)} span class="condition-stage" {" — "(diagnosis.stage)} p class="small-copy" {(diagnosis.contagion)} @if allow_treatment && diagnosis.treatable {form method="post" action=(format!("{location_path}/party/{target_id}/disease/{}/treat",diagnosis.infection_id)){input type="hidden" name="doctor_id" value=(doctor_id);button type="submit" class="btn btn-primary" {"Treat"}}}}}}}
+            }))
+        }
+    }
+}
+
+fn humour_bar(name: &str, meaning: &str, value: f32, family: &str) -> Markup {
+    let pct = (value.clamp(0.0, 1.0) * 100.0).round();
+    html! {div class="humour-vital" {div class="humour-heading" {strong {(name)} span {(format!("{pct:.0}%"))}} div class="humour-track" role="meter" aria-label=(format!("{name}: {meaning}, {pct:.0} percent function")) aria-valuemin="0" aria-valuemax="100" aria-valuenow=(pct) {span class="humour-current" style=(format!("width:{pct:.0}%")) {} span class=(format!("humour-impairment impairment-{family}")) style=(format!("left:{pct:.0}%;width:{:.0}%",100.0-pct)) aria-hidden="true" {}}}}
 }
 
 fn party_attributes_rail(
@@ -3931,5 +3968,27 @@ mod tests {
         assert!(css.contains(".schedule-time-input {"));
         assert!(css.contains("position: absolute;"));
         assert!(css.contains(".schedule-save-status"));
+    }
+
+    #[test]
+    fn low_medicine_medical_html_contains_no_hidden_payload() {
+        let presentation = crate::medical::MedicalPresentation {
+            symptoms: vec!["coughing"],
+            vitals: None,
+            diagnoses: Vec::new(),
+        };
+        let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
+        assert!(markup.contains("coughing"));
+        for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
+            assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
+        }
+    }
+
+    #[test]
+    fn humour_meter_has_text_and_aria_not_color_alone() {
+        let markup = humour_bar("Phlegmatic", "Breath", 0.4, "phlegmatic").into_string();
+        assert!(markup.contains("Phlegmatic"));
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("Breath, 40 percent function"));
     }
 }

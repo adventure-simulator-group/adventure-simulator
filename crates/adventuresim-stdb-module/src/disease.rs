@@ -1,0 +1,472 @@
+//! Durable strategic disease facts and authoritative treatment.
+
+use adventuresim_core::disease::{
+    self, DiseaseEventKind, DiseaseId, InfectionEpisode, TerminalFailure,
+};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+
+use crate::character::character as _;
+use crate::{character_attributes, character_capability, character_time};
+
+/// The complete per-character disease state. This table is deliberately
+/// private: strategic-web derives a viewer-specific presentation instead of
+/// forwarding these rows to browsers.
+#[derive(Clone, Debug)]
+#[table(accessor = infection_episode)]
+pub struct InfectionEpisodeRow {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub character_id: u64,
+    pub disease_id: String,
+    pub contracted_at: u64,
+    pub treated_at: Option<u64>,
+}
+
+/// Public world fact, not private medical information. Overlap with a
+/// character's exact local clock is evaluated continuously and deterministically.
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_outbreak, public)]
+pub struct SettlementOutbreak {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    pub disease_id: String,
+    pub start_minute: u64,
+    pub end_minute: u64,
+    pub intensity: f32,
+}
+
+/// Narrow durable provenance for committed cuts. No tactical tick state crosses
+/// this boundary.
+#[derive(Clone, Debug)]
+#[table(accessor = committed_cut)]
+pub struct CommittedCut {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub character_id: u64,
+    pub committed_at: u64,
+    pub severity: f32,
+    pub surgery_check: f32,
+}
+
+/// Delivery dedupe is explicitly separate from infection state and contains no
+/// undiagnosed disease identity.
+#[derive(Clone, Debug)]
+#[table(accessor = disease_notice, public)]
+pub struct DiseaseNotice {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub minute: u64,
+    pub kind: String,
+    pub message: String,
+}
+
+fn notice(
+    ctx: &ReducerContext,
+    character_id: u64,
+    infection_id: u64,
+    minute: u64,
+    kind: &str,
+    message: &str,
+) {
+    let id = format!("disease-{infection_id}-{minute}-{kind}");
+    if ctx.db.disease_notice().id().find(&id).is_none() {
+        ctx.db.disease_notice().insert(DiseaseNotice {
+            id,
+            character_id,
+            minute,
+            kind: kind.into(),
+            message: message.into(),
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, SpacetimeType)]
+pub enum DiseaseTerminalCause {
+    Respiratory,
+    Circulatory,
+    Homeostatic,
+    Neurologic,
+}
+
+fn parse_id(value: &str) -> Result<DiseaseId, String> {
+    match value {
+        "influenza" => Ok(DiseaseId::Influenza),
+        "dysentery" => Ok(DiseaseId::Dysentery),
+        "typhus" => Ok(DiseaseId::Typhus),
+        "tetanus" => Ok(DiseaseId::Tetanus),
+        "erysipelas" => Ok(DiseaseId::Erysipelas),
+        "smallpox" => Ok(DiseaseId::Smallpox),
+        "plague" => Ok(DiseaseId::Plague),
+        "consumption" => Ok(DiseaseId::Consumption),
+        _ => Err("Unknown disease".into()),
+    }
+}
+
+fn episode(row: &InfectionEpisodeRow) -> Result<InfectionEpisode, String> {
+    Ok(InfectionEpisode {
+        id: row.id,
+        character_id: row.character_id,
+        disease_id: parse_id(&row.disease_id)?,
+        contracted_at: row.contracted_at,
+        treated_at: row.treated_at,
+    })
+}
+
+pub fn character_episodes(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<Vec<InfectionEpisode>, String> {
+    ctx.db
+        .infection_episode()
+        .character_id()
+        .filter(character_id)
+        .map(|row| episode(&row))
+        .collect()
+}
+
+fn acquire_outbreaks_through(
+    ctx: &ReducerContext,
+    character_id: u64,
+    from: u64,
+    to: u64,
+) -> Result<(), String> {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return Ok(());
+    };
+    let Some(settlement_id) = character.current_settlement_id else {
+        return Ok(());
+    };
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |a| a.immunity);
+    for outbreak in ctx
+        .db
+        .settlement_outbreak()
+        .settlement_id()
+        .filter(&settlement_id)
+    {
+        let disease_id = parse_id(&outbreak.disease_id)?;
+        let prior = disease::acquired_immunity(
+            &character_episodes(ctx, character_id)?,
+            disease_id,
+            from,
+            immunity,
+        );
+        let seed = disease::outbreak_exposure_seed(character_id, &outbreak.id);
+        let Some(at) = disease::exposure_threshold_minute(
+            seed,
+            outbreak.start_minute,
+            outbreak.intensity,
+            disease::definition(disease_id).base_acquisition,
+            immunity,
+            prior,
+        ) else {
+            continue;
+        };
+        if at > from
+            && at <= to.min(outbreak.end_minute)
+            && !ctx
+                .db
+                .infection_episode()
+                .character_id()
+                .filter(character_id)
+                .any(|row| row.disease_id == outbreak.disease_id && row.contracted_at == at)
+        {
+            ctx.db.infection_episode().insert(InfectionEpisodeRow {
+                id: 0,
+                character_id,
+                disease_id: outbreak.disease_id,
+                contracted_at: at,
+                treated_at: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Returns the safe prefix of an interval and a terminal mechanism, if any.
+/// All boundary events at the earliest minute are considered together.
+pub fn clip_elapsed_for_disease(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+) -> Result<(u64, Option<TerminalFailure>), String> {
+    if requested == 0 {
+        return Ok((0, None));
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |t| t.minutes);
+    acquire_outbreaks_through(ctx, character_id, now, now.saturating_add(requested))?;
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |a| a.immunity);
+    let episodes = character_episodes(ctx, character_id)?;
+    let mut events = episodes
+        .iter()
+        .copied()
+        .flat_map(|e| disease::interval_events(e, now, now.saturating_add(requested), immunity))
+        .collect::<Vec<_>>();
+    events.sort_by_key(|e| e.minute);
+    let terminal =
+        disease::first_combined_terminal(&episodes, now, now.saturating_add(requested), immunity);
+    let death_minute = terminal.map(|value| value.0);
+    let through = death_minute.unwrap_or_else(|| now.saturating_add(requested));
+    for event in events.iter().filter(|event| event.minute <= through) {
+        match event.kind {
+            DiseaseEventKind::SymptomOnset => notice(
+                ctx,
+                character_id,
+                event.infection_id,
+                event.minute,
+                "symptom-onset",
+                "New symptoms have appeared.",
+            ),
+            DiseaseEventKind::Peak => {}
+            DiseaseEventKind::Critical(_) => notice(
+                ctx,
+                character_id,
+                event.infection_id,
+                event.minute,
+                "critical",
+                "A vital humour is failing.",
+            ),
+            DiseaseEventKind::Resolution => notice(
+                ctx,
+                character_id,
+                event.infection_id,
+                event.minute,
+                "resolution",
+                "The illness's visible effects have resolved.",
+            ),
+        }
+    }
+    let Some(death_minute) = death_minute else {
+        return Ok((requested, None));
+    };
+    notice(
+        ctx,
+        character_id,
+        0,
+        death_minute,
+        "critical",
+        "A vital humour is failing.",
+    );
+    Ok((
+        death_minute.saturating_sub(now),
+        terminal.map(|value| value.1),
+    ))
+}
+
+pub fn finish_disease_interval(
+    ctx: &ReducerContext,
+    character_id: u64,
+    cause: Option<TerminalFailure>,
+) -> Result<(), String> {
+    let Some(cause) = cause else { return Ok(()) };
+    crate::transition_character_to_dead(
+        ctx,
+        character_id,
+        crate::DeathCause::Disease,
+        crate::DeathSource::Disease,
+        Some(
+            match cause {
+                TerminalFailure::Respiratory => "respiratory-failure",
+                TerminalFailure::Circulatory => "circulatory-failure",
+                TerminalFailure::Homeostatic => "homeostatic-failure",
+                TerminalFailure::Neurologic => "neurologic-failure",
+            }
+            .into(),
+        ),
+    )?;
+    Ok(())
+}
+
+pub fn record_committed_cut(
+    ctx: &ReducerContext,
+    character_id: u64,
+    severity: f32,
+    surgery_check: f32,
+) -> Result<(), String> {
+    if severity <= 0.0 {
+        return Ok(());
+    }
+    let at = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |t| t.minutes);
+    let cut = ctx.db.committed_cut().insert(CommittedCut {
+        id: 0,
+        character_id,
+        committed_at: at,
+        severity,
+        surgery_check,
+    });
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |a| a.immunity);
+    let residual = (1.0 - (surgery_check / 5.0).clamp(0.0, 1.0) * 0.8) * severity.clamp(0.0, 1.0);
+    for disease_id in [DiseaseId::Tetanus, DiseaseId::Erysipelas] {
+        let d = disease::definition(disease_id);
+        let seed = disease::outbreak_exposure_seed(
+            character_id,
+            &format!("cut-{}-{disease_id:?}", cut.id),
+        );
+        if disease::acquisition_succeeds(seed, d, immunity, 0.0, residual) {
+            ctx.db.infection_episode().insert(InfectionEpisodeRow {
+                id: 0,
+                character_id,
+                disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+                contracted_at: at,
+                treated_at: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn treat_disease(
+    ctx: &ReducerContext,
+    doctor_id: u64,
+    target_id: u64,
+    infection_id: u64,
+) -> Result<(), String> {
+    let doctor = crate::require_living_character(ctx, doctor_id)?;
+    let target = crate::require_living_character(ctx, target_id)?;
+    if doctor.server != ctx.sender() {
+        return Err("Only the active doctor may administer treatment".into());
+    }
+    let same_place = doctor.current_settlement_id.is_some()
+        && doctor.current_settlement_id == target.current_settlement_id
+        || doctor.current_quest_location_id.is_some()
+            && doctor.current_quest_location_id == target.current_quest_location_id;
+    if !same_place {
+        return Err("Doctor and patient must be together".into());
+    }
+    if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
+        return Err("A doctor may treat only themselves or a member of their party".into());
+    }
+    let medicine = ctx
+        .db
+        .character_capability()
+        .character_id()
+        .find(doctor_id)
+        .ok_or("Doctor capability not found")?
+        .medicine;
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(target_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(target_id)
+        .ok_or("Patient attributes not found")?
+        .immunity;
+    let mut row = ctx
+        .db
+        .infection_episode()
+        .id()
+        .find(infection_id)
+        .ok_or("Infection not found")?;
+    if row.character_id != target_id {
+        return Err("Infection does not belong to this patient".into());
+    }
+    if row.treated_at.is_some() {
+        return Err("This illness has already been treated".into());
+    }
+    let state = disease::evaluate(episode(&row)?, now, immunity);
+    if matches!(
+        state.stage,
+        disease::DiseaseStage::Resolved | disease::DiseaseStage::Incubating
+    ) {
+        return Err("This illness cannot currently be treated".into());
+    }
+    if medicine < state.diagnosis_dc {
+        return Err("Medicine skill is too low to identify this illness".into());
+    }
+    row.treated_at = Some(now);
+    ctx.db.infection_episode().id().update(row);
+    notice(
+        ctx,
+        target_id,
+        infection_id,
+        now,
+        "treatment",
+        "Treatment was administered.",
+    );
+    Ok(())
+}
+
+/// Deterministic fixture for local UI and strategic simulation demos.
+#[reducer]
+pub fn seed_disease_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let character = crate::require_living_character(ctx, character_id)?;
+    if character.server != ctx.sender() {
+        return Err("Only this character's player may seed the demo".into());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time not found")?
+        .minutes;
+    if ctx
+        .db
+        .infection_episode()
+        .character_id()
+        .filter(character_id)
+        .next()
+        .is_none()
+    {
+        ctx.db.infection_episode().insert(InfectionEpisodeRow {
+            id: 0,
+            character_id,
+            disease_id: "influenza".into(),
+            contracted_at: now.saturating_sub(4 * 1_440),
+            treated_at: None,
+        });
+    }
+    if let Some(settlement_id) = character.current_settlement_id {
+        let id = format!("disease-demo-{settlement_id}");
+        if ctx.db.settlement_outbreak().id().find(&id).is_none() {
+            ctx.db.settlement_outbreak().insert(SettlementOutbreak {
+                id,
+                settlement_id,
+                disease_id: "influenza".into(),
+                start_minute: now.saturating_sub(1_440),
+                end_minute: now + 7 * 1_440,
+                intensity: 0.35,
+            });
+        }
+    }
+    Ok(())
+}

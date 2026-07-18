@@ -1,6 +1,7 @@
 pub mod capability;
 pub mod character;
 pub mod condition;
+pub mod disease;
 pub mod item;
 pub mod personality;
 pub mod repair;
@@ -12,6 +13,7 @@ pub mod time;
 pub use capability::*;
 pub use character::*;
 pub use condition::*;
+pub use disease::*;
 pub use item::*;
 pub use personality::*;
 pub use repair::*;

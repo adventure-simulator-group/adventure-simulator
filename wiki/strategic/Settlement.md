@@ -1,4 +1,9 @@
 # Services
+
+Settlements may have public disease outbreak facts: disease, start and end
+character-minute bounds, and intensity. Acquisition uses deterministic
+continuous overlap plus innate and acquired immunity, so dividing the same stay
+into smaller rest actions does not reroll exposure.
 Imported settlements carry a bounded strategic industry profile derived from
 land use, hydrology, soil, geology, historical woodland, population, and route
 accessibility. It describes plausible production rather than stock on hand;

@@ -23,6 +23,7 @@ pub struct RecruitmentApplicant {
     pub skills: Option<CharacterSkills>,
     pub limbs: Option<CharacterLimbs>,
     pub contribution: PartyCheckSummary,
+    pub medical: crate::medical::MedicalPresentation,
 }
 
 pub struct RecruitmentRolePanel {
@@ -355,7 +356,7 @@ fn role_requests_detail(
                                 }
                             }
                             template data-applicant-left-template {
-                                (character_stats_panel(&applicant.character, applicant.capability.as_ref(), applicant.attributes.as_ref(), applicant.skills.as_ref(), applicant.limbs.as_ref()))
+                                (character_stats_panel(&applicant.character, applicant.capability.as_ref(), applicant.attributes.as_ref(), applicant.skills.as_ref(), applicant.limbs.as_ref(), &applicant.medical))
                             }
                             template data-applicant-center-template {
                                 (character_visual_preview(&applicant.character))

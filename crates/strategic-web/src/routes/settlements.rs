@@ -31,10 +31,10 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem, PartyJourney, PartyMember,
-    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
-    ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, TravelEdge,
+    InfectionEpisodeRow, ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem,
+    PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
+    RecruitmentRequirements, ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
@@ -108,6 +108,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{target_id}/disease/{infection_id}/treat",
+            post(treat_disease),
         )
         .route(
             "/locations/{kind}/{id}/players/{character_id}",
@@ -1340,6 +1344,7 @@ async fn party_personal(
         .map_or(0.0, |notoriety| notoriety.value);
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let medical = medical_presentation(&state, character_id, character_id).await;
     let religious_demand = state
         .db
         .query::<ReligiousDemand>(&format!(
@@ -1366,6 +1371,7 @@ async fn party_personal(
             religious_demand.as_ref(),
             notoriety,
             personality.as_ref(),
+            &medical,
             session.theme(),
         )
         .into_string(),
@@ -1981,6 +1987,7 @@ async fn party_stats(
         .map_or(0.0, |notoriety| notoriety.value);
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let medical = medical_presentation(&state, active_character.id, character_id).await;
     Html(
         party_stats_page(
             &location,
@@ -1998,10 +2005,73 @@ async fn party_stats(
             selected_party.as_ref(),
             notoriety,
             personality.as_ref(),
+            &medical,
             session.theme(),
         )
         .into_string(),
     )
+}
+
+pub(crate) async fn medical_presentation(
+    state: &AppState,
+    viewer_id: u64,
+    target_id: u64,
+) -> crate::medical::MedicalPresentation {
+    let viewer = get_character_capability(state, viewer_id).await;
+    let rows = state
+        .db
+        .query::<InfectionEpisodeRow>(&format!(
+            "SELECT * FROM infection_episode WHERE character_id = {target_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let time = query_single::<CharacterTime>(state, "character_time", target_id)
+        .await
+        .map_or(0, |t| t.minutes);
+    let attributes =
+        query_single::<CharacterAttributes>(state, "character_attributes", target_id).await;
+    let condition =
+        query_single::<CharacterCondition>(state, "character_condition", target_id).await;
+    let blood = condition.as_ref().map_or(1.0, |c| {
+        if c.maximum_blood_ml > 0.0 {
+            c.current_blood_ml / c.maximum_blood_ml
+        } else {
+            0.0
+        }
+    });
+    crate::medical::sanitize(
+        &rows,
+        time,
+        attributes.map_or(3.0, |a| a.immunity),
+        viewer.map_or(0.0, |c| c.medicine),
+        blood,
+    )
+}
+
+#[derive(Deserialize)]
+struct TreatDiseaseForm {
+    doctor_id: u64,
+}
+
+async fn treat_disease(
+    State(state): State<AppState>,
+    Path((kind, id, target_id, infection_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+    Form(form): Form<TreatDiseaseForm>,
+) -> Redirect {
+    if session.character_id_u64() == Some(form.doctor_id) {
+        if let Err(error) = state
+            .db
+            .call(
+                "treat_disease",
+                &[json!(form.doctor_id), json!(target_id), json!(infection_id)],
+            )
+            .await
+        {
+            tracing::warn!(%error,"disease treatment rejected");
+        }
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
 }
 
 async fn get_strategic_condition(

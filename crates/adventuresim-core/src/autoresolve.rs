@@ -334,6 +334,9 @@ pub struct Combatant {
     pub imbalance: f32,
     #[doc(hidden)]
     pub blood_loss_fraction: f32,
+    /// Cut damage committed at the tactical/strategic boundary. This is durable
+    /// wound provenance, not tactical tick state.
+    pub cut_damage: f32,
     #[doc(hidden)]
     pub initial_ammunition: u32,
     #[doc(hidden)]
@@ -356,6 +359,7 @@ impl Combatant {
             starting_blood_fraction: 1.0,
             imbalance: 0.0,
             blood_loss_fraction: 0.0,
+            cut_damage: 0.0,
             initial_ammunition: 0,
             ranged_attack_progress: 0.0,
         }
@@ -431,6 +435,7 @@ pub struct CombatantOutcome {
     pub id: u64,
     pub body: CombatBody,
     pub blood_loss_fraction: f32,
+    pub cut_damage: f32,
     pub incapacitated: bool,
     pub ammunition_used: u32,
 }
@@ -1200,6 +1205,23 @@ fn apply_attack_result(
             defender.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, part);
             let applied = defender.body.apply_damage(part, damage);
+            let raw_cut = match result {
+                AttackResult::ToDefender { cut_damage, .. } => cut_damage.max(0.0),
+                _ => 0.0,
+            };
+            let raw_total = match result {
+                AttackResult::ToDefender {
+                    cut_damage,
+                    blunt_damage,
+                    ..
+                } => (cut_damage + blunt_damage).max(0.0),
+                _ => 0.0,
+            };
+            defender.cut_damage += if raw_total > 0.0 {
+                applied * raw_cut / raw_total
+            } else {
+                0.0
+            };
             defender.blood_loss_fraction += applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
             AttackEffect {
                 hit: true,
@@ -1344,6 +1366,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
         id: combatant.id,
         body: combatant.body,
         blood_loss_fraction: combatant.blood_loss_fraction,
+        cut_damage: combatant.cut_damage,
         incapacitated,
         ammunition_used: combatant
             .initial_ammunition

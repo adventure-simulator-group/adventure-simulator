@@ -9,6 +9,26 @@ The other "approach" is to use the fantasy elements to circumvent this. For exam
 Why elves? Because they are the designated race for casual players who aren't looking for a hardcore survival experience.
 
 # Damage
+
+## Disease
+
+Characters do not innately know their diseases. Everyone can see compact,
+deduplicated outward symptoms. An individual effective Medicine check of at
+least 2 reveals Vitals; meeting a disease's stage-dependent diagnosis difficulty
+also reveals its period-facing name, suspected contagion, and treatment action.
+Party-aggregate Medicine does not grant this knowledge.
+
+The four displayed vitals are a period medical vocabulary over modern internal
+physiology: Sanguine covers blood and circulation, Phlegmatic breath, Choleric
+heat and digestion, and Melancholic sense and reason. Treatment adds one
+timestamp and continuously accelerates the remaining course while mitigating
+symptoms; it never instantly cures disease.
+
+Episodes retain only identity/associations, contraction minute, and optional
+treatment minute. Severity is deterministically seeded from those associations.
+Immunity resists acquisition and attenuates severity; resolved episodes can
+confer disease-specific acquired immunity. Open cuts may introduce wound disease
+with Surgery reducing residual risk; blunt damage does not.
 Damage can be applied to each of the 7 body parts. Each body part has a health ranging from 1.0 to an unspecified negative value. At zero, the body part is unusable and its associated [attributes](../shared/Stats.md) are 0, and effectiveness degrades proportionally between 1.0 and 0.
 
 Below zero, you aren't any *less* effective, per-se, but the body part can continue to be damaged which will increase the time it takes to be healed (or whether it even *can* be healed). The "unspecified negative value" is essentially the point at which the body part is so damaged that further damage doesn't really mean anything, as if the flesh were essentially ground beef or it were severed.

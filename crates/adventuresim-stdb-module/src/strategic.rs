@@ -5443,6 +5443,7 @@ pub fn autoresolve_quest(
             member.id,
             member.blood_loss_fraction + deterioration_blood_loss,
         )?;
+        crate::disease::record_committed_cut(ctx, member.id, member.cut_damage, surgery_check)?;
         crate::capability::refresh_character_capability(ctx, member.id)?;
     }
 

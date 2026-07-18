@@ -573,6 +573,12 @@ async fn recruitment_panel_fragment(
                     skills,
                     limbs,
                     contribution,
+                    medical: crate::routes::settlements::medical_presentation(
+                        &state,
+                        character_id,
+                        request.character_id,
+                    )
+                    .await,
                 });
             }
         }

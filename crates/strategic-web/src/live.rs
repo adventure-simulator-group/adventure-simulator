@@ -34,7 +34,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    inventory_item_table::InventoryItemTableAccess,
+    disease_notice_table::DiseaseNoticeTableAccess, inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
@@ -54,6 +54,7 @@ use adventuresim_stdb_client::{
     settlement_alias_table::SettlementAliasTableAccess,
     settlement_description_table::SettlementDescriptionTableAccess,
     settlement_smith_table::SettlementSmithTableAccess,
+    settlement_outbreak_table::SettlementOutbreakTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
@@ -159,6 +160,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_personality());
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
+        invalidate_on_changes!(state.0._connection.db.disease_notice());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.strategic_incident());
         invalidate_on_changes!(state.0._connection.db.quest());
@@ -170,6 +172,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.battle_participant());
         invalidate_on_changes!(state.0._connection.db.tactical_server_request());
         invalidate_on_changes!(state.0._connection.db.tactical_server());
+        invalidate_on_changes!(state.0._connection.db.settlement_outbreak());
 
         state
             .0
@@ -203,6 +206,7 @@ impl LiveState {
             .add_query(|query| query.from.character_time())
             .add_query(|query| query.from.character_training_schedule())
             .add_query(|query| query.from.connected_players())
+            .add_query(|query| query.from.disease_notice())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())
@@ -227,6 +231,7 @@ impl LiveState {
             .add_query(|query| query.from.settlement_alias())
             .add_query(|query| query.from.settlement_description())
             .add_query(|query| query.from.settlement_smith())
+            .add_query(|query| query.from.settlement_outbreak())
             .add_query(|query| query.from.strategic_incident())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())

@@ -677,6 +677,17 @@ pub struct CharacterTime {
     pub minutes: u64,
 }
 
+/// Queried only by strategic-web and immediately sanitized. Browser responses
+/// never serialize this private disease row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InfectionEpisodeRow {
+    pub id: u64,
+    pub character_id: u64,
+    pub disease_id: String,
+    pub contracted_at: u64,
+    pub treated_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {
     pub character_id: u64,
