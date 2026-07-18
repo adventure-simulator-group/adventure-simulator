@@ -2,12 +2,14 @@
 
 mod analysis;
 mod config;
+mod live_core;
 mod profile;
 mod rng;
 mod runner;
 
 pub use analysis::*;
 pub use config::*;
+pub use live_core::*;
 pub use profile::*;
 pub use runner::*;
 

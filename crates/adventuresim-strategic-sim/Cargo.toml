@@ -7,11 +7,13 @@ license.workspace = true
 
 [dependencies]
 adventuresim-core.workspace = true
+adventuresim-stdb-client.workspace = true
 blake3.workspace = true
 clap.workspace = true
 serde = { workspace = true, features = ["std"] }
 serde_json.workspace = true
 thiserror.workspace = true
+url = "2.5"
 
 [lints]
 workspace = true

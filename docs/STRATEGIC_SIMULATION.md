@@ -1,10 +1,10 @@
 # Strategic NPC simulation
 
 `adventuresim-strategic-sim` is a native, deterministic experiment harness for
-balance exploration and regression reproduction. This first increment covers
-only character settlement downtime: saved daily training and activity
-allocations progress once per canonical in-game day. It is part of issue #66,
-not a complete synthetic-player system.
+balance exploration and regression reproduction. It has two deliberately
+different backends: a fast native settlement-activity model for multi-year
+population sweeps, and an opt-in reducer-backed core-loop driver for behavioral
+and integration testing.
 
 ## Reproducibility contract
 
@@ -57,22 +57,71 @@ objectives, preserve exact ties, and reject nonfinite values. The `matched`
 command holds a profile and seed constant while changing only its declared
 labor/thievery activity preference and allocation.
 
-## Backend seam and current limitations
+## Authoritative core-loop backend
 
-`StrategicBackend` separates observations and player-like intents from state
-mutation. `NativeSettlementBackend` is the only implementation today. A future
-adapter should submit legal intents to the authoritative reducer interface and
-observe the same data a player can see. It must not duplicate quest, travel,
-trade, equipment, incident, or combat rules in a parallel simulator.
+`StrategicBackend` separates observations and player-like intents from native
+state mutation. `NativeSettlementBackend` remains the fast deterministic
+backend. The `core-loop` command instead connects through generated typed SDK
+bindings and serializes ordinary reducer calls, waiting for both reducer
+completion and the subscribed state that follows it. It creates several
+independent parties through ordinary join request/accept reducers. Each leader
+then independently chooses settlement activity or questing from its generated
+policy until its in-game duration or cycle bound is reached. Questing selects a
+quest, travels through persisted camp stops, autoresolves, stores loot, returns,
+turns in, liquidates party loot, withdraws the member's earned stake, purchases
+from the merchant, and equips an upgrade. Followers travel and run their own
+daily schedules. Defeat causes a retreat, bounded settlement convalescence, and
+a bounded retry; an incapacitated party is never autoresolved repeatedly in
+place.
 
-This increment deliberately has:
+Core-loop reports are explicitly tagged `spacetimedb_authoritative_core_loop`
+and retain the server origin, disposable database, claimed run nonce, generated
+profiles, semantic action trace, final equipment and capabilities, and metrics
+for quest results, activity days, camps, loot value, proceeds, earned stake
+withdrawals, purchases, upgrades, unexpected reducer failures/retries, stuck
+detection, and duplicate semantic events. Final agent rows distinguish the
+legacy character gold field, personal gold-coin stacks, party treasury, and
+party stake. Generated preferences drive quest/activity choice, quest risk, and
+weighted equipment utility (protection, mobility, price, and reach) for
+unarmored, light, heavy, and ranged styles. An upgrade counts only after the
+authoritative equipment row shows the purchased inventory item.
 
-- no live SpacetimeDB/reducer adapter;
-- no quest, travel, trade, equipment purchase, recovery, or provisioning actions;
+Safety is intentionally strict. URLs are parsed structurally and must be an
+exact credential-free HTTP loopback origin with no path, query, or fragment.
+The command accepts only an `adventuresim-sim-*` database and refuses any
+pre-existing run, character, party, or settlement state. It atomically claims
+the fresh database with an owner identity and nonce before seeding. Bootstrap
+configuration requires that claim and permanently marks each simulated
+character by run and agent ID; simulated and ordinary characters cannot merge
+parties. In addition, ordinary module builds compile with simulation claims
+disabled. The recipe creates 32 random bytes in memory, exposes them to exactly
+one module build and runner process through `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN`,
+and never accepts the capability as a CLI argument or writes it to a report.
+The public claim reducer checks that build-time capability before inspecting
+database freshness. The recipe creates a nonce-named database, exposes no
+host/database override, and deletes it on exit. Population, duration, cycles,
+action waits, camp continuation, defeat retries, and recovery loops are bounded.
+
+There are two distinct random streams. The CLI seed deterministically controls
+profiles and policy choices. Combat is authoritative: the autoresolver obtains
+its seed from server RNG, and reports record that actual seed together with
+rounds, summary, and log. Consequently the native backend supports exact replay,
+while a core-loop rerun reproduces policy inputs but not necessarily combat
+outcomes. Its trace is the debugging artifact. Reports identify the server,
+database, and claimed run; the current SDK does not expose a deployed module
+binary digest.
+
+Current limitations are:
+
 - no native Raiding execution until an authoritative equipped-capability observation exists (generated schedules exclude it and custom schedules are rejected);
 - no parity claim for live bulk multi-day rest, whose aggregate rounding and incident interruption semantics differ from repeated one-day actions;
-- no shared-world population competition;
-- no strategic-web dialogue or session end-to-end coverage;
+- the bounded bootstrap applies generated attributes, initial skills, and
+  downtime schedules, while equipment starts from the normal character
+  creator before policy-driven upgrades;
+- party loot is liquidated through the shared party treasury; upgrades must be
+  funded by withdrawing the character's earned stake before a personal trade;
+- duplicate detection covers the simulator's semantic action stream, not the
+  strategic-web rendered DOM;
 - no tactical ticks and no persistent production NPC rows.
 
 ## Commands
@@ -81,4 +130,11 @@ This increment deliberately has:
 cargo run -p adventuresim-strategic-sim -- run --seed 42 --population 100 --days 1095 --output report.json
 cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
+# Safe disposable integration run (requires local SpacetimeDB 2.6.1):
+just strategic-sim-core-loop 42 8 20 30 2
 ```
+
+Direct `core-loop` invocation is intentionally an expert-only path: its process
+must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
+publish that disposable module. There is no token CLI option. Prefer the recipe,
+which keeps the capability confined to one shell process and always cleans up.
