@@ -1443,6 +1443,7 @@ pub fn set_inventory_quantity_target(
     item_id: String,
     quantity: u32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
         .character()
@@ -1740,6 +1741,7 @@ pub fn send_local_chat_message(
     subject_id: String,
     body: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, sender_id)?;
     let sender = ctx
         .db
         .character()
@@ -1778,6 +1780,7 @@ pub fn record_local_npc_message(
     npc_name: String,
     body: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, actor_id)?;
     let actor = ctx
         .db
         .character()
@@ -1808,6 +1811,7 @@ pub fn request_party_action(
     summary: String,
     payload: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, requester_id)?;
     let requester = ctx
         .db
         .character()
@@ -1875,6 +1879,7 @@ pub fn dismiss_party_action_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let request = ctx
         .db
         .party_action_request()
@@ -1910,20 +1915,13 @@ pub fn vote_for_party_leader(
         return Err("Dead characters cannot vote".into());
     }
     let party_id = voter.party_id.ok_or("Voter has no party")?;
-    let mut party = ctx
-        .db
+    ctx.db
         .party()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    let leader = ctx
-        .db
-        .character()
-        .id()
-        .find(party.leader_id)
-        .ok_or("Leader not found")?;
-    if leader.alive {
-        return Err("Succession voting begins only after the leader dies".into());
+    if voter_id == candidate_id {
+        return Err("Members cannot assign a leadership vote to themselves".into());
     }
     let candidate = ctx
         .db
@@ -1946,46 +1944,98 @@ pub fn vote_for_party_leader(
     } else {
         ctx.db.party_leader_vote().insert(vote);
     }
-    let living = ctx
+    normalize_and_elect_party_leader(ctx, &party_id)?;
+    Ok(())
+}
+
+fn put_leader_vote(ctx: &ReducerContext, party_id: &str, voter_id: u64, candidate_id: u64) {
+    let id = format!("{party_id}:{voter_id}");
+    let row = PartyLeaderVote {
+        id: id.clone(),
+        party_id: party_id.to_string(),
+        voter_id,
+        candidate_id,
+    };
+    if ctx.db.party_leader_vote().id().find(&id).is_some() {
+        ctx.db.party_leader_vote().id().update(row);
+    } else {
+        ctx.db.party_leader_vote().insert(row);
+    }
+}
+
+/// Lazily backfills standing votes and discards stale legacy succession rows.
+/// This is intentionally safe to call after every membership or life-state
+/// transition, preserving non-destructive compatibility with existing parties.
+pub(crate) fn normalize_and_elect_party_leader(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    let living: Vec<u64> = ctx
         .db
         .party_member()
         .party_id()
-        .filter(&party_id)
-        .filter(|member| {
+        .filter(party_id)
+        .filter_map(|member| {
             ctx.db
                 .character()
                 .id()
                 .find(member.character_id)
-                .is_some_and(|c| c.alive)
+                .filter(|character| character.alive)
+                .map(|character| character.id)
         })
-        .count();
-    let votes = ctx
+        .collect();
+    let living_set: std::collections::HashSet<_> = living.iter().copied().collect();
+    for vote in ctx
         .db
         .party_leader_vote()
         .party_id()
-        .filter(&party_id)
-        .filter(|vote| vote.candidate_id == candidate_id)
-        .count();
-    if votes * 2 > living {
-        party.leader_id = candidate_id;
-        party.is_solo = living == 1;
-        ctx.db.party().id().update(party);
-        let ids: Vec<_> = ctx
-            .db
-            .party_leader_vote()
-            .party_id()
-            .filter(&party_id)
-            .map(|v| v.id)
-            .collect();
-        for id in ids {
-            ctx.db.party_leader_vote().id().delete(&id);
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        if !living_set.contains(&vote.voter_id) || !living_set.contains(&vote.candidate_id) {
+            ctx.db.party_leader_vote().id().delete(&vote.id);
         }
+    }
+    if living_set.contains(&party.leader_id) {
+        for voter_id in &living {
+            let id = format!("{party_id}:{voter_id}");
+            if ctx.db.party_leader_vote().id().find(&id).is_none() {
+                // System-created self votes are allowed for solo/legacy party
+                // initialization; the public reducer rejects user self-votes.
+                put_leader_vote(ctx, party_id, *voter_id, party.leader_id);
+            }
+        }
+    }
+    let leader_alive = living_set.contains(&party.leader_id);
+    let ballots: Vec<_> = ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(party_id)
+        .map(|vote| (vote.voter_id, vote.candidate_id))
+        .collect();
+    if let Some(next) = adventuresim_core::leadership::elect_leader(
+        party.leader_id,
+        leader_alive,
+        &living,
+        &ballots,
+    ) {
+        party.leader_id = next;
+        party.is_solo = living.len() == 1;
+        ctx.db.party().id().update(party);
     }
     Ok(())
 }
 
 #[reducer]
 pub fn update_character(ctx: &ReducerContext, id: u64, name: String) -> Result<(), String> {
+    crate::character::require_living_character(ctx, id)?;
     let Some(mut character) = ctx.db.character().id().find(id) else {
         return Err("Character not found".into());
     };
@@ -2028,9 +2078,11 @@ pub(crate) fn create_solo_party_for_character(
             role: Some("Leader".into()),
             recruitment_role_id: None,
         });
+        put_leader_vote(ctx, &party_id, character_id, character_id);
     }
     character.party_id = Some(party_id.clone());
     ctx.db.character().id().update(character);
+    normalize_and_elect_party_leader(ctx, &party_id)?;
     Ok(party_id)
 }
 
@@ -2059,6 +2111,7 @@ pub fn create_recruitment_role(
     weapon_precision: f32,
     save_role: bool,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     if quantity == 0 || quantity > 8 {
         return Err("Role quantity must be between 1 and 8".into());
     }
@@ -2138,6 +2191,7 @@ pub fn update_recruitment_role(
     requirements: RecruitmentRequirements,
     weapon_precision: f32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     if quantity > 8 {
         return Err("Role quantity must be between 0 and 8".into());
     }
@@ -2200,6 +2254,7 @@ pub fn delete_recruitment_role(
     leader_id: u64,
     role_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let leader = ctx
         .db
         .character()
@@ -2257,6 +2312,7 @@ pub fn save_recruitment_role(
     requirements: RecruitmentRequirements,
     weapon_precision: f32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, owner_id)?;
     if ctx.db.character().id().find(owner_id).is_none() {
         return Err("Character not found".into());
     }
@@ -2284,6 +2340,7 @@ pub fn rename_saved_recruitment_role(
     role_id: u64,
     name: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, owner_id)?;
     let mut role = ctx
         .db
         .saved_recruitment_role()
@@ -2329,6 +2386,7 @@ pub fn update_party_check_targets(
     charisma: f32,
     faith: f32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     if [medicine, surgery, charisma, faith]
         .into_iter()
         .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
@@ -2365,6 +2423,7 @@ pub fn delete_saved_recruitment_role(
     owner_id: u64,
     role_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, owner_id)?;
     let role = ctx
         .db
         .saved_recruitment_role()
@@ -2404,6 +2463,7 @@ pub fn request_to_join_party(
     character_id: u64,
     recruitment_role_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -2497,6 +2557,7 @@ pub fn accept_party_join_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
     };
@@ -2589,6 +2650,15 @@ pub fn accept_party_join_request(
         .iter()
         .map(|member| member.character_id)
         .collect();
+    if source_member_ids.iter().any(|member_id| {
+        ctx.db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| !character.alive)
+    }) {
+        return Err("A party containing dead members cannot merge".into());
+    }
     for member in source_members {
         ctx.db.party_member().id().delete(member.id);
         ctx.db.party_member().insert(PartyMember {
@@ -2630,18 +2700,30 @@ pub fn accept_party_join_request(
         }
         ctx.db.party_recruitment_role().id().delete(source_role.id);
     }
-    for member_id in source_member_ids {
+    for member_id in &source_member_ids {
         for pending in ctx
             .db
             .party_join_request()
             .character_id()
-            .filter(member_id)
+            .filter(*member_id)
             .collect::<Vec<_>>()
         {
             ctx.db.party_join_request().id().delete(pending.id);
         }
     }
     ctx.db.party().id().delete(&source_party_id);
+    for old_vote in ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(&source_party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_leader_vote().id().delete(&old_vote.id);
+    }
+    for member_id in &source_member_ids {
+        put_leader_vote(ctx, &request.party_id, *member_id, party.leader_id);
+    }
     if party.is_solo {
         let mut party = party;
         party.is_solo = false;
@@ -2667,6 +2749,7 @@ pub fn accept_party_join_request(
             ctx.db.party_join_request().id().delete(pending.id);
         }
     }
+    normalize_and_elect_party_leader(ctx, &request.party_id)?;
     Ok(())
 }
 
@@ -2676,6 +2759,7 @@ pub fn reject_party_join_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
     };
@@ -2798,6 +2882,8 @@ pub fn transfer_party_item(
     inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, from_character_id)?;
+    crate::character::require_living_character(ctx, to_character_id)?;
     if quantity == 0 || from_character_id == to_character_id {
         return Err("Transfer quantity must be positive and between different characters".into());
     }
@@ -3008,6 +3094,7 @@ pub fn store_battle_loot(
     loot_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if loot_item_ids.len() != quantities.len() {
         return Err("Loot entries must be aligned".into());
     }
@@ -3095,6 +3182,7 @@ pub fn deposit_party_inventory_item(
     inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
         .character()
@@ -3170,6 +3258,7 @@ pub fn withdraw_party_inventory_item(
     party_inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
         .character()
@@ -3221,6 +3310,7 @@ pub fn liquidate_party_inventory(
     party_inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if party_inventory_item_ids.is_empty() || party_inventory_item_ids.len() != quantities.len() {
         return Err("Liquidation entries must be non-empty and aligned".into());
     }
@@ -3278,6 +3368,7 @@ pub fn discard_inventory_items(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if inventory_item_ids.is_empty() || inventory_item_ids.len() != quantities.len() {
         return Err("Discarded item IDs and quantities must be non-empty and aligned".into());
     }
@@ -3328,6 +3419,9 @@ pub fn finalize_party_offer(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    for character_id in from_character_ids.iter().chain(&to_character_ids) {
+        crate::character::require_living_character(ctx, *character_id)?;
+    }
     if from_character_ids.len() != to_character_ids.len()
         || from_character_ids.len() != inventory_item_ids.len()
         || from_character_ids.len() != quantities.len()
@@ -3390,6 +3484,7 @@ pub fn finalize_merchant_trade(
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -3644,6 +3739,7 @@ pub fn finalize_merchant_trade(
 /// strategic UI development. Safe to call repeatedly.
 #[reducer]
 pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let leader = ctx
         .db
         .character()
@@ -3673,6 +3769,13 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
         }
         companion.current_settlement_id = leader.current_settlement_id.clone();
         companion.current_quest_location_id = leader.current_quest_location_id.clone();
+        if let Some(source_party_id) = companion.party_id.as_ref() {
+            if let Some(mut source_party) = ctx.db.party().id().find(source_party_id) {
+                source_party.current_settlement_id = leader.current_settlement_id.clone();
+                source_party.current_quest_location_id = leader.current_quest_location_id.clone();
+                ctx.db.party().id().update(source_party);
+            }
+        }
         ctx.db.character().id().update(companion);
         request_to_join_party(ctx, id, role.id)?;
         let request = ctx
@@ -3689,6 +3792,7 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
 
 #[reducer]
 pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     remove_party_member(ctx, character_id, character_id)
 }
 
@@ -3700,6 +3804,7 @@ pub fn remove_party_member(
     actor_character_id: u64,
     member_character_id: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, actor_character_id)?;
     let Some(actor) = ctx.db.character().id().find(actor_character_id) else {
         return Err("Acting character not found".into());
     };
@@ -3749,6 +3854,18 @@ pub fn remove_party_member(
 
     character.party_id = None;
     ctx.db.character().id().update(character);
+    for vote in ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>()
+    {
+        if vote.voter_id == member_character_id || vote.candidate_id == member_character_id {
+            ctx.db.party_leader_vote().id().delete(&vote.id);
+        }
+    }
+    normalize_and_elect_party_leader(ctx, &party_id)?;
     create_solo_party_for_character(ctx, member_character_id)?;
     Ok(())
 }
@@ -3785,6 +3902,7 @@ fn settle_temporary_member_stake(
 
 #[reducer]
 pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
     };
@@ -3897,6 +4015,7 @@ pub fn accept_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -3944,6 +4063,7 @@ pub fn abandon_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -4499,6 +4619,7 @@ pub fn travel_to_quest(
     quest_id: String,
     provision: bool,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -4608,6 +4729,7 @@ pub fn travel_to_settlement(
     settlement_id: String,
     provision: bool,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(destination) = ctx.db.settlement().id().find(&settlement_id) else {
         return Err("Settlement not found".into());
     };
@@ -4798,6 +4920,7 @@ pub fn set_party_camp_fatigue_percent(
     character_id: u64,
     fatigue_percent: u8,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if !(10..=100).contains(&fatigue_percent) {
         return Err("Camp fatigue must be between 10% and 100%".into());
     }
@@ -4827,6 +4950,7 @@ pub fn set_party_camp_fatigue_percent(
 /// transition between pins.
 #[reducer]
 pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
         .character()
@@ -4954,7 +5078,19 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         return Err("This is not the party's active quest".into());
     }
 
-    let members: Vec<_> = ctx.db.party_member().party_id().filter(&party_id).collect();
+    let members: Vec<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .filter(|member| {
+            ctx.db
+                .character()
+                .id()
+                .find(member.character_id)
+                .is_some_and(|character| character.alive)
+        })
+        .collect();
     let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
 
     for member in members {
@@ -4977,6 +5113,7 @@ pub fn turn_in_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
         .character()
@@ -5014,7 +5151,14 @@ pub fn turn_in_quest(
             .party_member()
             .party_id()
             .filter(&party_id)
-            .map(|member| member.character_id)
+            .filter_map(|member| {
+                ctx.db
+                    .character()
+                    .id()
+                    .find(member.character_id)
+                    .filter(|character| character.alive)
+                    .map(|character| character.id)
+            })
             .collect();
         let recipient_count = recipients.len().max(1) as u64;
         let share = reward / recipient_count;
@@ -5047,6 +5191,7 @@ pub fn autoresolve_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };

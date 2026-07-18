@@ -115,6 +115,7 @@ pub fn enter_mission(
     character_id: u64,
     server: Identity,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     // Check character exists
     let mut character = ctx
         .db

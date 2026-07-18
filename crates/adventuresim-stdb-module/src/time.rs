@@ -172,6 +172,7 @@ pub fn advance_character_time(
     character_id: u64,
     minutes: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     ensure_character_time(ctx, character_id)?;
     let mut character_time = ctx
         .db
@@ -560,6 +561,7 @@ fn rest_for_minutes(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -690,6 +692,7 @@ pub fn rest_at_camp(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
     }
@@ -713,6 +716,15 @@ pub fn rest_at_camp(
         return Err("The party is not camped while travelling".into());
     }
     for membership in ctx.db.party_member().party_id().filter(&party_id) {
+        if ctx
+            .db
+            .character()
+            .id()
+            .find(membership.character_id)
+            .is_some_and(|character| !character.alive)
+        {
+            continue;
+        }
         ensure_character_time(ctx, membership.character_id)?;
         let mut time = ctx
             .db
@@ -739,6 +751,17 @@ pub fn rest_at_camp(
 /// catch up from more than a year behind; callers should skip their action.
 pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
     ensure_character_time(ctx, character_id)?;
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|character| !character.alive)
+    {
+        // A corpse's strategic minute remains the death minute. Lazy reads must
+        // not train, recover, consume provisions, or advance it.
+        return Ok(false);
+    }
     let official_minutes = refresh_clock(ctx)?;
     let mut character_time = ctx
         .db
@@ -835,6 +858,7 @@ pub fn update_training_schedule(
     travel_thievery_minutes: u16,
     travel_raiding_minutes: u16,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     if synchronize_character(ctx, character_id)? {
         return Ok(());
     }

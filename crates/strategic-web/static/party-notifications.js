@@ -46,16 +46,18 @@
         }
         list.append(item);
       }
-      if (succession) {
-        const ownVote = votes.find((vote) => String(vote.voter_id) === document.querySelector("[data-active-character]")?.dataset.characterId);
-        document.querySelectorAll(".party-portrait[data-character-id]").forEach((portrait) => {
+      const activePortrait = document.querySelector("[data-active-character]");
+      if (activePortrait?.dataset.characterAlive === "true") {
+        const ownVote = votes.find((vote) => String(vote.voter_id) === activePortrait.dataset.characterId);
+        document.querySelectorAll('.party-portrait[data-character-id][data-character-alive="true"]').forEach((portrait) => {
+          if (portrait.dataset.characterId === activePortrait.dataset.characterId) return;
           const form = document.createElement("form");
           form.method = "post";
           form.action = `/party-leader-votes/${portrait.dataset.characterId}`;
           form.className = "party-succession-vote";
           form.dataset.partySuccessionVote = "true";
-          form.innerHTML = `<button title="Vote for this successor" aria-label="Vote for this successor" class="${String(ownVote?.candidate_id) === portrait.dataset.characterId ? "selected" : ""}">✓</button>`;
-          portrait.append(form);
+          form.innerHTML = `<button title="Assign leadership vote to this member" aria-label="Assign leadership vote to this member" aria-pressed="${String(ownVote?.candidate_id) === portrait.dataset.characterId}" class="${String(ownVote?.candidate_id) === portrait.dataset.characterId ? "selected" : ""}">✓</button>`;
+          portrait.prepend(form);
         });
       }
     } catch {

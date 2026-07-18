@@ -1670,6 +1670,15 @@ button.party-portrait-action {
 }
 .party-succession-vote button.selected { color: var(--accent); }
 
+.party-portrait.dead {
+  filter: grayscale(1);
+  opacity: 0.62;
+}
+
+.party-portrait.dead .party-portrait-initial {
+  border-color: var(--danger, #8b3030);
+}
+
 .party-requested-toast {
   position: fixed;
   z-index: 1000;

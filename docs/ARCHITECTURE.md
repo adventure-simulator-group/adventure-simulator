@@ -195,7 +195,8 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
 | `saved_recruitment_role` | Reusable named role requirement presets owned by a character |
 | `party_join_request` | Pending applications to a recruitment role |
-| `party_action_request` / `party_leader_vote` | Persistent member suggestions and dead-leader succession votes |
+| `party_action_request` / `party_leader_vote` | Persistent member suggestions and one standing leadership vote per living member |
+| `character_death` | Immutable first death cause/source and personal strategic minute, keyed by character |
 | `local_chat_message` | Party-scoped NPC and face-to-face player conversation history |
 | `character_capability` | Cached automatic equipment, attribute, skill, and mobility tags |
 | `mission` | Active and completed missions |
@@ -211,6 +212,8 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `upsert_character` | Create/update character (gives starter items) |
 | `add_item_to_inventory` | Add items |
 | `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party |
+| `backfill_character_deaths_and_leadership` | Non-destructively supply legacy death records and normalize stale/missing standing votes |
+| internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
 | `update_party_check_targets` | Configure non-filtering Medicine, Surgery, Charisma, and Faith aggregate goals |
@@ -264,7 +267,7 @@ When the tactical mission ends (timeout, victory, or defeat):
    ```rust
    commit_mission(mission_id, success, xp_gained, items_gained_json)
    ```
-3. SpacetimeDB applies rewards to all party members
+3. SpacetimeDB applies rewards only to living party members
 4. Tactical server terminates
 
 ## Running the MVP

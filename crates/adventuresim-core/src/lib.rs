@@ -7,6 +7,7 @@ pub mod combat;
 pub mod composite;
 pub mod equipment;
 pub mod essential;
+pub mod leadership;
 pub mod morale;
 pub mod provisioning;
 pub mod simulation_security;

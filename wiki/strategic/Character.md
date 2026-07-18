@@ -62,4 +62,8 @@ Mortals risen from the dead through unnatural magic.
 * Zombies and skeletons are not elf-blooded; they are risen via necromancy. They are mindless and must be consciously puppeted by a necromancer.
     * Ghouls/wights are zombies/skeletons who have a soul bound to them (the ritual requires elf blood). They are not mindless, and though bound to their necromantic masters, they can act autonomously.
 * A lich is a necromancer who has turned himself into a wight. As his soul is bound to himself, a lich is the only type of wight with free will. (This implies the possibility of ghoul-liches, who retain their flesh.)
-Characters persist an `alive` flag. Characters currently begin alive and no implemented strategic or tactical action changes that state yet. Once a future death system marks a party leader dead, the party uses the portrait-based majority succession vote described in [Settlement](Settlement.md).
+## Death
+
+Characters begin alive. Death is an authoritative strategic transition: `Character.alive` is the fast life-state flag and one immutable `CharacterDeath` row retains the first typed cause, source, optional committed-outcome identifier, and the character's personal strategic minute. Repeating the transition is idempotent and cannot replace the original context. Tactical combat may submit a final death outcome, but tactical positions, hit points, enemies, and tick state never enter strategic persistence.
+
+Dead characters remain visible for history and party context, but cannot train, rest, travel, trade, manage equipment or inventory, enter combat, use party actions, recruit, change membership, or chat. Lazy synchronization leaves their personal clock at its death minute, and dead members receive neither mission experience nor rewards. A disposable simulation capability provides the deterministic death path used for integration testing; ordinary production identities cannot invoke it.

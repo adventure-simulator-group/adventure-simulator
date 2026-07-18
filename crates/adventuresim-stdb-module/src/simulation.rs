@@ -4,8 +4,9 @@ use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 
 use crate::character::character;
 use crate::{
-    CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, ScheduleAllocation,
-    character_attributes, character_skills, character_training_schedule, party, settlement,
+    CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
+    ScheduleAllocation, character_attributes, character_skills, character_training_schedule, party,
+    settlement,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -90,6 +91,30 @@ fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationRun, String>
         return Err("Simulation run is owned by a different identity or nonce".into());
     }
     Ok(run)
+}
+
+/// Deterministic death path available only in a capability-owned disposable
+/// simulation database. Production databases cannot claim that capability.
+#[reducer]
+pub fn kill_simulation_character(
+    ctx: &ReducerContext,
+    nonce: String,
+    character_id: u64,
+) -> Result<(), String> {
+    owned_run(ctx, &nonce)?;
+    ctx.db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found in this disposable simulation database")?;
+    crate::character::transition_character_to_dead(
+        ctx,
+        character_id,
+        DeathCause::DevTest,
+        DeathSource::DevTest,
+        Some(nonce),
+    )?;
+    Ok(())
 }
 
 /// Configure a fresh character only inside the claimed isolated run. Combat
