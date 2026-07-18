@@ -463,9 +463,16 @@ test-strategic-sim:
 
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
-strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start build-strategic
+strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start
     #!/usr/bin/env bash
     set -euo pipefail
+    set +x
+    token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    if [[ ${#token} -ne 64 ]]; then
+        echo "failed to create simulation bootstrap capability" >&2
+        exit 1
+    fi
+    export ADVENTURESIM_SIM_BOOTSTRAP_TOKEN="$token"
     nonce="$(date +%s)-$$-${RANDOM}-${RANDOM}"
     database="adventuresim-sim-${nonce}"
     cleanup() {

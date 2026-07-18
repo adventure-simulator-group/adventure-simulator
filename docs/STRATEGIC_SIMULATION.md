@@ -93,9 +93,14 @@ pre-existing run, character, party, or settlement state. It atomically claims
 the fresh database with an owner identity and nonce before seeding. Bootstrap
 configuration requires that claim and permanently marks each simulated
 character by run and agent ID; simulated and ordinary characters cannot merge
-parties. The recipe creates a nonce-named database, exposes no host/database
-override, and deletes it on exit. Population, duration, cycles, action waits,
-camp continuation, defeat retries, and recovery loops are bounded.
+parties. In addition, ordinary module builds compile with simulation claims
+disabled. The recipe creates 32 random bytes in memory, exposes them to exactly
+one module build and runner process through `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN`,
+and never accepts the capability as a CLI argument or writes it to a report.
+The public claim reducer checks that build-time capability before inspecting
+database freshness. The recipe creates a nonce-named database, exposes no
+host/database override, and deletes it on exit. Population, duration, cycles,
+action waits, camp continuation, defeat retries, and recovery loops are bounded.
 
 There are two distinct random streams. The CLI seed deterministically controls
 profiles and policy choices. Combat is authoritative: the autoresolver obtains
@@ -128,3 +133,8 @@ cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
 # Safe disposable integration run (requires local SpacetimeDB 2.6.1):
 just strategic-sim-core-loop 42 8 20 30 2
 ```
+
+Direct `core-loop` invocation is intentionally an expert-only path: its process
+must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
+publish that disposable module. There is no token CLI option. Prefer the recipe,
+which keeps the capability confined to one shell process and always cleans up.

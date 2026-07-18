@@ -1,7 +1,9 @@
 //! Opt-in real SpacetimeDB integration assertion.
 //!
 //! Publish a fresh module first, then set `ADVENTURESIM_SIM_DATABASE` to its
-//! unique `adventuresim-sim-*` name and run this ignored test explicitly.
+//! unique `adventuresim-sim-*` name. The test process must inherit the same
+//! `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used for that module build; use the safe
+//! recipe for routine runs.
 
 use adventuresim_strategic_sim::{
     CoreLoopConfig, CoreLoopEventKind, EquipmentStyle, run_core_loop,

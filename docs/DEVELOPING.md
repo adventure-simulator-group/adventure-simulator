@@ -6,7 +6,8 @@ For deterministic multi-year NPC balance experiments and replay commands, see
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
 `just test-strategic-sim`. The opt-in authoritative integration driver is
 `just strategic-sim-core-loop`; the recipe creates, claims, and deletes its own
-  nonce-named loopback database, and accepts no host or database override.
+  nonce-named loopback database, compiles a one-run bootstrap capability in
+  memory, and accepts no host, database, or capability override.
 
 ## Architecture Overview
 

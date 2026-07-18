@@ -5,6 +5,10 @@
 //! normal strategic reducers.
 
 use crate::{AgentProfile, EquipmentStyle, generate_profile};
+use adventuresim_core::simulation_security::{
+    SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
+    SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
+};
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::*;
 use serde::{Deserialize, Serialize};
@@ -113,6 +117,21 @@ fn validate_loopback_url(host: &str) -> Result<(), String> {
         return Err("host must be a credential-free http://localhost, 127.0.0.1, or [::1] origin with no path/query/fragment".into());
     }
     Ok(())
+}
+
+fn bootstrap_token_from_environment(value: Option<String>) -> Result<String, String> {
+    let token = value.ok_or_else(|| {
+        format!(
+            "{BOOTSTRAP_TOKEN_ENV} is required; use the disposable strategic-sim-core-loop recipe"
+        )
+    })?;
+    if token.len() != BOOTSTRAP_TOKEN_HEX_LEN || !token.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "{BOOTSTRAP_TOKEN_ENV} must contain exactly 32 random bytes encoded as hexadecimal"
+        ));
+    }
+    Ok(token)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -925,6 +944,8 @@ fn equipped_at(equip: &CharacterEquip, slot: ItemSlot, inventory_id: u64) -> boo
 
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
     config.validate()?;
+    let bootstrap_token =
+        bootstrap_token_from_environment(std::env::var(BOOTSTRAP_TOKEN_ENV).ok())?;
     let (connected_tx, connected_rx) = mpsc::sync_channel(1);
     let connect_error_tx = connected_tx.clone();
     let connection = DbConnection::builder()
@@ -988,7 +1009,12 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
     let result = reducer_call!(runner, "claim_simulation_run", |cb| runner
         .connection
         .reducers
-        .claim_simulation_run_then(config.run_nonce.clone(), config.seed, cb));
+        .claim_simulation_run_then(
+            bootstrap_token.clone(),
+            config.run_nonce.clone(),
+            config.seed,
+            cb,
+        ));
     runner.call(result)?;
     let result = reducer_call!(runner, "seed_world", |cb| runner
         .connection
@@ -1290,5 +1316,16 @@ mod tests {
             config.host = spoofed.into();
             assert!(config.validate().is_err(), "accepted spoofed URL {spoofed}");
         }
+    }
+
+    #[test]
+    fn bootstrap_token_is_required_and_bounded() {
+        assert!(bootstrap_token_from_environment(None).is_err());
+        assert!(bootstrap_token_from_environment(Some("short".into())).is_err());
+        assert!(bootstrap_token_from_environment(Some("z".repeat(64))).is_err());
+        assert_eq!(
+            bootstrap_token_from_environment(Some("a".repeat(64))).unwrap(),
+            "a".repeat(64)
+        );
     }
 }

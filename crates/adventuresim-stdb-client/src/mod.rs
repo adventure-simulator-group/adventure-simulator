@@ -729,6 +729,7 @@ pub enum Reducer {
         by_quantity: i32,
     },
     ClaimSimulationRun {
+        bootstrap_token: String,
         nonce: String,
         policy_seed: u64,
     },
@@ -1277,12 +1278,15 @@ impl __sdk::Reducer for Reducer {
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
             }),
-            Reducer::ClaimSimulationRun { nonce, policy_seed } => {
-                __sats::bsatn::to_vec(&claim_simulation_run_reducer::ClaimSimulationRunArgs {
-                    nonce: nonce.clone(),
-                    policy_seed: policy_seed.clone(),
-                })
-            }
+            Reducer::ClaimSimulationRun {
+                bootstrap_token,
+                nonce,
+                policy_seed,
+            } => __sats::bsatn::to_vec(&claim_simulation_run_reducer::ClaimSimulationRunArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                nonce: nonce.clone(),
+                policy_seed: policy_seed.clone(),
+            }),
             Reducer::CompleteQuest { quest_id } => {
                 __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
                     quest_id: quest_id.clone(),

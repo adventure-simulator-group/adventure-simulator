@@ -8,6 +8,10 @@ use crate::{
     character_attributes, character_skills, character_training_schedule, party, settlement,
 };
 
+/// Ordinary module builds deliberately contain no simulation capability. The
+/// disposable launcher supplies this only to the one module build it owns.
+const COMPILED_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_SIM_BOOTSTRAP_TOKEN");
+
 #[derive(Clone, Debug)]
 #[table(accessor = simulation_run, public)]
 pub struct SimulationRun {
@@ -41,9 +45,18 @@ fn valid_nonce(nonce: &str) -> bool {
 #[reducer]
 pub fn claim_simulation_run(
     ctx: &ReducerContext,
+    bootstrap_token: String,
     nonce: String,
     policy_seed: u64,
 ) -> Result<(), String> {
+    // This check must remain first: a normal production build cannot reveal
+    // or depend on database freshness through this public reducer.
+    if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+        COMPILED_BOOTSTRAP_TOKEN,
+        &bootstrap_token,
+    ) {
+        return Err("Simulation bootstrap is disabled or unauthorized".into());
+    }
     if !valid_nonce(&nonce) {
         return Err("Simulation nonce must be 16..=96 ASCII alphanumeric/dash characters".into());
     }
