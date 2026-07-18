@@ -5,7 +5,148 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 5;
+pub const WORLD_SCHEMA_VERSION: u32 = 6;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct EuroVegMapUnitCode {
+    code: String,
+}
+
+impl EuroVegMapUnitCode {
+    pub fn new(code: impl Into<String>) -> Option<Self> {
+        let code = code.into();
+        let mut chars = code.chars();
+        let first = chars.next()?;
+        if code.len() <= 20
+            && first.is_ascii_uppercase()
+            && chars.all(|character| character.is_ascii_alphanumeric() || character == '/')
+        {
+            Some(Self { code })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.code
+    }
+}
+
+impl<'de> Deserialize<'de> for EuroVegMapUnitCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            code: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.code).ok_or_else(|| serde::de::Error::custom("invalid EuroVegMap unit code"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum PotentialVegetationFormation {
+    PolarDesertAndNival,
+    TundraAndAlpine,
+    OpenWoodlandAndSubalpine,
+    ConiferousAndMixedForest,
+    Heath,
+    DeciduousAndMixedForest,
+    ThermophilousBroadleafForest,
+    HygroThermophilousBroadleafForest,
+    MediterraneanSclerophyll,
+    XerophyticConiferAndScrub,
+    ForestSteppe,
+    Steppe,
+    Oroxerophytic,
+    Desert,
+    CoastalAndHalophytic,
+    AquaticAndReed,
+    Mire,
+    SwampAndFenForest,
+    FloodplainAndWetland,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct MappedPotentialVegetation {
+    unit: EuroVegMapUnitCode,
+    formation: PotentialVegetationFormation,
+}
+
+impl MappedPotentialVegetation {
+    pub fn new(unit: EuroVegMapUnitCode, formation: PotentialVegetationFormation) -> Option<Self> {
+        (formation_for_unit(unit.as_str()) == Some(formation)).then_some(Self { unit, formation })
+    }
+
+    pub fn unit(&self) -> &EuroVegMapUnitCode {
+        &self.unit
+    }
+
+    pub const fn formation(&self) -> PotentialVegetationFormation {
+        self.formation
+    }
+}
+
+impl<'de> Deserialize<'de> for MappedPotentialVegetation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            unit: EuroVegMapUnitCode,
+            formation: PotentialVegetationFormation,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.unit, wire.formation).ok_or_else(|| {
+            serde::de::Error::custom("EuroVegMap unit code and formation do not agree")
+        })
+    }
+}
+
+fn formation_for_unit(code: &str) -> Option<PotentialVegetationFormation> {
+    use PotentialVegetationFormation as F;
+    match code {
+        "Glacier" => return Some(F::PolarDesertAndNival),
+        // EuroVegMap 2.1 assigns its descriptive River unit to formation F.
+        "River" => return Some(F::DeciduousAndMixedForest),
+        _ => {}
+    }
+    match code.as_bytes().first().copied()? {
+        b'A' => Some(F::PolarDesertAndNival),
+        b'B' => Some(F::TundraAndAlpine),
+        b'C' => Some(F::OpenWoodlandAndSubalpine),
+        b'D' => Some(F::ConiferousAndMixedForest),
+        b'E' => Some(F::Heath),
+        b'F' => Some(F::DeciduousAndMixedForest),
+        b'G' => Some(F::ThermophilousBroadleafForest),
+        b'H' => Some(F::HygroThermophilousBroadleafForest),
+        b'J' => Some(F::MediterraneanSclerophyll),
+        b'K' => Some(F::XerophyticConiferAndScrub),
+        b'L' => Some(F::ForestSteppe),
+        b'M' => Some(F::Steppe),
+        b'N' => Some(F::Oroxerophytic),
+        b'O' => Some(F::Desert),
+        b'P' => Some(F::CoastalAndHalophytic),
+        b'R' => Some(F::AquaticAndReed),
+        b'S' => Some(F::Mire),
+        b'T' => Some(F::SwampAndFenForest),
+        b'U' => Some(F::FloodplainAndWetland),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum PotentialVegetation {
+    Mapped(MappedPotentialVegetation),
+    Inferred(PotentialVegetationFormation),
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -340,6 +481,9 @@ pub struct WorldBuildReport {
     pub forest_tiles_read: usize,
     pub forest_samples: usize,
     pub forest_fallback_samples: usize,
+    pub potential_vegetation_polygons_read: usize,
+    pub potential_vegetation_samples: usize,
+    pub potential_vegetation_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -392,6 +536,7 @@ pub struct SettlementImport {
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
+    pub potential_vegetation: PotentialVegetation,
     pub scene_key: String,
     pub religion_id: String,
 }
@@ -399,8 +544,9 @@ pub struct SettlementImport {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanopyDensity, ElevationBand, ElevationMeters, ForestCover, HumanLandUseIntensity,
-        LandUseFraction, LandUseProfile,
+        CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
+        HumanLandUseIntensity, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        PotentialVegetationFormation,
     };
 
     #[test]
@@ -463,5 +609,58 @@ mod tests {
         assert!(CanopyDensity::new(50).is_some());
         assert!(serde_json::from_str::<CanopyDensity>(r#"{"percent":0}"#).is_err());
         assert_eq!(ForestCover::Open, ForestCover::Open);
+    }
+
+    #[test]
+    fn eurovegmap_codes_parse_into_a_bounded_source_identifier() {
+        assert_eq!(EuroVegMapUnitCode::new("F27").unwrap().as_str(), "F27");
+        assert_eq!(
+            EuroVegMapUnitCode::new("S18/19").unwrap().as_str(),
+            "S18/19"
+        );
+        assert!(EuroVegMapUnitCode::new("").is_none());
+        assert!(EuroVegMapUnitCode::new("future-code").is_none());
+        assert!(serde_json::from_str::<EuroVegMapUnitCode>(r#"{"code":"bad code"}"#).is_err());
+    }
+
+    #[test]
+    fn mapped_vegetation_parses_unit_and_formation_as_one_invariant() {
+        let mapped = MappedPotentialVegetation::new(
+            EuroVegMapUnitCode::new("F27").unwrap(),
+            PotentialVegetationFormation::DeciduousAndMixedForest,
+        )
+        .unwrap();
+        assert_eq!(mapped.unit().as_str(), "F27");
+        assert_eq!(
+            mapped.formation(),
+            PotentialVegetationFormation::DeciduousAndMixedForest
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("F27").unwrap(),
+                PotentialVegetationFormation::Steppe,
+            )
+            .is_none()
+        );
+        assert!(
+            serde_json::from_str::<MappedPotentialVegetation>(
+                r#"{"unit":{"code":"F27"},"formation":"Steppe"}"#
+            )
+            .is_err()
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("Glacier").unwrap(),
+                PotentialVegetationFormation::PolarDesertAndNival,
+            )
+            .is_some()
+        );
+        assert!(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("River").unwrap(),
+                PotentialVegetationFormation::DeciduousAndMixedForest,
+            )
+            .is_some()
+        );
     }
 }

@@ -1,8 +1,9 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover, LandUseFraction,
-    LandUseProfile, SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport,
+    LandUseProfile, MappedPotentialVegetation, PotentialVegetation, PotentialVegetationFormation,
+    SettlementImport, TravelEdgeImport, TravelRoute, WORLD_SCHEMA_VERSION, Woodland,
+    WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -91,6 +92,7 @@ pub struct Settlement {
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
+    pub potential_vegetation: PotentialVegetation,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -328,6 +330,28 @@ pub fn import_settlements(
                 dominant: woodland.dominant,
             }),
         };
+        let potential_vegetation = match settlement.potential_vegetation {
+            PotentialVegetation::Mapped(mapped) => {
+                let unit = adventuresim_world_schema::EuroVegMapUnitCode::new(
+                    mapped.unit().as_str().to_owned(),
+                )
+                .ok_or_else(|| {
+                    format!(
+                        "Settlement {} has invalid EuroVegMap unit code",
+                        settlement.id
+                    )
+                })?;
+                PotentialVegetation::Mapped(
+                    MappedPotentialVegetation::new(unit, mapped.formation()).ok_or_else(|| {
+                        format!(
+                            "Settlement {} has contradictory EuroVegMap vegetation",
+                            settlement.id
+                        )
+                    })?,
+                )
+            }
+            PotentialVegetation::Inferred(formation) => PotentialVegetation::Inferred(formation),
+        };
         if ctx
             .db
             .world_node()
@@ -350,6 +374,7 @@ pub fn import_settlements(
             elevation,
             land_use,
             forest_cover,
+            potential_vegetation,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3788,6 +3813,9 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     density: CanopyDensity::new(35).unwrap(),
                     dominant: DominantLeafType::Mixed,
                 }),
+                potential_vegetation: PotentialVegetation::Inferred(
+                    PotentialVegetationFormation::DeciduousAndMixedForest,
+                ),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,

@@ -5,8 +5,8 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, SettlementImport, TravelEdgeImport,
-    TravelRoute, WorldNodeImport,
+    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, TravelEdgeImport, TravelRoute, WorldNodeImport,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -27,6 +27,8 @@ struct Args {
     land_use_dir: PathBuf,
     #[arg(long, default_value_os_t = default_forest_cover_directory())]
     forest_cover_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_potential_vegetation_directory())]
+    potential_vegetation_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -62,6 +64,7 @@ fn run(args: Args) -> Result<()> {
         &args.elevation_dir,
         &args.land_use_dir,
         &args.forest_cover_dir,
+        &args.potential_vegetation_dir,
     )?;
     let output = args
         .output
@@ -206,9 +209,53 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "elevation": settlement.elevation,
         "land_use": settlement.land_use,
         "forest_cover": encode_forest_cover(settlement.forest_cover),
+        "potential_vegetation": encode_potential_vegetation(&settlement.potential_vegetation),
         "scene_key": settlement.scene_key,
         "religion_id": settlement.religion_id,
     }))
+}
+
+fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
+    match vegetation {
+        PotentialVegetation::Mapped(mapped) => json!({
+            "Mapped": {
+                "unit": { "code": mapped.unit().as_str() },
+                "formation": encode_potential_formation(mapped.formation()),
+            }
+        }),
+        PotentialVegetation::Inferred(formation) => {
+            json!({ "Inferred": encode_potential_formation(*formation) })
+        }
+    }
+}
+
+fn encode_potential_formation(formation: PotentialVegetationFormation) -> Value {
+    let name = match formation {
+        PotentialVegetationFormation::PolarDesertAndNival => "PolarDesertAndNival",
+        PotentialVegetationFormation::TundraAndAlpine => "TundraAndAlpine",
+        PotentialVegetationFormation::OpenWoodlandAndSubalpine => "OpenWoodlandAndSubalpine",
+        PotentialVegetationFormation::ConiferousAndMixedForest => "ConiferousAndMixedForest",
+        PotentialVegetationFormation::Heath => "Heath",
+        PotentialVegetationFormation::DeciduousAndMixedForest => "DeciduousAndMixedForest",
+        PotentialVegetationFormation::ThermophilousBroadleafForest => {
+            "ThermophilousBroadleafForest"
+        }
+        PotentialVegetationFormation::HygroThermophilousBroadleafForest => {
+            "HygroThermophilousBroadleafForest"
+        }
+        PotentialVegetationFormation::MediterraneanSclerophyll => "MediterraneanSclerophyll",
+        PotentialVegetationFormation::XerophyticConiferAndScrub => "XerophyticConiferAndScrub",
+        PotentialVegetationFormation::ForestSteppe => "ForestSteppe",
+        PotentialVegetationFormation::Steppe => "Steppe",
+        PotentialVegetationFormation::Oroxerophytic => "Oroxerophytic",
+        PotentialVegetationFormation::Desert => "Desert",
+        PotentialVegetationFormation::CoastalAndHalophytic => "CoastalAndHalophytic",
+        PotentialVegetationFormation::AquaticAndReed => "AquaticAndReed",
+        PotentialVegetationFormation::Mire => "Mire",
+        PotentialVegetationFormation::SwampAndFenForest => "SwampAndFenForest",
+        PotentialVegetationFormation::FloodplainAndWetland => "FloodplainAndWetland",
+    };
+    json!({ (name): [] })
 }
 
 fn encode_forest_cover(cover: ForestCover) -> Value {
@@ -266,6 +313,10 @@ fn default_forest_cover_directory() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/forest-cover")
 }
 
+fn default_potential_vegetation_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/potential-vegetation/Maps")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -273,8 +324,10 @@ fn default_output(year: i32) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use adventuresim_world_schema::{
-        CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, ForestCover,
-        LandUseFraction, LandUseProfile, SettlementImport, TravelEdgeImport, TravelRoute, Woodland,
+        CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
+        ForestCover, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        PotentialVegetation, PotentialVegetationFormation, SettlementImport, TravelEdgeImport,
+        TravelRoute, Woodland,
     };
 
     use super::{
@@ -337,6 +390,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn encodes_mapped_and_inferred_vegetation_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["potential_vegetation"],
+            serde_json::json!({
+                "Inferred": { "DeciduousAndMixedForest": [] }
+            })
+        );
+        settlement.potential_vegetation = PotentialVegetation::Mapped(
+            MappedPotentialVegetation::new(
+                EuroVegMapUnitCode::new("F27").unwrap(),
+                PotentialVegetationFormation::DeciduousAndMixedForest,
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["potential_vegetation"],
+            serde_json::json!({
+                "Mapped": {
+                    "unit": { "code": "F27" },
+                    "formation": { "DeciduousAndMixedForest": [] }
+                }
+            })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -355,6 +435,9 @@ mod tests {
             )
             .unwrap(),
             forest_cover,
+            potential_vegetation: PotentialVegetation::Inferred(
+                PotentialVegetationFormation::DeciduousAndMixedForest,
+            ),
             scene_key: "village".into(),
             religion_id: "catholic".into(),
         }

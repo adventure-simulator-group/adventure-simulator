@@ -8,8 +8,7 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CanopyDensity, CompiledWorld, DominantLeafType, ForestCover, SettlementImport,
-    SourceProvenance, WORLD_SCHEMA_VERSION, Woodland, WorldMetadata,
+    CanopyDensity, DominantLeafType, ForestCover, SourceProvenance, Woodland,
 };
 use serde::Deserialize;
 use tiff::{
@@ -19,7 +18,7 @@ use tiff::{
 
 use crate::{
     Error, Result,
-    draft::{LandUseSettlementDraft, WorldDraft},
+    draft::{ForestSettlementDraft, LandUseSettlementDraft, WorldDraft},
 };
 
 const SOURCE_NAME: &str = "Copernicus Land Monitoring Service Forest 2018";
@@ -45,7 +44,7 @@ enum PreparedFormat {
 pub(crate) fn enrich(
     mut draft: WorldDraft<LandUseSettlementDraft>,
     directory: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<WorldDraft<ForestSettlementDraft>> {
     let mut by_tile: BTreeMap<DegreeTile, Vec<usize>> = BTreeMap::new();
     for (index, settlement) in draft.settlements.iter().enumerate() {
         let base = &settlement.elevated.settlement;
@@ -90,24 +89,9 @@ pub(crate) fn enrich(
     let settlements = std::mem::take(&mut draft.settlements)
         .into_iter()
         .zip(covers)
-        .map(|(land, cover)| {
-            let cover = cover.expect("every settlement was grouped into a forest tile");
-            let elevated = land.elevated;
-            let settlement = elevated.settlement;
-            SettlementImport {
-                id: settlement.id,
-                source_node_id: settlement.source_node_id,
-                name: settlement.name,
-                longitude: settlement.longitude,
-                latitude: settlement.latitude,
-                population_level: settlement.population_level,
-                population_estimate: settlement.population_estimate,
-                elevation: elevated.elevation,
-                land_use: land.land_use,
-                forest_cover: cover,
-                scene_key: settlement.scene_key,
-                religion_id: settlement.religion_id,
-            }
+        .map(|(land, cover)| ForestSettlementDraft {
+            land,
+            forest_cover: cover.expect("every settlement was grouped into a forest tile"),
         })
         .collect::<Vec<_>>();
     draft.sources.push(SourceProvenance {
@@ -118,13 +102,10 @@ pub(crate) fn enrich(
     draft.report.forest_tiles_read = by_tile.len();
     draft.report.forest_samples = settlements.len();
     draft.report.forest_fallback_samples = fallbacks;
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(WorldDraft {
+        year: draft.year,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges: draft.edges,
         settlements,
