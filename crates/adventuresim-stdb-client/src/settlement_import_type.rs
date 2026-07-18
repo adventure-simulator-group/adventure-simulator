@@ -8,6 +8,7 @@ use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
+use super::tree_species_profile_type::TreeSpeciesProfile;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -23,6 +24,7 @@ pub struct SettlementImport {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub tree_species: TreeSpeciesProfile,
     pub scene_key: String,
     pub religion_id: String,
 }

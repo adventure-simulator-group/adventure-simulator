@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 6;
+pub const WORLD_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -146,6 +146,204 @@ fn formation_for_unit(code: &str) -> Option<PotentialVegetationFormation> {
 pub enum PotentialVegetation {
     Mapped(MappedPotentialVegetation),
     Inferred(PotentialVegetationFormation),
+}
+
+pub const MAX_MODELED_TREE_SPECIES: usize = 12;
+pub const MAX_INFERRED_TREE_SPECIES: usize = 4;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct TreeSpeciesId {
+    scientific_name: String,
+}
+
+impl TreeSpeciesId {
+    pub fn new(scientific_name: impl Into<String>) -> Option<Self> {
+        let scientific_name = scientific_name.into();
+        let (genus, epithet) = scientific_name.split_once('_')?;
+        if epithet.contains('_') || !valid_genus(genus) || !valid_epithet(epithet) {
+            return None;
+        }
+        Some(Self { scientific_name })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.scientific_name
+    }
+}
+
+fn valid_genus(value: &str) -> bool {
+    let mut characters = value.bytes();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_uppercase())
+        && characters.all(|character| character.is_ascii_lowercase())
+}
+
+fn valid_epithet(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|character| character.is_ascii_lowercase())
+}
+
+impl<'de> Deserialize<'de> for TreeSpeciesId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            scientific_name: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.scientific_name)
+            .ok_or_else(|| serde::de::Error::custom("invalid EU-Trees4F scientific name"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct HabitatSuitability {
+    score: u16,
+}
+
+impl HabitatSuitability {
+    pub const MAX: u16 = 1_000;
+
+    pub const fn new(score: u16) -> Option<Self> {
+        if score <= Self::MAX {
+            Some(Self { score })
+        } else {
+            None
+        }
+    }
+
+    pub const fn score(self) -> u16 {
+        self.score
+    }
+}
+
+impl<'de> Deserialize<'de> for HabitatSuitability {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            score: u16,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.score)
+            .ok_or_else(|| serde::de::Error::custom("tree habitat suitability must be 0..=1000"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum NativeRangeEvidence {
+    WithinNativeRange,
+    OutsideNativeRange,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct ModeledTreeSpecies {
+    pub species: TreeSpeciesId,
+    pub suitability: HabitatSuitability,
+    pub native_range: NativeRangeEvidence,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct ModeledTreeSpeciesProfile {
+    candidates: Vec<ModeledTreeSpecies>,
+}
+
+impl ModeledTreeSpeciesProfile {
+    pub fn new(mut candidates: Vec<ModeledTreeSpecies>) -> Option<Self> {
+        if candidates.is_empty() || candidates.len() > MAX_MODELED_TREE_SPECIES {
+            return None;
+        }
+        let unique_species = candidates
+            .iter()
+            .map(|candidate| &candidate.species)
+            .collect::<std::collections::BTreeSet<_>>();
+        if unique_species.len() != candidates.len() {
+            return None;
+        }
+        candidates.sort_by(|left, right| {
+            right
+                .suitability
+                .cmp(&left.suitability)
+                .then_with(|| left.species.cmp(&right.species))
+        });
+        Some(Self { candidates })
+    }
+
+    pub fn candidates(&self) -> &[ModeledTreeSpecies] {
+        &self.candidates
+    }
+}
+
+impl<'de> Deserialize<'de> for ModeledTreeSpeciesProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            candidates: Vec<ModeledTreeSpecies>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.candidates)
+            .ok_or_else(|| serde::de::Error::custom("invalid modeled tree-species profile"))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct InferredTreeSpeciesProfile {
+    species: Vec<TreeSpeciesId>,
+}
+
+impl InferredTreeSpeciesProfile {
+    pub fn new(mut species: Vec<TreeSpeciesId>) -> Option<Self> {
+        if species.is_empty() || species.len() > MAX_INFERRED_TREE_SPECIES {
+            return None;
+        }
+        species.sort();
+        if species.windows(2).any(|pair| pair[0] == pair[1]) {
+            return None;
+        }
+        Some(Self { species })
+    }
+
+    pub fn species(&self) -> &[TreeSpeciesId] {
+        &self.species
+    }
+}
+
+impl<'de> Deserialize<'de> for InferredTreeSpeciesProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            species: Vec<TreeSpeciesId>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.species)
+            .ok_or_else(|| serde::de::Error::custom("invalid inferred tree-species profile"))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum TreeSpeciesProfile {
+    Modeled(ModeledTreeSpeciesProfile),
+    Inferred(InferredTreeSpeciesProfile),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -484,6 +682,10 @@ pub struct WorldBuildReport {
     pub potential_vegetation_polygons_read: usize,
     pub potential_vegetation_samples: usize,
     pub potential_vegetation_fallback_samples: usize,
+    pub tree_species_rasters_read: usize,
+    pub tree_species_samples: usize,
+    pub tree_species_fallback_samples: usize,
+    pub tree_species_candidates: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -537,6 +739,7 @@ pub struct SettlementImport {
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
     pub potential_vegetation: PotentialVegetation,
+    pub tree_species: TreeSpeciesProfile,
     pub scene_key: String,
     pub religion_id: String,
 }
@@ -545,8 +748,9 @@ pub struct SettlementImport {
 mod tests {
     use super::{
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
-        HumanLandUseIntensity, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        PotentialVegetationFormation,
+        HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
+        NativeRangeEvidence, PotentialVegetationFormation, TreeSpeciesId,
     };
 
     #[test]
@@ -662,5 +866,44 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn tree_species_profiles_are_nonempty_unique_and_canonically_ranked() {
+        let oak = TreeSpeciesId::new("Quercus_robur").unwrap();
+        let beech = TreeSpeciesId::new("Fagus_sylvatica").unwrap();
+        assert!(TreeSpeciesId::new("quercus robur").is_none());
+        assert!(HabitatSuitability::new(1_001).is_none());
+        let profile = ModeledTreeSpeciesProfile::new(vec![
+            ModeledTreeSpecies {
+                species: oak.clone(),
+                suitability: HabitatSuitability::new(400).unwrap(),
+                native_range: NativeRangeEvidence::WithinNativeRange,
+            },
+            ModeledTreeSpecies {
+                species: beech,
+                suitability: HabitatSuitability::new(800).unwrap(),
+                native_range: NativeRangeEvidence::OutsideNativeRange,
+            },
+        ])
+        .unwrap();
+        assert_eq!(profile.candidates()[0].suitability.score(), 800);
+        assert!(
+            ModeledTreeSpeciesProfile::new(vec![
+                ModeledTreeSpecies {
+                    species: oak.clone(),
+                    suitability: HabitatSuitability::new(400).unwrap(),
+                    native_range: NativeRangeEvidence::WithinNativeRange,
+                },
+                ModeledTreeSpecies {
+                    species: oak,
+                    suitability: HabitatSuitability::new(500).unwrap(),
+                    native_range: NativeRangeEvidence::OutsideNativeRange,
+                },
+            ])
+            .is_none()
+        );
+        assert!(InferredTreeSpeciesProfile::new(Vec::new()).is_none());
+        assert!(serde_json::from_str::<ModeledTreeSpeciesProfile>(r#"{"candidates":[]}"#).is_err());
     }
 }
