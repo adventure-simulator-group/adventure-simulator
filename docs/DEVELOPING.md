@@ -27,7 +27,23 @@ just dev
 Open http://localhost:8080
 
 Ordinary `just dev` / `just web` startup publishes without deleting database
-data. Use `just web-reset` only when an intentional reset is required.
+data. Publication failures stop startup before the seed reducer, tactical
+spawner, or web process starts and print the server/database identity plus
+recovery choices. Canonical reset recipes are intentionally disabled.
+
+For a disposable demo or worktree, use an explicit isolated profile:
+
+```bash
+just web-isolated renderer-demo 23100
+```
+
+The profile name is restricted to lowercase letters, digits, and hyphens, and
+the base port must leave room for the web and tactical ports. The recipe derives
+a distinct database name, SpacetimeDB data directory, run/PID directory, and
+three loopback ports from those values. Only this guarded workflow may pass
+`--delete-data=always`; it rejects remote servers, non-loopback binds, mismatched
+database names, and unsafe profile strings. It stops its own SpacetimeDB and
+spawner when the foreground web process exits.
 
 ## Full Development (with Tactical Servers)
 
@@ -72,10 +88,10 @@ Now when you click a location in the browser, a tactical server will automatical
 ```bash
 # Development
 just dev              # Start the complete browser stack
-just web-reset        # Delete, reseed, and start the disposable browser stack
+just web-isolated     # Reset and start an explicitly isolated local profile
 just web-secure       # Start strategic-web at https://localhost:8443
 just secure-web-trust # Trust Caddy's local development CA (normally once)
-just web-damaged      # Start a fresh stack with an injured demo character
+just web-damaged      # Refuses canonical reset; seed damage in an isolated profile
 just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
 
@@ -98,8 +114,9 @@ just build-all        # Build everything
 
 # Database
 just publish          # Publish SpacetimeDB module
-just publish-reset    # Publish and clear database
+just publish-reset    # Refuses canonical database deletion
 just generate-db-client # Regenerate and format the Rust client bindings
+just verify-db-client   # Fail if committed bindings differ from the module ABI
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
@@ -119,23 +136,36 @@ tests require a running SpacetimeDB environment.
 The workspace pins both the module crate and Rust SDK to SpacetimeDB 2.6.1.
 Before building or generating bindings, verify the active CLI with
 `spacetime --version`. Binding generation uses `spacetime generate
---module-path` and intentionally excludes private tables.
+--module-path` and intentionally excludes private tables. Both native tactical
+and WASM builds run `just verify-db-client`, which generates and formats into a
+temporary directory and compares the result without changing the checkout.
 
 The 1.x to 2.6.1 project upgrade is intentionally a clean reset: the game is
 pre-launch, so existing local and deployment data is not retained. Stop the
 old server, take an operator backup only if the old data may still be useful,
 and move its data directory aside or configure a new empty data directory.
-Then install/select SpacetimeDB 2.6.1 and run `just web-reset`. That explicit
-startup path starts the 2.6.1 server, reset-publishes, reseeds, and launches the
-browser stack; it permanently discards the database's previous contents. Keep
+Then install/select SpacetimeDB 2.6.1 and use an explicitly isolated profile,
+or perform a separately reviewed operator migration. `web-isolated` starts a
+profile-owned server, reset-publishes, reseeds, and launches the browser stack;
+it permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
 
 After this one-time reset, routine startup should use `just dev` / `just web`
 and routine publishes should use `just publish`, all of which preserve data.
-Do not use `web-reset` or `publish-reset` on a future public or player-bearing
-database unless data loss is explicitly approved and a verified recovery copy
-exists.
+`web-reset` and `publish-reset` refuse to run. Never pass destructive publish
+flags manually against a public or player-bearing database unless data loss is
+explicitly approved and a verified recovery copy exists.
+
+`seed_world` is itself idempotent: it inserts only missing demo rows. The local
+workflow now propagates every reducer failure instead of treating arbitrary
+errors as evidence that seeding already happened.
+
+Spawner PID files have a sidecar identity containing the resolved repository,
+profile, server/database, bind/port configuration, and hashes of both tactical
+binaries. A live PID with a missing or different identity is rejected, so a
+worktree cannot silently reuse another checkout's dispatcher or an out-of-date
+build. Dead PIDs are cleaned and replaced.
 
 ## Viabundus source data
 
