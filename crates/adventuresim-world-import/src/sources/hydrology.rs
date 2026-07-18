@@ -19,7 +19,10 @@ use adventuresim_world_schema::{
     WaterDistanceMeters, WorldMetadata,
 };
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, Point};
-use geozero::{ToGeo, wkb::GpkgWkb};
+use geozero::{
+    ToGeo,
+    wkb::{Ewkb, GpkgWkb},
+};
 use proj4rs::{proj::Proj, transform::transform};
 use rusqlite::{Connection, OpenFlags, params};
 
@@ -35,6 +38,13 @@ const SOURCE_NAME: &str = "Copernicus EU-Hydro River Network Database v1.3";
 const SOURCE_URL: &str =
     "https://land.copernicus.eu/en/products/eu-hydro/eu-hydro-river-network-database";
 const SOURCE_LICENSE: &str = "Copernicus Land Monitoring Service full and open data policy";
+// OGC used version-specific SQLite application IDs before adopting the
+// current `GPKG` marker. The official EU-Hydro v1.3 GeoPackages use `GP11`.
+const GEOPACKAGE_APPLICATION_IDS: [i64; 3] = [
+    0x4750_3130, // GP10
+    0x4750_3131, // GP11
+    0x4750_4b47, // GPKG
+];
 const EXPECTED_SRS: i64 = 3035;
 const SETTLEMENT_ADJACENCY_METERS: f64 = 2_000.0;
 const SOURCE_MARGIN_METERS: f64 = 10_000.0;
@@ -686,7 +696,7 @@ fn read_geopackage(
             path: path.to_path_buf(),
             source,
         })?;
-    if application_id != 0x4750_4b47 {
+    if !is_geopackage_application_id(application_id) {
         return Err(Error::Validation(format!(
             "{} is not an OGC GeoPackage",
             path.display()
@@ -774,6 +784,10 @@ fn read_geopackage(
         )?;
     }
     Ok(())
+}
+
+fn is_geopackage_application_id(application_id: i64) -> bool {
+    GEOPACKAGE_APPLICATION_IDS.contains(&application_id)
 }
 
 fn feature_kind(table: &str) -> Option<FeatureKind> {
@@ -887,35 +901,41 @@ fn read_feature_table(
                 source,
             })?;
         let order = row
-            .get::<_, Option<i64>>(1)
+            .get::<_, Option<f64>>(1)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
+        let order = source_integer(order, path, table, "STRAHLER")?;
         let persistence = row
-            .get::<_, Option<i64>>(2)
+            .get::<_, Option<f64>>(2)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
+        let persistence = source_integer(persistence, path, table, "HYP")?;
         let navigability = row
-            .get::<_, Option<i64>>(3)
+            .get::<_, Option<f64>>(3)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
+        let navigability = source_integer(navigability, path, table, "NVS")?;
         let area = row
             .get::<_, Option<f64>>(4)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let geometry = GpkgWkb(geometry).to_geo().map_err(|error| {
-            Error::Validation(format!(
-                "{} table {table} has invalid GeoPackage geometry: {error}",
-                path.display()
-            ))
-        })?;
+        let geometry = compatible_ewkb(&geometry)
+            .map(Ewkb)
+            .map_or_else(|| GpkgWkb(geometry).to_geo(), |geometry| geometry.to_geo())
+            .map_err(|error| {
+                Error::Validation(format!(
+                    "{} table {table} has invalid GeoPackage geometry: {error}",
+                    path.display()
+                ))
+            })?;
         if !decoded_geometry_matches(kind, &geometry) {
             return Err(Error::Validation(format!(
                 "{} table {table} contains geometry incompatible with its feature class",
@@ -951,6 +971,82 @@ fn read_feature_table(
         });
     }
     Ok(())
+}
+
+/// EU-Hydro v1.3 stores ISO 3D/4D WKB at the GeoPackage root while nested
+/// geometries use equivalent EWKB dimension flags. GeoZero treats a package as
+/// one WKB dialect, so promote only that root header before using its EWKB
+/// reader. Ordinary GeoPackage WKB continues through the normal reader.
+fn compatible_ewkb(geometry: &[u8]) -> Option<Vec<u8>> {
+    let offset = geopackage_wkb_offset(geometry)?;
+    let little_endian = match *geometry.get(offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let type_bytes: [u8; 4] = geometry.get(offset + 1..offset + 5)?.try_into().ok()?;
+    let type_id = if little_endian {
+        u32::from_le_bytes(type_bytes)
+    } else {
+        u32::from_be_bytes(type_bytes)
+    };
+    let dimensions = type_id / 1_000;
+    let dimension_flags = match dimensions {
+        1 => 0x8000_0000,
+        2 => 0x4000_0000,
+        3 => 0xc000_0000,
+        _ => return None,
+    };
+    let base_type = type_id % 1_000;
+    if base_type == 0 {
+        return None;
+    }
+    let mut wkb = geometry[offset..].to_vec();
+    let type_bytes = (base_type | dimension_flags).to_le_bytes();
+    if little_endian {
+        wkb[1..5].copy_from_slice(&type_bytes);
+    } else {
+        wkb[1..5].copy_from_slice(&(base_type | dimension_flags).to_be_bytes());
+    }
+    Some(wkb)
+}
+
+fn geopackage_wkb_offset(geometry: &[u8]) -> Option<usize> {
+    if geometry.get(..2)? != b"GP" {
+        return None;
+    }
+    let envelope_values = match (geometry.get(3)? & 0b0000_1110) >> 1 {
+        0 => 0,
+        1 => 4,
+        2 | 3 => 6,
+        4 => 8,
+        _ => return None,
+    };
+    let offset = 8 + envelope_values * 8;
+    (geometry.len() >= offset + 5).then_some(offset)
+}
+
+fn source_integer(
+    value: Option<f64>,
+    path: &Path,
+    table: &str,
+    column: &str,
+) -> Result<Option<i64>> {
+    value
+        .map(|value| {
+            if !value.is_finite()
+                || value.fract() != 0.0
+                || value < i64::MIN as f64
+                || value >= i64::MAX as f64
+            {
+                return Err(Error::Validation(format!(
+                    "{} table {table} column {column} must contain a finite whole-number code",
+                    path.display()
+                )));
+            }
+            Ok(value as i64)
+        })
+        .transpose()
 }
 
 fn source_geometry_type_matches(kind: FeatureKind, geometry_type: &str) -> bool {
@@ -1210,6 +1306,34 @@ mod tests {
     use rusqlite::params;
 
     use super::*;
+
+    #[test]
+    fn accepts_standard_geopackage_application_identifiers() {
+        assert!(is_geopackage_application_id(0x4750_3130));
+        assert!(is_geopackage_application_id(0x4750_3131));
+        assert!(is_geopackage_application_id(0x4750_4b47));
+        assert!(!is_geopackage_application_id(0));
+    }
+
+    #[test]
+    fn source_codes_accept_whole_number_sqlite_reals() {
+        let path = Path::new("fixture.gpkg");
+        assert_eq!(
+            source_integer(Some(3.0), path, "River_Net_l", "STRAHLER").unwrap(),
+            Some(3)
+        );
+        assert!(source_integer(Some(3.5), path, "River_Net_l", "STRAHLER").is_err());
+        assert!(source_integer(Some(f64::NAN), path, "River_Net_l", "STRAHLER").is_err());
+    }
+
+    #[test]
+    fn converts_iso_dimension_header_for_eu_hydro_nested_ewkb() {
+        let geometry = [
+            b'G', b'P', 0, 1, 0xdb, 0x0b, 0, 0, // GeoPackage header, EPSG:3035
+            1, 0xbe, 0x0b, 0, 0, // little-endian ISO MultiPolygon ZM (3006)
+        ];
+        assert_eq!(compatible_ewkb(&geometry).unwrap(), vec![1, 6, 0, 0, 0xc0]);
+    }
 
     #[test]
     fn canal_access_cannot_exist_without_river_access() {
@@ -1502,6 +1626,27 @@ mod tests {
     fn reads_downloaded_eu_hydro_distribution() {
         let directory = std::env::var_os("EU_HYDRO_DIR").expect("set EU_HYDRO_DIR");
         let database = HydrologyDatabase::open(Path::new(&directory), None).unwrap();
+        assert!(database.files_read > 0);
+        assert!(
+            database
+                .features
+                .iter()
+                .any(|feature| feature.kind == FeatureKind::River)
+        );
+        assert!(!database.spatial_grid.is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires extracted official EU-Hydro basin GeoPackages in EU_HYDRO_DIR"]
+    fn reads_downloaded_eu_hydro_distribution_for_hamburg() {
+        let directory = std::env::var_os("EU_HYDRO_DIR").expect("set EU_HYDRO_DIR");
+        let projection = HydrologyProjection::new().unwrap();
+        let bounds = world_bounds(
+            [(53.10, 9.24), (54.00, 10.75)]
+                .into_iter()
+                .map(|(latitude, longitude)| projection.project(latitude, longitude).unwrap()),
+        );
+        let database = HydrologyDatabase::open(Path::new(&directory), bounds).unwrap();
         assert!(database.files_read > 0);
         assert!(
             database

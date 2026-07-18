@@ -211,7 +211,11 @@ fn serialize_batches<T>(
     batch_size: usize,
     encode: fn(&T) -> Result<Value>,
 ) -> Result<Vec<Vec<Value>>> {
-    let rows = rows.iter().map(encode).collect::<Result<Vec<_>>>()?;
+    let rows = rows
+        .iter()
+        .map(encode)
+        .map(|row| row.map(sats_json))
+        .collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
     let mut code_units = 2;
@@ -240,6 +244,31 @@ fn serialize_batches<T>(
         batches.push(batch);
     }
     Ok(batches)
+}
+
+/// SpacetimeDB's reducer JSON uses lower-camel enum labels, while the shared
+/// Rust types serialize their variants in Rust's conventional PascalCase.
+/// Field names are already lower snake case, so only object keys with an
+/// uppercase first ASCII character are converted recursively at this boundary.
+fn sats_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(sats_json).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (sats_key(&key), sats_json(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+fn sats_key(key: &str) -> String {
+    let mut bytes = key.as_bytes().to_vec();
+    if let Some(first) = bytes.first_mut().filter(|first| first.is_ascii_uppercase()) {
+        *first = first.to_ascii_lowercase();
+    }
+    String::from_utf8(bytes).expect("an ASCII-only change preserves UTF-8")
 }
 
 fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
@@ -435,16 +464,16 @@ fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
     };
     match status {
         SettlementReligiousStatus::Established { religion: value } => {
-            json!({ "Established": { "religion": religion(value) } })
+            json!({ "Established": religion(value) })
         }
         SettlementReligiousStatus::Parity { arrangement: value } => {
-            json!({ "Parity": { "arrangement": arrangement(value) } })
+            json!({ "Parity": arrangement(value) })
         }
         SettlementReligiousStatus::MultiConfessional { arrangement: value } => {
-            json!({ "MultiConfessional": { "arrangement": arrangement(value) } })
+            json!({ "MultiConfessional": arrangement(value) })
         }
         SettlementReligiousStatus::LocallyDetermined { church } => {
-            json!({ "LocallyDetermined": { "church": religion(church) } })
+            json!({ "LocallyDetermined": religion(church) })
         }
     }
 }
@@ -880,11 +909,11 @@ mod tests {
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(
             batches[0][0]["route"],
-            serde_json::json!({ "Land": { "bridge": { "some": { "To": [] } }, "water_crossings": [] } })
+            serde_json::json!({ "land": { "bridge": { "some": { "to": [] } }, "water_crossings": [] } })
         );
         assert_eq!(
             batches[0][0]["toll"],
-            serde_json::json!({ "some": { "From": [] } })
+            serde_json::json!({ "some": { "from": [] } })
         );
         assert_eq!(batches[0][0]["sources"], "- Test source.");
     }
@@ -1031,7 +1060,7 @@ mod tests {
         assert_eq!(
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
-                "Established": { "religion": { "RomanCatholic": [] } }
+                "Established": { "RomanCatholic": [] }
             })
         );
         settlement.religious_status = SettlementReligiousStatus::MultiConfessional {
@@ -1043,9 +1072,7 @@ mod tests {
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
                 "MultiConfessional": {
-                    "arrangement": {
-                        "CatholicLutheran": { "church": { "Lutheran": [] } }
-                    }
+                    "CatholicLutheran": { "church": { "Lutheran": [] } }
                 }
             })
         );

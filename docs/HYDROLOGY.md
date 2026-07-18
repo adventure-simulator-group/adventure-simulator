@@ -15,13 +15,15 @@ Download the basin GeoPackage distribution and extract its `.gpkg` files under
 `target/world-data-sources/raw/hydrology/`. Nested basin directories are
 accepted. Override the directory with `--hydrology-dir`.
 
-The official full archive is not currently present in the development data
-directory, so only the strict source boundary has been verified using
-read-focused SQLite fixtures with GeoPackage core metadata, a real EPSG:3035
-definition, synthetic geometries, and manually populated RTree tables. The
-fixtures exercise the reader but are not a writable GeoPackage conformance
-suite. Do not describe a full-world hydrology audit as complete until the
-official archive has been run.
+The reader accepts the standard GeoPackage 1.0 (`GP10`), 1.1 (`GP11`), and
+current (`GPKG`) SQLite application identifiers. The official EU-Hydro v1.3
+basin files use the GeoPackage 1.1 marker.
+
+The test suite uses read-focused SQLite fixtures with GeoPackage core metadata,
+a real EPSG:3035 definition, synthetic geometries, and manually populated
+RTree tables. The fixtures exercise the reader but are not a writable
+GeoPackage conformance suite. Do not describe a full-world hydrology audit as
+complete until every required official basin archive has been run.
 
 ## Parsed source features
 
