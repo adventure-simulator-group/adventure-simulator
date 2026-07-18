@@ -1707,12 +1707,14 @@ button.party-portrait-action {
 .party-portrait:hover .party-succession-vote,
 .party-portrait:focus-within .party-succession-vote,
 .party-succession-vote.selected,
+.party-succession-vote.current-leader,
 .party-succession-vote.dropping {
   opacity: 1;
   pointer-events: auto;
 }
 
 .party-succession-vote.selected,
+.party-succession-vote.current-leader,
 .party-succession-vote.dropping {
   transform: translate(-50%, 0.55rem);
 }
