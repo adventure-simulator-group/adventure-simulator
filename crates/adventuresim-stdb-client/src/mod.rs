@@ -17,6 +17,7 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
@@ -41,6 +42,8 @@ pub mod character_capability_table;
 pub mod character_capability_type;
 pub mod character_condition_table;
 pub mod character_condition_type;
+pub mod character_death_table;
+pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
 pub mod character_limbs_table;
@@ -83,6 +86,8 @@ pub mod create_temporary_character_reducer;
 pub mod cropland_cover_type;
 pub mod crossing_traversal_type;
 pub mod crossing_watercourse_type;
+pub mod death_cause_type;
+pub mod death_source_type;
 pub mod define_armor_reducer;
 pub mod define_clothing_reducer;
 pub mod define_item_reducer;
@@ -159,6 +164,7 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
+pub mod kill_simulation_character_reducer;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
 pub mod land_use_profile_type;
@@ -355,6 +361,7 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
@@ -379,6 +386,8 @@ pub use character_capability_table::*;
 pub use character_capability_type::CharacterCapability;
 pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
+pub use character_death_table::*;
+pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
 pub use character_limbs_table::*;
@@ -421,6 +430,8 @@ pub use create_temporary_character_reducer::create_temporary_character;
 pub use cropland_cover_type::CroplandCover;
 pub use crossing_traversal_type::CrossingTraversal;
 pub use crossing_watercourse_type::CrossingWatercourse;
+pub use death_cause_type::DeathCause;
+pub use death_source_type::DeathSource;
 pub use define_armor_reducer::define_armor;
 pub use define_clothing_reducer::define_clothing;
 pub use define_item_reducer::define_item;
@@ -497,6 +508,7 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
+pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
 pub use land_use_profile_type::LandUseProfile;
@@ -711,6 +723,7 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    BackfillCharacterDeathsAndLeadership,
     BackfillItemValues,
     BackfillSoloParties,
     BeginWorldDataImport {
@@ -901,6 +914,10 @@ pub enum Reducer {
         name: String,
         id: u64,
         temporary: bool,
+    },
+    KillSimulationCharacter {
+        nonce: String,
+        character_id: u64,
     },
     LeaveMission {
         character_id: u64,
@@ -1116,6 +1133,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
+            Reducer::BackfillCharacterDeathsAndLeadership => {
+                "backfill_character_deaths_and_leadership"
+            }
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
@@ -1158,6 +1178,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
             Reducer::InsertNewCharacter { .. } => "insert_new_character",
+            Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
@@ -1203,96 +1224,91 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
-            Reducer::AbandonQuest {
+                        Reducer::AbandonQuest{
                 character_id,
                 quest_id,
-            } => __sats::bsatn::to_vec(&abandon_quest_reducer::AbandonQuestArgs {
+}             => __sats::bsatn::to_vec(&abandon_quest_reducer::AbandonQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
-            }),
-            Reducer::AcceptPartyJoinRequest {
+}),
+            Reducer::AcceptPartyJoinRequest{
                 leader_id,
                 request_id,
-            } => __sats::bsatn::to_vec(
-                &accept_party_join_request_reducer::AcceptPartyJoinRequestArgs {
-                    leader_id: leader_id.clone(),
-                    request_id: request_id.clone(),
-                },
-            ),
-            Reducer::AcceptQuest {
+}             => __sats::bsatn::to_vec(&accept_party_join_request_reducer::AcceptPartyJoinRequestArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
+}),
+            Reducer::AcceptQuest{
                 character_id,
                 quest_id,
-            } => __sats::bsatn::to_vec(&accept_quest_reducer::AcceptQuestArgs {
+}             => __sats::bsatn::to_vec(&accept_quest_reducer::AcceptQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
-            }),
-            Reducer::AddAndEquipItem {
+}),
+            Reducer::AddAndEquipItem{
                 character_id,
                 item_id,
                 destination,
-            } => __sats::bsatn::to_vec(&add_and_equip_item_reducer::AddAndEquipItemArgs {
+}             => __sats::bsatn::to_vec(&add_and_equip_item_reducer::AddAndEquipItemArgs {
                 character_id: character_id.clone(),
                 item_id: item_id.clone(),
                 destination: destination.clone(),
-            }),
-            Reducer::AutoresolveQuest {
+}),
+            Reducer::AutoresolveQuest{
                 character_id,
                 quest_id,
-            } => __sats::bsatn::to_vec(&autoresolve_quest_reducer::AutoresolveQuestArgs {
+}             => __sats::bsatn::to_vec(&autoresolve_quest_reducer::AutoresolveQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
-            }),
-            Reducer::BackfillItemValues => {
-                __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {})
-            }
-            Reducer::BackfillSoloParties => {
-                __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {})
-            }
-            Reducer::BeginWorldDataImport {
+}),
+            Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
+                }),
+Reducer::BackfillItemValues => __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {
+                }),
+Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
+                }),
+Reducer::BeginWorldDataImport{
                 schema_version,
                 artifact_id,
                 manifest_digest,
                 sources,
-            } => {
-                __sats::bsatn::to_vec(&begin_world_data_import_reducer::BeginWorldDataImportArgs {
-                    schema_version: schema_version.clone(),
-                    artifact_id: artifact_id.clone(),
-                    manifest_digest: manifest_digest.clone(),
-                    sources: sources.clone(),
-                })
-            }
-            Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(
-                &calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs {},
-            ),
-            Reducer::CancelMissionRequest { mission_id } => {
-                __sats::bsatn::to_vec(&cancel_mission_request_reducer::CancelMissionRequestArgs {
-                    mission_id: mission_id.clone(),
-                })
-            }
-            Reducer::ChangeInventoryItem {
+}             => __sats::bsatn::to_vec(&begin_world_data_import_reducer::BeginWorldDataImportArgs {
+                schema_version: schema_version.clone(),
+                artifact_id: artifact_id.clone(),
+                manifest_digest: manifest_digest.clone(),
+                sources: sources.clone(),
+}),
+            Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(&calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs {
+                }),
+Reducer::CancelMissionRequest{
+                mission_id,
+}             => __sats::bsatn::to_vec(&cancel_mission_request_reducer::CancelMissionRequestArgs {
+                mission_id: mission_id.clone(),
+}),
+            Reducer::ChangeInventoryItem{
                 character_id,
                 item_id,
                 by_quantity,
-            } => __sats::bsatn::to_vec(&change_inventory_item_reducer::ChangeInventoryItemArgs {
+}             => __sats::bsatn::to_vec(&change_inventory_item_reducer::ChangeInventoryItemArgs {
                 character_id: character_id.clone(),
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
-            }),
-            Reducer::ClaimSimulationRun {
+}),
+            Reducer::ClaimSimulationRun{
                 bootstrap_token,
                 nonce,
                 policy_seed,
-            } => __sats::bsatn::to_vec(&claim_simulation_run_reducer::ClaimSimulationRunArgs {
+}             => __sats::bsatn::to_vec(&claim_simulation_run_reducer::ClaimSimulationRunArgs {
                 bootstrap_token: bootstrap_token.clone(),
                 nonce: nonce.clone(),
                 policy_seed: policy_seed.clone(),
-            }),
-            Reducer::CompleteQuest { quest_id } => {
-                __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
-                    quest_id: quest_id.clone(),
-                })
-            }
-            Reducer::ConfigureSimulationCharacter {
+}),
+            Reducer::CompleteQuest{
+                quest_id,
+}             => __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
+                quest_id: quest_id.clone(),
+}),
+            Reducer::ConfigureSimulationCharacter{
                 nonce,
                 character_id,
                 agent_id,
@@ -1300,83 +1316,78 @@ impl __sdk::Reducer for Reducer {
                 attributes,
                 skills,
                 downtime,
-            } => __sats::bsatn::to_vec(
-                &configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
-                    nonce: nonce.clone(),
-                    character_id: character_id.clone(),
-                    agent_id: agent_id.clone(),
-                    settlement_id: settlement_id.clone(),
-                    attributes: attributes.clone(),
-                    skills: skills.clone(),
-                    downtime: downtime.clone(),
-                },
-            ),
-            Reducer::ContinueCampTravel { character_id } => {
-                __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
-                    character_id: character_id.clone(),
-                })
-            }
-            Reducer::CreateCharacter { id } => {
-                __sats::bsatn::to_vec(&create_character_reducer::CreateCharacterArgs {
-                    id: id.clone(),
-                })
-            }
-            Reducer::CreateNamedCharacter { name } => {
-                __sats::bsatn::to_vec(&create_named_character_reducer::CreateNamedCharacterArgs {
-                    name: name.clone(),
-                })
-            }
-            Reducer::CreateNamedCharacterWithId { id, name } => __sats::bsatn::to_vec(
-                &create_named_character_with_id_reducer::CreateNamedCharacterWithIdArgs {
-                    id: id.clone(),
-                    name: name.clone(),
-                },
-            ),
-            Reducer::CreateRecruitmentRole {
+}             => __sats::bsatn::to_vec(&configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
+                nonce: nonce.clone(),
+                character_id: character_id.clone(),
+                agent_id: agent_id.clone(),
+                settlement_id: settlement_id.clone(),
+                attributes: attributes.clone(),
+                skills: skills.clone(),
+                downtime: downtime.clone(),
+}),
+            Reducer::ContinueCampTravel{
+                character_id,
+}             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::CreateCharacter{
+                id,
+}             => __sats::bsatn::to_vec(&create_character_reducer::CreateCharacterArgs {
+                id: id.clone(),
+}),
+            Reducer::CreateNamedCharacter{
+                name,
+}             => __sats::bsatn::to_vec(&create_named_character_reducer::CreateNamedCharacterArgs {
+                name: name.clone(),
+}),
+            Reducer::CreateNamedCharacterWithId{
+                id,
+                name,
+}             => __sats::bsatn::to_vec(&create_named_character_with_id_reducer::CreateNamedCharacterWithIdArgs {
+                id: id.clone(),
+                name: name.clone(),
+}),
+            Reducer::CreateRecruitmentRole{
                 leader_id,
                 name,
                 quantity,
                 requirements,
                 weapon_precision,
                 save_role,
-            } => __sats::bsatn::to_vec(
-                &create_recruitment_role_reducer::CreateRecruitmentRoleArgs {
-                    leader_id: leader_id.clone(),
-                    name: name.clone(),
-                    quantity: quantity.clone(),
-                    requirements: requirements.clone(),
-                    weapon_precision: weapon_precision.clone(),
-                    save_role: save_role.clone(),
-                },
-            ),
-            Reducer::CreateTacticalServer {
+}             => __sats::bsatn::to_vec(&create_recruitment_role_reducer::CreateRecruitmentRoleArgs {
+                leader_id: leader_id.clone(),
+                name: name.clone(),
+                quantity: quantity.clone(),
+                requirements: requirements.clone(),
+                weapon_precision: weapon_precision.clone(),
+                save_role: save_role.clone(),
+}),
+            Reducer::CreateTacticalServer{
                 mission_id,
                 scene_key,
                 addr,
                 cert_digest,
-            } => __sats::bsatn::to_vec(&create_tactical_server_reducer::CreateTacticalServerArgs {
+}             => __sats::bsatn::to_vec(&create_tactical_server_reducer::CreateTacticalServerArgs {
                 mission_id: mission_id.clone(),
                 scene_key: scene_key.clone(),
                 addr: addr.clone(),
                 cert_digest: cert_digest.clone(),
-            }),
-            Reducer::CreateTacticalServerForRequest {
+}),
+            Reducer::CreateTacticalServerForRequest{
                 mission_id,
                 addr,
                 cert_digest,
-            } => __sats::bsatn::to_vec(
-                &create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs {
-                    mission_id: mission_id.clone(),
-                    addr: addr.clone(),
-                    cert_digest: cert_digest.clone(),
-                },
-            ),
-            Reducer::CreateTemporaryCharacter { server } => __sats::bsatn::to_vec(
-                &create_temporary_character_reducer::CreateTemporaryCharacterArgs {
-                    server: server.clone(),
-                },
-            ),
-            Reducer::DefineArmor {
+}             => __sats::bsatn::to_vec(&create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs {
+                mission_id: mission_id.clone(),
+                addr: addr.clone(),
+                cert_digest: cert_digest.clone(),
+}),
+            Reducer::CreateTemporaryCharacter{
+                server,
+}             => __sats::bsatn::to_vec(&create_temporary_character_reducer::CreateTemporaryCharacterArgs {
+                server: server.clone(),
+}),
+            Reducer::DefineArmor{
                 item_id,
                 weight,
                 slot,
@@ -1385,7 +1396,7 @@ impl __sdk::Reducer for Reducer {
                 padding,
                 flexibility,
                 range_of_motion,
-            } => __sats::bsatn::to_vec(&define_armor_reducer::DefineArmorArgs {
+}             => __sats::bsatn::to_vec(&define_armor_reducer::DefineArmorArgs {
                 item_id: item_id.clone(),
                 weight: weight.clone(),
                 slot: slot.clone(),
@@ -1394,29 +1405,31 @@ impl __sdk::Reducer for Reducer {
                 padding: padding.clone(),
                 flexibility: flexibility.clone(),
                 range_of_motion: range_of_motion.clone(),
-            }),
-            Reducer::DefineClothing { item_id, weight } => {
-                __sats::bsatn::to_vec(&define_clothing_reducer::DefineClothingArgs {
-                    item_id: item_id.clone(),
-                    weight: weight.clone(),
-                })
-            }
-            Reducer::DefineItem { item_id, weight } => {
-                __sats::bsatn::to_vec(&define_item_reducer::DefineItemArgs {
-                    item_id: item_id.clone(),
-                    weight: weight.clone(),
-                })
-            }
-            Reducer::DefineShield {
+}),
+            Reducer::DefineClothing{
+                item_id,
+                weight,
+}             => __sats::bsatn::to_vec(&define_clothing_reducer::DefineClothingArgs {
+                item_id: item_id.clone(),
+                weight: weight.clone(),
+}),
+            Reducer::DefineItem{
+                item_id,
+                weight,
+}             => __sats::bsatn::to_vec(&define_item_reducer::DefineItemArgs {
+                item_id: item_id.clone(),
+                weight: weight.clone(),
+}),
+            Reducer::DefineShield{
                 item_id,
                 weight,
                 block,
-            } => __sats::bsatn::to_vec(&define_shield_reducer::DefineShieldArgs {
+}             => __sats::bsatn::to_vec(&define_shield_reducer::DefineShieldArgs {
                 item_id: item_id.clone(),
                 weight: weight.clone(),
                 block: block.clone(),
-            }),
-            Reducer::DefineWeapon {
+}),
+            Reducer::DefineWeapon{
                 item_id,
                 weight,
                 accuracy,
@@ -1429,7 +1442,7 @@ impl __sdk::Reducer for Reducer {
                 blunt,
                 slash,
                 pierce,
-            } => __sats::bsatn::to_vec(&define_weapon_reducer::DefineWeaponArgs {
+}             => __sats::bsatn::to_vec(&define_weapon_reducer::DefineWeaponArgs {
                 item_id: item_id.clone(),
                 weight: weight.clone(),
                 accuracy: accuracy.clone(),
@@ -1442,96 +1455,91 @@ impl __sdk::Reducer for Reducer {
                 blunt: blunt.clone(),
                 slash: slash.clone(),
                 pierce: pierce.clone(),
-            }),
-            Reducer::DeleteRecruitmentRole { leader_id, role_id } => __sats::bsatn::to_vec(
-                &delete_recruitment_role_reducer::DeleteRecruitmentRoleArgs {
-                    leader_id: leader_id.clone(),
-                    role_id: role_id.clone(),
-                },
-            ),
-            Reducer::DeleteSavedRecruitmentRole { owner_id, role_id } => __sats::bsatn::to_vec(
-                &delete_saved_recruitment_role_reducer::DeleteSavedRecruitmentRoleArgs {
-                    owner_id: owner_id.clone(),
-                    role_id: role_id.clone(),
-                },
-            ),
-            Reducer::DepositPartyInventoryItem {
+}),
+            Reducer::DeleteRecruitmentRole{
+                leader_id,
+                role_id,
+}             => __sats::bsatn::to_vec(&delete_recruitment_role_reducer::DeleteRecruitmentRoleArgs {
+                leader_id: leader_id.clone(),
+                role_id: role_id.clone(),
+}),
+            Reducer::DeleteSavedRecruitmentRole{
+                owner_id,
+                role_id,
+}             => __sats::bsatn::to_vec(&delete_saved_recruitment_role_reducer::DeleteSavedRecruitmentRoleArgs {
+                owner_id: owner_id.clone(),
+                role_id: role_id.clone(),
+}),
+            Reducer::DepositPartyInventoryItem{
                 character_id,
                 inventory_item_id,
                 quantity,
-            } => __sats::bsatn::to_vec(
-                &deposit_party_inventory_item_reducer::DepositPartyInventoryItemArgs {
-                    character_id: character_id.clone(),
-                    inventory_item_id: inventory_item_id.clone(),
-                    quantity: quantity.clone(),
-                },
-            ),
-            Reducer::DisbandParty {
+}             => __sats::bsatn::to_vec(&deposit_party_inventory_item_reducer::DepositPartyInventoryItemArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                quantity: quantity.clone(),
+}),
+            Reducer::DisbandParty{
                 leader_id,
                 party_id,
-            } => __sats::bsatn::to_vec(&disband_party_reducer::DisbandPartyArgs {
+}             => __sats::bsatn::to_vec(&disband_party_reducer::DisbandPartyArgs {
                 leader_id: leader_id.clone(),
                 party_id: party_id.clone(),
-            }),
-            Reducer::DiscardInventoryItems {
+}),
+            Reducer::DiscardInventoryItems{
                 character_id,
                 inventory_item_ids,
                 quantities,
-            } => __sats::bsatn::to_vec(
-                &discard_inventory_items_reducer::DiscardInventoryItemsArgs {
-                    character_id: character_id.clone(),
-                    inventory_item_ids: inventory_item_ids.clone(),
-                    quantities: quantities.clone(),
-                },
-            ),
-            Reducer::DismissPartyActionRequest {
+}             => __sats::bsatn::to_vec(&discard_inventory_items_reducer::DiscardInventoryItemsArgs {
+                character_id: character_id.clone(),
+                inventory_item_ids: inventory_item_ids.clone(),
+                quantities: quantities.clone(),
+}),
+            Reducer::DismissPartyActionRequest{
                 leader_id,
                 request_id,
-            } => __sats::bsatn::to_vec(
-                &dismiss_party_action_request_reducer::DismissPartyActionRequestArgs {
-                    leader_id: leader_id.clone(),
-                    request_id: request_id.clone(),
-                },
-            ),
-            Reducer::EndTacticalServer { success, xp_gained } => {
-                __sats::bsatn::to_vec(&end_tactical_server_reducer::EndTacticalServerArgs {
-                    success: success.clone(),
-                    xp_gained: xp_gained.clone(),
-                })
-            }
-            Reducer::EndTacticalServerByInstance {
+}             => __sats::bsatn::to_vec(&dismiss_party_action_request_reducer::DismissPartyActionRequestArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
+}),
+            Reducer::EndTacticalServer{
+                success,
+                xp_gained,
+}             => __sats::bsatn::to_vec(&end_tactical_server_reducer::EndTacticalServerArgs {
+                success: success.clone(),
+                xp_gained: xp_gained.clone(),
+}),
+            Reducer::EndTacticalServerByInstance{
                 server,
                 success,
                 xp_gained,
-            } => __sats::bsatn::to_vec(
-                &end_tactical_server_by_instance_reducer::EndTacticalServerByInstanceArgs {
-                    server: server.clone(),
-                    success: success.clone(),
-                    xp_gained: xp_gained.clone(),
-                },
-            ),
-            Reducer::EnsureSettlementActivity { settlement_id } => __sats::bsatn::to_vec(
-                &ensure_settlement_activity_reducer::EnsureSettlementActivityArgs {
-                    settlement_id: settlement_id.clone(),
-                },
-            ),
-            Reducer::EnterMission {
+}             => __sats::bsatn::to_vec(&end_tactical_server_by_instance_reducer::EndTacticalServerByInstanceArgs {
+                server: server.clone(),
+                success: success.clone(),
+                xp_gained: xp_gained.clone(),
+}),
+            Reducer::EnsureSettlementActivity{
+                settlement_id,
+}             => __sats::bsatn::to_vec(&ensure_settlement_activity_reducer::EnsureSettlementActivityArgs {
+                settlement_id: settlement_id.clone(),
+}),
+            Reducer::EnterMission{
                 character_id,
                 server,
-            } => __sats::bsatn::to_vec(&enter_mission_reducer::EnterMissionArgs {
+}             => __sats::bsatn::to_vec(&enter_mission_reducer::EnterMissionArgs {
                 character_id: character_id.clone(),
                 server: server.clone(),
-            }),
-            Reducer::EquipItem {
+}),
+            Reducer::EquipItem{
                 character_id,
                 inventory_item_id,
                 destination,
-            } => __sats::bsatn::to_vec(&equip_item_reducer::EquipItemArgs {
+}             => __sats::bsatn::to_vec(&equip_item_reducer::EquipItemArgs {
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 destination: destination.clone(),
-            }),
-            Reducer::FinalizeMerchantTrade {
+}),
+            Reducer::FinalizeMerchantTrade{
                 character_id,
                 settlement_id,
                 buy_item_ids,
@@ -1539,372 +1547,355 @@ impl __sdk::Reducer for Reducer {
                 sell_inventory_ids,
                 sell_quantities,
                 party_scope,
-            } => __sats::bsatn::to_vec(
-                &finalize_merchant_trade_reducer::FinalizeMerchantTradeArgs {
-                    character_id: character_id.clone(),
-                    settlement_id: settlement_id.clone(),
-                    buy_item_ids: buy_item_ids.clone(),
-                    buy_quantities: buy_quantities.clone(),
-                    sell_inventory_ids: sell_inventory_ids.clone(),
-                    sell_quantities: sell_quantities.clone(),
-                    party_scope: party_scope.clone(),
-                },
-            ),
-            Reducer::FinalizePartyOffer {
+}             => __sats::bsatn::to_vec(&finalize_merchant_trade_reducer::FinalizeMerchantTradeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                buy_item_ids: buy_item_ids.clone(),
+                buy_quantities: buy_quantities.clone(),
+                sell_inventory_ids: sell_inventory_ids.clone(),
+                sell_quantities: sell_quantities.clone(),
+                party_scope: party_scope.clone(),
+}),
+            Reducer::FinalizePartyOffer{
                 from_character_ids,
                 to_character_ids,
                 inventory_item_ids,
                 quantities,
-            } => __sats::bsatn::to_vec(&finalize_party_offer_reducer::FinalizePartyOfferArgs {
+}             => __sats::bsatn::to_vec(&finalize_party_offer_reducer::FinalizePartyOfferArgs {
                 from_character_ids: from_character_ids.clone(),
                 to_character_ids: to_character_ids.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
-            }),
-            Reducer::FinishWorldDataImport { artifact_id } => __sats::bsatn::to_vec(
-                &finish_world_data_import_reducer::FinishWorldDataImportArgs {
-                    artifact_id: artifact_id.clone(),
-                },
-            ),
-            Reducer::ImportSettlementAliases { aliases } => __sats::bsatn::to_vec(
-                &import_settlement_aliases_reducer::ImportSettlementAliasesArgs {
-                    aliases: aliases.clone(),
-                },
-            ),
-            Reducer::ImportSettlementDescriptions { descriptions } => __sats::bsatn::to_vec(
-                &import_settlement_descriptions_reducer::ImportSettlementDescriptionsArgs {
-                    descriptions: descriptions.clone(),
-                },
-            ),
-            Reducer::ImportSettlements { settlements } => {
-                __sats::bsatn::to_vec(&import_settlements_reducer::ImportSettlementsArgs {
-                    settlements: settlements.clone(),
-                })
-            }
-            Reducer::ImportTravelEdges { edges } => {
-                __sats::bsatn::to_vec(&import_travel_edges_reducer::ImportTravelEdgesArgs {
-                    edges: edges.clone(),
-                })
-            }
-            Reducer::ImportWorldNodes { nodes } => {
-                __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
-                    nodes: nodes.clone(),
-                })
-            }
-            Reducer::InsertNewCharacter {
+}),
+            Reducer::FinishWorldDataImport{
+                artifact_id,
+}             => __sats::bsatn::to_vec(&finish_world_data_import_reducer::FinishWorldDataImportArgs {
+                artifact_id: artifact_id.clone(),
+}),
+            Reducer::ImportSettlementAliases{
+                aliases,
+}             => __sats::bsatn::to_vec(&import_settlement_aliases_reducer::ImportSettlementAliasesArgs {
+                aliases: aliases.clone(),
+}),
+            Reducer::ImportSettlementDescriptions{
+                descriptions,
+}             => __sats::bsatn::to_vec(&import_settlement_descriptions_reducer::ImportSettlementDescriptionsArgs {
+                descriptions: descriptions.clone(),
+}),
+            Reducer::ImportSettlements{
+                settlements,
+}             => __sats::bsatn::to_vec(&import_settlements_reducer::ImportSettlementsArgs {
+                settlements: settlements.clone(),
+}),
+            Reducer::ImportTravelEdges{
+                edges,
+}             => __sats::bsatn::to_vec(&import_travel_edges_reducer::ImportTravelEdgesArgs {
+                edges: edges.clone(),
+}),
+            Reducer::ImportWorldNodes{
+                nodes,
+}             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
+                nodes: nodes.clone(),
+}),
+            Reducer::InsertNewCharacter{
                 name,
                 id,
                 temporary,
-            } => __sats::bsatn::to_vec(&insert_new_character_reducer::InsertNewCharacterArgs {
+}             => __sats::bsatn::to_vec(&insert_new_character_reducer::InsertNewCharacterArgs {
                 name: name.clone(),
                 id: id.clone(),
                 temporary: temporary.clone(),
-            }),
-            Reducer::LeaveMission { character_id } => {
-                __sats::bsatn::to_vec(&leave_mission_reducer::LeaveMissionArgs {
-                    character_id: character_id.clone(),
-                })
-            }
-            Reducer::LeaveParty { character_id } => {
-                __sats::bsatn::to_vec(&leave_party_reducer::LeavePartyArgs {
-                    character_id: character_id.clone(),
-                })
-            }
-            Reducer::LiquidatePartyInventory {
+}),
+            Reducer::KillSimulationCharacter{
+                nonce,
+                character_id,
+}             => __sats::bsatn::to_vec(&kill_simulation_character_reducer::KillSimulationCharacterArgs {
+                nonce: nonce.clone(),
+                character_id: character_id.clone(),
+}),
+            Reducer::LeaveMission{
+                character_id,
+}             => __sats::bsatn::to_vec(&leave_mission_reducer::LeaveMissionArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::LeaveParty{
+                character_id,
+}             => __sats::bsatn::to_vec(&leave_party_reducer::LeavePartyArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::LiquidatePartyInventory{
                 character_id,
                 settlement_id,
                 party_inventory_item_ids,
                 quantities,
-            } => __sats::bsatn::to_vec(
-                &liquidate_party_inventory_reducer::LiquidatePartyInventoryArgs {
-                    character_id: character_id.clone(),
-                    settlement_id: settlement_id.clone(),
-                    party_inventory_item_ids: party_inventory_item_ids.clone(),
-                    quantities: quantities.clone(),
-                },
-            ),
-            Reducer::RecordLocalNpcMessage {
+}             => __sats::bsatn::to_vec(&liquidate_party_inventory_reducer::LiquidatePartyInventoryArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                party_inventory_item_ids: party_inventory_item_ids.clone(),
+                quantities: quantities.clone(),
+}),
+            Reducer::RecordLocalNpcMessage{
                 actor_id,
                 subject_id,
                 npc_name,
                 body,
-            } => __sats::bsatn::to_vec(
-                &record_local_npc_message_reducer::RecordLocalNpcMessageArgs {
-                    actor_id: actor_id.clone(),
-                    subject_id: subject_id.clone(),
-                    npc_name: npc_name.clone(),
-                    body: body.clone(),
-                },
-            ),
-            Reducer::RefreshCapabilities { character_id } => {
-                __sats::bsatn::to_vec(&refresh_capabilities_reducer::RefreshCapabilitiesArgs {
-                    character_id: character_id.clone(),
-                })
-            }
-            Reducer::RefreshStrategicCondition { character_id } => __sats::bsatn::to_vec(
-                &refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
-                    character_id: character_id.clone(),
-                },
-            ),
-            Reducer::RejectPartyJoinRequest {
+}             => __sats::bsatn::to_vec(&record_local_npc_message_reducer::RecordLocalNpcMessageArgs {
+                actor_id: actor_id.clone(),
+                subject_id: subject_id.clone(),
+                npc_name: npc_name.clone(),
+                body: body.clone(),
+}),
+            Reducer::RefreshCapabilities{
+                character_id,
+}             => __sats::bsatn::to_vec(&refresh_capabilities_reducer::RefreshCapabilitiesArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::RefreshStrategicCondition{
+                character_id,
+}             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::RejectPartyJoinRequest{
                 leader_id,
                 request_id,
-            } => __sats::bsatn::to_vec(
-                &reject_party_join_request_reducer::RejectPartyJoinRequestArgs {
-                    leader_id: leader_id.clone(),
-                    request_id: request_id.clone(),
-                },
-            ),
-            Reducer::RemovePartyMember {
+}             => __sats::bsatn::to_vec(&reject_party_join_request_reducer::RejectPartyJoinRequestArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
+}),
+            Reducer::RemovePartyMember{
                 actor_character_id,
                 member_character_id,
-            } => __sats::bsatn::to_vec(&remove_party_member_reducer::RemovePartyMemberArgs {
+}             => __sats::bsatn::to_vec(&remove_party_member_reducer::RemovePartyMemberArgs {
                 actor_character_id: actor_character_id.clone(),
                 member_character_id: member_character_id.clone(),
-            }),
-            Reducer::RenameSavedRecruitmentRole {
+}),
+            Reducer::RenameSavedRecruitmentRole{
                 owner_id,
                 role_id,
                 name,
-            } => __sats::bsatn::to_vec(
-                &rename_saved_recruitment_role_reducer::RenameSavedRecruitmentRoleArgs {
-                    owner_id: owner_id.clone(),
-                    role_id: role_id.clone(),
-                    name: name.clone(),
-                },
-            ),
-            Reducer::RequestGeneralPartyJoin {
+}             => __sats::bsatn::to_vec(&rename_saved_recruitment_role_reducer::RenameSavedRecruitmentRoleArgs {
+                owner_id: owner_id.clone(),
+                role_id: role_id.clone(),
+                name: name.clone(),
+}),
+            Reducer::RequestGeneralPartyJoin{
                 character_id,
                 target_party_id,
-            } => __sats::bsatn::to_vec(
-                &request_general_party_join_reducer::RequestGeneralPartyJoinArgs {
-                    character_id: character_id.clone(),
-                    target_party_id: target_party_id.clone(),
-                },
-            ),
-            Reducer::RequestPartyAction {
+}             => __sats::bsatn::to_vec(&request_general_party_join_reducer::RequestGeneralPartyJoinArgs {
+                character_id: character_id.clone(),
+                target_party_id: target_party_id.clone(),
+}),
+            Reducer::RequestPartyAction{
                 requester_id,
                 action_kind,
                 summary,
                 payload,
-            } => __sats::bsatn::to_vec(&request_party_action_reducer::RequestPartyActionArgs {
+}             => __sats::bsatn::to_vec(&request_party_action_reducer::RequestPartyActionArgs {
                 requester_id: requester_id.clone(),
                 action_kind: action_kind.clone(),
                 summary: summary.clone(),
                 payload: payload.clone(),
-            }),
-            Reducer::RequestTacticalServer {
+}),
+            Reducer::RequestTacticalServer{
                 mission_id,
                 scene_key,
-            } => __sats::bsatn::to_vec(
-                &request_tactical_server_reducer::RequestTacticalServerArgs {
-                    mission_id: mission_id.clone(),
-                    scene_key: scene_key.clone(),
-                },
-            ),
-            Reducer::RequestTacticalServerForScene { scene_key } => __sats::bsatn::to_vec(
-                &request_tactical_server_for_scene_reducer::RequestTacticalServerForSceneArgs {
-                    scene_key: scene_key.clone(),
-                },
-            ),
-            Reducer::RequestToJoinParty {
+}             => __sats::bsatn::to_vec(&request_tactical_server_reducer::RequestTacticalServerArgs {
+                mission_id: mission_id.clone(),
+                scene_key: scene_key.clone(),
+}),
+            Reducer::RequestTacticalServerForScene{
+                scene_key,
+}             => __sats::bsatn::to_vec(&request_tactical_server_for_scene_reducer::RequestTacticalServerForSceneArgs {
+                scene_key: scene_key.clone(),
+}),
+            Reducer::RequestToJoinParty{
                 character_id,
                 recruitment_role_id,
-            } => __sats::bsatn::to_vec(&request_to_join_party_reducer::RequestToJoinPartyArgs {
+}             => __sats::bsatn::to_vec(&request_to_join_party_reducer::RequestToJoinPartyArgs {
                 character_id: character_id.clone(),
                 recruitment_role_id: recruitment_role_id.clone(),
-            }),
-            Reducer::ResolveReligiousDemand { demand_id, choice } => __sats::bsatn::to_vec(
-                &resolve_religious_demand_reducer::ResolveReligiousDemandArgs {
-                    demand_id: demand_id.clone(),
-                    choice: choice.clone(),
-                },
-            ),
-            Reducer::RestAtCamp {
+}),
+            Reducer::ResolveReligiousDemand{
+                demand_id,
+                choice,
+}             => __sats::bsatn::to_vec(&resolve_religious_demand_reducer::ResolveReligiousDemandArgs {
+                demand_id: demand_id.clone(),
+                choice: choice.clone(),
+}),
+            Reducer::RestAtCamp{
                 character_id,
                 requested_minutes,
-            } => __sats::bsatn::to_vec(&rest_at_camp_reducer::RestAtCampArgs {
+}             => __sats::bsatn::to_vec(&rest_at_camp_reducer::RestAtCampArgs {
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
-            }),
-            Reducer::RestAtSettlement {
+}),
+            Reducer::RestAtSettlement{
                 character_id,
                 requested_days,
                 at_inn,
-            } => __sats::bsatn::to_vec(&rest_at_settlement_reducer::RestAtSettlementArgs {
+}             => __sats::bsatn::to_vec(&rest_at_settlement_reducer::RestAtSettlementArgs {
                 character_id: character_id.clone(),
                 requested_days: requested_days.clone(),
                 at_inn: at_inn.clone(),
-            }),
-            Reducer::RestAtSettlementHours {
+}),
+            Reducer::RestAtSettlementHours{
                 character_id,
                 requested_minutes,
                 at_inn,
-            } => __sats::bsatn::to_vec(
-                &rest_at_settlement_hours_reducer::RestAtSettlementHoursArgs {
-                    character_id: character_id.clone(),
-                    requested_minutes: requested_minutes.clone(),
-                    at_inn: at_inn.clone(),
-                },
-            ),
-            Reducer::SaveRecruitmentRole {
+}             => __sats::bsatn::to_vec(&rest_at_settlement_hours_reducer::RestAtSettlementHoursArgs {
+                character_id: character_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+                at_inn: at_inn.clone(),
+}),
+            Reducer::SaveRecruitmentRole{
                 owner_id,
                 name,
                 requirements,
                 weapon_precision,
-            } => __sats::bsatn::to_vec(&save_recruitment_role_reducer::SaveRecruitmentRoleArgs {
+}             => __sats::bsatn::to_vec(&save_recruitment_role_reducer::SaveRecruitmentRoleArgs {
                 owner_id: owner_id.clone(),
                 name: name.clone(),
                 requirements: requirements.clone(),
                 weapon_precision: weapon_precision.clone(),
-            }),
-            Reducer::SeedBotJoinRequests {
+}),
+            Reducer::SeedBotJoinRequests{
                 recruitment_role_id,
-            } => __sats::bsatn::to_vec(&seed_bot_join_requests_reducer::SeedBotJoinRequestsArgs {
+}             => __sats::bsatn::to_vec(&seed_bot_join_requests_reducer::SeedBotJoinRequestsArgs {
                 recruitment_role_id: recruitment_role_id.clone(),
-            }),
-            Reducer::SeedDamagedCharacter => {
-                __sats::bsatn::to_vec(&seed_damaged_character_reducer::SeedDamagedCharacterArgs {})
-            }
-            Reducer::SeedPartyCompanions { leader_id } => {
-                __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
-                    leader_id: leader_id.clone(),
-                })
-            }
-            Reducer::SeedWorld => __sats::bsatn::to_vec(&seed_world_reducer::SeedWorldArgs {}),
-            Reducer::SendLocalChatMessage {
+}),
+            Reducer::SeedDamagedCharacter => __sats::bsatn::to_vec(&seed_damaged_character_reducer::SeedDamagedCharacterArgs {
+                }),
+Reducer::SeedPartyCompanions{
+                leader_id,
+}             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
+                leader_id: leader_id.clone(),
+}),
+            Reducer::SeedWorld => __sats::bsatn::to_vec(&seed_world_reducer::SeedWorldArgs {
+                }),
+Reducer::SendLocalChatMessage{
                 sender_id,
                 subject_kind,
                 subject_id,
                 body,
-            } => {
-                __sats::bsatn::to_vec(&send_local_chat_message_reducer::SendLocalChatMessageArgs {
-                    sender_id: sender_id.clone(),
-                    subject_kind: subject_kind.clone(),
-                    subject_id: subject_id.clone(),
-                    body: body.clone(),
-                })
-            }
-            Reducer::SetCharacterReligion {
+}             => __sats::bsatn::to_vec(&send_local_chat_message_reducer::SendLocalChatMessageArgs {
+                sender_id: sender_id.clone(),
+                subject_kind: subject_kind.clone(),
+                subject_id: subject_id.clone(),
+                body: body.clone(),
+}),
+            Reducer::SetCharacterReligion{
                 character_id,
                 religion_id,
-            } => __sats::bsatn::to_vec(&set_character_religion_reducer::SetCharacterReligionArgs {
+}             => __sats::bsatn::to_vec(&set_character_religion_reducer::SetCharacterReligionArgs {
                 character_id: character_id.clone(),
                 religion_id: religion_id.clone(),
-            }),
-            Reducer::SetInventoryQuantityTarget {
+}),
+            Reducer::SetInventoryQuantityTarget{
                 character_id,
                 party_scope,
                 item_id,
                 quantity,
-            } => __sats::bsatn::to_vec(
-                &set_inventory_quantity_target_reducer::SetInventoryQuantityTargetArgs {
-                    character_id: character_id.clone(),
-                    party_scope: party_scope.clone(),
-                    item_id: item_id.clone(),
-                    quantity: quantity.clone(),
-                },
-            ),
-            Reducer::SetPartyCampFatiguePercent {
+}             => __sats::bsatn::to_vec(&set_inventory_quantity_target_reducer::SetInventoryQuantityTargetArgs {
+                character_id: character_id.clone(),
+                party_scope: party_scope.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+}),
+            Reducer::SetPartyCampFatiguePercent{
                 character_id,
                 fatigue_percent,
-            } => __sats::bsatn::to_vec(
-                &set_party_camp_fatigue_percent_reducer::SetPartyCampFatiguePercentArgs {
-                    character_id: character_id.clone(),
-                    fatigue_percent: fatigue_percent.clone(),
-                },
-            ),
-            Reducer::StoreBattleLoot {
+}             => __sats::bsatn::to_vec(&set_party_camp_fatigue_percent_reducer::SetPartyCampFatiguePercentArgs {
+                character_id: character_id.clone(),
+                fatigue_percent: fatigue_percent.clone(),
+}),
+            Reducer::StoreBattleLoot{
                 character_id,
                 quest_id,
                 loot_item_ids,
                 quantities,
-            } => __sats::bsatn::to_vec(&store_battle_loot_reducer::StoreBattleLootArgs {
+}             => __sats::bsatn::to_vec(&store_battle_loot_reducer::StoreBattleLootArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
                 loot_item_ids: loot_item_ids.clone(),
                 quantities: quantities.clone(),
-            }),
-            Reducer::SynchronizeCharacterTime { character_id } => __sats::bsatn::to_vec(
-                &synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
-                    character_id: character_id.clone(),
-                },
-            ),
-            Reducer::TransferPartyItem {
+}),
+            Reducer::SynchronizeCharacterTime{
+                character_id,
+}             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::TransferPartyItem{
                 from_character_id,
                 to_character_id,
                 inventory_item_id,
                 quantity,
-            } => __sats::bsatn::to_vec(&transfer_party_item_reducer::TransferPartyItemArgs {
+}             => __sats::bsatn::to_vec(&transfer_party_item_reducer::TransferPartyItemArgs {
                 from_character_id: from_character_id.clone(),
                 to_character_id: to_character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 quantity: quantity.clone(),
-            }),
-            Reducer::TravelToQuest {
+}),
+            Reducer::TravelToQuest{
                 character_id,
                 quest_id,
                 provision,
-            } => __sats::bsatn::to_vec(&travel_to_quest_reducer::TravelToQuestArgs {
+}             => __sats::bsatn::to_vec(&travel_to_quest_reducer::TravelToQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
                 provision: provision.clone(),
-            }),
-            Reducer::TravelToSettlement {
+}),
+            Reducer::TravelToSettlement{
                 character_id,
                 settlement_id,
                 provision,
-            } => __sats::bsatn::to_vec(&travel_to_settlement_reducer::TravelToSettlementArgs {
+}             => __sats::bsatn::to_vec(&travel_to_settlement_reducer::TravelToSettlementArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
                 provision: provision.clone(),
-            }),
-            Reducer::TurnInQuest {
+}),
+            Reducer::TurnInQuest{
                 character_id,
                 quest_id,
-            } => __sats::bsatn::to_vec(&turn_in_quest_reducer::TurnInQuestArgs {
+}             => __sats::bsatn::to_vec(&turn_in_quest_reducer::TurnInQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
-            }),
-            Reducer::UpdateCharacter { id, name } => {
-                __sats::bsatn::to_vec(&update_character_reducer::UpdateCharacterArgs {
-                    id: id.clone(),
-                    name: name.clone(),
-                })
-            }
-            Reducer::UpdatePartyCheckTargets {
+}),
+            Reducer::UpdateCharacter{
+                id,
+                name,
+}             => __sats::bsatn::to_vec(&update_character_reducer::UpdateCharacterArgs {
+                id: id.clone(),
+                name: name.clone(),
+}),
+            Reducer::UpdatePartyCheckTargets{
                 leader_id,
                 medicine,
                 surgery,
                 charisma,
                 faith,
-            } => __sats::bsatn::to_vec(
-                &update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
-                    leader_id: leader_id.clone(),
-                    medicine: medicine.clone(),
-                    surgery: surgery.clone(),
-                    charisma: charisma.clone(),
-                    faith: faith.clone(),
-                },
-            ),
-            Reducer::UpdateRecruitmentRole {
+}             => __sats::bsatn::to_vec(&update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
+                leader_id: leader_id.clone(),
+                medicine: medicine.clone(),
+                surgery: surgery.clone(),
+                charisma: charisma.clone(),
+                faith: faith.clone(),
+}),
+            Reducer::UpdateRecruitmentRole{
                 leader_id,
                 role_id,
                 name,
                 quantity,
                 requirements,
                 weapon_precision,
-            } => __sats::bsatn::to_vec(
-                &update_recruitment_role_reducer::UpdateRecruitmentRoleArgs {
-                    leader_id: leader_id.clone(),
-                    role_id: role_id.clone(),
-                    name: name.clone(),
-                    quantity: quantity.clone(),
-                    requirements: requirements.clone(),
-                    weapon_precision: weapon_precision.clone(),
-                },
-            ),
-            Reducer::UpdateTrainingSchedule {
+}             => __sats::bsatn::to_vec(&update_recruitment_role_reducer::UpdateRecruitmentRoleArgs {
+                leader_id: leader_id.clone(),
+                role_id: role_id.clone(),
+                name: name.clone(),
+                quantity: quantity.clone(),
+                requirements: requirements.clone(),
+                weapon_precision: weapon_precision.clone(),
+}),
+            Reducer::UpdateTrainingSchedule{
                 character_id,
                 melee_minutes,
                 dodge_minutes,
@@ -1936,61 +1927,57 @@ impl __sdk::Reducer for Reducer {
                 travel_prayer_minutes,
                 travel_thievery_minutes,
                 travel_raiding_minutes,
-            } => __sats::bsatn::to_vec(
-                &update_training_schedule_reducer::UpdateTrainingScheduleArgs {
-                    character_id: character_id.clone(),
-                    melee_minutes: melee_minutes.clone(),
-                    dodge_minutes: dodge_minutes.clone(),
-                    block_minutes: block_minutes.clone(),
-                    ranged_minutes: ranged_minutes.clone(),
-                    will_minutes: will_minutes.clone(),
-                    charisma_minutes: charisma_minutes.clone(),
-                    medicine_minutes: medicine_minutes.clone(),
-                    faith_minutes: faith_minutes.clone(),
-                    stealth_minutes: stealth_minutes.clone(),
-                    balance_minutes: balance_minutes.clone(),
-                    surgeon_minutes: surgeon_minutes.clone(),
-                    labor_minutes: labor_minutes.clone(),
-                    prayer_minutes: prayer_minutes.clone(),
-                    thievery_minutes: thievery_minutes.clone(),
-                    raiding_minutes: raiding_minutes.clone(),
-                    travel_melee_minutes: travel_melee_minutes.clone(),
-                    travel_dodge_minutes: travel_dodge_minutes.clone(),
-                    travel_block_minutes: travel_block_minutes.clone(),
-                    travel_ranged_minutes: travel_ranged_minutes.clone(),
-                    travel_will_minutes: travel_will_minutes.clone(),
-                    travel_charisma_minutes: travel_charisma_minutes.clone(),
-                    travel_medicine_minutes: travel_medicine_minutes.clone(),
-                    travel_faith_minutes: travel_faith_minutes.clone(),
-                    travel_stealth_minutes: travel_stealth_minutes.clone(),
-                    travel_balance_minutes: travel_balance_minutes.clone(),
-                    travel_surgeon_minutes: travel_surgeon_minutes.clone(),
-                    travel_labor_minutes: travel_labor_minutes.clone(),
-                    travel_prayer_minutes: travel_prayer_minutes.clone(),
-                    travel_thievery_minutes: travel_thievery_minutes.clone(),
-                    travel_raiding_minutes: travel_raiding_minutes.clone(),
-                },
-            ),
-            Reducer::VoteForPartyLeader {
+}             => __sats::bsatn::to_vec(&update_training_schedule_reducer::UpdateTrainingScheduleArgs {
+                character_id: character_id.clone(),
+                melee_minutes: melee_minutes.clone(),
+                dodge_minutes: dodge_minutes.clone(),
+                block_minutes: block_minutes.clone(),
+                ranged_minutes: ranged_minutes.clone(),
+                will_minutes: will_minutes.clone(),
+                charisma_minutes: charisma_minutes.clone(),
+                medicine_minutes: medicine_minutes.clone(),
+                faith_minutes: faith_minutes.clone(),
+                stealth_minutes: stealth_minutes.clone(),
+                balance_minutes: balance_minutes.clone(),
+                surgeon_minutes: surgeon_minutes.clone(),
+                labor_minutes: labor_minutes.clone(),
+                prayer_minutes: prayer_minutes.clone(),
+                thievery_minutes: thievery_minutes.clone(),
+                raiding_minutes: raiding_minutes.clone(),
+                travel_melee_minutes: travel_melee_minutes.clone(),
+                travel_dodge_minutes: travel_dodge_minutes.clone(),
+                travel_block_minutes: travel_block_minutes.clone(),
+                travel_ranged_minutes: travel_ranged_minutes.clone(),
+                travel_will_minutes: travel_will_minutes.clone(),
+                travel_charisma_minutes: travel_charisma_minutes.clone(),
+                travel_medicine_minutes: travel_medicine_minutes.clone(),
+                travel_faith_minutes: travel_faith_minutes.clone(),
+                travel_stealth_minutes: travel_stealth_minutes.clone(),
+                travel_balance_minutes: travel_balance_minutes.clone(),
+                travel_surgeon_minutes: travel_surgeon_minutes.clone(),
+                travel_labor_minutes: travel_labor_minutes.clone(),
+                travel_prayer_minutes: travel_prayer_minutes.clone(),
+                travel_thievery_minutes: travel_thievery_minutes.clone(),
+                travel_raiding_minutes: travel_raiding_minutes.clone(),
+}),
+            Reducer::VoteForPartyLeader{
                 voter_id,
                 candidate_id,
-            } => __sats::bsatn::to_vec(&vote_for_party_leader_reducer::VoteForPartyLeaderArgs {
+}             => __sats::bsatn::to_vec(&vote_for_party_leader_reducer::VoteForPartyLeaderArgs {
                 voter_id: voter_id.clone(),
                 candidate_id: candidate_id.clone(),
-            }),
-            Reducer::WithdrawPartyInventoryItem {
+}),
+            Reducer::WithdrawPartyInventoryItem{
                 character_id,
                 party_inventory_item_id,
                 quantity,
-            } => __sats::bsatn::to_vec(
-                &withdraw_party_inventory_item_reducer::WithdrawPartyInventoryItemArgs {
-                    character_id: character_id.clone(),
-                    party_inventory_item_id: party_inventory_item_id.clone(),
-                    quantity: quantity.clone(),
-                },
-            ),
+}             => __sats::bsatn::to_vec(&withdraw_party_inventory_item_reducer::WithdrawPartyInventoryItemArgs {
+                character_id: character_id.clone(),
+                party_inventory_item_id: party_inventory_item_id.clone(),
+                quantity: quantity.clone(),
+}),
             _ => unreachable!(),
-        }
+}
     }
 }
 
@@ -2006,6 +1993,7 @@ pub struct DbUpdate {
     character_attributes: __sdk::TableUpdate<CharacterAttributes>,
     character_capability: __sdk::TableUpdate<CharacterCapability>,
     character_condition: __sdk::TableUpdate<CharacterCondition>,
+    character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
@@ -2080,6 +2068,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_condition" => db_update
                     .character_condition
                     .append(character_condition_table::parse_table_update(table_update)?),
+                "character_death" => db_update
+                    .character_death
+                    .append(character_death_table::parse_table_update(table_update)?),
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
@@ -2270,6 +2261,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_condition",
                 &self.character_condition,
             )
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_death = cache
+            .apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death)
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_equip = cache
             .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
@@ -2469,6 +2463,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_condition" => db_update
                     .character_condition
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_death" => db_update
+                    .character_death
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2632,6 +2629,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_condition" => db_update
                     .character_condition
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_death" => db_update
+                    .character_death
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2781,6 +2781,7 @@ pub struct AppliedDiff<'r> {
     character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
     character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
+    character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
@@ -2870,6 +2871,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterCondition>(
             "character_condition",
             &self.character_condition,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterDeath>(
+            "character_death",
+            &self.character_death,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
@@ -3718,6 +3724,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_attributes_table::register_table(client_cache);
         character_capability_table::register_table(client_cache);
         character_condition_table::register_table(client_cache);
+        character_death_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
@@ -3770,6 +3777,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_attributes",
         "character_capability",
         "character_condition",
+        "character_death",
         "character_equip",
         "character_limbs",
         "character_morale_source",

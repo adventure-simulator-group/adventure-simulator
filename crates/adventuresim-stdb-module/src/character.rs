@@ -1,9 +1,11 @@
-use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
+use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
 use crate::{
-    ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item, strategic::settlement,
+    ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item,
+    strategic::{party, settlement},
+    time::character_time,
 };
 
 /// General character info
@@ -30,6 +32,125 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub enum DeathCause {
+    Combat,
+    Injury,
+    Disease,
+    Starvation,
+    Dehydration,
+    Other,
+    DevTest,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub enum DeathSource {
+    Tactical,
+    Autoresolve,
+    Strategic,
+    Disease,
+    DevTest,
+}
+
+/// Immutable first-known death context. Tactical state is deliberately absent;
+/// committed outcomes pass only their durable cause/source into this boundary.
+#[derive(Clone, Debug)]
+#[table(accessor = character_death, public)]
+pub struct CharacterDeath {
+    #[primary_key]
+    pub character_id: u64,
+    pub cause: DeathCause,
+    pub source: DeathSource,
+    pub source_id: Option<String>,
+    pub strategic_minute: u64,
+}
+
+pub fn require_living_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<Character, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if !character.alive {
+        return Err("Dead characters cannot perform this action".into());
+    }
+    Ok(character)
+}
+
+/// Authoritative, idempotent life-state transition shared by strategic disease
+/// and committed tactical/autoresolve outcomes. Repeated calls retain the first
+/// recorded cause, source, and strategic minute.
+pub fn transition_character_to_dead(
+    ctx: &ReducerContext,
+    character_id: u64,
+    cause: DeathCause,
+    source: DeathSource,
+    source_id: Option<String>,
+) -> Result<CharacterDeath, String> {
+    if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
+        return Ok(death);
+    }
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let strategic_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let death = ctx.db.character_death().insert(CharacterDeath {
+        character_id,
+        cause,
+        source,
+        source_id,
+        strategic_minute,
+    });
+    character.alive = false;
+    character.in_server = false;
+    character.server = Identity::ZERO;
+    let party_id = character.party_id.clone();
+    ctx.db.character().id().update(character);
+    if let Some(party_id) = party_id {
+        crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
+    }
+    Ok(death)
+}
+
+/// Non-destructive upgrade path for legacy rows that predate durable death
+/// context and standing vote normalization.
+#[reducer]
+pub fn backfill_character_deaths_and_leadership(ctx: &ReducerContext) -> Result<(), String> {
+    let dead_ids: Vec<_> = ctx
+        .db
+        .character()
+        .iter()
+        .filter(|character| !character.alive)
+        .map(|character| character.id)
+        .collect();
+    for character_id in dead_ids {
+        transition_character_to_dead(
+            ctx,
+            character_id,
+            DeathCause::Other,
+            DeathSource::Strategic,
+            Some("legacy-backfill".into()),
+        )?;
+    }
+    let party_ids: Vec<_> = ctx.db.party().iter().map(|party| party.id).collect();
+    for party_id in party_ids {
+        crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
+    }
+    Ok(())
 }
 
 /// [`Character`] attributes
@@ -344,6 +465,7 @@ pub fn equip_item(
     inventory_item_id: u64,
     destination: ItemSlot,
 ) -> Result<(), String> {
+    require_living_character(ctx, character_id)?;
     if ctx
         .db
         .inventory_item()

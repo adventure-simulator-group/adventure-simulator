@@ -156,7 +156,13 @@ async fn show_settlement_location(
         state.db.query::<SettlementDescription>(&description_sql),
         get_active_character(&state, session.character_id_u64()),
     );
-    let settlements = settlements.unwrap_or_default();
+    let settlements = match settlements {
+        Ok(settlements) => settlements,
+        Err(error) => {
+            tracing::error!(%error, settlement_id = %id, "failed to load settlements");
+            return Html("<h1>Settlement data unavailable</h1>".to_string());
+        }
+    };
     let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };

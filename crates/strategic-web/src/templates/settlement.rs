@@ -1935,8 +1935,9 @@ pub(crate) fn party_portrait_overlay(
                 @for member in members {
                     @let is_active = active_character.is_some_and(|character| character.id == member.id);
                     @let can_remove = Some(member.id) != leader_id;
-                    div class=(if selected_character_id == Some(member.id) { "party-portrait active" } else { "party-portrait" })
+                    div class=(format!("party-portrait{}{}", if selected_character_id == Some(member.id) { " active" } else { "" }, if !member.alive { " dead" } else { "" }))
                         data-character-id=(member.id)
+                        data-character-alive=(member.alive)
                         data-active-character[is_active]
                         title=(&member.name) {
                         a class="party-portrait-select"
@@ -1949,9 +1950,10 @@ pub(crate) fn party_portrait_overlay(
                             (incapacitation_wheel(member.id))
                             span class="party-portrait-initial" {
                                 span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                                span class="party-portrait-name" { (&member.name) }
+                                span class="party-portrait-name" { (&member.name) @if !member.alive { " (dead)" } }
                             }
                         }
+                        @if member.alive && active_character.is_some_and(|character| character.alive) {
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             a href=(format!("{}/party/{}/inventory", location_path, member.id))
                                 class="party-portrait-action"
@@ -1969,6 +1971,7 @@ pub(crate) fn party_portrait_overlay(
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }

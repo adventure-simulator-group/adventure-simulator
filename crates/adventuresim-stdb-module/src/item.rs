@@ -992,7 +992,8 @@ pub fn change_inventory_item(
     character_id: u64,
     item_id: &str,
     by_quantity: i32,
-) {
+) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let mut is_found = false;
 
     for mut item in ctx
@@ -1009,6 +1010,7 @@ pub fn change_inventory_item(
     if !is_found {
         add_inventory_item(ctx, character_id, item_id, by_quantity as u32);
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,12 +1,14 @@
 pub mod activity;
 pub mod attribute;
 pub mod autoresolve;
+pub mod battle_rewards;
 pub mod body;
 pub mod capability;
 pub mod combat;
 pub mod composite;
 pub mod equipment;
 pub mod essential;
+pub mod leadership;
 pub mod morale;
 pub mod provisioning;
 pub mod simulation_security;

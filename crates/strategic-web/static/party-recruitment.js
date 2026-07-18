@@ -22,7 +22,7 @@
 
     document.querySelectorAll("[data-role-inspection-panel], [data-applicant-inspection-preview]").forEach((element) => element.remove());
     document.querySelectorAll(".role-inspection-hidden").forEach((element) => element.classList.remove("role-inspection-hidden"));
-    overlay.querySelectorAll("[data-party-role-group], [data-party-aggregate-checks], .party-recruitment-add, .party-leader-crown").forEach((element) => element.remove());
+    overlay.querySelectorAll("[data-party-role-group], [data-party-aggregate-checks], .party-recruitment-add").forEach((element) => element.remove());
     document.querySelector("[data-party-recruitment-panel]")?.remove();
     document.body.append(panel);
 
@@ -30,11 +30,6 @@
     const leaderPortrait = overlay.querySelector(`[data-character-id="${leaderId}"]`);
     if (leaderPortrait) {
       portraitMembers.prepend(leaderPortrait);
-      const crown = document.createElement("span");
-      crown.className = "party-leader-crown";
-      crown.textContent = "♛";
-      crown.title = "Party leader";
-      leaderPortrait.append(crown);
     }
 
     const aggregateChecks = panel.querySelector("[data-party-aggregate-checks]");

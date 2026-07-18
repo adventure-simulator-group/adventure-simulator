@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (622)
+## Files (628)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -37,12 +37,14 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/activity.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/attribute.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/autoresolve.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/battle_rewards.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/body.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/combat.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/composite.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/essential.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
@@ -65,6 +67,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/autoresolve_report_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/autoresolve_report_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/available_water_capacity_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_item_values_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_solo_parties_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/battle_loot_item_table.rs` — Generated SpacetimeDB table interface.
@@ -89,6 +92,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_capability_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_condition_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_condition_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_death_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_death_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_equip_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_equip_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_limbs_table.rs` — Generated SpacetimeDB table interface.
@@ -131,6 +136,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/cropland_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/crossing_traversal_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/crossing_watercourse_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/death_cause_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/death_source_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/define_armor_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_clothing_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/define_item_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -207,6 +214,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/item_slot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/item_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/kill_simulation_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/land_route_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/land_use_fraction_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/land_use_profile_type.rs` — Generated SpacetimeDB data type.

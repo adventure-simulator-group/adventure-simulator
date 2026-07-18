@@ -9,7 +9,7 @@ use crate::strategic::{quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
-    character_training_schedule, inventory_item, party_member,
+    character_training_schedule, inventory_item,
 };
 
 pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
@@ -498,14 +498,7 @@ fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u6
         .ok_or("Character not found")?;
     Ok(character.party_id.as_ref().map_or_else(
         || vec![character_id],
-        |party_id| {
-            ctx.db
-                .party_member()
-                .party_id()
-                .filter(party_id)
-                .map(|member| member.character_id)
-                .collect()
-        },
+        |party_id| crate::strategic::living_party_member_ids(ctx, party_id),
     ))
 }
 
@@ -1095,6 +1088,7 @@ pub fn resolve_religious_demand(
         .id()
         .find(demand_id)
         .ok_or("Religious demand not found")?;
+    crate::character::require_living_character(ctx, demand.character_id)?;
     if demand.status != "pending" {
         return Err("Religious demand has already been resolved".into());
     }
@@ -1399,6 +1393,7 @@ pub fn apply_blood_loss(
 }
 
 pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     let condition = refresh_character_strategic_condition(ctx, character_id)?;
     if condition.status == "incapacitated" {
         Err("Character is incapacitated and must recover before acting".into())
@@ -1408,6 +1403,9 @@ pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Resul
 }
 
 pub fn require_characters_ready(ctx: &ReducerContext, character_ids: &[u64]) -> Result<(), String> {
+    for character_id in character_ids {
+        crate::character::require_living_character(ctx, *character_id)?;
+    }
     let conditions = refresh_party_strategic_condition_projection(ctx, character_ids)?;
     for condition in &conditions {
         ensure_holy_day_demand(ctx, condition)?;
@@ -1429,6 +1427,7 @@ pub fn set_character_religion(
     character_id: u64,
     religion_id: String,
 ) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
     initialize_character_condition(ctx, character_id)?;
     let religion_id = religion_id.trim();
     if !religion_id.is_empty() {

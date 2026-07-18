@@ -640,13 +640,20 @@ struct PartyNotifications {
     role_join_requests: Vec<RoleNotification>,
     action_requests: Vec<PartyActionRequest>,
     succession_required: bool,
-    leader_votes: Vec<PartyLeaderVote>,
+    leader_id: Option<String>,
+    leader_votes: Vec<LeaderVoteNotification>,
 }
 
 #[derive(Serialize)]
 struct RoleNotification {
     role_id: u64,
     count: usize,
+}
+
+#[derive(Serialize)]
+struct LeaderVoteNotification {
+    voter_id: String,
+    candidate_id: String,
 }
 
 async fn party_notifications(
@@ -659,6 +666,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -668,6 +676,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -677,6 +686,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -734,8 +744,31 @@ async fn party_notifications(
             .collect(),
         action_requests,
         succession_required: !actual_leader_alive,
-        leader_votes,
+        leader_id: parties.first().map(|party| party.leader_id.to_string()),
+        leader_votes: leader_votes
+            .into_iter()
+            .map(|vote| LeaderVoteNotification {
+                voter_id: vote.voter_id.to_string(),
+                candidate_id: vote.candidate_id.to_string(),
+            })
+            .collect(),
     })
+}
+
+#[cfg(test)]
+mod party_notification_tests {
+    use super::LeaderVoteNotification;
+
+    #[test]
+    fn leadership_vote_ids_serialize_without_javascript_precision_loss() {
+        let notification = LeaderVoteNotification {
+            voter_id: 9_000_001_u64.to_string(),
+            candidate_id: 11_108_535_685_347_685_334_u64.to_string(),
+        };
+        let json = serde_json::to_value(notification).unwrap();
+        assert_eq!(json["voter_id"], "9000001");
+        assert_eq!(json["candidate_id"], "11108535685347685334");
+    }
 }
 
 async fn approve_action_request(

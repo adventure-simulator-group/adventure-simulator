@@ -36,6 +36,20 @@ fn product_elements(algebraic_type: &AlgebraicType) -> Option<&Vec<Value>> {
     ty.get("Product")?.get("elements")?.as_array()
 }
 
+fn array_element_type(algebraic_type: &AlgebraicType) -> Option<&Value> {
+    let AlgebraicType::Value(ty) = algebraic_type;
+    ty.get("Array")
+}
+
+fn serde_variant_name(variant: &Value) -> String {
+    let name = variant_name(variant).unwrap_or("Unknown");
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => "Unknown".into(),
+    }
+}
+
 fn is_identity_product(elements: &[Value]) -> bool {
     elements.len() == 1
         && elements[0]
@@ -51,6 +65,18 @@ fn is_identity_product(elements: &[Value]) -> bool {
 /// - Unit enums: [tag, []] => "VariantName"
 /// - Identity: ["0x..."] => "0x..."
 fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Value {
+    if let Some(element_type) = array_element_type(algebraic_type)
+        && let Value::Array(values) = value
+    {
+        let element_type = AlgebraicType::Value(element_type.clone());
+        return Value::Array(
+            values
+                .iter()
+                .map(|value| convert_spacetime_value(value, &element_type))
+                .collect(),
+        );
+    }
+
     if let Some(elements) = product_elements(algebraic_type) {
         if is_identity_product(elements) {
             if let Some(identity) = value
@@ -116,7 +142,13 @@ fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Val
         {
             return Value::Null;
         }
-        return payload.clone();
+        let payload_type = AlgebraicType::Value(
+            variant
+                .get("algebraic_type")
+                .cloned()
+                .unwrap_or(Value::Null),
+        );
+        return convert_spacetime_value(payload, &payload_type);
     }
 
     // Most strategic layer enums are unit variants, encoded as empty tuple payload.
@@ -125,16 +157,21 @@ fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Val
         .map(|elements| elements.is_empty())
         .unwrap_or(false)
     {
-        return Value::String(variant_name(variant).unwrap_or("Unknown").to_string());
+        return Value::String(serde_variant_name(variant));
     }
 
+    let payload_type = AlgebraicType::Value(
+        variant
+            .get("algebraic_type")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    let payload = convert_spacetime_value(payload, &payload_type);
+
     Value::Object(
-        [(
-            variant_name(variant).unwrap_or("Unknown").to_string(),
-            json!(payload),
-        )]
-        .into_iter()
-        .collect(),
+        [(serde_variant_name(variant), json!(payload))]
+            .into_iter()
+            .collect(),
     )
 }
 
@@ -312,5 +349,38 @@ mod tests {
             convert_spacetime_value(&json!([true, 3]), &ty),
             json!({ "melee": true, "endurance": 3 })
         );
+    }
+
+    #[test]
+    fn converts_arrays_of_nested_sum_variants() {
+        let ty = AlgebraicType::Value(json!({
+            "Product": { "elements": [
+                {
+                    "name": { "some": "outputs" },
+                    "algebraic_type": { "Array": { "Sum": { "variants": [
+                        {
+                            "name": { "some": "derived" },
+                            "algebraic_type": { "Product": { "elements": [] } }
+                        },
+                        {
+                            "name": { "some": "fallback" },
+                            "algebraic_type": { "Sum": { "variants": [
+                                {
+                                    "name": { "some": "woodlandFuelwood" },
+                                    "algebraic_type": { "Product": { "elements": [] } }
+                                }
+                            ] } }
+                        }
+                    ] } } }
+                }
+            ] }
+        }));
+        let converted = convert_spacetime_value(&json!([[[1, [0, []]]]]), &ty);
+        assert_eq!(
+            converted,
+            json!({ "outputs": [{ "Fallback": "WoodlandFuelwood" }] })
+        );
+        serde_json::from_value::<adventuresim_world_schema::InferredIndustryProfile>(converted)
+            .expect("converted industry profile should deserialize");
     }
 }
