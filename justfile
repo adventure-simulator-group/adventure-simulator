@@ -416,7 +416,11 @@ check:
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs
 
-test: test-chat build-strategic
+# Test local workflow policy without leaving Python bytecode in the worktree.
+test-dev-stack:
+    @{{python_bin}} -B -m unittest scripts.tests.test_dev_stack -v
+
+test: test-chat test-dev-stack build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 
 fmt:

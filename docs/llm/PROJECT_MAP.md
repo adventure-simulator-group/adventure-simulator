@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (601)
+## Files (600)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -580,7 +580,6 @@ development, or wiki document before changing a subsystem.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
 - `scripts/test_init_soilgrids.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
-- `scripts/tests/__pycache__/test_dev_stack.cpython-312.pyc` — Repository support file.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
