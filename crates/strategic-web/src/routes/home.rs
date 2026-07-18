@@ -9,6 +9,7 @@ use axum::{
 
 use super::AppState;
 use crate::session::Session;
+use crate::spacetimedb::Party;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
@@ -30,6 +31,15 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
                 .into_response();
         }
     };
+    if let Some(party_id) = character.party_id.as_deref()
+        && let Ok(Some(party)) = state
+            .db
+            .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{party_id}'"))
+            .await
+        && party.camp_destination_id.is_some()
+    {
+        return Redirect::to("/camp").into_response();
+    }
     match (
         &character.current_settlement_id,
         &character.current_quest_location_id,

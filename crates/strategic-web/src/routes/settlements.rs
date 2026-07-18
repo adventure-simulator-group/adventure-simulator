@@ -22,23 +22,23 @@ use super::inventory_forms::{
 };
 use super::travel::{
     TravelDestination, TravelForm, TravelProvisionForecast, TravelerProvisionForecast,
-    connected_destinations,
+    connected_destinations, next_settlement_toward, populate_camp_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterSkills,
-    CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemDefinition, Party, PartyInventoryItem, PartyMember, PartyRecruitmentRole, PartyStake,
-    Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
-    SettlementAlias, SettlementDescription, TravelEdge,
+    CharacterStats, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
+    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyJourney, PartyMember,
+    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
+    ReligiousDemand, Settlement, SettlementAlias, SettlementDescription, TravelEdge,
 };
 use crate::templates::settlement::{
-    LocationKind, LocationView, MerchantShop, RestSummary, inn_page, live_merchant_shop_page,
-    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
-    party_stats_page, religion_page, rest_result_page, settlement_map_page,
-    settlement_overview_page,
+    LocationKind, LocationView, MerchantShop, RestSummary, camp_page, inn_page,
+    live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
+    party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
+    settlement_map_page, settlement_overview_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -46,6 +46,13 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}", get(show_settlement))
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
+        .route(
+            "/locations/settlement/{id}/map/travel-configuration",
+            post(update_travel_configuration),
+        )
+        .route("/camp", get(camp))
+        .route("/camp/rest", post(rest_at_camp))
+        .route("/camp/continue", post(continue_camp_travel))
         .route(
             "/api/settlements/{id}/service-quests",
             get(service_quest_offers),
@@ -247,25 +254,44 @@ async fn settlement_map(
     } else {
         None
     };
+    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
+    });
     if let Some(quest) = active_quest
         .as_ref()
         .filter(|quest| quest.status == QuestStatus::Accepted)
     {
-        let distance_m = crate::routes::quests::straight_line_distance_m(&quest, settlement);
-        destinations.push(TravelDestination {
-            id: quest.id.clone(),
-            name: quest.title.clone(),
-            description: quest.description.clone(),
-            summary: Some(format!(
-                "Active quest · {} {}",
-                quest.enemy_count, quest.enemy_type
-            )),
-            travel_action: format!("/quests/{}/travel", quest.id),
-            distance_m,
-            journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
-            quest_in_progress: true,
-            turn_in_ready: false,
-        });
+        if can_travel && settlement.id == quest.settlement_id {
+            let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
+            destinations.push(TravelDestination {
+                id: quest.id.clone(),
+                name: quest.title.clone(),
+                description: quest.description.clone(),
+                summary: Some(format!(
+                    "Active quest · {} {}",
+                    quest.enemy_count, quest.enemy_type
+                )),
+                travel_action: format!("/quests/{}/travel", quest.id),
+                distance_m,
+                journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
+                camp_stop_minutes: Vec::new(),
+                camp_forecasts: Vec::new(),
+                quest_in_progress: true,
+                active_quest_route: false,
+                turn_in_ready: false,
+            });
+        } else if can_travel {
+            if let Some(next_settlement_id) =
+                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
+            {
+                if let Some(destination) = destinations
+                    .iter_mut()
+                    .find(|destination| destination.id == next_settlement_id)
+                {
+                    destination.active_quest_route = true;
+                }
+            }
+        }
     }
     if let Some(quest) = active_quest
         .as_ref()
@@ -280,9 +306,34 @@ async fn settlement_map(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
-        character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
-    });
+    if can_travel {
+        if let Some(party) = active_party.as_ref() {
+            let attributes: Vec<CharacterAttributes> = state
+                .db
+                .query("SELECT * FROM character_attributes")
+                .await
+                .unwrap_or_default();
+            let limbs: Vec<CharacterLimbs> = state
+                .db
+                .query("SELECT * FROM character_limbs")
+                .await
+                .unwrap_or_default();
+            let stats: Vec<CharacterStats> = state
+                .db
+                .query("SELECT * FROM character_stats")
+                .await
+                .unwrap_or_default();
+            let member_ids: Vec<_> = party_members.iter().map(|member| member.id).collect();
+            populate_camp_forecasts(
+                &mut destinations,
+                &member_ids,
+                &attributes,
+                &limbs,
+                &stats,
+                party.camp_fatigue_percent,
+            );
+        }
+    }
     let provision_forecast = if can_travel {
         if let Some(destination) = query
             .destination
@@ -305,6 +356,7 @@ async fn settlement_map(
             &destinations,
             query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
+            active_party.as_ref(),
             &party_members,
             can_travel,
             provision_forecast.as_ref(),
@@ -315,6 +367,194 @@ async fn settlement_map(
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct TravelConfigurationForm {
+    fatigue_percent: u8,
+}
+
+async fn update_travel_configuration(
+    State(state): State<AppState>,
+    Path(_id): Path<String>,
+    session: Session,
+    Form(form): Form<TravelConfigurationForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "set_party_camp_fatigue_percent",
+            &[
+                json!(character_id),
+                json!(form.fatigue_percent.clamp(10, 100)),
+            ],
+        )
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn camp(State(state): State<AppState>, session: Session) -> Response {
+    let Some((character, _inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Redirect::to("/characters").into_response();
+    };
+    let Some(party_id) = character.party_id.as_deref() else {
+        return Redirect::to("/").into_response();
+    };
+    // A reducer response can arrive a fraction before its row is visible to
+    // the SQL endpoint. Retry briefly so a completed travel POST resolves to
+    // camp rather than falling through to the character picker.
+    let mut party = None;
+    for attempt in 0..4 {
+        party = state
+            .db
+            .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{party_id}'"))
+            .await
+            .ok()
+            .flatten();
+        if party
+            .as_ref()
+            .is_some_and(|party| party.camp_destination_id.is_some())
+        {
+            break;
+        }
+        if attempt < 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+    }
+    let Some(party) = party else {
+        return Redirect::to("/").into_response();
+    };
+    let Some(destination_id) = party.camp_destination_id.as_deref() else {
+        return Redirect::to("/").into_response();
+    };
+    let destination_name = match party.camp_destination_kind.as_deref() {
+        Some("settlement") => state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = '{destination_id}'"
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map(|item| item.name),
+        Some("quest") => state
+            .db
+            .query_one::<Quest>(&format!(
+                "SELECT * FROM quest WHERE id = '{destination_id}'"
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map(|item| item.title),
+        _ => None,
+    }
+    .unwrap_or_else(|| "Unknown destination".into());
+    // The party and journey rows are committed atomically, but the SQL view
+    // can observe the camp row a fraction before the journey projection.
+    // Retry briefly so the first camp render retains the original start.
+    let mut journey = None;
+    for attempt in 0..4 {
+        journey = state
+            .db
+            .query_one::<PartyJourney>(&format!(
+                "SELECT * FROM party_journey WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .ok()
+            .flatten();
+        if journey.is_some() || attempt == 3 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    let party_members = get_active_party_members(&state, Some(&character)).await;
+    let stats: Vec<CharacterStats> = state
+        .db
+        .query("SELECT * FROM character_stats")
+        .await
+        .unwrap_or_default();
+    let default_rest_minutes = party_members
+        .iter()
+        .filter_map(|member| stats.iter().find(|stat| stat.character_id == member.id))
+        .map(|stat| ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY) * 1_440.0).ceil() as u64)
+        .max()
+        .unwrap_or(0);
+    Html(
+        camp_page(
+            &party,
+            journey.as_ref(),
+            &destination_name,
+            Some(&character),
+            &party_members,
+            default_rest_minutes,
+            Some(&character.name),
+            session.theme(),
+        )
+        .into_string(),
+    )
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct CampRestForm {
+    duration: u64,
+    unit: String,
+}
+
+fn rest_duration_minutes(duration: u64, unit: &str) -> u64 {
+    match unit {
+        "days" => duration.saturating_mul(1_440),
+        _ => duration.saturating_mul(60),
+    }
+}
+
+async fn rest_at_camp(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<CampRestForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "rest_at_camp",
+            &[
+                json!(character_id),
+                json!(rest_duration_minutes(form.duration, &form.unit)),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn continue_camp_travel(State(state): State<AppState>, session: Session) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call("continue_camp_travel", &[json!(character_id)])
+        .await
+    {
+        // Navigation follows the authoritative SSE revision once the party
+        // state is visible to every connected member.
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 async fn travel_provision_forecast(
@@ -1789,6 +2029,18 @@ async fn inn(
         }
         None => None,
     };
+    let stats = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterStats>(&state, "character_stats", character.id).await
+        }
+        None => None,
+    };
+    let condition = match active_character.as_ref() {
+        Some((character, _)) => {
+            query_single::<CharacterCondition>(&state, "character_condition", character.id).await
+        }
+        None => None,
+    };
     Html(
         inn_page(
             settlement,
@@ -1798,6 +2050,8 @@ async fn inn(
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &party_members,
             limbs.as_ref(),
+            stats.as_ref(),
+            condition.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -1807,7 +2061,8 @@ async fn inn(
 
 #[derive(Deserialize)]
 struct RestForm {
-    days: u16,
+    duration: u64,
+    unit: String,
 }
 
 async fn rest(
@@ -1837,8 +2092,12 @@ async fn rest(
     if let Err(error) = state
         .db
         .call(
-            "rest_at_settlement",
-            &[json!(character_id), json!(form.days.max(1)), json!(at_inn)],
+            "rest_at_settlement_hours",
+            &[
+                json!(character_id),
+                json!(rest_duration_minutes(form.duration, &form.unit)),
+                json!(at_inn),
+            ],
         )
         .await
     {
@@ -1934,8 +2193,8 @@ fn rest_summary(
     before_notoriety: Option<&CharacterNotoriety>,
     after_notoriety: Option<&CharacterNotoriety>,
 ) -> RestSummary {
-    let days = before_time.zip(after_time).map_or(0, |(before, after)| {
-        after.minutes.saturating_sub(before.minutes) / 1_440
+    let minutes = before_time.zip(after_time).map_or(0, |(before, after)| {
+        after.minutes.saturating_sub(before.minutes)
     });
     let gold_spent = before_character
         .zip(after_character)
@@ -1955,7 +2214,7 @@ fn rest_summary(
         _ => vec![],
     };
     RestSummary {
-        days,
+        minutes,
         gold_spent,
         gold_earned,
         notoriety_gained,
@@ -2024,21 +2283,10 @@ async fn travel(
     )
     .await;
     match outcome {
-        Ok(super::PartyActionOutcome::Executed) => {
-            match super::data::character(&state, character_id)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|character| character.current_quest_location_id)
-            {
-                Some(quest_id) => Redirect::to(&format!("/locations/quest/{quest_id}")),
-                None => Redirect::to(&format!("/locations/settlement/{id}")),
-            }
-            .into_response()
-        }
-        Ok(super::PartyActionOutcome::Requested) => {
-            Redirect::to("/?party-requested=travel").into_response()
-        }
+        // The live navigation stream routes every party member after the
+        // reducer's committed state is visible.
+        Ok(super::PartyActionOutcome::Executed) => StatusCode::NO_CONTENT.into_response(),
+        Ok(super::PartyActionOutcome::Requested) => StatusCode::ACCEPTED.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
     }
 }
@@ -2227,6 +2475,8 @@ type ServiceRenderer = fn(
     &[InventoryItem],
     &[Character],
     Option<&CharacterLimbs>,
+    Option<&CharacterStats>,
+    Option<&CharacterCondition>,
     Option<&str>,
     &str,
 ) -> maud::Markup;
@@ -2372,9 +2622,28 @@ async fn render_service_page(
             None => None,
         }
     };
-    let (party_members, limbs) = tokio::join!(
+    let stats_lookup = async {
+        match active_character_ref {
+            Some(character) => {
+                query_single::<CharacterStats>(&state, "character_stats", character.id).await
+            }
+            None => None,
+        }
+    };
+    let condition_lookup = async {
+        match active_character_ref {
+            Some(character) => {
+                query_single::<CharacterCondition>(&state, "character_condition", character.id)
+                    .await
+            }
+            None => None,
+        }
+    };
+    let (party_members, limbs, stats, condition) = tokio::join!(
         get_active_party_members(&state, active_character_ref),
         limbs_lookup,
+        stats_lookup,
+        condition_lookup,
     );
     let logged_in_as = active_character
         .as_ref()
@@ -2390,6 +2659,8 @@ async fn render_service_page(
             &inventory,
             &party_members,
             limbs.as_ref(),
+            stats.as_ref(),
+            condition.as_ref(),
             logged_in_as.as_deref(),
             session.theme(),
         )

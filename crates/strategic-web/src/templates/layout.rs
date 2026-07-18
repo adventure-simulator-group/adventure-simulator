@@ -129,16 +129,16 @@ fn page_shell(
                 link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=quest-status-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=unified-chat-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=quest-actions-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=typed-frontend-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-1" {}
                 @if scripts != ScriptProfile::Entry {
-                    script src="/static/live-state.js?v=sse-2" defer {}
+                    script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=live-regions-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
@@ -146,9 +146,10 @@ fn page_shell(
                     script src="/static/party-notifications.js?v=party-requests-2" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-2" defer {}
                     script src="/static/service-quests.js?v=unified-chat-2" defer {}
-                    script src="/static/chat-resize.js?v=floating-chat-2" defer {}
+                    script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=unified-chat-2" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-2" defer {}
+                    script src="/static/travel-planner.js?v=journey-state-1" defer {}
                 }
             }
             body {
