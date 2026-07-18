@@ -1,6 +1,7 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    SettlementImport, TravelEdgeImport, WORLD_SCHEMA_VERSION, WorldNodeImport,
+    EdgeEndpoint, ElevationMeters, SettlementImport, TravelEdgeImport, TravelRoute,
+    WORLD_SCHEMA_VERSION, WorldNodeImport,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -86,6 +87,7 @@ pub struct Settlement {
     pub population_level: i32,
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
+    pub elevation: ElevationMeters,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -123,6 +125,8 @@ pub struct TravelEdge {
     #[index(btree)]
     pub to_node_id: u64,
     pub kind: String,
+    pub bridge_at: Option<EdgeEndpoint>,
+    pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,
@@ -259,11 +263,17 @@ pub fn import_travel_edges(
                 edge.id
             ));
         }
+        let (kind, bridge_at) = match edge.route {
+            TravelRoute::Land { bridge } => ("land", bridge),
+            TravelRoute::Ferry => ("ferry", None),
+        };
         let row = TravelEdge {
             id: edge.id,
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
-            kind: edge.kind.as_str().into(),
+            kind: kind.into(),
+            bridge_at,
+            toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
             certainty: edge.certainty,
@@ -288,6 +298,12 @@ pub fn import_settlements(
         return Err("Settlement batch is empty".into());
     }
     for settlement in settlements {
+        let elevation = ElevationMeters::new(settlement.elevation.get()).ok_or_else(|| {
+            format!(
+                "Settlement {} has elevation outside the supported range",
+                settlement.id
+            )
+        })?;
         if ctx
             .db
             .world_node()
@@ -307,6 +323,7 @@ pub fn import_settlements(
             coord_y: settlement.latitude,
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
+            elevation,
             scene_key: settlement.scene_key,
             religion_id: settlement.religion_id,
             source_node_id: Some(settlement.source_node_id),
@@ -3733,6 +3750,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 coord_y: y,
                 population_level: pop,
                 population_estimate: 0,
+                elevation: ElevationMeters::new(100).unwrap(),
                 scene_key: scene.into(),
                 religion_id: religion_id.into(),
                 source_node_id: None,

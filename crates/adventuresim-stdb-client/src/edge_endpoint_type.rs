@@ -4,23 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::edge_endpoint_type::EdgeEndpoint;
-use super::travel_route_type::TravelRoute;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct TravelEdgeImport {
-    pub id: u64,
-    pub from_node_id: u64,
-    pub to_node_id: u64,
-    pub route: TravelRoute,
-    pub toll: Option<EdgeEndpoint>,
-    pub length_m: u32,
-    pub slope_multiplier: f32,
-    pub certainty: u8,
-    pub section: String,
+#[derive(Copy, Eq, Hash)]
+pub enum EdgeEndpoint {
+    From,
+
+    To,
+
+    Both,
 }
 
-impl __sdk::InModule for TravelEdgeImport {
+impl __sdk::InModule for EdgeEndpoint {
     type Module = super::RemoteModule;
 }

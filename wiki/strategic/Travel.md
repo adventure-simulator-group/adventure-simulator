@@ -46,6 +46,13 @@ time by that duration and moves them to the destination. Route cost, party
 speed, terrain, rest stops, and encounters are subsequent layers on this
 graph.
 
+Travel edges also retain typed bridge and toll infrastructure derived from
+active Viabundus nodes. Ferry and land routes are distinct typed variants; land
+routes may carry a bridge endpoint. Toll and bridge properties retain whether
+the infrastructure lies at the route's `from`, `to`, or both endpoints. This
+lets travel events deduplicate a shared node and generate an appropriate
+tactical scene without treating infrastructure as a settlement attribute.
+
 Quest travel is deliberately separate from this road graph. A generated quest
 stores an off-road point near its posting settlement. The trip to that point and
 trips from it to the five nearest settlements use straight-line distance, require

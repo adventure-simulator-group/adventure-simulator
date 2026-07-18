@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::elevation_meters_type::ElevationMeters;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Settlement {
@@ -13,6 +15,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub population_estimate: u32,
+    pub elevation: ElevationMeters,
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,
@@ -32,6 +35,7 @@ pub struct SettlementCols {
     pub coord_y: __sdk::__query_builder::Col<Settlement, f64>,
     pub population_level: __sdk::__query_builder::Col<Settlement, i32>,
     pub population_estimate: __sdk::__query_builder::Col<Settlement, u32>,
+    pub elevation: __sdk::__query_builder::Col<Settlement, ElevationMeters>,
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
     pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
@@ -50,6 +54,7 @@ impl __sdk::__query_builder::HasCols for Settlement {
                 table_name,
                 "population_estimate",
             ),
+            elevation: __sdk::__query_builder::Col::new(table_name, "elevation"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
             source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),
