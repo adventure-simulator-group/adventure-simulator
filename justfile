@@ -382,7 +382,10 @@ win-dev:
 check:
     @cargo check --workspace
 
-test:
+test-chat:
+    @node --test crates/strategic-web/tests/local-chat.test.cjs
+
+test: test-chat
     @cargo test --workspace
 
 fmt:

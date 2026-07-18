@@ -1718,8 +1718,9 @@ fn incapacitation_wheel(character_id: u64) -> Markup {
     }
 }
 
-/// Layout-only chat panel matching the UX prototype. Channels, message history,
-/// and sending are deliberately disabled until the strategic chat backend exists.
+/// Shared chat panel. Local conversations are live; the remaining channel
+/// filters are present so their messages can join the same stream as their
+/// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
     chat_area(location, active_character, None, None)
 }
@@ -1761,27 +1762,32 @@ fn chat_area(
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
                 span aria-hidden="true" {}
             }
-            div class="settlement-chat-tabs" role="tablist" aria-label="Chat channels" {
-                button type="button" class="settlement-chat-tab active" {
-                    "Local"
-                }
-                button type="button" class="settlement-chat-tab" disabled
-                    title="TODO: settlement chat requires real-time message delivery" {
-                    "Settlement"
-                }
-                button type="button" class="settlement-chat-tab" disabled
-                    title="TODO: guild chat requires guild membership and real-time message delivery" {
-                    "Guild"
+            div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
+                @for (channel, label) in [
+                    ("local", "Local"),
+                    ("party", "Party"),
+                    ("settlement", "Settlement"),
+                    ("dm", "DMs"),
+                    ("guild", "Guild"),
+                    ("info", "Info"),
+                ] {
+                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) {
+                        input type="checkbox" checked data-chat-filter=(channel);
+                        span { (label) }
+                    }
                 }
             }
             div class="settlement-chat-messages" aria-live="polite" {
-                @if local_context.is_none() { div class="chat-system-message" {
+                @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
                     span class="chat-timestamp" { "[--:--]" }
+                    span class="chat-channel-badge" { " [Info] " }
                     " Select a local character or settlement service to begin talking."
                 } }
             }
             div class="settlement-chat-composer" {
-                input type="text" name="body" disabled[local_context.is_none()] placeholder=(format!("Message {location}"));
+                input type="text" name="body" disabled[local_context.is_none()]
+                    aria-label="Local message"
+                    placeholder=(format!("Message {location} (Local)"));
                 button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
                     aria-label="Send message" {
                     "➤"
@@ -2006,5 +2012,79 @@ mod tests {
         assert!(markup.contains("value=\"underprovisioned\""));
         assert!(!markup.contains("Provision and travel"));
         assert!(!markup.contains("Provision forecast"));
+    }
+
+    #[test]
+    fn chat_uses_one_stream_with_all_channel_filters() {
+        let markup = chat_area("Lubeck", None, None, None).into_string();
+
+        assert!(!markup.contains("role=\"tablist\""));
+        for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
+            assert!(
+                markup.contains(&format!("data-chat-filter=\"{channel}\"")),
+                "missing {channel} filter"
+            );
+        }
+        assert!(markup.contains("data-chat-channel=\"info\""));
+        assert!(markup.contains("class=\"chat-channel-badge\"> [Info] "));
+    }
+
+    #[test]
+    fn chat_palette_meets_text_contrast_on_the_lightest_composite() {
+        fn linear_channel(channel: u8) -> f64 {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        }
+
+        fn luminance([red, green, blue]: [u8; 3]) -> f64 {
+            0.2126 * linear_channel(red)
+                + 0.7152 * linear_channel(green)
+                + 0.0722 * linear_channel(blue)
+        }
+
+        fn contrast(first: [u8; 3], second: [u8; 3]) -> f64 {
+            let (lighter, darker) = if luminance(first) > luminance(second) {
+                (luminance(first), luminance(second))
+            } else {
+                (luminance(second), luminance(first))
+            };
+            (lighter + 0.05) / (darker + 0.05)
+        }
+
+        // The 88% #0c0f18 surface over white is the lightest possible panel
+        // composite and therefore the lowest-contrast case for this palette.
+        let lightest_chat_surface = [41, 43, 52];
+        for (channel, color) in [
+            ("Local", [0xff, 0xff, 0xff]),
+            ("Party", [0x6f, 0xb5, 0xff]),
+            ("Settlement", [0xf2, 0xd2, 0x6b]),
+            ("DM", [0xc9, 0x95, 0xff]),
+            ("Guild", [0x73, 0xd5, 0x8a]),
+            ("Info", [0x9c, 0xa3, 0xad]),
+        ] {
+            assert!(
+                contrast(color, lightest_chat_surface) >= 4.5,
+                "{channel} does not meet WCAG AA text contrast"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_css_keeps_fallbacks_and_mobile_message_space() {
+        let css = include_str!("../../static/css/strategic.css");
+        let fallback = css
+            .find("background: rgb(12 15 24 / 88%);")
+            .expect("chat needs a background fallback");
+        let enhanced = css
+            .find("background: color-mix(in srgb, #0c0f18 88%, transparent);")
+            .expect("chat should enhance its fallback with color-mix");
+
+        assert!(fallback < enhanced);
+        assert!(css.contains(".settlement-chat-filters {\n    flex-wrap: nowrap;"));
+        assert!(css.contains("min-height: 10rem;"));
     }
 }

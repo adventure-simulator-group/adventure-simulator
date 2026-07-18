@@ -54,6 +54,7 @@ Now when you click a location in the browser, a tactical server will automatical
   `curl -sSf https://install.spacetimedb.com | bash`, then
   `spacetime version install 2.6.1` and `spacetime version use 2.6.1`
 - Python 3
+- Node.js 20 or newer (strategic browser behavior tests)
 - wasm-bindgen (`cargo install wasm-bindgen-cli`) - for WASM builds
 - Caddy (for the HTTPS HTTP/2 development entry point)
 
@@ -79,6 +80,8 @@ just spawner          # Run tactical server spawner
 just build-wasm       # Build WASM client
 
 # Testing
+just test             # Run the Rust workspace and strategic browser behavior tests
+just test-chat        # Run only the strategic chat behavior tests
 just tactical         # Run a single tactical server (for testing)
 just status           # Check service status
 just stop             # Stop all services

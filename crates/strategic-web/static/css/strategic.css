@@ -3,6 +3,8 @@
    SETTLEMENT INTERFACE
    ============================================ */
 .settlement-main {
+  --chat-bottom-gap: 0.3rem;
+  --chat-inline-gap: 1rem;
   display: flex;
   flex-direction: column;
   max-width: none;
@@ -1834,19 +1836,22 @@ button.party-portrait-action {
   filter: drop-shadow(0 0 0.2rem #c84747);
 }
 
-/* Persistent, currently read-only chat area from the settlement UX prototype. */
+/* Unified floating chat stream. */
 .settlement-chat {
   --chat-height: 11.5rem;
   display: flex;
   flex: 0 0 var(--chat-height);
   flex-direction: column;
+  margin: 0 var(--chat-inline-gap) var(--chat-bottom-gap);
   min-height: 8rem;
-  max-height: calc(100% - 8rem);
+  max-height: calc(100% - 8rem - var(--chat-bottom-gap));
   overflow: hidden;
   border: 1px solid var(--border-accent);
   border-radius: var(--radius);
-  background: var(--panel-bg);
-  box-shadow: var(--shadow-sm);
+  background: rgb(12 15 24 / 88%);
+  background: color-mix(in srgb, #0c0f18 88%, transparent);
+  box-shadow: 0 0.35rem 1rem #0005;
+  backdrop-filter: blur(5px);
 }
 
 .settlement-chat-resize {
@@ -1854,7 +1859,8 @@ button.party-portrait-action {
   flex: 0 0 0.65rem;
   place-items: center;
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  background: rgb(17 21 33 / 90%);
+  background: color-mix(in srgb, #111521 90%, transparent);
   cursor: ns-resize;
   touch-action: none;
   user-select: none;
@@ -1885,37 +1891,70 @@ body.chat-resizing {
   user-select: none;
 }
 
-.settlement-chat-tabs {
+.settlement-chat-filters {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  align-items: center;
   flex: 0 0 auto;
+  padding: 0.42rem 0.65rem;
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  background: rgb(17 21 33 / 86%);
+  background: color-mix(in srgb, #111521 86%, transparent);
 }
 
-.settlement-chat-tab {
-  flex: 1;
-  min-width: 0;
-  padding: 0.45rem 0.6rem;
-  border: 0;
-  border-right: 1px solid var(--border-light);
-  background: transparent;
-  color: var(--text-muted);
+.chat-channel-filter {
+  --channel-color: #fff;
+  display: inline-flex;
+  gap: 0.32rem;
+  align-items: center;
+  color: #d7dbe4;
   font-family: var(--font-display), serif;
   font-size: var(--font-size-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  cursor: not-allowed;
+  cursor: pointer;
+  user-select: none;
 }
 
-.settlement-chat-tab:last-child {
-  border-right: 0;
+.chat-channel-filter input {
+  display: grid;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0;
+  appearance: none;
+  place-items: center;
+  border: 1px solid #353b48;
+  border-color: color-mix(in srgb, var(--channel-color) 72%, #111);
+  border-radius: 0.2rem;
+  background: var(--channel-color);
+  box-shadow: inset 0 0 0 1px #0004;
+  cursor: pointer;
 }
 
-.settlement-chat-tab.active {
-  background: var(--panel-bg);
-  color: var(--accent-dark);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.chat-channel-filter input::after {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #0008;
+  content: "";
+  opacity: 0;
+  transform: scale(0.45);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
+
+.chat-channel-filter input:checked::after { opacity: 1; transform: scale(1); }
+.chat-channel-filter input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.chat-channel-filter input:not(:checked),
+.chat-channel-filter input:not(:checked) + span { opacity: 0.52; }
+
+.chat-channel-filter-local { --channel-color: #fff; }
+.chat-channel-filter-party { --channel-color: #4a9eff; }
+.chat-channel-filter-settlement { --channel-color: #e6bd3f; }
+.chat-channel-filter-dm { --channel-color: #a968e8; }
+.chat-channel-filter-guild { --channel-color: #43ad62; }
+.chat-channel-filter-info { --channel-color: #858b94; }
 
 .settlement-chat-messages {
   flex: 1;
@@ -1932,28 +1971,37 @@ body.chat-resizing {
   margin-bottom: 0.35rem;
 }
 
+.settlement-chat-messages [data-chat-channel="local"] { color: #fff; }
+.settlement-chat-messages [data-chat-channel="party"] { color: #6fb5ff; }
+.settlement-chat-messages [data-chat-channel="settlement"] { color: #f2d26b; }
+.settlement-chat-messages [data-chat-channel="dm"] { color: #c995ff; }
+.settlement-chat-messages [data-chat-channel="guild"] { color: #73d58a; }
+.settlement-chat-messages [data-chat-channel="info"] { color: #9ca3ad; }
+
 .chat-system-message {
-  color: var(--text-muted);
   font-style: italic;
 }
 
-.chat-npc-message {
-  color: var(--text-primary);
-}
-
-.chat-player-message {
-  color: var(--accent-dark);
+.chat-channel-badge {
+  display: inline-block;
+  min-width: 4.4em;
+  font-family: var(--font-display), serif;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .chat-quest-link {
-  color: var(--accent);
+  color: inherit;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 0.14em;
 }
 
 .chat-timestamp {
-  color: var(--text-muted);
+  color: #a0a7b2;
   font-size: var(--font-size-xs);
 }
 
@@ -1963,7 +2011,8 @@ body.chat-resizing {
   flex: 0 0 auto;
   padding: 0.5rem;
   border-top: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  background: rgb(17 21 33 / 86%);
+  background: color-mix(in srgb, #111521 86%, transparent);
 }
 
 .settlement-chat-composer input {
@@ -1972,12 +2021,14 @@ body.chat-resizing {
   padding: 0.4rem 0.55rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
+  background: rgb(255 255 255 / 10%);
+  color: #e2e5eb;
   font: inherit;
   font-size: var(--font-size-sm);
-  cursor: not-allowed;
+  cursor: text;
 }
+
+.settlement-chat-composer input:disabled { cursor: not-allowed; }
 
 .settlement-chat-composer .btn:disabled {
   opacity: 0.55;
@@ -1987,8 +2038,8 @@ body.chat-resizing {
 .local-chat-incoming {
   position: absolute;
   z-index: 6;
-  right: 0.75rem;
-  bottom: calc(var(--chat-height, 11.5rem) + 0.75rem);
+  right: calc(var(--chat-inline-gap) + 0.75rem);
+  bottom: calc(var(--chat-height, 11.5rem) + var(--chat-bottom-gap) + 0.75rem);
   display: flex;
   flex-direction: row-reverse;
   gap: 0.35rem;
@@ -2006,6 +2057,21 @@ body.chat-resizing {
   color: var(--text-primary);
   font-weight: 700;
   text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .settlement-chat {
+    min-height: 10rem;
+    max-height: calc(100% - 8rem - var(--chat-bottom-gap));
+  }
+
+  .settlement-chat-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .chat-channel-filter { flex: 0 0 auto; }
 }
 
 .small-copy {

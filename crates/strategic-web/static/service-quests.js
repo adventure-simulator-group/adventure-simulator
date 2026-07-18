@@ -14,12 +14,16 @@
     const row = document.createElement("div");
     const body = typeof content === "string" ? content : content.textContent;
     row.className = kind === "player" ? "chat-player-message" : "chat-npc-message";
+    row.dataset.chatChannel = "local";
     row.dataset.localChatBody = body || "";
     row.dataset.localChatSpeaker = speaker || "";
     const timestamp = document.createElement("span");
     timestamp.className = "chat-timestamp";
     timestamp.textContent = "[--:--] ";
-    row.append(timestamp);
+    const badge = document.createElement("span");
+    badge.className = "chat-channel-badge";
+    badge.textContent = "[Local] ";
+    row.append(timestamp, badge);
     if (speaker) {
       const name = document.createElement("strong");
       name.textContent = `${speaker}: `;
