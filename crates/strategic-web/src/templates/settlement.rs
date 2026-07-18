@@ -1708,7 +1708,7 @@ fn repair_custody_panel(
                             }
                             th scope="col" class="inventory-column-durability" { "Durability" }
                             th scope="col" class="repair-column-eta" { "ETA" }
-                            th scope="col" class="inventory-column-gold" title="Full repair cost" { span class="inventory-header-coin" aria-label="Full repair cost" {} }
+                            th scope="col" class="inventory-column-gold" title="Full repair cost (Currency)" { (currency_header("Full repair cost in Currency")) }
                         } }
                         tbody {
                         @for order in matching {
@@ -1759,8 +1759,12 @@ fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Ma
         @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { "✓" } }
         @if let Some(condition_header) = condition_header { th scope="col" class="inventory-column-durability" { (condition_header) } }
         th scope="col" class="inventory-column-weight" title="Weight" { span class="inventory-header-weight" aria-label="Weight" {} }
-        th scope="col" class="inventory-column-gold" title="Gold" { span class="inventory-header-coin" aria-label="Gold" {} }
+        th scope="col" class="inventory-column-gold" title="Currency" { (currency_header("Currency")) }
     } } }
+}
+
+fn currency_header(label: &str) -> Markup {
+    html! { span class="currency-header-icon" role="img" aria-label=(label) title="Currency" { "💎" } }
 }
 
 fn party_skills_rail(
@@ -1779,17 +1783,19 @@ fn party_skills_rail(
         (limbs.left_leg_health + limbs.right_leg_health) / 2.0
     });
     html! {
-        (sidebar_section(title, html! {
+        (sidebar_section("", html! {
             @if let Some(skills) = skills {
+                h3 class="sr-only" { (title) }
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
-                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
+                        (skills_table(title, skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
                     }
-                    script src="/static/training-schedule.js?v=clock-shorthand-1" {}
+                    script src="/static/training-schedule.js?v=live-remount-1" {}
                 } @else {
-                    (skills_table(skills, head_health, upper_health, lower_health, None, None))
+                    (skills_table(title, skills, head_health, upper_health, lower_health, None, None))
                 }
             } @else {
+                h3 class="sidebar-header" { (title) }
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
             }
         }))
@@ -1797,6 +1803,7 @@ fn party_skills_rail(
 }
 
 fn skills_table(
+    title: &str,
     skills: &CharacterSkills,
     head_health: f32,
     upper_health: f32,
@@ -1814,20 +1821,21 @@ fn skills_table(
                         col class="schedule-effect-column";
                         col class="schedule-effect-column";
                         col class="schedule-effect-column";
-                        col class="party-skill-time-column";
                     } @else {
                         col class="party-skill-meter-column";
                     }
                 }
                 @if schedule.is_some() {
-                    thead { tr class="schedule-context-heading" {
-                        th colspan="6" { }
-                        th scope="col" title="Daily plan used while resting or waiting in a settlement" {
-                            span aria-hidden="true" { "⌛" }
-                            span class="sr-only" { "Daily allocation" }
-                        }
-                    } }
+                    colgroup { col class="party-skill-time-column"; }
                 }
+                thead { tr class="schedule-context-heading" {
+                        th scope="colgroup" colspan=(if schedule.is_some() { "6" } else { "3" }) class="schedule-table-title" { (title) }
+                    @if schedule.is_some() {
+                        th scope="col" title="Daily plan used while resting or waiting in a settlement" {
+                            (schedule_header_icon("⌛", "Daily allocation"))
+                        }
+                    }
+                } }
                 tbody {
                     (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
                     (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
@@ -1845,12 +1853,12 @@ fn skills_table(
                         @let preview = activity_preview.unwrap_or_default();
                         tr class="schedule-divider" { td colspan="7" {} }
                         tr class="schedule-section-heading" {
-                            td colspan="2" { "Activities" }
-                            th scope="col" title="Gold per day" { "Gold" }
-                            th scope="col" title="Virtue per day" { "Virt." }
-                            th scope="col" title="Morale per day" { "Mor." }
-                            th scope="col" title="Fatigue per day" { "Fat." }
-                            td {}
+                            th colspan="2" { "Activities" }
+                            th scope="col" title="Currency" { (schedule_header_icon("💎", "Currency")) }
+                            th scope="col" title="Virtue" { (schedule_header_icon("⚖️", "Virtue")) }
+                            th scope="col" title="Morale" { (schedule_header_icon("🙂", "Morale")) }
+                            th scope="col" title="Fatigue" { (schedule_header_icon("💤", "Fatigue")) }
+                            th scope="col" title="Daily allocation" { (schedule_header_icon("⌛", "Daily allocation")) }
                         }
                         (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, ActivityEffectRates::prayer(), "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
                         (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, 0.0), "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed."))
@@ -1861,6 +1869,10 @@ fn skills_table(
             }
         }
     }
+}
+
+fn schedule_header_icon(glyph: &str, label: &str) -> Markup {
+    html! { span class="schedule-header-icon" role="img" aria-label=(label) title=(label) { (glyph) } }
 }
 
 fn party_skill_row(
@@ -3093,6 +3105,59 @@ mod tests {
     }
 
     #[test]
+    fn schedule_table_uses_compact_accessible_icon_headers() {
+        let skills = CharacterSkills {
+            character_id: 1,
+            melee_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            ranged_hours: 0.0,
+            will_hours: 0.0,
+            charisma_hours: 0.0,
+            medicine_hours: 0.0,
+            faith_hours: 0.0,
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            surgeon_hours: 0.0,
+            smithing_hours: 0.0,
+        };
+        let schedule = CharacterTrainingSchedule {
+            character_id: 1,
+            downtime: crate::spacetimedb::ScheduleAllocation::default(),
+            travel: crate::spacetimedb::ScheduleAllocation::default(),
+        };
+        let rendered = skills_table("Your skills", &skills, 1.0, 1.0, 1.0, Some(&schedule), None)
+            .into_string();
+
+        assert!(rendered.contains(
+            "scope=\"colgroup\" colspan=\"6\" class=\"schedule-table-title\">Your skills"
+        ));
+        assert_eq!(rendered.matches("<colgroup>").count(), 2);
+        assert_eq!(
+            rendered.matches("aria-label=\"Daily allocation\"").count(),
+            2
+        );
+        for label in ["Currency", "Virtue", "Morale", "Fatigue"] {
+            assert!(rendered.contains(&format!("aria-label=\"{label}\"")));
+        }
+        assert!(rendered.contains('\u{1f48e}'));
+        assert!(!rendered.contains(">Gold</th>"));
+        assert!(!rendered.contains(">Virt.</th>"));
+
+        let rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/schedule"),
+            None,
+        )
+        .into_string();
+        assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
+        assert!(rail.contains("<h3 class=\"sr-only\">Your skills</h3>"));
+    }
+
+    #[test]
     fn activity_rows_show_signed_daily_effects_instead_of_allocation_bars() {
         let rendered = schedule_special_row(
             "Thievery",
@@ -3154,6 +3219,9 @@ mod tests {
         assert!(rendered.contains("inventory-column-count"));
         assert!(rendered.contains("inventory-column-weight"));
         assert!(rendered.contains("inventory-column-gold"));
+        assert!(rendered.contains("title=\"Currency\""));
+        assert!(rendered.contains("aria-label=\"Currency\""));
+        assert!(rendered.contains('\u{1f48e}'));
     }
 
     #[test]
@@ -3523,6 +3591,9 @@ mod tests {
         assert!(schedule.contains("/^\\d{3,4}$/"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
         assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
+        assert!(schedule.contains("function mountSchedules(root = document)"));
+        assert!(schedule.contains("'strategic-live-regions-refreshed'"));
+        assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
         assert!(schedule.contains("schedule-effect-positive"));
         assert!(!schedule.contains("scheduleDrag"));
         assert!(!schedule.contains("travel_"));

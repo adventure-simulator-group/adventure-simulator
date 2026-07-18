@@ -205,7 +205,14 @@
   if (typeof module !== 'undefined') module.exports = { parseClock };
   if (typeof document === 'undefined') return;
 
-  document.querySelectorAll('[data-skill-schedule]').forEach(stateFor);
+  function mountSchedules(root = document) {
+    root.querySelectorAll('[data-skill-schedule]').forEach(stateFor);
+  }
+
+  mountSchedules();
+  document.addEventListener('strategic-live-regions-refreshed', (event) => {
+    if (!event.detail?.regions || event.detail.regions.includes('left-sidebar')) mountSchedules();
+  });
   document.addEventListener('wheel', (event) => {
     const cell = event.target.closest?.('.party-skill-allocation');
     const root = cell?.closest('[data-skill-schedule]');

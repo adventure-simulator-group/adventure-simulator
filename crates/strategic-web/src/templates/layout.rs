@@ -131,7 +131,7 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=schedule-editor-fit-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=schedule-headers-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
 
                 // Datastar
