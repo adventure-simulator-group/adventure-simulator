@@ -1081,7 +1081,7 @@ fn party_trade_inventory_rail(
                             tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                 td class="inventory-item-name" {
                                     (item_name_with_quality(&item.item_id, definition))
-                                    @if !is_equipped { span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode=(mode) aria-label=(format!("Transfer {}", item.item_id)) title="Stage items for trade" { (transfer_glyph(arrows)) } } } }
+                                    @if !is_equipped { span class="inventory-row-actions" { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) } } }
                                 }
                                 td class="inventory-count" { (item.qty) }
                                 td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
@@ -1118,8 +1118,12 @@ fn discard_inventory_rail(
                                 @if !is_equipped {
                                     button type="button" class="trade-transfer trade-transfer-left"
                                         data-discard-item=(item.id) data-count=(item.qty)
+                                        data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                                        data-label-one=(format!("Discard one {}", item.item_id))
+                                        data-label-target=(format!("Discard {} down to target", item.item_id))
+                                        data-label-all=(format!("Discard all {}", item.item_id))
                                         aria-label=(format!("Discard {}", item.item_id))
-                                        title="Stage one item for discarding" {}
+                                        title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
                                 }
                             }
                             td class="inventory-count" { (item.qty) }
@@ -1291,7 +1295,7 @@ pub fn party_pool_page(
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
                                 (item_name_with_quality(&item.item_id, definition))
-                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal gold required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
                             }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
@@ -1320,7 +1324,7 @@ pub fn party_pool_page(
                             td class="inventory-item-name" {
                                 (item_name_with_quality(&item.item_id, definition))
                                 @if !equipped {
-                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                    span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) } }
                                 }
                             }
                             td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
@@ -1392,15 +1396,13 @@ fn trade_inventory_table(
     let show_condition = condition_header.is_some();
     html! {
         table class=(if show_condition { "trade-inventory-table smith-player-inventory-table" } else { "trade-inventory-table" }) {
-            @if show_equipped {
-                colgroup {
-                    col class="inventory-column-item";
-                    col class="inventory-column-count";
-                    col class="inventory-column-equipped";
-                    @if show_condition { col class="inventory-column-durability"; }
-                    col class="inventory-column-weight";
-                    col class="inventory-column-gold";
-                }
+            colgroup {
+                col class="inventory-column-item";
+                col class="inventory-column-count";
+                @if show_equipped { col class="inventory-column-equipped"; }
+                @if show_condition { col class="inventory-column-durability"; }
+                col class="inventory-column-weight";
+                col class="inventory-column-gold";
             }
             (trade_inventory_table_header(show_equipped, condition_header))
             tbody { (rows) }
@@ -1434,9 +1436,7 @@ pub(crate) fn transfer_glyph(count: usize) -> Markup {
 
 fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" aria-label=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="target" data-target=(target) data-count=(available) aria-label=(format!("Buy {item_id} to target")) { (transfer_glyph(2)) }
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="all" data-count=(available) aria-label=(format!("Buy all {item_id}")) { (transfer_glyph(3)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_id}")) data-label-target=(format!("Buy {item_id} to target")) data-label-all=(format!("Buy all {item_id}")) aria-label=(format!("Buy one {item_id}")) title=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -1448,9 +1448,7 @@ fn merchant_sell_controls(
     target: u32,
 ) -> Markup {
     html! { span class="inventory-row-actions" {
-        @for (mode, arrows, label) in [("one", 1, "Sell one"), ("target", 2, "Sell surplus"), ("all", 3, "Sell all")] {
-            button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode=(mode) data-count=(quantity) data-target=(target) aria-label=(format!("{label} {item_id}")) { (transfer_glyph(arrows)) }
-        }
+        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -1465,9 +1463,7 @@ fn merchant_sell_repair_controls(
 ) -> Markup {
     html! { div class="inventory-row-actions smith-player-actions" {
         @if can_sell {
-            @for (mode, arrows, label) in [("one", 1, "Sell one"), ("target", 2, "Sell surplus"), ("all", 3, "Sell all")] {
-                button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode=(mode) data-count=(quantity) data-target=(target) aria-label=(format!("{label} {item_id}")) { (transfer_glyph(arrows)) }
-            }
+            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
         }
         @if let Some(repair) = repair { (repair) }
     } }
@@ -1600,9 +1596,9 @@ fn repair_custody_panel(
                         thead { tr {
                             th scope="col" class="inventory-column-item" {
                                 span class="repair-custody-item-heading" { span { "Item" }
-                                    form class="repair-retrieve-all-form" action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
-                                        input type="hidden" name="limit" value=(u32::MAX);
-                                        button type="submit" class="trade-transfer trade-transfer-right repair-retrieve-all" title="Retrieve the affordable prefix of all completed repairs" aria-label="Retrieve affordable completed repairs" { (transfer_glyph(3)) }
+                                    form class="repair-retrieve-all-form" data-repair-retrieve-form data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
+                                        input type="hidden" name="limit" value="2";
+                                        button type="submit" class="trade-transfer trade-transfer-right repair-retrieve-all" data-dynamic-transfer data-default-transfer-mode="target" data-transfer-mode="target" data-label-target="Retrieve up to two completed repairs" data-label-all="Retrieve all completed repairs" title="Retrieve up to two completed repairs" aria-label="Retrieve up to two completed repairs" { (transfer_glyph(2)) }
                                     }
                                 }
                             }
@@ -1619,16 +1615,11 @@ fn repair_custody_panel(
                             tr class="trade-inventory-row trade-row-merchant repair-order-row" {
                                 td class="inventory-item-name" { (item_name_with_quality(&order.item_id, definition))
                                     span class="inventory-row-actions repair-retrieve-actions" {
-                                        form action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) method="post" {
-                                            button type="submit" class="trade-transfer trade-transfer-right" disabled[!ready] title=(if ready { "Retrieve this completed item at its shown quote" } else { "Repair is still underway" }) aria-label="Retrieve this completed item" { (transfer_glyph(1)) }
-                                        }
-                                    @for (limit, arrows, label) in [(2_u32, 2_usize, "Retrieve an affordable prefix of up to two completed matching items"), (u32::MAX, 3, "Retrieve the affordable prefix of all completed matching items")] {
-                                        form action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
+                                        form data-repair-retrieve-form data-single-action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) method="post" {
                                             input type="hidden" name="item_id" value=(&order.item_id);
-                                            input type="hidden" name="limit" value=(limit);
-                                            button type="submit" class="trade-transfer trade-transfer-right" disabled[!ready] title=(if ready { label } else { "Repair is still underway" }) aria-label=(label) { (transfer_glyph(arrows)) }
+                                            input type="hidden" name="limit" value="1" disabled;
+                                            button type="submit" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one" data-label-one="Retrieve this completed item" data-label-target="Retrieve up to two completed matching items" data-label-all="Retrieve all completed matching items" disabled[!ready] title=(if ready { "Retrieve this completed item" } else { "Repair is still underway" }) aria-label="Retrieve this completed item" { (transfer_glyph(1)) }
                                         }
-                                    }
                                     }
                                 }
                                 td class="inventory-durability" {
@@ -1653,8 +1644,7 @@ pub(crate) fn inventory_footer_controls(
     all_label: &str,
 ) -> Markup {
     html! { div class="inventory-footer-actions" {
-        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="target" aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
-        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="all" aria-label=(all_label) title=(all_label) { (transfer_glyph(3)) }
+        button type="button" class="trade-transfer inventory-footer-transfer" data-dynamic-transfer data-default-transfer-mode="target" data-inventory-bulk=(action) data-transfer-mode="target" data-label-target=(target_label) data-label-all=(all_label) aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
     } }
 }
 
@@ -2806,9 +2796,11 @@ mod tests {
             merchant_sell_repair_controls(4, "torch", 2, 3, 1, true, Some(repair)).into_string();
 
         assert!(rendered.starts_with("<div class=\"inventory-row-actions smith-player-actions\">"));
-        for mode in ["one", "target", "all"] {
-            assert!(rendered.contains(&format!("data-transfer-mode=\"{mode}\"")));
-        }
+        assert_eq!(rendered.matches("data-merchant-sell=\"").count(), 1);
+        assert!(rendered.contains("data-dynamic-transfer"));
+        assert!(rendered.contains("data-default-transfer-mode=\"one\""));
+        assert!(rendered.contains("data-label-target=\"Sell surplus torch\""));
+        assert!(rendered.contains("data-label-all=\"Sell all torch\""));
         assert!(rendered.contains("row-repair-form"));
         assert_eq!(rendered.matches("smith-player-actions").count(), 1);
     }
@@ -2889,6 +2881,15 @@ mod tests {
             trade_inventory_table(true, Some(html! { "Durability" }), html! {}).into_string();
         assert!(rendered.contains("smith-player-inventory-table"));
         assert!(rendered.contains("inventory-column-durability"));
+    }
+
+    #[test]
+    fn merchant_stock_table_keeps_quantity_weight_and_gold_columns() {
+        let rendered = trade_inventory_table(false, None, html! {}).into_string();
+        assert!(rendered.contains("<colgroup>"));
+        assert!(rendered.contains("inventory-column-count"));
+        assert!(rendered.contains("inventory-column-weight"));
+        assert!(rendered.contains("inventory-column-gold"));
     }
 
     #[test]
@@ -2980,7 +2981,8 @@ mod tests {
         assert!(weapons.contains("ETA"));
         assert!(weapons.contains("Full repair cost"));
         assert!(weapons.contains("repair-retrieve-all"));
-        assert!(weapons.contains("Retrieve an affordable prefix of up to two"));
+        assert!(weapons.contains("Retrieve up to two completed matching items"));
+        assert!(!weapons.to_lowercase().contains("affordable prefix"));
         assert!(weapons.contains("/repairs/1/retrieve"));
         assert!(weapons.contains(">12<"));
         assert!(!weapons.contains("Target "));
@@ -3221,19 +3223,22 @@ mod tests {
         assert!(css.contains(".smith-player-inventory-table"));
         assert!(css.contains("width: 3.65rem;"));
         assert!(css.contains(".repair-custody-item-heading"));
-        assert!(css.contains("width: calc(100% + 4.55rem);"));
-        assert!(css.contains("right: -4.55rem;"));
+        assert!(css.contains("width: calc(100% + 1.65rem);"));
+        assert!(css.contains("right: -1.65rem;"));
         assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
         assert!(utilities.contains(".smith-wares-scroll .inventory-row-actions"));
         assert!(utilities.contains(".smith-wares-scroll .inventory-footer-actions"));
-        assert!(utilities.contains("grid-template-columns:repeat(4,1.35rem)"));
+        assert!(utilities.contains("grid-template-columns:repeat(2,1.35rem)"));
         assert!(utilities.contains(
-            ".right-sidebar .inventory-row-actions.smith-player-actions { left:-6rem; }"
+            ".right-sidebar .inventory-row-actions.smith-player-actions { left:-3.15rem; }"
         ));
         assert!(
             utilities
                 .contains(".smith-player-actions .row-repair-form { position:static; order:0;")
         );
         assert!(trade_script.contains("if (stockRow) changeTradeDraftCount(stockRow, amount);"));
+        assert!(trade_script.contains("function applyDynamicTransferModifiers(event)"));
+        assert!(trade_script.contains("event.key === \"Shift\" || event.key === \"Control\""));
+        assert!(trade_script.contains("controlKey ? \"all\""));
     }
 }

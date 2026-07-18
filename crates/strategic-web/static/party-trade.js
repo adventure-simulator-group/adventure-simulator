@@ -13,8 +13,46 @@ function mountInventoryBulkControls(root = document) {
     const headerRow = section?.querySelector(".trade-inventory-table thead tr");
     if (headerRow) headerRow.append(actions);
   });
+  applyDynamicTransferModifiers();
 }
 strategicTradeUi.mountInventoryBulkControls = mountInventoryBulkControls;
+
+function setDynamicTransferButton(button, shiftKey, controlKey) {
+  const defaultMode = button.dataset.defaultTransferMode || "one";
+  const mode = controlKey ? "all" : shiftKey && defaultMode === "one" ? "target" : defaultMode;
+  button.dataset.transferMode = mode;
+  const label = button.dataset[`label${mode[0].toUpperCase()}${mode.slice(1)}`];
+  if (label) {
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+  const glyph = button.querySelector(".inventory-transfer-glyph");
+  if (glyph) {
+    const count = mode === "all" ? 3 : mode === "target" ? 2 : 1;
+    glyph.className = `inventory-transfer-glyph arrows-${count}`;
+    glyph.replaceChildren(...Array.from({ length: count }, () => document.createElement("i")));
+  }
+
+  const form = button.closest("[data-repair-retrieve-form]");
+  if (!form) return;
+  const useSingle = mode === "one" && form.dataset.singleAction;
+  form.action = useSingle ? form.dataset.singleAction : form.dataset.bulkAction;
+  form.querySelectorAll("[name='item_id'], [name='limit']").forEach((input) => { input.disabled = Boolean(useSingle); });
+  const limit = form.querySelector("[name='limit']");
+  if (limit && !useSingle) limit.value = mode === "all" ? "4294967295" : "2";
+}
+
+function applyDynamicTransferModifiers(event) {
+  const modifiers = strategicTradeUi.state.transferModifiers ||= { shiftKey: false, controlKey: false };
+  if (event) {
+    modifiers.shiftKey = event.shiftKey;
+    modifiers.controlKey = event.ctrlKey;
+  }
+  document.querySelectorAll("[data-dynamic-transfer]").forEach((button) => {
+    setDynamicTransferButton(button, modifiers.shiftKey, modifiers.controlKey);
+  });
+}
+strategicTradeUi.applyDynamicTransferModifiers = applyDynamicTransferModifiers;
 
 function changeInventoryTarget(control, change) {
   const value = control?.querySelector("[data-target-value]");
@@ -67,6 +105,8 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   row.classList.remove("trade-row-merchant");
   row.classList.add("trade-row-player");
   row.dataset.merchantEquipped = "false";
+  row.dataset.inventoryQuantity = "0";
+  row.dataset.target = sourceRow.querySelector("[data-merchant-buy]")?.dataset.target || "0";
   row.querySelector(".trade-transfer")?.remove();
   const count = row.querySelector(".inventory-count");
   count.textContent = "0";
@@ -84,9 +124,17 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   cancel.type = "button";
   cancel.className = "trade-transfer trade-transfer-left";
   cancel.dataset.merchantCancelBuy = itemId;
-  cancel.setAttribute("aria-label", `Cancel buying ${itemId}`);
-  cancel.title = "Remove one item from this purchase";
+  cancel.dataset.dynamicTransfer = "";
+  cancel.dataset.defaultTransferMode = "one";
+  cancel.dataset.transferMode = "one";
+  cancel.dataset.labelOne = `Cancel one ${itemId}`;
+  cancel.dataset.labelTarget = `Cancel ${itemId} down to target`;
+  cancel.dataset.labelAll = `Cancel all ${itemId}`;
+  cancel.setAttribute("aria-label", cancel.dataset.labelOne);
+  cancel.title = cancel.dataset.labelOne;
+  cancel.innerHTML = '<span class="inventory-transfer-glyph arrows-1" aria-hidden="true"><i></i></span>';
   name.append(cancel);
+  applyDynamicTransferModifiers();
   playerSidebar.querySelector(".trade-inventory-table tbody").append(row);
   return row;
 }
@@ -175,14 +223,18 @@ function ensureDiscardRow(sourceRow, inventoryId) {
     action.dataset.unstageDiscard = inventoryId;
     action.classList.remove("trade-transfer-left");
     action.classList.add("trade-transfer-right");
-    action.title = "Remove one item from the discard list";
-    action.setAttribute("aria-label", "Remove one item from the discard list");
+    action.dataset.labelOne = "Restore one item from the discard list";
+    action.dataset.labelTarget = "Restore this discard stack";
+    action.dataset.labelAll = "Restore this discard stack";
+    action.title = action.dataset.labelOne;
+    action.setAttribute("aria-label", action.dataset.labelOne);
   }
   const count = row.querySelector(".inventory-count");
   count.textContent = "0";
   delete count.dataset.base;
   delete count.dataset.tradeDraftChange;
   document.querySelector("[data-discard-list]").append(row);
+  applyDynamicTransferModifiers();
   return row;
 }
 
@@ -208,6 +260,9 @@ function updateMerchantGoldDraft() {
 }
 
 document.addEventListener("click", (event) => {
+  if (event.isTrusted && event.target.closest("[data-dynamic-transfer]")) {
+    applyDynamicTransferModifiers(event);
+  }
   const tab = event.target.closest("[data-inventory-tab]");
   if (tab) {
     const root = tab.closest("[data-inventory-tabs]");
@@ -291,13 +346,15 @@ document.addEventListener("click", (event) => {
     const quantity = draft.get(id) || Number(stagedRow.querySelector(".inventory-count").textContent) || 0;
     if (!quantity) return;
     const sourceRow = document.querySelector(`[data-discard-source="${CSS.escape(id)}"]`);
-    if (sourceRow) setTradeDraftCount(sourceRow, -(quantity - 1));
-    if (quantity === 1) {
+    const mode = unstageDiscard.dataset.transferMode || "one";
+    const amount = mode === "one" ? 1 : quantity;
+    if (sourceRow) setTradeDraftCount(sourceRow, -(quantity - amount));
+    if (amount >= quantity) {
       draft.delete(id);
       stagedRow.remove();
     } else {
-      draft.set(id, quantity - 1);
-      stagedRow.querySelector(".inventory-count").textContent = String(quantity - 1);
+      draft.set(id, quantity - amount);
+      stagedRow.querySelector(".inventory-count").textContent = String(quantity - amount);
     }
     updateDiscardForm();
     return;
@@ -308,10 +365,13 @@ document.addEventListener("click", (event) => {
     const sourceRow = discardItem.closest("tr");
     const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
     const quantity = draft.get(id) || 0;
-    if (quantity >= Number(discardItem.dataset.count)) return;
-    draft.set(id, quantity + 1);
-    setTradeDraftCount(sourceRow, -(quantity + 1));
-    ensureDiscardRow(sourceRow, id).querySelector(".inventory-count").textContent = String(quantity + 1);
+    const available = Number(discardItem.dataset.count);
+    if (quantity >= available) return;
+    const mode = discardItem.dataset.transferMode || "one";
+    const amount = mode === "one" ? 1 : available - quantity;
+    draft.set(id, quantity + amount);
+    setTradeDraftCount(sourceRow, -(quantity + amount));
+    ensureDiscardRow(sourceRow, id).querySelector(".inventory-count").textContent = String(quantity + amount);
     updateDiscardForm();
     return;
   }
@@ -321,10 +381,15 @@ document.addEventListener("click", (event) => {
     const buys = strategicTradeUi.state.merchantDraft ||= new Map();
     const quantity = buys.get(itemId) || 0;
     if (quantity === 0) return;
-    if (quantity === 1) buys.delete(itemId); else buys.set(itemId, quantity - 1);
     const playerRow = cancelBuy.closest("tr");
-    changeTradeDraftCount(playerRow, -1);
-    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), 1);
+    const mode = cancelBuy.dataset.transferMode || "one";
+    const current = Number(playerRow.dataset.inventoryQuantity || 0);
+    const target = Number(playerRow.dataset.target || 0);
+    const amount = mode === "all" ? quantity : mode === "target" ? Math.max(0, quantity - Math.max(0, target - current)) : 1;
+    if (!amount) return;
+    if (amount >= quantity) buys.delete(itemId); else buys.set(itemId, quantity - amount);
+    changeTradeDraftCount(playerRow, -amount);
+    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
     if (playerRow.dataset.generatedMerchantRow === "true" && Number(playerRow.querySelector(".inventory-count").dataset.tradeDraftChange || 0) === 0) playerRow.remove();
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
@@ -424,6 +489,17 @@ document.addEventListener("wheel", (event) => {
   event.preventDefault();
   changeInventoryTarget(control, event.deltaY < 0 ? 1 : -1);
 }, { passive: false });
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
+});
+document.addEventListener("keyup", (event) => {
+  if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
+});
+window.addEventListener("blur", () => {
+  strategicTradeUi.state.transferModifiers = { shiftKey: false, controlKey: false };
+  applyDynamicTransferModifiers();
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => mountInventoryBulkControls(), { once: true });

@@ -281,7 +281,7 @@
 }
 
 .trade-transfer::before {
-  display: block;
+  display: none;
   width: 0;
   height: 0;
   content: "";
@@ -482,7 +482,7 @@
 .repair-custody-table thead .repair-retrieve-all {
   position: absolute;
   top: 50%;
-  right: -4.55rem;
+  right: -1.65rem;
   width: 1.35rem;
   height: 1.35rem;
   opacity: 0.8;
@@ -490,9 +490,9 @@
 }
 .repair-custody-scroll {
   box-sizing: border-box;
-  width: calc(100% + 4.55rem);
+  width: calc(100% + 1.65rem);
   min-height: 0;
-  padding-right: 4.55rem;
+  padding-right: 1.65rem;
   overflow-x: hidden;
   overflow-y: auto;
   display: flex;

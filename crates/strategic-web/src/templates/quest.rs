@@ -198,9 +198,7 @@ pub fn quest_location_page(
                                 @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
                                 tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
                                     td { (super::settlement::item_name_with_quality(&entry.item_id, definition)) span class="inventory-row-actions" {
-                                        @for (mode, arrows) in [("one",1),("target",2),("all",3)] {
-                                            button type="button" class="trade-transfer trade-transfer-right" data-loot-stage=(entry.id) data-transfer-mode=(mode) aria-label=(format!("Move {} loot", entry.item_id)) { (super::settlement::transfer_glyph(arrows)) }
-                                        }
+                                        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-loot-stage=(entry.id) data-transfer-mode="one" data-label-one=(format!("Move one {}", entry.item_id)) data-label-target=(format!("Move {} to target", entry.item_id)) data-label-all=(format!("Move all {}", entry.item_id)) aria-label=(format!("Move one {}", entry.item_id)) title=(format!("Move one {}", entry.item_id)) { (super::settlement::transfer_glyph(1)) }
                                     } }
                                     td class="inventory-count" { (entry.quantity) }
                                     td { (u64::from(value) * u64::from(entry.quantity)) }

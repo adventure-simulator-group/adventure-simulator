@@ -29,10 +29,11 @@ and leave that residual condition untouched. Custody and the quoted ETA persist 
 have no collection deadline. The smith quotes the full job when accepting it: the item's base value
 multiplied by the share of damage that smith can repair, rounded up to at least one gold. The quote
 is stable while the item is in custody and is paid from personal gold when completed work is
-retrieved. The custody table shows durability, ETA, and this full-job cost. A row's one-arrow action
-retrieves that exact quoted order; its two- and three-arrow actions retrieve the affordable ordered
-prefix of matching ready work. The header does the same across all ready work in that shop, stopping
-before the first order the character cannot afford rather than failing already-affordable retrievals.
+retrieved. The custody table shows durability, ETA, and this full-job cost. A row arrow retrieves
+that exact quoted order by default; Shift changes it to retrieve up to two matching ready orders,
+and Control changes it to retrieve all matching ready orders. The header arrow defaults to two and
+Control changes it to all ready work in that shop. Bulk retrieval stops before the first order the
+character cannot afford rather than failing already-affordable retrievals.
 Removing a staged purchase before offering it simply cancels that purchase;
 it does not create a sale or apply a merchant fee.
 The confirmation popup appears in the center of the view only while an
@@ -40,9 +41,11 @@ exchange is pending and includes **Offer** and **Cancel** controls; Cancel
 discards the entire draft. Loot, discard, character trade, merchant trade, and
 party-inventory transfers all use this same centered confirmation pattern.
 
-Transfer arrows always progress from one to two to three as they point inward
-from the source rail. The right rail therefore mirrors their visual order to
-three, two, one when read from left to right.
+Every inventory action exposes one inward-pointing arrow control. Row controls
+default to one arrow, become two while Shift is held, and become three while
+Control is held. Header controls default to two arrows and become three while
+Control is held. These modifiers apply consistently to merchant, character,
+party, loot, discard, and smith-custody inventory views.
 
 Equipped inventory stacks remain separate from unequipped stacks. Merchant
 purchases are always added to an unequipped stack (or a new stack), and the UI

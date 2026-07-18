@@ -131,8 +131,8 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=quality-palette-2";
-                link rel="stylesheet" href="/static/css/utilities.css?v=smith-repair-actions-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-dynamic-transfer-2";
+                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -142,7 +142,7 @@ fn page_shell(
                     script src="/static/live-regions.js?v=live-regions-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
-                    script src="/static/party-trade.js?v=smith-repair-actions-1" {}
+                    script src="/static/party-trade.js?v=inventory-dynamic-transfer-2" {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=unified-chat-2" defer {}
