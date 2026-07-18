@@ -454,7 +454,10 @@ check:
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs
 
-test: test-chat build-strategic
+test-renderer:
+    @node --test crates/strategic-web/tests/strategic-renderer.test.cjs
+
+test: test-chat test-renderer build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 
 fmt:

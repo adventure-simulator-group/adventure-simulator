@@ -132,13 +132,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             (
                 Name::new("controls"),
                 Text::new(""),
-                children![
-                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
-                    #[cfg(feature = "debug")]
-                    TextSpan::new(
-                        "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
-                    )
-                ],
+                children![TextSpan::new(controls_hint())],
             ),
             (
                 Name::new("stats"),
@@ -321,6 +315,17 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ),
         ],
     ));
+}
+
+fn controls_hint() -> &'static str {
+    #[cfg(feature = "debug")]
+    {
+        "WASD to move | Space to jump | Mouse to look around\nDEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
+    }
+    #[cfg(not(feature = "debug"))]
+    {
+        "WASD to move | Space to jump | Mouse to look around"
+    }
 }
 
 fn update_stats_ui(

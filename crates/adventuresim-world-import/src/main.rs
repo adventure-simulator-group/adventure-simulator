@@ -58,6 +58,9 @@ struct Args {
     grid_cell_size_meters: GridCellSizeMeters,
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Directory for renderer manifest, content-addressed package, and SVG fallback.
+    #[arg(long)]
+    renderer_output: Option<PathBuf>,
     #[arg(long)]
     load: bool,
     #[arg(long, default_value = "spacetime")]
@@ -110,6 +113,15 @@ fn run(args: Args) -> Result<()> {
     let artifact_id = blake3::hash(&artifact).to_hex().to_string();
     artifact.push(b'\n');
     std::fs::write(&output, artifact)?;
+    let renderer_output = args
+        .renderer_output
+        .clone()
+        .unwrap_or_else(|| repository_root().join("crates/adventuresim-stdb-module/static/map"));
+    let renderer = adventuresim_world_import::renderer_artifacts::build(
+        &world,
+        &artifact_id,
+        &renderer_output,
+    )?;
     println!("{}", serde_json::to_string_pretty(&world.report)?);
     println!(
         "Source manifest {} ({} distributions):",
@@ -129,6 +141,7 @@ fn run(args: Args) -> Result<()> {
         );
     }
     println!("Wrote compiled world to {}", output.display());
+    println!("Wrote renderer manifest to {}", renderer.manifest.display());
     if args.load {
         load_world(&world, &artifact_id, &args)?;
     }

@@ -5,6 +5,7 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 [dependencies]
+adventuresim-render-contracts.workspace = true
 adventuresim-world-schema.workspace = true
 blake3.workspace = true
 clap.workspace = true

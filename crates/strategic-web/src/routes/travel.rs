@@ -353,6 +353,12 @@ mod tests {
             coord_y: 0.0,
             population_level: 0,
             population_estimate: 0,
+            industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
+                adventuresim_world_schema::IndustryEvidence::Fallback(
+                    adventuresim_world_schema::FallbackIndustry::CroplandGrain,
+                ),
+            ])
+            .unwrap(),
             scene_key: String::new(),
             religion_id: String::new(),
             source_node_id: Some(node),
@@ -370,6 +376,7 @@ mod tests {
             }),
             length_m: 1_000,
             slope_multiplier: 1.0,
+            terrain: adventuresim_world_schema::RouteTerrain::stage_placeholder(),
             certainty: 100,
             section: String::new(),
         }

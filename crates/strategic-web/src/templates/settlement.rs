@@ -4,6 +4,11 @@
 //! settlement-owned information on the left, service context in the center,
 //! and the active player's party on the right.
 
+use adventuresim_render_contracts::{
+    AnimationName, Bounds, MapMarker, MapOverlay, MapPackage, MarkerKind, Point, Primitive,
+    RENDER_SCHEMA_VERSION, RoadFeature, SceneActor, SceneDescriptor, SettlementFeature,
+    StartupConfig, StartupMode,
+};
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
@@ -17,6 +22,7 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party, PartyInventoryItem,
     PartyJourney, Settlement, SettlementAlias, SettlementDescription, SettlementDescriptionKind,
+    TravelEdge,
 };
 
 #[derive(Clone, Debug)]
@@ -256,6 +262,8 @@ pub fn settlement_map_page(
     provision_forecast: Option<&TravelProvisionForecast>,
     logged_in_as: Option<&str>,
     theme: &str,
+    settlements: &[Settlement],
+    edges: &[TravelEdge],
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
@@ -263,7 +271,7 @@ pub fn settlement_map_page(
         (map_destination_list(destinations, selected_id, &base_path))
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
-            (visual_stage("map", &settlement.name, "TODO: settlement map"))
+            (map_visual_stage(settlement, settlements, edges, destinations, selected_id, party_members))
             (travel_planner_bar(selected, active_party.map_or(50, |party| party.camp_fatigue_percent)))
             (settlement_chat_area(&settlement.name, active_character))
         }
@@ -987,7 +995,7 @@ fn service_page(
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
-            (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
+            (scene_visual_stage(npc_name, party_members))
             (settlement_service_chat_area(
                 title,
                 active_character,
@@ -1908,6 +1916,241 @@ pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup
     }
 }
 
+fn renderer_host(config: &StartupConfig, fallback: Markup, label: &str) -> Markup {
+    let config = serde_json::to_string(config).expect("renderer descriptor is serializable");
+    html! {
+        figure class="service-visual renderer-host" data-render-config=(config) aria-label=(label) {
+            div class="renderer-fallback" data-renderer-fallback { (fallback) }
+            canvas class="strategic-render-canvas" data-renderer-canvas aria-label=(label) hidden {}
+            p class="renderer-status text-muted small-copy" data-renderer-status { "Interactive renderer loading; the accessible map remains available." }
+        }
+        script type="module" src="/static/strategic-renderer.js?v=renderer-1" {}
+    }
+}
+
+fn map_visual_stage(
+    settlement: &Settlement,
+    settlements: &[Settlement],
+    edges: &[TravelEdge],
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    party_members: &[Character],
+) -> Markup {
+    let mut features: Vec<_> = settlements
+        .iter()
+        .map(|s| SettlementFeature {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            point: Point {
+                x: s.coord_x,
+                y: s.coord_y,
+            },
+            population_level: s.population_level,
+        })
+        .collect();
+    features.sort_by(|a, b| a.id.cmp(&b.id));
+    if features.is_empty() {
+        features.push(SettlementFeature {
+            id: settlement.id.clone(),
+            name: settlement.name.clone(),
+            point: Point {
+                x: settlement.coord_x,
+                y: settlement.coord_y,
+            },
+            population_level: settlement.population_level,
+        });
+    }
+    let node_points: std::collections::BTreeMap<_, _> = settlements
+        .iter()
+        .filter_map(|s| {
+            s.source_node_id.map(|id| {
+                (
+                    id,
+                    Point {
+                        x: s.coord_x,
+                        y: s.coord_y,
+                    },
+                )
+            })
+        })
+        .collect();
+    let mut roads: Vec<_> = edges
+        .iter()
+        .filter_map(|e| {
+            Some(RoadFeature {
+                id: e.id.to_string(),
+                from: *node_points.get(&e.from_node_id)?,
+                to: *node_points.get(&e.to_node_id)?,
+                ferry: matches!(e.route, adventuresim_world_schema::TravelRoute::Ferry(_)),
+            })
+        })
+        .collect();
+    roads.sort_by(|a, b| a.id.cmp(&b.id));
+    let (min_x, max_x, min_y, max_y) = features.iter().fold(
+        (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ),
+        |(a, b, c, d), s| {
+            (
+                a.min(s.point.x),
+                b.max(s.point.x),
+                c.min(s.point.y),
+                d.max(s.point.y),
+            )
+        },
+    );
+    let pad = 0.15;
+    let bounds = Bounds {
+        min: Point {
+            x: min_x - pad,
+            y: min_y - pad,
+        },
+        max: Point {
+            x: max_x + pad,
+            y: max_y + pad,
+        },
+    };
+    let package = MapPackage {
+        renderer_schema: RENDER_SCHEMA_VERSION,
+        bounds,
+        settlements: features.clone(),
+        roads: roads.clone(),
+    };
+    let mut markers = Vec::new();
+    for destination in destinations {
+        if let Some(s) = settlements.iter().find(|s| s.id == destination.id) {
+            markers.push(MapMarker {
+                id: destination.id.clone(),
+                label: destination.name.clone(),
+                point: Point {
+                    x: s.coord_x,
+                    y: s.coord_y,
+                },
+                kind: if selected_id == Some(destination.id.as_str()) {
+                    MarkerKind::SelectedDestination
+                } else if destination.active_quest_route || destination.quest_in_progress {
+                    MarkerKind::ActiveQuest
+                } else {
+                    MarkerKind::Destination
+                },
+                href: Some(format!(
+                    "/locations/settlement/{}/map?destination={}",
+                    settlement.id, destination.id
+                )),
+            });
+        } else if destination.quest_in_progress {
+            markers.push(MapMarker {
+                id: destination.id.clone(),
+                label: destination.name.clone(),
+                point: Point {
+                    x: settlement.coord_x + 0.08,
+                    y: settlement.coord_y + 0.05,
+                },
+                kind: MarkerKind::ActiveQuest,
+                href: Some(format!(
+                    "/locations/settlement/{}/map?destination={}",
+                    settlement.id, destination.id
+                )),
+            });
+        }
+    }
+    markers.push(MapMarker {
+        id: "party".into(),
+        label: if party_members.is_empty() {
+            "Current location".into()
+        } else {
+            "Party".into()
+        },
+        point: Point {
+            x: settlement.coord_x,
+            y: settlement.coord_y,
+        },
+        kind: MarkerKind::Party,
+        href: None,
+    });
+    let selected_route = selected_id
+        .and_then(|id| settlements.iter().find(|s| s.id == id))
+        .map(|s| {
+            vec![
+                Point {
+                    x: settlement.coord_x,
+                    y: settlement.coord_y,
+                },
+                Point {
+                    x: s.coord_x,
+                    y: s.coord_y,
+                },
+            ]
+        })
+        .unwrap_or_default();
+    let config = StartupConfig {
+        renderer_schema: RENDER_SCHEMA_VERSION,
+        canvas_selector: "[data-renderer-canvas]".into(),
+        startup: StartupMode::StrategicMap {
+            package_url: Some("/tactical/map/manifest.json".into()),
+            package: package.clone(),
+            overlay: MapOverlay {
+                renderer_schema: RENDER_SCHEMA_VERSION,
+                focus: Point {
+                    x: settlement.coord_x,
+                    y: settlement.coord_y,
+                },
+                markers,
+                selected_route,
+            },
+        },
+    };
+    let dx = (bounds.max.x - bounds.min.x).max(0.001);
+    let dy = (bounds.max.y - bounds.min.y).max(0.001);
+    let fallback = html! {svg class="paper-map" viewBox="0 0 1000 600" role="img" aria-label=(format!("Road map around {}",settlement.name)){rect width="1000" height="600" fill="#d9c79c"{} @for road in roads { @let x1=(road.from.x-bounds.min.x)/dx*1000.; @let y1=600.-(road.from.y-bounds.min.y)/dy*600.; @let x2=(road.to.x-bounds.min.x)/dx*1000.; @let y2=600.-(road.to.y-bounds.min.y)/dy*600.; line x1=(x1) y1=(y1) x2=(x2) y2=(y2) class=(if road.ferry{"fallback-road ferry"}else{"fallback-road"}){} } @for place in features {@let x=(place.point.x-bounds.min.x)/dx*1000.;@let y=600.-(place.point.y-bounds.min.y)/dy*600.;g{circle cx=(x) cy=(y) r=(5+place.population_level.max(0)){} text x=(x+10.) y=(y-8.){(&place.name)}}}}};
+    renderer_host(&config, fallback, "Interactive strategic map")
+}
+
+fn scene_visual_stage(npc_name: &str, party_members: &[Character]) -> Markup {
+    let mut actors = Vec::new();
+    actors.push(scene_actor(format!("service:{npc_name}"), npc_name));
+    for member in party_members {
+        actors.push(scene_actor(member.id.to_string(), &member.name));
+    }
+    let config = StartupConfig {
+        renderer_schema: RENDER_SCHEMA_VERSION,
+        canvas_selector: "[data-renderer-canvas]".into(),
+        startup: StartupMode::StrategicScene {
+            scene: SceneDescriptor {
+                renderer_schema: RENDER_SCHEMA_VERSION,
+                actors,
+            },
+        },
+    };
+    renderer_host(
+        &config,
+        html! {div class="service-visual-placeholder" role="img" aria-label=(format!("{} and the visible party",npc_name)){span class="visual-symbol"{(npc_name.chars().next().unwrap_or('?'))}span class="visual-label"{(npc_name)}}},
+        &format!("{} and party scene", npc_name),
+    )
+}
+fn scene_actor(id: String, label: &str) -> SceneActor {
+    let hash = id
+        .bytes()
+        .fold(0u32, |h, b| h.wrapping_mul(33).wrapping_add(u32::from(b)));
+    SceneActor {
+        id,
+        label: label.into(),
+        color_rgb: [
+            70 + (hash & 127) as u8,
+            70 + ((hash >> 8) & 127) as u8,
+            70 + ((hash >> 16) & 127) as u8,
+        ],
+        primitive: Primitive::Cylinder {
+            radius: 0.45,
+            height: 1.8,
+        },
+        animation: AnimationName::Idle,
+    }
+}
+
 pub(crate) fn party_portrait_overlay(
     party_members: &[Character],
     active_character: Option<&Character>,
@@ -2453,6 +2696,16 @@ mod tests {
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("Active quest destination"));
         assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn strategic_scene_keeps_a_visible_fallback_and_uses_typed_cylinders() {
+        let markup = scene_visual_stage("Innkeeper", &[]).into_string();
+        assert!(markup.contains("data-render-config"));
+        assert!(markup.contains("data-renderer-fallback"));
+        assert!(markup.contains("strategic_scene"));
+        assert!(markup.contains("cylinder"));
+        assert!(markup.contains("Innkeeper"));
     }
 
     #[test]

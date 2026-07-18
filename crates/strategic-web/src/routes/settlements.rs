@@ -364,6 +364,8 @@ async fn settlement_map(
                 .as_ref()
                 .map(|(character, _)| character.name.as_str()),
             session.theme(),
+            &settlements,
+            &edges,
         )
         .into_string(),
     )

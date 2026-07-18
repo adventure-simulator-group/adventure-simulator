@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/adventuresim-core",
     "crates/adventuresim-world-schema",
+    "crates/adventuresim-render-contracts",
     "crates/adventuresim-world-import",
     "crates/adventuresim-stdb-module",
     "crates/adventuresim-stdb-client",
@@ -28,6 +29,7 @@ adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
+adventuresim-render-contracts = { version = "0.1.0", path = "crates/adventuresim-render-contracts" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
   "reflect_auto_register",

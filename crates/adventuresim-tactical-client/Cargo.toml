@@ -7,13 +7,14 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["debug"]
+default = []
 debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
 
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true
+adventuresim-render-contracts.workspace = true
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
 clap.workspace = true
@@ -44,6 +45,7 @@ bevy = { workspace = true, default-features = false, features = [
 ] }
 console_error_panic_hook.workspace = true
 wasm-bindgen.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

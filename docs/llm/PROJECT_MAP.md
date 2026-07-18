@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (598)
+## Files (604)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -49,6 +49,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
+- `crates/adventuresim-render-contracts/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-render-contracts/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-client/README.md` — Component overview and usage notes.
 - `crates/adventuresim-stdb-client/src/abandon_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -405,6 +407,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/strategic.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-core/src/combat.rs` — Rust source module for this component.
@@ -433,6 +436,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/manifest.rs` — Rust source module for this component.
+- `crates/adventuresim-world-import/src/renderer_artifacts.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/sources/drought.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/elevation.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/environment_synthesis.rs` — Rust source module.
@@ -543,10 +547,12 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
+- `crates/strategic-web/static/strategic-renderer.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/strategic-renderer.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.
 - `docs/DROUGHT.md` — Project documentation.

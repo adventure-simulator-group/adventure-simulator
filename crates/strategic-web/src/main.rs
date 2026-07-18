@@ -106,6 +106,7 @@ async fn log_http_request(request: Request, next: Next) -> Response {
     };
     tracing::info!(request_id, method = %log.method, uri = %log.uri, "http request started");
 
+    let cache_path = request.uri().path().to_owned();
     let mut response = next.run(request).await;
     tracing::info!(
         request_id,
@@ -120,6 +121,19 @@ async fn log_http_request(request: Request, next: Next) -> Response {
         HeaderName::from_static("x-request-id"),
         HeaderValue::from_str(&request_id.to_string()).expect("numeric request id is a header"),
     );
+    if cache_path.starts_with("/tactical/map/map-")
+        || cache_path.starts_with("/tactical/map/paper-map-")
+    {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else if cache_path == "/tactical/map/manifest.json" || cache_path.contains("/map") {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        );
+    }
     response
 }
 

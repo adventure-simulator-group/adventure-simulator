@@ -1,4 +1,4 @@
-//! Adventure Simulator - WASM Tactical Client
+//! Adventure Simulator shared browser renderer and tactical client.
 //!
 //! A Bevy-based 3D game client that runs in the browser (WASM).
 //! Features:
@@ -7,6 +7,7 @@
 //! - Ground plane and skybox
 //! - Ready for Lightyear networking integration
 
+use adventuresim_render_contracts::{StartupConfig, StartupMode};
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
@@ -28,13 +29,27 @@ use bevy::{
 use clap::Parser;
 #[cfg(target_family = "wasm")]
 use console_error_panic_hook;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "debug")]
 mod debug;
 mod player;
+mod strategic;
 mod ui;
+
+static SUSPENDED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
+enum RendererMode {
+    StrategicMap,
+    StrategicScene,
+    #[default]
+    Tactical,
+}
+#[derive(Resource, Clone)]
+struct RendererConfig(StartupConfig);
 
 #[derive(Parser, Debug, Resource)]
 #[command(version, about)]
@@ -64,13 +79,58 @@ pub fn wasm_run(args: Vec<String>) {
     run(Args::parse_from(args));
 }
 
+/// Starts the one production WASM artifact in one of its versioned modes.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_run_config(json: &str) -> Result<(), JsValue> {
+    let config: StartupConfig =
+        serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    config
+        .validate()
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    run_config(config);
+    Ok(())
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_set_suspended(suspended: bool) {
+    SUSPENDED.store(suspended, Ordering::Relaxed);
+}
+
+/// Reserved command boundary for an eventual in-page strategic-to-tactical handoff.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_tactical_handoff(_player_id: u64, _server_url: &str) -> Result<(), JsValue> {
+    Err(JsValue::from_str(
+        "hot tactical handoff is not enabled yet; use the tactical page fallback",
+    ))
+}
+
 fn run(args: Args) {
+    run_config(StartupConfig {
+        renderer_schema: adventuresim_render_contracts::RENDER_SCHEMA_VERSION,
+        canvas_selector: "#game-canvas".into(),
+        startup: StartupMode::Tactical {
+            player_id: args.id,
+            server_url: args.server_addr,
+        },
+    });
+}
+
+fn run_config(config: StartupConfig) {
+    let canvas = config.canvas_selector.clone();
+    let mode = match &config.startup {
+        StartupMode::StrategicMap { .. } => RendererMode::StrategicMap,
+        StartupMode::StrategicScene { .. } => RendererMode::StrategicScene,
+        StartupMode::Tactical { .. } => RendererMode::Tactical,
+    };
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Adventure Simulator - Tactical".into(),
-                canvas: Some("#game-canvas".into()),
+                canvas: Some(canvas),
                 fit_canvas_to_parent: true,
                 prevent_default_event_handling: true,
                 present_mode: PresentMode::AutoVsync,
@@ -83,37 +143,64 @@ fn run(args: Args) {
         EnhancedInputPlugin,
         InputDispatchPlugin,
     ))
-    .add_plugins((
-        AdventureSimulatorCorePlugins
-            .build()
-            .set(AdventureSimulatorPhysicsPlugin {
-                enable_simulation: false,
-            }),
-        AdventureSimulatorNetPlugins,
-    ))
-    .add_input_context::<Player>()
-    .add_plugins((ui::UiPlugin, player::PlayerPlugin))
+    .insert_state(mode)
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .add_systems(Startup, (setup_scene, setup_client))
-    .add_systems(
-        Update,
-        (
-            capture_cursor.run_if(
-                input_just_pressed(MouseButton::Left)
-                    .and(any_with_component::<CharacterController>),
+    .add_systems(Update, apply_lifecycle)
+    .insert_resource(RendererConfig(config.clone()));
+
+    if mode == RendererMode::Tactical {
+        let StartupMode::Tactical {
+            player_id,
+            server_url,
+        } = config.startup
+        else {
+            unreachable!()
+        };
+        app.add_plugins((
+            AdventureSimulatorCorePlugins
+                .build()
+                .set(AdventureSimulatorPhysicsPlugin {
+                    enable_simulation: false,
+                }),
+            AdventureSimulatorNetPlugins,
+        ))
+        .add_input_context::<Player>()
+        .add_plugins((ui::UiPlugin, player::PlayerPlugin))
+        .add_systems(Startup, (setup_scene, setup_client))
+        .add_systems(
+            Update,
+            (
+                capture_cursor.run_if(
+                    input_just_pressed(MouseButton::Left)
+                        .and(any_with_component::<CharacterController>),
+                ),
+                release_cursor.run_if(
+                    input_just_pressed(KeyCode::Escape)
+                        .and(any_with_component::<CharacterController>),
+                ),
             ),
-            release_cursor.run_if(
-                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
-            ),
-        ),
-    )
-    .add_observer(on_game_scene_added_hook)
-    .insert_resource(args);
+        )
+        .add_observer(on_game_scene_added_hook)
+        .insert_resource(Args {
+            id: player_id,
+            server_addr: server_url,
+        });
+    } else {
+        app.add_plugins(strategic::StrategicRendererPlugin);
+    }
 
     #[cfg(feature = "debug")]
     app.add_plugins(debug::DebugPlugin);
 
     app.run();
+}
+
+fn apply_lifecycle(mut time: ResMut<Time<Virtual>>) {
+    if SUSPENDED.load(Ordering::Relaxed) {
+        time.pause();
+    } else {
+        time.unpause();
+    }
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {

@@ -344,3 +344,10 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
 - **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.
+# Strategic rendering boundary
+
+`adventuresim-render-contracts` is a Bevy-free, versioned wire boundary. The world compiler publishes a content-addressed whole-world topology package, a manifest bound to the renderer/world schemas and source identities, and an SVG paper map produced from the same data. The initial roads are straight endpoint segments because imported edges do not contain polylines. Source attribution and required notices are retained in the manifest and SVG metadata.
+
+The single `adventuresim-tactical-client` WASM artifact has explicit Bevy states for strategic map, strategic scene, and tactical startup. Strategic startup does not add tactical core, netcode, UI, player, controller, or physics plugins. Cylinder positions and idle transforms are presentation-only transient state and must never be persisted to SpacetimeDB.
+
+Strategic SSR owns canonical links and actions. Its descriptor is session-aware and `private, no-store`; hashed map packages and paper maps are served `public, max-age=31536000, immutable`. The unhashed manifest is not immutable.

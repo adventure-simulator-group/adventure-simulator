@@ -22,6 +22,10 @@ This is all to say that we aren't building a "normal" web game that uses Wasm an
 [^3]: We end up rendering a sort of network-driven ["immediate mode"](https://en.wikipedia.org/wiki/Immediate_mode_(computer_graphics)) view of the world.
 
 ## Gameplay
+
+### Shared browser renderer
+
+The map and small strategic scenes use the same production Bevy/WASM artifact as tactical combat. A versioned startup contract selects `strategic_map`, `strategic_scene`, or `tactical`; strategic modes deliberately install no tactical networking, physics, controller, combat-entity, or tactical-UI plugins. Server-rendered SVG/HTML remains the accessible fallback when WebGPU or WASM initialization is unavailable.
 The nearest games for inspiration are [*Mount and Blade*](https://www.taleworlds.com/en/games/mountandblade), [*Battle Brothers*](https://battlebrothersgame.com/), [*Jagged Alliance*](https://store.steampowered.com/app/1084160/Jagged_Alliance_3/), [*Starsector*](https://fractalsoftworks.com/), and to some extent [*Kenshi*](https://lofigames.com/).
 
 Like the former three, the world of _Adventure Simulator_ is separated between the "tactical" layer (a real-time simulation) and the "strategic" layer (which advances in discrete chunks of time, generally after fast travel or resting). We have the same basic gameplay formula where the player recruits a party to adventure with, defeats enemies in randomly generated missions, and uses their hard-earned rewards to buy equipment for future missions.

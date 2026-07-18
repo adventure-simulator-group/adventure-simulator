@@ -134,3 +134,8 @@ arrival immediately clears hunger and thirst and refills owned containers;
 quest arrival does not. Foraging, intermediate freshwater stops, weather-based
 water use, spoilage, food quality, and manual eating or drinking remain future
 layers.
+# Map presentation
+
+The settlement map progressively enhances a server-rendered paper topology map with the shared Bevy renderer. Destination links and travel forms remain the canonical keyboard and no-JavaScript controls. Dragging pans and the wheel zooms the enhanced view. Roads are currently straight endpoint segments; true road geometry, regional packages, raster tiles, and canvas-to-link selection synchronization remain follow-up work.
+
+Small settlement service scenes use transient cylinder placeholders for the visible service participant and party. Their deterministic slots, colors, and idle animation are presentation state only.
