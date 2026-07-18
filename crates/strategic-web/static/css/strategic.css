@@ -2599,7 +2599,22 @@ body.chat-resizing {
 .schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
 .party-skill-allocation:hover .schedule-step,
 .schedule-step:focus-visible { opacity: 1; }
-.schedule-time-input { width: 4.1rem; padding: 0.08rem 0.18rem; border: 1px solid var(--accent); text-align: center; font: inherit; color: inherit; background: var(--bg-tertiary); }
+.schedule-time-input {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  right: 0;
+  box-sizing: border-box;
+  width: 4.1rem;
+  max-width: none;
+  padding: 0.08rem 0.18rem;
+  border: 1px solid var(--accent);
+  color: inherit;
+  background: var(--bg-tertiary);
+  font: inherit;
+  text-align: center;
+  transform: translateY(-50%);
+}
 
 .skill-schedule { display: grid; gap: 0.55rem; }
 

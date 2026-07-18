@@ -47,6 +47,19 @@
     return true;
   };
 
+  const scrollOffsets = (selector) => {
+    const region = document.querySelector(selector);
+    return region ? { left: region.scrollLeft, top: region.scrollTop } : null;
+  };
+
+  const restoreScrollOffsets = (selector, offsets) => {
+    if (!offsets) return;
+    const region = document.querySelector(selector);
+    if (!region) return;
+    region.scrollLeft = offsets.left;
+    region.scrollTop = offsets.top;
+  };
+
   const refresh = async () => {
     const currentGeneration = ++generation;
     const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
@@ -59,6 +72,8 @@
     // Match the post-mount table structure before comparing it with the live DOM.
     window.strategicTradeUi?.mountInventoryBulkControls?.(nextDocument);
     const inventoryTab = selectedInventoryTab();
+    const leftSidebarScroll = scrollOffsets(".left-sidebar");
+    const rightSidebarScroll = scrollOffsets(".right-sidebar");
     const replaced = [];
 
     if (replaceIfChanged("[data-party-portrait-members]", nextDocument)) {
@@ -71,6 +86,8 @@
 
     if (!replaced.length) return;
     restoreInventoryTab(inventoryTab);
+    if (replaced.includes("left-sidebar")) restoreScrollOffsets(".left-sidebar", leftSidebarScroll);
+    if (replaced.includes("right-sidebar")) restoreScrollOffsets(".right-sidebar", rightSidebarScroll);
     document.dispatchEvent(new CustomEvent("strategic-live-regions-refreshed", {
       detail: { regions: replaced },
     }));

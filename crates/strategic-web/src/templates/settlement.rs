@@ -1785,7 +1785,7 @@ fn party_skills_rail(
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
                     }
-                    script src="/static/training-schedule.js?v=activity-preview-2" {}
+                    script src="/static/training-schedule.js?v=clock-shorthand-1" {}
                 } @else {
                     (skills_table(skills, head_health, upper_health, lower_health, None, None))
                 }
@@ -2018,7 +2018,7 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
             @if editable {
                 input type="hidden" name=(name) value=(minutes) data-schedule-input;
                 (schedule_step_button("Decrease daily allocation", -15))
-                span data-schedule-display tabindex="0" role="button" title="Click to enter a time as hh:mm" {
+                span data-schedule-display tabindex="0" role="button" title="Click to enter a time such as 8, 8:30, or 830" {
                     (format_schedule_hours(minutes))
                 }
                 (schedule_step_button("Increase daily allocation", 15))
@@ -3087,7 +3087,7 @@ mod tests {
         let allocation = schedule_allocation_cell("smithing_minutes", 75, true).into_string();
         assert!(allocation.contains("data-schedule-input"));
         assert!(allocation.contains("data-schedule-display"));
-        assert!(allocation.contains("Click to enter a time as hh:mm"));
+        assert!(allocation.contains("Click to enter a time such as 8, 8:30, or 830"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
     }
@@ -3516,8 +3516,11 @@ mod tests {
     fn schedule_and_equipment_scripts_use_the_new_interactions() {
         let schedule = include_str!("../../static/training-schedule.js");
         let equipment = include_str!("../../static/equipment-toggle.js");
+        let live_regions = include_str!("../../static/live-regions.js");
+        let css = include_str!("../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("input.type = 'text'"));
+        assert!(schedule.contains("/^\\d{3,4}$/"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
         assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
         assert!(schedule.contains("schedule-effect-positive"));
@@ -3525,5 +3528,9 @@ mod tests {
         assert!(!schedule.contains("travel_"));
         assert!(equipment.contains("'/api/equipment'"));
         assert!(equipment.contains("window.location.reload()"));
+        assert!(live_regions.contains("const scrollOffsets = (selector)"));
+        assert!(live_regions.contains("region.scrollTop = offsets.top"));
+        assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
+        assert!(css.contains(".schedule-time-input {\n  position: absolute;"));
     }
 }

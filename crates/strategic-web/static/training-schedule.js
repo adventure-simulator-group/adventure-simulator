@@ -15,10 +15,23 @@
   }
 
   function parseClock(value) {
-    const match = /^\s*(\d{1,2}):([0-5]\d)\s*$/.exec(value);
-    if (!match) return null;
-    const hours = Number(match[1]);
-    const minutes = Number(match[2]);
+    const normalized = String(value).trim();
+    let hours;
+    let minutes;
+    const clock = /^(\d{1,2}):([0-5]\d)$/.exec(normalized);
+    if (clock) {
+      hours = Number(clock[1]);
+      minutes = Number(clock[2]);
+    } else if (/^\d{1,2}$/.test(normalized)) {
+      hours = Number(normalized);
+      minutes = 0;
+    } else if (/^\d{3,4}$/.test(normalized)) {
+      hours = Number(normalized.slice(0, -2));
+      minutes = Number(normalized.slice(-2));
+      if (minutes > 59) return null;
+    } else {
+      return null;
+    }
     if (hours > 24 || (hours === 24 && minutes !== 0)) return null;
     return hours * 60 + minutes;
   }
@@ -188,6 +201,9 @@
     input.focus();
     input.select();
   }
+
+  if (typeof module !== 'undefined') module.exports = { parseClock };
+  if (typeof document === 'undefined') return;
 
   document.querySelectorAll('[data-skill-schedule]').forEach(stateFor);
   document.addEventListener('wheel', (event) => {

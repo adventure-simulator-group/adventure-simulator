@@ -139,6 +139,7 @@ just build-wasm       # Build WASM client
 # Testing
 just test             # Run native Rust/browser tests and validate the SpacetimeDB module ABI
 just test-chat        # Run only the strategic chat behavior tests
+just test-schedule    # Run only the training-schedule editor tests
 just test-dev-stack   # Test local workflow policy without writing bytecode
 just tactical         # Run a single tactical server (for testing)
 just status           # Check service status

@@ -447,6 +447,9 @@ check:
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs
 
+test-schedule:
+    @node --test crates/strategic-web/tests/training-schedule.test.cjs
+
 # Test local workflow policy without leaving Python bytecode in the worktree.
 test-dev-stack:
     @{{python_bin}} -B -m unittest scripts.tests.test_dev_stack -v
@@ -484,7 +487,7 @@ strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365
         --seed {{seed}} --population {{population}} --cycles {{cycles}} \
         --duration-days {{duration_days}} --party-size {{party_size}}
 
-test: test-chat test-dev-stack build-strategic
+test: test-chat test-schedule test-dev-stack build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 
 fmt:
