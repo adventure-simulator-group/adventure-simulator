@@ -57,10 +57,24 @@ rust belongs to later corrosion work.
 ## Condition and repair
 
 Weapons, shields, and armor are individual inventory instances. Their condition is a continuous
-five-bin bar: bins one and two are field-repairable (yellow), while bins three through five require
-a settlement smith (red). Repairing bin *n* requires Smithing skill *n*; field work is capped at
-bin two. Equipment quality is also its required maintenance skill, so a lesser smith can improve a
-masterwork item without restoring it completely.
+five-bin bar: tier one is yellow-green, tier two yellow, tier three orange, tier four red, and tier
+five violet. Bins one and two are field-repairable, while bins three through five require a
+settlement smith. Repairing bin *n* requires Smithing skill *n*; field work is capped at bin two.
+Equipment quality is also its required maintenance skill, so a lesser smith can improve a
+masterwork item without restoring it completely. Damage can never occupy a tier above the item's
+quality: only quality-5 equipment can acquire violet tier-5 damage.
+
+Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
+color, adjusted toward the active theme's text color for readability. Quality 3 is ordinary
+munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is
+work for royalty or an esteemed hero. Munition grade is the neutral durability baseline. Quality
+1--5 multiplies physical durability by 0.65, 0.80, 1.00, 1.25, and 1.60 respectively: the multiplier
+raises yield and fracture stress and inversely scales ordinary wear. Outside durability and its
+maintenance requirements, quality does not currently change combat statistics, coverage, handling,
+price, or any other item property.
+
+The local catalog assigns several starter and demo items across all five qualities so the Wounded
+Demo fixture exercises each color and repair ceiling.
 
 Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. Database upgrades
 split any legacy durable stack into quantity-one instances while retaining the original row ID for

@@ -784,6 +784,16 @@ const ARMOR: &[EquipmentDefinition] = &[
     ),
 ];
 
+fn equipment_quality(item_id: &str) -> u8 {
+    match item_id {
+        "buckler" => 1,
+        "katzbalger" | "padded_skirt" => 2,
+        "arming_cap" | "arming_doublet" | "arming_sword" => 4,
+        "padded_chausses" | "brigandine" => 5,
+        _ => 3,
+    }
+}
+
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
@@ -838,7 +848,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             blunt: definition.blunt,
             slash: definition.slash,
             pierce: definition.pierce,
-            quality: 3,
+            quality: equipment_quality(definition.id),
             durability_yield: if definition.kind == ItemKind::Armor {
                 35.0
             } else {
@@ -1216,5 +1226,16 @@ mod tests {
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
             }
         }
+    }
+
+    #[test]
+    fn development_catalog_exercises_every_quality_level() {
+        let qualities: HashSet<_> = WEAPONS
+            .iter()
+            .chain(SHIELDS)
+            .chain(ARMOR)
+            .map(|definition| equipment_quality(definition.id))
+            .collect();
+        assert_eq!(qualities, HashSet::from([1, 2, 3, 4, 5]));
     }
 }

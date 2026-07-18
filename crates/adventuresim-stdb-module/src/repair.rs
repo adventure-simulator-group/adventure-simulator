@@ -650,15 +650,16 @@ pub(crate) fn apply_impact(ctx: &ReducerContext, inventory_item_id: u64, stress:
         },
         stress,
     );
-    let mut bins = condition.bins();
     let quality_tier = definition.quality.clamp(1, 5);
+    let mut bins = condition.bins().capped_to_quality(quality_tier);
+    let event_tier = event.tier.min(quality_tier);
     if !event.catastrophic && quality_tier > event.tier {
         // Most routine wear remains approachable, but restoring the final fit,
         // temper, and finish requires a craftsperson matching the item's quality.
-        bins.add_to_tier(event.tier, event.amount * 0.8);
+        bins.add_to_tier(event_tier, event.amount * 0.8);
         bins.add_to_tier(quality_tier, event.amount * 0.2);
     } else {
-        bins.add_to_tier(event.tier, event.amount);
+        bins.add_to_tier(event_tier, event.amount);
     }
     condition.set_bins(bins);
     ctx.db

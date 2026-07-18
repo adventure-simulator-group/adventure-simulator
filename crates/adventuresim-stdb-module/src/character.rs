@@ -4,6 +4,7 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item,
+    item::item,
     repair::item_condition,
     strategic::{party, settlement},
     time::character_time,
@@ -352,8 +353,8 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     // specialist screens. Equipped pieces make the durability column useful,
     // while the two spares also exercise the combined sell/repair row actions.
     for (inventory_item_id, bins) in [
-        (equip.left_hand_item_id, [0.12, 0.08, 0.0, 0.0, 0.0]),
-        (equip.right_hand_item_id, [0.08, 0.05, 0.12, 0.0, 0.0]),
+        (equip.left_hand_item_id, [0.20, 0.0, 0.0, 0.0, 0.0]),
+        (equip.right_hand_item_id, [0.08, 0.17, 0.0, 0.0, 0.0]),
         (equip.left_arm_armor_id, [0.18, 0.0, 0.0, 0.0, 0.0]),
         (equip.right_arm_armor_id, [0.0, 0.10, 0.10, 0.0, 0.0]),
         (equip.left_leg_armor_id, [0.10, 0.0, 0.08, 0.0, 0.0]),
@@ -391,6 +392,21 @@ fn set_demo_item_damage(
     inventory_item_id: u64,
     bins: [f32; 5],
 ) -> Result<(), String> {
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or_else(|| format!("Damaged demo item {inventory_item_id} is missing"))?;
+    let quality = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .map_or(1, |definition| definition.quality.clamp(1, 5));
+    let bins = adventuresim_core::durability::DamageBins(bins)
+        .capped_to_quality(quality)
+        .0;
     let mut condition = ctx
         .db
         .item_condition()

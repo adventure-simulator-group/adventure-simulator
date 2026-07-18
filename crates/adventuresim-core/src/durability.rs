@@ -145,6 +145,20 @@ impl DamageBins {
         let added = amount.min(1.0 - used);
         self.0[tier.clamp(1, 5) as usize - 1] += added;
     }
+
+    /// Collapse damage that would require craftsmanship beyond the item's
+    /// quality into the deepest tier that item can possess.
+    pub fn capped_to_quality(mut self, quality: u8) -> Self {
+        let quality_index = quality.clamp(1, 5) as usize - 1;
+        let overflow = self.0[(quality_index + 1)..]
+            .iter()
+            .filter(|value| value.is_finite())
+            .map(|value| value.max(0.0))
+            .sum::<f32>();
+        self.0[(quality_index + 1)..].fill(0.0);
+        self.0[quality_index] += overflow;
+        self.normalized()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -169,17 +183,35 @@ pub struct DamageEvent {
     pub catastrophic: bool,
 }
 
+/// Physical endurance supplied by craftsmanship, with munition-grade work as
+/// the neutral baseline. Better tempering and fit raise the stress needed to
+/// yield or fracture the item and reduce ordinary wear at the same stress.
+pub fn quality_durability_multiplier(quality: u8) -> f32 {
+    match quality.clamp(1, 5) {
+        1 => 0.65,
+        2 => 0.80,
+        3 => 1.00,
+        4 => 1.25,
+        5 => 1.60,
+        _ => unreachable!(),
+    }
+}
+
 pub fn damage_from_impact(profile: DurabilityProfile, stress: f32) -> DamageEvent {
     let stress = stress.max(0.0);
-    if stress < profile.yield_threshold {
+    let durability = quality_durability_multiplier(profile.quality);
+    let yield_threshold = profile.yield_threshold * durability;
+    let catastrophic_threshold = profile.catastrophic_threshold * durability;
+    let wear_rate = profile.wear_rate / durability;
+    if stress < yield_threshold {
         return DamageEvent {
             amount: 0.0,
             tier: 1,
             catastrophic: false,
         };
     }
-    if stress >= profile.catastrophic_threshold {
-        let overload = stress / profile.catastrophic_threshold.max(f32::EPSILON) - 1.0;
+    if stress >= catastrophic_threshold {
+        let overload = stress / catastrophic_threshold.max(f32::EPSILON) - 1.0;
         return DamageEvent {
             amount: (profile.failure_share * (1.0 + overload * 0.35)).clamp(0.0, 1.0),
             tier: (3 + (overload * 2.0).floor() as u8 + profile.quality.saturating_sub(3) / 2)
@@ -187,10 +219,10 @@ pub fn damage_from_impact(profile: DurabilityProfile, stress: f32) -> DamageEven
             catastrophic: true,
         };
     }
-    let span = (profile.catastrophic_threshold - profile.yield_threshold).max(f32::EPSILON);
-    let severity = (stress - profile.yield_threshold) / span;
+    let span = (catastrophic_threshold - yield_threshold).max(f32::EPSILON);
+    let severity = (stress - yield_threshold) / span;
     DamageEvent {
-        amount: (severity * profile.wear_rate).clamp(0.0, profile.failure_share.max(0.01)),
+        amount: (severity * wear_rate).clamp(0.0, profile.failure_share.max(0.01)),
         tier: if severity < 0.55 { 1 } else { 2 },
         catastrophic: false,
     }
@@ -250,6 +282,33 @@ mod tests {
             damage_from_impact(base, 100.0).amount
                 > damage_from_impact(segmented, 100.0).amount * 5.0
         );
+    }
+
+    #[test]
+    fn quality_monotonically_increases_physical_durability() {
+        let profile = DurabilityProfile {
+            yield_threshold: 40.0,
+            catastrophic_threshold: 100.0,
+            wear_rate: 0.2,
+            failure_share: 0.7,
+            quality: 1,
+        };
+        let damage: Vec<_> = (1..=5)
+            .map(|quality| damage_from_impact(DurabilityProfile { quality, ..profile }, 75.0))
+            .collect();
+        assert!(
+            damage
+                .windows(2)
+                .all(|pair| pair[0].amount >= pair[1].amount)
+        );
+        assert!(damage[0].catastrophic);
+        assert!(!damage[4].catastrophic);
+    }
+
+    #[test]
+    fn damage_never_requires_skill_above_item_quality() {
+        let damage = DamageBins([0.1, 0.1, 0.1, 0.1, 0.1]).capped_to_quality(3);
+        assert_eq!(damage, DamageBins([0.1, 0.1, 0.3, 0.0, 0.0]));
     }
     #[test]
     fn every_damage_amount_reduces_performance_and_repairs_are_tiered() {

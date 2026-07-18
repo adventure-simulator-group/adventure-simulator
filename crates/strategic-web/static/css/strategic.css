@@ -350,10 +350,12 @@
 }
 .condition-bar > span { display: block; min-width: 0; }
 .condition-green { background: #4c9b55; }
-.condition-yellow { --condition-color: #d5a936; background-color: var(--condition-color); }
-.condition-red { --condition-color: #9f3e3e; background-color: var(--condition-color); }
+.condition-tier-1 { --condition-color: #a8c84a; background-color: var(--condition-color); }
+.condition-tier-2 { --condition-color: #e0bd3f; background-color: var(--condition-color); }
+.condition-tier-3 { --condition-color: #e48336; background-color: var(--condition-color); }
+.condition-tier-4 { --condition-color: #c84d4d; background-color: var(--condition-color); }
+.condition-tier-5 { --condition-color: #9b63c7; background-color: var(--condition-color); }
 .condition-repairable {
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 58%);
   animation: repairable-damage-pulse 1.6s linear infinite;
 }
 @keyframes repairable-damage-pulse {
@@ -361,10 +363,19 @@
   66%, 74% { background-color: #fff; filter: brightness(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .condition-repairable { animation: none; }
+  .condition-repairable { animation: none; filter: brightness(1.15); }
 }
 .inventory-durability { min-width: 5.6rem; text-align: center; }
 .inventory-column-durability { min-width: 5.8rem; }
+.item-quality-1 { --quality-color: #78952b; }
+.item-quality-2 { --quality-color: #b58d0d; }
+.item-quality-3 { --quality-color: #c7641f; }
+.item-quality-4 { --quality-color: #a93636; }
+.item-quality-5 { --quality-color: #79419f; }
+[class*="item-quality-"] {
+  color: var(--quality-color);
+  color: color-mix(in srgb, var(--quality-color) 50%, var(--text-primary));
+}
 .row-repair-form {
   display: block;
   width: 1.35rem;
@@ -457,6 +468,7 @@
   flex-direction: column;
 }
 .repair-custody-header { position: relative; display: flex; align-items: center; justify-content: space-between; }
+.repair-custody-skill { color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; }
 .repair-custody-panel h3 { margin: 0; padding: 0.55rem var(--padding); font-size: var(--font-size-sm); }
 .repair-retrieve-all-form { display: contents; }
 .repair-custody-item-heading {

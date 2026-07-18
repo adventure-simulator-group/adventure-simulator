@@ -2182,6 +2182,11 @@ async fn inn(
         }
         None => (0, 0),
     };
+    let items = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         inn_page(
             settlement,
@@ -2189,6 +2194,7 @@ async fn inn(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &items,
             &party_members,
             limbs.as_ref(),
             stats.as_ref(),
@@ -2290,6 +2296,11 @@ async fn rest(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let items = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         rest_result_page(
             settlement,
@@ -2297,6 +2308,7 @@ async fn rest(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &items,
             &party_members,
             logged_in_as.as_deref(),
             session.theme(),
@@ -2617,6 +2629,7 @@ type ServiceRenderer = fn(
     &Settlement,
     Option<&Character>,
     &[InventoryItem],
+    &[ItemDefinition],
     &[Character],
     Option<&CharacterLimbs>,
     Option<&CharacterStats>,
@@ -2816,8 +2829,9 @@ async fn render_service_page(
             None => (0, 0),
         }
     };
-    let (party_members, limbs, stats, condition, equipment_recovery) = tokio::join!(
+    let (party_members, items, limbs, stats, condition, equipment_recovery) = tokio::join!(
         get_active_party_members(&state, active_character_ref),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
         limbs_lookup,
         stats_lookup,
         condition_lookup,
@@ -2835,6 +2849,7 @@ async fn render_service_page(
             settlement,
             active_character.as_ref().map(|(character, _)| character),
             &inventory,
+            &items.unwrap_or_default(),
             &party_members,
             limbs.as_ref(),
             stats.as_ref(),

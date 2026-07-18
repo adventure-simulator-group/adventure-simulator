@@ -131,7 +131,7 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=smith-custody-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=quality-palette-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=smith-repair-actions-1";
 
                 // Datastar
