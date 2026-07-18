@@ -1652,7 +1652,7 @@ button.party-portrait-action {
 .party-succession-vote {
   position: absolute;
   z-index: 6;
-  bottom: calc(100% - 0.2rem);
+  bottom: calc(100% - 0.45rem);
   left: 50%;
   opacity: 0;
   pointer-events: none;
@@ -1661,9 +1661,10 @@ button.party-portrait-action {
 }
 
 .party-succession-vote button {
+  position: relative;
   display: grid;
-  width: 2rem;
-  height: 1.75rem;
+  width: 3.2rem;
+  height: 2.35rem;
   padding: 0;
   border: 0;
   place-items: center;
@@ -1673,6 +1674,13 @@ button.party-portrait-action {
   filter: drop-shadow(0 1px 1px #000);
   font-size: 1.35rem;
   line-height: 1;
+}
+
+.party-succession-vote button span {
+  position: absolute;
+  bottom: 0.3rem;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .party-portrait:hover .party-succession-vote,
