@@ -96,16 +96,17 @@ pub fn build(
     package_bytes.push(b'\n');
     let package_hash = blake3::hash(&package_bytes).to_hex().to_string();
     let package_name = format!("map-{package_hash}.json");
-    let svg = paper_svg(
-        &package,
-        &world
-            .metadata
-            .sources
-            .iter()
-            .flat_map(|s| s.required_notices.iter())
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
+    let source_notices: Vec<_> = world
+        .metadata
+        .sources
+        .iter()
+        .map(|source| SourceNotice {
+            name: source.name.clone(),
+            canonical_url: source.canonical_url.clone(),
+            required_notices: source.required_notices.clone(),
+        })
+        .collect();
+    let svg = paper_svg(&package, &source_notices);
     let svg_hash = blake3::hash(svg.as_bytes()).to_hex().to_string();
     let svg_name = format!("paper-map-{svg_hash}.svg");
     let manifest = MapManifest {
@@ -117,16 +118,7 @@ pub fn build(
         package_url: format!("/tactical/map/{package_name}"),
         paper_map_url: format!("/tactical/map/{svg_name}"),
         bounds,
-        sources: world
-            .metadata
-            .sources
-            .iter()
-            .map(|s| SourceNotice {
-                name: s.name.clone(),
-                canonical_url: s.canonical_url.clone(),
-                required_notices: s.required_notices.clone(),
-            })
-            .collect(),
+        sources: source_notices,
     };
     manifest
         .validate()
@@ -162,7 +154,7 @@ fn bounds(points: &[Point]) -> Option<Bounds> {
     ))
 }
 
-fn paper_svg(package: &MapPackage, notices: &[String]) -> String {
+fn paper_svg(package: &MapPackage, sources: &[SourceNotice]) -> String {
     let w = 1000.;
     let h = 650.;
     let dx = (package.bounds.max.x - package.bounds.min.x).max(0.001);
@@ -204,9 +196,18 @@ fn paper_svg(package: &MapPackage, notices: &[String]) -> String {
         );
     }
     out.push_str("<metadata>");
-    for n in notices {
-        out.push_str(&html_escape::encode_text(n));
-        out.push('\n');
+    for source in sources {
+        out.push_str("<source><name>");
+        out.push_str(&html_escape::encode_text(&source.name));
+        out.push_str("</name><url>");
+        out.push_str(&html_escape::encode_text(&source.canonical_url));
+        out.push_str("</url>");
+        for notice in &source.required_notices {
+            out.push_str("<notice>");
+            out.push_str(&html_escape::encode_text(notice));
+            out.push_str("</notice>");
+        }
+        out.push_str("</source>");
     }
     out.push_str("</metadata></svg>");
     out
@@ -220,5 +221,29 @@ mod tests {
         let b = bounds(&[Point { x: 2., y: -1. }, Point { x: -3., y: 5. }]).unwrap();
         assert_eq!(b.min, Point { x: -3., y: -1. });
         assert_eq!(b.max, Point { x: 2., y: 5. });
+    }
+
+    #[test]
+    fn paper_svg_contains_escaped_standalone_source_attribution() {
+        let package = MapPackage {
+            renderer_schema: RENDER_SCHEMA_VERSION,
+            bounds: Bounds {
+                min: Point { x: 0., y: 0. },
+                max: Point { x: 1., y: 1. },
+            },
+            settlements: vec![],
+            roads: vec![],
+        };
+        let svg = paper_svg(
+            &package,
+            &[SourceNotice {
+                name: "Atlas & Archive".into(),
+                canonical_url: "https://example.test/?a=1&b=2".into(),
+                required_notices: vec!["Credit <required>".into()],
+            }],
+        );
+        assert!(svg.contains("Atlas &amp; Archive"));
+        assert!(svg.contains("https://example.test/?a=1&amp;b=2"));
+        assert!(svg.contains("Credit &lt;required&gt;"));
     }
 }

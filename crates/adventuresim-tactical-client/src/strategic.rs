@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::{RendererConfig, RendererMode};
+use crate::{RendererConfig, RendererMode, renderer_suspended};
 
 pub struct StrategicRendererPlugin;
 #[derive(Component)]
@@ -25,8 +25,13 @@ impl Plugin for StrategicRendererPlugin {
         app.add_systems(Startup, setup).add_systems(
             Update,
             (
-                pan_zoom.run_if(in_state(RendererMode::StrategicMap)),
-                animate_idle.run_if(in_state(RendererMode::StrategicScene)),
+                set_strategic_render_active,
+                pan_zoom
+                    .run_if(in_state(RendererMode::StrategicMap))
+                    .run_if(strategic_running),
+                animate_idle
+                    .run_if(in_state(RendererMode::StrategicScene))
+                    .run_if(strategic_running),
             ),
         );
     }
@@ -197,5 +202,16 @@ fn pan_zoom(
 fn animate_idle(time: Res<Time>, mut actors: Query<(&Idle, &mut Transform)>) {
     for (idle, mut transform) in &mut actors {
         transform.translation.y = 0.95 + (time.elapsed_secs() * 1.8 + idle.phase).sin() * 0.035;
+    }
+}
+
+fn strategic_running() -> bool {
+    !renderer_suspended()
+}
+
+fn set_strategic_render_active(mut cameras: Query<&mut Camera, With<StrategicEntity>>) {
+    let active = !renderer_suspended();
+    for mut camera in &mut cameras {
+        camera.is_active = active;
     }
 }

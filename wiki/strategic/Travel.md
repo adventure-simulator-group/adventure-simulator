@@ -138,4 +138,6 @@ layers.
 
 The settlement map progressively enhances a server-rendered paper topology map with the shared Bevy renderer. Destination links and travel forms remain the canonical keyboard and no-JavaScript controls. Dragging pans and the wheel zooms the enhanced view. Roads are currently straight endpoint segments; true road geometry, regional packages, raster tiles, and canvas-to-link selection synchronization remain follow-up work.
 
+When compiled world artifacts exist, the enhanced map uses their complete junction-node topology. The server-rendered paper map remains available to assistive technology after the canvas starts. Hidden tabs stop strategic camera rendering and interaction while retaining allocations for quick return.
+
 Small settlement service scenes use transient cylinder placeholders for the visible service participant and party. Their deterministic slots, colors, and idle animation are presentation state only.

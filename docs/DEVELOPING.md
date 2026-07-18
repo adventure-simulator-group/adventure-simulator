@@ -348,4 +348,6 @@ diagnostics.
 
 `just compile-world` also writes `crates/adventuresim-stdb-module/static/map/manifest.json`, a content-addressed JSON package, and a content-addressed SVG fallback. Override this with `cargo run -p adventuresim-world-import -- --renderer-output PATH`. Build the shared production artifact with `just build-wasm`; release builds no longer enable Bevy's debug feature by default.
 
+The strategic loader imports `/tactical/wasm/adventuresim-tactical-client.js`, matching `tactical.html` and wasm-bindgen's hyphenated binary output. It first tries the compiled manifest/package and falls back to the embedded descriptor for an unimported demo database.
+
 To compare the shared artifact fairly with a future strategic-only build, use the same toolchain/profile and record raw and compressed `.wasm` bytes, build duration, browser initialization-to-first-frame, idle/hidden CPU, GPU/heap memory, and one/three-tab totals. Browser numbers have not been recorded in this change because an automated WebGPU browser was not available. Do not infer runtime cost from byte size alone.

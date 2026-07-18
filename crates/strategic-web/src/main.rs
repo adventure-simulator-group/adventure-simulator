@@ -121,20 +121,34 @@ async fn log_http_request(request: Request, next: Next) -> Response {
         HeaderName::from_static("x-request-id"),
         HeaderValue::from_str(&request_id.to_string()).expect("numeric request id is a header"),
     );
-    if cache_path.starts_with("/tactical/map/map-")
-        || cache_path.starts_with("/tactical/map/paper-map-")
-    {
-        response.headers_mut().insert(
-            axum::http::header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=31536000, immutable"),
-        );
-    } else if cache_path == "/tactical/map/manifest.json" || cache_path.contains("/map") {
-        response.headers_mut().insert(
-            axum::http::header::CACHE_CONTROL,
-            HeaderValue::from_static("private, no-store"),
-        );
-    }
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control(&cache_path)),
+    );
     response
+}
+
+fn cache_control(path: &str) -> &'static str {
+    let immutable_map = path
+        .strip_prefix("/tactical/map/map-")
+        .and_then(|suffix| suffix.strip_suffix(".json"))
+        .is_some_and(valid_content_hash)
+        || path
+            .strip_prefix("/tactical/map/paper-map-")
+            .and_then(|suffix| suffix.strip_suffix(".svg"))
+            .is_some_and(valid_content_hash);
+    if immutable_map {
+        "public, max-age=31536000, immutable"
+    } else if path.starts_with("/static/") || path.starts_with("/tactical/wasm/") {
+        "public, max-age=3600"
+    } else {
+        // Pages and APIs may contain session-derived character/party information.
+        "private, no-store"
+    }
+}
+
+fn valid_content_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 struct HttpRequestLog {
@@ -156,5 +170,57 @@ impl Drop for HttpRequestLog {
                 "http request canceled before a response was produced"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::cache_control;
+
+    #[test]
+    fn only_exact_content_addressed_map_artifacts_are_immutable() {
+        let hash = "a".repeat(64);
+        assert_eq!(
+            cache_control(&format!("/tactical/map/map-{hash}.json")),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            cache_control(&format!("/tactical/map/paper-map-{hash}.svg")),
+            "public, max-age=31536000, immutable"
+        );
+        for path in [
+            "/tactical/map/manifest.json",
+            "/tactical/map/map-short.json",
+            "/tactical/map/map-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json/extra",
+            "/locations/settlement/demo/inn",
+            "/api/settlements/demo/service-quests",
+        ] {
+            assert_eq!(cache_control(path), "private, no-store", "{path}");
+        }
+        assert_eq!(
+            cache_control("/static/strategic-renderer.js"),
+            "public, max-age=3600"
+        );
+    }
+
+    #[test]
+    fn strategic_loader_matches_build_output_and_preserves_fallback_semantics() {
+        let loader = include_str!("../static/strategic-renderer.js");
+        let tactical = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../adventuresim-stdb-module/static/tactical.html"
+        ));
+        let build = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/build_wasm.sh"
+        ));
+        for source in [loader, tactical] {
+            assert!(source.contains("adventuresim-tactical-client.js"));
+        }
+        assert!(build.contains("adventuresim-tactical-client.wasm"));
+        assert!(loader.contains("fetch(config.startup.package_url"));
+        assert!(loader.contains("fetch(manifest.package_url"));
+        assert!(loader.contains("wasm_set_suspended(document.hidden)"));
+        assert!(!loader.contains("querySelector('[data-renderer-fallback]').hidden = true"));
     }
 }

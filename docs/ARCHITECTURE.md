@@ -351,3 +351,7 @@ Spawn points are defined in GLB/GLTF files using node naming:
 The single `adventuresim-tactical-client` WASM artifact has explicit Bevy states for strategic map, strategic scene, and tactical startup. Strategic startup does not add tactical core, netcode, UI, player, controller, or physics plugins. Cylinder positions and idle transforms are presentation-only transient state and must never be persisted to SpacetimeDB.
 
 Strategic SSR owns canonical links and actions. Its descriptor is session-aware and `private, no-store`; hashed map packages and paper maps are served `public, max-age=31536000, immutable`. The unhashed manifest is not immutable.
+
+Strategic map startup treats the descriptor's `package_url` as a manifest URL. The browser validates that manifest, fetches its content-addressed whole-world package (including non-settlement junction nodes), and substitutes it for the embedded demo package. Missing or invalid compiled artifacts leave the inline settlement topology active. After successful enhancement the paper SVG is visually concealed but remains in the accessibility tree.
+
+When the document is hidden, strategic animation/input systems stop and strategic cameras are deactivated. Meshes, materials, and other GPU allocations intentionally remain resident for fast hot reuse; full teardown would defeat that goal and Bevy does not support replacing a running app in place. Multi-tab resident-memory benchmarking remains required before this tradeoff is considered final.

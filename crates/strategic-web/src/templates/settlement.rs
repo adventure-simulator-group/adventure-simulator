@@ -2046,8 +2046,8 @@ fn map_visual_stage(
                 id: destination.id.clone(),
                 label: destination.name.clone(),
                 point: Point {
-                    x: settlement.coord_x + 0.08,
-                    y: settlement.coord_y + 0.05,
+                    x: settlement.coord_x,
+                    y: settlement.coord_y,
                 },
                 kind: MarkerKind::ActiveQuest,
                 href: Some(format!(

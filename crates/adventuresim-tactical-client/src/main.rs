@@ -94,6 +94,16 @@ pub fn wasm_run_config(json: &str) -> Result<(), JsValue> {
 
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
+pub fn wasm_validate_manifest(json: &str) -> Result<(), JsValue> {
+    let manifest: adventuresim_render_contracts::MapManifest =
+        serde_json::from_str(json).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    manifest
+        .validate()
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
 pub fn wasm_set_suspended(suspended: bool) {
     SUSPENDED.store(suspended, Ordering::Relaxed);
 }
@@ -190,7 +200,9 @@ fn run_config(config: StartupConfig) {
     }
 
     #[cfg(feature = "debug")]
-    app.add_plugins(debug::DebugPlugin);
+    if mode == RendererMode::Tactical {
+        app.add_plugins(debug::DebugPlugin);
+    }
 
     app.run();
 }
@@ -201,6 +213,10 @@ fn apply_lifecycle(mut time: ResMut<Time<Virtual>>) {
     } else {
         time.unpause();
     }
+}
+
+fn renderer_suspended() -> bool {
+    SUSPENDED.load(Ordering::Relaxed)
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {

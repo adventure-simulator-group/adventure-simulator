@@ -2386,6 +2386,7 @@ body.chat-resizing {
 .renderer-host { position: relative; min-height: 22rem; overflow: hidden; background: #151813; }
 .strategic-render-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .renderer-fallback, .paper-map { width: 100%; height: 100%; min-height: 22rem; display: block; }
+.renderer-enhanced .renderer-fallback { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .paper-map text { font: 16px serif; fill: #211b13; }
 .paper-map circle { fill: #7b1e1e; }
 .fallback-road { stroke: #594b35; stroke-width: 3; }
