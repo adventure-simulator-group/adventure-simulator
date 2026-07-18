@@ -1704,47 +1704,62 @@ fn personality_tags(
     };
     let mut tags = Vec::new();
     match personality.nerve {
-        Brave => tags.push(("Brave", "Less troubled when outmatched.")),
-        Fearful => tags.push(("Fearful", "More troubled when outmatched.")),
+        Brave => tags.push(("Brave", "Raw morale loss from being outmatched ×0.5.")),
+        Fearful => tags.push(("Fearful", "Raw morale loss from being outmatched ×2.")),
         _ => {}
     }
     match personality.drive {
-        Ambitious => tags.push(("Ambitious", "Feels victories and defeats more strongly.")),
-        Content => tags.push(("Content", "Feels victories and defeats less strongly.")),
+        Ambitious => tags.push(("Ambitious", "Raw morale from victories and defeats ×1.5.")),
+        Content => tags.push(("Content", "Raw morale from victories and defeats ×0.5.")),
         _ => {}
     }
     match personality.outlook {
         Sanguine => tags.push((
             "Sanguine",
-            "Favors good news and recovers from setbacks quickly.",
+            "Positive raw morale ×1.25; negative raw morale ×0.75; negative-event duration ×0.5.",
         )),
-        Brooding => tags.push(("Brooding", "Dwells on setbacks and discounts good news.")),
+        Brooding => tags.push((
+            "Brooding",
+            "Positive raw morale ×0.75; negative raw morale ×1.25; negative-event duration ×2.",
+        )),
         _ => {}
     }
     match personality.sociability {
-        Gregarious => tags.push(("Gregarious", "Responds strongly to encouragement.")),
-        Solitary => tags.push(("Solitary", "Responds weakly to encouragement.")),
+        Gregarious => tags.push(("Gregarious", "Morale restored by allies ×1.5.")),
+        Solitary => tags.push(("Solitary", "Morale restored by allies ×0.5.")),
         _ => {}
     }
     match personality.conscience {
-        Compassionate => tags.push(("Compassionate", "Cares deeply about the welfare of others.")),
-        Callous => tags.push(("Callous", "Is unmoved by the suffering of others.")),
-        Cruel => tags.push(("Cruel", "Takes satisfaction in causing suffering.")),
+        Compassionate => tags.push((
+            "Compassionate",
+            "Current morale effect ×1.0: no outcomes carry moral context yet.",
+        )),
+        Callous => tags.push((
+            "Callous",
+            "Current morale effect ×1.0: no outcomes carry moral context yet.",
+        )),
+        Cruel => tags.push((
+            "Cruel",
+            "Current morale effect ×1.0: no outcomes carry moral context yet.",
+        )),
         _ => {}
     }
     match personality.self_regard {
-        Proud => tags.push(("Proud", "Exults in victory and takes defeat personally.")),
-        Humble => tags.push(("Humble", "Is less concerned with personal glory.")),
+        Proud => tags.push((
+            "Proud",
+            "Raw morale from victory ×1.5; raw morale from defeat ×3.",
+        )),
+        Humble => tags.push(("Humble", "Raw morale from victories and defeats ×0.75.")),
         _ => {}
     }
     match personality.conviction {
         Zealous => tags.push((
             "Zealous",
-            "Responds strongly to religious life and conflict.",
+            "Raw morale from religious sources and events ×1.5.",
         )),
         Irreverent => tags.push((
             "Irreverent",
-            "Responds weakly to religious life and conflict.",
+            "Raw morale from religious sources and events ×0.5.",
         )),
         _ => {}
     }
@@ -1773,6 +1788,51 @@ mod personality_tests {
             tags.iter().map(|tag| tag.0).collect::<Vec<_>>(),
             ["Brave", "Cruel"]
         );
+    }
+
+    #[test]
+    fn every_visible_tag_explains_its_numeric_morale_effect() {
+        let profiles = [
+            CharacterPersonality {
+                character_id: 1,
+                nerve: Nerve::Brave,
+                drive: Drive::Ambitious,
+                outlook: Outlook::Sanguine,
+                sociability: Sociability::Gregarious,
+                conscience: Conscience::Compassionate,
+                self_regard: SelfRegard::Proud,
+                conviction: Conviction::Zealous,
+            },
+            CharacterPersonality {
+                character_id: 2,
+                nerve: Nerve::Fearful,
+                drive: Drive::Content,
+                outlook: Outlook::Brooding,
+                sociability: Sociability::Solitary,
+                conscience: Conscience::Callous,
+                self_regard: SelfRegard::Humble,
+                conviction: Conviction::Irreverent,
+            },
+            CharacterPersonality {
+                character_id: 3,
+                nerve: Nerve::Neutral,
+                drive: Drive::Neutral,
+                outlook: Outlook::Neutral,
+                sociability: Sociability::Neutral,
+                conscience: Conscience::Cruel,
+                self_regard: SelfRegard::Neutral,
+                conviction: Conviction::Neutral,
+            },
+        ];
+
+        for profile in &profiles {
+            for (tag, description) in personality_tags(profile) {
+                assert!(
+                    description.contains('×'),
+                    "{tag} tooltip lacks a numeric multiplier: {description}"
+                );
+            }
+        }
     }
 }
 
