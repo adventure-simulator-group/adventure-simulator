@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (777)
+## Files (781)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -70,6 +70,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/autoresolve_report_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/autoresolve_report_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/available_water_capacity_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_committed_cuts_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_infection_episodes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_item_values_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -541,6 +543,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/parties.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/party_actions.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/quests.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/session.rs` — Rust source module for this component.

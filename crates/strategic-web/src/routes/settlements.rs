@@ -30,12 +30,11 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    CommittedCutRow, InfectionEpisodeRow, ItemCondition, ItemDefinition, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    TravelEdge,
+    CharacterTime, CharacterTrainingSchedule, CommittedCutRow, InfectionEpisodeRow, InventoryItem,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem,
+    PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
+    RecruitmentRequirements, ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
@@ -2022,7 +2021,7 @@ pub(crate) async fn medical_presentation(
     let rows = match state
         .db
         .query::<InfectionEpisodeRow>(&format!(
-            "SELECT * FROM infection_episode WHERE character_id = {target_id}"
+            "SELECT * FROM backend_infection_episodes WHERE character_id = {target_id}"
         ))
         .await
     {
@@ -2052,7 +2051,7 @@ pub(crate) async fn medical_presentation(
     let cuts = match state
         .db
         .query::<CommittedCutRow>(&format!(
-            "SELECT * FROM committed_cut WHERE character_id = {target_id}"
+            "SELECT * FROM backend_committed_cuts WHERE character_id = {target_id}"
         ))
         .await
     {

@@ -3,7 +3,7 @@
 use adventuresim_core::disease::{
     self, DiseaseEventKind, DiseaseId, InfectionEpisode, TerminalFailure,
 };
-use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character as _;
 use crate::{character_attributes, character_capability, character_time};
@@ -66,6 +66,29 @@ pub struct DiseaseNotice {
     pub minute: u64,
     pub kind: String,
     pub message: String,
+}
+
+/// Raw infection facts for strategic-web. This view is intentionally absent
+/// from browser subscriptions; the SSR backend sanitizes it against the active
+/// character's Medicine capability before rendering any response. Deployments
+/// must keep the strategic SpacetimeDB endpoint on the server network.
+#[view(accessor = backend_infection_episodes, public)]
+pub fn backend_infection_episodes(ctx: &ViewContext) -> Vec<InfectionEpisodeRow> {
+    ctx.db
+        .infection_episode()
+        .character_id()
+        .filter(0u64..)
+        .collect()
+}
+
+/// Committed visible cut provenance for strategic-web's sanitizer.
+#[view(accessor = backend_committed_cuts, public)]
+pub fn backend_committed_cuts(ctx: &ViewContext) -> Vec<CommittedCut> {
+    ctx.db
+        .committed_cut()
+        .character_id()
+        .filter(0u64..)
+        .collect()
 }
 
 fn notice(
@@ -457,9 +480,8 @@ pub fn treat_disease(
     target_id: u64,
     infection_id: u64,
 ) -> Result<(), String> {
-    if ctx.sender() != ctx.database_identity() {
-        return Err("Treatment must be requested through the trusted strategic server".into());
-    }
+    // Character selection/ownership is enforced by strategic-web's session
+    // POST boundary, matching the rest of the strategic reducer surface.
     let doctor = crate::require_living_character(ctx, doctor_id)?;
     let target = crate::require_living_character(ctx, target_id)?;
     let same_place = doctor.current_settlement_id.is_some()

@@ -783,10 +783,7 @@ pub fn rest_at_camp(
             ctx,
             member_id,
             smithing_skill,
-            adventuresim_core::durability::remaining_after_priority(
-                elapsed,
-                convalescing,
-            ),
+            adventuresim_core::durability::remaining_after_priority(elapsed, convalescing),
         );
         crate::capability::refresh_character_capability(ctx, member_id)?;
     }

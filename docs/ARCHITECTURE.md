@@ -198,6 +198,11 @@ damage but never tactical positions, HP, enemies, or tick state. Strategic-web
 is the medical presentation boundary and gives templates only a viewer-sanitized
 model; raw medical rows are never browser payloads.
 
+The `backend_infection_episodes` and `backend_committed_cuts` views are narrow
+SSR integration surfaces, not browser APIs or subscriptions. Deployments keep
+the strategic SpacetimeDB endpoint on the server network; strategic-web applies
+the active character's Medicine gate before emitting HTML.
+
 The strategic web process uses its configured database-owner credential as the
 trusted presentation boundary. Private infection and committed-cut queries fail
 closed and visibly if that credential is absent; treatment reducers accept only

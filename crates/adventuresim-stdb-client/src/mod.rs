@@ -17,6 +17,8 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_committed_cuts_table;
+pub mod backend_infection_episodes_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
@@ -390,6 +392,8 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_committed_cuts_table::*;
+pub use backend_infection_episodes_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
@@ -2056,6 +2060,8 @@ Reducer::SendLocalChatMessage{
 #[doc(hidden)]
 pub struct DbUpdate {
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
+    backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -2123,6 +2129,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_committed_cuts" => db_update.backend_committed_cuts.append(
+                    backend_committed_cuts_table::parse_table_update(table_update)?,
+                ),
+                "backend_infection_episodes" => db_update.backend_infection_episodes.append(
+                    backend_infection_episodes_table::parse_table_update(table_update)?,
+                ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(battle_loot_item_table::parse_table_update(table_update)?),
@@ -2551,6 +2563,14 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
+            "backend_committed_cuts",
+            &self.backend_committed_cuts,
+        );
+        diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>(
+            "backend_infection_episodes",
+            &self.backend_infection_episodes,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -2562,6 +2582,12 @@ impl __sdk::DbUpdate for DbUpdate {
             match &table_rows.table[..] {
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_committed_cuts" => db_update
+                    .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_infection_episodes" => db_update
+                    .backend_infection_episodes
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2747,6 +2773,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_committed_cuts" => db_update
+                    .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_infection_episodes" => db_update
+                    .backend_infection_episodes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2931,6 +2963,8 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
+    backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -3003,6 +3037,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CommittedCut>(
+            "backend_committed_cuts",
+            &self.backend_committed_cuts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
+            "backend_infection_episodes",
+            &self.backend_infection_episodes,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -3910,6 +3954,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         autoresolve_report_table::register_table(client_cache);
+        backend_committed_cuts_table::register_table(client_cache);
+        backend_infection_episodes_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -3969,6 +4015,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "autoresolve_report",
+        "backend_committed_cuts",
+        "backend_infection_episodes",
         "battle_loot_item",
         "battle_participant",
         "battle_result",
