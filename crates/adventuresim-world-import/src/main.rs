@@ -6,10 +6,12 @@ use std::{
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType, EdgeEndpoint,
-    ForestCover, MineralSoilTexture, NativeRangeEvidence, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilProfile, SoilSubstrate,
-    SoilWaterRegime, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile,
-    WorldNodeImport, WrbReferenceGroup,
+    ForestCover, GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, IgneousRock,
+    MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence, PotentialVegetation,
+    PotentialVegetationFormation, SedimentaryRock, SettlementImport, SoilDepth, SoilProfile,
+    SoilSubstrate, SoilWaterRegime, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeImport, TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WorldNodeImport,
+    WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -36,6 +38,8 @@ struct Args {
     tree_species_archive: PathBuf,
     #[arg(long, default_value_os_t = default_soil_directory())]
     soil_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_geology_geopackage())]
+    geology_geopackage: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -74,6 +78,7 @@ fn run(args: Args) -> Result<()> {
         &args.potential_vegetation_dir,
         &args.tree_species_archive,
         &args.soil_dir,
+        &args.geology_geopackage,
     )?;
     let output = args
         .output
@@ -221,9 +226,133 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "potential_vegetation": encode_potential_vegetation(&settlement.potential_vegetation),
         "tree_species": encode_tree_species(&settlement.tree_species),
         "soil": encode_soil(&settlement.soil),
+        "geology": encode_geology(&settlement.geology),
         "scene_key": settlement.scene_key,
         "religion_id": settlement.religion_id,
     }))
+}
+
+fn encode_geology(profile: &SurfaceGeology) -> Value {
+    let setting = |setting: &adventuresim_world_schema::GeologicSetting| {
+        json!({
+            "lithology": match setting.lithology {
+                GeologicLithologyEvidence::Mapped(value) => json!({ "Mapped": encode_lithology(value) }),
+                GeologicLithologyEvidence::Inferred(value) => json!({ "Inferred": encode_lithology(value) }),
+            },
+            "age": match setting.age {
+                GeologicAgeEvidence::Mapped(age) => json!({ "Mapped": enum_unit(geologic_era_name(age)) }),
+                GeologicAgeEvidence::Inferred(age) => json!({ "Inferred": enum_unit(geologic_era_name(age)) }),
+            },
+        })
+    };
+    match profile {
+        SurfaceGeology::Mapped(mapped) => json!({ "Mapped": {
+            "unit": { "value": mapped.unit.as_str() },
+            "setting": setting(&mapped.setting),
+        }}),
+        SurfaceGeology::Inferred(inferred) => json!({ "Inferred": {
+            "lithology": encode_lithology(inferred.lithology),
+            "age": enum_unit(geologic_era_name(inferred.age)),
+        }}),
+    }
+}
+
+fn encode_lithology(lithology: SurfaceLithology) -> Value {
+    let named = |variant: &str, name: &'static str| json!({ (variant): enum_unit(name) });
+    match lithology {
+        SurfaceLithology::Unconsolidated(value) => named(
+            "Unconsolidated",
+            match value {
+                UnconsolidatedDeposit::Clay => "Clay",
+                UnconsolidatedDeposit::Silt => "Silt",
+                UnconsolidatedDeposit::Sand => "Sand",
+                UnconsolidatedDeposit::Gravel => "Gravel",
+                UnconsolidatedDeposit::Till => "Till",
+                UnconsolidatedDeposit::Peat => "Peat",
+                UnconsolidatedDeposit::Alluvium => "Alluvium",
+                UnconsolidatedDeposit::Loess => "Loess",
+                UnconsolidatedDeposit::VolcanicAsh => "VolcanicAsh",
+                UnconsolidatedDeposit::MixedSediment => "MixedSediment",
+            },
+        ),
+        SurfaceLithology::Sedimentary(value) => named(
+            "Sedimentary",
+            match value {
+                SedimentaryRock::Limestone => "Limestone",
+                SedimentaryRock::Dolostone => "Dolostone",
+                SedimentaryRock::Chalk => "Chalk",
+                SedimentaryRock::Marl => "Marl",
+                SedimentaryRock::Sandstone => "Sandstone",
+                SedimentaryRock::Siltstone => "Siltstone",
+                SedimentaryRock::Mudstone => "Mudstone",
+                SedimentaryRock::Shale => "Shale",
+                SedimentaryRock::Conglomerate => "Conglomerate",
+                SedimentaryRock::Evaporite => "Evaporite",
+                SedimentaryRock::Coal => "Coal",
+                SedimentaryRock::Chert => "Chert",
+                SedimentaryRock::MixedSedimentary => "MixedSedimentary",
+            },
+        ),
+        SurfaceLithology::Igneous(value) => named(
+            "Igneous",
+            match value {
+                IgneousRock::Granite => "Granite",
+                IgneousRock::Granitoid => "Granitoid",
+                IgneousRock::Diorite => "Diorite",
+                IgneousRock::Gabbro => "Gabbro",
+                IgneousRock::Basalt => "Basalt",
+                IgneousRock::Andesite => "Andesite",
+                IgneousRock::Rhyolite => "Rhyolite",
+                IgneousRock::Tuff => "Tuff",
+                IgneousRock::OtherPlutonic => "OtherPlutonic",
+                IgneousRock::OtherVolcanic => "OtherVolcanic",
+                IgneousRock::OtherIgneous => "OtherIgneous",
+            },
+        ),
+        SurfaceLithology::Metamorphic(value) => named(
+            "Metamorphic",
+            match value {
+                MetamorphicRock::Slate => "Slate",
+                MetamorphicRock::Schist => "Schist",
+                MetamorphicRock::Gneiss => "Gneiss",
+                MetamorphicRock::Quartzite => "Quartzite",
+                MetamorphicRock::Marble => "Marble",
+                MetamorphicRock::Phyllite => "Phyllite",
+                MetamorphicRock::Amphibolite => "Amphibolite",
+                MetamorphicRock::OtherMetamorphic => "OtherMetamorphic",
+            },
+        ),
+        SurfaceLithology::Mixed(value) => named(
+            "Mixed",
+            match value {
+                MixedLithology::Breccia => "Breccia",
+                MixedLithology::Melange => "Melange",
+                MixedLithology::MixedRock => "MixedRock",
+            },
+        ),
+    }
+}
+
+const fn geologic_era_name(era: GeologicEra) -> &'static str {
+    match era {
+        GeologicEra::Quaternary => "Quaternary",
+        GeologicEra::Neogene => "Neogene",
+        GeologicEra::Paleogene => "Paleogene",
+        GeologicEra::Cenozoic => "Cenozoic",
+        GeologicEra::Cretaceous => "Cretaceous",
+        GeologicEra::Jurassic => "Jurassic",
+        GeologicEra::Triassic => "Triassic",
+        GeologicEra::Mesozoic => "Mesozoic",
+        GeologicEra::Permian => "Permian",
+        GeologicEra::Carboniferous => "Carboniferous",
+        GeologicEra::Devonian => "Devonian",
+        GeologicEra::Silurian => "Silurian",
+        GeologicEra::Ordovician => "Ordovician",
+        GeologicEra::Cambrian => "Cambrian",
+        GeologicEra::Paleozoic => "Paleozoic",
+        GeologicEra::Precambrian => "Precambrian",
+        GeologicEra::Phanerozoic => "Phanerozoic",
+    }
 }
 
 fn encode_soil(profile: &SoilProfile) -> Value {
@@ -479,6 +608,10 @@ fn default_soil_directory() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes")
 }
 
+fn default_geology_geopackage() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/geology/GeologicUnitView.gpkg")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -487,14 +620,16 @@ fn default_output(year: i32) -> PathBuf {
 mod tests {
     use adventuresim_world_schema::{
         AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
-        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, HabitatSuitability,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
-        MappedSoilProfile, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
+        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, GeologicAgeEvidence,
+        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
+        HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
+        LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile,
+        MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
         ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode, PotentialVegetation,
         PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
-        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, TopsoilOrganicCarbon,
-        TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, Woodland,
-        WrbReferenceGroup,
+        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+        SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId,
+        TreeSpeciesProfile, UnconsolidatedDeposit, Woodland, WrbReferenceGroup,
     };
 
     use super::{
@@ -643,6 +778,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_mapped_and_inferred_geology_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["geology"],
+            serde_json::json!({ "Inferred": {
+                "lithology": { "Unconsolidated": { "Alluvium": [] } },
+                "age": { "Quaternary": [] },
+            }})
+        );
+        settlement.geology = SurfaceGeology::Mapped(MappedSurfaceGeology {
+            unit: GeologicUnitId::new("FR-BRGM.1953.72852").unwrap(),
+            setting: GeologicSetting {
+                lithology: GeologicLithologyEvidence::Mapped(SurfaceLithology::Igneous(
+                    IgneousRock::Granite,
+                )),
+                age: GeologicAgeEvidence::Mapped(GeologicEra::Cambrian),
+            },
+        });
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["geology"]["Mapped"]["unit"],
+            serde_json::json!({ "value": "FR-BRGM.1953.72852" })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -678,6 +838,10 @@ mod tests {
                 }),
                 water_regime: SoilWaterRegime::SeasonallyWet,
                 agricultural_limitation: AgriculturalLimitation::None,
+            }),
+            geology: SurfaceGeology::Inferred(InferredGeologicSetting {
+                lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                age: GeologicEra::Quaternary,
             }),
             scene_key: "village".into(),
             religion_id: "catholic".into(),

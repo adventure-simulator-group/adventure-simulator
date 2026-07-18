@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SoilProfile, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    CompiledWorld, SoilProfile, SurfaceGeology, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
 };
 
 use crate::{Error, Result};
@@ -190,12 +190,35 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .count(),
             world.settlements.len(),
         )
+        || !geology_counts_are_consistent(
+            world.report.geology_features_read,
+            world.report.geology_samples,
+            world.report.geology_fallback_samples,
+            world
+                .settlements
+                .iter()
+                .filter(|settlement| matches!(settlement.geology, SurfaceGeology::Inferred(_)))
+                .count(),
+            world.settlements.len(),
+        )
     {
         return Err(Error::Validation(
             "build report counts do not match the compiled world".into(),
         ));
     }
     Ok(())
+}
+
+fn geology_counts_are_consistent(
+    features: usize,
+    samples: usize,
+    fallbacks: usize,
+    actual_fallbacks: usize,
+    settlements: usize,
+) -> bool {
+    samples == settlements
+        && fallbacks == actual_fallbacks
+        && ((settlements == 0 && features == 0) || (settlements > 0 && features > 0))
 }
 
 fn soil_counts_are_consistent(
@@ -283,7 +306,10 @@ mod tests {
     use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
     use super::potential_vegetation_counts_are_consistent;
-    use super::{soil_counts_are_consistent, tree_species_counts_are_consistent};
+    use super::{
+        geology_counts_are_consistent, soil_counts_are_consistent,
+        tree_species_counts_are_consistent,
+    };
 
     #[test]
     fn elevation_report_requires_complete_consistent_counts() {
@@ -341,5 +367,13 @@ mod tests {
         assert!(soil_counts_are_consistent(0, 0, 0, 0, 0, 0));
         assert!(!soil_counts_are_consistent(0, 20, 3, 1, 1, 3));
         assert!(!soil_counts_are_consistent(10, 20, 3, 2, 1, 3));
+    }
+
+    #[test]
+    fn geology_report_requires_source_features_and_exact_fallback_count() {
+        assert!(geology_counts_are_consistent(243_092, 3, 1, 1, 3));
+        assert!(geology_counts_are_consistent(0, 0, 0, 0, 0));
+        assert!(!geology_counts_are_consistent(0, 3, 1, 1, 3));
+        assert!(!geology_counts_are_consistent(243_092, 3, 2, 1, 3));
     }
 }

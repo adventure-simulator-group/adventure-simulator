@@ -5,7 +5,187 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 8;
+pub const WORLD_SCHEMA_VERSION: u32 = 9;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct GeologicUnitId {
+    value: String,
+}
+
+impl GeologicUnitId {
+    pub fn new(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        (!value.is_empty()
+            && value.len() <= 255
+            && value == value.trim()
+            && !value.chars().any(char::is_control))
+        .then_some(Self { value })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl<'de> Deserialize<'de> for GeologicUnitId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            value: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.value)
+            .ok_or_else(|| serde::de::Error::custom("invalid EGDI geologic unit identifier"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum UnconsolidatedDeposit {
+    Clay,
+    Silt,
+    Sand,
+    Gravel,
+    Till,
+    Peat,
+    Alluvium,
+    Loess,
+    VolcanicAsh,
+    MixedSediment,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SedimentaryRock {
+    Limestone,
+    Dolostone,
+    Chalk,
+    Marl,
+    Sandstone,
+    Siltstone,
+    Mudstone,
+    Shale,
+    Conglomerate,
+    Evaporite,
+    Coal,
+    Chert,
+    MixedSedimentary,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum IgneousRock {
+    Granite,
+    Granitoid,
+    Diorite,
+    Gabbro,
+    Basalt,
+    Andesite,
+    Rhyolite,
+    Tuff,
+    OtherPlutonic,
+    OtherVolcanic,
+    OtherIgneous,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum MetamorphicRock {
+    Slate,
+    Schist,
+    Gneiss,
+    Quartzite,
+    Marble,
+    Phyllite,
+    Amphibolite,
+    OtherMetamorphic,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum MixedLithology {
+    Breccia,
+    Melange,
+    MixedRock,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SurfaceLithology {
+    Unconsolidated(UnconsolidatedDeposit),
+    Sedimentary(SedimentaryRock),
+    Igneous(IgneousRock),
+    Metamorphic(MetamorphicRock),
+    Mixed(MixedLithology),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum GeologicEra {
+    Quaternary,
+    Neogene,
+    Paleogene,
+    Cenozoic,
+    Cretaceous,
+    Jurassic,
+    Triassic,
+    Mesozoic,
+    Permian,
+    Carboniferous,
+    Devonian,
+    Silurian,
+    Ordovician,
+    Cambrian,
+    Paleozoic,
+    Precambrian,
+    Phanerozoic,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum GeologicAgeEvidence {
+    Mapped(GeologicEra),
+    Inferred(GeologicEra),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum GeologicLithologyEvidence {
+    Mapped(SurfaceLithology),
+    Inferred(SurfaceLithology),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct GeologicSetting {
+    pub lithology: GeologicLithologyEvidence,
+    pub age: GeologicAgeEvidence,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct MappedSurfaceGeology {
+    pub unit: GeologicUnitId,
+    pub setting: GeologicSetting,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct InferredGeologicSetting {
+    pub lithology: SurfaceLithology,
+    pub age: GeologicEra,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SurfaceGeology {
+    Mapped(MappedSurfaceGeology),
+    Inferred(InferredGeologicSetting),
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -979,6 +1159,9 @@ pub struct WorldBuildReport {
     pub soil_attribute_rows_read: usize,
     pub soil_samples: usize,
     pub soil_fallback_samples: usize,
+    pub geology_features_read: usize,
+    pub geology_samples: usize,
+    pub geology_fallback_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -1034,6 +1217,7 @@ pub struct SettlementImport {
     pub potential_vegetation: PotentialVegetation,
     pub tree_species: TreeSpeciesProfile,
     pub soil: SoilProfile,
+    pub geology: SurfaceGeology,
     pub scene_key: String,
     pub religion_id: String,
 }
@@ -1042,10 +1226,10 @@ pub struct SettlementImport {
 mod tests {
     use super::{
         CanopyDensity, ElevationBand, ElevationMeters, EuroVegMapUnitCode, ForestCover,
-        HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
-        LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, ParentMaterialCode, PotentialVegetationFormation, SoilMappingUnit,
-        StoneContentPercent, TreeSpeciesId,
+        GeologicUnitId, HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile,
+        LandUseFraction, LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode,
+        PotentialVegetationFormation, SoilMappingUnit, StoneContentPercent, TreeSpeciesId,
     };
 
     #[test]
@@ -1212,5 +1396,16 @@ mod tests {
         assert!(StoneContentPercent::new(101).is_none());
         assert!(ParentMaterialCode::new("110").is_some());
         assert!(ParentMaterialCode::new("bad-code").is_none());
+    }
+
+    #[test]
+    fn geologic_unit_identifiers_are_bounded_source_values() {
+        assert_eq!(
+            GeologicUnitId::new("FR-BRGM.1953.72852").unwrap().as_str(),
+            "FR-BRGM.1953.72852"
+        );
+        assert!(GeologicUnitId::new("").is_none());
+        assert!(GeologicUnitId::new(" leading-space").is_none());
+        assert!(GeologicUnitId::new("x".repeat(256)).is_none());
     }
 }

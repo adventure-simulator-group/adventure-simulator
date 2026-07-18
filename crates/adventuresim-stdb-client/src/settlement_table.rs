@@ -8,6 +8,7 @@ use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_type::Settlement;
 use super::soil_profile_type::SoilProfile;
+use super::surface_geology_type::SurfaceGeology;
 use super::tree_species_profile_type::TreeSpeciesProfile;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
