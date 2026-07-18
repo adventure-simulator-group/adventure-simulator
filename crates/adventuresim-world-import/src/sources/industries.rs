@@ -2,20 +2,19 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
+use adventuresim_world_schema::{
+    AgriculturalCommodity as Ag, AgricultureIndustry, ConstructionCommodity as Construction,
+    ConstructionIndustry, DerivedHistoricalVegetationCover as DerivedCover,
+    FallbackHistoricalVegetationCover as FallbackCover, FallbackIndustry, FishCommodity as Fish,
+    FishingIndustry, ForestCommodity as Forest, ForestryIndustry, HistoricalVegetation,
+    IgneousRock, MarineWaterAccess, MetamorphicRock, MiningIndustry, PotteryCommodity as Pottery,
+    PotteryIndustry, QuarryCommodity as Quarry, SaltSource, SaltmakingIndustry, SedimentaryRock,
+    SurfaceGeology, SurfaceLithology,
+};
 use adventuresim_world_schema::{
     CompiledWorld, DerivedIndustry as Industry, IndustryEvidence, InferredIndustryProfile,
     ProductionScale as Scale, RouteTerrainClass,
-};
-#[cfg(test)]
-use adventuresim_world_schema::{
-    AgriculturalCommodity as Ag, AgricultureIndustry,
-    ConstructionCommodity as Construction, ConstructionIndustry,
-    DerivedHistoricalVegetationCover as DerivedCover,
-    FallbackHistoricalVegetationCover as FallbackCover, FallbackIndustry, FishCommodity as Fish,
-    FishingIndustry, ForestCommodity as Forest, ForestryIndustry, HistoricalVegetation,
-    IgneousRock, MarineWaterAccess, MetamorphicRock, MiningIndustry,
-    PotteryCommodity as Pottery, PotteryIndustry, QuarryCommodity as Quarry, SaltSource,
-    SaltmakingIndustry, SedimentaryRock, SurfaceGeology, SurfaceLithology,
 };
 
 use crate::{Error, Result};
@@ -65,7 +64,7 @@ pub(crate) fn enrich(mut world: CompiledWorld) -> Result<CompiledWorld> {
         append_note(
             settlement,
             &format!(
-                "**Industry inference v6:** {} canonical production output(s) from HYDE historical land use, finalized SoilGrids/EGDI evidence, OWDA moisture, EU-Hydro access, historical woodland, population, and {} incident finalized route(s); accessibility can only downgrade scale, never create a resource.",
+                "**Industry inference v6:** {} canonical production output(s) from LUH1 historical land use, finalized SoilGrids/EGDI evidence, OWDA moisture, EU-Hydro access, historical woodland, population, and {} incident finalized route(s); accessibility can only downgrade scale, never create a resource.",
                 profile.outputs().len(),
                 context.route_count
             ),
