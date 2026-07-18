@@ -3,7 +3,7 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use adventuresim_world_import::{Error, Result, WorldBuilder};
+use adventuresim_world_import::{Error, Result, WorldBuilder, derive_owda_profiles};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
     CrossingTraversal, CrossingWatercourse, DerivedHistoricalVegetationCover,
@@ -50,6 +50,12 @@ struct Args {
     religion_regions: PathBuf,
     #[arg(long, default_value_os_t = default_drought_netcdf())]
     drought_netcdf: PathBuf,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "derive bounded OWDA developer profiles from the audited raw NetCDF and exit"
+    )]
+    derive_owda_profiles: Option<PathBuf>,
     #[arg(long, default_value_os_t = default_hydrology_directory())]
     hydrology_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
@@ -83,6 +89,9 @@ fn main() -> ExitCode {
 fn run(args: Args) -> Result<()> {
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
+    }
+    if let Some(output) = &args.derive_owda_profiles {
+        return derive_owda_profiles(&args.viabundus_dir, &args.drought_netcdf, output, args.year);
     }
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
@@ -995,7 +1004,7 @@ fn default_religion_regions() -> PathBuf {
 }
 
 fn default_drought_netcdf() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/climate/owda.nc")
+    repository_root().join("target/world-data-sources/prepared/owda/settlement-profiles-1544.json")
 }
 
 fn default_hydrology_directory() -> PathBuf {

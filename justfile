@@ -287,6 +287,15 @@ init-hydrology:
 verify-hydrology:
 	@python3 scripts/world_source_init.py eu-hydro --verify-only
 
+# Verify or atomically install a downloaded source-separated world-data bundle.
+# `replace-world-data` first retains a recoverable backup under target/.
+verify-world-data-bundle archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py verify {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}}
+install-world-data archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository .
+replace-world-data archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository . --replace
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

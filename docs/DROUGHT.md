@@ -15,17 +15,43 @@ Severity Index (PDSI) across Europe and the Mediterranean.
   `c044aa52e9e81932841b642b6977fa6f84beb9fe73c3db502b90f4295b1d65bd`.
 - Grid: 0.5 degree point grid, 114 longitudes by 88 latitudes.
 - Time coverage: AD 0 through 2012.
-- Compiler input: NetCDF-4 classic-model/HDF5.
+- Maintainer audit/derivation input: NetCDF-4 classic-model/HDF5.
 
-Run `just init-owda` to download or verify the pinned file at
+Release maintainers run `just init-owda` to download or verify the pinned file at
 `target/world-data-sources/raw/climate/owda.nc`. Preparation is atomic: a
 temporary sibling is size- and checksum-verified before replacement. An
 adjacent ignored `.owda-source.json` records the version, URL, both DOIs, size,
 and checksum. A mismatched existing cache fails closed; use
 `python scripts/init_owda.py --force` only to replace it. Override the compiler
-path with `--drought-netcdf`. The importer uses a pure-Rust, read-only NetCDF-4
-decoder; no NetCDF/HDF5 native library enters the shared schema or database
-module.
+path with `--drought-netcdf`. The raw file is never a standard developer input
+and is never included in a world-data input bundle. The importer uses a
+pure-Rust, read-only NetCDF-4 decoder; no NetCDF/HDF5 native library enters the
+shared schema or database module.
+
+## Standard developer input and release derivation
+
+Developers install the reviewed bundle's
+`target/world-data-sources/prepared/owda/settlement-profiles-1544.json` and run
+the ordinary `just compile-world`. That bounded profile contains exactly one
+sorted entry per bundled Viabundus settlement, its selected-year/20-year summary,
+and truthful `direct` or `nearest` sampling classification. It contains neither
+OWDA coordinates nor annual values.
+
+After auditing the raw file and preparing the matching Viabundus
+`.viabundus-source.json` sidecar, a release maintainer produces that
+file deterministically with:
+
+```bash
+cargo run -p adventuresim-world-import -- \
+  --drought-netcdf target/world-data-sources/raw/climate/owda.nc \
+  --derive-owda-profiles target/world-data-sources/prepared/owda/settlement-profiles-1544.json
+```
+
+The command refuses a missing grid sample rather than emitting a deceptive
+profile, generates (or validates) `settlement-ids-1544.json`, hashes both
+matching Viabundus records into the output, and is
+limited to the reviewed 1544 release. Bundle verification checks those hashes,
+the exact settlement-ID coverage, integer bounds, and sampling classification.
 
 ## Source boundary
 

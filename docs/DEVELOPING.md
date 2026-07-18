@@ -163,6 +163,8 @@ just verify-db-client   # Fail if committed bindings differ from the module ABI
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
+just verify-world-data-bundle /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Verify a reviewed input collection
+just install-world-data /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Install it without source-by-source downloads
 just compile-world      # Compile initialized sources into the 1544 world in target/
 just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
@@ -256,6 +258,18 @@ untrusted clients to connect.
 
 ### Remaining source initializer workflows
 
+### Source-separated development bundle
+
+Most developers should use the reviewed one-archive input workflow rather than
+collecting each upstream source. Download the archive, run
+`just verify-world-data-bundle /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256>`, then
+`just install-world-data /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256>`, and finally `just compile-world`.
+The installer does not merge with existing inputs; use `just replace-world-data`
+only when retaining its backup is acceptable. See
+[`docs/WORLD_DATA_BUNDLES.md`](WORLD_DATA_BUNDLES.md) for the separately marked
+licence collection, its OWDA/IEG boundaries, release-maintainer requirements,
+and the distinction from a future combined derived-world release.
+
 The remaining accepted source workflows share `scripts/world_source_init.py`.
 Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is the
 only newly automated anonymous immutable download (`tree-species`); it is
@@ -317,13 +331,14 @@ boundaries. The checked-in 1544 intermediate and its intentionally approximate
 interpretation are documented in `docs/RELIGION.md`; override its location with
 `--religion-regions`.
 
-Run `just init-owda` to download or verify the pinned NOAA OWDA v1.0 NetCDF-4
-file at `target/world-data-sources/raw/climate/owda.nc`. The initializer checks
-the exact 228226363-byte size and SHA-256 and records both the dataset and paper
-DOIs in ignored adjacent metadata. Its strict source boundary, typed
-twenty-year profile, spatial fallback, redistribution boundary, and gameplay
-scope are in `docs/DROUGHT.md`; override the compiler path with
-`--drought-netcdf`.
+The bundle workflow installs only the bounded, per-settlement OWDA derived
+profiles at `target/world-data-sources/prepared/owda/settlement-profiles-1544.json`;
+this is the compiler default. `just init-owda` remains available for a direct
+source audit of the pinned NOAA OWDA v1.0 NetCDF-4 file at
+`target/world-data-sources/raw/climate/owda.nc`, but it is not eligible for
+redistribution and must be passed explicitly with `--drought-netcdf`. Its strict
+source boundary, typed twenty-year profile, spatial fallback, redistribution
+boundary, and gameplay scope are in `docs/DROUGHT.md`.
 
 Copernicus EU-Hydro v1.3 is read from extracted EPSG:3035 basin GeoPackages
 under `target/world-data-sources/raw/hydrology/`, as documented in

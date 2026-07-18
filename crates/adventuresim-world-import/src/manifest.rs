@@ -492,12 +492,21 @@ pub(crate) fn religion(path: &Path) -> Result<SourceProvenance> {
 }
 
 pub(crate) fn drought(path: &Path) -> Result<SourceProvenance> {
+    let derived = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
     Ok(source(
         "noaa-owda-v1",
         "NOAA Old World Drought Atlas v1.0",
-        SourceRelease::Immutable {
-            version: "1.0".into(),
-            released: "2015".into(),
+        if derived {
+            SourceRelease::Curated {
+                revision: "adventuresim-owda-1544-derived-v1".into(),
+            }
+        } else {
+            SourceRelease::Immutable {
+                version: "1.0".into(),
+                released: "2015".into(),
+            }
         },
         "https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc",
         Some("10.25921/rjm6-mq74"),
@@ -506,20 +515,39 @@ pub(crate) fn drought(path: &Path) -> Result<SourceProvenance> {
             "Cite the NOAA/NCEI OWDA dataset DOI 10.25921/rjm6-mq74 and Cook et al. (2015), DOI 10.1126/sciadv.1500561.",
             "Only bounded per-settlement derived values are distributed; do not redistribute the source grid or annual series as part of the compiled world.",
         ],
-        SourceAccess::AnonymousDownload,
+        if derived {
+            SourceAccess::CuratedRepositoryAsset
+        } else {
+            SourceAccess::AnonymousDownload
+        },
         SourceSpatialCoverage::Geographic {
             crs: "EPSG:4326".into(),
-            resolution: "0.5 degree point grid".into(),
+            resolution: if derived {
+                "bounded per-settlement 20-year profiles".into()
+            } else {
+                "0.5 degree point grid".into()
+            },
             coverage: "Old World drought reconstruction domain".into(),
         },
         SourceTemporalCoverage::Years {
             first: 0,
             last: 2012,
         },
-        "owda-20-year-settlement-profile",
+        if derived {
+            "owda-bounded-settlement-profile-import"
+        } else {
+            "owda-20-year-settlement-profile"
+        },
         1,
-        SourceContentIdentity::RawSha256 {
-            sha256: sha256_file(path)?,
+        if derived {
+            SourceContentIdentity::CuratedRevision {
+                revision: "adventuresim-owda-1544-derived-v1".into(),
+                sha256: sha256_file(path)?,
+            }
+        } else {
+            SourceContentIdentity::RawSha256 {
+                sha256: sha256_file(path)?,
+            }
         },
         "[NOAA/NCEI OWDA v1.0](https://doi.org/10.25921/rjm6-mq74); compiled output is derived-only.",
     ))

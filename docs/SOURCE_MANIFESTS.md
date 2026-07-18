@@ -81,3 +81,16 @@ The EU-Trees4F initializer pins the exact JRC ENS_CLIM archive. It retains the
 EU-Trees4F v2 Figshare citation and CC0 notice, but does not claim that a
 Figshare-hosted archive is byte-identical; confirming that relationship remains
 an explicit provenance blocker.
+
+## Source-separated developer bundles
+
+`scripts/world_data_bundle.py` provides a distinct distribution boundary for
+development inputs. Its ZIP is a manifest-and-notices collection: source
+components remain separately addressed and are installed into the compiler's
+existing source paths only after complete verification. It carries no compiled
+world artifact. The policy includes every active input but rejects LUH1,
+rights-reserved IEG map images, and raw OWDA grid/annual data; IEG's committed
+coarse CSV stays in the repository and OWDA may appear only as a bounded
+per-settlement derived profile. This engineering policy is fail-closed and does
+not itself resolve source-specific redistribution terms or the licence status of
+a future combined world-data release. See `docs/WORLD_DATA_BUNDLES.md`.
