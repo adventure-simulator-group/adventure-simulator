@@ -11,7 +11,7 @@ test('renderer loader preserves fallback on every unsupported/error path', () =>
   assert.match(source, /navigator\.gpu/);
   assert.match(source, /catch \(error\)/);
   assert.match(source, /canvas\.hidden = true/);
-  assert.match(source, /data-renderer-fallback/);
+  assert.match(source, /classList\.add\('renderer-enhanced'\)/);
   assert.doesNotMatch(source, /querySelector\('\[data-renderer-fallback\]'\)\.hidden = true/);
 });
 
