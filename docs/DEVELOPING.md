@@ -59,6 +59,11 @@ spawner when the foreground web process exits. The isolated database files are
 retained under the fingerprinted profile directory for inspection and are reset
 the next time that exact worktree/profile is run.
 
+The public `dev_stack.py publish` command is always non-destructive. Reset
+publication is not a CLI option: it is an internal lifecycle operation that
+requires the held profile lock and re-verifies the captured standalone listener
+identity immediately before invoking SpacetimeDB.
+
 ## Full Development (with Tactical Servers)
 
 To run the complete stack with automatic tactical server spawning:

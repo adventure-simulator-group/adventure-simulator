@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -114,28 +115,17 @@ def run_checked(command: list[str], cwd: Path = ROOT) -> subprocess.CompletedPro
     return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
-def publish(server: str, database: str, reset_profile: str | None, base_port: int) -> int:
-    command = ["spacetime", "publish"]
-    if reset_profile is not None:
-        values = profile_values(reset_profile, base_port)
-        validate_loopback_server(server, int(values["spacetime_port"]))
-        if database != values["database"]:
-            raise ValueError("reset database does not match the isolated profile identity")
-        command.extend(["--delete-data=always", "--yes"])
-    command.extend(["--server", server, database])
+def publish(server: str, database: str) -> int:
+    command = ["spacetime", "publish", "--server", server, database]
     result = run_checked(command, MODULE_DIR)
     sys.stdout.write(result.stdout)
     if result.returncode:
         print("\nSpacetimeDB rejected the module before any client or spawner was launched.", file=sys.stderr)
         print(f"Server: {server}\nDatabase: {database}", file=sys.stderr)
         print("The published database ABI is incompatible with this checkout, or publication failed.", file=sys.stderr)
-        if reset_profile is None:
-            print("Data was not deleted by this command. Choose one recovery path:", file=sys.stderr)
-            print("  * preserve the database and implement an explicit migration; or", file=sys.stderr)
-            print("  * use `just web-isolated <name> <base-port>` for disposable demo data.", file=sys.stderr)
-        else:
-            print("This was a disposable isolated reset; deletion may already have occurred.", file=sys.stderr)
-            print("Fix the error and rerun the isolated profile to recreate its data.", file=sys.stderr)
+        print("Data was not deleted by this command. Choose one recovery path:", file=sys.stderr)
+        print("  * preserve the database and implement an explicit migration; or", file=sys.stderr)
+        print("  * use `just web-isolated <name> <base-port>` for disposable demo data.", file=sys.stderr)
     return result.returncode
 
 
@@ -225,6 +215,10 @@ class ProfileLock(AbstractContextManager["ProfileLock"]):
         self.path = path
         self.stream = None
 
+    @property
+    def held(self) -> bool:
+        return self.stream is not None
+
     def __enter__(self) -> "ProfileLock":
         if self.path.is_symlink():
             raise ValueError("refusing symlink lifecycle lock")
@@ -269,6 +263,41 @@ class ProfileLock(AbstractContextManager["ProfileLock"]):
 
             fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
         self.stream.close()
+        self.stream = None
+
+
+@dataclass(frozen=True)
+class ResetCapability:
+    profile: str
+    base_port: int
+    server: str
+    database: str
+    lock: ProfileLock
+    listener: dict[str, object]
+
+
+def reset_publish(capability: ResetCapability) -> int:
+    if not capability.lock.held:
+        raise ValueError("isolated reset requires the held profile lifecycle lock")
+    values = profile_values(capability.profile, capability.base_port)
+    validate_loopback_server(capability.server, int(values["spacetime_port"]))
+    if capability.database != values["database"]:
+        raise ValueError("reset database does not match the isolated profile identity")
+    current = listener_process_snapshot(int(values["spacetime_port"]))
+    if current is None or current != capability.listener or not identity_matches(capability.listener):
+        raise ValueError("isolated reset ownership capability is missing or changed")
+    command = [
+        "spacetime", "publish", "--delete-data=always", "--yes",
+        "--server", capability.server, capability.database,
+    ]
+    result = run_checked(command, MODULE_DIR)
+    sys.stdout.write(result.stdout)
+    if result.returncode:
+        print("\nIsolated reset publication failed.", file=sys.stderr)
+        print(f"Server: {capability.server}\nDatabase: {capability.database}", file=sys.stderr)
+        print("Deletion may already have occurred; this profile is disposable.", file=sys.stderr)
+        print("Fix the error and rerun the isolated profile to recreate its data.", file=sys.stderr)
+    return result.returncode
 
 
 def ports_in_use(ports: list[int]) -> list[int]:
@@ -548,7 +577,7 @@ def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
     profile_dir = ensure_secure_directory(Path(str(values["profile_dir"])), state_root)
     run_dir = ensure_secure_directory(profile_dir / "run", state_root)
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
-    with ProfileLock(profile_dir / "lifecycle.lock"):
+    with ProfileLock(profile_dir / "lifecycle.lock") as lifecycle:
         ports = [int(values[key]) for key in ("spacetime_port", "web_port", "tactical_port")]
         occupied = ports_in_use(ports)
         if occupied:
@@ -573,7 +602,15 @@ def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
             listener = wait_for_spacetime(stdb, stdb_metadata, stdb_log, int(values["spacetime_port"]))
             if not identity_matches(listener):
                 raise RuntimeError("SpacetimeDB ownership changed before destructive publish")
-            code = publish(server, str(values["database"]), name, base_port)
+            capability = ResetCapability(
+                profile=name,
+                base_port=base_port,
+                server=server,
+                database=str(values["database"]),
+                lock=lifecycle,
+                listener=listener,
+            )
+            code = reset_publish(capability)
             if code:
                 return code
             code = seed(server, str(values["database"]))
@@ -648,7 +685,7 @@ def canonical_spawner(action: str) -> int:
     return 0
 
 
-def main() -> int:
+def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     profile_parser = sub.add_parser("profile")
@@ -657,8 +694,6 @@ def main() -> int:
     publish_parser = sub.add_parser("publish")
     publish_parser.add_argument("--server", required=True)
     publish_parser.add_argument("--database", required=True)
-    publish_parser.add_argument("--reset-profile")
-    publish_parser.add_argument("--base-port", type=int, default=0)
     seed_parser = sub.add_parser("seed")
     seed_parser.add_argument("--server", required=True)
     seed_parser.add_argument("--database", required=True)
@@ -671,13 +706,17 @@ def main() -> int:
     verifier.add_argument("base_port", type=int)
     canonical = sub.add_parser("canonical-spawner")
     canonical.add_argument("action", choices=("start", "stop", "status"))
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = create_parser().parse_args()
     try:
         if args.command == "profile":
             print(json.dumps(profile_values(args.name, args.base_port), sort_keys=True))
             return 0
         if args.command == "publish":
-            return publish(args.server, args.database, args.reset_profile, args.base_port)
+            return publish(args.server, args.database)
         if args.command == "seed":
             return seed(args.server, args.database)
         if args.command == "verify-bindings":

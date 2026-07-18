@@ -78,33 +78,70 @@ class WorkflowTests(unittest.TestCase):
         run_checked.return_value = mock.Mock(returncode=1, stdout="failed\n")
         ordinary = io.StringIO()
         with redirect_stderr(ordinary):
-            dev_stack.publish("http://localhost:3000", "canonical", None, 0)
+            dev_stack.publish("http://localhost:3000", "canonical")
         self.assertIn("Data was not deleted", ordinary.getvalue())
         values = dev_stack.profile_values("demo", 23100)
+        listener = {"pid": 123, "executable": "stdb", "start_token": "1"}
+        capability = dev_stack.ResetCapability(
+            "demo", 23100, "http://127.0.0.1:23100", str(values["database"]),
+            mock.Mock(held=True), listener,
+        )
         reset = io.StringIO()
-        with redirect_stderr(reset):
-            dev_stack.publish("http://127.0.0.1:23100", str(values["database"]), "demo", 23100)
-        self.assertIn("deletion may already have occurred", reset.getvalue())
+        with mock.patch.object(dev_stack, "listener_process_snapshot", return_value=listener), \
+             mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+             redirect_stderr(reset):
+            dev_stack.reset_publish(capability)
+        self.assertIn("deletion may already have occurred", reset.getvalue().lower())
         self.assertNotIn("Data was not deleted", reset.getvalue())
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_ordinary_publish_never_adds_delete_flag(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
-        self.assertEqual(dev_stack.publish("http://localhost:3000", "canonical", None, 0), 0)
+        self.assertEqual(dev_stack.publish("http://localhost:3000", "canonical"), 0)
         self.assertNotIn("--delete-data=always", run_checked.call_args.args[0])
 
     @mock.patch.object(dev_stack, "run_checked")
-    def test_isolated_reset_is_noninteractive_and_identity_bound(self, run_checked):
+    def test_internal_reset_is_noninteractive_and_identity_bound(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
         values = dev_stack.profile_values("demo", 23100)
-        self.assertEqual(dev_stack.publish("http://127.0.0.1:23100", str(values["database"]), "demo", 23100), 0)
+        listener = {"pid": 123, "executable": "stdb", "start_token": "1"}
+        capability = dev_stack.ResetCapability(
+            "demo", 23100, "http://127.0.0.1:23100", str(values["database"]),
+            mock.Mock(held=True), listener,
+        )
+        with mock.patch.object(dev_stack, "listener_process_snapshot", return_value=listener), \
+             mock.patch.object(dev_stack, "identity_matches", return_value=True):
+            self.assertEqual(dev_stack.reset_publish(capability), 0)
         command = run_checked.call_args.args[0]
         self.assertIn("--delete-data=always", command)
         self.assertIn("--yes", command)
+
+    def test_internal_reset_refuses_missing_or_changed_ownership(self):
+        values = dev_stack.profile_values("demo", 23100)
+        listener = {"pid": 123, "executable": "stdb", "start_token": "1"}
+        unlocked = dev_stack.ResetCapability(
+            "demo", 23100, "http://127.0.0.1:23100", str(values["database"]),
+            mock.Mock(held=False), listener,
+        )
         with self.assertRaises(ValueError):
-            dev_stack.publish("https://example.com:23100", str(values["database"]), "demo", 23100)
-        with self.assertRaises(ValueError):
-            dev_stack.publish("http://127.0.0.1:23100", "canonical", "demo", 23100)
+            dev_stack.reset_publish(unlocked)
+        locked = dev_stack.ResetCapability(
+            "demo", 23100, "http://127.0.0.1:23100", str(values["database"]),
+            mock.Mock(held=True), listener,
+        )
+        changed = dict(listener, start_token="2")
+        with mock.patch.object(dev_stack, "listener_process_snapshot", return_value=changed):
+            with self.assertRaises(ValueError):
+                dev_stack.reset_publish(locked)
+
+    def test_public_publish_parser_has_no_reset_option(self):
+        parser = dev_stack.create_parser()
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                parser.parse_args([
+                    "publish", "--server", "http://127.0.0.1:23100", "--database", "db",
+                    "--reset-profile", "demo", "--base-port", "23100",
+                ])
 
     def test_binding_diff_detects_changed_and_extra_files(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
