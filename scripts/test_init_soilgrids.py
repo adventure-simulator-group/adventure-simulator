@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 import json
 import subprocess
+import urllib.error
 
 SPEC = importlib.util.spec_from_file_location("init_soilgrids", Path(__file__).with_name("init_soilgrids.py"))
 module = importlib.util.module_from_spec(SPEC)
@@ -39,6 +40,29 @@ class SoilGridsInitializerTests(unittest.TestCase):
         self.assertIn("-dstnodata", command)
         self.assertEqual(command[command.index("-ot") + 1], "Float32")
         self.assertEqual(command[command.index("-t_srs") + 1], "EPSG:3035")
+        self.assertIn("GDAL_HTTP_MAX_RETRY=5", command)
+        self.assertIn("GDAL_HTTP_RETRY_CODES=429,500,502,503,504", command)
+
+    @patch("time.sleep")
+    @patch("subprocess.run")
+    def test_transient_gdal_failure_retries_and_clears_partial_output(self, run, sleep):
+        run.side_effect = [subprocess.CalledProcessError(1, ["gdalwarp"]), None]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "prepared.tif"
+            output.write_bytes(b"partial")
+            module.warp_with_retries(module.layers()[0], output, 1000)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(sleep.call_args.args[0], module.HTTP_RETRY_DELAY_SECONDS)
+            self.assertFalse(output.exists())
+
+    @patch("time.sleep")
+    @patch("urllib.request.build_opener")
+    def test_source_metadata_retries_network_failure(self, opener, sleep):
+        response = type("Response", (), {"geturl": lambda self: "https://files.isric.org/soilgrids/latest/data/sand/sand_0-5cm_Q0.05.vrt", "headers": {}, "read": lambda self, _: b"", "__enter__": lambda self: self, "__exit__": lambda self, *args: None})()
+        opener.side_effect = [urllib.error.URLError("temporary"), type("Opener", (), {"open": lambda self, request, timeout: response})()]
+        result = module.source_metadata("https://files.isric.org/soilgrids/latest/data/sand/sand_0-5cm_Q0.05.vrt")
+        self.assertEqual(result["source_observation_size"], 0)
+        self.assertEqual(sleep.call_args.args[0], module.HTTP_RETRY_DELAY_SECONDS)
 
     def test_vsicurl_preserves_master_url_for_relative_vrt_tiles(self):
         url = module.layers()[0]["source_url"]

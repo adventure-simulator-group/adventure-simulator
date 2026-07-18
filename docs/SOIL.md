@@ -54,6 +54,12 @@ end-to-end JSON inspection (fixed size/extent, exact transform, EPSG:3035,
 single Float32 band, NaN nodata, and DEFLATE) plus a second prepared hash check
 before the active manifest is atomically replaced.
 
+The initializer configures GDAL `/vsicurl/` retries for transient HTTP 429/500/
+502/503/504 responses and retries a failed layer a bounded number of times after
+removing only that layer's incomplete staged TIFF. It never publishes a partial
+generation; after the bounded retries are exhausted, rerun `--prepare` once the
+official service is healthy.
+
 The fixed continental extent currently fits the importer's 32-million-pixel
 bound only at exactly dividing sizes of 1 km or coarser (for example 1 km and
 5 km). Although the global `SpatialGridSpec` still permits 250 m, SoilGrids

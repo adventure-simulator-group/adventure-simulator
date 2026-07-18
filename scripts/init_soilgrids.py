@@ -30,6 +30,9 @@ MAX_SOURCE_BYTES = 256 * 1024 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_SOURCE_SECONDS = 300
 MAX_PIXELS = 32_000_000
+HTTP_RETRIES = 5
+HTTP_RETRY_DELAY_SECONDS = 5
+WARP_ATTEMPTS = 3
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -96,7 +99,12 @@ def sha256(path: Path) -> str:
 
 def command(layer: dict[str, str], vrt: str | Path, output: Path, size: int) -> list[str]:
     west, south, east, north = EXTENT
-    return ["gdalwarp", "-overwrite", "-of", "GTiff", "-ot", "Float32", "-srcnodata",
+    return ["gdalwarp",
+        "--config", f"GDAL_HTTP_MAX_RETRY={HTTP_RETRIES}",
+        "--config", f"GDAL_HTTP_RETRY_DELAY={HTTP_RETRY_DELAY_SECONDS}",
+        "--config", "GDAL_HTTP_RETRY_CODES=429,500,502,503,504",
+        "--config", "GDAL_HTTP_TCP_KEEPALIVE=YES",
+        "-overwrite", "-of", "GTiff", "-ot", "Float32", "-srcnodata",
         "255" if layer["property"] == "wrb" else "-32768", "-dstnodata", "nan",
         "-co", "TILED=YES", "-co", "COMPRESS=DEFLATE",
         "-t_srs", "EPSG:3035", "-te", str(west), str(south), str(east), str(north),
@@ -113,28 +121,49 @@ def vsicurl(url: str) -> str:
 
 def source_metadata(url: str) -> dict[str, object]:
     vsicurl(url)
-    request = urllib.request.Request(url, headers={"User-Agent": "adventure-simulator-world-import/1"})
-    started = time.monotonic()
-    digest = hashlib.sha256()
-    opener = urllib.request.build_opener(NoRedirect)
-    with opener.open(request, timeout=30) as response:
-        final_url = response.geturl()
-        if final_url != url:
-            raise RuntimeError("SoilGrids fixed URL redirected; update the source contract explicitly")
-        length = response.headers.get("Content-Length")
-        if length is not None and int(length) > MAX_SOURCE_BYTES:
-            raise RuntimeError(f"source exceeds {MAX_SOURCE_BYTES} byte bound")
-        total = 0
-        while chunk := response.read(64 * 1024):
-            if time.monotonic() - started > MAX_SOURCE_SECONDS:
-                raise RuntimeError("SoilGrids source retrieval exceeded total-time bound")
-            total += len(chunk)
-            if total > MAX_SOURCE_BYTES:
-                raise RuntimeError(f"source exceeds {MAX_SOURCE_BYTES} byte bound")
-            digest.update(chunk)
-        return {"source_observation_size": total,
-            "source_observation_sha256": digest.hexdigest(), "source_observation_etag": response.headers.get("ETag"),
-            "source_observation_last_modified": response.headers.get("Last-Modified")}
+    for attempt in range(1, HTTP_RETRIES + 1):
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "adventure-simulator-world-import/1"})
+            started = time.monotonic()
+            digest = hashlib.sha256()
+            opener = urllib.request.build_opener(NoRedirect)
+            with opener.open(request, timeout=30) as response:
+                final_url = response.geturl()
+                if final_url != url:
+                    raise RuntimeError("SoilGrids fixed URL redirected; update the source contract explicitly")
+                length = response.headers.get("Content-Length")
+                if length is not None and int(length) > MAX_SOURCE_BYTES:
+                    raise RuntimeError(f"source exceeds {MAX_SOURCE_BYTES} byte bound")
+                total = 0
+                while chunk := response.read(64 * 1024):
+                    if time.monotonic() - started > MAX_SOURCE_SECONDS:
+                        raise RuntimeError("SoilGrids source retrieval exceeded total-time bound")
+                    total += len(chunk)
+                    if total > MAX_SOURCE_BYTES:
+                        raise RuntimeError(f"source exceeds {MAX_SOURCE_BYTES} byte bound")
+                    digest.update(chunk)
+                return {"source_observation_size": total,
+                    "source_observation_sha256": digest.hexdigest(), "source_observation_etag": response.headers.get("ETag"),
+                    "source_observation_last_modified": response.headers.get("Last-Modified")}
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as error:
+            if attempt == HTTP_RETRIES:
+                raise RuntimeError(f"SoilGrids source metadata failed after {HTTP_RETRIES} attempts: {url}") from error
+            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
+    raise AssertionError("metadata retry loop must return or raise")
+
+
+def warp_with_retries(layer: dict[str, str], output: Path, size: int) -> None:
+    arguments = command(layer, vsicurl(layer["source_url"]), output, size)
+    for attempt in range(1, WARP_ATTEMPTS + 1):
+        output.unlink(missing_ok=True)
+        try:
+            subprocess.run(arguments, check=True, shell=False)
+            return
+        except subprocess.CalledProcessError:
+            output.unlink(missing_ok=True)
+            if attempt == WARP_ATTEMPTS:
+                raise
+            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
 
 
 def validate_prepared(path: Path, size: int) -> None:
@@ -225,7 +254,7 @@ def main() -> None:
         for index, layer in enumerate(layers()):
             prepared = temp / layer["filename"]
             metadata = source_metadata(layer["source_url"])
-            subprocess.run(command(layer, vsicurl(layer["source_url"]), prepared, args.grid_cell_size_meters), check=True, shell=False)
+            warp_with_retries(layer, prepared, args.grid_cell_size_meters)
             records.append({**layer, **metadata, "prepared_size": prepared.stat().st_size,
                 "prepared_sha256": sha256(prepared)})
         if len(records) != 207:
