@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::edge_endpoint_type::EdgeEndpoint;
 use super::travel_edge_type::TravelEdge;
+use super::travel_route_type::TravelRoute;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `travel_edge`.

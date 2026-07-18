@@ -70,19 +70,11 @@ pub struct TravelEdge {
     pub id: u64,
     pub from_node_id: u64,
     pub to_node_id: u64,
-    pub kind: TravelKind,
+    pub route: adventuresim_world_schema::TravelRoute,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub certainty: u8,
     pub section: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TravelKind {
-    #[serde(alias = "land", alias = "Land")]
-    Land,
-    #[serde(alias = "ferry", alias = "Ferry")]
-    Ferry,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -654,14 +646,5 @@ mod tests {
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
         );
-    }
-
-    #[test]
-    fn travel_kind_is_a_closed_set() {
-        assert_eq!(
-            serde_json::from_str::<TravelKind>("\"land\"").unwrap(),
-            TravelKind::Land
-        );
-        assert!(serde_json::from_str::<TravelKind>("\"teleport\"").is_err());
     }
 }

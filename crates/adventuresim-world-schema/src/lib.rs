@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 11;
+pub const WORLD_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -1402,23 +1402,269 @@ pub enum EdgeEndpoint {
     Both,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
-pub enum TravelRoute {
-    Land { bridge: Option<EdgeEndpoint> },
-    Ferry,
+pub struct WaterDistanceMeters {
+    meters: u16,
 }
 
-impl TravelRoute {
-    pub const fn kind(self) -> TravelEdgeKind {
-        match self {
-            Self::Land { .. } => TravelEdgeKind::Land,
-            Self::Ferry => TravelEdgeKind::Ferry,
+impl WaterDistanceMeters {
+    pub const MAX: u16 = 10_000;
+
+    pub fn new(meters: u16) -> Result<Self, String> {
+        if meters <= Self::MAX {
+            Ok(Self { meters })
+        } else {
+            Err(format!(
+                "water distance {meters} exceeds {} meters",
+                Self::MAX
+            ))
         }
     }
 
-    pub const fn has_crossing(self) -> bool {
-        matches!(self, Self::Land { bridge: Some(_) } | Self::Ferry)
+    pub const fn get(self) -> u16 {
+        self.meters
+    }
+}
+
+impl<'de> Deserialize<'de> for WaterDistanceMeters {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            meters: u16,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.meters).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct StrahlerOrder {
+    order: u8,
+}
+
+impl StrahlerOrder {
+    pub const MAX: u8 = 12;
+
+    pub fn new(order: u8) -> Result<Self, String> {
+        if (1..=Self::MAX).contains(&order) {
+            Ok(Self { order })
+        } else {
+            Err(format!(
+                "Strahler order {order} is outside 1..={}",
+                Self::MAX
+            ))
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.order
+    }
+}
+
+impl<'de> Deserialize<'de> for StrahlerOrder {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            order: u8,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.order).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FlowPersistence {
+    Perennial,
+    Intermittent,
+    Ephemeral,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RiverAccess {
+    pub distance: WaterDistanceMeters,
+    pub order: StrahlerOrder,
+    pub persistence: FlowPersistence,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RiverAndCanalAccess {
+    pub river: RiverAccess,
+    pub canal_distance: WaterDistanceMeters,
+    pub canal_navigable: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FlowingWaterAccess {
+    River(RiverAccess),
+    RiverAndCanal(RiverAndCanalAccess),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum InlandWaterSize {
+    Pond,
+    Lake,
+    GreatLake,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct InlandWaterAccess {
+    pub distance: WaterDistanceMeters,
+    pub size: InlandWaterSize,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum MarineWaterAccess {
+    Tidal(WaterDistanceMeters),
+    OpenCoast(WaterDistanceMeters),
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SettlementHydrology {
+    pub flowing: Option<FlowingWaterAccess>,
+    pub inland: Option<InlandWaterAccess>,
+    pub marine: Option<MarineWaterAccess>,
+}
+
+impl SettlementHydrology {
+    pub const fn has_freshwater(self) -> bool {
+        self.flowing.is_some() || self.inland.is_some()
+    }
+
+    pub const fn has_saltwater(self) -> bool {
+        self.marine.is_some()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct EdgeProgressPermille {
+    permille: u16,
+}
+
+impl EdgeProgressPermille {
+    pub const MAX: u16 = 1_000;
+
+    pub fn new(value: u16) -> Result<Self, String> {
+        if value <= Self::MAX {
+            Ok(Self { permille: value })
+        } else {
+            Err(format!("edge progress {value} exceeds {}", Self::MAX))
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.permille
+    }
+}
+
+impl<'de> Deserialize<'de> for EdgeProgressPermille {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            permille: u16,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.permille).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum CrossingWatercourse {
+    River(RiverWatercourse),
+    Canal(CanalWatercourse),
+    Ditch,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RiverWatercourse {
+    pub order: StrahlerOrder,
+    pub persistence: FlowPersistence,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct CanalWatercourse {
+    pub navigable: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum CrossingTraversal {
+    Bridge,
+    Ford,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct LandWaterCrossing {
+    pub position: EdgeProgressPermille,
+    pub watercourse: CrossingWatercourse,
+    pub traversal: CrossingTraversal,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FerryWaterway {
+    River(RiverWatercourse),
+    InlandWater,
+    TidalWater,
+    CoastalWater,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum TravelRoute {
+    Land(LandRoute),
+    Ferry(FerryRoute),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct LandRoute {
+    pub bridge: Option<EdgeEndpoint>,
+    pub water_crossings: Vec<LandWaterCrossing>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct FerryRoute {
+    pub waterway: FerryWaterway,
+}
+
+impl TravelRoute {
+    pub const fn kind(&self) -> TravelEdgeKind {
+        match self {
+            Self::Land(_) => TravelEdgeKind::Land,
+            Self::Ferry(_) => TravelEdgeKind::Ferry,
+        }
+    }
+
+    pub const fn has_crossing(&self) -> bool {
+        match self {
+            Self::Land(route) => route.bridge.is_some() || !route.water_crossings.is_empty(),
+            Self::Ferry(_) => true,
+        }
     }
 }
 
@@ -1477,6 +1723,12 @@ pub struct WorldBuildReport {
     pub drought_samples: usize,
     pub drought_neighbor_samples: usize,
     pub drought_fallback_samples: usize,
+    pub hydrology_files_read: usize,
+    pub hydrology_features_read: usize,
+    pub hydrology_settlement_samples: usize,
+    pub hydrology_landlocked_settlements: usize,
+    pub hydrology_edge_crossings: usize,
+    pub hydrology_inferred_ferry_waterways: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -1535,6 +1787,7 @@ pub struct SettlementImport {
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
+    pub hydrology: SettlementHydrology,
     pub scene_key: String,
 }
 
@@ -1765,5 +2018,19 @@ mod tests {
         assert!(GeologicUnitId::new("").is_none());
         assert!(GeologicUnitId::new(" leading-space").is_none());
         assert!(GeologicUnitId::new("x".repeat(256)).is_none());
+    }
+
+    #[test]
+    fn hydrology_wire_values_cannot_bypass_bounded_constructors() {
+        assert!(serde_json::from_str::<super::WaterDistanceMeters>(r#"{"meters":10000}"#).is_ok());
+        assert!(serde_json::from_str::<super::WaterDistanceMeters>(r#"{"meters":10001}"#).is_err());
+        assert!(serde_json::from_str::<super::StrahlerOrder>(r#"{"order":1}"#).is_ok());
+        assert!(serde_json::from_str::<super::StrahlerOrder>(r#"{"order":0}"#).is_err());
+        assert!(
+            serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1000}"#).is_ok()
+        );
+        assert!(
+            serde_json::from_str::<super::EdgeProgressPermille>(r#"{"permille":1001}"#).is_err()
+        );
     }
 }

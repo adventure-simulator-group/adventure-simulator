@@ -1,13 +1,14 @@
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
-    DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, GeologicEra,
-    GeologicUnitId, HabitatSuitability, InferredGeologicSetting, InferredTreeSpeciesProfile,
-    LandUseFraction, LandUseProfile, MappedPotentialVegetation, MappedSoilProfile, MineralSoil,
+    AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CrossingWatercourse,
+    DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint, ElevationMeters, FerryWaterway,
+    FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId, HabitatSuitability,
+    InferredGeologicSetting, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
+    MappedPotentialVegetation, MappedSoilProfile, MarineWaterAccess, MineralSoil,
     MineralSoilTexture, ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion,
     PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-    PotentialVegetationFormation, SettlementImport, SettlementReligiousStatus, SoilDepth,
-    SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    PotentialVegetationFormation, SettlementHydrology, SettlementImport, SettlementReligiousStatus,
+    SoilDepth, SoilMappingUnit, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
     StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
     TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
     Woodland, WorldNodeImport,
@@ -105,6 +106,7 @@ pub struct Settlement {
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
+    pub hydrology: SettlementHydrology,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -141,8 +143,7 @@ pub struct TravelEdge {
     pub from_node_id: u64,
     #[index(btree)]
     pub to_node_id: u64,
-    pub kind: String,
-    pub bridge_at: Option<EdgeEndpoint>,
+    pub route: TravelRoute,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -280,16 +281,12 @@ pub fn import_travel_edges(
                 edge.id
             ));
         }
-        let (kind, bridge_at) = match edge.route {
-            TravelRoute::Land { bridge } => ("land", bridge),
-            TravelRoute::Ferry => ("ferry", None),
-        };
+        validate_travel_route(edge.id, &edge.route)?;
         let row = TravelEdge {
             id: edge.id,
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
-            kind: kind.into(),
-            bridge_at,
+            route: edge.route,
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
@@ -421,6 +418,7 @@ pub fn import_settlements(
         let soil = reconstruct_soil_profile(&settlement.id, settlement.soil)?;
         let geology = reconstruct_geology_profile(&settlement.id, settlement.geology)?;
         let drought = reconstruct_drought_profile(&settlement.id, settlement.drought)?;
+        validate_settlement_hydrology(&settlement.id, settlement.hydrology)?;
         if ctx
             .db
             .world_node()
@@ -451,6 +449,7 @@ pub fn import_settlements(
             religion_id: settlement.religious_status.church().faith_id().into(),
             religious_status: settlement.religious_status,
             drought,
+            hydrology: settlement.hydrology,
             source_node_id: Some(settlement.source_node_id),
         };
         let settlement_id = row.id.clone();
@@ -462,6 +461,86 @@ pub fn import_settlements(
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
     }
     Ok(())
+}
+
+fn validate_travel_route(edge_id: u64, route: &TravelRoute) -> Result<(), String> {
+    match route {
+        TravelRoute::Land(route) => {
+            if route
+                .water_crossings
+                .windows(2)
+                .any(|pair| pair[0].position.get() > pair[1].position.get())
+            {
+                return Err(format!(
+                    "Travel edge {edge_id} has unsorted water crossings"
+                ));
+            }
+            for crossing in &route.water_crossings {
+                if adventuresim_world_schema::EdgeProgressPermille::new(crossing.position.get())
+                    .is_err()
+                    || !valid_crossing_watercourse(crossing.watercourse)
+                {
+                    return Err(format!(
+                        "Travel edge {edge_id} has an invalid water crossing"
+                    ));
+                }
+            }
+        }
+        TravelRoute::Ferry(route) => {
+            if let FerryWaterway::River(river) = route.waterway
+                && !valid_river_watercourse(river)
+            {
+                return Err(format!(
+                    "Travel edge {edge_id} has an invalid ferry waterway"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn valid_crossing_watercourse(watercourse: CrossingWatercourse) -> bool {
+    match watercourse {
+        CrossingWatercourse::River(river) => valid_river_watercourse(river),
+        CrossingWatercourse::Canal(_) | CrossingWatercourse::Ditch => true,
+    }
+}
+
+fn valid_river_watercourse(river: adventuresim_world_schema::RiverWatercourse) -> bool {
+    adventuresim_world_schema::StrahlerOrder::new(river.order.get()).is_ok()
+}
+
+fn validate_settlement_hydrology(
+    settlement_id: &str,
+    hydrology: SettlementHydrology,
+) -> Result<(), String> {
+    let valid_distance = |distance: adventuresim_world_schema::WaterDistanceMeters| {
+        adventuresim_world_schema::WaterDistanceMeters::new(distance.get()).is_ok()
+    };
+    let valid_river = |river: adventuresim_world_schema::RiverAccess| {
+        valid_distance(river.distance)
+            && adventuresim_world_schema::StrahlerOrder::new(river.order.get()).is_ok()
+    };
+    let flowing_is_valid = match hydrology.flowing {
+        Some(FlowingWaterAccess::River(river)) => valid_river(river),
+        Some(FlowingWaterAccess::RiverAndCanal(access)) => {
+            valid_river(access.river) && valid_distance(access.canal_distance)
+        }
+        None => true,
+    };
+    let inland_is_valid = hydrology
+        .inland
+        .is_none_or(|access| valid_distance(access.distance));
+    let marine_is_valid = hydrology.marine.is_none_or(|access| match access {
+        MarineWaterAccess::Tidal(distance) | MarineWaterAccess::OpenCoast(distance) => {
+            valid_distance(distance)
+        }
+    });
+    if flowing_is_valid && inland_is_valid && marine_is_valid {
+        Ok(())
+    } else {
+        Err(format!("Settlement {settlement_id} has invalid hydrology"))
+    }
 }
 
 fn reconstruct_drought_profile(
@@ -3203,20 +3282,14 @@ fn travel_neighbors(ctx: &ReducerContext, node: u64) -> Vec<(u64, u32)> {
         .travel_edge()
         .from_node_id()
         .filter(&node)
-        .filter_map(|edge| {
-            matches!(edge.kind.as_str(), "land" | "ferry")
-                .then_some((edge.to_node_id, edge.length_m))
-        })
+        .map(|edge| (edge.to_node_id, edge.length_m))
         .collect();
     neighbors.extend(
         ctx.db
             .travel_edge()
             .to_node_id()
             .filter(&node)
-            .filter_map(|edge| {
-                matches!(edge.kind.as_str(), "land" | "ferry")
-                    .then_some((edge.from_node_id, edge.length_m))
-            }),
+            .map(|edge| (edge.from_node_id, edge.length_m)),
     );
     neighbors
 }
@@ -4024,6 +4097,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     )
                     .unwrap(),
                 ),
+                hydrology: SettlementHydrology::default(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().faith_id().into(),
                 source_node_id: None,
