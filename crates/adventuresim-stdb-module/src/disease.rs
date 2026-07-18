@@ -57,7 +57,7 @@ pub struct CommittedCut {
 /// Delivery dedupe is explicitly separate from infection state and contains no
 /// undiagnosed disease identity.
 #[derive(Clone, Debug)]
-#[table(accessor = disease_notice, public)]
+#[table(accessor = disease_notice)]
 pub struct DiseaseNotice {
     #[primary_key]
     pub id: String,
@@ -132,17 +132,49 @@ pub fn character_episodes(
         .collect()
 }
 
-fn acquire_outbreaks_through(
+pub fn effective_attributes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut attributes: crate::CharacterAttributes,
+) -> Result<crate::CharacterAttributes, String> {
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |t| t.minutes);
+    let (penalty, _, _, _) = disease::combined_state(
+        &character_episodes(ctx, character_id)?,
+        now,
+        attributes.immunity,
+    );
+    attributes.endurance = (attributes.endurance - penalty.endurance).max(0.0);
+    attributes.immunity = (attributes.immunity - penalty.immunity).max(0.0);
+    attributes.gut = (attributes.gut - penalty.gut).max(0.0);
+    attributes.intelligence = (attributes.intelligence - penalty.intelligence).max(0.0);
+    attributes.instinct = (attributes.instinct - penalty.instinct).max(0.0);
+    for value in [
+        &mut attributes.left_arm_agility,
+        &mut attributes.right_arm_agility,
+        &mut attributes.left_leg_agility,
+        &mut attributes.right_leg_agility,
+    ] {
+        *value = (*value - penalty.limb_agility).max(0.0)
+    }
+    Ok(attributes)
+}
+
+fn outbreak_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
     from: u64,
     to: u64,
-) -> Result<(), String> {
+) -> Result<Vec<InfectionEpisode>, String> {
     let Some(character) = ctx.db.character().id().find(character_id) else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let Some(settlement_id) = character.current_settlement_id else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let immunity = ctx
         .db
@@ -150,6 +182,8 @@ fn acquire_outbreaks_through(
         .character_id()
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
+    let mut episodes = character_episodes(ctx, character_id)?;
+    let existing_len = episodes.len();
     for outbreak in ctx
         .db
         .settlement_outbreak()
@@ -157,16 +191,17 @@ fn acquire_outbreaks_through(
         .filter(&settlement_id)
     {
         let disease_id = parse_id(&outbreak.disease_id)?;
-        let prior = disease::acquired_immunity(
-            &character_episodes(ctx, character_id)?,
-            disease_id,
-            from,
-            immunity,
-        );
-        let seed = disease::outbreak_exposure_seed(character_id, &outbreak.id);
-        let Some(at) = disease::exposure_threshold_minute(
-            seed,
-            outbreak.start_minute,
+        let prior = disease::acquired_immunity(&episodes, disease_id, from, immunity);
+        let overlap_from = from.max(outbreak.start_minute);
+        let overlap_to = to.min(outbreak.end_minute);
+        if overlap_to <= overlap_from {
+            continue;
+        }
+        let Some(at) = disease::first_presence_exposure_minute(
+            character_id,
+            &outbreak.id,
+            overlap_from,
+            overlap_to,
             outbreak.intensity,
             disease::definition(disease_id).base_acquisition,
             immunity,
@@ -174,20 +209,51 @@ fn acquire_outbreaks_through(
         ) else {
             continue;
         };
-        if at > from
-            && at <= to.min(outbreak.end_minute)
-            && !ctx
-                .db
-                .infection_episode()
-                .character_id()
-                .filter(character_id)
-                .any(|row| row.disease_id == outbreak.disease_id && row.contracted_at == at)
+        if !episodes
+            .iter()
+            .any(|episode| episode.disease_id == disease_id && episode.contracted_at == at)
+        {
+            episodes.push(InfectionEpisode {
+                id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", outbreak.id)),
+                character_id,
+                disease_id,
+                contracted_at: at,
+                treated_at: None,
+            });
+        }
+    }
+    Ok(episodes.split_off(existing_len))
+}
+
+fn acquire_outbreaks_through(
+    ctx: &ReducerContext,
+    character_id: u64,
+    from: u64,
+    to: u64,
+) -> Result<(), String> {
+    for episode in outbreak_episodes_through(ctx, character_id, from, to)? {
+        let disease_id = match episode.disease_id {
+            DiseaseId::Influenza => "influenza",
+            DiseaseId::Dysentery => "dysentery",
+            DiseaseId::Typhus => "typhus",
+            DiseaseId::Tetanus => "tetanus",
+            DiseaseId::Erysipelas => "erysipelas",
+            DiseaseId::Smallpox => "smallpox",
+            DiseaseId::Plague => "plague",
+            DiseaseId::Consumption => "consumption",
+        };
+        if !ctx
+            .db
+            .infection_episode()
+            .character_id()
+            .filter(character_id)
+            .any(|row| row.disease_id == disease_id && row.contracted_at == episode.contracted_at)
         {
             ctx.db.infection_episode().insert(InfectionEpisodeRow {
-                id: 0,
+                id: episode.id,
                 character_id,
-                disease_id: outbreak.disease_id,
-                contracted_at: at,
+                disease_id: disease_id.into(),
+                contracted_at: episode.contracted_at,
                 treated_at: None,
             });
         }
@@ -275,6 +341,38 @@ pub fn clip_elapsed_for_disease(
     ))
 }
 
+/// Side-effect-free party preflight. Acquisition and notice delivery happen
+/// only in the subsequent committed interval.
+pub fn preview_elapsed_for_disease(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+) -> Result<u64, String> {
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |t| t.minutes);
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |a| a.immunity);
+    let mut episodes = character_episodes(ctx, character_id)?;
+    episodes.extend(outbreak_episodes_through(
+        ctx,
+        character_id,
+        now,
+        now.saturating_add(requested),
+    )?);
+    Ok(
+        disease::first_combined_terminal(&episodes, now, now.saturating_add(requested), immunity)
+            .map_or(requested, |(minute, _)| minute.saturating_sub(now)),
+    )
+}
+
 pub fn finish_disease_interval(
     ctx: &ReducerContext,
     character_id: u64,
@@ -284,7 +382,12 @@ pub fn finish_disease_interval(
     crate::transition_character_to_dead(
         ctx,
         character_id,
-        crate::DeathCause::Disease,
+        match cause {
+            TerminalFailure::Respiratory => crate::DeathCause::RespiratoryFailure,
+            TerminalFailure::Circulatory => crate::DeathCause::CirculatoryFailure,
+            TerminalFailure::Homeostatic => crate::DeathCause::HomeostaticFailure,
+            TerminalFailure::Neurologic => crate::DeathCause::NeurologicFailure,
+        },
         crate::DeathSource::Disease,
         Some(
             match cause {
@@ -354,11 +457,11 @@ pub fn treat_disease(
     target_id: u64,
     infection_id: u64,
 ) -> Result<(), String> {
+    if ctx.sender() != ctx.database_identity() {
+        return Err("Treatment must be requested through the trusted strategic server".into());
+    }
     let doctor = crate::require_living_character(ctx, doctor_id)?;
     let target = crate::require_living_character(ctx, target_id)?;
-    if doctor.server != ctx.sender() {
-        return Err("Only the active doctor may administer treatment".into());
-    }
     let same_place = doctor.current_settlement_id.is_some()
         && doctor.current_settlement_id == target.current_settlement_id
         || doctor.current_quest_location_id.is_some()
@@ -422,51 +525,5 @@ pub fn treat_disease(
         "treatment",
         "Treatment was administered.",
     );
-    Ok(())
-}
-
-/// Deterministic fixture for local UI and strategic simulation demos.
-#[reducer]
-pub fn seed_disease_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    let character = crate::require_living_character(ctx, character_id)?;
-    if character.server != ctx.sender() {
-        return Err("Only this character's player may seed the demo".into());
-    }
-    let now = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character time not found")?
-        .minutes;
-    if ctx
-        .db
-        .infection_episode()
-        .character_id()
-        .filter(character_id)
-        .next()
-        .is_none()
-    {
-        ctx.db.infection_episode().insert(InfectionEpisodeRow {
-            id: 0,
-            character_id,
-            disease_id: "influenza".into(),
-            contracted_at: now.saturating_sub(4 * 1_440),
-            treated_at: None,
-        });
-    }
-    if let Some(settlement_id) = character.current_settlement_id {
-        let id = format!("disease-demo-{settlement_id}");
-        if ctx.db.settlement_outbreak().id().find(&id).is_none() {
-            ctx.db.settlement_outbreak().insert(SettlementOutbreak {
-                id,
-                settlement_id,
-                disease_id: "influenza".into(),
-                start_minute: now.saturating_sub(1_440),
-                end_minute: now + 7 * 1_440,
-                intensity: 0.35,
-            });
-        }
-    }
     Ok(())
 }

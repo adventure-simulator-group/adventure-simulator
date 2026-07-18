@@ -4838,7 +4838,9 @@ pub fn travel_to_quest(
     )?);
     if leg_minutes < travel_minutes {
         for member_id in traveler_ids.iter().copied() {
-            advance_character_time(ctx, member_id, leg_minutes)?;
+            if !advance_character_time(ctx, member_id, leg_minutes)? {
+                return Ok(());
+            }
             let mut member = ctx
                 .db
                 .character()
@@ -4860,7 +4862,9 @@ pub fn travel_to_quest(
     }
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
-            advance_character_time(ctx, member.id, travel_minutes)?;
+            if !advance_character_time(ctx, member.id, travel_minutes)? {
+                return Ok(());
+            }
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
             ctx.db.character().id().update(member);
@@ -4997,7 +5001,9 @@ pub fn travel_to_settlement(
         )?);
         if leg_minutes < travel_minutes {
             for traveler_id in traveler_ids {
-                advance_character_time(ctx, traveler_id, leg_minutes)?;
+                if !advance_character_time(ctx, traveler_id, leg_minutes)? {
+                    return Ok(());
+                }
                 let mut traveler = ctx
                     .db
                     .character()
@@ -5019,7 +5025,9 @@ pub fn travel_to_settlement(
         }
     }
     for traveler_id in traveler_ids {
-        advance_character_time(ctx, traveler_id, travel_minutes)?;
+        if !advance_character_time(ctx, traveler_id, travel_minutes)? {
+            return Ok(());
+        }
         let mut traveler = ctx
             .db
             .character()
@@ -5134,7 +5142,9 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     for member_id in traveler_ids.iter().copied() {
-        advance_character_time(ctx, member_id, leg_minutes)?;
+        if !advance_character_time(ctx, member_id, leg_minutes)? {
+            return Ok(());
+        }
     }
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {

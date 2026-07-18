@@ -34,7 +34,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    disease_notice_table::DiseaseNoticeTableAccess, inventory_item_table::InventoryItemTableAccess,
+    inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
@@ -160,7 +160,6 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_personality());
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
-        invalidate_on_changes!(state.0._connection.db.disease_notice());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.strategic_incident());
         invalidate_on_changes!(state.0._connection.db.quest());
@@ -206,7 +205,6 @@ impl LiveState {
             .add_query(|query| query.from.character_time())
             .add_query(|query| query.from.character_training_schedule())
             .add_query(|query| query.from.connected_players())
-            .add_query(|query| query.from.disease_notice())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())

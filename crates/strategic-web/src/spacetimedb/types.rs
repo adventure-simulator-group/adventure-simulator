@@ -687,6 +687,14 @@ pub struct InfectionEpisodeRow {
     pub contracted_at: u64,
     pub treated_at: Option<u64>,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommittedCutRow {
+    pub id: u64,
+    pub character_id: u64,
+    pub committed_at: u64,
+    pub severity: f32,
+    pub surgery_check: f32,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {

@@ -175,7 +175,7 @@ pub fn advance_character_time(
     ctx: &ReducerContext,
     character_id: u64,
     minutes: u64,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     crate::character::require_living_character(ctx, character_id)?;
     ensure_character_time(ctx, character_id)?;
     let mut character_time = ctx
@@ -193,11 +193,11 @@ pub fn advance_character_time(
         .update(character_time);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() {
-        return Ok(());
+        return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
-    Ok(())
+    Ok(true)
 }
 
 fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
@@ -743,8 +743,8 @@ pub fn rest_at_camp(
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {
-            crate::disease::clip_elapsed_for_disease(ctx, *member_id, limit)
-                .map(|(safe, _)| limit.min(safe))
+            crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)
+                .map(|safe| limit.min(safe))
         })?;
     for member_id in members {
         ensure_character_time(ctx, member_id)?;

@@ -8,6 +8,8 @@ use crate::spacetimedb::InfectionEpisodeRow;
 
 #[derive(Clone, Debug, Default)]
 pub struct MedicalPresentation {
+    pub unavailable: bool,
+    pub obvious_cut: f32,
     pub symptoms: Vec<&'static str>,
     pub vitals: Option<HumourVitals>,
     pub diagnoses: Vec<DiagnosisPresentation>,
@@ -100,6 +102,8 @@ pub fn sanitize(
         }
     }
     MedicalPresentation {
+        unavailable: false,
+        obvious_cut: 0.0,
         symptoms,
         vitals: Some(HumourVitals {
             sanguine: (blood_fraction.clamp(0.0, 1.0) - disease_vitals.sanguine).clamp(0.0, 1.0),

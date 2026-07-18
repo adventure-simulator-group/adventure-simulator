@@ -930,7 +930,7 @@ pub fn party_personal_page(
             (settlement_chat_area(&active_character.name, Some(active_character)))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
+            @if medical.vitals.is_some() {(strategic_condition_rail(condition, morale_sources))}
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1001,7 +1001,7 @@ pub fn party_stats_page(
             (player_chat_area(selected, active_character))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
+            @if medical.vitals.is_some() {(strategic_condition_rail(condition, morale_sources))}
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
             (character_bio_rail(
                 selected,
@@ -2495,8 +2495,21 @@ fn medical_rail(
 ) -> Markup {
     html! {
         (sidebar_section("Symptoms", html! {
-            @if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
+            @if medical.unavailable {p class="text-muted small-copy" {"Medical examination unavailable."}} @else if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
         }))
+        @if medical.obvious_cut > 0.0 {
+            (sidebar_section("Visible injuries", html! {
+                div class="damage-family" {
+                    strong { "Cuts" }
+                    div class="damage-family-track" role="meter"
+                        aria-label=(format!("Visible cut impairment {:.0} percent", medical.obvious_cut * 100.0))
+                        aria-valuemin="0" aria-valuemax="100" aria-valuenow=(medical.obvious_cut * 100.0) {
+                        span class="damage-segment damage-physical obvious-cut"
+                            style=(format!("width:{:.0}%", medical.obvious_cut * 100.0)) {}
+                    }
+                }
+            }))
+        }
         @if let Some(vitals)=medical.vitals {
             (sidebar_section("Vitals", html! {
                 div class="humour-vitals" aria-label="Four humours" {
@@ -2697,7 +2710,6 @@ pub(crate) fn party_portrait_overlay(
                                 format!("{}/party/{}/stats", location_path, member.id)
                             })
                             title=(format!("Inspect {}", member.name)) {
-                            (incapacitation_wheel(member.id))
                             span class="party-portrait-initial" {
                                 span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                                 span class="party-portrait-name" { (&member.name) @if !member.alive { " (dead)" } }
@@ -2728,16 +2740,6 @@ pub(crate) fn party_portrait_overlay(
                 }
             }
         }
-    }
-}
-
-fn incapacitation_wheel(character_id: u64) -> Markup {
-    html! {
-        span class="incapacitation-wheel"
-            data-strategic-condition-wheel=(character_id)
-            role="img"
-            aria-label="Loading strategic condition"
-            title="Loading strategic condition" {}
     }
 }
 
@@ -3973,6 +3975,8 @@ mod tests {
     #[test]
     fn low_medicine_medical_html_contains_no_hidden_payload() {
         let presentation = crate::medical::MedicalPresentation {
+            unavailable: false,
+            obvious_cut: 0.0,
             symptoms: vec!["coughing"],
             vitals: None,
             diagnoses: Vec::new(),

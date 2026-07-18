@@ -904,6 +904,9 @@
 .medical-diagnoses { margin-top: .85rem; }
 .medical-diagnoses article + article { border-top: 1px solid var(--border-color); margin-top: .65rem; padding-top: .65rem; }
 .condition-stage { color: var(--text-muted); text-transform: capitalize; }
+.damage-family-track {height:.65rem;background:#2b2b2b;border:1px solid #111;}
+.damage-segment {display:block;height:100%;background-size:6px 6px;background-image:repeating-linear-gradient(135deg,transparent 0 2px,rgba(255,255,255,.45) 2px 3px);}
+.damage-physical {background-color:#a63838;}
 
 .autoresolve-report h2,
 .autoresolve-report p {

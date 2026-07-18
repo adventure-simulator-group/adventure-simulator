@@ -29,6 +29,18 @@ treatment minute. Severity is deterministically seeded from those associations.
 Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
 with Surgery reducing residual risk; blunt damage does not.
+
+Outbreak acquisition hashes each actual minute of presence. This keeps late
+arrival, departure and re-entry exact and makes one long stay identical to the
+same stay split among many actions without persisting disease state beyond an
+infection episode. Current committed combat provenance is an aggregate cut
+amount: the UI can honestly distinguish visible physical cuts, but per-limb
+source families await a tactical result format that reports them.
+
+Ten percent or less remaining blood volume is terminal circulatory failure.
+Gut impairment contributes to Choleric/homeostatic failure through disease;
+long-term starvation and malabsorption reservoirs remain future antecedent
+systems rather than making a raw Gut attribute of zero instantly lethal.
 Damage can be applied to each of the 7 body parts. Each body part has a health ranging from 1.0 to an unspecified negative value. At zero, the body part is unusable and its associated [attributes](../shared/Stats.md) are 0, and effectiveness degrades proportionally between 1.0 and 0.
 
 Below zero, you aren't any *less* effective, per-se, but the body part can continue to be damaged which will increase the time it takes to be healed (or whether it even *can* be healed). The "unspecified negative value" is essentially the point at which the body part is so damaged that further damage doesn't really mean anything, as if the flesh were essentially ground beef or it were severed.

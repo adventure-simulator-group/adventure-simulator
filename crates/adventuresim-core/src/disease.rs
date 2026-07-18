@@ -448,6 +448,30 @@ pub fn outbreak_exposure_seed(character_id: u64, outbreak_id: &str) -> u64 {
         .chain(character_id.to_le_bytes())
         .chain(outbreak_id.bytes()))
 }
+pub fn first_presence_exposure_minute(
+    character_id: u64,
+    outbreak_id: &str,
+    from: u64,
+    to: u64,
+    intensity: f32,
+    base_acquisition: f32,
+    immunity: f32,
+    prior_immunity: f32,
+) -> Option<u64> {
+    ((from + 1)..=to).find(|minute| {
+        let key = format!("{outbreak_id}:{minute}");
+        acquisition_succeeds(
+            outbreak_exposure_seed(character_id, &key),
+            &DiseaseDefinition {
+                base_acquisition: base_acquisition / 1_440.0,
+                ..*definition(DiseaseId::Influenza)
+            },
+            immunity,
+            prior_immunity,
+            intensity,
+        )
+    })
+}
 pub fn severity(e: InfectionEpisode, immunity: f32) -> f32 {
     let unit = (severity_seed(e) >> 11) as f64 / (1u64 << 53) as f64;
     let innate = (immunity / 5.0).clamp(0.0, 1.0);
@@ -825,12 +849,53 @@ mod tests {
         assert_eq!(whole, chunks);
     }
     #[test]
+    fn presence_exposure_handles_late_arrival_reentry_and_chunking() {
+        let whole = first_presence_exposure_minute(4, "x", 10_000, 30_000, 1.0, 0.65, 0.0, 0.0);
+        let chunks = (10_000..30_000).step_by(500).find_map(|from| {
+            first_presence_exposure_minute(
+                4,
+                "x",
+                from,
+                (from + 500).min(30_000),
+                1.0,
+                0.65,
+                0.0,
+                0.0,
+            )
+        });
+        assert_eq!(whole, chunks);
+        let reentry = first_presence_exposure_minute(
+            9,
+            "reentry",
+            20_000,
+            21_000,
+            1_000_000.0,
+            0.65,
+            0.0,
+            0.0,
+        );
+        assert!(
+            reentry.is_some(),
+            "late re-entry receives a fresh presence interval"
+        );
+    }
+    #[test]
+    fn attribute_impairment_declines_and_recovers_without_mutating_baseline() {
+        let x = e(77, DiseaseId::Dysentery);
+        let baseline = 3.0;
+        let peak = evaluate(x, 100 + 3 * DAY, 2.0).attributes.gut;
+        let resolved = evaluate(x, 100 + 30 * DAY, 2.0).attributes.gut;
+        assert!(peak > 0.0);
+        assert_eq!(resolved, 0.0);
+        assert_eq!(baseline, 3.0);
+    }
+    #[test]
     fn combined_subcritical_infections_can_cross_terminal_boundary() {
         let a = e(1, DiseaseId::Influenza);
         let b = e(2, DiseaseId::Influenza);
         let c = e(3, DiseaseId::Influenza);
         let d = e(4, DiseaseId::Influenza);
-        assert!(evaluate(a,100+4*DAY,3.0).terminal_failure.is_none());
+        assert!(evaluate(a, 100 + 4 * DAY, 3.0).terminal_failure.is_none());
         let at = first_combined_terminal(&[a, b, c, d], 100, 100 + 8 * DAY, 3.0);
         assert!(at.is_some());
     }

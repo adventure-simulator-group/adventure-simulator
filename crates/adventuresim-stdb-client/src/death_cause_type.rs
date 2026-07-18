@@ -14,6 +14,14 @@ pub enum DeathCause {
 
     Disease,
 
+    RespiratoryFailure,
+
+    CirculatoryFailure,
+
+    HomeostaticFailure,
+
+    NeurologicFailure,
+
     Starvation,
 
     Dehydration,
