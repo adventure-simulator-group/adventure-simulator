@@ -217,10 +217,13 @@ boundaries. The checked-in 1544 intermediate and its intentionally approximate
 interpretation are documented in `docs/RELIGION.md`; override its location with
 `--religion-regions`.
 
-NOAA OWDA summer PDSI is read directly from the NetCDF-4 file at
-`target/world-data-sources/raw/climate/owda.nc`. Its strict source boundary,
-typed twenty-year profile, and full-file verification are documented in
-`docs/DROUGHT.md`; override the path with `--drought-netcdf`.
+Run `just init-owda` to download or verify the pinned NOAA OWDA v1.0 NetCDF-4
+file at `target/world-data-sources/raw/climate/owda.nc`. The initializer checks
+the exact 228226363-byte size and SHA-256 and records both the dataset and paper
+DOIs in ignored adjacent metadata. Its strict source boundary, typed
+twenty-year profile, spatial fallback, redistribution boundary, and gameplay
+scope are in `docs/DROUGHT.md`; override the compiler path with
+`--drought-netcdf`.
 
 Copernicus EU-Hydro v1.3 is read from extracted EPSG:3035 basin GeoPackages
 under `target/world-data-sources/raw/hydrology/`, as documented in
