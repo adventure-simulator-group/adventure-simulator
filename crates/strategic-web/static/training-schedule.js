@@ -9,13 +9,27 @@
     return `${whole}${['', '¼', '½', '¾'][(snapped % 60) / STEP]}h`;
   }
 
+  function formatClock(minutes) {
+    const snapped = Math.round(Number(minutes) / STEP) * STEP;
+    return `${String(Math.floor(snapped / 60)).padStart(2, '0')}:${String(snapped % 60).padStart(2, '0')}`;
+  }
+
+  function parseClock(value) {
+    const match = /^\s*(\d{1,2}):([0-5]\d)\s*$/.exec(value);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 24 || (hours === 24 && minutes !== 0)) return null;
+    return hours * 60 + minutes;
+  }
+
   function leisureColor(minutes) {
     const stops = [
-      [480, [105, 168, 107]], // green
-      [420, [214, 196, 83]],  // yellow
-      [360, [217, 120, 53]],  // orange
-      [300, [178, 59, 59]],   // red
-      [0, [16, 16, 16]],      // black
+      [480, [105, 168, 107]],
+      [420, [214, 196, 83]],
+      [360, [217, 120, 53]],
+      [300, [178, 59, 59]],
+      [0, [16, 16, 16]],
     ];
     for (let index = 0; index < stops.length - 1; index += 1) {
       const [high, highColor] = stops[index];
@@ -29,31 +43,23 @@
     return 'rgb(16 16 16)';
   }
 
-  function drainFromBottom(values, names, amount) {
+  function drainFromBottom(allocation, names, amount) {
     let remaining = amount;
     for (const name of [...names].reverse()) {
       if (!remaining) break;
-      const drained = Math.min(values[name], remaining);
-      values[name] -= drained;
+      const drained = Math.min(allocation[name], remaining);
+      allocation[name] -= drained;
       remaining -= drained;
     }
-    return amount - remaining;
   }
 
   function stateFor(root) {
     if (root._scheduleState) return root._scheduleState;
     const inputs = [...root.querySelectorAll('[data-schedule-input]')];
-    inputs.forEach((input) => {
-      input.value = Math.round(Number(input.value) / STEP) * STEP;
-    });
-    const state = {
-      inputs: Object.fromEntries(inputs.map((input) => [input.name, input])),
-      handles: Object.fromEntries([...root.querySelectorAll('[data-schedule-handle]')]
-        .map((handle) => [handle.dataset.scheduleName, handle])),
-    };
+    inputs.forEach((input) => { input.value = Math.round(Number(input.value) / STEP) * STEP; });
+    const state = { inputs: Object.fromEntries(inputs.map((input) => [input.name, input])) };
     root._scheduleState = state;
     render(root, state);
-    bindEditing(root, state);
     return state;
   }
 
@@ -61,58 +67,47 @@
     return Object.fromEntries(Object.entries(state.inputs).map(([name, input]) => [name, Number(input.value)]));
   }
 
-  function contextFor(name) {
-    return name.startsWith('travel_') ? 'travel' : 'downtime';
-  }
-
-  function contextValues(allocation, context) {
-    return Object.fromEntries(Object.entries(allocation).filter(([name]) => contextFor(name) === context));
-  }
-
   function render(root, state) {
-    const allocations = values(state);
-    Object.entries(state.handles).forEach(([name, handle]) => {
-      const minutes = allocations[name];
-      handle.style.left = `${minutes / DAY * 100}%`;
-      handle.title = `${format(minutes)} per day`;
-      handle.setAttribute('aria-valuenow', minutes);
-      handle.setAttribute('aria-valuetext', format(minutes));
-      root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(minutes); });
-    });
-    ['downtime', 'travel'].forEach((context) => {
-      const plan = contextValues(allocations, context);
-      const leisure = Math.max(0, DAY - Object.values(plan).reduce((sum, value) => sum + value, 0));
-      const leisureName = context === 'travel' ? 'travel_leisure_minutes' : 'leisure_minutes';
-      root.querySelectorAll(`[data-schedule-value="${leisureName}"] [data-schedule-display]`).forEach((output) => { output.textContent = format(leisure); });
-      root.querySelectorAll(`[data-leisure-fill="${context}"]`).forEach((fill) => {
-        fill.style.width = `${leisure / DAY * 100}%`;
-        fill.style.backgroundColor = leisureColor(leisure);
-        fill.parentElement.title = leisureTip;
+    const allocation = values(state);
+    Object.entries(allocation).forEach(([name, minutes]) => {
+      root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => {
+        output.textContent = format(minutes);
+        output.setAttribute('aria-label', `Daily allocation ${formatClock(minutes)}; click to edit`);
       });
+      root.querySelectorAll(`[data-schedule-fill="${name}"]`).forEach((fill) => {
+        fill.style.width = `${minutes / DAY * 100}%`;
+      });
+    });
+    const leisure = Math.max(0, DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0));
+    root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => {
+      output.textContent = format(leisure);
+    });
+    root.querySelectorAll('[data-leisure-fill="downtime"]').forEach((fill) => {
+      fill.style.width = `${leisure / DAY * 100}%`;
+      fill.style.backgroundColor = leisureColor(leisure);
+      fill.parentElement.title = leisureTip;
     });
   }
 
   function setValue(root, state, target, wanted) {
     const allocation = values(state);
-    const context = contextFor(target);
-    const planNames = Object.keys(allocation).filter((name) => contextFor(name) === context);
+    const names = Object.keys(allocation);
     const current = allocation[target];
     const next = Math.max(0, Math.min(DAY, Math.round(wanted / STEP) * STEP));
     const delta = next - current;
     if (delta > 0) {
-      const leisure = DAY - planNames.reduce((sum, name) => sum + allocation[name], 0);
-      const laborName = context === 'travel' ? 'travel_labor_minutes' : 'labor_minutes';
-      const otherSkills = planNames.filter((name) => name !== target && name !== laborName);
-      const donors = target === laborName
+      const leisure = DAY - names.reduce((sum, name) => sum + allocation[name], 0);
+      const otherSkills = names.filter((name) => name !== target && name !== 'labor_minutes');
+      const donors = target === 'labor_minutes'
         ? otherSkills
-        : [laborName, ...otherSkills.filter((name) => name !== laborName)];
+        : ['labor_minutes', ...otherSkills.filter((name) => name !== 'labor_minutes')];
       const capacity = Math.max(0, leisure) + donors.reduce((sum, name) => sum + allocation[name], 0);
       const accepted = Math.min(delta, capacity);
       allocation[target] += accepted;
       let remaining = Math.max(0, accepted - Math.max(0, leisure));
-      if (target !== laborName) {
-        const fromLabor = Math.min(allocation[laborName], remaining);
-        allocation[laborName] -= fromLabor;
+      if (target !== 'labor_minutes') {
+        const fromLabor = Math.min(allocation.labor_minutes, remaining);
+        allocation.labor_minutes -= fromLabor;
         remaining -= fromLabor;
       }
       if (remaining) drainFromBottom(allocation, otherSkills, remaining);
@@ -133,93 +128,75 @@
   }
 
   function nameFor(element) {
-    return element.closest('.party-skill-row')?.querySelector('[data-schedule-handle]')?.dataset.scheduleName;
+    return element.closest('[data-schedule-value]')?.dataset.scheduleValue;
   }
 
-  function bindEditing(root, state) {
-    root.querySelectorAll('.party-skill-allocation').forEach((element) => {
-      element.addEventListener('wheel', (evt) => {
-        const name = nameFor(element);
-        if (!name) return;
-        evt.preventDefault();
-        setValue(root, state, name, Number(state.inputs[name].value) + (evt.deltaY < 0 ? STEP : -STEP));
-        save(root, 180);
-      }, { passive: false });
-    });
-    root.querySelectorAll('[data-schedule-step]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const name = nameFor(button);
-        setValue(root, state, name, Number(state.inputs[name].value) + Number(button.dataset.scheduleStep));
+  function beginEditing(root, state, display) {
+    const name = nameFor(display);
+    if (!name || !state.inputs[name] || display.dataset.editing) return;
+    display.dataset.editing = 'true';
+    const input = document.createElement('input');
+    input.className = 'schedule-time-input';
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.placeholder = 'hh:mm';
+    input.setAttribute('aria-label', 'Daily allocation in hours and minutes');
+    input.value = formatClock(state.inputs[name].value);
+    let finished = false;
+    const finish = (commit) => {
+      if (finished) return;
+      finished = true;
+      const parsed = parseClock(input.value);
+      if (commit && parsed !== null) {
+        setValue(root, state, name, parsed);
         save(root);
-      });
+      }
+      delete display.dataset.editing;
+      input.replaceWith(display);
+      render(root, state);
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(true);
+      if (event.key === 'Escape') finish(false);
     });
-    root.querySelectorAll('[data-schedule-display]').forEach((display) => {
-      display.addEventListener('click', () => {
-        const name = nameFor(display);
-        if (!name || display.dataset.editing) return;
-        display.dataset.editing = 'true';
-        const input = document.createElement('input');
-        input.className = 'schedule-time-input';
-        input.type = 'number';
-        input.min = '0';
-        input.max = '24';
-        input.step = '0.25';
-        input.value = String(Number(state.inputs[name].value) / 60);
-        const finish = (commit) => {
-          if (commit && input.value !== '') {
-            setValue(root, state, name, Number(input.value) * 60);
-            save(root);
-          }
-          display.textContent = format(Number(state.inputs[name].value));
-          delete display.dataset.editing;
-          input.replaceWith(display);
-        };
-        input.addEventListener('keydown', (evt) => {
-          if (evt.key === 'Enter') finish(true);
-          if (evt.key === 'Escape') finish(false);
-        });
-        input.addEventListener('blur', () => finish(true), { once: true });
-        display.replaceWith(input);
-        input.focus();
-        input.select();
-      });
-    });
+    input.addEventListener('blur', () => finish(true), { once: true });
+    display.replaceWith(input);
+    input.focus();
+    input.select();
   }
-
-  window.scheduleDrag = {
-    start(handle, evt) {
-      evt.preventDefault();
-      const root = handle.closest('[data-skill-schedule]');
-      const state = stateFor(root);
-      const name = handle.dataset.scheduleName;
-      const move = (event) => {
-        const track = handle.parentElement;
-        const rect = track.getBoundingClientRect();
-        setValue(root, state, name, (event.clientX - rect.left) / rect.width * DAY);
-      };
-      const finish = () => {
-        handle.removeEventListener('pointermove', move);
-        handle.removeEventListener('pointerup', finish);
-        handle.removeEventListener('pointercancel', finish);
-        save(root);
-      };
-      handle.setPointerCapture(evt.pointerId);
-      handle.addEventListener('pointermove', move);
-      handle.addEventListener('pointerup', finish);
-      handle.addEventListener('pointercancel', finish);
-      move(evt);
-    },
-    key(handle, evt) {
-      const steps = { ArrowLeft: -STEP, ArrowDown: -STEP, ArrowRight: STEP, ArrowUp: STEP, PageDown: -60, PageUp: 60 };
-      if (!(evt.key in steps) && evt.key !== 'Home' && evt.key !== 'End') return;
-      evt.preventDefault();
-      const root = handle.closest('[data-skill-schedule]');
-      const state = stateFor(root);
-      const current = Number(state.inputs[handle.dataset.scheduleName].value);
-      setValue(root, state, handle.dataset.scheduleName, evt.key === 'Home' ? 0 : evt.key === 'End' ? DAY : current + steps[evt.key]);
-      save(root);
-    },
-  };
 
   document.querySelectorAll('[data-skill-schedule]').forEach(stateFor);
+  document.addEventListener('wheel', (event) => {
+    const cell = event.target.closest?.('.party-skill-allocation');
+    const root = cell?.closest('[data-skill-schedule]');
+    if (!root) return;
+    const state = stateFor(root);
+    const name = nameFor(cell);
+    if (!name || !state.inputs[name]) return;
+    event.preventDefault();
+    setValue(root, state, name, Number(state.inputs[name].value) + (event.deltaY < 0 ? STEP : -STEP));
+    save(root, 180);
+  }, { passive: false });
+  document.addEventListener('click', (event) => {
+    const step = event.target.closest?.('[data-schedule-step]');
+    if (step) {
+      const root = step.closest('[data-skill-schedule]');
+      const state = stateFor(root);
+      const name = nameFor(step);
+      setValue(root, state, name, Number(state.inputs[name].value) + Number(step.dataset.scheduleStep));
+      save(root);
+      return;
+    }
+    const display = event.target.closest?.('[data-schedule-display][role="button"]');
+    const root = display?.closest('[data-skill-schedule]');
+    if (root) beginEditing(root, stateFor(root), display);
+  });
+  document.addEventListener('keydown', (event) => {
+    const display = event.target.closest?.('[data-schedule-display][role="button"]');
+    const root = display?.closest('[data-skill-schedule]');
+    if (root && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      beginEditing(root, stateFor(root), display);
+    }
+  });
 })();

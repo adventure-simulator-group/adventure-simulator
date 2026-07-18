@@ -497,6 +497,8 @@ pub struct CharacterEquip {
 pub struct ItemDefinition {
     pub id: String,
     pub weight: f32,
+    #[serde(default)]
+    pub slot: ItemSlot,
     pub kind: ItemKind,
     #[serde(default)]
     pub base_value: Option<u32>,
@@ -574,6 +576,45 @@ pub struct RepairOrder {
     pub quoted_cost: u32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ItemSlot {
+    #[default]
+    None,
+    LeftHolding,
+    RightHolding,
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+    AnyHolding,
+    AnyArm,
+    AnyLeg,
+}
+
+impl ItemSlot {
+    pub fn sats_json(self) -> serde_json::Value {
+        let tag = match self {
+            Self::None => "none",
+            Self::LeftHolding => "leftHolding",
+            Self::RightHolding => "rightHolding",
+            Self::LeftArm => "leftArm",
+            Self::RightArm => "rightArm",
+            Self::LeftLeg => "leftLeg",
+            Self::RightLeg => "rightLeg",
+            Self::Chest => "chest",
+            Self::Stomach => "stomach",
+            Self::Head => "head",
+            Self::AnyHolding => "anyHolding",
+            Self::AnyArm => "anyArm",
+            Self::AnyLeg => "anyLeg",
+        };
+        serde_json::json!({ (tag): {} })
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 pub enum ItemKind {
     #[serde(alias = "Simple", alias = "simple")]
@@ -643,7 +684,7 @@ pub struct CharacterStats {
     pub focus: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleAllocation {
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
@@ -667,6 +708,7 @@ pub struct ScheduleAllocation {
 pub struct CharacterTrainingSchedule {
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
+    /// Legacy compatibility field; strategic travel no longer trains skills.
     pub travel: ScheduleAllocation,
 }
 
@@ -847,5 +889,17 @@ mod tests {
             SettlementDescriptionKind::City
         );
         assert!(serde_json::from_str::<SettlementDescriptionKind>("\"bridge\"").is_err());
+    }
+
+    #[test]
+    fn item_slots_use_sats_tagged_sum_arguments() {
+        assert_eq!(
+            ItemSlot::None.sats_json(),
+            serde_json::json!({ "none": {} })
+        );
+        assert_eq!(
+            ItemSlot::AnyHolding.sats_json(),
+            serde_json::json!({ "anyHolding": {} })
+        );
     }
 }

@@ -16,8 +16,9 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party, PartyInventoryItem,
-    PartyJourney, Settlement, SettlementAlias, SettlementDescription, SettlementDescriptionKind,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
+    PartyInventoryItem, PartyJourney, Settlement, SettlementAlias, SettlementDescription,
+    SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -1084,7 +1085,7 @@ fn party_trade_inventory_rail(
                                     @if !is_equipped { span class="inventory-row-actions" { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) } } }
                                 }
                                 td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -1127,7 +1128,7 @@ fn discard_inventory_rail(
                                 }
                             }
                             td class="inventory-count" { (item.qty) }
-                            td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                            td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1206,7 +1207,7 @@ pub fn live_merchant_shop_page(
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if can_sell || service_matches { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -1328,7 +1329,7 @@ pub fn party_pool_page(
                                 }
                             }
                             td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
+                            td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1344,6 +1345,28 @@ pub fn party_pool_page(
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn equipment_checkbox(
+    inventory: &InventoryItem,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    equipped: bool,
+) -> Markup {
+    let equippable = definition.is_some_and(|definition| definition.slot != ItemSlot::None);
+    let label = if equipped {
+        format!("Unequip {}", inventory.item_id)
+    } else {
+        format!("Equip {}", inventory.item_id)
+    };
+    html! {
+        input type="checkbox"
+            checked[equipped]
+            disabled[!equippable]
+            data-equipment-toggle
+            data-inventory-item-id=(inventory.id)
+            aria-label=(label)
+            title=(if equippable { "Equip or unequip this item" } else { "This item cannot be equipped" });
+    }
 }
 
 fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
@@ -1587,7 +1610,10 @@ fn repair_custody_panel(
         section class="repair-custody-panel" aria-label="Items entrusted for repair" {
             header class="repair-custody-header" {
                 h3 { "In the smith's care" }
-                span class="repair-custody-skill" { "Smithing " (smith_skill) }
+                span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
+                    (stat_icon("Smithing", "skills", "smithing"))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}")))
+                }
             }
             div class="repair-custody-scroll" {
                 @if matching.is_empty() { p class="text-muted small-copy" { "No items entrusted." } }
@@ -1680,7 +1706,7 @@ fn party_skills_rail(
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
                     }
-                    script src="/static/training-schedule.js?v=dual-context-1" {}
+                    script src="/static/training-schedule.js?v=single-context-2" {}
                 } @else {
                     (skills_table(skills, head_health, upper_health, lower_health, None))
                 }
@@ -1706,37 +1732,35 @@ fn skills_table(
                     col class="party-skill-meter-column";
                     @if schedule.is_some() {
                         col class="party-skill-time-column";
-                        col class="party-skill-time-column";
                     }
                 }
                 @if schedule.is_some() {
                     thead { tr class="schedule-context-heading" {
                         th colspan="3" { }
                         th scope="col" title="Daily plan used while resting or waiting in a settlement" { "Downtime" }
-                        th scope="col" title="Daily plan used while traveling between locations" { "Travel" }
                     } }
                 }
                 tbody {
-                    (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
-                    (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
-                    (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
-                    (party_skill_row("Faith", "faith", Skill::Faith, skills.faith_hours, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
-                    (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
-                    (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
-                    (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
-                    (party_skill_row("Block", "block", Skill::Block, skills.block_hours, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
-                    (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
-                    (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
-                    (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
-                    (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| (s.downtime.smithing_minutes, s.travel.smithing_minutes))))
+                    (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
+                    (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
+                    (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| s.downtime.medicine_minutes)))
+                    (party_skill_row("Faith", "faith", Skill::Faith, skills.faith_hours, head_health, schedule.map(|s| s.downtime.faith_minutes)))
+                    (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| s.downtime.melee_minutes)))
+                    (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| s.downtime.ranged_minutes)))
+                    (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| s.downtime.dodge_minutes)))
+                    (party_skill_row("Block", "block", Skill::Block, skills.block_hours, upper_health, schedule.map(|s| s.downtime.block_minutes)))
+                    (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| s.downtime.stealth_minutes)))
+                    (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| s.downtime.balance_minutes)))
+                    (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| s.downtime.surgeon_minutes)))
+                    (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| s.downtime.smithing_minutes)))
                     @if let Some(schedule) = schedule {
-                        tr class="schedule-divider" { td colspan="5" {} }
-                        tr class="schedule-section-heading" { td colspan="5" { "Activities" } }
-                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, "travel_prayer_minutes", schedule.travel.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, "travel_labor_minutes", schedule.travel.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed in either plan."))
-                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, "travel_thievery_minutes", schedule.travel.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery; either plan trains Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, "travel_raiding_minutes", schedule.travel.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation; either plan trains with equipped weapons and armor."))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, "travel_leisure_minutes", 0, false, "Unallocated time in each plan for sleep and personal needs."))
+                        tr class="schedule-divider" { td colspan="4" {} }
+                        tr class="schedule-section-heading" { td colspan="4" { "Activities" } }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, "Unallocated downtime for sleep and personal needs."))
                     }
             }
         }
@@ -1749,40 +1773,42 @@ fn party_skill_row(
     skill: Skill,
     hours: f32,
     health: f32,
-    schedule_minutes: Option<(u16, u16)>,
+    schedule_minutes: Option<u16>,
 ) -> Markup {
     let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
-    let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
-    let damage_width = ((rank - effective_rank).max(0.0) / 5.0) * 100.0;
     let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
             td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
             td class="party-skill-name" { (name) }
             td class="party-skill-meter" {
-                div class="skill-rank-bar" title=(format!("{invested_hours} hours invested")) {
-                    span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
-                    span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
-                    span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
-                    @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
-                        (schedule_handle(name, &format!("{}_minutes", icon), downtime_minutes, "downtime"))
-                        (schedule_handle(name, &format!("travel_{}_minutes", icon), travel_minutes, "travel"))
-                    }
+                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
+            }
+            @if let Some(minutes) = schedule_minutes {
+                (schedule_allocation_cell(&format!("{}_minutes", icon), minutes, true))
+            }
+        }
+    }
+}
+
+fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
+    let rank = rank.clamp(0.0, 5.0);
+    let effective_rank = effective_rank.clamp(0.0, rank);
+    let value_left = (effective_rank / 5.0 * 100.0).clamp(2.0, 98.0);
+    html! {
+        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5")) {
+            @for tier in 1..=5 {
+                @let offset = (tier - 1) as f32;
+                @let current = (effective_rank - offset).clamp(0.0, 1.0) * 100.0;
+                @let trained = (rank - offset).clamp(0.0, 1.0) * 100.0;
+                @let damaged = (trained - current).max(0.0);
+                span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
+                    span class="rank-current" style=(format!("width:{current:.1}%")) {}
+                    span class="rank-damage" style=(format!("left:{current:.1}%;width:{damaged:.1}%")) {}
                 }
             }
-            @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
-                td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
-                    (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
-                    (schedule_step_button("Increase daily allocation", 15))
-                }
-                td class="party-skill-allocation travel-allocation" data-schedule-value=(format!("travel_{}_minutes", icon)) {
-                    (schedule_step_button("Decrease travel allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
-                    (schedule_step_button("Increase travel allocation", 15))
-                }
-            }
+            span class="skill-rank-value" style=(format!("left:{value_left:.1}%")) { (format!("{effective_rank:.1}")) }
         }
     }
 }
@@ -1790,10 +1816,8 @@ fn party_skill_row(
 fn schedule_special_row(
     label: &str,
     icon: &str,
-    downtime_name: &str,
-    downtime_minutes: u16,
-    travel_name: &str,
-    travel_minutes: u16,
+    allocation_name: &str,
+    allocation_minutes: u16,
     editable: bool,
     description: &str,
 ) -> Markup {
@@ -1804,28 +1828,13 @@ fn schedule_special_row(
             td class="party-skill-meter" {
                 div class="skill-rank-bar schedule-special-track" {
                 @if editable {
-                    (schedule_handle(label, downtime_name, downtime_minutes, "downtime"))
-                    (schedule_handle(label, travel_name, travel_minutes, "travel"))
+                    span class="schedule-allocation-fill" data-schedule-fill=(allocation_name) style=(format!("width:{:.1}%", f32::from(allocation_minutes) / 14.4)) {}
                 } @else {
                     span class="schedule-leisure-fill" data-leisure-fill="downtime" {}
-                    span class="schedule-leisure-fill travel-leisure-fill" data-leisure-fill="travel" {}
                 }
                 }
             }
-            td class="party-skill-allocation" data-schedule-value=(downtime_name) {
-                @if editable {
-                    (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
-                    (schedule_step_button("Increase daily allocation", 15))
-                } @else { span data-schedule-display { "0h" } }
-            }
-            td class="party-skill-allocation travel-allocation" data-schedule-value=(travel_name) {
-                @if editable {
-                    (schedule_step_button("Decrease travel allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
-                    (schedule_step_button("Increase travel allocation", 15))
-                } @else { span data-schedule-display { "0h" } }
-            }
+            (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
         }
     }
 }
@@ -1834,6 +1843,23 @@ fn schedule_step_button(label: &str, delta: i16) -> Markup {
     html! {
         button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
             data-schedule-step=(delta) aria-label=(label) {}
+    }
+}
+
+fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
+    html! {
+        td class="party-skill-allocation" data-schedule-value=(name) {
+            @if editable {
+                input type="hidden" name=(name) value=(minutes) data-schedule-input;
+                (schedule_step_button("Decrease daily allocation", -15))
+                span data-schedule-display tabindex="0" role="button" title="Click to enter a time as hh:mm" {
+                    (format_schedule_hours(minutes))
+                }
+                (schedule_step_button("Increase daily allocation", 15))
+            } @else {
+                span data-schedule-display { "0h" }
+            }
+        }
     }
 }
 
@@ -1846,16 +1872,6 @@ fn schedule_icon(label: &str, icon: &str) -> Markup {
             aria-label=(label)
             title=(label)
         {}
-    }
-}
-
-fn schedule_handle(label: &str, name: &str, minutes: u16, context: &str) -> Markup {
-    html! {
-        input type="hidden" name=(name) value=(minutes) data-schedule-input;
-        button type="button" class=(format!("schedule-handle schedule-handle-{context}")) data-schedule-handle data-schedule-name=(name)
-            aria-label=(format!("{} {} allocation", label, context)) aria-valuemin="0" aria-valuemax="1440"
-            aria-valuenow=(minutes) title=(format!("{} per {} day", format_schedule_hours(minutes), context))
-            data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
 }
 
@@ -2841,6 +2857,7 @@ mod tests {
         let definition = crate::spacetimedb::ItemDefinition {
             id: "commissioned_sword".into(),
             weight: 1.0,
+            slot: ItemSlot::AnyHolding,
             kind: crate::spacetimedb::ItemKind::Weapon,
             base_value: None,
             nutrition_kcal: 0.0,
@@ -2891,6 +2908,52 @@ mod tests {
     }
 
     #[test]
+    fn skill_meter_and_schedule_use_segmented_rank_and_text_time_controls() {
+        let meter = skill_rank_bar(3.5, 2.75, "Skill test").into_string();
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        let allocation = schedule_allocation_cell("smithing_minutes", 75, true).into_string();
+        assert!(allocation.contains("data-schedule-input"));
+        assert!(allocation.contains("data-schedule-display"));
+        assert!(allocation.contains("Click to enter a time as hh:mm"));
+        assert!(!allocation.contains("type=\"range\""));
+        assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn equipment_checkbox_is_enabled_only_for_equippable_items() {
+        let inventory = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "sword".into(),
+            qty: 1,
+        };
+        let mut definition = crate::spacetimedb::ItemDefinition {
+            id: "sword".into(),
+            weight: 1.0,
+            slot: ItemSlot::AnyHolding,
+            kind: crate::spacetimedb::ItemKind::Weapon,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 3,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+        };
+        let enabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(enabled.contains("data-equipment-toggle"));
+        assert!(!enabled.contains(" disabled"));
+        definition.slot = ItemSlot::None;
+        let disabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(disabled.contains(" disabled"));
+    }
+
+    #[test]
     fn merchant_stock_table_keeps_quantity_weight_and_gold_columns() {
         let rendered = trade_inventory_table(false, None, html! {}).into_string();
         assert!(rendered.contains("<colgroup>"));
@@ -2931,6 +2994,7 @@ mod tests {
             crate::spacetimedb::ItemDefinition {
                 id: "sword".into(),
                 weight: 1.0,
+                slot: ItemSlot::AnyHolding,
                 kind: crate::spacetimedb::ItemKind::Weapon,
                 base_value: None,
                 nutrition_kcal: 0.0,
@@ -2946,6 +3010,7 @@ mod tests {
             crate::spacetimedb::ItemDefinition {
                 id: "cuirass".into(),
                 weight: 1.0,
+                slot: ItemSlot::Chest,
                 kind: crate::spacetimedb::ItemKind::Armor,
                 base_value: None,
                 nutrition_kcal: 0.0,
@@ -2983,6 +3048,10 @@ mod tests {
         assert!(!weapons.contains("cuirass"));
         assert!(weapons.contains("repair-custody-table"));
         assert!(weapons.contains("Smithing 4"));
+        assert!(weapons.contains("stat-icon-smithing"));
+        for tier in 1..=5 {
+            assert!(weapons.contains(&format!("skill-rank-segment-{tier}")));
+        }
         assert!(weapons.contains("repair-custody-item-heading"));
         assert!(weapons.contains("Durability"));
         assert!(weapons.contains("ETA"));
@@ -3247,5 +3316,18 @@ mod tests {
         assert!(trade_script.contains("function applyDynamicTransferModifiers(event)"));
         assert!(trade_script.contains("event.key === \"Shift\" || event.key === \"Control\""));
         assert!(trade_script.contains("controlKey ? \"all\""));
+    }
+
+    #[test]
+    fn schedule_and_equipment_scripts_use_the_new_interactions() {
+        let schedule = include_str!("../../static/training-schedule.js");
+        let equipment = include_str!("../../static/equipment-toggle.js");
+        assert!(schedule.contains("function parseClock(value)"));
+        assert!(schedule.contains("input.type = 'text'"));
+        assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
+        assert!(!schedule.contains("scheduleDrag"));
+        assert!(!schedule.contains("travel_"));
+        assert!(equipment.contains("'/api/equipment'"));
+        assert!(equipment.contains("window.location.reload()"));
     }
 }

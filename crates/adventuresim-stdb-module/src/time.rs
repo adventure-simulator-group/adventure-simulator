@@ -76,13 +76,15 @@ pub struct ScheduleAllocation {
     pub raiding_minutes: u16,
 }
 
-/// Separate daily plans for settlement downtime and strategic travel.
+/// Daily settlement plan. The empty travel allocation is retained temporarily
+/// for database/client compatibility; travel never applies it.
 #[derive(Clone, Debug)]
 #[table(accessor = character_training_schedule, public)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
+    /// Legacy compatibility field. Reducers keep this empty and travel ignores it.
     pub travel: ScheduleAllocation,
 }
 
@@ -167,8 +169,8 @@ pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Res
     ensure_character_time(ctx, character_id)
 }
 
-/// Record time spent travelling without applying settlement-only recovery or
-/// training. Travel time belongs to the character's personal strategic clock.
+/// Record time spent travelling without applying recovery, activities, or
+/// training. Travel time belongs only to the character's personal clock.
 pub fn advance_character_time(
     ctx: &ReducerContext,
     character_id: u64,
@@ -188,28 +190,7 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
-    let schedule = ctx
-        .db
-        .character_training_schedule()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character training schedule not found".to_string())?;
-    let mut skills = ctx
-        .db
-        .character_skills()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character skill record not found".to_string())?;
-    let activities = activity_training_profile(ctx, character_id)?;
-    apply_training(&mut skills, &schedule.travel, minutes, activities);
-    ctx.db.character_skills().character_id().update(skills);
-    crate::condition::apply_travel_condition(
-        ctx,
-        character_id,
-        starting_minute,
-        minutes,
-        schedule.travel.prayer_minutes,
-    )?;
+    crate::condition::apply_travel_condition(ctx, character_id, starting_minute, minutes, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
@@ -855,7 +836,7 @@ pub fn update_training_schedule(
     ctx: &ReducerContext,
     character_id: u64,
     downtime: ScheduleAllocation,
-    travel: ScheduleAllocation,
+    _travel: ScheduleAllocation,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     if synchronize_character(ctx, character_id)? {
@@ -864,12 +845,10 @@ pub fn update_training_schedule(
     let schedule = CharacterTrainingSchedule {
         character_id,
         downtime,
-        travel,
+        travel: ScheduleAllocation::default(),
     };
-    if schedule.downtime.allocated_minutes() > MINUTES_PER_DAY
-        || schedule.travel.allocated_minutes() > MINUTES_PER_DAY
-    {
-        return Err("Each downtime and travel plan must fit within 24 hours".into());
+    if schedule.downtime.allocated_minutes() > MINUTES_PER_DAY {
+        return Err("The downtime plan must fit within 24 hours".into());
     }
     ctx.db
         .character_training_schedule()

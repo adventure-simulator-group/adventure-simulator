@@ -76,6 +76,10 @@ price, or any other item property.
 The local catalog assigns several starter and demo items across all five qualities so the Wounded
 Demo fixture exercises each color and repair ceiling.
 
+Equippable personal-inventory rows expose a checkbox backed by the item's catalog slot. Checking
+it equips that exact inventory instance, displacing any item already occupying the selected slot;
+unchecking it unequips the instance. Non-equipment rows keep a disabled checkbox.
+
 Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. Database upgrades
 split any legacy durable stack into quantity-one instances while retaining the original row ID for
 one piece, preserving equipped references; pooled party equipment is migrated the same way.

@@ -572,16 +572,27 @@ pub fn equip_item(
     destination: ItemSlot,
 ) -> Result<(), String> {
     require_living_character(ctx, character_id)?;
-    if ctx
+    let inventory = ctx
         .db
         .inventory_item()
         .character_and_id()
         .filter((character_id, inventory_item_id))
         .next()
-        .is_none()
-    {
-        return Err(format!(
+        .ok_or_else(|| {
+            format!(
             "Can't equip item: InventoryItem@{inventory_item_id} doesn't exist for Character@{character_id}"
+            )
+        })?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .ok_or_else(|| format!("Can't equip unknown item {}", inventory.item_id))?;
+    if destination != ItemSlot::None && !item_slot_accepts(definition.slot, destination) {
+        return Err(format!(
+            "Can't equip {} in {:?}; its equipment slot is {:?}",
+            inventory.item_id, destination, definition.slot
         ));
     }
 
@@ -622,11 +633,29 @@ pub fn equip_item(
         ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
         ItemSlot::Chest => equip.chest_armor_id = Some(inventory_item_id),
         ItemSlot::Stomach => equip.stomach_armor_id = Some(inventory_item_id),
-        ItemSlot::None => {}
+        ItemSlot::None => crate::repair::unequip(&mut equip, inventory_item_id),
     }
 
     ctx.db.character_equip().character_id().update(equip);
     Ok(())
+}
+
+fn item_slot_accepts(catalog_slot: ItemSlot, destination: ItemSlot) -> bool {
+    match catalog_slot {
+        ItemSlot::AnyHolding => matches!(
+            destination,
+            ItemSlot::AnyHolding | ItemSlot::LeftHolding | ItemSlot::RightHolding
+        ),
+        ItemSlot::AnyArm => matches!(
+            destination,
+            ItemSlot::AnyArm | ItemSlot::LeftArm | ItemSlot::RightArm
+        ),
+        ItemSlot::AnyLeg => matches!(
+            destination,
+            ItemSlot::AnyLeg | ItemSlot::LeftLeg | ItemSlot::RightLeg
+        ),
+        slot => slot == destination,
+    }
 }
 
 #[reducer]

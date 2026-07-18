@@ -31,7 +31,7 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, Party,
+    ItemCondition, ItemDefinition, ItemSlot, Party,
     PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
     QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
     ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
@@ -105,6 +105,7 @@ pub fn routes() -> Router<AppState> {
             post(liquidate_party_assets),
         )
         .route("/api/inventory-target", post(set_inventory_target))
+        .route("/api/equipment", post(set_equipment))
         .route(
             "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
@@ -1391,22 +1392,6 @@ struct TrainingScheduleForm {
     prayer_minutes: u16,
     thievery_minutes: u16,
     raiding_minutes: u16,
-    travel_melee_minutes: u16,
-    travel_dodge_minutes: u16,
-    travel_block_minutes: u16,
-    travel_ranged_minutes: u16,
-    travel_will_minutes: u16,
-    travel_charisma_minutes: u16,
-    travel_medicine_minutes: u16,
-    travel_faith_minutes: u16,
-    travel_stealth_minutes: u16,
-    travel_balance_minutes: u16,
-    travel_surgeon_minutes: u16,
-    travel_smithing_minutes: u16,
-    travel_labor_minutes: u16,
-    travel_prayer_minutes: u16,
-    travel_thievery_minutes: u16,
-    travel_raiding_minutes: u16,
 }
 
 async fn update_training_schedule(
@@ -1440,24 +1425,7 @@ async fn update_training_schedule(
                         thievery_minutes: form.thievery_minutes,
                         raiding_minutes: form.raiding_minutes,
                     }),
-                    json!(ScheduleAllocation {
-                        melee_minutes: form.travel_melee_minutes,
-                        dodge_minutes: form.travel_dodge_minutes,
-                        block_minutes: form.travel_block_minutes,
-                        ranged_minutes: form.travel_ranged_minutes,
-                        will_minutes: form.travel_will_minutes,
-                        charisma_minutes: form.travel_charisma_minutes,
-                        medicine_minutes: form.travel_medicine_minutes,
-                        faith_minutes: form.travel_faith_minutes,
-                        stealth_minutes: form.travel_stealth_minutes,
-                        balance_minutes: form.travel_balance_minutes,
-                        surgeon_minutes: form.travel_surgeon_minutes,
-                        smithing_minutes: form.travel_smithing_minutes,
-                        labor_minutes: form.travel_labor_minutes,
-                        prayer_minutes: form.travel_prayer_minutes,
-                        thievery_minutes: form.travel_thievery_minutes,
-                        raiding_minutes: form.travel_raiding_minutes,
-                    }),
+                    json!(ScheduleAllocation::default()),
                 ],
             )
             .await;
@@ -1704,6 +1672,88 @@ async fn set_inventory_target(
             (axum::http::StatusCode::BAD_REQUEST, "Could not save target")
         }
     }
+}
+
+#[derive(Deserialize)]
+struct EquipmentForm {
+    inventory_item_id: u64,
+    equipped: bool,
+}
+
+async fn set_equipment(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<EquipmentForm>,
+) -> impl IntoResponse {
+    let Some(character_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character");
+    };
+    let inventory: Option<InventoryItem> = match state
+        .db
+        .query_one(&format!(
+            "SELECT * FROM inventory_item WHERE id = {} AND character_id = {character_id}",
+            form.inventory_item_id
+        ))
+        .await
+    {
+        Ok(inventory) => inventory,
+        Err(error) => {
+            tracing::warn!(%error, character_id, "failed to load equipment inventory row");
+            return (StatusCode::SERVICE_UNAVAILABLE, "Inventory is unavailable");
+        }
+    };
+    let Some(inventory) = inventory else {
+        return (StatusCode::NOT_FOUND, "Item is not in this inventory");
+    };
+    let definition: Option<ItemDefinition> = match state
+        .db
+        .query_one(&format!(
+            "SELECT * FROM item WHERE id = {}",
+            sql_string_literal(&inventory.item_id)
+        ))
+        .await
+    {
+        Ok(definition) => definition,
+        Err(error) => {
+            tracing::warn!(%error, character_id, "failed to load equipment definition");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Equipment catalog is unavailable",
+            );
+        }
+    };
+    let Some(definition) = definition else {
+        return (StatusCode::NOT_FOUND, "Item definition is missing");
+    };
+    let destination = if form.equipped {
+        definition.slot
+    } else {
+        ItemSlot::None
+    };
+    if form.equipped && destination == ItemSlot::None {
+        return (StatusCode::BAD_REQUEST, "This item cannot be equipped");
+    }
+    if let Err(error) = state
+        .db
+        .call(
+            "equip_item",
+            &[
+                json!(character_id),
+                json!(form.inventory_item_id),
+                destination.sats_json(),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(%error, character_id, "failed to update equipment");
+        return (StatusCode::BAD_REQUEST, "Could not update equipment");
+    }
+    for reducer in ["refresh_capabilities", "refresh_strategic_condition"] {
+        if let Err(error) = state.db.call(reducer, &[json!(character_id)]).await {
+            tracing::warn!(%error, character_id, reducer, "failed to refresh equipment projection");
+        }
+    }
+    (StatusCode::NO_CONTENT, "")
 }
 
 async fn deposit_party_inventory(

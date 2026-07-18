@@ -467,7 +467,9 @@
   flex-direction: column;
 }
 .repair-custody-header { position: relative; display: flex; align-items: center; justify-content: space-between; }
-.repair-custody-skill { color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; }
+.repair-custody-skill { display: flex; width: 6.8rem; align-items: center; gap: 0.35rem; color: var(--text-muted); white-space: nowrap; }
+.repair-custody-skill .stat-icon { flex: 0 0 1rem; width: 1rem; height: 1rem; }
+.repair-custody-skill .skill-rank-bar { flex: 1; }
 .repair-custody-panel h3 { margin: 0; padding: 0.55rem var(--padding); font-size: var(--font-size-sm); }
 .repair-retrieve-all-form { display: contents; }
 .repair-custody-item-heading {
@@ -2012,7 +2014,6 @@ button.party-portrait-action {
 
 .party-skill-meter .skill-rank-bar { width: 100%; overflow: visible; }
 
-.skill-rank-bar,
 .attribute-rank-bar {
   position: relative;
   overflow: hidden;
@@ -2021,19 +2022,16 @@ button.party-portrait-action {
   --stat-damage-color: color-mix(in srgb, var(--danger) 70%, #fff);
 }
 
-.skill-rank-bar,
 .attribute-rank-bar {
   height: 0.45rem;
 }
 
-.skill-rank-bar > .rank-current,
 .attribute-rank-bar > .rank-current {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--stat-current-color);
 }
 
-.skill-rank-bar > .rank-damage,
 .attribute-rank-bar > .rank-damage {
   position: absolute;
   top: 0;
@@ -2041,7 +2039,6 @@ button.party-portrait-action {
   background: var(--stat-damage-color);
 }
 
-.skill-rank-bar::after,
 .attribute-rank-bar::after {
   position: absolute;
   z-index: 1;
@@ -2050,7 +2047,6 @@ button.party-portrait-action {
   pointer-events: none;
 }
 
-.skill-rank-bar::after,
 .attribute-rank-bar::after {
   background: repeating-linear-gradient(
     to right,
@@ -2061,6 +2057,41 @@ button.party-portrait-action {
     transparent calc(20% + 1px),
     transparent 20%
   );
+}
+
+.skill-rank-bar {
+  position: relative;
+  display: flex;
+  height: 0.45rem;
+  gap: 0.12rem;
+  overflow: visible;
+}
+
+.skill-rank-segment {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--skill-tier-color) 18%, var(--bg-tertiary));
+}
+
+.skill-rank-segment-1 { --skill-tier-color: #a8c84a; }
+.skill-rank-segment-2 { --skill-tier-color: #e0bd3f; }
+.skill-rank-segment-3 { --skill-tier-color: #e48336; }
+.skill-rank-segment-4 { --skill-tier-color: #c84d4d; }
+.skill-rank-segment-5 { --skill-tier-color: #9b63c7; }
+
+.skill-rank-segment > .rank-current,
+.skill-rank-segment > .rank-damage {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.skill-rank-segment > .rank-current { left: 0; background: var(--skill-tier-color); }
+.skill-rank-segment > .rank-damage {
+  background: color-mix(in srgb, var(--skill-tier-color) 45%, var(--danger));
+  opacity: 0.7;
 }
 
 .party-attributes-list {
@@ -2531,7 +2562,7 @@ body.chat-resizing {
   content: "";
 }
 
-.party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; }
+.party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; cursor: text; }
 
 .schedule-step {
   position: absolute;
@@ -2564,43 +2595,9 @@ body.chat-resizing {
 .schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
 .party-skill-allocation:hover .schedule-step,
 .schedule-step:focus-visible { opacity: 1; }
-.schedule-time-input { width: 3.25rem; padding: 0; border: 1px solid var(--accent); text-align: right; font: inherit; color: inherit; background: var(--bg-tertiary); }
+.schedule-time-input { width: 4.1rem; padding: 0.08rem 0.18rem; border: 1px solid var(--accent); text-align: center; font: inherit; color: inherit; background: var(--bg-tertiary); }
 
-/* Daily allocation handles sit over the existing skill-rank meters. */
 .skill-schedule { display: grid; gap: 0.55rem; }
-.skill-schedule .skill-rank-bar { overflow: visible; cursor: crosshair; }
-.schedule-handle {
-  --schedule-handle-color: var(--text-primary);
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  width: 0.44rem;
-  height: 0.78rem;
-  padding: 0;
-  border: 0;
-  background: linear-gradient(to right, transparent calc(50% - 0.5px), var(--schedule-handle-color) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
-  cursor: ew-resize;
-  touch-action: none;
-  transform: translate(-50%, -50%);
-}
-
-.schedule-handle::before,
-.schedule-handle::after {
-  position: absolute;
-  left: 50%;
-  width: 0;
-  height: 0;
-  content: "";
-  border-right: 0.22rem solid transparent;
-  border-left: 0.22rem solid transparent;
-  transform: translateX(-50%);
-}
-
-.schedule-handle::before { top: 0; border-top: 0.21rem solid var(--schedule-handle-color); }
-.schedule-handle::after { bottom: 0; border-bottom: 0.21rem solid var(--schedule-handle-color); }
-.schedule-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.schedule-handle-downtime { top: 28%; }
-.schedule-handle-travel { --schedule-handle-color: var(--accent); top: 72%; }
 
 .schedule-context-heading th {
   padding: 0 0.15rem 0.35rem;
@@ -2610,7 +2607,6 @@ body.chat-resizing {
   text-align: center;
   text-transform: uppercase;
 }
-.travel-allocation [data-schedule-display] { color: var(--accent); }
 
 .schedule-divider td {
   height: 0.8rem;
@@ -2631,7 +2627,9 @@ body.chat-resizing {
 
 .schedule-special-row .party-skill-name { font-weight: 700; }
 .schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
-.schedule-special-track { overflow: visible; }
+.schedule-special-track { position: relative; display: block; overflow: hidden; background: var(--bg-tertiary); }
+.schedule-allocation-fill,
+.schedule-leisure-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
 .schedule-special-track::after {
   display: block;
   background:
@@ -2645,6 +2643,5 @@ body.chat-resizing {
 }
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
-.schedule-extra-track .schedule-handle { top: 50%; }
 .schedule-leisure-fill { position: absolute; top: 0; left: 0; display: block; height: 50%; background: var(--success, #69a86b); }
 .schedule-leisure-fill.travel-leisure-fill { top: 50%; }

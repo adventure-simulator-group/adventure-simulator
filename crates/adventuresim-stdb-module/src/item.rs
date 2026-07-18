@@ -142,7 +142,7 @@ const fn weapon(
         id,
         weight,
         base_value,
-        slot: ItemSlot::None,
+        slot: ItemSlot::AnyHolding,
         kind: ItemKind::Weapon,
         accuracy,
         reach,
@@ -204,7 +204,7 @@ const fn shield(id: &'static str, weight: f32, base_value: u32, block: f32) -> E
         id,
         weight,
         base_value,
-        slot: ItemSlot::None,
+        slot: ItemSlot::AnyHolding,
         kind: ItemKind::Shield,
         accuracy: 0.0,
         reach: 0.0,
@@ -1198,7 +1198,7 @@ mod tests {
 
             match definition.kind {
                 ItemKind::Weapon => {
-                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
                     assert!(definition.accuracy > 0.0);
                     assert!(definition.reach > 0.0);
                     assert!(definition.blunt || definition.slash || definition.pierce);
@@ -1220,7 +1220,7 @@ mod tests {
                     assert!((0.0..=1.0).contains(&definition.range_of_motion));
                 }
                 ItemKind::Shield => {
-                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
                     assert!((1.0..=5.0).contains(&definition.block));
                 }
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
