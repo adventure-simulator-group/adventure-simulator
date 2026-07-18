@@ -59,6 +59,8 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
             let land_evidence = match finalized.hydrologic.drought.religious.geologic.predicted.trees.vegetated.forest.land.evidence {
                 LandUseEvidence::HydeSampled { normalized: false } => "sampled HYDE land-use fractions",
                 LandUseEvidence::HydeSampled { normalized: true } => "sampled and normalized HYDE land-use fractions",
+                LandUseEvidence::Luh1Sampled { normalized: false } => "sampled LUH1 land-use fractions",
+                LandUseEvidence::Luh1Sampled { normalized: true } => "sampled and normalized LUH1 land-use fractions",
                 LandUseEvidence::DeterministicFallback => "deterministic non-HYDE land-use fallback",
             };
             push_source_note(

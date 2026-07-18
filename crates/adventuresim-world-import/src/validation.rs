@@ -53,7 +53,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
     }
     for (used, id) in [
         (report.elevation_tiles_read > 0, "copernicus-dem-glo30"),
-        (report.land_use_rasters_read > 0, "hyde-3-2-1"),
+        (report.land_use_rasters_read > 0, "luh1-luha-u2-v1"),
         (report.forest_tiles_read > 0, "clms-forest-2018"),
         (
             report.potential_vegetation_raster_files_read > 0,
@@ -692,7 +692,8 @@ fn land_use_counts_are_consistent(
     samples == settlements
         && fallbacks <= samples
         && normalized <= samples - fallbacks
-        && ((settlements == 0 && rasters == 0) || (settlements > 0 && rasters == 7))
+        && ((settlements == 0 && (rasters == 0 || rasters == 5))
+            || (settlements > 0 && rasters == 5))
 }
 
 fn elevation_counts_are_consistent(
@@ -832,12 +833,13 @@ mod tests {
 
     #[test]
     fn land_use_report_requires_all_source_rasters_and_samples() {
-        assert!(land_use_counts_are_consistent(7, 3, 1, 1, 3));
+        assert!(land_use_counts_are_consistent(5, 3, 1, 1, 3));
         assert!(land_use_counts_are_consistent(0, 0, 0, 0, 0));
-        assert!(!land_use_counts_are_consistent(6, 3, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(7, 2, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(7, 3, 4, 0, 3));
-        assert!(!land_use_counts_are_consistent(7, 3, 1, 3, 3));
+        assert!(land_use_counts_are_consistent(5, 0, 0, 0, 0));
+        assert!(!land_use_counts_are_consistent(4, 3, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(5, 2, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(5, 3, 4, 0, 3));
+        assert!(!land_use_counts_are_consistent(5, 3, 1, 3, 3));
     }
 
     #[test]

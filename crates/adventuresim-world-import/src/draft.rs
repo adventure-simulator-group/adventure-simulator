@@ -115,7 +115,9 @@ delegate_settlement_access!(LandUseSettlementDraft, elevated);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LandUseEvidence {
+    #[allow(dead_code)]
     HydeSampled { normalized: bool },
+    Luh1Sampled { normalized: bool },
     DeterministicFallback,
 }
 
