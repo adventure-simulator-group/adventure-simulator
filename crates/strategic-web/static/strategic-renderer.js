@@ -1,25 +1,25 @@
 const hosts = [...document.querySelectorAll('[data-render-config]:not([data-render-started])')];
-const { consumeMarkerSelection } = window.strategicRendererHelpers;
+const {
+  consumeMarkerSelection,
+  createAttemptState,
+  pollForReady,
+  monitorTacticalMission,
+  canonicalNavigationPath,
+} = window.strategicRendererHelpers;
 
 function setStatus(status, message) {
   if (status) status.textContent = message;
 }
 
-async function pollHandoff(url, status, fallback, signal) {
-  while (!signal.aborted) {
-    const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    const outcome = await response.json();
-    if (!response.ok) throw new Error(outcome.status === 'unauthorized' ? 'Mission handoff is not authorized.' : 'Mission status is unavailable.');
-    if (outcome.fallback_url) {
-      fallback.href = outcome.fallback_url;
-      fallback.hidden = false;
-    }
-    if (outcome.status === 'ready') return outcome;
-    if (outcome.status === 'failed' || outcome.status === 'ended') throw new Error(`Mission ${outcome.status}.`);
-    setStatus(status, 'Allocating a tactical server…');
-    await new Promise((resolve) => setTimeout(resolve, 500));
+async function requestJson(url, options, signal) {
+  const response = await fetch(url, { ...options, signal });
+  const outcome = await response.json();
+  if (!response.ok && !outcome.status && !outcome.outcome) {
+    throw new Error(outcome.status === 'unauthorized'
+      ? 'Mission handoff is not authorized.'
+      : 'Mission status is unavailable.');
   }
-  throw new DOMException('Handoff canceled', 'AbortError');
+  return outcome;
 }
 
 function installHandoff(renderer, host) {
@@ -33,67 +33,116 @@ function installHandoff(renderer, host) {
   fallback.hidden = true;
   status.after(fallback);
   form.dataset.handoffInterceptReady = 'true';
-  let busy = false;
-  let handedOff = false;
+
+  const updateFallback = (outcome) => {
+    if (!outcome?.fallback_url) return;
+    fallback.href = outcome.fallback_url;
+    fallback.hidden = false;
+  };
+  const attempt = createAttemptState(({ active, handedOff }) => {
+    submit.disabled = active;
+    renderer.wasm_set_allocating(active && !handedOff);
+  });
+  const cancelAttempt = () => attempt.reset();
+  window.addEventListener('pagehide', cancelAttempt, { once: true });
+  document.addEventListener('strategic-navigation-start', cancelAttempt);
+  const teardownObserver = new MutationObserver(() => {
+    if (!host.isConnected) {
+      cancelAttempt();
+      teardownObserver.disconnect();
+    }
+  });
+  teardownObserver.observe(document.documentElement, { childList: true, subtree: true });
+
   form.addEventListener('submit', async (event) => {
     if (!host.classList.contains('renderer-enhanced')) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (busy) return;
-    busy = true;
-    submit.disabled = true;
-    renderer.wasm_set_allocating(true);
+    if (!attempt.begin()) return;
+    const signal = attempt.snapshot().signal;
     setStatus(status, 'Requesting tactical combat…');
-    const controller = new AbortController();
     try {
-      const response = await fetch(form.action, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { Accept: 'application/json' }, signal: controller.signal,
-      });
-      const outcome = await response.json();
+      const outcome = await requestJson(form.action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }, signal);
       if (outcome.outcome === 'approval_required') {
         setStatus(status, outcome.message);
+        attempt.reset();
         return;
       }
-      if (!response.ok || outcome.outcome !== 'executed') throw new Error(outcome.message || 'Combat could not be started.');
+      if (outcome.outcome !== 'executed') {
+        throw new Error(outcome.message || 'Combat could not be started.');
+      }
       fallback.href = outcome.status_url;
       fallback.hidden = false;
-      const ready = await pollHandoff(outcome.handoff_url, status, fallback, controller.signal);
+      const requestStatus = (pollSignal) => requestJson(outcome.handoff_url, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }, pollSignal);
+      const ready = await pollForReady({
+        requestStatus,
+        signal,
+        onOutcome: (handoff) => {
+          updateFallback(handoff);
+          if (handoff.status === 'pending') {
+            setStatus(status, 'Allocating a tactical server…');
+          }
+        },
+      });
       renderer.wasm_tactical_handoff(JSON.stringify({
-        handoff_schema: 1, player_id: ready.player_id, server_url: ready.server_url,
+        handoff_schema: 1,
+        player_id: ready.player_id,
+        server_url: ready.server_url,
       }));
-      handedOff = true;
+      attempt.markHandedOff();
       setStatus(status, 'Connecting to the tactical server…');
-      const statusTimer = setInterval(() => {
-        const phase = renderer.wasm_renderer_status();
-        if (phase === 'tactical_connected') {
-          clearInterval(statusTimer);
-          setStatus(status, 'Connected. Tactical combat is active.');
-        } else if (phase === 'tactical_failed') {
-          clearInterval(statusTimer);
+      await monitorTacticalMission({
+        requestStatus,
+        rendererStatus: () => renderer.wasm_renderer_status(),
+        signal,
+        onConnected: () => setStatus(status, 'Connected. Tactical combat is active.'),
+        onFailed: (handoff) => {
+          updateFallback(handoff);
           setStatus(status, 'The tactical connection failed. The strategic scene has been restored; use mission status to retry.');
-        }
-      }, 200);
+          attempt.reset();
+        },
+        onEnded: (handoff) => {
+          updateFallback(handoff);
+          const path = canonicalNavigationPath(handoff.fallback_url, location.href);
+          if (!path) {
+            setStatus(status, 'Mission ended. Use the mission status link to continue.');
+            attempt.reset();
+            return;
+          }
+          attempt.reset();
+          document.dispatchEvent(new CustomEvent('strategic-navigation-start'));
+          location.assign(path);
+        },
+      });
     } catch (error) {
-      console.error('Live tactical handoff failed', error);
-      setStatus(status, `${error.message} Use the normal mission status link to continue.`);
-    } finally {
-      if (!handedOff) {
-        renderer.wasm_set_allocating(false);
-        submit.disabled = false;
-        busy = false;
+      if (error.name !== 'AbortError') {
+        console.error('Live tactical handoff failed', error);
+        setStatus(status, `${error.message} Use the normal mission status link to continue.`);
       }
+      if (attempt.snapshot().active) attempt.reset();
     }
   }, { capture: true });
 }
 
 if (hosts.length > 1) {
-  for (const host of hosts) setStatus(host.querySelector('[data-renderer-status]'), 'Only one interactive renderer can run on this page; using the accessible fallback.');
+  for (const host of hosts) {
+    setStatus(host.querySelector('[data-renderer-status]'), 'Only one interactive renderer can run on this page; using the accessible fallback.');
+  }
 } else for (const host of hosts) {
   host.dataset.renderStarted = 'true';
   const canvas = host.querySelector('[data-renderer-canvas]');
   const status = host.querySelector('[data-renderer-status]');
-  if (!navigator.gpu) { setStatus(status, 'WebGPU is unavailable; using the accessible paper fallback.'); continue; }
+  if (!navigator.gpu) {
+    setStatus(status, 'WebGPU is unavailable; using the accessible paper fallback.');
+    continue;
+  }
   try {
     const renderer = await import('/tactical/wasm/adventuresim-tactical-client.js');
     await renderer.default();
@@ -107,17 +156,26 @@ if (hosts.length > 1) {
         const packageResponse = await fetch(manifest.package_url, { credentials: 'same-origin', cache: 'force-cache' });
         if (!packageResponse.ok) throw new Error(`map package returned ${packageResponse.status}`);
         const compiledPackage = await packageResponse.json();
-        if (JSON.stringify(compiledPackage.bounds) !== JSON.stringify(manifest.bounds)) throw new Error('map package bounds do not match its manifest');
+        if (JSON.stringify(compiledPackage.bounds) !== JSON.stringify(manifest.bounds)) {
+          throw new Error('map package bounds do not match its manifest');
+        }
         config.startup.package = compiledPackage;
-      } catch (artifactError) { console.warn('Compiled map artifacts unavailable; using embedded map package', artifactError); }
+      } catch (artifactError) {
+        console.warn('Compiled map artifacts unavailable; using embedded map package', artifactError);
+      }
     }
     renderer.wasm_set_suspended(document.hidden);
     await renderer.wasm_run_config(JSON.stringify(config));
     canvas.hidden = false;
     host.classList.add('renderer-enhanced');
-    setStatus(status, config.startup.mode === 'strategic_map' ? 'Interactive renderer ready. Drag to pan and use the wheel to zoom.' : 'Interactive strategic scene ready.');
+    setStatus(status, config.startup.mode === 'strategic_map'
+      ? 'Interactive renderer ready. Drag to pan and use the wheel to zoom.'
+      : 'Interactive strategic scene ready.');
     document.addEventListener('visibilitychange', () => renderer.wasm_set_suspended(document.hidden));
-    setInterval(() => consumeMarkerSelection(renderer, document, location.href), 100);
+    const markerTimer = setInterval(() => consumeMarkerSelection(renderer, document, location.href), 100);
+    const stopMarkerTimer = () => clearInterval(markerTimer);
+    window.addEventListener('pagehide', stopMarkerTimer, { once: true });
+    document.addEventListener('strategic-navigation-start', stopMarkerTimer, { once: true });
     installHandoff(renderer, host);
   } catch (error) {
     console.error('Strategic renderer initialization failed', error);

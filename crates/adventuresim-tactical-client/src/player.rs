@@ -4,7 +4,7 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 
-use crate::Args;
+use crate::{Args, TacticalDerivedEntity};
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -166,6 +166,7 @@ fn on_new_player_added_hook(
                     _ => id.color(),
                 };
                 parent.spawn((
+                    TacticalDerivedEntity,
                     Mesh3d(meshes.add(Capsule3d::new(
                         half_extents.x,
                         (half_extents.y - half_extents.x).max(0.0) * 2.0,
@@ -181,6 +182,7 @@ fn on_new_player_added_hook(
 
                 if body_part == BodyPart::Head {
                     parent.spawn((
+                        TacticalDerivedEntity,
                         Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(0.3, 0.10, 0.1)))),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color: color,
@@ -197,6 +199,7 @@ fn on_new_player_added_hook(
 
             for &(body_part, offset, half_extents) in BODY_PART_HITBOXES {
                 parent.spawn((
+                    TacticalDerivedEntity,
                     LimbHitbox(body_part),
                     Collider::cuboid(
                         half_extents.x * 2.0,

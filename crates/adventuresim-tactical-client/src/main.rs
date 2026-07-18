@@ -70,6 +70,12 @@ pub(crate) struct RendererConfig(StartupConfig);
 #[derive(Component)]
 pub(crate) struct TacticalEntity;
 
+#[derive(Component)]
+struct TacticalTerrain;
+
+#[derive(Component)]
+pub(crate) struct TacticalDerivedEntity;
+
 #[derive(Resource, Clone, Copy)]
 struct StrategicReturnMode(Option<RendererMode>);
 
@@ -171,14 +177,16 @@ pub fn wasm_renderer_status() -> String {
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
 pub fn wasm_set_allocating(allocating: bool) {
-    RENDERER_STATUS.store(
-        if allocating {
-            STATUS_ALLOCATING
-        } else {
-            STATUS_STRATEGIC
-        },
-        Ordering::Release,
-    );
+    if allocating {
+        RENDERER_STATUS.store(STATUS_ALLOCATING, Ordering::Release);
+    } else {
+        let _ = RENDERER_STATUS.compare_exchange(
+            STATUS_ALLOCATING,
+            STATUS_STRATEGIC,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
 }
 
 #[cfg(target_family = "wasm")]
@@ -424,7 +432,18 @@ fn monitor_connection_failure(
     }
 }
 
-fn cleanup_tactical(mut commands: Commands, entities: Query<Entity, With<TacticalEntity>>) {
+fn cleanup_tactical(
+    mut commands: Commands,
+    entities: Query<
+        Entity,
+        Or<(
+            With<TacticalEntity>,
+            With<adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated>,
+            With<TacticalDerivedEntity>,
+            With<TacticalTerrain>,
+        )>,
+    >,
+) {
     for entity in &entities {
         commands.entity(entity).despawn();
     }
@@ -500,6 +519,55 @@ mod tests {
         );
         HANDOFF_ACCEPTED.store(false, Ordering::Release);
     }
+
+    #[test]
+    fn tactical_exit_removes_network_roots_terrain_and_derived_entities_only() {
+        use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
+
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin))
+            .insert_state(RendererMode::Tactical)
+            .add_systems(OnExit(RendererMode::Tactical), cleanup_tactical);
+        app.update();
+
+        let strategic = app.world_mut().spawn(Name::new("strategic sentinel")).id();
+        let replicated = app.world_mut().spawn(Replicated).id();
+        let derived = app
+            .world_mut()
+            .spawn((
+                TacticalDerivedEntity,
+                Collider::cuboid(1.0, 1.0, 1.0),
+                ChildOf(replicated),
+            ))
+            .id();
+        let terrain = app
+            .world_mut()
+            .spawn((TacticalEntity, TacticalTerrain))
+            .id();
+        let tactical_root = app.world_mut().spawn(TacticalEntity).id();
+        let tactical_child = app
+            .world_mut()
+            .spawn((TacticalDerivedEntity, ChildOf(tactical_root)))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<NextState<RendererMode>>()
+            .set(RendererMode::StrategicScene);
+        app.update();
+        app.update();
+
+        assert!(app.world().get_entity(strategic).is_ok());
+        for removed in [replicated, derived, terrain, tactical_root, tactical_child] {
+            assert!(app.world().get_entity(removed).is_err(), "{removed:?}");
+        }
+        let mut query = app.world_mut().query_filtered::<Entity, Or<(
+            With<TacticalEntity>,
+            With<Replicated>,
+            With<TacticalDerivedEntity>,
+            With<TacticalTerrain>,
+        )>>();
+        assert_eq!(query.iter(app.world()).count(), 0);
+    }
 }
 
 fn on_game_scene_added_hook(
@@ -533,6 +601,8 @@ fn on_game_scene_added_hook(
             metallic: 0.0,
             ..default()
         })),
+        TacticalEntity,
+        TacticalTerrain,
     ));
 
     Ok(())
