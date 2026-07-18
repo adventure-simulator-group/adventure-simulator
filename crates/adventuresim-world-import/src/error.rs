@@ -11,6 +11,11 @@ pub enum Error {
         path: PathBuf,
         source: tiff::TiffError,
     },
+    #[error("failed to parse JSON source {path}: {source}")]
+    JsonSource {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
     #[error("invalid {field} value {value:?} in {path}: {message}")]
     InvalidField {
         path: PathBuf,
