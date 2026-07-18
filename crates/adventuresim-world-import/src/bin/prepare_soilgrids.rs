@@ -9,6 +9,7 @@ use std::{
     fs,
     io::{Cursor, Read, Seek},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use adventuresim_world_schema::WorldBounds;
@@ -27,6 +28,8 @@ const WCS_ROOT: &str = "https://maps.isric.org/mapserv";
 const LAYERS: [&str; 6] = ["sand", "silt", "clay", "soc", "cfvo", "bdod"];
 const MAX_DOWNLOAD_BYTES: usize = 64 * 1024 * 1024;
 const MAX_RASTER_PIXELS: u64 = 16_000_000;
+const MAX_PIXEL_DEGREES: f64 = 0.01;
+const MAX_ENVELOPE_EXPANSION_DEGREES: f64 = 0.05;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,12 +70,17 @@ fn run(args: Args) -> Result<(), Box<dyn Error>> {
         validate_existing_cache(&args.output_dir)?;
     }
     let staging = args.output_dir.with_extension("staging");
+    if staging == args.output_dir {
+        return Err("output directory must not end with .staging".into());
+    }
     if staging.exists() {
         return Err(format!("staging path already exists: {}", staging.display()).into());
     }
     fs::create_dir_all(&staging)?;
     let client = Client::builder()
         .user_agent("adventure-simulator-soilgrids-preparer/1.0")
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(45))
         .build()?;
     let result = (|| -> Result<(), Box<dyn Error>> {
         let mut grid = None;
@@ -266,6 +274,8 @@ impl Grid {
             || !scale[1].is_finite()
             || scale[0] <= 0.0
             || scale[1] <= 0.0
+            || scale[0] > MAX_PIXEL_DEGREES
+            || scale[1] > MAX_PIXEL_DEGREES
         {
             return Err(
                 "SoilGrids WCS response has invalid EPSG:4326 RasterPixelIsArea metadata".into(),
@@ -308,6 +318,10 @@ impl Grid {
             || raster_east > east + self.x_scale + e
             || raster_south < south - self.y_scale - e
             || raster_south > south + self.y_scale + e
+            || self.west < west - MAX_ENVELOPE_EXPANSION_DEGREES
+            || self.north > north + MAX_ENVELOPE_EXPANSION_DEGREES
+            || raster_east > east + MAX_ENVELOPE_EXPANSION_DEGREES
+            || raster_south < south - MAX_ENVELOPE_EXPANSION_DEGREES
         {
             return Err(
                 "SoilGrids WCS response envelope does not match requested world bounds".into(),

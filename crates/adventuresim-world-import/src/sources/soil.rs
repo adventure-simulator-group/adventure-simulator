@@ -37,6 +37,8 @@ const MANIFEST: &str = "soilgrids-manifest.json";
 const LAYERS: [&str; 6] = ["sand", "silt", "clay", "soc", "cfvo", "bdod"];
 const NODATA: i16 = i16::MIN;
 const MAX_RASTER_PIXELS: u64 = 16_000_000;
+const MAX_PIXEL_DEGREES: f64 = 0.01;
+const MAX_ENVELOPE_EXPANSION_DEGREES: f64 = 0.05;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -273,6 +275,8 @@ impl Grid {
         let north = tie[4] + tie[1] * scale[1];
         if !(west.is_finite()
             && north.is_finite()
+            && scale[0] <= MAX_PIXEL_DEGREES
+            && scale[1] <= MAX_PIXEL_DEGREES
             && west >= -180.0
             && west + scale[0] * f64::from(width) <= 180.0
             && north <= 90.0
@@ -318,6 +322,10 @@ impl Grid {
             || raster_east > east + self.x_scale + epsilon
             || raster_south < south - self.y_scale - epsilon
             || raster_south > south + self.y_scale + epsilon
+            || self.west < west - MAX_ENVELOPE_EXPANSION_DEGREES
+            || self.north > north + MAX_ENVELOPE_EXPANSION_DEGREES
+            || raster_east > east + MAX_ENVELOPE_EXPANSION_DEGREES
+            || raster_south < south - MAX_ENVELOPE_EXPANSION_DEGREES
         {
             return Err(Error::Validation(
                 "SoilGrids GeoTIFF envelope does not match its manifest world bounds".into(),
@@ -558,7 +566,8 @@ mod tests {
         Grid, NODATA, PhysicalSample, carbon_from_soc, modeled_water_capacity, texture_from_source,
     };
     use adventuresim_world_schema::{
-        AvailableWaterCapacity, MineralSoilTexture, TopsoilOrganicCarbon,
+        AvailableWaterCapacity, GeographicCoordinate, MineralSoilTexture, TopsoilOrganicCarbon,
+        WorldBounds,
     };
     #[test]
     fn grid_keeps_inclusive_outer_edge_in_final_pixel() {
@@ -615,5 +624,26 @@ mod tests {
         assert_eq!(carbon_from_soc(100), TopsoilOrganicCarbon::Low);
         assert_eq!(carbon_from_soc(200), TopsoilOrganicCarbon::Medium);
         assert_eq!(carbon_from_soc(600), TopsoilOrganicCarbon::High);
+    }
+
+    #[test]
+    fn bounds_contract_rejects_coarse_global_grid_but_allows_one_pixel_alignment() {
+        let coordinate =
+            |latitude, longitude| GeographicCoordinate::new(latitude, longitude).unwrap();
+        let bounds = WorldBounds::new(coordinate(53.1, 9.24), coordinate(54.0, 10.75)).unwrap();
+        let aligned = Grid {
+            west: 9.239,
+            north: 54.001,
+            x_scale: 0.001,
+            y_scale: 0.001,
+        };
+        assert!(aligned.validate_bounds(&bounds, 1_512, 902).is_ok());
+        let global = Grid {
+            west: -180.0,
+            north: 90.0,
+            x_scale: 1.0,
+            y_scale: 1.0,
+        };
+        assert!(global.validate_bounds(&bounds, 360, 180).is_err());
     }
 }
