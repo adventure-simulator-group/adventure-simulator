@@ -3,7 +3,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
 use crate::{
-    ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item, strategic::settlement,
+    CharacterTrainingSchedule, ItemSlot, ScheduleAllocation, Settlement, add_inventory_item,
+    character_training_schedule, enter_mission, inventory_item,
+    strategic::{party, settlement},
 };
 
 /// General character info
@@ -191,6 +193,115 @@ pub fn create_named_character_with_id(
     name: String,
 ) -> Result<(), String> {
     insert_new_character(ctx, name, id, false)
+}
+
+/// Configure a freshly-created `sim-*` character for an isolated strategic
+/// simulation. This reducer does not accept any combat seed or outcome. Its
+/// fixed starting purse and profile bounds keep it useful for reproducible
+/// local experiments without becoming a general-purpose character editor.
+#[reducer]
+pub fn configure_simulation_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    attributes: CharacterAttributes,
+    skills: CharacterSkills,
+    downtime: ScheduleAllocation,
+) -> Result<(), String> {
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Simulation character not found")?;
+    if !character.name.starts_with("sim-") || character.temporary {
+        return Err("Only a fresh sim-* character may be configured".into());
+    }
+    if attributes.character_id != character_id || skills.character_id != character_id {
+        return Err("Simulation profile character IDs must match".into());
+    }
+    let bounded_attributes = [
+        attributes.endurance,
+        attributes.immunity,
+        attributes.gut,
+        attributes.precision,
+        attributes.intelligence,
+        attributes.instinct,
+        attributes.eyesight,
+        attributes.hearing,
+        attributes.left_arm_strength,
+        attributes.right_arm_strength,
+        attributes.left_leg_strength,
+        attributes.right_leg_strength,
+        attributes.left_arm_agility,
+        attributes.right_arm_agility,
+        attributes.left_leg_agility,
+        attributes.right_leg_agility,
+    ]
+    .into_iter()
+    .all(|value| value.is_finite() && (0.5..=5.0).contains(&value));
+    let bounded_skills = [
+        skills.melee_hours,
+        skills.dodge_hours,
+        skills.block_hours,
+        skills.ranged_hours,
+        skills.will_hours,
+        skills.charisma_hours,
+        skills.medicine_hours,
+        skills.faith_hours,
+        skills.stealth_hours,
+        skills.balance_hours,
+        skills.surgeon_hours,
+    ]
+    .into_iter()
+    .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value));
+    if !bounded_attributes || !bounded_skills || downtime.allocated_minutes() > 1_440 {
+        return Err("Simulation profile is outside bounded gameplay ranges".into());
+    }
+    if ctx.db.settlement().id().find(&settlement_id).is_none() {
+        return Err("Simulation settlement not found".into());
+    }
+    let party_id = character
+        .party_id
+        .clone()
+        .ok_or("Simulation character has no party")?;
+    let mut solo_party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Simulation party not found")?;
+    if solo_party.leader_id != character_id || !solo_party.is_solo {
+        return Err("Simulation character must still lead its fresh solo party".into());
+    }
+    character.current_settlement_id = Some(settlement_id.clone());
+    character.current_quest_location_id = None;
+    character.temporary = true;
+    character.gold = 500;
+    ctx.db.character().id().update(character);
+    solo_party.current_settlement_id = Some(settlement_id);
+    solo_party.current_quest_location_id = None;
+    ctx.db.party().id().update(solo_party);
+    ctx.db
+        .character_attributes()
+        .character_id()
+        .update(attributes);
+    ctx.db.character_skills().character_id().update(skills);
+    let mut schedule: CharacterTrainingSchedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or("Simulation schedule not found")?;
+    schedule.downtime = downtime;
+    ctx.db
+        .character_training_schedule()
+        .character_id()
+        .update(schedule);
+    add_inventory_item(ctx, character_id, "gold_coin", 400);
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    Ok(())
 }
 
 /// Seed an injured character for local UI development and visual verification.

@@ -44,10 +44,58 @@ enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    /// Exercise the complete strategic loop against an owned disposable local database.
+    CoreLoop {
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        host: String,
+        /// Must be a unique `adventuresim-sim-*` database published for this run.
+        #[arg(long)]
+        database: String,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long, default_value_t = 2)]
+        population: u32,
+        #[arg(long, default_value_t = 1)]
+        cycles: u32,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    if let Command::CoreLoop {
+        host,
+        database,
+        seed,
+        population,
+        cycles,
+        output,
+    } = cli.command
+    {
+        let report = run_core_loop(CoreLoopConfig {
+            host,
+            database,
+            seed,
+            population,
+            cycles,
+        })?;
+        let json = serde_json::to_vec_pretty(&report)?;
+        if let Some(path) = output {
+            fs::write(path, json)?;
+        } else {
+            println!("{}", String::from_utf8(json)?);
+        }
+        eprintln!(
+            "authoritative core loop: {} completed / {} attempted, {} defeats, {} camps, {} upgrades",
+            report.metrics.quests_completed,
+            report.metrics.quests_attempted,
+            report.metrics.defeats,
+            report.metrics.camp_stops,
+            report.metrics.equipment_upgrades,
+        );
+        return Ok(());
+    }
     let report = match cli.command {
         Command::Run {
             config,
@@ -107,6 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             emit(run_profiles(config, vec![a, b])?, output)?
         }
+        Command::CoreLoop { .. } => unreachable!(),
     };
     eprintln!("{}", human_summary(&report));
     Ok(())

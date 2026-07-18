@@ -127,6 +127,7 @@ name = "adventuresim-strategic-sim"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-stdb-client",
  "blake3",
  "clap",
  "serde",

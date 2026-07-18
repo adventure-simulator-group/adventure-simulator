@@ -65,6 +65,7 @@ pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod complete_quest_reducer;
+pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
@@ -397,6 +398,7 @@ pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use complete_quest_reducer::complete_quest;
+pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
@@ -718,6 +720,13 @@ pub enum Reducer {
     },
     CompleteQuest {
         quest_id: String,
+    },
+    ConfigureSimulationCharacter {
+        character_id: u64,
+        settlement_id: String,
+        attributes: CharacterAttributes,
+        skills: CharacterSkills,
+        downtime: ScheduleAllocation,
     },
     ContinueCampTravel {
         character_id: u64,
@@ -1097,6 +1106,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::CompleteQuest { .. } => "complete_quest",
+            Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
@@ -1255,6 +1265,21 @@ impl __sdk::Reducer for Reducer {
                     quest_id: quest_id.clone(),
                 })
             }
+            Reducer::ConfigureSimulationCharacter {
+                character_id,
+                settlement_id,
+                attributes,
+                skills,
+                downtime,
+            } => __sats::bsatn::to_vec(
+                &configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
+                    character_id: character_id.clone(),
+                    settlement_id: settlement_id.clone(),
+                    attributes: attributes.clone(),
+                    skills: skills.clone(),
+                    downtime: downtime.clone(),
+                },
+            ),
             Reducer::ContinueCampTravel { character_id } => {
                 __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                     character_id: character_id.clone(),

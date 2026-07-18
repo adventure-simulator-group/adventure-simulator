@@ -461,6 +461,13 @@ strategic-sim seed="42" population="100" days="1095":
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
+# Publish to a caller-named disposable database and exercise the authoritative
+# NPC core loop. The simulator also rejects non-loopback/shared targets.
+strategic-sim-core-loop database seed="42" population="2" cycles="1" server=spacetime_url: spacetime-version-check build-strategic
+	@case "{{database}}" in adventuresim-sim-*) ;; *) echo "database must start with adventuresim-sim-" >&2; exit 1;; esac
+	@cd "{{strategic_dir}}" && spacetime publish --delete-data=always --yes=delete-data --server {{server}} "{{database}}"
+	@cargo run -p adventuresim-strategic-sim -- core-loop --host {{server}} --database "{{database}}" --seed {{seed}} --population {{population}} --cycles {{cycles}}
+
 test: test-chat build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (609)
+## Files (612)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -111,6 +111,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/charcoal_burning_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/complete_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/configure_simulation_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/connected_player_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_player_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_players_table.rs` — Generated SpacetimeDB table interface.
@@ -401,10 +402,12 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-strategic-sim/src/analysis.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/config.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/live_core.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/profile.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/rng.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/runner.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/tests/core_loop_live.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/tests/simulation.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/.cargo/config.toml` — Tooling or build configuration.
 - `crates/adventuresim-tactical-client/Cargo.toml` — Cargo package/workspace manifest.
