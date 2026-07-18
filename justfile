@@ -20,6 +20,7 @@ strategic_static := strategic_dir + "/static"
 strategic_web_dir := "crates/strategic-web"
 caddy_config := "Caddyfile.dev"
 caddy_bin := env_var_or_default("CADDY_BIN", "caddy")
+python_bin := env_var_or_default("PYTHON_BIN", "python3")
 
 run_dir := "/tmp/adventure-simulator-1"
 spawner_pid := run_dir + "/spawner.pid"
@@ -37,7 +38,7 @@ default:
 
 # Verify required tools are available
 preflight: spacetime-version-check
-    @command -v python3 >/dev/null 2>&1 || { echo "Missing python3. Install it before running."; exit 1; }
+    @command -v "{{python_bin}}" >/dev/null 2>&1 || { echo "Missing Python 3 executable '{{python_bin}}'. Install it or set PYTHON_BIN."; exit 1; }
 
 # Refuse to build, generate, publish, or start with a mismatched CLI/runtime.
 spacetime-version-check:
@@ -69,8 +70,8 @@ dev:
 dev-full:
     @just web
 
-# Start the local browser stack, resetting local data only for breaking schema changes.
-web: preflight build-wasm spacetime-start publish-on-conflict _seed-world build-tactical
+# Start the local browser stack.
+web: preflight spacetime-start publish _seed-world build-wasm build-tactical
     @just _spawner-start
     @echo ""
     @echo "Starting strategic-web server..."
@@ -84,25 +85,19 @@ web: preflight build-wasm spacetime-start publish-on-conflict _seed-world build-
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
 
-# Start the browser stack after intentionally deleting and reseeding database data.
-# Use only for disposable development state or the approved pre-launch 1.x reset.
-web-reset: preflight build-wasm spacetime-start publish-reset _seed-world build-tactical
-    @just _spawner-start
-    @echo ""
-    @echo "Starting strategic-web server after a database reset..."
-    @echo "Open: http://localhost:{{web_port}}"
-    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
-    @echo ""
-    @SPACETIMEDB_HOST={{spacetime_url}} \
-     SPACETIMEDB_DATABASE={{spacetime_module}} \
-     BIND_ADDRESS=127.0.0.1:{{web_port}} \
-     STATIC_DIR={{strategic_web_dir}}/static \
-     TACTICAL_STATIC_DIR={{strategic_static}} \
-     cargo run -p strategic-web
+# Start a disposable, worktree-safe stack. Every destructive target is derived
+# from the validated profile and loopback base port.
+web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-client build-wasm build-tactical
+    @{{python_bin}} scripts/dev_stack.py run-profile {{quote(profile)}} {{quote(base_port)}}
+
+# Canonical database deletion is deliberately unavailable. Use web-isolated.
+web-reset:
+    @echo "Refusing to reset the canonical database. Use: just web-isolated renderer-demo 23100" >&2
+    @exit 2
 
 # Start the browser stack behind locally trusted HTTPS. Caddy negotiates HTTP/2
 # (and HTTP/3 when available) while strategic-web remains internal on port 8080.
-web-secure: preflight caddy-preflight build-wasm spacetime-start publish _seed-world build-tactical
+web-secure: preflight caddy-preflight spacetime-start publish _seed-world build-wasm build-tactical
     #!/usr/bin/env bash
     set -euo pipefail
     just _spawner-start
@@ -130,23 +125,13 @@ secure-web-trust: caddy-preflight
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Start a fresh local stack with an injured character for stat-bar UI verification.
-web-damaged: preflight build-wasm spacetime-start publish-reset _seed-world _seed-damaged-character build-tactical
-    @just _spawner-start
-    @echo ""
-    @echo "Starting strategic-web server with Wounded Demo..."
-    @echo "Open: http://localhost:{{web_port}}"
-    @echo "Tactical servers bind on 127.0.0.1:{{tactical_web_port}}+"
-    @echo ""
-    @SPACETIMEDB_HOST={{spacetime_url}} \
-     SPACETIMEDB_DATABASE={{spacetime_module}} \
-     BIND_ADDRESS=127.0.0.1:{{web_port}} \
-     STATIC_DIR={{strategic_web_dir}}/static \
-     TACTICAL_STATIC_DIR={{strategic_static}} \
-     cargo run -p strategic-web
+web-damaged:
+    @echo "Canonical reset demos are disabled. Start an isolated profile, then seed the damaged character there." >&2
+    @exit 2
 
 # Seed the world with initial settlements and quests
 _seed-world server=spacetime_url: spacetime-version-check
-    @spacetime call --server {{server}} {{spacetime_module}} seed_world || echo "Seeding (may already be seeded)"
+    @{{python_bin}} scripts/dev_stack.py seed --server {{server}} --database {{spacetime_module}}
 
 # Create or reset the injured Wounded Demo character used to verify damage bars.
 _seed-damaged-character server=spacetime_url: spacetime-version-check
@@ -197,15 +182,13 @@ spacetime-stop:
 
 # Publish the strategic module (optional target can be provided: just publish target=localhost)
 publish server=spacetime_url: spacetime-version-check
-    @cd "{{strategic_dir}}" && spacetime publish --server {{server}} {{spacetime_module}}
+    @{{python_bin}} scripts/dev_stack.py publish --server {{server}} --database {{spacetime_module}}
 
-# Publish locally, clearing data only when a breaking schema change requires it.
-publish-on-conflict: spacetime-version-check
-    @cd "{{strategic_dir}}" && spacetime publish --delete-data=on-conflict --server {{spacetime_url}} {{spacetime_module}}
-
-# Publish and clear the module database
-publish-reset server=spacetime_url: spacetime-version-check
-    @cd "{{strategic_dir}}" && spacetime publish --delete-data=always --server {{server}} {{spacetime_module}}
+# Canonical database deletion is deliberately unavailable. Isolated startup
+# calls the guarded reset command with its validated profile identity.
+publish-reset:
+    @echo "Refusing to reset the canonical database. Use web-isolated." >&2
+    @exit 2
 
 # Stop all running services started by this justfile
 stop: _spawner-stop spacetime-stop
@@ -217,11 +200,7 @@ status:
     else \
         echo "SpacetimeDB: not running"; \
     fi
-    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
-        echo "Tactical spawner: running (pid $(cat "{{spawner_pid}}"))"; \
-    else \
-        echo "Tactical spawner: not running"; \
-    fi
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner status
 
 # Build the strategic SpacetimeDB module
 build-strategic: spacetime-version-check
@@ -233,6 +212,10 @@ generate-db-client: spacetime-version-check
 	@spacetime generate --lang rust --out-dir crates/adventuresim-stdb-client/src --module-path "{{strategic_dir}}"
 	@cargo fmt --package adventuresim-stdb-client
 	@echo "Bindings generated in crates/adventuresim-stdb-client/src/"
+
+# Generate into a temporary directory and fail if committed bindings are stale.
+verify-db-client: spacetime-version-check
+	@{{python_bin}} scripts/dev_stack.py verify-bindings
 
 # Download and extract the Viabundus v2 CSV source data into viabundus/.
 init-viabundus:
@@ -316,11 +299,11 @@ load-viabundus-world server=spacetime_url: spacetime-version-check
 	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
-build-tactical: generate-db-client
+build-tactical: verify-db-client
 	@cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
 
 # Build the WASM client
-build-wasm:
+build-wasm: verify-db-client
 	@bash scripts/build_wasm.sh
 
 # Build everything
@@ -335,37 +318,12 @@ spawner: build-tactical
 		--base-port {{tactical_port}}
 
 # Start the tactical spawner in the background.
-_spawner-start host="127.0.0.1" base_port=tactical_web_port:
-    @mkdir -p "{{run_dir}}"
-    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
-        echo "Tactical spawner already running (pid $(cat "{{spawner_pid}}"))"; \
-    else \
-        rm -f "{{spawner_pid}}"; \
-        RUST_LOG=info setsid "$(pwd)/target/debug/adventuresim-tactical-server-dispatcher" \
-            --spacetimedb-url {{spacetime_url}} \
-            --spacetimedb-module {{spacetime_module}} \
-            --tactical-server-bin "$(pwd)/target/debug/adventuresim-tactical-server" \
-            --base-port {{base_port}} \
-            --host {{host}} >"{{spawner_log}}" 2>&1 < /dev/null & \
-        echo $! > "{{spawner_pid}}"; \
-        sleep 1; \
-        if ! kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
-            echo "Tactical spawner failed to start. See {{spawner_log}}"; \
-            exit 1; \
-        fi; \
-        echo "Tactical spawner running; log: {{spawner_log}}"; \
-    fi
+_spawner-start:
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner start
 
 # Stop the tactical spawner.
 _spawner-stop:
-    @if [ -f "{{spawner_pid}}" ] && kill -0 "$(cat "{{spawner_pid}}")" 2>/dev/null; then \
-        kill "$(cat "{{spawner_pid}}")"; \
-        rm -f "{{spawner_pid}}"; \
-        echo "Tactical spawner stopped"; \
-    else \
-        rm -f "{{spawner_pid}}"; \
-        echo "Tactical spawner not running"; \
-    fi
+    @{{python_bin}} scripts/dev_stack.py canonical-spawner stop
 
 # Run a single tactical server (for testing)
 tactical mission_id="test-mission" scene_key="hills" bots="3":
@@ -489,6 +447,10 @@ check:
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs
 
+# Test local workflow policy without leaving Python bytecode in the worktree.
+test-dev-stack:
+    @{{python_bin}} -B -m unittest scripts.tests.test_dev_stack -v
+
 # Run a deterministic sample strategic NPC population.
 strategic-sim seed="42" population="100" days="1095":
     @cargo run -p adventuresim-strategic-sim -- run --seed {{seed}} --population {{population}} --days {{days}}
@@ -522,7 +484,7 @@ strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365
         --seed {{seed}} --population {{population}} --cycles {{cycles}} \
         --duration-days {{duration_days}} --party-size {{party_size}}
 
-test: test-chat build-strategic
+test: test-chat test-dev-stack build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 
 fmt:
