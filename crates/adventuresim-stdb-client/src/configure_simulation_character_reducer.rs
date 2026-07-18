@@ -11,7 +11,9 @@ use super::schedule_allocation_type::ScheduleAllocation;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ConfigureSimulationCharacterArgs {
+    pub nonce: String,
     pub character_id: u64,
+    pub agent_id: u32,
     pub settlement_id: String,
     pub attributes: CharacterAttributes,
     pub skills: CharacterSkills,
@@ -21,7 +23,9 @@ pub(super) struct ConfigureSimulationCharacterArgs {
 impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
     fn from(args: ConfigureSimulationCharacterArgs) -> Self {
         Self::ConfigureSimulationCharacter {
+            nonce: args.nonce,
             character_id: args.character_id,
+            agent_id: args.agent_id,
             settlement_id: args.settlement_id,
             attributes: args.attributes,
             skills: args.skills,
@@ -47,14 +51,18 @@ pub trait configure_simulation_character {
     /// /// Use [`configure_simulation_character:configure_simulation_character_then`] to run a callback after the reducer completes.
     fn configure_simulation_character(
         &self,
+        nonce: String,
         character_id: u64,
+        agent_id: u32,
         settlement_id: String,
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
     ) -> __sdk::Result<()> {
         self.configure_simulation_character_then(
+            nonce,
             character_id,
+            agent_id,
             settlement_id,
             attributes,
             skills,
@@ -71,7 +79,9 @@ pub trait configure_simulation_character {
     ///  and its status can be observed with the `callback`.
     fn configure_simulation_character_then(
         &self,
+        nonce: String,
         character_id: u64,
+        agent_id: u32,
         settlement_id: String,
         attributes: CharacterAttributes,
         skills: CharacterSkills,
@@ -88,7 +98,9 @@ pub trait configure_simulation_character {
 impl configure_simulation_character for super::RemoteReducers {
     fn configure_simulation_character_then(
         &self,
+        nonce: String,
         character_id: u64,
+        agent_id: u32,
         settlement_id: String,
         attributes: CharacterAttributes,
         skills: CharacterSkills,
@@ -102,7 +114,9 @@ impl configure_simulation_character for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             ConfigureSimulationCharacterArgs {
+                nonce,
                 character_id,
+                agent_id,
                 settlement_id,
                 attributes,
                 skills,

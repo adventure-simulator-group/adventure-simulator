@@ -461,12 +461,24 @@ strategic-sim seed="42" population="100" days="1095":
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
-# Publish to a caller-named disposable database and exercise the authoritative
-# NPC core loop. The simulator also rejects non-loopback/shared targets.
-strategic-sim-core-loop database seed="42" population="2" cycles="1" server=spacetime_url: spacetime-version-check build-strategic
-	@case "{{database}}" in adventuresim-sim-*) ;; *) echo "database must start with adventuresim-sim-" >&2; exit 1;; esac
-	@cd "{{strategic_dir}}" && spacetime publish --delete-data=always --yes=delete-data --server {{server}} "{{database}}"
-	@cargo run -p adventuresim-strategic-sim -- core-loop --host {{server}} --database "{{database}}" --seed {{seed}} --population {{population}} --cycles {{cycles}}
+# Own one nonce-named local database for the duration of the command. There is
+# intentionally no database or server override.
+strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start build-strategic
+    #!/usr/bin/env bash
+    set -euo pipefail
+    nonce="$(date +%s)-$$-${RANDOM}-${RANDOM}"
+    database="adventuresim-sim-${nonce}"
+    cleanup() {
+        spacetime delete --yes --server "{{spacetime_url}}" "$database" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT INT TERM
+    cd "{{strategic_dir}}"
+    spacetime publish --server "{{spacetime_url}}" "$database"
+    cd ../..
+    cargo run -p adventuresim-strategic-sim -- core-loop \
+        --host "{{spacetime_url}}" --database "$database" --run-nonce "$nonce" \
+        --seed {{seed}} --population {{population}} --cycles {{cycles}} \
+        --duration-days {{duration_days}} --party-size {{party_size}}
 
 test: test-chat build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module

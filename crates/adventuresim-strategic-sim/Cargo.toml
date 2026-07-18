@@ -13,6 +13,7 @@ clap.workspace = true
 serde = { workspace = true, features = ["std"] }
 serde_json.workspace = true
 thiserror.workspace = true
+url = "2.5"
 
 [lints]
 workspace = true

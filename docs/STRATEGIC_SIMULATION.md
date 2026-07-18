@@ -63,27 +63,48 @@ labor/thievery activity preference and allocation.
 state mutation. `NativeSettlementBackend` remains the fast deterministic
 backend. The `core-loop` command instead connects through generated typed SDK
 bindings and serializes ordinary reducer calls, waiting for both reducer
-completion and the subscribed state that follows it. It forms solo parties,
-merges them through ordinary join request/accept reducers, selects a quest,
-provisions and travels through persisted camp stops, autoresolves, stores loot,
-returns, turns in, liquidates party loot, and attempts a personal equipment
-upgrade. Defeat causes a retreat, bounded settlement convalescence, and a
-bounded retry; an incapacitated party is never autoresolved repeatedly in
+completion and the subscribed state that follows it. It creates several
+independent parties through ordinary join request/accept reducers. Each leader
+then independently chooses settlement activity or questing from its generated
+policy until its in-game duration or cycle bound is reached. Questing selects a
+quest, travels through persisted camp stops, autoresolves, stores loot, returns,
+turns in, liquidates party loot, withdraws the member's earned stake, purchases
+from the merchant, and equips an upgrade. Followers travel and run their own
+daily schedules. Defeat causes a retreat, bounded settlement convalescence, and
+a bounded retry; an incapacitated party is never autoresolved repeatedly in
 place.
 
 Core-loop reports are explicitly tagged `spacetimedb_authoritative_core_loop`
-and retain generated profiles, a semantic action trace, final equipment and
-capabilities, and metrics for quest results, camps, loot value, proceeds,
-purchases, upgrades, reducer failures/retries, stuck detection, and duplicate
-semantic events. Generated preferences drive quest risk selection and upgrade
-style; the remaining preferences stay in the profile for later policy work.
+and retain the server origin, disposable database, claimed run nonce, generated
+profiles, semantic action trace, final equipment and capabilities, and metrics
+for quest results, activity days, camps, loot value, proceeds, earned stake
+withdrawals, purchases, upgrades, unexpected reducer failures/retries, stuck
+detection, and duplicate semantic events. Final agent rows distinguish the
+legacy character gold field, personal gold-coin stacks, party treasury, and
+party stake. Generated preferences drive quest/activity choice, quest risk, and
+weighted equipment utility (protection, mobility, price, and reach) for
+unarmored, light, heavy, and ranged styles. An upgrade counts only after the
+authoritative equipment row shows the purchased inventory item.
 
-Safety is intentionally strict. The command accepts only an explicit loopback
-HTTP host and a database name beginning `adventuresim-sim-`. The recipe resets
-only that caller-named disposable database, never the shared development
-module. Population, cycles, action waits, camp continuation, defeat retries,
-and recovery loops are bounded. The autoresolver obtains its seed only from the
-authoritative reducer; the simulator has no combat-seed input.
+Safety is intentionally strict. URLs are parsed structurally and must be an
+exact credential-free HTTP loopback origin with no path, query, or fragment.
+The command accepts only an `adventuresim-sim-*` database and refuses any
+pre-existing run, character, party, or settlement state. It atomically claims
+the fresh database with an owner identity and nonce before seeding. Bootstrap
+configuration requires that claim and permanently marks each simulated
+character by run and agent ID; simulated and ordinary characters cannot merge
+parties. The recipe creates a nonce-named database, exposes no host/database
+override, and deletes it on exit. Population, duration, cycles, action waits,
+camp continuation, defeat retries, and recovery loops are bounded.
+
+There are two distinct random streams. The CLI seed deterministically controls
+profiles and policy choices. Combat is authoritative: the autoresolver obtains
+its seed from server RNG, and reports record that actual seed together with
+rounds, summary, and log. Consequently the native backend supports exact replay,
+while a core-loop rerun reproduces policy inputs but not necessarily combat
+outcomes. Its trace is the debugging artifact. Reports identify the server,
+database, and claimed run; the current SDK does not expose a deployed module
+binary digest.
 
 Current limitations are:
 
@@ -92,8 +113,8 @@ Current limitations are:
 - the bounded bootstrap applies generated attributes, initial skills, and
   downtime schedules, while equipment starts from the normal character
   creator before policy-driven upgrades;
-- party loot is liquidated through the shared party treasury while personal
-  upgrades use the character's personal merchant balance;
+- party loot is liquidated through the shared party treasury; upgrades must be
+  funded by withdrawing the character's earned stake before a personal trade;
 - duplicate detection covers the simulator's semantic action stream, not the
   strategic-web rendered DOM;
 - no tactical ticks and no persistent production NPC rows.
@@ -104,6 +125,6 @@ Current limitations are:
 cargo run -p adventuresim-strategic-sim -- run --seed 42 --population 100 --days 1095 --output report.json
 cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
-# Safe opt-in integration run (requires local SpacetimeDB 2.6.1):
-just strategic-sim-core-loop adventuresim-sim-manual-42 42 2 1
+# Safe disposable integration run (requires local SpacetimeDB 2.6.1):
+just strategic-sim-core-loop 42 8 20 30 2
 ```

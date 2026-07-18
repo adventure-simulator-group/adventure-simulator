@@ -13,6 +13,7 @@ use std::{
     sync::mpsc,
     time::Duration,
 };
+use url::Url;
 
 use adventuresim_stdb_client::{
     abandon_quest_reducer::abandon_quest,
@@ -25,7 +26,8 @@ use adventuresim_stdb_client::{
     character_equip_table::CharacterEquipTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
-    character_table::CharacterTableAccess,
+    character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
+    claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
     continue_camp_travel_reducer::continue_camp_travel,
     create_named_character_with_id_reducer::create_named_character_with_id,
@@ -34,13 +36,15 @@ use adventuresim_stdb_client::{
     inventory_item_table::InventoryItemTableAccess, item_table::ItemTableAccess,
     liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
-    party_join_request_table::PartyJoinRequestTableAccess, party_table::PartyTableAccess,
-    quest_status_type::QuestStatus, quest_table::QuestTableAccess,
+    party_join_request_table::PartyJoinRequestTableAccess,
+    party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
+    party_table::PartyTableAccess, quest_status_type::QuestStatus, quest_table::QuestTableAccess,
     request_general_party_join_reducer::request_general_party_join,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
-    seed_world_reducer::seed_world, store_battle_loot_reducer::store_battle_loot,
-    travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
-    turn_in_quest_reducer::turn_in_quest,
+    seed_world_reducer::seed_world, simulation_run_table::SimulationRunTableAccess,
+    store_battle_loot_reducer::store_battle_loot, travel_to_quest_reducer::travel_to_quest,
+    travel_to_settlement_reducer::travel_to_settlement, turn_in_quest_reducer::turn_in_quest,
+    withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
 };
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -60,16 +64,14 @@ pub struct CoreLoopConfig {
     pub seed: u64,
     pub population: u32,
     pub cycles: u32,
+    pub duration_days: u32,
+    pub party_size: u32,
+    pub run_nonce: String,
 }
 
 impl CoreLoopConfig {
     pub fn validate(&self) -> Result<(), String> {
-        let local = self.host.starts_with("http://127.0.0.1:")
-            || self.host.starts_with("http://localhost:")
-            || self.host.starts_with("http://[::1]:");
-        if !local {
-            return Err("core-loop backend only accepts an explicit loopback HTTP host".into());
-        }
+        validate_loopback_url(&self.host)?;
         if !self.database.starts_with("adventuresim-sim-")
             || !self
                 .database
@@ -78,11 +80,39 @@ impl CoreLoopConfig {
         {
             return Err("database must be a unique adventuresim-sim-* disposable name".into());
         }
-        if !(2..=32).contains(&self.population) || !(1..=100).contains(&self.cycles) {
-            return Err("population must be 2..=32 and cycles 1..=100".into());
+        if !(2..=32).contains(&self.population)
+            || !(1..=10_000).contains(&self.cycles)
+            || !(1..=36_500).contains(&self.duration_days)
+            || !(2..=8).contains(&self.party_size)
+            || self.party_size > self.population
+        {
+            return Err("population 2..=32, party_size 2..=8, cycles 1..=10000, and duration_days 1..=36500 are required".into());
+        }
+        if !(16..=96).contains(&self.run_nonce.len())
+            || !self
+                .run_nonce
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("run_nonce must be 16..=96 ASCII alphanumeric/dash characters".into());
         }
         Ok(())
     }
+}
+
+fn validate_loopback_url(host: &str) -> Result<(), String> {
+    let parsed = Url::parse(host).map_err(|error| format!("invalid SpacetimeDB URL: {error}"))?;
+    if parsed.scheme() != "http"
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || !matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
+    {
+        return Err("host must be a credential-free http://localhost, 127.0.0.1, or [::1] origin with no path/query/fragment".into());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +132,8 @@ pub struct CoreLoopMetrics {
     pub sale_proceeds: u64,
     pub equipment_purchases: u32,
     pub equipment_upgrades: u32,
+    pub earned_gold_withdrawn: u64,
+    pub activity_days: u32,
     pub reducer_failures: u32,
     pub retries: u32,
     pub duplicate_semantic_events: u32,
@@ -126,6 +158,7 @@ pub enum CoreLoopEventKind {
     Liquidate,
     Purchase,
     Equip,
+    Activity,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -146,6 +179,10 @@ pub struct FinalAgentState {
     pub equipment_item_ids: Vec<String>,
     pub capability_summary: String,
     pub condition_status: String,
+    pub elapsed_minutes: u64,
+    pub personal_gold_coin: u64,
+    pub party_treasury: u64,
+    pub party_stake: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -153,11 +190,16 @@ pub struct FinalAgentState {
 pub struct CoreLoopReport {
     pub backend_kind: String,
     pub seed: u64,
+    pub server_origin: String,
     pub database: String,
+    pub run_nonce: String,
+    pub deployment_identity_note: String,
     pub profiles: Vec<AgentProfile>,
     pub metrics: CoreLoopMetrics,
     pub trace: Vec<CoreLoopEvent>,
     pub final_agents: Vec<FinalAgentState>,
+    pub elapsed_game_minutes: u64,
+    pub policy_seed_note: String,
 }
 
 struct LiveRunner {
@@ -404,11 +446,50 @@ impl LiveRunner {
         Err("recovery bound exhausted".into())
     }
 
-    fn cycle(&mut self, cycle: u32) -> Result<(), String> {
-        let leader = self.character_ids[0];
+    fn settlement_activity_day(&mut self, leader_agent: u32) -> Result<(), String> {
+        let leader = self.character_ids[leader_agent as usize];
+        for agent in self.party_agents(leader)? {
+            let character_id = self.character_ids[agent as usize];
+            let result = reducer_call!(self, "settlement_activity_rest", |cb| self
+                .connection
+                .reducers
+                .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+            self.call(result)?;
+            self.event(
+                agent,
+                CoreLoopEventKind::Activity,
+                format!(
+                    "preferred={:?}",
+                    self.profiles[agent as usize].preferred_activity
+                ),
+            );
+            self.metrics.activity_days += 1;
+        }
+        Ok(())
+    }
+
+    fn party_agents(&self, leader: u64) -> Result<Vec<u32>, String> {
+        let party = self.party_for(leader)?;
+        Ok(self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party.id)
+            .filter_map(|member| {
+                self.character_ids
+                    .iter()
+                    .position(|id| *id == member.character_id)
+                    .map(|index| index as u32)
+            })
+            .collect())
+    }
+
+    fn cycle(&mut self, leader_agent: u32, cycle: u32) -> Result<(), String> {
+        let leader = self.character_ids[leader_agent as usize];
         let party = self.party_for(leader)?;
         let quest = self
-            .choose_quest(&party, &self.profiles[0])
+            .choose_quest(&party, &self.profiles[leader_agent as usize])
             .ok_or("no suitable available quest")?;
         self.metrics.quests_attempted += 1;
         let result = reducer_call!(self, "accept_quest", |cb| self
@@ -417,9 +498,17 @@ impl LiveRunner {
             .accept_quest_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         self.event(
-            0,
+            leader_agent,
             CoreLoopEventKind::AcceptQuest,
-            format!("cycle={cycle};quest={}", quest.id),
+            format!(
+                "cycle={cycle};quest={};title={};difficulty={};enemy={}x{};distance_m={}",
+                quest.id,
+                quest.title,
+                quest.difficulty,
+                quest.enemy_type,
+                quest.enemy_count,
+                quest.distance_m
+            ),
         );
 
         let result = reducer_call!(self, "travel_to_quest", |cb| self
@@ -428,11 +517,11 @@ impl LiveRunner {
             .travel_to_quest_then(leader, quest.id.clone(), true, cb));
         self.call(result)?;
         self.event(
-            0,
+            leader_agent,
             CoreLoopEventKind::Travel,
             format!("outbound={}", quest.id),
         );
-        self.travel_camps(leader, 0)?;
+        self.travel_camps(leader, leader_agent)?;
 
         let mut victory = false;
         for attempt in 0..=MAX_DEFEAT_RETRIES {
@@ -456,11 +545,25 @@ impl LiveRunner {
                 .any(|r| r.quest_id == quest.id)
             {
                 victory = true;
-                self.event(0, CoreLoopEventKind::AutoresolveVictory, report.summary);
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AutoresolveVictory,
+                    format!(
+                        "seed={};rounds={};summary={};log={:?}",
+                        report.seed, report.rounds, report.summary, report.log
+                    ),
+                );
                 break;
             }
             self.metrics.defeats += 1;
-            self.event(0, CoreLoopEventKind::AutoresolveDefeat, report.summary);
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::AutoresolveDefeat,
+                format!(
+                    "seed={};rounds={};summary={};log={:?}",
+                    report.seed, report.rounds, report.summary, report.log
+                ),
+            );
             if attempt == MAX_DEFEAT_RETRIES {
                 break;
             }
@@ -470,8 +573,8 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
             self.call(result)?;
-            self.travel_camps(leader, 0)?;
-            for agent in 0..self.character_ids.len() as u32 {
+            self.travel_camps(leader, leader_agent)?;
+            for agent in self.party_agents(leader)? {
                 self.recover_at_settlement(agent)?;
             }
             let result = reducer_call!(self, "retry_travel_to_quest", |cb| self
@@ -479,7 +582,7 @@ impl LiveRunner {
                 .reducers
                 .travel_to_quest_then(leader, quest.id.clone(), true, cb));
             self.call(result)?;
-            self.travel_camps(leader, 0)?;
+            self.travel_camps(leader, leader_agent)?;
         }
         if !victory {
             let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
@@ -487,8 +590,8 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
             self.call(result)?;
-            self.travel_camps(leader, 0)?;
-            for agent in 0..self.character_ids.len() as u32 {
+            self.travel_camps(leader, leader_agent)?;
+            for agent in self.party_agents(leader)? {
                 self.recover_at_settlement(agent)?;
             }
             let result = reducer_call!(self, "abandon_defeated_quest", |cb| self
@@ -496,7 +599,7 @@ impl LiveRunner {
                 .reducers
                 .abandon_quest_then(leader, quest.id.clone(), cb));
             self.call(result)?;
-            self.event(0, CoreLoopEventKind::AbandonQuest, quest.id);
+            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
             let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
                 .connection
                 .reducers
@@ -537,7 +640,7 @@ impl LiveRunner {
             .store_battle_loot_then(leader, quest.id.clone(), vec![], vec![], cb));
         self.call(result)?;
         self.event(
-            0,
+            leader_agent,
             CoreLoopEventKind::StoreLoot,
             format!("stacks={}", loot.len()),
         );
@@ -548,18 +651,18 @@ impl LiveRunner {
             .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
         self.call(result)?;
         self.event(
-            0,
+            leader_agent,
             CoreLoopEventKind::Travel,
             format!("return={}", quest.settlement_id),
         );
-        self.travel_camps(leader, 0)?;
+        self.travel_camps(leader, leader_agent)?;
         let result = reducer_call!(self, "turn_in_quest", |cb| self
             .connection
             .reducers
             .turn_in_quest_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         self.metrics.quests_completed += 1;
-        self.event(0, CoreLoopEventKind::TurnIn, quest.id.clone());
+        self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
 
         let party = self.party_for(leader)?;
         let sale: Vec<_> = self
@@ -601,16 +704,16 @@ impl LiveRunner {
                 .sum();
             self.metrics.sale_proceeds += after_coins.saturating_sub(before_coins);
             self.event(
-                0,
+                leader_agent,
                 CoreLoopEventKind::Liquidate,
                 format!("stacks={}", sale.len()),
             );
         }
-        self.try_upgrade(0, &quest.settlement_id)?;
+        self.try_upgrade(leader_agent, &quest.settlement_id)?;
         // A successful but costly victory may still leave someone incapacitated.
         // Recover before the next policy cycle instead of discovering that only
         // by repeatedly failing the next autoresolve reducer.
-        for agent in 0..self.character_ids.len() as u32 {
+        for agent in self.party_agents(leader)? {
             self.recover_at_settlement(agent)?;
         }
         Ok(())
@@ -618,6 +721,7 @@ impl LiveRunner {
 
     fn try_upgrade(&mut self, agent: u32, settlement: &str) -> Result<(), String> {
         let character_id = self.character_ids[agent as usize];
+        let profile = self.profiles[agent as usize].clone();
         let equipped = self
             .connection
             .db
@@ -625,10 +729,20 @@ impl LiveRunner {
             .iter()
             .find(|row| row.character_id == character_id)
             .ok_or("missing equipment state")?;
-        let equipped_ids = [equipped.left_hand_item_id, equipped.right_hand_item_id]
-            .into_iter()
-            .flatten()
-            .collect::<HashSet<_>>();
+        let equipped_ids = [
+            equipped.left_hand_item_id,
+            equipped.right_hand_item_id,
+            equipped.left_arm_armor_id,
+            equipped.right_arm_armor_id,
+            equipped.left_leg_armor_id,
+            equipped.right_leg_armor_id,
+            equipped.head_armor_id,
+            equipped.chest_armor_id,
+            equipped.stomach_armor_id,
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<HashSet<_>>();
         let inventories: Vec<_> = self
             .connection
             .db
@@ -636,75 +750,176 @@ impl LiveRunner {
             .iter()
             .filter(|row| row.character_id == character_id)
             .collect();
-        let current_value = inventories
+        let definitions: Vec<_> = self.connection.db.item().iter().collect();
+        let equipped_definitions = inventories
             .iter()
             .filter(|row| equipped_ids.contains(&row.id))
-            .filter_map(|row| {
-                self.connection
-                    .db
-                    .item()
-                    .iter()
-                    .find(|i| i.id == row.item_id)
-            })
-            .filter_map(|item| item.base_value)
-            .max()
-            .unwrap_or(0);
-        let style = self.profiles[agent as usize].equipment.style;
-        let mut candidates: Vec<_> = self
+            .filter_map(|row| definitions.iter().find(|item| item.id == row.item_id))
+            .collect::<Vec<_>>();
+        let character = self
             .connection
             .db
-            .item()
+            .character()
             .iter()
-            .filter(|item| item.base_value.unwrap_or(0) > current_value)
-            .filter(|item| match style {
-                EquipmentStyle::Ranged => item.ranged,
-                EquipmentStyle::Unarmored => item.melee && item.weight <= 2.0,
-                EquipmentStyle::Light | EquipmentStyle::Heavy => item.melee,
+            .find(|row| row.id == character_id)
+            .ok_or("missing upgrade character")?;
+        let party_id = character.party_id.ok_or("missing upgrade party")?;
+        let stake = self
+            .connection
+            .db
+            .party_stake()
+            .iter()
+            .find(|row| row.party_id == party_id && row.character_id == character_id)
+            .map_or(0, |row| row.value);
+        let mut candidates = definitions
+            .iter()
+            .filter_map(|candidate| {
+                let utility = equipment_utility(&profile, candidate)?;
+                let armor = matches!(candidate.kind, ItemKind::Armor | ItemKind::Clothing);
+                let current = equipped_definitions
+                    .iter()
+                    .filter(|item| {
+                        if candidate.melee || candidate.ranged {
+                            item.melee || item.ranged
+                        } else {
+                            armor
+                                && matches!(item.kind, ItemKind::Armor | ItemKind::Clothing)
+                                && item.slot == candidate.slot
+                        }
+                    })
+                    .filter_map(|item| equipment_utility(&profile, item))
+                    .fold(0.0, f32::max);
+                let cost = adventuresim_core::strategic_economy::merchant_buy_price(
+                    candidate.base_value.unwrap_or(1),
+                );
+                (utility > current && u64::from(cost) <= stake).then_some((
+                    utility - current,
+                    cost,
+                    candidate.clone(),
+                ))
             })
-            .collect();
-        candidates.sort_by_key(|item| item.base_value.unwrap_or(u32::MAX));
-        for candidate in candidates {
-            let result = reducer_call!(self, "finalize_merchant_trade", |cb| self
-                .connection
-                .reducers
-                .finalize_merchant_trade_then(
-                    character_id,
-                    settlement.to_string(),
-                    vec![candidate.id.clone()],
-                    vec![1],
-                    vec![],
-                    vec![],
-                    false,
-                    cb,
-                ));
-            if self.call(result).is_err() {
-                continue;
-            }
-            self.metrics.equipment_purchases += 1;
-            self.event(agent, CoreLoopEventKind::Purchase, candidate.id.clone());
-            let inventory = self
-                .connection
-                .db
-                .inventory_item()
-                .iter()
-                .filter(|row| row.character_id == character_id && row.item_id == candidate.id)
-                .max_by_key(|row| row.id)
-                .ok_or("purchase succeeded but inventory was not coherent")?;
-            let destination = if candidate.melee || candidate.ranged {
-                ItemSlot::AnyHolding
-            } else {
-                candidate.slot
-            };
-            let result = reducer_call!(self, "equip_item", |cb| self
-                .connection
-                .reducers
-                .equip_item_then(character_id, inventory.id, destination, cb));
-            self.call(result)?;
-            self.metrics.equipment_upgrades += 1;
-            self.event(agent, CoreLoopEventKind::Equip, candidate.id);
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| right.0.total_cmp(&left.0));
+        let Some((improvement, cost, candidate)) = candidates.into_iter().next() else {
+            return Ok(());
+        };
+        let treasury = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .find(|row| row.party_id == party_id && row.item_id == "gold_coin")
+            .ok_or("earned party treasury is missing")?;
+        if treasury.quantity < cost {
             return Ok(());
         }
+        let result = reducer_call!(self, "withdraw_earned_upgrade_gold", |cb| self
+            .connection
+            .reducers
+            .withdraw_party_inventory_item_then(character_id, treasury.id, cost, cb));
+        self.call(result)?;
+        self.metrics.earned_gold_withdrawn += u64::from(cost);
+        let result = reducer_call!(self, "finalize_merchant_trade", |cb| self
+            .connection
+            .reducers
+            .finalize_merchant_trade_then(
+                character_id,
+                settlement.to_string(),
+                vec![candidate.id.clone()],
+                vec![1],
+                vec![],
+                vec![],
+                false,
+                cb,
+            ));
+        self.call(result)?;
+        self.metrics.equipment_purchases += 1;
+        self.event(
+            agent,
+            CoreLoopEventKind::Purchase,
+            format!(
+                "item={};earned_cost={cost};utility_gain={improvement:.3}",
+                candidate.id
+            ),
+        );
+        let inventory = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id && row.item_id == candidate.id)
+            .max_by_key(|row| row.id)
+            .ok_or("purchase succeeded but inventory was not coherent")?;
+        let destination = if candidate.melee || candidate.ranged {
+            ItemSlot::AnyHolding
+        } else {
+            candidate.slot
+        };
+        let result = reducer_call!(self, "equip_item", |cb| self
+            .connection
+            .reducers
+            .equip_item_then(character_id, inventory.id, destination, cb));
+        self.call(result)?;
+        let verified = self
+            .connection
+            .db
+            .character_equip()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .is_some_and(|row| equipped_at(&row, destination, inventory.id));
+        if !verified {
+            return Err("equip reducer completed without the requested equipped state".into());
+        }
+        self.metrics.equipment_upgrades += 1;
+        self.event(agent, CoreLoopEventKind::Equip, candidate.id);
         Ok(())
+    }
+}
+
+fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f32> {
+    let preference = &profile.equipment;
+    let armor = matches!(item.kind, ItemKind::Armor | ItemKind::Clothing);
+    let compatible = match preference.style {
+        EquipmentStyle::Unarmored => !armor && item.melee && item.weight <= 2.5,
+        EquipmentStyle::Ranged => !armor && item.ranged,
+        EquipmentStyle::Light => (armor && item.weight <= 8.0) || (!armor && item.melee),
+        EquipmentStyle::Heavy => armor || item.melee,
+    };
+    if !compatible || item.base_value.is_none() {
+        return None;
+    }
+    let protection = item.coverage + item.resistance + item.padding;
+    let mobility = item.flexibility + item.range_of_motion - item.weight * 0.1;
+    let price = 1.0 / (1.0 + item.base_value.unwrap_or(1) as f32 / 100.0);
+    Some(
+        preference.protection_weight * protection
+            + preference.mobility_weight * mobility
+            + preference.price_weight * price
+            + preference.reach_weight * item.reach,
+    )
+}
+
+fn equipped_at(equip: &CharacterEquip, slot: ItemSlot, inventory_id: u64) -> bool {
+    match slot {
+        ItemSlot::LeftHolding => equip.left_hand_item_id == Some(inventory_id),
+        ItemSlot::RightHolding | ItemSlot::AnyHolding => {
+            equip.left_hand_item_id == Some(inventory_id)
+                || equip.right_hand_item_id == Some(inventory_id)
+        }
+        ItemSlot::LeftArm => equip.left_arm_armor_id == Some(inventory_id),
+        ItemSlot::RightArm | ItemSlot::AnyArm => {
+            equip.left_arm_armor_id == Some(inventory_id)
+                || equip.right_arm_armor_id == Some(inventory_id)
+        }
+        ItemSlot::LeftLeg => equip.left_leg_armor_id == Some(inventory_id),
+        ItemSlot::RightLeg | ItemSlot::AnyLeg => {
+            equip.left_leg_armor_id == Some(inventory_id)
+                || equip.right_leg_armor_id == Some(inventory_id)
+        }
+        ItemSlot::Head => equip.head_armor_id == Some(inventory_id),
+        ItemSlot::Chest => equip.chest_armor_id == Some(inventory_id),
+        ItemSlot::Stomach => equip.stomach_armor_id == Some(inventory_id),
+        ItemSlot::None => false,
     }
 }
 
@@ -758,6 +973,23 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         sequence: 0,
         last_semantic_event: None,
     };
+    if runner
+        .connection
+        .db
+        .simulation_run()
+        .iter()
+        .next()
+        .is_some()
+        || runner.connection.db.character().iter().next().is_some()
+        || runner.connection.db.settlement().iter().next().is_some()
+    {
+        return Err("refusing reused or populated simulation database".into());
+    }
+    let result = reducer_call!(runner, "claim_simulation_run", |cb| runner
+        .connection
+        .reducers
+        .claim_simulation_run_then(config.run_nonce.clone(), config.seed, cb));
+    runner.call(result)?;
     let result = reducer_call!(runner, "seed_world", |cb| runner
         .connection
         .reducers
@@ -790,7 +1022,9 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
             .connection
             .reducers
             .configure_simulation_character_then(
+                config.run_nonce.clone(),
                 character_id,
+                agent as u32,
                 settlement.clone(),
                 attributes.clone(),
                 skills.clone(),
@@ -805,43 +1039,49 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
     // Joining is demonstrated with the same ordinary request/accept reducers as players.
     // The bounded bootstrap co-locates fresh sim-* solo parties before they use
     // the ordinary request/accept reducers to merge.
-    let leader = runner.character_ids[0];
-    let leader_party = runner.party_for(leader)?;
-    let settlement = leader_party
+    let settlement = runner
+        .party_for(runner.character_ids[0])?
         .current_settlement_id
         .clone()
         .ok_or("leader not at settlement")?;
-    for agent in 1..runner.character_ids.len() {
-        let member = runner.character_ids[agent];
-        let result = reducer_call!(runner, "request_general_party_join", |cb| runner
-            .connection
-            .reducers
-            .request_general_party_join_then(member, leader_party.id.clone(), cb));
-        runner.call(result)?;
-        runner.metrics.joins_requested += 1;
-        runner.event(
-            agent as u32,
-            CoreLoopEventKind::RequestJoin,
-            leader_party.id.clone(),
-        );
-        let request = runner
-            .connection
-            .db
-            .party_join_request()
-            .iter()
-            .find(|row| row.character_id == member && row.party_id == leader_party.id)
-            .ok_or("join reducer completed without a coherent request row")?;
-        let result = reducer_call!(runner, "accept_party_join_request", |cb| runner
-            .connection
-            .reducers
-            .accept_party_join_request_then(leader, request.id, cb));
-        runner.call(result)?;
-        runner.metrics.joins_accepted += 1;
-        runner.event(
-            agent as u32,
-            CoreLoopEventKind::AcceptJoin,
-            leader_party.id.clone(),
-        );
+    let mut leader_agents = Vec::new();
+    for first in (0..runner.character_ids.len()).step_by(config.party_size as usize) {
+        let leader = runner.character_ids[first];
+        leader_agents.push(first as u32);
+        let leader_party = runner.party_for(leader)?;
+        let end = (first + config.party_size as usize).min(runner.character_ids.len());
+        for agent in first + 1..end {
+            let member = runner.character_ids[agent];
+            let result = reducer_call!(runner, "request_general_party_join", |cb| runner
+                .connection
+                .reducers
+                .request_general_party_join_then(member, leader_party.id.clone(), cb));
+            runner.call(result)?;
+            runner.metrics.joins_requested += 1;
+            runner.event(
+                agent as u32,
+                CoreLoopEventKind::RequestJoin,
+                leader_party.id.clone(),
+            );
+            let request = runner
+                .connection
+                .db
+                .party_join_request()
+                .iter()
+                .find(|row| row.character_id == member && row.party_id == leader_party.id)
+                .ok_or("join reducer completed without a coherent request row")?;
+            let result = reducer_call!(runner, "accept_party_join_request", |cb| runner
+                .connection
+                .reducers
+                .accept_party_join_request_then(leader, request.id, cb));
+            runner.call(result)?;
+            runner.metrics.joins_accepted += 1;
+            runner.event(
+                agent as u32,
+                CoreLoopEventKind::AcceptJoin,
+                leader_party.id.clone(),
+            );
+        }
     }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
@@ -849,8 +1089,47 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .ensure_settlement_activity_then(settlement.clone(), cb));
     runner.call(result)?;
 
+    let duration_minutes = u64::from(config.duration_days) * 1_440;
     for cycle in 0..config.cycles {
-        runner.cycle(cycle)?;
+        let mut active = false;
+        for &leader_agent in &leader_agents {
+            let leader = runner.character_ids[leader_agent as usize];
+            let elapsed = runner
+                .connection
+                .db
+                .character_time()
+                .iter()
+                .find(|row| row.character_id == leader)
+                .ok_or("missing leader clock")?
+                .minutes;
+            if elapsed >= duration_minutes {
+                continue;
+            }
+            active = true;
+            let profile = &runner.profiles[leader_agent as usize];
+            let mixed = config.seed
+                ^ u64::from(leader_agent).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
+            let wants_quest = selector < f64::from(profile.activity_vs_quest_propensity);
+            if wants_quest
+                && runner
+                    .choose_quest(&runner.party_for(leader)?, profile)
+                    .is_some()
+            {
+                runner.cycle(leader_agent, cycle)?;
+            } else {
+                runner.settlement_activity_day(leader_agent)?;
+            }
+            let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
+                .connection
+                .reducers
+                .ensure_settlement_activity_then(settlement.clone(), cb));
+            runner.call(result)?;
+        }
+        if !active {
+            break;
+        }
     }
     let final_agents = runner
         .character_ids
@@ -905,6 +1184,38 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .iter()
                 .find(|row| row.character_id == *character_id)
                 .ok_or("missing final condition")?;
+            let elapsed_minutes = runner
+                .connection
+                .db
+                .character_time()
+                .iter()
+                .find(|row| row.character_id == *character_id)
+                .ok_or("missing final clock")?
+                .minutes;
+            let personal_gold_coin = runner
+                .connection
+                .db
+                .inventory_item()
+                .iter()
+                .filter(|row| row.character_id == *character_id && row.item_id == "gold_coin")
+                .map(|row| u64::from(row.quantity))
+                .sum();
+            let party_id = character.party_id.clone().ok_or("missing final party")?;
+            let party_treasury = runner
+                .connection
+                .db
+                .party_inventory_item()
+                .iter()
+                .filter(|row| row.party_id == party_id && row.item_id == "gold_coin")
+                .map(|row| u64::from(row.quantity))
+                .sum();
+            let party_stake = runner
+                .connection
+                .db
+                .party_stake()
+                .iter()
+                .find(|row| row.party_id == party_id && row.character_id == *character_id)
+                .map_or(0, |row| row.value);
             Ok(FinalAgentState {
                 agent_id: agent as u32,
                 character_id: *character_id,
@@ -919,17 +1230,31 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                     capability.endurance
                 ),
                 condition_status: condition.status,
+                elapsed_minutes,
+                personal_gold_coin,
+                party_treasury,
+                party_stake,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let elapsed_game_minutes = final_agents
+        .iter()
+        .map(|agent| agent.elapsed_minutes)
+        .max()
+        .unwrap_or(0);
     Ok(CoreLoopReport {
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
+        server_origin: config.host.clone(),
         database: config.database,
+        run_nonce: config.run_nonce,
+        deployment_identity_note: "server origin, database, and claimed run nonce identify this deployment; the SDK does not expose a deployed module binary digest".into(),
         profiles: runner.profiles,
         metrics: runner.metrics,
         trace: runner.trace,
         final_agents,
+        elapsed_game_minutes,
+        policy_seed_note: "seed controls profiles and policy choices only; authoritative autoresolve seeds are server RNG values recorded in the trace".into(),
     })
 }
 
@@ -945,11 +1270,25 @@ mod tests {
             seed: 1,
             population: 2,
             cycles: 1,
+            duration_days: 1,
+            party_size: 2,
+            run_nonce: "unit-test-nonce-0001".into(),
         };
         assert!(config.validate().is_err());
         config.host = "http://127.0.0.1:3000".into();
         assert!(config.validate().is_err());
         config.database = "adventuresim-sim-test-1".into();
         assert!(config.validate().is_ok());
+        for spoofed in [
+            "http://localhost.example.com:3000",
+            "http://127.0.0.1@evil.example:3000",
+            "http://localhost:3000/path",
+            "http://localhost:3000?database=shared",
+            "http://user:pass@localhost:3000",
+            "https://localhost:3000",
+        ] {
+            config.host = spoofed.into();
+            assert!(config.validate().is_err(), "accepted spoofed URL {spoofed}");
+        }
     }
 }

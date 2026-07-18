@@ -64,6 +64,7 @@ pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
+pub mod claim_simulation_run_reducer;
 pub mod complete_quest_reducer;
 pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
@@ -286,6 +287,10 @@ pub mod settlement_import_type;
 pub mod settlement_religious_status_type;
 pub mod settlement_table;
 pub mod settlement_type;
+pub mod simulation_character_table;
+pub mod simulation_character_type;
+pub mod simulation_run_table;
+pub mod simulation_run_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
 pub mod soil_depth_type;
@@ -397,6 +402,7 @@ pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
+pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use complete_quest_reducer::complete_quest;
 pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
@@ -619,6 +625,10 @@ pub use settlement_import_type::SettlementImport;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
+pub use simulation_character_table::*;
+pub use simulation_character_type::SimulationCharacter;
+pub use simulation_run_table::*;
+pub use simulation_run_type::SimulationRun;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
 pub use soil_depth_type::SoilDepth;
@@ -718,11 +728,17 @@ pub enum Reducer {
         item_id: String,
         by_quantity: i32,
     },
+    ClaimSimulationRun {
+        nonce: String,
+        policy_seed: u64,
+    },
     CompleteQuest {
         quest_id: String,
     },
     ConfigureSimulationCharacter {
+        nonce: String,
         character_id: u64,
+        agent_id: u32,
         settlement_id: String,
         attributes: CharacterAttributes,
         skills: CharacterSkills,
@@ -1105,6 +1121,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
+            Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::CompleteQuest { .. } => "complete_quest",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
@@ -1260,20 +1277,30 @@ impl __sdk::Reducer for Reducer {
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
             }),
+            Reducer::ClaimSimulationRun { nonce, policy_seed } => {
+                __sats::bsatn::to_vec(&claim_simulation_run_reducer::ClaimSimulationRunArgs {
+                    nonce: nonce.clone(),
+                    policy_seed: policy_seed.clone(),
+                })
+            }
             Reducer::CompleteQuest { quest_id } => {
                 __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
                     quest_id: quest_id.clone(),
                 })
             }
             Reducer::ConfigureSimulationCharacter {
+                nonce,
                 character_id,
+                agent_id,
                 settlement_id,
                 attributes,
                 skills,
                 downtime,
             } => __sats::bsatn::to_vec(
                 &configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
+                    nonce: nonce.clone(),
                     character_id: character_id.clone(),
+                    agent_id: agent_id.clone(),
                     settlement_id: settlement_id.clone(),
                     attributes: attributes.clone(),
                     skills: skills.clone(),
@@ -2008,6 +2035,8 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
+    simulation_character: __sdk::TableUpdate<SimulationCharacter>,
+    simulation_run: __sdk::TableUpdate<SimulationRun>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
@@ -2146,6 +2175,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
+                "simulation_character" => db_update.simulation_character.append(
+                    simulation_character_table::parse_table_update(table_update)?,
+                ),
+                "simulation_run" => db_update
+                    .simulation_run
+                    .append(simulation_run_table::parse_table_update(table_update)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(strategic_incident_table::parse_table_update(table_update)?),
@@ -2361,6 +2396,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.simulation_character = cache
+            .apply_diff_to_table::<SimulationCharacter>(
+                "simulation_character",
+                &self.simulation_character,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.simulation_run = cache
+            .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
+            .with_updates_by_pk(|row| &row.id);
         diff.strategic_incident = cache
             .apply_diff_to_table::<StrategicIncident>(
                 "strategic_incident",
@@ -2520,6 +2564,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_character" => db_update
+                    .simulation_character
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_run" => db_update
+                    .simulation_run
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2677,6 +2727,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_character" => db_update
+                    .simulation_character
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_run" => db_update
+                    .simulation_run
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2754,6 +2810,8 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
+    simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
+    simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
@@ -2953,6 +3011,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SimulationCharacter>(
+            "simulation_character",
+            &self.simulation_character,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SimulationRun>(
+            "simulation_run",
+            &self.simulation_run,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicIncident>(
@@ -3679,6 +3747,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
+        simulation_character_table::register_table(client_cache);
+        simulation_run_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
@@ -3729,6 +3799,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
+        "simulation_character",
+        "simulation_run",
         "strategic_incident",
         "tactical_server",
         "tactical_server_request",
