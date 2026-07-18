@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::land_use_profile_type::LandUseProfile;

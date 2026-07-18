@@ -214,6 +214,11 @@ boundaries. The checked-in 1544 intermediate and its intentionally approximate
 interpretation are documented in `docs/RELIGION.md`; override its location with
 `--religion-regions`.
 
+NOAA OWDA summer PDSI is read directly from the NetCDF-4 file at
+`target/world-data-sources/raw/climate/owda.nc`. Its strict source boundary,
+typed twenty-year profile, and full-file verification are documented in
+`docs/DROUGHT.md`; override the path with `--drought-netcdf`.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
