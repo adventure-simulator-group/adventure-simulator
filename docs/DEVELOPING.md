@@ -203,11 +203,12 @@ NetCDF-4 state files documented in `docs/HISTORICAL_LAND_USE.md`, placed under
 requested annual year directly from the modelled 0.5-degree reconstruction.
 Override that directory with `--land-use-dir`.
 
-Forest cover likewise has a tested boundary but no authenticated full local
-download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
-in `docs/FOREST_COVER.md` under
-`target/world-data-sources/raw/forest-cover/`. Override that directory with
-`--forest-cover-dir`.
+Prepare bounded Copernicus 2018 forest cover with
+`just init-forest-cover bounds=world-bounds.hamburg-test.json`. It reads the
+local, Git-ignored CDSE OAuth credentials from `.env`, downloads the official
+100 m TCD/BCD/CCD layers, and writes the paired importer GeoTIFFs under
+`target/world-data-sources/raw/forest-cover/`. See `docs/FOREST_COVER.md`; the
+compiler directory can still be overridden with `--forest-cover-dir`.
 
 EuroVegMap potential vegetation is distributed in an installer. Extract or
 install version 2.1 manually and place its `Maps` directory under

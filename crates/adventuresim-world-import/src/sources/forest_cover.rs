@@ -37,8 +37,8 @@ struct PreparedManifest {
 
 #[derive(Debug, Deserialize)]
 enum PreparedFormat {
-    #[serde(rename = "adventuresim-copernicus-forest-2018-v1")]
-    CopernicusForest2018V1,
+    #[serde(rename = "adventuresim-copernicus-forest-2018-v2")]
+    CopernicusForest2018V2,
 }
 
 pub(crate) fn enrich(
@@ -137,7 +137,7 @@ fn read_manifest(directory: &Path) -> Result<()> {
             source,
         })?;
     match manifest.format {
-        PreparedFormat::CopernicusForest2018V1 => Ok(()),
+        PreparedFormat::CopernicusForest2018V2 => Ok(()),
     }
 }
 
@@ -462,13 +462,13 @@ mod tests {
     fn manifest_identifies_the_exact_preparation_contract() {
         assert!(
             serde_json::from_str::<PreparedManifest>(
-                r#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#
+                r#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#
             )
             .is_ok()
         );
         assert!(
             serde_json::from_str::<PreparedManifest>(
-                r#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#
+                r#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#
             )
             .is_err()
         );

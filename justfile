@@ -238,6 +238,10 @@ init-viabundus:
 init-owda:
 	@python3 scripts/init_owda.py
 
+# Download and prepare bounded Copernicus 2018 forest-cover inputs from CDSE.
+init-forest-cover bounds:
+	@cargo run --package adventuresim-world-import --bin prepare-forest-cover -- --world-bounds "{{bounds}}"
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

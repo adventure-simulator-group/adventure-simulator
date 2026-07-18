@@ -1,8 +1,9 @@
 # Forest-cover world data
 
 Settlement-scale forest cover comes from the **Copernicus Land Monitoring
-Service High Resolution Layer Tree Cover and Forests**, using the 2018 Tree
-Cover Density (TCD) and Dominant Leaf Type (DLT) products. This is modern data,
+Service High Resolution Layer Tree Cover and Forests**, using the 2018 100 m
+Tree Cover Density (TCD), Broadleaved Cover Density (BCD), and Coniferous Cover
+Density (CCD) products. This is modern data,
 used as a plausibility input for the game's 1544 setting rather than as a claim
 about the exact historical tree cover around a settlement.
 
@@ -10,28 +11,36 @@ about the exact historical tree cover around a settlement.
 - DLT dataset DOI: <https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a>
 - Terms: Copernicus full, free, and open data policy
 
-The Copernicus download requires an authenticated data-service workflow that
-was not available while this integration was developed. The raw source
-directory is therefore empty, the integration is verified against synthetic
-GeoTIFF fixtures, and a full-source build is not claimed. It is not yet part of
-the data-initialization script.
+The source is downloaded through Copernicus Data Space Ecosystem (CDSE), using
+the local, Git-ignored `.env` variables `COPERNICUS_CLIENT_ID` and
+`COPERNICUS_CLIENT_SECRET`. The preparer reads them only to obtain a short-lived
+OAuth token; it does not print, persist, or add them to the compiled world.
 
 ## Manual preparation contract
 
-Reproject and aggregate the official 2018 status layers into 1000-by-1000-pixel
-one-degree, EPSG:4326, `RasterPixelIsArea`, single-band UInt8 GeoTIFFs. This
-fixed 0.001-degree grid is approximately 100 m at European latitudes and makes
-the prepared format deterministic. Place the files in the Git-ignored
-`target/world-data-sources/raw/forest-cover/` directory. That directory must
-also contain `forest-cover-manifest.json` with exactly this version marker:
+Run the bounded preparer from the repository root:
 
-```json
-{"format":"adventuresim-copernicus-forest-2018-v1"}
+```powershell
+just init-forest-cover bounds=world-bounds.hamburg-test.json
 ```
 
-The marker identifies the source year, resolution, aggregation rule, and class
+It obtains the official 2018 100 m source grids through CDSE Process API and
+emits 1000-by-1000-pixel, one-degree, EPSG:4326, `RasterPixelIsArea`,
+single-band UInt8 GeoTIFFs. CDSE selects the nearest official 100 m source cell
+for each 0.001-degree output cell; it does not re-aggregate the source. This
+fixed grid is approximately 100 m at European latitudes and makes the prepared
+format deterministic. The output is Git-ignored under
+`target/world-data-sources/raw/forest-cover/`. That directory also contains
+`forest-cover-manifest.json` with exactly this version marker:
+
+```json
+{"format":"adventuresim-copernicus-forest-2018-v2"}
+```
+
+The marker identifies the source year, resolution, sampling rule, and class
 mapping described here so a raw, stale, or differently prepared byte raster is
-not silently interpreted under this contract. Each used degree tile requires a
+not silently interpreted under this contract. Each degree tile intersecting the
+configured world bounds requires a
 pair named for its southwest corner:
 
 - `TCD_N48_E002.tif`
@@ -39,12 +48,12 @@ pair named for its southwest corner:
 
 Southern and western coordinates use `S` and `W`. Both rasters in a pair must
 be 1000 by 1000, have identical transforms, and span exactly one degree. TCD
-values are canopy percentages from 0 through 100. DLT preparation aggregates
-the source 10 m broadleaf and conifer pixels to the same approximately 100 m
-grid as TCD: emit `1` for at least 75% broadleaf, `2` for at least 75%
-coniferous, and `3` for a mixture where neither type reaches 75%. Use `255` for
-nodata in either layer. This code `3` is part of the preparation contract; it
-is not asserted to be a raw DLT status-layer class.
+values are canopy percentages from 0 through 100. DLT is deterministically
+derived from the official 100 m BCD and CCD percentages: emit `1` when
+`BCD / (BCD + CCD)` is at least 75%, `2` when the analogous coniferous share is
+at least 75%, and `3` otherwise. Use `255` where TCD, BCD, or CCD is nodata, or
+where BCD and CCD are both zero. This code `3` is part of the preparation
+contract; it is not asserted to be a raw DLT status-layer class.
 
 The importer groups settlements by degree tile and reads only tile pairs that
 contain settlements. A source density of zero becomes `ForestCover::Open`.

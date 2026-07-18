@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
+default-run = "adventuresim-world-import"
+
+[[bin]]
+name = "prepare-forest-cover"
+path = "src/bin/prepare_forest_cover.rs"
 
 [dependencies]
 adventuresim-world-schema.workspace = true
@@ -23,6 +28,7 @@ shapefile.workspace = true
 thiserror.workspace = true
 tiff.workspace = true
 zip.workspace = true
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 
 [lints]
 workspace = true
