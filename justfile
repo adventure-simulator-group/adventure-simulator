@@ -454,6 +454,13 @@ check:
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs
 
+# Run a deterministic sample strategic NPC population.
+strategic-sim seed="42" population="100" days="1095":
+    @cargo run -p adventuresim-strategic-sim -- run --seed {{seed}} --population {{population}} --days {{days}}
+
+test-strategic-sim:
+    @cargo test -p adventuresim-strategic-sim
+
 test: test-chat build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
 

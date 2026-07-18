@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/adventuresim-core",
+    "crates/adventuresim-strategic-sim",
     "crates/adventuresim-world-schema",
     "crates/adventuresim-world-import",
     "crates/adventuresim-stdb-module",
@@ -27,6 +28,7 @@ adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
+adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
 
 bevy = { version = "0.18.0", default-features = false, features = [
@@ -87,6 +89,7 @@ adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" 
 adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
 adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
+adventuresim-strategic-sim = { path = "crates/adventuresim-strategic-sim" }
 
 # https://github.com/janhohenheim/bevy_ahoy/pull/66
 bevy_ahoy = { git = "https://github.com/barsoosayque/bevy_ahoy", branch = "adventuresim" }

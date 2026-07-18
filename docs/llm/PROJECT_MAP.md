@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (598)
+## Files (609)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -47,6 +47,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/Cargo.toml` — Cargo package/workspace manifest.
@@ -396,6 +397,15 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
+- `crates/adventuresim-strategic-sim/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-strategic-sim/src/analysis.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/config.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/profile.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/rng.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/runner.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/tests/simulation.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/.cargo/config.toml` — Tooling or build configuration.
 - `crates/adventuresim-tactical-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-client/README.md` — Component overview and usage notes.
@@ -563,6 +573,7 @@ development, or wiki document before changing a subsystem.
 - `docs/SOIL.md` — Project documentation.
 - `docs/SOURCE_MANIFESTS.md` — Project documentation.
 - `docs/SPATIAL_GRID.md` — Project documentation.
+- `docs/STRATEGIC_SIMULATION.md` — Project documentation.
 - `docs/TREE_SPECIES.md` — Project documentation.
 - `docs/VIABUNDUS.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.

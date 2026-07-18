@@ -123,6 +123,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "adventuresim-strategic-sim"
+version = "0.1.0"
+dependencies = [
+ "adventuresim-core",
+ "blake3",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "adventuresim-tactical-client"
 version = "0.1.0"
 dependencies = [

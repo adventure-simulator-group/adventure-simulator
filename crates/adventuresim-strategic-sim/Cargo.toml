@@ -1,0 +1,17 @@
+[package]
+name = "adventuresim-strategic-sim"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+adventuresim-core.workspace = true
+blake3.workspace = true
+clap.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

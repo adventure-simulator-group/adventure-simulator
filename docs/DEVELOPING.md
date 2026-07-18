@@ -2,6 +2,10 @@
 
 Local workflow for running the Adventure Simulator demo.
 
+For deterministic multi-year NPC balance experiments and replay commands, see
+[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
+`just test-strategic-sim`.
+
 ## Architecture Overview
 
 The game uses a Mount & Blade style architecture:
