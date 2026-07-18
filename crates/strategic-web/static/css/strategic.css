@@ -1777,6 +1777,9 @@ button.party-portrait-action {
 .character-bio dt { color: var(--text-muted); }
 .character-bio dd { margin: 0; color: var(--text-primary); }
 
+.personality-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; justify-content: flex-end; }
+.personality-tag { border: 1px solid var(--border-color); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: var(--font-size-xs); }
+
 .party-skills-table {
   width: 100%;
   table-layout: fixed;

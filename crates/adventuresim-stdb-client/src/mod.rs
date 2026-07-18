@@ -54,6 +54,8 @@ pub mod character_needs_table;
 pub mod character_needs_type;
 pub mod character_notoriety_table;
 pub mod character_notoriety_type;
+pub mod character_personality_table;
+pub mod character_personality_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
 pub mod character_stats_table;
@@ -73,9 +75,11 @@ pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
+pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod continue_camp_travel_reducer;
+pub mod conviction_type;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
@@ -108,6 +112,7 @@ pub mod discard_inventory_items_reducer;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
+pub mod drive_type;
 pub mod drought_history_type;
 pub mod drought_profile_type;
 pub mod edge_endpoint_type;
@@ -189,9 +194,11 @@ pub mod modeled_tree_species_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
 pub mod native_range_evidence_type;
+pub mod nerve_type;
 pub mod official_religion_type;
 pub mod organic_soil_type;
 pub mod other_non_textured_soil_type;
+pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
@@ -277,6 +284,7 @@ pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_world_reducer;
+pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
@@ -297,6 +305,7 @@ pub mod simulation_character_table;
 pub mod simulation_character_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
+pub mod sociability_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
 pub mod soil_depth_type;
@@ -398,6 +407,8 @@ pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
 pub use character_notoriety_table::*;
 pub use character_notoriety_type::CharacterNotoriety;
+pub use character_personality_table::*;
+pub use character_personality_type::CharacterPersonality;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
 pub use character_stats_table::*;
@@ -417,9 +428,11 @@ pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
+pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use continue_camp_travel_reducer::continue_camp_travel;
+pub use conviction_type::Conviction;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
@@ -452,6 +465,7 @@ pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
+pub use drive_type::Drive;
 pub use drought_history_type::DroughtHistory;
 pub use drought_profile_type::DroughtProfile;
 pub use edge_endpoint_type::EdgeEndpoint;
@@ -533,9 +547,11 @@ pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
+pub use nerve_type::Nerve;
 pub use official_religion_type::OfficialReligion;
 pub use organic_soil_type::OrganicSoil;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
+pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
@@ -621,6 +637,7 @@ pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
 pub use seed_world_reducer::seed_world;
+pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
@@ -641,6 +658,7 @@ pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
+pub use sociability_type::Sociability;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
 pub use soil_depth_type::SoilDepth;
@@ -1999,6 +2017,7 @@ pub struct DbUpdate {
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
     character_needs: __sdk::TableUpdate<CharacterNeeds>,
     character_notoriety: __sdk::TableUpdate<CharacterNotoriety>,
+    character_personality: __sdk::TableUpdate<CharacterPersonality>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
@@ -2086,6 +2105,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(character_notoriety_table::parse_table_update(table_update)?),
+                "character_personality" => db_update.character_personality.append(
+                    character_personality_table::parse_table_update(table_update)?,
+                ),
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
@@ -2286,6 +2308,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_notoriety,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.character_personality = cache
+            .apply_diff_to_table::<CharacterPersonality>(
+                "character_personality",
+                &self.character_personality,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_skills = cache
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
             .with_updates_by_pk(|row| &row.character_id);
@@ -2481,6 +2509,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_personality" => db_update
+                    .character_personality
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2647,6 +2678,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_personality" => db_update
+                    .character_personality
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2787,6 +2821,7 @@ pub struct AppliedDiff<'r> {
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
     character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     character_notoriety: __sdk::TableAppliedDiff<'r, CharacterNotoriety>,
+    character_personality: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
@@ -2901,6 +2936,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
             "character_notoriety",
             &self.character_notoriety,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
+            "character_personality",
+            &self.character_personality,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
@@ -3730,6 +3770,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_morale_source_table::register_table(client_cache);
         character_needs_table::register_table(client_cache);
         character_notoriety_table::register_table(client_cache);
+        character_personality_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         character_strategic_condition_table::register_table(client_cache);
@@ -3783,6 +3824,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_morale_source",
         "character_needs",
         "character_notoriety",
+        "character_personality",
         "character_skills",
         "character_stats",
         "character_strategic_condition",

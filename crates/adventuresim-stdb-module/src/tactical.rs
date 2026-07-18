@@ -6,7 +6,8 @@ use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
     ItemSlot, character::character, character__view, character_attributes__view, character_equip,
     character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
-    complete_quest, inventory_item, inventory_item__view, item__view, party, record_battle_result,
+    complete_quest, inventory_item, inventory_item__view, item__view, party,
+    personality::character_personality, record_battle_result,
 };
 use std::collections::{HashMap, HashSet};
 use strum::VariantArray;
@@ -163,6 +164,10 @@ pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), Stri
 
     if character.temporary {
         log::info!("Leaving mission for character #{character_id}: removing temporary character..");
+        ctx.db
+            .character_personality()
+            .character_id()
+            .delete(character_id);
         ctx.db.character().delete(character);
     } else {
         log::info!("Leaving mission for character #{character_id}: resetting server info..");

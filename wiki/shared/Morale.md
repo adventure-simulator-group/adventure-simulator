@@ -18,7 +18,15 @@ The current strategic sources are:
 - Religious conviction and mixed-faith discord.
 - Morale restored by individual allies.
 
-Food quality and disease will become additional named sources when those systems are implemented.
+Food quality and disease will become additional named sources when those systems are implemented. **Comfort-seeking/Ascetic** is a good follow-up personality axis only after food and lodging distinguish quality levels, so it has meaningful conditions to react to.
+
+# Personality reactions
+
+Personality is stored as seven immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, and **Zealous/Irreverent**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
+
+Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
+
+Applied tags are appended to the source label so the breakdown remains auditable. Personality changes what an event means; Will still governs coping with ranked negative morale, Charisma still governs the party restoration budget, and Faith still governs religious knowledge and cohort strength.
 
 # Lifting allies
 
@@ -49,7 +57,7 @@ The party budget is divided among positive-morale members in proportion to their
 
 Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Charisma` limit. Hovering or focusing the meter shows every named contribution and its signed value.
 
-The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, and time-stamped morale events.
+The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, time-stamped morale events, and static personality. A negative event's persisted expiration already includes its Sanguine or Brooding duration adjustment, so `expires_at_minute` is authoritative rather than a projection-only reinterpretation. Personality is assigned before ordinary NPC events are recorded and is immutable thereafter. Personality is strategic identity, never tactical tick state. A missing legacy personality row is safely treated as fully neutral.
 
 # Religion
 

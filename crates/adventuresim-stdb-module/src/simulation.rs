@@ -231,6 +231,7 @@ pub fn configure_simulation_character(
         run_id: run.id,
         agent_id,
     });
+    crate::personality::assign_random_personality(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())

@@ -2,6 +2,13 @@
 Characters are created by investing some amount of [favor](../shared/Magic.md) into them. The more powerful the character, as determined by their [stats](../shared/Stats.md), the more favor you need to invest. The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
 
 You aren't exactly spawning a character into the world; ostensibly, you are obtaining control over a character who already exists! This means you don't always have to start "fresh" with a young, untrained character with no background. You can create a wealthy, skilled character simply by spending a lot of favor on him.
+
+## Personality
+
+Characters have an immutable sparse personality drawn from seven discrete axes. Only non-neutral tags are displayed. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Charisma, or Faith.
+
+When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
+
 ## Mortal
 Mortal characters [age](../strategic/Time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
 ### Humans

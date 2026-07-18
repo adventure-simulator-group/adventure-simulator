@@ -468,6 +468,25 @@ struct ProjectedMoraleSource {
     magnitude: f32,
 }
 
+fn rank_morale_sources(raw_sources: &mut [ProjectedMoraleSource], will: f32) {
+    let mut positive: Vec<_> = raw_sources
+        .iter_mut()
+        .filter(|source| source.magnitude > 0.0)
+        .collect();
+    positive.sort_by(|left, right| right.magnitude.total_cmp(&left.magnitude));
+    for (index, source) in positive.into_iter().enumerate() {
+        source.magnitude /= (index + 1) as f32;
+    }
+    let mut negative: Vec<_> = raw_sources
+        .iter_mut()
+        .filter(|source| source.magnitude < 0.0)
+        .collect();
+    negative.sort_by(|left, right| left.magnitude.total_cmp(&right.magnitude));
+    for (index, source) in negative.into_iter().enumerate() {
+        source.magnitude /= (index + 1) as f32 * will;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct PartyFaithContext {
     own_cohort: f32,
@@ -574,37 +593,59 @@ fn base_morale(
         .map_or(0, |time| time.minutes);
     let (_, limbs, _, _) = load_character_parts(ctx, character_id)?;
     let will = mental_check(ctx, character_id, Skill::Will)?.max(MINIMUM_WILL_CHECK);
+    let personality = crate::personality::personality_or_neutral(ctx, character_id);
     let mut raw_sources = Vec::new();
+    let mut add_source = |key: String,
+                          kind: String,
+                          label: String,
+                          magnitude: f32,
+                          stimulus: crate::personality::MoraleStimulus| {
+        let (magnitude, traits) = crate::personality::react_raw(&personality, stimulus, magnitude);
+        let label = if traits.is_empty() {
+            label
+        } else {
+            format!("{label} ({})", traits.join(", "))
+        };
+        raw_sources.push(ProjectedMoraleSource {
+            key,
+            kind,
+            label,
+            magnitude,
+        });
+    };
 
     let injury = total_damage(&limbs) * INJURY_MORALE_PER_HEALTH_DEFICIT;
     if injury > 0.0 {
-        raw_sources.push(ProjectedMoraleSource {
-            key: "injuries".into(),
-            kind: "injury".into(),
-            label: "Injuries".into(),
-            magnitude: -injury,
-        });
+        add_source(
+            "injuries".into(),
+            "injury".into(),
+            "Injuries".into(),
+            -injury,
+            crate::personality::MoraleStimulus::Other,
+        );
     }
 
     let party_members = party_character_ids(ctx, character_id)?;
     if let Some((religion_id, faith)) = party_faith_context(ctx, character_id, &party_members)? {
-        raw_sources.push(ProjectedMoraleSource {
-            key: format!("faith-{religion_id}"),
-            kind: "faith".into(),
-            label: format!(
+        add_source(
+            format!("faith-{religion_id}"),
+            "faith".into(),
+            format!(
                 "Conviction among the {} faithful",
                 religion_label(&religion_id)
             ),
-            magnitude: faith.own_cohort,
-        });
+            faith.own_cohort,
+            crate::personality::MoraleStimulus::Religious,
+        );
         let discord = religious_discord(faith.foreign_pressure, faith.party_charisma);
         if discord > 0.0 {
-            raw_sources.push(ProjectedMoraleSource {
-                key: "religious-discord".into(),
-                kind: "religious_discord".into(),
-                label: "Religious discord".into(),
-                magnitude: -discord,
-            });
+            add_source(
+                "religious-discord".into(),
+                "religious_discord".into(),
+                "Religious discord".into(),
+                -discord,
+                crate::personality::MoraleStimulus::Religious,
+            );
         }
         let prayer_minutes = ctx
             .db
@@ -613,12 +654,13 @@ fn base_morale(
             .find(character_id)
             .map_or(0, |schedule| schedule.downtime.prayer_minutes);
         if prayer_minutes > 0 {
-            raw_sources.push(ProjectedMoraleSource {
-                key: "daily-prayer".into(),
-                kind: "prayer".into(),
-                label: "Daily prayer".into(),
-                magnitude: prayer_morale(prayer_minutes),
-            });
+            add_source(
+                "daily-prayer".into(),
+                "prayer".into(),
+                "Daily prayer".into(),
+                prayer_morale(prayer_minutes),
+                crate::personality::MoraleStimulus::Religious,
+            );
         }
         let prayer_fervor = fervor_fraction(
             mental_check(ctx, character_id, Skill::Faith)?,
@@ -629,12 +671,13 @@ fn base_morale(
         let neglect = religious_neglect_morale(prayer_fervor, faith.party_charisma)
             * (1.0 - prayer_observance(prayer_fervor, prayer_minutes));
         if neglect > 0.0 {
-            raw_sources.push(ProjectedMoraleSource {
-                key: "neglected-prayer".into(),
-                kind: "prayer".into(),
-                label: "Insufficient daily prayer".into(),
-                magnitude: -neglect,
-            });
+            add_source(
+                "neglected-prayer".into(),
+                "prayer".into(),
+                "Insufficient daily prayer".into(),
+                -neglect,
+                crate::personality::MoraleStimulus::Religious,
+            );
         }
     }
     let mut allied_power = 0.0;
@@ -665,20 +708,25 @@ fn base_morale(
         let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
         let difference = allied_power - enemy_power;
         if difference != 0.0 {
-            raw_sources.push(ProjectedMoraleSource {
-                key: format!("power-{quest_id}"),
-                kind: "power".into(),
-                label: if difference > 0.0 {
+            add_source(
+                format!("power-{quest_id}"),
+                "power".into(),
+                if difference > 0.0 {
                     "Superior allied strength".into()
                 } else {
                     format!("Outmatched by {}", quest.enemy_type)
                 },
-                magnitude: if difference > 0.0 {
+                if difference > 0.0 {
                     difference
                 } else {
                     difference.abs() * -enemy_fear_multiplier(&quest.enemy_type)
                 },
-            });
+                if difference < 0.0 {
+                    crate::personality::MoraleStimulus::Threat
+                } else {
+                    crate::personality::MoraleStimulus::Other
+                },
+            );
         }
     }
 
@@ -689,35 +737,22 @@ fn base_morale(
         let age = current_minute.saturating_sub(event.occurred_at_minute);
         let effect = event.magnitude * morale_event_decay(age, duration);
         if effect != 0.0 {
-            raw_sources.push(ProjectedMoraleSource {
-                key: format!("event-{}", event.id),
-                kind: "event".into(),
-                label: match event.kind.as_str() {
+            let stimulus = crate::personality::morale_event_stimulus(&event.kind);
+            add_source(
+                format!("event-{}", event.id),
+                "event".into(),
+                match event.kind.as_str() {
                     "victory" => "Recent victory".into(),
                     "defeat" => "Recent defeat".into(),
                     other => other.replace('_', " "),
                 },
-                magnitude: effect,
-            });
+                effect,
+                stimulus,
+            );
         }
     }
 
-    let mut positive: Vec<_> = raw_sources
-        .iter_mut()
-        .filter(|source| source.magnitude > 0.0)
-        .collect();
-    positive.sort_by(|left, right| right.magnitude.total_cmp(&left.magnitude));
-    for (index, source) in positive.into_iter().enumerate() {
-        source.magnitude /= (index + 1) as f32;
-    }
-    let mut negative: Vec<_> = raw_sources
-        .iter_mut()
-        .filter(|source| source.magnitude < 0.0)
-        .collect();
-    negative.sort_by(|left, right| left.magnitude.total_cmp(&right.magnitude));
-    for (index, source) in negative.into_iter().enumerate() {
-        source.magnitude /= (index + 1) as f32 * will;
-    }
+    rank_morale_sources(&mut raw_sources, will);
     let morale = raw_sources.iter().map(|source| source.magnitude).sum();
     Ok((morale, raw_sources))
 }
@@ -787,20 +822,32 @@ fn evaluate_strategic_condition(
                     .id()
                     .find(member_id)
                     .ok_or("Party member not found")?;
-                ally_lifts.push((member_id, ally.name, deficit * fraction));
+                let (social_multiplier, social_trait) =
+                    crate::personality::ally_restoration_multiplier(
+                        &crate::personality::personality_or_neutral(ctx, character_id),
+                    );
+                ally_lifts.push((
+                    member_id,
+                    ally.name,
+                    deficit * fraction * social_multiplier,
+                    social_trait,
+                ));
             }
         }
-        let total_lift: f32 = ally_lifts.iter().map(|(_, _, lift)| *lift).sum();
+        let total_lift: f32 = ally_lifts.iter().map(|(_, _, lift, _)| *lift).sum();
         let scale = if total_lift > deficit {
             deficit / total_lift
         } else {
             1.0
         };
-        for (member_id, name, lift) in ally_lifts {
+        for (member_id, name, lift, social_trait) in ally_lifts {
             sources.push(ProjectedMoraleSource {
                 key: format!("ally-{member_id}"),
                 kind: "ally".into(),
-                label: format!("Encouraged by {name}"),
+                label: social_trait.map_or_else(
+                    || format!("Encouraged by {name}"),
+                    |tag| format!("Encouraged by {name} ({tag})"),
+                ),
                 magnitude: lift * scale,
             });
         }
@@ -1169,13 +1216,14 @@ pub fn record_morale_event(
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
+    let duration = stored_morale_event_duration(ctx, character_id, magnitude);
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
         kind: kind.into(),
         magnitude,
         occurred_at_minute,
-        expires_at_minute: occurred_at_minute + RECENT_MORALE_DURATION_MINUTES,
+        expires_at_minute: occurred_at_minute.saturating_add(duration),
         source_id,
     });
     refresh_character_strategic_condition(ctx, character_id)?;
@@ -1193,15 +1241,27 @@ fn insert_morale_event_without_refresh(
         return;
     }
     let occurred_at_minute = character_minute(ctx, character_id);
+    let duration = stored_morale_event_duration(ctx, character_id, magnitude);
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
         kind: kind.into(),
         magnitude,
         occurred_at_minute,
-        expires_at_minute: occurred_at_minute + RECENT_MORALE_DURATION_MINUTES,
+        expires_at_minute: occurred_at_minute.saturating_add(duration),
         source_id: Some(source_id),
     });
+}
+
+fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitude: f32) -> u64 {
+    if magnitude < 0.0 {
+        crate::personality::negative_event_duration(
+            &crate::personality::personality_or_neutral(ctx, character_id),
+            RECENT_MORALE_DURATION_MINUTES,
+        )
+    } else {
+        RECENT_MORALE_DURATION_MINUTES
+    }
 }
 
 fn party_charisma(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
@@ -1466,7 +1526,7 @@ pub fn set_character_religion(
 
 #[cfg(test)]
 mod tests {
-    use super::holy_day_demand_has_expired;
+    use super::{ProjectedMoraleSource, holy_day_demand_has_expired, rank_morale_sources};
 
     #[test]
     fn holy_day_demands_expire_after_their_day_or_on_departure() {
@@ -1474,5 +1534,26 @@ mod tests {
         assert!(holy_day_demand_has_expired(6, 6, true));
         assert!(holy_day_demand_has_expired(6, 7, false));
         assert!(!holy_day_demand_has_expired(13, 12, true));
+    }
+
+    #[test]
+    fn raw_personality_reaction_is_ranked_before_will() {
+        let mut sources = vec![
+            ProjectedMoraleSource {
+                key: "trait-adjusted".into(),
+                kind: "test".into(),
+                label: "Defeat (Proud)".into(),
+                magnitude: -30.0,
+            },
+            ProjectedMoraleSource {
+                key: "other".into(),
+                kind: "test".into(),
+                label: "Other".into(),
+                magnitude: -10.0,
+            },
+        ];
+        rank_morale_sources(&mut sources, 2.0);
+        assert_eq!(sources[0].magnitude, -15.0);
+        assert_eq!(sources[1].magnitude, -2.5);
     }
 }

@@ -2805,7 +2805,7 @@ pub fn seed_bot_join_requests(
         while ctx.db.character().id().find(id).is_some() {
             id = ctx.random::<u64>() | (1_u64 << 63);
         }
-        crate::character::insert_new_character(ctx, name, id, true)?;
+        crate::character::insert_new_npc_character(ctx, name, id, true)?;
         let mut bot = ctx.db.character().id().find(id).unwrap();
         bot.current_settlement_id = party.current_settlement_id.clone();
         bot.current_quest_location_id = party.current_quest_location_id.clone();
@@ -3782,7 +3782,7 @@ pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(),
 
     for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {
         if ctx.db.character().id().find(id).is_none() {
-            crate::character::insert_new_character(ctx, name.into(), id, false)?;
+            crate::character::insert_new_npc_character(ctx, name.into(), id, false)?;
         }
         let mut companion = ctx.db.character().id().find(id).unwrap();
         if companion.party_id.as_deref() == Some(&party_id) {
@@ -5586,7 +5586,7 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         while ctx.db.character().id().find(leader_id).is_some() {
             leader_id = ctx.random::<u64>() | (1_u64 << 63);
         }
-        crate::character::insert_new_character(ctx, leader_name.clone(), leader_id, true)?;
+        crate::character::insert_new_npc_character(ctx, leader_name.clone(), leader_id, true)?;
         let mut leader = ctx.db.character().id().find(leader_id).unwrap();
         leader.current_settlement_id = Some(settlement_id.to_string());
         ctx.db.character().id().update(leader.clone());
