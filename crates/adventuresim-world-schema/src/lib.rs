@@ -5,7 +5,137 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 3;
+pub const WORLD_SCHEMA_VERSION: u32 = 4;
+
+pub const LAND_USE_BASIS_POINTS: u16 = 10_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct LandUseFraction {
+    basis_points: u16,
+}
+
+impl LandUseFraction {
+    pub const fn new(basis_points: u16) -> Option<Self> {
+        if basis_points <= LAND_USE_BASIS_POINTS {
+            Some(Self { basis_points })
+        } else {
+            None
+        }
+    }
+
+    pub const fn basis_points(self) -> u16 {
+        self.basis_points
+    }
+}
+
+impl<'de> Deserialize<'de> for LandUseFraction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireFraction {
+            basis_points: u16,
+        }
+
+        let wire = WireFraction::deserialize(deserializer)?;
+        Self::new(wire.basis_points).ok_or_else(|| {
+            serde::de::Error::custom("land-use fraction exceeds 10,000 basis points")
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum HumanLandUseIntensity {
+    Wild,
+    Sparse,
+    Rural,
+    Intensive,
+    Urban,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct LandUseProfile {
+    cropland: LandUseFraction,
+    grazing: LandUseFraction,
+    built_up: LandUseFraction,
+    natural: LandUseFraction,
+}
+
+impl LandUseProfile {
+    pub const fn new(
+        cropland: LandUseFraction,
+        grazing: LandUseFraction,
+        built_up: LandUseFraction,
+        natural: LandUseFraction,
+    ) -> Option<Self> {
+        if cropland.basis_points() as u32
+            + grazing.basis_points() as u32
+            + built_up.basis_points() as u32
+            + natural.basis_points() as u32
+            == LAND_USE_BASIS_POINTS as u32
+        {
+            Some(Self {
+                cropland,
+                grazing,
+                built_up,
+                natural,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub const fn cropland(self) -> LandUseFraction {
+        self.cropland
+    }
+    pub const fn grazing(self) -> LandUseFraction {
+        self.grazing
+    }
+    pub const fn built_up(self) -> LandUseFraction {
+        self.built_up
+    }
+    pub const fn natural(self) -> LandUseFraction {
+        self.natural
+    }
+
+    pub const fn intensity(self) -> HumanLandUseIntensity {
+        let managed = self.cropland.basis_points() as u32
+            + self.grazing.basis_points() as u32
+            + self.built_up.basis_points() as u32;
+        if self.built_up.basis_points() >= 1_000 {
+            HumanLandUseIntensity::Urban
+        } else {
+            match managed {
+                0..=499 => HumanLandUseIntensity::Wild,
+                500..=1_999 => HumanLandUseIntensity::Sparse,
+                2_000..=4_999 => HumanLandUseIntensity::Rural,
+                _ => HumanLandUseIntensity::Intensive,
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LandUseProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireProfile {
+            cropland: LandUseFraction,
+            grazing: LandUseFraction,
+            built_up: LandUseFraction,
+            natural: LandUseFraction,
+        }
+        let wire = WireProfile::deserialize(deserializer)?;
+        Self::new(wire.cropland, wire.grazing, wire.built_up, wire.natural)
+            .ok_or_else(|| serde::de::Error::custom("land-use fractions do not sum to 10,000"))
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
@@ -145,6 +275,10 @@ pub struct WorldBuildReport {
     pub elevation_tiles_read: usize,
     pub elevation_samples: usize,
     pub elevation_fallback_samples: usize,
+    pub land_use_rasters_read: usize,
+    pub land_use_samples: usize,
+    pub land_use_fallback_samples: usize,
+    pub land_use_normalized_samples: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -195,13 +329,16 @@ pub struct SettlementImport {
     pub population_level: i32,
     pub population_estimate: u32,
     pub elevation: ElevationMeters,
+    pub land_use: LandUseProfile,
     pub scene_key: String,
     pub religion_id: String,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ElevationBand, ElevationMeters};
+    use super::{
+        ElevationBand, ElevationMeters, HumanLandUseIntensity, LandUseFraction, LandUseProfile,
+    };
 
     #[test]
     fn elevations_parse_into_bounded_values_and_bands() {
@@ -228,5 +365,31 @@ mod tests {
             ElevationBand::Alpine
         );
         assert!(serde_json::from_str::<ElevationMeters>(r#"{"meters":9001}"#).is_err());
+    }
+
+    #[test]
+    fn land_use_profiles_are_exhaustive_and_derive_intensity() {
+        let profile = LandUseProfile::new(
+            LandUseFraction::new(3_000).unwrap(),
+            LandUseFraction::new(2_000).unwrap(),
+            LandUseFraction::new(100).unwrap(),
+            LandUseFraction::new(4_900).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(profile.intensity(), HumanLandUseIntensity::Intensive);
+        assert!(
+            LandUseProfile::new(
+                LandUseFraction::new(3_000).unwrap(),
+                LandUseFraction::new(2_000).unwrap(),
+                LandUseFraction::new(100).unwrap(),
+                LandUseFraction::new(4_800).unwrap(),
+            )
+            .is_none()
+        );
+        assert!(serde_json::from_str::<LandUseFraction>(r#"{"basis_points":10001}"#).is_err());
+        assert!(serde_json::from_str::<LandUseProfile>(
+            r#"{"cropland":{"basis_points":3000},"grazing":{"basis_points":2000},"built_up":{"basis_points":100},"natural":{"basis_points":4800}}"#
+        )
+        .is_err());
     }
 }

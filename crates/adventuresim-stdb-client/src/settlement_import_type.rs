@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::elevation_meters_type::ElevationMeters;
+use super::land_use_profile_type::LandUseProfile;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,6 +18,7 @@ pub struct SettlementImport {
     pub population_level: i32,
     pub population_estimate: u32,
     pub elevation: ElevationMeters,
+    pub land_use: LandUseProfile,
     pub scene_key: String,
     pub religion_id: String,
 }

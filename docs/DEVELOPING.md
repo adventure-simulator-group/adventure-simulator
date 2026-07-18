@@ -170,6 +170,12 @@ GLO-30 `*_DEM.tif` tiles in
 licensing, parsing, and fallback details. You can override either input with
 `--viabundus-dir` or `--elevation-dir`.
 
+Historical land use currently has a tested parser but no accessible full local
+dataset. Preparing the seven corrected HYDE 3.2.1 ESRI ASCII files documented in
+`docs/HISTORICAL_LAND_USE.md` under
+`target/world-data-sources/raw/historical-land-use/` is required before the
+stacked compiler can complete. Override that directory with `--land-use-dir`.
+
 ## Strategic UI
 
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
