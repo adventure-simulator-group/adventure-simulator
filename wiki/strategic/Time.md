@@ -17,6 +17,8 @@ Activities combine reduced-rate training with another strategic result:
 - **Thievery** earns more gold in more populous settlements during downtime and trains Stealth at 25% speed. Stealth improves the take while reducing both notoriety and the continuous chance of discovery.
 - **Raiding** earns gold during downtime and trains weapon-appropriate combat skills at 25% speed. Equipped ranged weapons train Ranged; other weapons train Melee; heavier armor adds Block practice while lighter armor adds Dodge practice. Raiding produces high notoriety and a high retaliation chance.
 
+The schedule previews each activity's daily Gold, Virtue, Morale, and Fatigue at the currently assigned time. Notoriety is presented as negative Virtue so future honorable activities can use positive values on the same scale. Positive preview values are green, negative values are red, and zero is neutral.
+
 Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
 
 Thievery and Raiding discovery is resolved whenever settlement downtime advances, including explicit rest and off-screen catch-up. The continuous exposure formulas are:

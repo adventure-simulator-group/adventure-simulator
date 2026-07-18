@@ -4,7 +4,10 @@
 //! settlement-owned information on the left, service context in the center,
 //! and the active player's party on the right.
 
-use adventuresim_core::prelude::Skill;
+use adventuresim_core::{
+    activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    prelude::Skill,
+};
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
@@ -26,6 +29,80 @@ pub struct LocationView {
     pub kind: LocationKind,
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ActivityPreviewRates {
+    labor_gold_per_hour: f32,
+    thievery_gold_per_hour: f32,
+    thievery_virtue_per_hour: f32,
+    raiding_gold_per_hour: f32,
+    raiding_virtue_per_hour: f32,
+}
+
+impl ActivityPreviewRates {
+    pub fn from_character(
+        attributes: Option<&CharacterAttributes>,
+        skills: Option<&CharacterSkills>,
+        limbs: Option<&CharacterLimbs>,
+        capability: Option<&CharacterCapability>,
+        settlement: Option<&Settlement>,
+    ) -> Self {
+        let (Some(attributes), Some(skills), Some(limbs), Some(capability), Some(settlement)) =
+            (attributes, skills, limbs, capability, settlement)
+        else {
+            return Self::default();
+        };
+        let limb_health = [
+            limbs.left_arm_health,
+            limbs.right_arm_health,
+            limbs.left_leg_health,
+            limbs.right_leg_health,
+        ];
+        let strength = [
+            attributes.left_arm_strength,
+            attributes.right_arm_strength,
+            attributes.left_leg_strength,
+            attributes.right_leg_strength,
+        ]
+        .into_iter()
+        .zip(limb_health)
+        .map(|(value, health)| value * health.clamp(0.0, 1.0) * 0.25)
+        .sum::<f32>();
+        let agility = [
+            attributes.left_arm_agility,
+            attributes.right_arm_agility,
+            attributes.left_leg_agility,
+            attributes.right_leg_agility,
+        ]
+        .into_iter()
+        .zip(limb_health)
+        .map(|(value, health)| value * health.clamp(0.0, 1.0) * 0.25)
+        .sum::<f32>();
+        let usable_limbs = limb_health
+            .into_iter()
+            .map(|health| health.clamp(0.0, 1.0) * 0.25)
+            .sum::<f32>();
+        let precision = attributes.precision * usable_limbs;
+        let stealth =
+            (Skill::Stealth.training_rank(skills.stealth_hours) + agility + precision) * 0.5;
+        let endurance = attributes.endurance * limbs.chest_health.clamp(0.0, 1.0);
+        let population = settlement_population_scale(
+            settlement.population_level,
+            settlement.population_estimate,
+        );
+        let combat = capability
+            .weapon_precision
+            .max(capability.athletics)
+            .max(capability.endurance);
+        Self {
+            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 8.0,
+            thievery_gold_per_hour: population.max(0.0) * (1.0 + stealth.max(0.0)) / 8.0,
+            thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
+            raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
+            raiding_virtue_per_hour: -1.5,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -814,6 +891,7 @@ pub fn party_personal_page(
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
+    activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
@@ -824,7 +902,7 @@ pub fn party_personal_page(
             (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs))
             @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
+            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action), Some(activity_preview)))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
@@ -893,7 +971,7 @@ pub fn party_stats_page(
         aside class="left-sidebar" {
             (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
-            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
+            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
@@ -1691,6 +1769,7 @@ fn party_skills_rail(
     limbs: Option<&CharacterLimbs>,
     schedule: Option<&CharacterTrainingSchedule>,
     schedule_action: Option<&str>,
+    activity_preview: Option<ActivityPreviewRates>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -1704,11 +1783,11 @@ fn party_skills_rail(
             @if let Some(skills) = skills {
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
-                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
+                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
                     }
-                    script src="/static/training-schedule.js?v=single-context-2" {}
+                    script src="/static/training-schedule.js?v=activity-preview-2" {}
                 } @else {
-                    (skills_table(skills, head_health, upper_health, lower_health, None))
+                    (skills_table(skills, head_health, upper_health, lower_health, None, None))
                 }
             } @else {
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
@@ -1723,21 +1802,30 @@ fn skills_table(
     upper_health: f32,
     lower_health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
+    activity_preview: Option<ActivityPreviewRates>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
                 colgroup {
                     col class="party-skill-icon-column";
                     col class="party-skill-name-column";
-                    col class="party-skill-meter-column";
                     @if schedule.is_some() {
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
                         col class="party-skill-time-column";
+                    } @else {
+                        col class="party-skill-meter-column";
                     }
                 }
                 @if schedule.is_some() {
                     thead { tr class="schedule-context-heading" {
-                        th colspan="3" { }
-                        th scope="col" title="Daily plan used while resting or waiting in a settlement" { "Downtime" }
+                        th colspan="6" { }
+                        th scope="col" title="Daily plan used while resting or waiting in a settlement" {
+                            span aria-hidden="true" { "⌛" }
+                            span class="sr-only" { "Daily allocation" }
+                        }
                     } }
                 }
                 tbody {
@@ -1754,13 +1842,21 @@ fn skills_table(
                     (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| s.downtime.surgeon_minutes)))
                     (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| s.downtime.smithing_minutes)))
                     @if let Some(schedule) = schedule {
-                        tr class="schedule-divider" { td colspan="4" {} }
-                        tr class="schedule-section-heading" { td colspan="4" { "Activities" } }
-                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed."))
-                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, "Unallocated downtime for sleep and personal needs."))
+                        @let preview = activity_preview.unwrap_or_default();
+                        tr class="schedule-divider" { td colspan="7" {} }
+                        tr class="schedule-section-heading" {
+                            td colspan="2" { "Activities" }
+                            th scope="col" title="Gold per day" { "Gold" }
+                            th scope="col" title="Virtue per day" { "Virt." }
+                            th scope="col" title="Morale per day" { "Mor." }
+                            th scope="col" title="Fatigue per day" { "Fat." }
+                            td {}
+                        }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, ActivityEffectRates::prayer(), "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, 0.0), "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, ActivityEffectRates::default(), "Unallocated downtime for sleep and personal needs."))
                     }
             }
         }
@@ -1782,7 +1878,7 @@ fn party_skill_row(
         tr class="party-skill-row" {
             td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
             td class="party-skill-name" { (name) }
-            td class="party-skill-meter" {
+            td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
                 (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
             }
             @if let Some(minutes) = schedule_minutes {
@@ -1813,27 +1909,97 @@ fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct ActivityEffectRates {
+    gold_per_hour: f32,
+    virtue_per_hour: f32,
+    morale_per_hour: f32,
+    fatigue_per_hour: f32,
+    prayer_morale: bool,
+}
+
+impl ActivityEffectRates {
+    const fn linear(gold: f32, virtue: f32, morale: f32, fatigue: f32) -> Self {
+        Self {
+            gold_per_hour: gold,
+            virtue_per_hour: virtue,
+            morale_per_hour: morale,
+            fatigue_per_hour: fatigue,
+            prayer_morale: false,
+        }
+    }
+
+    const fn prayer() -> Self {
+        Self {
+            prayer_morale: true,
+            ..Self::linear(0.0, 0.0, 0.0, 0.0)
+        }
+    }
+
+    fn values(self, minutes: u16) -> [f32; 4] {
+        let hours = f32::from(minutes) / 60.0;
+        let morale = if self.prayer_morale {
+            PRAYER_MORALE_LIMIT * (1.0 - (-f32::from(minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
+        } else {
+            self.morale_per_hour * hours
+        };
+        [
+            (self.gold_per_hour * hours).round(),
+            self.virtue_per_hour * hours,
+            morale,
+            self.fatigue_per_hour * hours,
+        ]
+    }
+}
+
+fn activity_effect_cell(kind: &str, value: f32) -> Markup {
+    let state = if value > 0.0005 {
+        "positive"
+    } else if value < -0.0005 {
+        "negative"
+    } else {
+        "neutral"
+    };
+    let display = if state == "neutral" {
+        "0".to_string()
+    } else if kind == "gold" {
+        format!("{value:+.0}")
+    } else {
+        format!("{value:+.1}")
+    };
+    html! {
+        td class=(format!("schedule-effect schedule-effect-{state}")) data-activity-effect=(kind) {
+            (display)
+        }
+    }
+}
+
 fn schedule_special_row(
     label: &str,
     icon: &str,
     allocation_name: &str,
     allocation_minutes: u16,
     editable: bool,
+    effects: ActivityEffectRates,
     description: &str,
 ) -> Markup {
+    let values = effects.values(allocation_minutes);
     html! {
-        tr class="party-skill-row schedule-special-row" title=(description) {
+        tr class="party-skill-row schedule-special-row" title=(description)
+            data-activity-row data-activity-allocation=(allocation_name)
+            data-gold-rate=(effects.gold_per_hour)
+            data-virtue-rate=(effects.virtue_per_hour)
+            data-morale-rate=(effects.morale_per_hour)
+            data-fatigue-rate=(effects.fatigue_per_hour)
+            data-prayer-morale=[effects.prayer_morale.then_some("true")]
+            data-prayer-morale-limit=[effects.prayer_morale.then_some(PRAYER_MORALE_LIMIT)]
+            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)] {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
             td class="party-skill-name" { strong { (label) } }
-            td class="party-skill-meter" {
-                div class="skill-rank-bar schedule-special-track" {
-                @if editable {
-                    span class="schedule-allocation-fill" data-schedule-fill=(allocation_name) style=(format!("width:{:.1}%", f32::from(allocation_minutes) / 14.4)) {}
-                } @else {
-                    span class="schedule-leisure-fill" data-leisure-fill="downtime" {}
-                }
-                }
-            }
+            (activity_effect_cell("gold", values[0]))
+            (activity_effect_cell("virtue", values[1]))
+            (activity_effect_cell("morale", values[2]))
+            (activity_effect_cell("fatigue", values[3]))
             (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
         }
     }
@@ -1915,7 +2081,7 @@ pub(crate) fn character_stats_panel(
     html! {
         (character_summary_rail(capability))
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
-        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None))
+        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None, None))
     }
 }
 
@@ -1951,11 +2117,16 @@ fn character_bio_rail(
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
+    let virtue = if notoriety.abs() < 0.0005 {
+        0.0
+    } else {
+        -notoriety
+    };
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
-                div { dt { "Notoriety" } dd title="Tracked now; consequences will be added later." { (format!("{notoriety:.1}")) } }
+                div { dt { "Virtue" } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
                 @if let Some(personality) = personality {
                     @let tags = personality_tags(personality);
                     @if !tags.is_empty() {
@@ -2659,7 +2830,7 @@ fn rest_service_menu(
                     p { @if summary.minutes >= 1_440 { (summary.minutes / 1_440) " day" @if summary.minutes / 1_440 != 1 { "s" } " passed." } @else { (summary.minutes / 60) " hour" @if summary.minutes / 60 != 1 { "s" } " passed." } }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
-                    @if summary.notoriety_gained > 0.0 { p { "+" (format!("{:.1}", summary.notoriety_gained)) " notoriety gained." } }
+                    @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
@@ -2919,6 +3090,29 @@ mod tests {
         assert!(allocation.contains("Click to enter a time as hh:mm"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn activity_rows_show_signed_daily_effects_instead_of_allocation_bars() {
+        let rendered = schedule_special_row(
+            "Thievery",
+            "market",
+            "thievery_minutes",
+            120,
+            true,
+            ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            "Test activity",
+        )
+        .into_string();
+        for effect in ["gold", "virtue", "morale", "fatigue"] {
+            assert!(rendered.contains(&format!("data-activity-effect=\"{effect}\"")));
+        }
+        assert!(rendered.contains("schedule-effect-positive"));
+        assert!(rendered.contains(">+4</td>"));
+        assert!(rendered.contains("schedule-effect-negative"));
+        assert!(rendered.contains(">-2.0</td>"));
+        assert!(!rendered.contains("schedule-allocation-fill"));
+        assert!(!rendered.contains("schedule-special-track"));
     }
 
     #[test]
@@ -3325,6 +3519,8 @@ mod tests {
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("input.type = 'text'"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
+        assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
+        assert!(schedule.contains("schedule-effect-positive"));
         assert!(!schedule.contains("scheduleDrag"));
         assert!(!schedule.contains("travel_"));
         assert!(equipment.contains("'/api/equipment'"));

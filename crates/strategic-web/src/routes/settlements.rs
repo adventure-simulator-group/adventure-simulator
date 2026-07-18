@@ -38,8 +38,8 @@ use crate::spacetimedb::{
     TravelEdge,
 };
 use crate::templates::settlement::{
-    LocationKind, LocationView, MerchantShop, RestSummary, camp_page, inn_page,
-    live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
+    ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
+    inn_page, live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
     settlement_map_page, settlement_overview_page,
 };
@@ -1308,6 +1308,26 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let settlement = if location.kind == LocationKind::Settlement {
+        state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(&location.id)
+            ))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let activity_preview = ActivityPreviewRates::from_character(
+        attributes.first(),
+        skills.first(),
+        limbs.first(),
+        capability.as_ref(),
+        settlement.as_ref(),
+    );
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -1340,6 +1360,7 @@ async fn party_personal(
             &morale_sources,
             religion.as_deref(),
             schedule.first(),
+            activity_preview,
             religious_demand.as_ref(),
             notoriety,
             personality.as_ref(),

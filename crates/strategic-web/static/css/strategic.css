@@ -1997,6 +1997,10 @@ button.party-portrait-action {
 .party-skill-icon-column { width: 1.55rem; }
 .party-skill-name-column { width: 5.75rem; }
 .party-skill-time-column { width: 3.65rem; }
+.skill-schedule .party-skill-icon-column { width: 1.15rem; }
+.skill-schedule .party-skill-name-column { width: 3.6rem; }
+.skill-schedule .schedule-effect-column { width: 1.55rem; }
+.skill-schedule .party-skill-time-column { width: 2.55rem; }
 
 .party-skills-table td {
   padding: 0.42rem 0;
@@ -2615,7 +2619,8 @@ body.chat-resizing {
   border-top: 3px double var(--border-light);
 }
 
-.schedule-section-heading td {
+.schedule-section-heading td,
+.schedule-section-heading th {
   padding: 0.25rem 0 0.15rem !important;
   border-bottom: 0 !important;
   color: var(--text-muted);
@@ -2625,23 +2630,24 @@ body.chat-resizing {
   text-transform: uppercase;
 }
 
+.schedule-section-heading th {
+  overflow: hidden;
+  font-size: 0.48rem;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .schedule-special-row .party-skill-name { font-weight: 700; }
 .schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
-.schedule-special-track { position: relative; display: block; overflow: hidden; background: var(--bg-tertiary); }
-.schedule-allocation-fill,
-.schedule-leisure-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
-.schedule-special-track::after {
-  display: block;
-  background:
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 85%, transparent), transparent) center / 3px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 80%, transparent), transparent) 25% / 2px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 80%, transparent), transparent) 75% / 2px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 12.5% / 1px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 37.5% / 1px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 62.5% / 1px 100% no-repeat,
-    linear-gradient(to right, transparent, color-mix(in srgb, var(--panel-bg) 75%, transparent), transparent) 87.5% / 1px 100% no-repeat;
-}
 .schedule-special-icon { --stat-icon-color: var(--accent); }
-.schedule-extra-track { position: relative; height: 0.45rem; background: var(--bg-tertiary); }
-.schedule-leisure-fill { position: absolute; top: 0; left: 0; display: block; height: 50%; background: var(--success, #69a86b); }
-.schedule-leisure-fill.travel-leisure-fill { top: 50%; }
+.schedule-effect {
+  padding-inline: 0.1rem !important;
+  text-align: center;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.schedule-effect-positive { color: var(--success); }
+.schedule-effect-negative { color: var(--danger); }
+.schedule-effect-neutral { color: var(--text-muted); }
+[data-schedule-value="leisure_minutes"] [data-schedule-display] { color: var(--leisure-color, var(--text-primary)); }

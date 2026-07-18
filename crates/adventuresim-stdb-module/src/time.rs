@@ -304,14 +304,6 @@ fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     }
 }
 
-fn settlement_population_scale(population_level: i32, population_estimate: u32) -> f32 {
-    if population_estimate > 0 {
-        ((population_estimate as f32 + 1.0).ln() / 4.0).clamp(1.0, 4.0)
-    } else {
-        (population_level.max(1) as f32 / 2.0).clamp(0.5, 3.0)
-    }
-}
-
 fn initialize_notoriety(ctx: &ReducerContext, character_id: u64) {
     if ctx
         .db
@@ -400,8 +392,10 @@ fn apply_activity_outcomes(
         LimbWeights::all_equal(),
     );
     let capability = crate::capability::evaluate_character(ctx, character_id)?;
-    let population =
-        settlement_population_scale(settlement.population_level, settlement.population_estimate);
+    let population = adventuresim_core::activity::settlement_population_scale(
+        settlement.population_level,
+        settlement.population_estimate,
+    );
     let combat = capability
         .weapon_precision
         .max(capability.athletics)

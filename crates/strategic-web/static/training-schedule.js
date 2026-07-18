@@ -43,6 +43,32 @@
     return 'rgb(16 16 16)';
   }
 
+  function signedEffect(kind, value) {
+    if (Math.abs(value) < 0.0005) return '0';
+    const rounded = kind === 'gold' ? Math.round(value).toString() : value.toFixed(1);
+    return value > 0 ? `+${rounded}` : rounded;
+  }
+
+  function renderActivityPreview(row, minutes) {
+    const hours = minutes / 60;
+    const effects = {
+      gold: hours * Number(row.dataset.goldRate || 0),
+      virtue: hours * Number(row.dataset.virtueRate || 0),
+      morale: row.dataset.prayerMorale === 'true'
+        ? Number(row.dataset.prayerMoraleLimit) * (1 - Math.exp(-minutes / Number(row.dataset.prayerMoraleScale)))
+        : hours * Number(row.dataset.moraleRate || 0),
+      fatigue: hours * Number(row.dataset.fatigueRate || 0),
+    };
+    Object.entries(effects).forEach(([kind, value]) => {
+      const cell = row.querySelector(`[data-activity-effect="${kind}"]`);
+      if (!cell) return;
+      cell.textContent = signedEffect(kind, value);
+      cell.classList.toggle('schedule-effect-positive', value > 0.0005);
+      cell.classList.toggle('schedule-effect-negative', value < -0.0005);
+      cell.classList.toggle('schedule-effect-neutral', Math.abs(value) <= 0.0005);
+    });
+  }
+
   function drainFromBottom(allocation, names, amount) {
     let remaining = amount;
     for (const name of [...names].reverse()) {
@@ -74,19 +100,17 @@
         output.textContent = format(minutes);
         output.setAttribute('aria-label', `Daily allocation ${formatClock(minutes)}; click to edit`);
       });
-      root.querySelectorAll(`[data-schedule-fill="${name}"]`).forEach((fill) => {
-        fill.style.width = `${minutes / DAY * 100}%`;
-      });
     });
     const leisure = Math.max(0, DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0));
     root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => {
       output.textContent = format(leisure);
     });
-    root.querySelectorAll('[data-leisure-fill="downtime"]').forEach((fill) => {
-      fill.style.width = `${leisure / DAY * 100}%`;
-      fill.style.backgroundColor = leisureColor(leisure);
-      fill.parentElement.title = leisureTip;
+    root.querySelectorAll('[data-activity-row]').forEach((row) => {
+      const name = row.dataset.activityAllocation;
+      renderActivityPreview(row, name === 'leisure_minutes' ? leisure : (allocation[name] || 0));
     });
+    root.querySelector('[data-schedule-value="leisure_minutes"]')?.style.setProperty('--leisure-color', leisureColor(leisure));
+    root.querySelector('[data-schedule-value="leisure_minutes"]')?.setAttribute('title', leisureTip);
   }
 
   function setValue(root, state, target, wanted) {
