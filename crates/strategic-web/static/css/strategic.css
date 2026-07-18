@@ -1683,6 +1683,27 @@ button.party-portrait-action {
   transform: translateX(-50%);
 }
 
+.party-succession-vote.current-leader button,
+.party-succession-vote.vote-indicator {
+  color: #d8a82d;
+}
+
+.party-succession-vote.vote-indicator {
+  width: 3.2rem;
+  height: 2.35rem;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px #000);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.party-succession-vote.vote-indicator > span {
+  position: absolute;
+  bottom: 0.3rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .party-portrait:hover .party-succession-vote,
 .party-portrait:focus-within .party-succession-vote,
 .party-succession-vote.selected,

@@ -1939,9 +1939,6 @@ pub fn vote_for_party_leader(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if voter_id == candidate_id {
-        return Err("Members cannot assign a leadership vote to themselves".into());
-    }
     let candidate = ctx
         .db
         .character()
@@ -2012,14 +2009,12 @@ pub(crate) fn normalize_and_elect_party_leader(
         for voter_id in &living {
             let id = format!("{party_id}:{voter_id}");
             if ctx.db.party_leader_vote().id().find(&id).is_none() {
-                // System-created self votes are allowed for solo/legacy party
-                // initialization; the public reducer rejects user self-votes.
+                // New and legacy members begin by supporting the incumbent.
                 put_leader_vote(ctx, party_id, *voter_id, party.leader_id);
             }
         }
     } else if let [sole_survivor] = living.as_slice() {
-        // Public self-votes remain forbidden. This system ballot prevents a
-        // two-member party from deadlocking when its incumbent dies.
+        // Ensure a sole survivor can complete succession without deadlocking.
         put_leader_vote(ctx, party_id, *sole_survivor, *sole_survivor);
     }
     let leader_alive = living_set.contains(&party.leader_id);

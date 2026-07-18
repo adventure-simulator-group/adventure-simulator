@@ -50,24 +50,43 @@
       if (activePortrait?.dataset.characterAlive === "true") {
         const ownVote = votes.find((vote) => String(vote.voter_id) === activePortrait.dataset.characterId);
         document.querySelectorAll('.party-portrait[data-character-id][data-character-alive="true"]').forEach((portrait) => {
-          if (portrait.dataset.characterId === String(leaderId)) return;
+          const selected = String(ownVote?.candidate_id) === portrait.dataset.characterId;
+          const currentLeader = String(leaderId) === portrait.dataset.characterId;
+          const voteLabel = `Vote for ${portrait.title} as party leader`;
+          if (selected && currentLeader) {
+            const indicator = document.createElement("span");
+            indicator.className = "party-succession-vote selected current-leader vote-indicator";
+            indicator.dataset.partySuccessionVote = "true";
+            indicator.title = `Your leadership vote is assigned to ${portrait.title}`;
+            indicator.setAttribute("role", "img");
+            indicator.setAttribute("aria-label", indicator.title);
+            indicator.innerHTML = '<span aria-hidden="true">♛</span>';
+            portrait.prepend(indicator);
+            return;
+          }
           const form = document.createElement("form");
           form.method = "post";
           form.action = `/party-leader-votes/${portrait.dataset.characterId}`;
-          const selected = String(ownVote?.candidate_id) === portrait.dataset.characterId;
-          form.className = `party-succession-vote${selected ? " selected" : ""}`;
+          form.className = `party-succession-vote${selected ? " selected" : ""}${currentLeader ? " current-leader" : ""}`;
           form.dataset.partySuccessionVote = "true";
           form.innerHTML = `<button aria-pressed="${selected}"><span aria-hidden="true">♛</span></button>`;
           const voteButton = form.querySelector("button");
-          const voteLabel = `Vote for ${portrait.title} as party leader`;
           voteButton.title = voteLabel;
           voteButton.setAttribute("aria-label", voteLabel);
-          form.addEventListener("submit", (event) => {
-            if (form.classList.contains("dropping")) return;
+          form.addEventListener("submit", async (event) => {
             event.preventDefault();
+            if (form.classList.contains("dropping")) return;
             form.classList.add("dropping");
             voteButton.setAttribute("aria-pressed", "true");
-            window.setTimeout(() => form.submit(), 240);
+            await new Promise((resolve) => window.setTimeout(resolve, 240));
+            try {
+              const voteResponse = await fetch(form.action, { method: "POST" });
+              if (!voteResponse.ok) throw new Error(`Leadership vote failed: ${voteResponse.status}`);
+              await refreshPartyNotifications();
+            } catch {
+              form.classList.remove("dropping");
+              voteButton.setAttribute("aria-pressed", String(selected));
+            }
           });
           portrait.prepend(form);
         });
@@ -87,4 +106,7 @@
     window.setTimeout(() => notice.remove(), 3000);
   }
   document.addEventListener("strategic-live-update", refreshPartyNotifications);
+  document.addEventListener("strategic-live-regions-refreshed", (event) => {
+    if (event.detail?.regions?.includes("party-portraits")) refreshPartyNotifications();
+  });
 })();

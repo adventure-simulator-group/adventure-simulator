@@ -131,7 +131,7 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=death-leadership-4";
+                link rel="stylesheet" href="/static/css/strategic.css?v=death-leadership-5";
                 link rel="stylesheet" href="/static/css/utilities.css?v=typed-frontend-1";
 
                 // Datastar
@@ -143,7 +143,7 @@ fn page_shell(
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/party-trade.js?v=live-control-init-1" {}
-                    script src="/static/party-notifications.js?v=standing-leadership-votes-3" defer {}
+                    script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=unified-chat-2" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
