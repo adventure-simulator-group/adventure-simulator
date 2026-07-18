@@ -11,11 +11,12 @@ use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 
 use crate::{
     Error, Result,
-    draft::{ElevatedSettlementDraft, LandUseSettlementDraft, WorldDraft, push_source_note},
+    draft::{
+        ElevatedSettlementDraft, LandUseEvidence, LandUseSettlementDraft, WorldDraft,
+        push_source_note,
+    },
 };
 
-const SOURCE_NAME: &str = "LUH1: Harmonized Global Land Use for Years 1500-2100, V1";
-const SOURCE_URL: &str = "https://doi.org/10.3334/ORNLDAAC/1248";
 const MAX_NORMALIZABLE_OVERFILL: f64 = 1.000_001;
 const AXIS_EPSILON: f64 = 1e-9;
 // LUH1's published half-degree grid has 259,200 cells. These limits leave a
@@ -67,11 +68,12 @@ pub(crate) fn enrich(
                 elevated.settlement.latitude,
                 elevated.settlement.longitude,
             )?;
-            let (land_use, note) = match sample.profile()? {
+            let (land_use, evidence, note) = match sample.profile()? {
                 Some((profile, was_normalized)) => {
                     normalized += usize::from(was_normalized);
                     (
                         profile,
+                        LandUseEvidence::Luh1Sampled { normalized: was_normalized },
                         if was_normalized {
                             "**[LUH1](https://doi.org/10.3334/ORNLDAAC/1248):** A modelled 0.5 degree annual land-use reconstruction was sampled directly for this world year. Its five terrestrial states were normalized into an exhaustive conditional-terrestrial profile."
                         } else {
@@ -83,12 +85,13 @@ pub(crate) fn enrich(
                     fallbacks += 1;
                     (
                         fallback_profile(&elevated),
+                        LandUseEvidence::DeterministicFallback,
                         "**LUH1 land-use fallback:** The otherwise valid LUH1 state cell was nodata or contained no terrestrial state. Cropland and pasture are deterministically seeded by the Viabundus node, built-up land by settlement population level, and the remainder is natural land.",
                     )
                 }
             };
             push_source_note(&mut elevated, note);
-            Ok(LandUseSettlementDraft { elevated, land_use })
+            Ok(LandUseSettlementDraft { elevated, land_use, evidence })
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -99,7 +102,7 @@ pub(crate) fn enrich(
     draft.report.land_use_normalized_samples = normalized;
     Ok(WorldDraft {
         year: draft.year,
-        world_bounds: draft.world_bounds,
+        spatial_grid: draft.spatial_grid,
         sources: draft.sources,
         road_types: draft.road_types,
         nodes: draft.nodes,
@@ -112,13 +115,7 @@ pub(crate) fn enrich(
 }
 
 fn source_provenance() -> SourceProvenance {
-    SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        // The official LUH1 catalogue asks users to cite the source, but we
-        // have not verified a redistributable licence statement for the files.
-        license: "Licence not stated by the LUH1 catalogue; citation required".into(),
-    }
+    crate::manifest::luh1()
 }
 
 #[derive(Clone, Copy, Debug)]

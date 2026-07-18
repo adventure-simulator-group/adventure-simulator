@@ -251,6 +251,7 @@ pub(crate) fn elevation() -> SourceProvenance {
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn hyde() -> SourceProvenance {
     source(
         "hyde-3-2-1",
@@ -282,6 +283,37 @@ pub(crate) fn hyde() -> SourceProvenance {
             reason: "the seven local HYDE ASCII grids have no checked content manifest".into(),
         },
         "[HYDE 3.2.1](https://doi.org/10.17026/dans-25g-gez3).",
+    )
+}
+
+pub(crate) fn luh1() -> SourceProvenance {
+    source(
+        "luh1-luha-u2-v1",
+        "LUH1 Harmonized Global Land Use LUHa_u2.v1",
+        SourceRelease::Immutable {
+            version: "LUHa_u2.v1".into(),
+            released: "2012".into(),
+        },
+        "https://doi.org/10.3334/ORNLDAAC/1248",
+        Some("10.3334/ORNLDAAC/1248"),
+        SourceLicense::RightsReserved,
+        &["Cite the LUH1 dataset and follow the current official acquisition terms."],
+        SourceAccess::ManualPreparation,
+        SourceSpatialCoverage::Geographic {
+            crs: "EPSG:4326".into(),
+            resolution: "0.5 degrees".into(),
+            coverage: "global land".into(),
+        },
+        SourceTemporalCoverage::Years {
+            first: 1500,
+            last: 2100,
+        },
+        "luh1-annual-netcdf-state-sampling",
+        1,
+        SourceContentIdentity::ReleaseBlocked {
+            reason: "the five manually acquired LUH1 NetCDF files are not content-pinned".into(),
+        },
+        "[LUH1 LUHa_u2.v1](https://doi.org/10.3334/ORNLDAAC/1248), sampled as a regional modelled baseline.",
     )
 }
 

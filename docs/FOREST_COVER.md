@@ -59,7 +59,7 @@ Positive density becomes `ForestCover::Wooded(Woodland)`, whose bounded
 variant.
 
 If density is nodata, the importer creates a deterministic plausible density
-from LUH1 natural/seminatural land use; cells with less than 5% natural land
+from HYDE natural/seminatural land use; cells with less than 5% natural land
 become open. If only leaf type is missing, elevation supplies a deterministic
 broadleaf/mixed/conifer fallback. The build report counts every settlement
 where either fallback was used. Malformed GeoTIFF structure, unsupported

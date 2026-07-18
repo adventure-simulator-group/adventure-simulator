@@ -11,16 +11,6 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 
 ## Offline world compilation
 
-Every build may select one canonical WGS84 `WorldBounds` rectangle, expressed
-as southwest and northeast latitude/longitude coordinates. That rectangle is
-part of the compiled-world metadata and schema identity. The Viabundus stage
-uses it to retain only in-bounds active settlements, road/ferry endpoints, and
-their graph nodes; every downstream enrichment therefore samples the same
-selected world rather than independently choosing a geographic extent. Source
-downloaders must derive their source-specific tiles, rasters, or vector queries
-from that same rectangle (plus any documented source-specific context margin).
-Changing the bounds is a full world rebuild boundary. See `docs/WORLD_BOUNDS.md`.
-
 Raw historical and geographic datasets are compiled outside SpacetimeDB by the
 native `adventuresim-world-import` crate. Each upstream format has an isolated
 source module; the outer builder combines them into a validated canonical
@@ -45,7 +35,7 @@ Source modules first parse into importer-only draft types. The outer builder
 enriches that draft in dependency order and only then constructs the canonical
 world schema. For example, Viabundus supplies settlement identity and road
 topology, while GLO-30 supplies the required typed elevation for each draft
-settlement. LUH1 then adds an exhaustive typed land-use profile and constructs
+settlement. HYDE then adds an exhaustive typed land-use profile and constructs
 an enriched draft. Copernicus forest cover consumes that draft and constructs
 another enriched draft with a typed open-or-wooded state. Jung/IIASA European
 PNV v1.1 then adds typed posterior, categorical, or inferred potential

@@ -53,7 +53,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
     }
     for (used, id) in [
         (report.elevation_tiles_read > 0, "copernicus-dem-glo30"),
-        (report.land_use_rasters_read > 0, "hyde-3-2-1"),
+        (report.land_use_rasters_read > 0, "luh1-luha-u2-v1"),
         (report.forest_tiles_read > 0, "clms-forest-2018"),
         (
             report.potential_vegetation_raster_files_read > 0,
