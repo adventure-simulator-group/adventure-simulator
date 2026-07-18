@@ -4,6 +4,7 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item,
+    repair::item_condition,
     strategic::{party, settlement},
     time::character_time,
 };
@@ -340,6 +341,73 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     limbs.stomach_health = 0.70;
     ctx.db.character_limbs().character_id().update(limbs);
 
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(DAMAGED_CHARACTER_ID)
+        .ok_or_else(|| "Damaged demo character is missing equipment data".to_string())?;
+
+    // Exercise field, settlement, and beyond-smith repair states across both
+    // specialist screens. Equipped pieces make the durability column useful,
+    // while the two spares also exercise the combined sell/repair row actions.
+    for (inventory_item_id, bins) in [
+        (equip.left_hand_item_id, [0.12, 0.08, 0.0, 0.0, 0.0]),
+        (equip.right_hand_item_id, [0.08, 0.05, 0.12, 0.0, 0.0]),
+        (equip.left_arm_armor_id, [0.18, 0.0, 0.0, 0.0, 0.0]),
+        (equip.right_arm_armor_id, [0.0, 0.10, 0.10, 0.0, 0.0]),
+        (equip.left_leg_armor_id, [0.10, 0.0, 0.08, 0.0, 0.0]),
+        (equip.right_leg_armor_id, [0.0, 0.0, 0.0, 0.12, 0.08]),
+        (equip.head_armor_id, [0.0, 0.0, 0.15, 0.05, 0.0]),
+        (equip.chest_armor_id, [0.05, 0.10, 0.08, 0.07, 0.0]),
+        (equip.stomach_armor_id, [0.0, 0.14, 0.0, 0.0, 0.0]),
+    ] {
+        if let Some(inventory_item_id) = inventory_item_id {
+            set_demo_item_damage(ctx, inventory_item_id, bins)?;
+        }
+    }
+
+    for (item_id, bins) in [
+        ("arming_sword", [0.10, 0.08, 0.12, 0.05, 0.0]),
+        ("brigandine", [0.06, 0.10, 0.08, 0.08, 0.04]),
+    ] {
+        let inventory_item_id = ctx
+            .db
+            .inventory_item()
+            .character_id()
+            .filter(DAMAGED_CHARACTER_ID)
+            .find(|inventory| inventory.item_id == item_id)
+            .map(|inventory| inventory.id)
+            .or_else(|| add_inventory_item(ctx, DAMAGED_CHARACTER_ID, item_id, 1))
+            .ok_or_else(|| format!("Failed to add {item_id} to damaged demo inventory"))?;
+        set_demo_item_damage(ctx, inventory_item_id, bins)?;
+    }
+
+    Ok(())
+}
+
+fn set_demo_item_damage(
+    ctx: &ReducerContext,
+    inventory_item_id: u64,
+    bins: [f32; 5],
+) -> Result<(), String> {
+    let mut condition = ctx
+        .db
+        .item_condition()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .ok_or_else(|| format!("Damaged demo item {inventory_item_id} has no condition row"))?;
+    [
+        condition.tier_1,
+        condition.tier_2,
+        condition.tier_3,
+        condition.tier_4,
+        condition.tier_5,
+    ] = bins;
+    ctx.db
+        .item_condition()
+        .inventory_item_id()
+        .update(condition);
     Ok(())
 }
 
