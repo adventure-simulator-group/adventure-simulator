@@ -1,6 +1,10 @@
+use adventuresim_core::strategic_schedule::{
+    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_schedule_training,
+    settlement_activity_outcome,
+};
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, allocated_schedule_minutes,
-    elapsed_official_minutes as calculate_elapsed_official_minutes, training_hours_increment,
+    elapsed_official_minutes as calculate_elapsed_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
@@ -243,64 +247,73 @@ fn ensure_character_time(ctx: &ReducerContext, character_id: u64) -> Result<(), 
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct ActivityTrainingProfile {
-    raiding_melee: bool,
-    raiding_ranged: bool,
-    raiding_block: bool,
-    raiding_dodge: bool,
-}
-
 fn activity_training_profile(
     ctx: &ReducerContext,
     character_id: u64,
-) -> Result<ActivityTrainingProfile, String> {
+) -> Result<adventuresim_core::strategic_schedule::ActivityTrainingProfile, String> {
     let capability = crate::capability::evaluate_character(ctx, character_id)?;
-    Ok(ActivityTrainingProfile {
-        raiding_melee: capability.melee && !capability.ranged,
-        raiding_ranged: capability.ranged,
-        raiding_block: capability.half_armor
-            || capability.three_quarter_armor
-            || capability.full_armor,
-        raiding_dodge: !capability.full_armor && !capability.three_quarter_armor,
-    })
+    Ok(
+        adventuresim_core::strategic_schedule::ActivityTrainingProfile {
+            raiding_melee: capability.melee && !capability.ranged,
+            raiding_ranged: capability.ranged,
+            raiding_block: capability.half_armor
+                || capability.three_quarter_armor
+                || capability.full_armor,
+            raiding_dodge: !capability.full_armor && !capability.three_quarter_armor,
+        },
+    )
 }
 
 fn apply_training(
     skills: &mut CharacterSkills,
     schedule: &ScheduleAllocation,
     elapsed: u64,
-    activities: ActivityTrainingProfile,
+    activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
 ) {
-    skills.melee_hours += training_hours_increment(elapsed, schedule.melee_minutes);
-    skills.dodge_hours += training_hours_increment(elapsed, schedule.dodge_minutes);
-    skills.block_hours += training_hours_increment(elapsed, schedule.block_minutes);
-    skills.ranged_hours += training_hours_increment(elapsed, schedule.ranged_minutes);
-    skills.will_hours += training_hours_increment(elapsed, schedule.will_minutes);
-    skills.charisma_hours += training_hours_increment(elapsed, schedule.charisma_minutes);
-    skills.medicine_hours += training_hours_increment(elapsed, schedule.medicine_minutes);
-    skills.faith_hours += training_hours_increment(elapsed, schedule.faith_minutes);
-    skills.stealth_hours += training_hours_increment(elapsed, schedule.stealth_minutes);
-    skills.balance_hours += training_hours_increment(elapsed, schedule.balance_minutes);
-    skills.surgeon_hours += training_hours_increment(elapsed, schedule.surgeon_minutes);
-    skills.faith_hours += training_hours_increment(elapsed, schedule.prayer_minutes)
-        * adventuresim_core::activity::ACTIVITY_TRAINING_RATE;
-    skills.will_hours += training_hours_increment(elapsed, schedule.labor_minutes)
-        * adventuresim_core::activity::ACTIVITY_TRAINING_RATE;
-    skills.stealth_hours += training_hours_increment(elapsed, schedule.thievery_minutes)
-        * adventuresim_core::activity::ACTIVITY_TRAINING_RATE;
-    let raiding_training = training_hours_increment(elapsed, schedule.raiding_minutes)
-        * adventuresim_core::activity::ACTIVITY_TRAINING_RATE;
-    if activities.raiding_ranged {
-        skills.ranged_hours += raiding_training;
-    } else if activities.raiding_melee {
-        skills.melee_hours += raiding_training;
-    }
-    if activities.raiding_block {
-        skills.block_hours += raiding_training * 0.5;
-    }
-    if activities.raiding_dodge {
-        skills.dodge_hours += raiding_training * 0.5;
+    let mut hours = SkillHours {
+        melee: skills.melee_hours,
+        dodge: skills.dodge_hours,
+        block: skills.block_hours,
+        ranged: skills.ranged_hours,
+        will: skills.will_hours,
+        charisma: skills.charisma_hours,
+        medicine: skills.medicine_hours,
+        faith: skills.faith_hours,
+        stealth: skills.stealth_hours,
+        balance: skills.balance_hours,
+        surgeon: skills.surgeon_hours,
+    };
+    apply_schedule_training(&mut hours, core_schedule(schedule), elapsed, activities);
+    skills.melee_hours = hours.melee;
+    skills.dodge_hours = hours.dodge;
+    skills.block_hours = hours.block;
+    skills.ranged_hours = hours.ranged;
+    skills.will_hours = hours.will;
+    skills.charisma_hours = hours.charisma;
+    skills.medicine_hours = hours.medicine;
+    skills.faith_hours = hours.faith;
+    skills.stealth_hours = hours.stealth;
+    skills.balance_hours = hours.balance;
+    skills.surgeon_hours = hours.surgeon;
+}
+
+fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
+    DailySchedule {
+        melee: schedule.melee_minutes,
+        dodge: schedule.dodge_minutes,
+        block: schedule.block_minutes,
+        ranged: schedule.ranged_minutes,
+        will: schedule.will_minutes,
+        charisma: schedule.charisma_minutes,
+        medicine: schedule.medicine_minutes,
+        faith: schedule.faith_minutes,
+        stealth: schedule.stealth_minutes,
+        balance: schedule.balance_minutes,
+        surgeon: schedule.surgeon_minutes,
+        labor: schedule.labor_minutes,
+        prayer: schedule.prayer_minutes,
+        thievery: schedule.thievery_minutes,
+        raiding: schedule.raiding_minutes,
     }
 }
 
@@ -400,28 +413,30 @@ fn apply_activity_outcomes(
         LimbWeights::all_equal(),
     );
     let capability = crate::capability::evaluate_character(ctx, character_id)?;
-    let days = elapsed as f32 / MINUTES_PER_DAY as f32;
-    let hours = |minutes: u16| days * f32::from(minutes) / 60.0;
     let population =
         settlement_population_scale(settlement.population_level, settlement.population_estimate);
-    let labor_hours = hours(schedule.labor_minutes);
-    let thievery_hours = hours(schedule.thievery_minutes);
-    let raiding_hours = hours(schedule.raiding_minutes);
     let combat = capability
         .weapon_precision
         .max(capability.athletics)
         .max(capability.endurance);
-    let gold = labor_gold(labor_hours, strength, endurance)
-        .saturating_add(thievery_gold(thievery_hours, population, stealth))
-        .saturating_add(raiding_gold(raiding_hours, combat));
-    if gold > 0 {
+    let outcome = settlement_activity_outcome(
+        core_schedule(schedule),
+        elapsed,
+        ActivityOutcomeInputs {
+            strength_check: strength,
+            endurance_check: endurance,
+            stealth_check: stealth,
+            combat_check: combat,
+            population_scale: population,
+        },
+    );
+    if outcome.gold_earned > 0 {
         let mut character = character;
-        character.gold = character.gold.saturating_add(gold);
+        character.gold = character.gold.saturating_add(outcome.gold_earned);
         ctx.db.character().id().update(character);
     }
     initialize_notoriety(ctx, character_id);
-    let notoriety_gain =
-        thievery_notoriety(thievery_hours, population, stealth) + raiding_notoriety(raiding_hours);
+    let notoriety_gain = outcome.notoriety_gained;
     if notoriety_gain > 0.0 {
         let mut notoriety = ctx
             .db
@@ -436,8 +451,8 @@ fn apply_activity_outcomes(
             .update(notoriety);
     }
     Ok(ActivityRisks {
-        thievery_discovery: thievery_discovery_chance(thievery_hours, population, stealth),
-        raiding_retaliation: raiding_retaliation_chance(raiding_hours),
+        thievery_discovery: outcome.thievery_discovery_chance,
+        raiding_retaliation: outcome.raiding_retaliation_chance,
     })
 }
 

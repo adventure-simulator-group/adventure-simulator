@@ -241,12 +241,12 @@ init-glo30:
 verify-glo30:
 	@python3 scripts/world_source_init.py glo30 --verify-only
 
-plan-hyde:
-	@python3 scripts/world_source_init.py hyde --plan
-init-hyde:
-	@python3 scripts/world_source_init.py hyde --init
-verify-hyde:
-	@python3 scripts/world_source_init.py hyde --verify-only
+plan-luh1:
+	@python3 scripts/world_source_init.py luh1 --plan
+init-luh1:
+	@python3 scripts/world_source_init.py luh1 --init
+verify-luh1:
+	@python3 scripts/world_source_init.py luh1 --verify-only
 
 plan-forest-cover:
 	@python3 scripts/world_source_init.py forest --plan
@@ -348,9 +348,9 @@ certs sans="127.0.0.1,localhost":
     @bash "{{cert_dir}}/generate_certificates.sh" "{{sans}}"
     @echo "Wrote {{cert_pem}}, {{cert_key}}, and {{cert_dir}}/digest.txt"
 
-# Windows development recipe
-# Local dev with native Windows exes (GPU accelerated, no WSLg, no UDP issues)
-# Cross-compiles server + client to Windows, stages to E:\adventure-sim-dev, runs both
+# Windows tactical development recipe
+# Runs the strategic stack in WSL, then stages and runs the tactical server and
+# client 0 as native Windows executables (GPU accelerated, no WSLg/UDP issues).
 win-dev:
     #!/usr/bin/env bash
     set -e
@@ -360,15 +360,57 @@ win-dev:
     SERVER_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-server.exe"
     CLIENT_EXE="./target/${WIN_TARGET}/win-dev/adventuresim-tactical-client.exe"
 
+    command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || {
+        echo "Missing MinGW linker: install gcc-mingw-w64-x86-64" >&2
+        exit 1
+    }
+    if ! rustup target list --installed | grep -Fxq "$WIN_TARGET"; then
+        echo "Installing Rust target ${WIN_TARGET}..."
+        rustup target add "$WIN_TARGET"
+    fi
+
+    kill_windows_processes() {
+        (cd /mnt/c && cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1") || true
+        (cd /mnt/c && cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1") || true
+    }
+
     # Kill any leftover instances
-    cmd.exe /C "taskkill /IM adventuresim-tactical-server.exe /F >NUL 2>&1" || true
-    cmd.exe /C "taskkill /IM adventuresim-tactical-client.exe /F >NUL 2>&1" || true
+    kill_windows_processes
     sleep 0.5
 
+    cleanup() {
+        echo ""
+        echo "Shutting down..."
+        kill_windows_processes
+        kill -- -"$DEV_PID" 2>/dev/null || true
+        wait "$DEV_PID" 2>/dev/null || true
+    }
+
+    echo "Starting strategic development stack..."
+    setsid just dev &
+    DEV_PID=$!
+    trap cleanup EXIT INT TERM
+
+    echo "Waiting for strategic web server..."
+    for _ in {1..300}; do
+        if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{web_port}})); s.close(); sys.exit(code != 0)'; then
+            break
+        fi
+        if ! kill -0 "$DEV_PID" 2>/dev/null; then
+            echo "Strategic development stack exited before becoming ready" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+    if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{web_port}})); s.close(); sys.exit(code != 0)'; then
+        echo "Timed out waiting for strategic web server" >&2
+        exit 1
+    fi
+
     echo "Building server (Windows)..."
-    cargo build -p adventuresim-tactical-server --target $WIN_TARGET --profile win-dev 2>&1
+    cargo build -p adventuresim-tactical-server --features debug --target "$WIN_TARGET" --profile win-dev 2>&1
     echo "Building client (Windows)..."
-    cargo build -p adventuresim-tactical-client --target $WIN_TARGET --profile win-dev 2>&1
+    cargo build -p adventuresim-tactical-client --features debug --target "$WIN_TARGET" --profile win-dev 2>&1
 
     echo "Staging to E:\\adventure-sim-dev..."
     mkdir -p "$STAGE_DIR"
@@ -380,32 +422,21 @@ win-dev:
         [ -d "$d" ] && rsync -a "$d" "$STAGE_DIR/assets/"
     done
 
-    cleanup() {
-        echo ""
-        echo "Shutting down..."
-        kill $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
-        wait $SERVER_PID $CLIENT0_PID $CLIENT1_PID 2>/dev/null
-    }
-    trap cleanup EXIT INT TERM
-
     echo "Starting server..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-server.exe \
+        --addr 0.0.0.0:{{tactical_port}} \
         --mission-id test-mission \
         --scene-key hills \
-        --no-timeout \
         --spacetimedb-url http://localhost:{{spacetime_port}} \
-        --spacetimedb-module {{spacetime_module}} &
+        --spacetimedb-module {{spacetime_module}} \
+        --bots 3 \
+        --no-timeout &
     SERVER_PID=$!
     sleep 3
 
     echo "Starting client 0..."
     cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 0 --server-addr 127.0.0.1:{{tactical_port}} &
-    CLIENT0_PID=$!
-    sleep 1
-
-    echo "Starting client 1..."
-    cd "$STAGE_DIR" && ./adventuresim-tactical-client.exe --id 1 --server-addr 127.0.0.1:{{tactical_port}} &
-    CLIENT1_PID=$!
+    CLIENT_PID=$!
 
     wait
 
@@ -419,6 +450,39 @@ test-chat:
 # Test local workflow policy without leaving Python bytecode in the worktree.
 test-dev-stack:
     @{{python_bin}} -B -m unittest scripts.tests.test_dev_stack -v
+
+# Run a deterministic sample strategic NPC population.
+strategic-sim seed="42" population="100" days="1095":
+    @cargo run -p adventuresim-strategic-sim -- run --seed {{seed}} --population {{population}} --days {{days}}
+
+test-strategic-sim:
+    @cargo test -p adventuresim-strategic-sim
+
+# Own one nonce-named local database for the duration of the command. There is
+# intentionally no database or server override.
+strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    if [[ ${#token} -ne 64 ]]; then
+        echo "failed to create simulation bootstrap capability" >&2
+        exit 1
+    fi
+    export ADVENTURESIM_SIM_BOOTSTRAP_TOKEN="$token"
+    nonce="$(date +%s)-$$-${RANDOM}-${RANDOM}"
+    database="adventuresim-sim-${nonce}"
+    cleanup() {
+        spacetime delete --yes --server "{{spacetime_url}}" "$database" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT INT TERM
+    cd "{{strategic_dir}}"
+    spacetime publish --server "{{spacetime_url}}" "$database"
+    cd ../..
+    cargo run -p adventuresim-strategic-sim -- core-loop \
+        --host "{{spacetime_url}}" --database "$database" --run-nonce "$nonce" \
+        --seed {{seed}} --population {{population}} --cycles {{cycles}} \
+        --duration-days {{duration_days}} --party-size {{party_size}}
 
 test: test-chat test-dev-stack build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module

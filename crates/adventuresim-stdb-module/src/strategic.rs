@@ -31,8 +31,6 @@ use crate::{
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
-const MERCHANT_MARGIN: f32 = 1.25;
-const SALES_TAX: f32 = 0.10;
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
 const METERS_PER_KILOMETER: u64 = 1_000;
@@ -2435,6 +2433,9 @@ pub fn request_to_join_party(
     if current_party_id == party_id {
         return Err("Cannot join your own party".into());
     }
+    if !crate::simulation::same_simulation_scope(ctx, character_id, party.leader_id) {
+        return Err("Simulation and ordinary parties cannot merge".into());
+    }
     if current_party.current_settlement_id != party.current_settlement_id
         || current_party.current_quest_location_id != party.current_quest_location_id
     {
@@ -2529,6 +2530,9 @@ pub fn accept_party_join_request(
         .ok_or("Applicant party not found")?;
     if source_party.leader_id != request.character_id {
         return Err("Applicant is no longer their party leader".into());
+    }
+    if !crate::simulation::same_simulation_scope(ctx, request.character_id, leader_id) {
+        return Err("Simulation and ordinary parties cannot merge".into());
     }
     if source_party.active_quest_id.is_some() {
         return Err("Applicant's party must abandon its current quest first".into());
@@ -3466,8 +3470,7 @@ pub fn finalize_merchant_trade(
             return Err("Invalid merchant purchase".into());
         }
         cost = cost.saturating_add(
-            (item.base_value.unwrap_or(1) as f32 * MERCHANT_MARGIN * (1.0 + SALES_TAX)).ceil()
-                as u32
+            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1))
                 * quantity,
         );
     }
@@ -3513,30 +3516,28 @@ pub fn finalize_merchant_trade(
             return Err("Unequip an item before selling it".into());
         }
         proceeds = proceeds.saturating_add(
-            (item.base_value.unwrap_or(1) as f32 / MERCHANT_MARGIN)
-                .floor()
-                .max(1.0) as u32
+            adventuresim_core::strategic_economy::merchant_sell_price(item.base_value.unwrap_or(1))
                 * quantity,
         );
     }
-    let coins: u32 = if party_scope {
+    let coins: u64 = if party_scope {
         let party_id = party_id.as_ref().ok_or("Character has no party")?;
         ctx.db
             .party_inventory_item()
             .party_id()
             .filter(party_id)
             .filter(|v| v.item_id == "gold_coin")
-            .map(|v| v.quantity)
+            .map(|v| u64::from(v.quantity))
             .sum()
     } else {
         ctx.db
             .inventory_item()
             .character_and_item_id()
             .filter((character_id, &"gold_coin".to_string()))
-            .map(|coin| coin.quantity)
+            .map(|coin| u64::from(coin.quantity))
             .sum()
     };
-    if coins.saturating_add(proceeds) < cost {
+    if coins.saturating_add(u64::from(proceeds)) < u64::from(cost) {
         return Err("Not enough gold".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
@@ -3594,7 +3595,7 @@ pub fn finalize_merchant_trade(
         }
     }
     let net = proceeds as i64 - cost as i64;
-    if party_scope && net != 0 {
+    if party_scope && net > 0 {
         let party_id = party_id.as_ref().unwrap();
         let mut coin = ctx
             .db
@@ -3603,29 +3604,38 @@ pub fn finalize_merchant_trade(
             .filter(party_id)
             .find(|v| v.item_id == "gold_coin");
         if let Some(ref mut coin) = coin {
-            coin.quantity = (coin.quantity as i64 + net) as u32;
+            coin.quantity = coin.quantity.saturating_add(net as u32);
             ctx.db.party_inventory_item().id().update(coin.clone());
-        } else if net > 0 {
+        } else {
             add_to_party_inventory(ctx, party_id, "gold_coin", net as u32);
         }
-    } else if net != 0 {
-        if let Some(mut coin) = ctx
+    } else if party_scope && net < 0 {
+        let party_id = party_id.as_ref().unwrap();
+        let mut remaining = (-net) as u64;
+        for mut coin in ctx
             .db
-            .inventory_item()
-            .character_and_item_id()
-            .filter((character_id, &"gold_coin".to_string()))
-            .next()
+            .party_inventory_item()
+            .party_id()
+            .filter(party_id)
+            .filter(|row| row.item_id == "gold_coin")
+            .collect::<Vec<_>>()
         {
-            coin.quantity = (coin.quantity as i64 + net) as u32;
-            ctx.db.inventory_item().id().update(coin);
-        } else if net > 0 {
-            ctx.db.inventory_item().insert(InventoryItem {
-                id: 0,
-                character_id,
-                item_id: "gold_coin".into(),
-                quantity: net as u32,
-            });
+            let taken = remaining.min(u64::from(coin.quantity)) as u32;
+            coin.quantity -= taken;
+            remaining -= u64::from(taken);
+            if coin.quantity == 0 {
+                ctx.db.party_inventory_item().id().delete(coin.id);
+            } else {
+                ctx.db.party_inventory_item().id().update(coin);
+            }
+            if remaining == 0 {
+                break;
+            }
         }
+    } else if net < 0 {
+        consume_personal_gold(ctx, character_id, (-net) as u64)?;
+    } else if net > 0 {
+        crate::add_inventory_item(ctx, character_id, "gold_coin", net as u32);
     }
     Ok(())
 }

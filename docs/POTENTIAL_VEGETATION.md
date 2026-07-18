@@ -33,7 +33,7 @@ scores are stored; they are not asserted to sum to 10,000. Otherwise the
 categorical raster is used, choosing greatest valid overlap with stable class
 ties. A cell with neither form of source evidence receives a deterministic
 non-unknown class inferred from already typed forest, elevation, latitude, and
-HYDE context. Reports reconcile posterior, categorical, and inferred outcomes
+LUH1 context. Reports reconcile posterior, categorical, and inferred outcomes
 exactly to settlement count.
 
 Inference-rules version 4 and world schema version 17 identify the complete
@@ -42,10 +42,10 @@ identity with Jung-derived or reconstructed historical results.
 
 Potential vegetation remains stored unchanged as the modern-climate ecological
 envelope. After soil and hydrology finalization, the compiler separately stores
-dominant 1544 cover. The greatest sampled HYDE human fraction is selected first
+dominant 1544 cover. The greatest sampled LUH1 human fraction is selected first
 (stable tie order: built, cropland, pasture), then becomes direct only when it
 meets its own threshold: 10% built or 35% cropland/pasture.
-Deterministic missing-HYDE profiles are never labeled direct. Natural cover is
+Deterministic missing-LUH1 profiles are never labeled direct. Natural cover is
 derived from Jung, Copernicus forest structure,
 EU-Trees4F candidates, soil/geology, elevation, hydrology, latitude, and OWDA
 moisture. Only genuinely close natural scores use coordinate-and-schema hashing

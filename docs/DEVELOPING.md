@@ -2,6 +2,13 @@
 
 Local workflow for running the Adventure Simulator demo.
 
+For deterministic multi-year NPC balance experiments and replay commands, see
+[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
+`just test-strategic-sim`. The opt-in authoritative integration driver is
+`just strategic-sim-core-loop`; the recipe creates, claims, and deletes its own
+  nonce-named loopback database, compiles a one-run bootstrap capability in
+  memory, and accepts no host, database, or capability override.
+
 ## Architecture Overview
 
 The game uses a Mount & Blade style architecture:
@@ -79,6 +86,21 @@ just build-wasm
 ```
 
 Now when you click a location in the browser, a tactical server will automatically spawn.
+
+For native tactical testing from WSL on Windows, the equivalent of running
+`just dev`, `just tactical`, and `just client 0` in separate Linux terminals is:
+
+```bash
+just win-dev
+```
+
+This runs the strategic stack in WSL, cross-compiles and stages the tactical
+executables in `E:\adventure-sim-dev`, then starts one native Windows tactical
+server and client 0. Press Ctrl+C to stop the web process and Windows tactical
+processes; the detached SpacetimeDB and tactical dispatcher follow the normal
+`just dev` lifecycle and can be stopped with `just stop`. The recipe installs
+the pinned toolchain's `x86_64-pc-windows-gnu` Rust target when needed; the WSL
+package `gcc-mingw-w64-x86-64` must already be installed.
 
 ## Requirements
 
@@ -236,9 +258,9 @@ size/hash checked and atomically published. Religion is a validation-only
 workflow and never mirrors the rights-reserved IEG images. GLO-30
 (`glo30`), Copernicus forest (`forest-cover`), and EU-Hydro (`hydrology`)
 perform redacted credential-file preflights but refuse network acquisition
-until exact product inventories are committed. HYDE and EGDI likewise provide
+until exact product inventories are committed. LUH1 and EGDI likewise provide
 deterministic plans and strict local-inventory verification while remaining
-release-blocked. `init-*` never turns missing pins or conflicting rights into
+release-blocked. `init-*` never turns missing pins or rights restrictions into
 guesses. See each source document for its exact blocker and command names.
 
 The compiler also currently requires manually downloaded Copernicus DEM
@@ -247,11 +269,12 @@ GLO-30 `*_DEM.tif` tiles in
 licensing, parsing, and fallback details. You can override either input with
 `--viabundus-dir` or `--elevation-dir`.
 
-Historical land use currently has a tested parser but no accessible full local
-dataset. Preparing the seven corrected HYDE 3.2.1 ESRI ASCII files documented in
-`docs/HISTORICAL_LAND_USE.md` under
-`target/world-data-sources/raw/historical-land-use/` is required before the
-stacked compiler can complete. Override that directory with `--land-use-dir`.
+Historical land use uses the LUH1 `LUHa_u2.v1` annual state files described in
+`docs/HISTORICAL_LAND_USE.md`. Obtain the five rights-reserved NetCDF files
+through the official route, place them under
+`target/world-data-sources/raw/luh1-land-use/`, then run `just verify-luh1`.
+The stacked compiler requires them; override that directory with
+`--land-use-dir`.
 
 Forest cover likewise has a tested boundary but no authenticated full local
 download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
@@ -324,7 +347,7 @@ or legal conclusions.
 World schema v17 / inference rules v4 add the final 1544 environmental
 synthesis. Its direct/derived/fallback and tie-break counters must reconcile to
 settlement count during validation. A complete official all-source audit is not
-available until the HYDE, forest, SoilGrids, and EU-Hydro inputs above exist
+available until the LUH1, forest, SoilGrids, and EU-Hydro inputs above exist
 locally; unit tests use bounded synthetic evidence and make no coverage claim.
 
 ## Strategic UI

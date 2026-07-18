@@ -251,41 +251,6 @@ pub(crate) fn elevation() -> SourceProvenance {
     )
 }
 
-#[allow(dead_code)]
-pub(crate) fn hyde() -> SourceProvenance {
-    source(
-        "hyde-3-2-1",
-        "History Database of the Global Environment 3.2.1",
-        SourceRelease::Immutable {
-            version: "3.2.1".into(),
-            released: "2017".into(),
-        },
-        "https://doi.org/10.17026/dans-25g-gez3",
-        Some("10.17026/dans-25g-gez3"),
-        SourceLicense::CcBy3_0,
-        &[
-            "Cite HYDE 3.2.1 and its DANS dataset record.",
-            "The source record and downloaded distribution carry conflicting rights signals (CC0 and attribution-oriented terms); this manifest records the conflict and does not claim legal resolution.",
-        ],
-        SourceAccess::ManualPreparation,
-        SourceSpatialCoverage::Geographic {
-            crs: "EPSG:4326".into(),
-            resolution: "5 arc-minutes".into(),
-            coverage: "global land".into(),
-        },
-        SourceTemporalCoverage::Years {
-            first: 1500,
-            last: 1600,
-        },
-        "hyde-ascii-linear-interpolation",
-        1,
-        SourceContentIdentity::ReleaseBlocked {
-            reason: "the seven local HYDE ASCII grids have no checked content manifest".into(),
-        },
-        "[HYDE 3.2.1](https://doi.org/10.17026/dans-25g-gez3).",
-    )
-}
-
 pub(crate) fn luh1() -> SourceProvenance {
     source(
         "luh1-luha-u2-v1",
@@ -806,8 +771,8 @@ mod tests {
 
     #[test]
     fn canonicalization_is_order_independent_and_rejects_duplicates() {
-        let mut first = vec![hyde(), elevation()];
-        let mut second = vec![elevation(), hyde()];
+        let mut first = vec![luh1(), elevation()];
+        let mut second = vec![elevation(), luh1()];
         canonicalize(&mut first).unwrap();
         canonicalize(&mut second).unwrap();
         assert_eq!(first, second);
@@ -924,7 +889,7 @@ mod tests {
         let sources = [
             viabundus(Path::new("missing")).unwrap(),
             elevation(),
-            hyde(),
+            luh1(),
             forest(Path::new("missing")).unwrap(),
             geology(Path::new("manual.gpkg")),
             religion(
@@ -944,7 +909,7 @@ mod tests {
         for required in [
             "CC BY-SA",
             "liable",
-            "conflicting rights",
+            "follow the current official acquisition terms",
             "modifications",
             "Malta",
             "not redistributed",
@@ -961,7 +926,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "2c5ce7647e82fe107fdf7bd3f7d2c6e05f7d382d8d6e57f00da7316ad901b150"
+            "7e33eaa6de3c0e8538c51709a7fef6e1bed11f853ce014a3bb9e63c2d49c773b"
         );
     }
 
