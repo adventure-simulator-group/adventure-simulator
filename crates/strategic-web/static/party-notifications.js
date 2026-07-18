@@ -50,13 +50,12 @@
       if (activePortrait?.dataset.characterAlive === "true") {
         const ownVote = votes.find((vote) => String(vote.voter_id) === activePortrait.dataset.characterId);
         document.querySelectorAll('.party-portrait[data-character-id][data-character-alive="true"]').forEach((portrait) => {
-          if (portrait.dataset.characterId === activePortrait.dataset.characterId) return;
+          if (portrait.dataset.characterId === String(leaderId)) return;
           const form = document.createElement("form");
           form.method = "post";
           form.action = `/party-leader-votes/${portrait.dataset.characterId}`;
           const selected = String(ownVote?.candidate_id) === portrait.dataset.characterId;
-          const currentLeader = String(leaderId) === portrait.dataset.characterId;
-          form.className = `party-succession-vote${selected ? " selected" : ""}${currentLeader ? " current-leader" : ""}`;
+          form.className = `party-succession-vote${selected ? " selected" : ""}`;
           form.dataset.partySuccessionVote = "true";
           form.innerHTML = `<button aria-pressed="${selected}"><span aria-hidden="true">♛</span></button>`;
           const voteButton = form.querySelector("button");
