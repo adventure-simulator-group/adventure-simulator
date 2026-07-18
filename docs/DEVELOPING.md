@@ -236,6 +236,13 @@ official archive is not currently available locally, so the parser and
 enrichment are verified against standards-compliant synthetic GeoPackages but
 the complete source distribution remains unverified.
 
+World schema v18 / inference rules v4 add typed canonical distribution
+manifests and a deterministic schema/rules/year/grid/source digest. The world
+compiler prints the sorted manifest and whether each source is reproducible.
+See `docs/SOURCE_MANIFESTS.md`; manual, rolling, credential-gated, or
+rights-conflicted sources remain explicit instead of receiving invented hashes
+or legal conclusions.
+
 World schema v17 / inference rules v4 add the final 1544 environmental
 synthesis. Its direct/derived/fallback and tie-break counters must reconcile to
 settlement count during validation. A complete official all-source audit is not

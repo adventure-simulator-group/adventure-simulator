@@ -111,6 +111,23 @@ fn run(args: Args) -> Result<()> {
     artifact.push(b'\n');
     std::fs::write(&output, artifact)?;
     println!("{}", serde_json::to_string_pretty(&world.report)?);
+    println!(
+        "Source manifest {} ({} distributions):",
+        world.metadata.manifest_digest,
+        world.metadata.sources.len()
+    );
+    for source in &world.metadata.sources {
+        println!(
+            "  {}: {} [{}]",
+            source.id,
+            source.name,
+            if source.content_identity.is_reproducible() {
+                "reproducible"
+            } else {
+                "not reproducible"
+            }
+        );
+    }
     println!("Wrote compiled world to {}", output.display());
     if args.load {
         load_world(&world, &artifact_id, &args)?;
@@ -119,24 +136,14 @@ fn run(args: Args) -> Result<()> {
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
-    let sources = world
-        .metadata
-        .sources
-        .iter()
-        .map(|source| {
-            format!(
-                "- **[{}]({}):** {}",
-                source.name, source.url, source.license
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let sources = manifest_audit_markdown(world)?;
     call_reducer(
         args,
         "begin_world_data_import",
         &[
             json!(world.metadata.schema_version),
             json!(artifact_id),
+            json!(world.metadata.manifest_digest),
             json!(sources),
         ],
     )?;
@@ -189,6 +196,38 @@ fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<(
     }
     call_reducer(args, "finish_world_data_import", &[json!(artifact_id)])?;
     Ok(())
+}
+
+fn manifest_audit_markdown(world: &CompiledWorld) -> Result<String> {
+    let mut output = String::new();
+    for source in &world.metadata.sources {
+        let canonical = serde_json::to_string(source)?;
+        let section = format!(
+            "## [{}]({})\n\nContent status: **{}**\n\n```json\n{}\n```\n\n",
+            source.name,
+            source.canonical_url,
+            if source.content_identity.is_reproducible() {
+                "reproducible"
+            } else {
+                "not reproducible"
+            },
+            canonical,
+        );
+        output.push_str(&section);
+        if !adventuresim_world_schema::valid_sources_markdown(&output)
+            || serde_json::to_string(&output)?.encode_utf16().count() > MAX_REDUCER_ARGUMENT_CHARS
+        {
+            return Err(Error::Validation(format!(
+                "complete serialized source-manifest audit exceeds the {MAX_REDUCER_ARGUMENT_CHARS}-character reducer transport budget; refusing to omit or truncate operational notices"
+            )));
+        }
+    }
+    if !adventuresim_world_schema::valid_sources_markdown(&output) {
+        return Err(Error::Validation(
+            "source-manifest audit Markdown is empty or invalid".into(),
+        ));
+    }
+    Ok(output)
 }
 
 fn serialize_batches<T>(
@@ -916,17 +955,19 @@ mod tests {
         PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
         SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
         SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth, SoilEvidence,
-        SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-        SpatialGridSpec, StoneContentPercent, SurfaceGeology, SurfaceLithology,
-        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
-        UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldBuildReport, WorldMetadata,
-        WrbReferenceGroup,
+        SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime, SourceAccess,
+        SourceContentIdentity, SourceLicense, SourcePreparation, SourceProvenance, SourceRelease,
+        SourceSpatialCoverage, SourceTemporalCoverage, SpatialGridSpec, StoneContentPercent,
+        SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
+        TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
+        WorldBuildReport, WorldMetadata, WrbReferenceGroup,
     };
     use clap::Parser;
 
     use super::{
         Args, MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
-        encode_settlement_description, encode_travel_edge, serialize_batches,
+        encode_settlement_description, encode_travel_edge, manifest_audit_markdown,
+        serialize_batches,
     };
 
     #[test]
@@ -949,6 +990,7 @@ mod tests {
                 inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
                 spatial_grid: SpatialGridSpec::new(GridCellSizeMeters::new(cell_size).unwrap()),
                 world_year: 1544,
+                manifest_digest: "0".repeat(64),
                 sources: Vec::new(),
                 road_types: Vec::new(),
             },
@@ -963,6 +1005,88 @@ mod tests {
         let fine_bytes = serde_json::to_vec(&world(250)).unwrap();
         assert_ne!(default_bytes, fine_bytes);
         assert_ne!(blake3::hash(&default_bytes), blake3::hash(&fine_bytes));
+    }
+
+    #[test]
+    fn import_audit_includes_every_notice_and_refuses_truncation() {
+        let source = SourceProvenance {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            release: SourceRelease::Immutable {
+                version: "1".into(),
+                released: "2020".into(),
+            },
+            canonical_url: "https://example.invalid/source".into(),
+            doi: Some("10.1/fixture".into()),
+            license: SourceLicense::CcBy4_0,
+            required_notices: vec!["first exact notice".into(), "second exact notice".into()],
+            access: SourceAccess::AnonymousDownload,
+            spatial: SourceSpatialCoverage::NotApplicable,
+            temporal: SourceTemporalCoverage::Timeless,
+            preparation: SourcePreparation {
+                recipe: "fixture".into(),
+                version: 1,
+            },
+            content_identity: SourceContentIdentity::RawSha256 {
+                sha256: "a".repeat(64),
+            },
+            notes_markdown: "Fixture notes.".into(),
+        };
+        let world = CompiledWorld {
+            metadata: WorldMetadata {
+                schema_version: WORLD_SCHEMA_VERSION,
+                inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+                spatial_grid: SpatialGridSpec::default(),
+                world_year: 1544,
+                manifest_digest: "0".repeat(64),
+                sources: vec![source.clone()],
+                road_types: vec![],
+            },
+            nodes: vec![],
+            edges: vec![],
+            settlements: vec![],
+            settlement_aliases: vec![],
+            settlement_descriptions: vec![],
+            report: WorldBuildReport::default(),
+        };
+        let audit = manifest_audit_markdown(&world).unwrap();
+        for text in [
+            "fixture",
+            "Fixture",
+            "immutable",
+            "cc-by4-0",
+            "reproducible",
+            "10.1/fixture",
+            "first exact notice",
+            "second exact notice",
+            "Fixture notes.",
+        ] {
+            assert!(audit.contains(text));
+        }
+        for mutate in [
+            |source: &mut SourceProvenance| source.access = SourceAccess::ManualPreparation,
+            |source: &mut SourceProvenance| {
+                source.spatial = SourceSpatialCoverage::Geographic {
+                    crs: "EPSG:3035".into(),
+                    resolution: "1 km".into(),
+                    coverage: "Europe".into(),
+                }
+            },
+            |source: &mut SourceProvenance| source.temporal = SourceTemporalCoverage::Year(1544),
+            |source: &mut SourceProvenance| source.preparation.version = 2,
+        ] {
+            let mut changed = world.clone();
+            mutate(&mut changed.metadata.sources[0]);
+            assert_ne!(audit, manifest_audit_markdown(&changed).unwrap());
+        }
+        let mut oversized = world.clone();
+        oversized.metadata.sources[0].required_notices = vec!["\\".repeat(13_000)];
+        assert!(
+            manifest_audit_markdown(&oversized)
+                .unwrap_err()
+                .to_string()
+                .contains("refusing to omit or truncate")
+        );
     }
 
     #[test]

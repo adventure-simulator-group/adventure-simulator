@@ -7,7 +7,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 17;
+pub const WORLD_SCHEMA_VERSION: u32 = 18;
 pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 4;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
@@ -2058,15 +2058,111 @@ pub struct WorldMetadata {
     pub inference_rules_version: u32,
     pub spatial_grid: SpatialGridSpec,
     pub world_year: i32,
+    /// BLAKE3 of the canonical schema/rules/year/grid/source-manifest tuple.
+    pub manifest_digest: String,
     pub sources: Vec<SourceProvenance>,
     pub road_types: Vec<TravelEdgeKind>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceProvenance {
+    /// Stable machine identifier. This is also the canonical sort key.
+    pub id: String,
     pub name: String,
-    pub url: String,
-    pub license: String,
+    pub release: SourceRelease,
+    pub canonical_url: String,
+    pub doi: Option<String>,
+    pub license: SourceLicense,
+    /// Exact operational attribution, change, endorsement, liability, and
+    /// redistribution notices which must accompany this distribution.
+    pub required_notices: Vec<String>,
+    pub access: SourceAccess,
+    pub spatial: SourceSpatialCoverage,
+    pub temporal: SourceTemporalCoverage,
+    pub preparation: SourcePreparation,
+    pub content_identity: SourceContentIdentity,
+    /// Human-facing Markdown retained alongside the typed manifest.
+    pub notes_markdown: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SourceRelease {
+    Immutable { version: String, released: String },
+    Curated { revision: String },
+    Rolling { observed_at: String },
+    ReleaseBlocked { reason: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceLicense {
+    CcBy3_0,
+    CcBy4_0,
+    CcBySa4_0,
+    Cc0_1_0,
+    CopernicusDem,
+    CopernicusClms,
+    NoaaPublicAccess,
+    RightsReserved,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SourceAccess {
+    AnonymousDownload,
+    AuthenticatedDownload,
+    CuratedRepositoryAsset,
+    ManualPreparation,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SourceSpatialCoverage {
+    NotApplicable,
+    Geographic {
+        crs: String,
+        resolution: String,
+        coverage: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SourceTemporalCoverage {
+    Timeless,
+    Year(i32),
+    Years { first: i32, last: i32 },
+    ModernProxy { year: i32 },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourcePreparation {
+    pub recipe: String,
+    pub version: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SourceContentIdentity {
+    RawSha256 { sha256: String },
+    PreparedSnapshotSha256 { sha256: String },
+    CuratedRevision { revision: String, sha256: String },
+    UnpinnedRollingObservation { observed_at: String },
+    ReleaseBlocked { reason: String },
+}
+
+impl SourceContentIdentity {
+    pub const fn is_reproducible(&self) -> bool {
+        matches!(
+            self,
+            Self::RawSha256 { .. }
+                | Self::PreparedSnapshotSha256 { .. }
+                | Self::CuratedRevision { .. }
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

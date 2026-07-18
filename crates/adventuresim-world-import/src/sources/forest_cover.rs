@@ -7,9 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_schema::{
-    CanopyDensity, DominantLeafType, ForestCover, SourceProvenance, Woodland,
-};
+use adventuresim_world_schema::{CanopyDensity, DominantLeafType, ForestCover, Woodland};
 use serde::Deserialize;
 use tiff::{
     decoder::{Decoder, DecodingResult},
@@ -21,10 +19,6 @@ use crate::{
     draft::{ForestSettlementDraft, LandUseSettlementDraft, WorldDraft, push_source_note},
 };
 
-const SOURCE_NAME: &str = "Copernicus Land Monitoring Service Forest 2018";
-const SOURCE_URL: &str =
-    "https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover";
-const SOURCE_LICENSE: &str = "Copernicus data licence";
 const NODATA: u8 = 255;
 const MANIFEST_FILENAME: &str = "forest-cover-manifest.json";
 const PIXELS_PER_DEGREE: u32 = 1_000;
@@ -106,11 +100,9 @@ pub(crate) fn enrich(
             }
         })
         .collect::<Vec<_>>();
-    draft.sources.push(SourceProvenance {
-        name: SOURCE_NAME.into(),
-        url: SOURCE_URL.into(),
-        license: SOURCE_LICENSE.into(),
-    });
+    if !by_tile.is_empty() {
+        draft.sources.push(crate::manifest::forest(directory)?);
+    }
     draft.report.forest_tiles_read = by_tile.len();
     draft.report.forest_samples = settlements.len();
     draft.report.forest_fallback_samples = fallbacks;

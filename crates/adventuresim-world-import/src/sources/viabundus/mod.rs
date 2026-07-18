@@ -4,8 +4,7 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    EdgeEndpoint, SourceProvenance, SpatialGridSpec, TravelEdgeKind, WorldBuildReport,
-    WorldNodeImport,
+    EdgeEndpoint, SpatialGridSpec, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -17,9 +16,7 @@ use crate::{
 mod descriptions;
 mod names;
 
-const SOURCE_NAME: &str = "Viabundus Pre-modern Street Map 2";
 const SOURCE_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
-const SOURCE_LICENSE: &str = "CC-BY-SA-4.0";
 
 #[derive(Debug, Deserialize)]
 struct RawNode {
@@ -316,11 +313,7 @@ pub(crate) fn compile(
     Ok(WorldDraft {
         year,
         spatial_grid,
-        sources: vec![SourceProvenance {
-            name: SOURCE_NAME.into(),
-            url: SOURCE_DOI.into(),
-            license: SOURCE_LICENSE.into(),
-        }],
+        sources: vec![crate::manifest::viabundus(directory)?],
         road_types: vec![TravelEdgeKind::Ferry, TravelEdgeKind::Land],
         report: WorldBuildReport {
             nodes: nodes.len(),

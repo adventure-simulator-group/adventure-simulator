@@ -5,6 +5,8 @@ European potential vegetation types v1.1**, DOI
 [`10.5281/zenodo.14627466`](https://doi.org/10.5281/zenodo.14627466). The pinned
 version was published 2025-01-10 under CC BY 4.0 and covers continental Europe,
 including Turkey, at nominal 1 km grain.
+Canonical temporal metadata records the model-input window, 1990–2020, rather
+than presenting the publication year as a single observation year.
 
 Run `just init-jung-pnv` to download the categorical current raster plus the six
 current-class COGs into `target/world-data-sources/raw/jung-pnv/`. The atomic
