@@ -1789,8 +1789,12 @@ fn party_skills_rail(
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
                         (skills_table(title, skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
+                        div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
+                            span { "Schedule could not be saved." }
+                            button type="button" data-schedule-retry { "Retry" }
+                        }
                     }
-                    script src="/static/training-schedule.js?v=live-remount-1" {}
+                    script src="/static/training-schedule.js?v=serialized-save-2" {}
                 } @else {
                     (skills_table(title, skills, head_health, upper_health, lower_health, None, None))
                 }
@@ -3155,6 +3159,9 @@ mod tests {
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
         assert!(rail.contains("<h3 class=\"sr-only\">Your skills</h3>"));
+        assert!(rail.contains("data-schedule-save-status"));
+        assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
+        assert!(rail.contains("data-schedule-retry>Retry</button>"));
     }
 
     #[test]
@@ -3594,6 +3601,12 @@ mod tests {
         assert!(schedule.contains("function mountSchedules(root = document)"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
+        assert!(schedule.contains("function createLatestSaveQueue(send"));
+        assert!(schedule.contains("data-schedule-pending"));
+        assert!(schedule.contains("retry()"));
+        assert!(schedule.contains("data-schedule-save-status"));
+        assert!(schedule.contains("data-schedule-retry"));
+        assert!(schedule.contains("strategic-live-refresh-requested"));
         assert!(schedule.contains("schedule-effect-positive"));
         assert!(!schedule.contains("scheduleDrag"));
         assert!(!schedule.contains("travel_"));
@@ -3602,6 +3615,10 @@ mod tests {
         assert!(live_regions.contains("const scrollOffsets = (selector)"));
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
+        assert!(live_regions.contains("scheduleEditorIsPending"));
+        assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
+        assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
         assert!(css.contains(".schedule-time-input {\n  position: absolute;"));
+        assert!(css.contains(".schedule-save-status"));
     }
 }

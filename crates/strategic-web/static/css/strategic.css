@@ -2608,6 +2608,24 @@ body.chat-resizing {
 }
 
 .skill-schedule { display: grid; gap: 0.55rem; }
+.schedule-save-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: var(--font-size-xs);
+}
+.schedule-save-status[hidden] { display: none; }
+.schedule-save-status button {
+  padding: 0.1rem 0.35rem;
+  border: 1px solid currentColor;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
 
 .schedule-context-heading th {
   padding: 0 0.15rem 0.35rem;

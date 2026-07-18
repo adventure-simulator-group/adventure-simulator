@@ -24,6 +24,9 @@
   };
 
   const selectedInventoryTab = () => document.querySelector("[data-inventory-tab].active")?.dataset.inventoryTab;
+  const scheduleEditorIsPending = () => Boolean(
+    document.querySelector('[data-skill-schedule][data-schedule-pending]'),
+  );
 
   const restoreInventoryTab = (name) => {
     if (!name) return;
@@ -62,6 +65,7 @@
 
   const refresh = async () => {
     const currentGeneration = ++generation;
+    const schedulePendingAtStart = scheduleEditorIsPending();
     const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
       headers: { Accept: "text/html", "X-Strategic-Live-Region": "true" },
     });
@@ -80,7 +84,8 @@
       replaced.push("party-portraits");
     }
     if (!sidebarsAreBusy()) {
-      if (replaceIfChanged(".left-sidebar", nextDocument)) replaced.push("left-sidebar");
+      if (!schedulePendingAtStart && !scheduleEditorIsPending()
+        && replaceIfChanged(".left-sidebar", nextDocument)) replaced.push("left-sidebar");
       if (replaceIfChanged(".right-sidebar", nextDocument)) replaced.push("right-sidebar");
     }
 

@@ -36,6 +36,73 @@
     return hours * 60 + minutes;
   }
 
+  function createLatestSaveQueue(send, { onState = () => {}, onDrained = () => {} } = {}) {
+    let queued = null;
+    let ready = false;
+    let inFlight = false;
+    let halted = false;
+    let error = null;
+
+    const status = () => ({
+      dirty: inFlight || queued !== null,
+      error,
+      inFlight,
+      pending: inFlight || queued !== null,
+    });
+    const notify = () => onState(status());
+
+    const pump = async () => {
+      if (inFlight || halted || !ready || queued === null) return;
+      const snapshot = queued;
+      queued = null;
+      ready = false;
+      inFlight = true;
+      error = null;
+      notify();
+      try {
+        await send(snapshot);
+      } catch (caught) {
+        const hasNewerSnapshot = queued !== null;
+        if (!hasNewerSnapshot) queued = snapshot;
+        inFlight = false;
+        halted = !hasNewerSnapshot;
+        error = caught;
+        notify();
+        if (hasNewerSnapshot && ready) void pump();
+        return;
+      }
+      inFlight = false;
+      notify();
+      if (queued !== null) {
+        if (ready) void pump();
+        return;
+      }
+      onDrained();
+    };
+
+    return {
+      flush() {
+        ready = true;
+        void pump();
+      },
+      retry() {
+        if (queued === null) return;
+        halted = false;
+        error = null;
+        ready = true;
+        notify();
+        void pump();
+      },
+      stage(snapshot) {
+        queued = snapshot;
+        halted = false;
+        error = null;
+        notify();
+      },
+      status,
+    };
+  }
+
   function leisureColor(minutes) {
     const stops = [
       [480, [105, 168, 107]],
@@ -97,6 +164,26 @@
     const inputs = [...root.querySelectorAll('[data-schedule-input]')];
     inputs.forEach((input) => { input.value = Math.round(Number(input.value) / STEP) * STEP; });
     const state = { inputs: Object.fromEntries(inputs.map((input) => [input.name, input])) };
+    state.saveQueue = createLatestSaveQueue(
+      (snapshot) => window.strategicFetch(root.action, {
+        method: 'POST',
+        body: new URLSearchParams(snapshot),
+        headers: { Accept: 'text/plain' },
+      }),
+      {
+        onState(queueState) {
+          root.toggleAttribute('data-schedule-dirty', queueState.dirty);
+          root.toggleAttribute('data-schedule-pending', queueState.pending);
+          root.toggleAttribute('data-schedule-save-in-flight', queueState.inFlight);
+          root.toggleAttribute('data-schedule-save-error', Boolean(queueState.error));
+          const saveStatus = root.querySelector('[data-schedule-save-status]');
+          if (saveStatus) saveStatus.hidden = !queueState.error;
+        },
+        onDrained() {
+          document.dispatchEvent(new Event('strategic-live-refresh-requested'));
+        },
+      },
+    );
     root._scheduleState = state;
     render(root, state);
     return state;
@@ -157,11 +244,9 @@
 
   function save(root, delay = 0) {
     clearTimeout(root._scheduleSaveTimer);
-    root._scheduleSaveTimer = setTimeout(() => {
-      const body = new URLSearchParams(new FormData(root));
-      window.strategicFetch(root.action, { method: 'POST', body, headers: { Accept: 'text/plain' } })
-        .catch(() => { root.dataset.scheduleSaveError = 'true'; });
-    }, delay);
+    const state = stateFor(root);
+    state.saveQueue.stage(new URLSearchParams(new FormData(root)).toString());
+    root._scheduleSaveTimer = setTimeout(() => state.saveQueue.flush(), delay);
   }
 
   function nameFor(element) {
@@ -202,7 +287,7 @@
     input.select();
   }
 
-  if (typeof module !== 'undefined') module.exports = { parseClock };
+  if (typeof module !== 'undefined') module.exports = { createLatestSaveQueue, parseClock };
   if (typeof document === 'undefined') return;
 
   function mountSchedules(root = document) {
@@ -225,6 +310,12 @@
     save(root, 180);
   }, { passive: false });
   document.addEventListener('click', (event) => {
+    const retry = event.target.closest?.('[data-schedule-retry]');
+    if (retry) {
+      const root = retry.closest('[data-skill-schedule]');
+      stateFor(root).saveQueue.retry();
+      return;
+    }
     const step = event.target.closest?.('[data-schedule-step]');
     if (step) {
       const root = step.closest('[data-skill-schedule]');
