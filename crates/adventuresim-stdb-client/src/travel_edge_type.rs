@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::edge_endpoint_type::EdgeEndpoint;
+use super::route_terrain_type::RouteTerrain;
 use super::travel_route_type::TravelRoute;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -17,6 +18,7 @@ pub struct TravelEdge {
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
+    pub terrain: RouteTerrain,
     pub certainty: u8,
     pub section: String,
     pub sources: String,

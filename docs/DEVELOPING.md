@@ -250,6 +250,11 @@ official archive is not currently available locally, so the parser and
 enrichment are verified against standards-compliant synthetic GeoPackages but
 the complete source distribution remains unverified.
 
+The same initialized GLO-30 and EU-Hydro directories feed the final strategic
+route-terrain stage. Its straight-line geometry, deterministic v5 rules, schema
+bounds, and remaining authenticated-source audit blockers are documented in
+`docs/ROUTE_TERRAIN.md`.
+
 World schema v18 / inference rules v4 add typed canonical distribution
 manifests and a deterministic schema/rules/year/grid/source digest. The world
 compiler prints the sorted manifest and whether each source is reproducible.

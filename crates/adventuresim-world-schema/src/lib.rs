@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 18;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 4;
+pub const WORLD_SCHEMA_VERSION: u32 = 19;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 5;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -1860,6 +1860,689 @@ pub struct FerryRoute {
     pub waterway: FerryWaterway,
 }
 
+/// One bounded sample of a route's straight endpoint-to-endpoint DEM profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RouteElevationSample {
+    pub progress: EdgeProgressPermille,
+    pub elevation: ElevationMeters,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RouteElevationProfile {
+    samples: Vec<RouteElevationSample>,
+}
+
+struct BoundedVec<T, const MAX: usize>(Vec<T>);
+
+impl<'de, T: Deserialize<'de>, const MAX: usize> Deserialize<'de> for BoundedVec<T, MAX> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct BoundedVisitor<T, const MAX: usize>(std::marker::PhantomData<T>);
+        impl<'de, T: Deserialize<'de>, const MAX: usize> serde::de::Visitor<'de>
+            for BoundedVisitor<T, MAX>
+        {
+            type Value = BoundedVec<T, MAX>;
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(formatter, "a sequence with at most {MAX} elements")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: A,
+            ) -> Result<Self::Value, A::Error> {
+                if sequence.size_hint().is_some_and(|hint| hint > MAX) {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "sequence exceeds {MAX} elements"
+                    )));
+                }
+                let mut values = Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX));
+                while let Some(value) = sequence.next_element()? {
+                    if values.len() == MAX {
+                        return Err(serde::de::Error::custom(format_args!(
+                            "sequence exceeds {MAX} elements"
+                        )));
+                    }
+                    values.push(value);
+                }
+                Ok(BoundedVec(values))
+            }
+        }
+        deserializer.deserialize_seq(BoundedVisitor::<T, MAX>(std::marker::PhantomData))
+    }
+}
+
+impl RouteElevationProfile {
+    pub const MAX_SAMPLES: usize = 1_001;
+
+    pub fn new(samples: Vec<RouteElevationSample>) -> Result<Self, String> {
+        if samples.len() < 2 || samples.len() > Self::MAX_SAMPLES {
+            return Err(format!(
+                "route elevation profile must contain 2..={} samples",
+                Self::MAX_SAMPLES
+            ));
+        }
+        if samples.first().map(|v| v.progress.get()) != Some(0)
+            || samples.last().map(|v| v.progress.get()) != Some(1_000)
+            || samples
+                .windows(2)
+                .any(|pair| pair[0].progress >= pair[1].progress)
+        {
+            return Err(
+                "route elevation profile must have sorted unique progress and 0/1000 endpoints"
+                    .into(),
+            );
+        }
+        Ok(Self { samples })
+    }
+
+    pub fn samples(&self) -> &[RouteElevationSample] {
+        &self.samples
+    }
+
+    fn validate_raw(&self) -> Result<(), String> {
+        if self.samples.len() < 2 || self.samples.len() > Self::MAX_SAMPLES {
+            return Err(format!(
+                "route elevation profile must contain 2..={} samples",
+                Self::MAX_SAMPLES
+            ));
+        }
+        for sample in &self.samples {
+            EdgeProgressPermille::new(sample.progress.get())?;
+            if ElevationMeters::new(sample.elevation.get()).is_none() {
+                return Err("route elevation profile contains an out-of-range elevation".into());
+            }
+        }
+        if self.samples.first().map(|v| v.progress.get()) != Some(0)
+            || self.samples.last().map(|v| v.progress.get()) != Some(1_000)
+            || self
+                .samples
+                .windows(2)
+                .any(|p| p[0].progress.get() >= p[1].progress.get())
+        {
+            return Err(
+                "route elevation profile must have sorted unique progress and 0/1000 endpoints"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for RouteElevationProfile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Wire {
+            samples: BoundedVec<RouteElevationSample, 1_001>,
+        }
+        Self::new(Wire::deserialize(deserializer)?.samples.0).map_err(serde::de::Error::custom)
+    }
+}
+
+macro_rules! bounded_route_metric {
+    ($name:ident, $field:ident, $inner:ty, $min:expr, $max:expr) => {
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+        #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+        pub struct $name {
+            $field: $inner,
+        }
+        impl $name {
+            pub const MIN: $inner = $min;
+            pub const MAX: $inner = $max;
+            pub fn new(value: $inner) -> Result<Self, String> {
+                if (Self::MIN..=Self::MAX).contains(&value) {
+                    Ok(Self { $field: value })
+                } else {
+                    Err(format!(
+                        "{} {} is outside {}..={}",
+                        stringify!($name),
+                        value,
+                        Self::MIN,
+                        Self::MAX
+                    ))
+                }
+            }
+            pub const fn get(self) -> $inner {
+                self.$field
+            }
+        }
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                #[derive(Deserialize)]
+                struct Wire {
+                    $field: $inner,
+                }
+                Self::new(Wire::deserialize(deserializer)?.$field).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+bounded_route_metric!(RouteVerticalMeters, meters, u32, 0, 100_000);
+bounded_route_metric!(RouteSignedGradePermille, permille, i16, -10_000, 10_000);
+bounded_route_metric!(RouteSlopePermille, permille, u16, 0, 10_000);
+bounded_route_metric!(RouteRoughnessMeters, meters, u16, 0, 9_500);
+bounded_route_metric!(RouteReliefMeters, meters, u16, 0, 9_500);
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum DominantAspect {
+    Flat,
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    South,
+    SouthWest,
+    West,
+    NorthWest,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteLandformKind {
+    Ridge,
+    Valley,
+    LikelyPass,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct LocatedRouteLandform {
+    pub progress: EdgeProgressPermille,
+    pub kind: RouteLandformKind,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteTerrainClass {
+    Flat,
+    Rolling,
+    Hilly,
+    Mountainous,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteWaterFeatureKind {
+    River,
+    Canal,
+    Ditch,
+    Inland,
+    Tidal,
+    Coastal,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RouteWaterAdjacency {
+    pub feature: RouteWaterFeatureKind,
+    pub distance: WaterDistanceMeters,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteRiskSeverity {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteSeasonalHazard {
+    SpringFlood,
+    AutumnMud,
+    WinterIce,
+    WinterSnow,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RouteSeasonalRisk {
+    pub hazard: RouteSeasonalHazard,
+    pub severity: RouteRiskSeverity,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum RouteEncounterTag {
+    Flat,
+    Rolling,
+    Hilly,
+    Mountainous,
+    Steep,
+    Rough,
+    Ridge,
+    Valley,
+    LikelyPass,
+    Bridge,
+    Ford,
+    Ferry,
+    Riverbank,
+    CanalBank,
+    Lakeshore,
+    TidalShore,
+    Coast,
+    SpringFlood,
+    AutumnMud,
+    WinterIce,
+    WinterSnow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RouteTerrain {
+    pub elevation_profile: RouteElevationProfile,
+    pub ascent: RouteVerticalMeters,
+    pub descent: RouteVerticalMeters,
+    pub max_uphill_grade: RouteSignedGradePermille,
+    pub max_downhill_grade: RouteSignedGradePermille,
+    pub mean_slope: RouteSlopePermille,
+    pub max_slope: RouteSlopePermille,
+    pub dominant_aspect: DominantAspect,
+    pub roughness: RouteRoughnessMeters,
+    pub relief: RouteReliefMeters,
+    pub landforms: Vec<LocatedRouteLandform>,
+    pub class: RouteTerrainClass,
+    pub water_adjacencies: Vec<RouteWaterAdjacency>,
+    pub seasonal_risks: Vec<RouteSeasonalRisk>,
+    pub encounter_tags: Vec<RouteEncounterTag>,
+}
+
+impl RouteTerrain {
+    pub const MAX_LANDFORMS: usize = RouteElevationProfile::MAX_SAMPLES;
+    pub const MAX_WATER_ADJACENCIES: usize = 6;
+    pub const MAX_SEASONAL_RISKS: usize = 4;
+    pub const MAX_ENCOUNTER_TAGS: usize = 21;
+    /// Valid placeholder used only between the hydrology and route-terrain
+    /// typestate stages; it is overwritten before canonical validation.
+    pub fn stage_placeholder() -> Self {
+        Self {
+            elevation_profile: RouteElevationProfile::new(vec![
+                RouteElevationSample {
+                    progress: EdgeProgressPermille::new(0).unwrap(),
+                    elevation: ElevationMeters::new(0).unwrap(),
+                },
+                RouteElevationSample {
+                    progress: EdgeProgressPermille::new(1_000).unwrap(),
+                    elevation: ElevationMeters::new(0).unwrap(),
+                },
+            ])
+            .unwrap(),
+            ascent: RouteVerticalMeters::new(0).unwrap(),
+            descent: RouteVerticalMeters::new(0).unwrap(),
+            max_uphill_grade: RouteSignedGradePermille::new(0).unwrap(),
+            max_downhill_grade: RouteSignedGradePermille::new(0).unwrap(),
+            mean_slope: RouteSlopePermille::new(0).unwrap(),
+            max_slope: RouteSlopePermille::new(0).unwrap(),
+            dominant_aspect: DominantAspect::Flat,
+            roughness: RouteRoughnessMeters::new(0).unwrap(),
+            relief: RouteReliefMeters::new(0).unwrap(),
+            landforms: vec![],
+            class: RouteTerrainClass::Flat,
+            water_adjacencies: vec![],
+            seasonal_risks: vec![],
+            encounter_tags: vec![RouteEncounterTag::Flat],
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.elevation_profile.validate_raw()?;
+        RouteVerticalMeters::new(self.ascent.get())?;
+        RouteVerticalMeters::new(self.descent.get())?;
+        RouteSignedGradePermille::new(self.max_uphill_grade.get())?;
+        RouteSignedGradePermille::new(self.max_downhill_grade.get())?;
+        RouteSlopePermille::new(self.mean_slope.get())?;
+        RouteSlopePermille::new(self.max_slope.get())?;
+        RouteRoughnessMeters::new(self.roughness.get())?;
+        RouteReliefMeters::new(self.relief.get())?;
+        for value in &self.landforms {
+            EdgeProgressPermille::new(value.progress.get())?;
+        }
+        for value in &self.water_adjacencies {
+            WaterDistanceMeters::new(value.distance.get())?;
+        }
+        if self.max_uphill_grade.get() < 0 || self.max_downhill_grade.get() > 0 {
+            return Err("route grade extrema have contradictory signs".into());
+        }
+        if self.mean_slope > self.max_slope {
+            return Err("route mean slope exceeds maximum slope".into());
+        }
+        if (self.mean_slope.get() < 10) != (self.dominant_aspect == DominantAspect::Flat) {
+            return Err("route dominant aspect contradicts the mean-slope flat threshold".into());
+        }
+        if self.class != Self::class_for(self.max_slope.get(), self.relief.get()) {
+            return Err("route terrain class contradicts slope/relief thresholds".into());
+        }
+        if self.landforms.len() > Self::MAX_LANDFORMS
+            || self.water_adjacencies.len() > Self::MAX_WATER_ADJACENCIES
+            || self.seasonal_risks.len() > Self::MAX_SEASONAL_RISKS
+            || self.encounter_tags.len() > Self::MAX_ENCOUNTER_TAGS
+        {
+            return Err("route terrain collection exceeds its closed bound".into());
+        }
+        if self
+            .landforms
+            .windows(2)
+            .any(|p| p[0].progress >= p[1].progress)
+            || self
+                .water_adjacencies
+                .windows(2)
+                .any(|p| p[0].feature >= p[1].feature)
+            || self
+                .seasonal_risks
+                .windows(2)
+                .any(|p| p[0].hazard >= p[1].hazard)
+            || self.encounter_tags.windows(2).any(|p| p[0] >= p[1])
+        {
+            return Err(
+                "route terrain collections are not canonically ordered by logical key".into(),
+            );
+        }
+        Ok(())
+    }
+
+    pub const fn class_for(max_slope: u16, relief: u16) -> RouteTerrainClass {
+        if max_slope < 30 && relief < 30 {
+            RouteTerrainClass::Flat
+        } else if max_slope < 80 && relief < 100 {
+            RouteTerrainClass::Rolling
+        } else if max_slope < 150 && relief < 300 {
+            RouteTerrainClass::Hilly
+        } else {
+            RouteTerrainClass::Mountainous
+        }
+    }
+
+    pub fn validate_context(&self, route: &TravelRoute, length_m: u32) -> Result<(), String> {
+        self.validate()?;
+        if length_m == 0 {
+            return Err("route terrain cannot describe a zero-length edge".into());
+        }
+        let mut ascent = 0u32;
+        let mut descent = 0u32;
+        let mut uphill = 0i16;
+        let mut downhill = 0i16;
+        for pair in self.elevation_profile.samples().windows(2) {
+            let dz = i32::from(pair[1].elevation.get()) - i32::from(pair[0].elevation.get());
+            if dz >= 0 {
+                ascent = ascent
+                    .checked_add(dz as u32)
+                    .ok_or("route ascent overflow")?;
+            } else {
+                descent = descent
+                    .checked_add((-dz) as u32)
+                    .ok_or("route descent overflow")?;
+            }
+            let dp = u32::from(pair[1].progress.get() - pair[0].progress.get());
+            let grade = route_grade_permille(dz, length_m, dp)?;
+            uphill = uphill.max(grade);
+            downhill = downhill.min(grade);
+        }
+        if self.ascent.get() != ascent.min(RouteVerticalMeters::MAX)
+            || self.descent.get() != descent.min(RouteVerticalMeters::MAX)
+            || self.max_uphill_grade.get() != uphill
+            || self.max_downhill_grade.get() != downhill
+        {
+            return Err("route profile contradicts ascent/descent or grade extrema".into());
+        }
+        let min = self
+            .elevation_profile
+            .samples()
+            .iter()
+            .map(|v| v.elevation.get())
+            .min()
+            .unwrap();
+        let max = self
+            .elevation_profile
+            .samples()
+            .iter()
+            .map(|v| v.elevation.get())
+            .max()
+            .unwrap();
+        if self.relief.get() != (i32::from(max) - i32::from(min)).clamp(0, 9_500) as u16 {
+            return Err("route relief contradicts its elevation profile".into());
+        }
+        let risks = expected_route_seasonal_risks(
+            route,
+            self.class,
+            &self.water_adjacencies,
+            &self.landforms,
+            max,
+        );
+        if self.seasonal_risks != risks {
+            return Err("route seasonal risks contradict route context".into());
+        }
+        let tags = expected_route_encounter_tags(
+            route,
+            self.class,
+            self.max_slope.get(),
+            self.roughness.get(),
+            &self.landforms,
+            &self.water_adjacencies,
+            &self.seasonal_risks,
+        );
+        if self.encounter_tags != tags {
+            return Err("route encounter tags contradict route context".into());
+        }
+        Ok(())
+    }
+}
+
+pub fn route_grade_permille(dz: i32, length_m: u32, progress_delta: u32) -> Result<i16, String> {
+    if length_m == 0 || progress_delta == 0 {
+        return Err("route grade requires positive length and progress delta".into());
+    }
+    let numerator = i64::from(dz) * 1_000_000;
+    let denominator = i64::from(length_m)
+        .checked_mul(i64::from(progress_delta))
+        .ok_or("route grade denominator overflow")?;
+    let magnitude = (numerator.unsigned_abs() + denominator as u64 / 2) / denominator as u64;
+    let signed = if numerator < 0 {
+        -(magnitude as i64)
+    } else {
+        magnitude as i64
+    };
+    Ok(signed.clamp(-10_000, 10_000) as i16)
+}
+
+pub fn expected_route_seasonal_risks(
+    route: &TravelRoute,
+    class: RouteTerrainClass,
+    water: &[RouteWaterAdjacency],
+    landforms: &[LocatedRouteLandform],
+    max_elevation: i16,
+) -> Vec<RouteSeasonalRisk> {
+    let ford = matches!(route, TravelRoute::Land(v) if v.water_crossings.iter().any(|c| c.traversal == CrossingTraversal::Ford));
+    let ferry = matches!(route, TravelRoute::Ferry(_));
+    let valley = landforms
+        .iter()
+        .any(|v| v.kind == RouteLandformKind::Valley);
+    let within = |distance, kinds: &[RouteWaterFeatureKind]| {
+        water
+            .iter()
+            .any(|v| kinds.contains(&v.feature) && v.distance.get() <= distance)
+    };
+    let mut values = std::collections::BTreeSet::new();
+    if ford {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::SpringFlood,
+            severity: RouteRiskSeverity::High,
+        });
+    } else if valley
+        && within(
+            500,
+            &[
+                RouteWaterFeatureKind::River,
+                RouteWaterFeatureKind::Canal,
+                RouteWaterFeatureKind::Ditch,
+                RouteWaterFeatureKind::Inland,
+                RouteWaterFeatureKind::Tidal,
+            ],
+        )
+    {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::SpringFlood,
+            severity: RouteRiskSeverity::Medium,
+        });
+    }
+    if ford {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::AutumnMud,
+            severity: RouteRiskSeverity::Medium,
+        });
+    } else if matches!(class, RouteTerrainClass::Flat | RouteTerrainClass::Rolling)
+        && within(
+            250,
+            &[
+                RouteWaterFeatureKind::River,
+                RouteWaterFeatureKind::Canal,
+                RouteWaterFeatureKind::Ditch,
+                RouteWaterFeatureKind::Inland,
+            ],
+        )
+    {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::AutumnMud,
+            severity: RouteRiskSeverity::Low,
+        });
+    }
+    if ferry {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::WinterIce,
+            severity: RouteRiskSeverity::High,
+        });
+    } else if ford {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::WinterIce,
+            severity: RouteRiskSeverity::Medium,
+        });
+    } else if within(
+        250,
+        &[RouteWaterFeatureKind::Inland, RouteWaterFeatureKind::Tidal],
+    ) {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::WinterIce,
+            severity: RouteRiskSeverity::Low,
+        });
+    }
+    if class == RouteTerrainClass::Mountainous || max_elevation >= 1_000 {
+        values.insert(RouteSeasonalRisk {
+            hazard: RouteSeasonalHazard::WinterSnow,
+            severity: RouteRiskSeverity::Medium,
+        });
+    }
+    values.into_iter().collect()
+}
+
+pub fn expected_route_encounter_tags(
+    route: &TravelRoute,
+    class: RouteTerrainClass,
+    max_slope: u16,
+    roughness: u16,
+    landforms: &[LocatedRouteLandform],
+    water: &[RouteWaterAdjacency],
+    risks: &[RouteSeasonalRisk],
+) -> Vec<RouteEncounterTag> {
+    let mut values = std::collections::BTreeSet::new();
+    values.insert(match class {
+        RouteTerrainClass::Flat => RouteEncounterTag::Flat,
+        RouteTerrainClass::Rolling => RouteEncounterTag::Rolling,
+        RouteTerrainClass::Hilly => RouteEncounterTag::Hilly,
+        RouteTerrainClass::Mountainous => RouteEncounterTag::Mountainous,
+    });
+    if max_slope >= 150 {
+        values.insert(RouteEncounterTag::Steep);
+    }
+    if roughness >= 20 {
+        values.insert(RouteEncounterTag::Rough);
+    }
+    for v in landforms {
+        values.insert(match v.kind {
+            RouteLandformKind::Ridge => RouteEncounterTag::Ridge,
+            RouteLandformKind::Valley => RouteEncounterTag::Valley,
+            RouteLandformKind::LikelyPass => RouteEncounterTag::LikelyPass,
+        });
+    }
+    match route {
+        TravelRoute::Ferry(_) => {
+            values.insert(RouteEncounterTag::Ferry);
+        }
+        TravelRoute::Land(v) => {
+            for c in &v.water_crossings {
+                values.insert(if c.traversal == CrossingTraversal::Bridge {
+                    RouteEncounterTag::Bridge
+                } else {
+                    RouteEncounterTag::Ford
+                });
+            }
+        }
+    }
+    for v in water {
+        values.insert(match v.feature {
+            RouteWaterFeatureKind::River | RouteWaterFeatureKind::Ditch => {
+                RouteEncounterTag::Riverbank
+            }
+            RouteWaterFeatureKind::Canal => RouteEncounterTag::CanalBank,
+            RouteWaterFeatureKind::Inland => RouteEncounterTag::Lakeshore,
+            RouteWaterFeatureKind::Tidal => RouteEncounterTag::TidalShore,
+            RouteWaterFeatureKind::Coastal => RouteEncounterTag::Coast,
+        });
+    }
+    for v in risks {
+        values.insert(match v.hazard {
+            RouteSeasonalHazard::SpringFlood => RouteEncounterTag::SpringFlood,
+            RouteSeasonalHazard::AutumnMud => RouteEncounterTag::AutumnMud,
+            RouteSeasonalHazard::WinterIce => RouteEncounterTag::WinterIce,
+            RouteSeasonalHazard::WinterSnow => RouteEncounterTag::WinterSnow,
+        });
+    }
+    values.into_iter().collect()
+}
+
+impl<'de> Deserialize<'de> for RouteTerrain {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Wire {
+            elevation_profile: RouteElevationProfile,
+            ascent: RouteVerticalMeters,
+            descent: RouteVerticalMeters,
+            max_uphill_grade: RouteSignedGradePermille,
+            max_downhill_grade: RouteSignedGradePermille,
+            mean_slope: RouteSlopePermille,
+            max_slope: RouteSlopePermille,
+            dominant_aspect: DominantAspect,
+            roughness: RouteRoughnessMeters,
+            relief: RouteReliefMeters,
+            landforms: BoundedVec<LocatedRouteLandform, 1_001>,
+            class: RouteTerrainClass,
+            water_adjacencies: BoundedVec<RouteWaterAdjacency, 6>,
+            seasonal_risks: BoundedVec<RouteSeasonalRisk, 4>,
+            encounter_tags: BoundedVec<RouteEncounterTag, 21>,
+        }
+        let w = Wire::deserialize(deserializer)?;
+        let value = Self {
+            elevation_profile: w.elevation_profile,
+            ascent: w.ascent,
+            descent: w.descent,
+            max_uphill_grade: w.max_uphill_grade,
+            max_downhill_grade: w.max_downhill_grade,
+            mean_slope: w.mean_slope,
+            max_slope: w.max_slope,
+            dominant_aspect: w.dominant_aspect,
+            roughness: w.roughness,
+            relief: w.relief,
+            landforms: w.landforms.0,
+            class: w.class,
+            water_adjacencies: w.water_adjacencies.0,
+            seasonal_risks: w.seasonal_risks.0,
+            encounter_tags: w.encounter_tags.0,
+        };
+        value.validate().map_err(serde::de::Error::custom)?;
+        Ok(value)
+    }
+}
+
 impl TravelRoute {
     pub const fn kind(&self) -> TravelEdgeKind {
         match self {
@@ -2220,6 +2903,13 @@ pub struct WorldBuildReport {
     pub historical_vegetation_derived_samples: usize,
     pub historical_vegetation_fallback_samples: usize,
     pub historical_vegetation_tie_breaks: usize,
+    pub route_terrain_edges: usize,
+    pub route_terrain_dem_samples: usize,
+    pub route_terrain_dem_fallbacks: usize,
+    pub route_terrain_water_adjacencies: usize,
+    pub route_terrain_landforms: usize,
+    pub route_terrain_seasonal_risks: usize,
+    pub route_terrain_encounter_tags: usize,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -2258,6 +2948,8 @@ pub struct TravelEdgeImport {
     pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
+    /// Viabundus's source cost hint remains distinct from DEM-derived grade.
+    pub terrain: RouteTerrain,
     pub certainty: u8,
     pub section: String,
     pub sources: String,
@@ -2734,6 +3426,170 @@ mod tests {
             "road_types": []
         });
         assert!(serde_json::from_value::<super::WorldMetadata>(old).is_err());
+    }
+
+    #[test]
+    fn route_terrain_wire_rejects_bounds_order_and_duplicates() {
+        let terrain = super::RouteTerrain::stage_placeholder();
+        let mut wire = serde_json::to_value(&terrain).unwrap();
+        wire["elevation_profile"]["samples"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<super::RouteTerrain>(wire).is_err());
+
+        let mut wire = serde_json::to_value(&terrain).unwrap();
+        wire["encounter_tags"] = serde_json::json!(["Flat", "Flat"]);
+        assert!(serde_json::from_value::<super::RouteTerrain>(wire).is_err());
+
+        assert!(super::RouteSlopePermille::new(10_001).is_err());
+        assert!(super::RouteSignedGradePermille::new(-10_001).is_err());
+        assert!(super::RouteVerticalMeters::new(100_001).is_err());
+
+        for (field, count, value) in [
+            (
+                "landforms",
+                1_002,
+                serde_json::json!({"progress":{"permille":1},"kind":"Ridge"}),
+            ),
+            (
+                "water_adjacencies",
+                7,
+                serde_json::json!({"feature":"River","distance":{"meters":1}}),
+            ),
+            (
+                "seasonal_risks",
+                5,
+                serde_json::json!({"hazard":"SpringFlood","severity":"Low"}),
+            ),
+            ("encounter_tags", 22, serde_json::json!("Flat")),
+        ] {
+            let mut wire = serde_json::to_value(&terrain).unwrap();
+            wire[field] = serde_json::Value::Array(vec![value; count]);
+            assert!(
+                serde_json::from_value::<super::RouteTerrain>(wire).is_err(),
+                "{field}"
+            );
+        }
+        let mut wire = serde_json::to_value(&terrain).unwrap();
+        wire["elevation_profile"]["samples"] = serde_json::Value::Array(vec![
+            serde_json::json!({"progress":{"permille":0},"elevation":{"meters":0}});
+            1_002
+        ]);
+        assert!(serde_json::from_value::<super::RouteTerrain>(wire).is_err());
+
+        let mut duplicate_key = super::RouteTerrain::stage_placeholder();
+        duplicate_key.water_adjacencies = vec![
+            super::RouteWaterAdjacency {
+                feature: super::RouteWaterFeatureKind::River,
+                distance: super::WaterDistanceMeters::new(1).unwrap(),
+            },
+            super::RouteWaterAdjacency {
+                feature: super::RouteWaterFeatureKind::River,
+                distance: super::WaterDistanceMeters::new(2).unwrap(),
+            },
+        ];
+        assert!(duplicate_key.validate().is_err());
+        let mut duplicate_progress = super::RouteTerrain::stage_placeholder();
+        duplicate_progress.landforms = vec![
+            super::LocatedRouteLandform {
+                progress: super::EdgeProgressPermille::new(10).unwrap(),
+                kind: super::RouteLandformKind::Ridge,
+            },
+            super::LocatedRouteLandform {
+                progress: super::EdgeProgressPermille::new(10).unwrap(),
+                kind: super::RouteLandformKind::Valley,
+            },
+        ];
+        assert!(duplicate_progress.validate().is_err());
+    }
+
+    #[test]
+    fn route_terrain_context_rejects_semantic_contradictions() {
+        let route = super::TravelRoute::Land(super::LandRoute {
+            bridge: None,
+            water_crossings: vec![],
+        });
+        let valid = super::RouteTerrain::stage_placeholder();
+        valid.validate_context(&route, 1_000).unwrap();
+        for mutate in [
+            |v: &mut super::RouteTerrain| v.class = super::RouteTerrainClass::Mountainous,
+            |v: &mut super::RouteTerrain| {
+                v.max_uphill_grade = super::RouteSignedGradePermille::new(-1).unwrap()
+            },
+            |v: &mut super::RouteTerrain| v.mean_slope = super::RouteSlopePermille::new(1).unwrap(),
+            |v: &mut super::RouteTerrain| v.ascent = super::RouteVerticalMeters::new(1).unwrap(),
+        ] {
+            let mut changed = valid.clone();
+            mutate(&mut changed);
+            assert!(changed.validate_context(&route, 1_000).is_err());
+        }
+        let mut bad_tags = valid.clone();
+        bad_tags.encounter_tags = vec![super::RouteEncounterTag::Rolling];
+        assert!(bad_tags.validate_context(&route, 1_000).is_err());
+        let mut bad_risk = valid;
+        bad_risk.seasonal_risks = vec![super::RouteSeasonalRisk {
+            hazard: super::RouteSeasonalHazard::WinterSnow,
+            severity: super::RouteRiskSeverity::High,
+        }];
+        assert!(bad_risk.validate_context(&route, 1_000).is_err());
+
+        let mut flat_with_nonflat_aspect = super::RouteTerrain::stage_placeholder();
+        flat_with_nonflat_aspect.dominant_aspect = super::DominantAspect::North;
+        assert!(
+            flat_with_nonflat_aspect
+                .validate_context(&route, 1_000)
+                .is_err()
+        );
+        let mut sloped_with_flat_aspect = super::RouteTerrain::stage_placeholder();
+        sloped_with_flat_aspect.mean_slope = super::RouteSlopePermille::new(10).unwrap();
+        sloped_with_flat_aspect.max_slope = super::RouteSlopePermille::new(10).unwrap();
+        assert!(
+            sloped_with_flat_aspect
+                .validate_context(&route, 1_000)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn raw_route_terrain_validation_is_panic_free_and_rechecks_wrappers() {
+        let route = super::TravelRoute::Land(super::LandRoute {
+            bridge: None,
+            water_crossings: vec![],
+        });
+        let mut empty = super::RouteTerrain::stage_placeholder();
+        empty.elevation_profile = super::RouteElevationProfile { samples: vec![] };
+        assert!(
+            std::panic::catch_unwind(|| empty.validate_context(&route, 1_000))
+                .unwrap()
+                .is_err()
+        );
+
+        let mut raw_slope = super::RouteTerrain::stage_placeholder();
+        raw_slope.max_slope = super::RouteSlopePermille { permille: 10_001 };
+        assert!(
+            std::panic::catch_unwind(|| raw_slope.validate_context(&route, 1_000))
+                .unwrap()
+                .is_err()
+        );
+
+        let mut raw_elevation = super::RouteTerrain::stage_placeholder();
+        raw_elevation.elevation_profile = super::RouteElevationProfile {
+            samples: vec![
+                super::RouteElevationSample {
+                    progress: super::EdgeProgressPermille { permille: 0 },
+                    elevation: super::ElevationMeters { meters: 9_001 },
+                },
+                super::RouteElevationSample {
+                    progress: super::EdgeProgressPermille { permille: 1_000 },
+                    elevation: super::ElevationMeters { meters: 0 },
+                },
+            ],
+        };
+        assert!(
+            std::panic::catch_unwind(|| raw_elevation.validate_context(&route, 1_000))
+                .unwrap()
+                .is_err()
+        );
+        assert!(super::route_grade_permille(1, 0, 1).is_err());
+        assert!(super::route_grade_permille(1, 1, 0).is_err());
     }
 }
 

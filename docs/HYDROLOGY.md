@@ -74,3 +74,9 @@ known bridge has no mapped EU-Hydro segment, the compiler supplies a plausible
 small perennial river crossing at that endpoint. Ferry edges without a nearby
 mapped water feature receive a plausible small perennial river rather than an
 unknown waterway.
+
+The subsequent route-terrain stage reuses crossings as zero-distance water
+adjacencies. The nearest feature of each other category may be retained within
+the existing two-kilometer threshold when the full official distribution is
+available. These facts feed only versioned static seasonal-risk and encounter
+selectors; they do not create tactical simulation state.

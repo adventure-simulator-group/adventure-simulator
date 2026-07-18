@@ -117,6 +117,25 @@ impl SpatialProjection {
         transform(&self.geographic, &self.projected, &mut coordinate)?;
         ProjectedCoordinate::from_meters(coordinate.0, coordinate.1)
     }
+
+    /// Inverse of [`Self::project`], used when a source raster is geographic
+    /// but route interpolation is required on the canonical projected grid.
+    pub fn unproject(&self, coordinate: ProjectedCoordinate) -> Result<(f64, f64)> {
+        let mut raw = (
+            coordinate.easting_meters(),
+            coordinate.northing_meters(),
+            0.0,
+        );
+        transform(&self.projected, &self.geographic, &mut raw)?;
+        let latitude = raw.1.to_degrees();
+        let longitude = raw.0.to_degrees();
+        if !latitude.is_finite() || !longitude.is_finite() {
+            return Err(Error::Validation(
+                "inverse EPSG:3035 projection was non-finite".into(),
+            ));
+        }
+        Ok((latitude, longitude))
+    }
 }
 
 #[cfg(test)]
