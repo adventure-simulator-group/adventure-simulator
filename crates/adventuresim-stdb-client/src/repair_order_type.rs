@@ -16,6 +16,7 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    pub quoted_cost: u32,
 }
 
 impl __sdk::InModule for RepairOrder {
@@ -35,6 +36,7 @@ pub struct RepairOrderCols {
     pub submitted_at_minutes: __sdk::__query_builder::Col<RepairOrder, u64>,
     pub ready_at_minutes: __sdk::__query_builder::Col<RepairOrder, u64>,
     pub target_condition: __sdk::__query_builder::Col<RepairOrder, f32>,
+    pub quoted_cost: __sdk::__query_builder::Col<RepairOrder, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for RepairOrder {
@@ -53,6 +55,7 @@ impl __sdk::__query_builder::HasCols for RepairOrder {
             ),
             ready_at_minutes: __sdk::__query_builder::Col::new(table_name, "ready_at_minutes"),
             target_condition: __sdk::__query_builder::Col::new(table_name, "target_condition"),
+            quoted_cost: __sdk::__query_builder::Col::new(table_name, "quoted_cost"),
         }
     }
 }

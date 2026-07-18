@@ -77,6 +77,9 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    /// Stable quote charged when the completed job is retrieved.
+    #[default(0)]
+    pub quoted_cost: u32,
 }
 
 fn durable(kind: ItemKind) -> bool {
@@ -367,6 +370,8 @@ fn submit(
         .map(|v| v.minutes)
         .unwrap_or(0);
     let minutes = (repairable * REPAIR_MINUTES_PER_FULL_ITEM as f32).ceil() as u64;
+    let quoted_cost =
+        adventuresim_core::durability::repair_quote(definition.base_value.unwrap_or(1), repairable);
     if let Some(mut equip) = ctx.db.character_equip().character_id().find(character_id) {
         unequip(&mut equip, inventory_item_id);
         ctx.db.character_equip().character_id().update(equip);
@@ -385,6 +390,7 @@ fn submit(
         submitted_at_minutes: now,
         ready_at_minutes: now.saturating_add(minutes.max(1)),
         target_condition,
+        quoted_cost,
     });
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(order.id)
@@ -440,6 +446,10 @@ pub fn retrieve_repaired_item(
     character_id: u64,
     order_id: u64,
 ) -> Result<(), String> {
+    retrieve(ctx, character_id, order_id)
+}
+
+fn retrieve(ctx: &ReducerContext, character_id: u64, order_id: u64) -> Result<(), String> {
     let order = ctx
         .db
         .repair_order()
@@ -468,6 +478,7 @@ pub fn retrieve_repaired_item(
     if now < order.ready_at_minutes {
         return Err("Repair is not complete yet".into());
     }
+    crate::strategic::consume_personal_gold(ctx, character_id, u64::from(order.quoted_cost))?;
     let mut inventory = ctx
         .db
         .inventory_item()
@@ -499,6 +510,71 @@ pub fn retrieve_repaired_item(
     ctx.db.inventory_item().id().update(inventory);
     ctx.db.repair_order().id().delete(order_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(())
+}
+
+#[reducer]
+pub fn retrieve_repaired_items(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    armourer: bool,
+    item_id: Option<String>,
+    limit: u32,
+) -> Result<(), String> {
+    if limit == 0 {
+        return Err("Retrieve count must be positive".into());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map(|value| value.minutes)
+        .unwrap_or(0);
+    let mut ids: Vec<_> = ctx
+        .db
+        .repair_order()
+        .owner_id()
+        .filter(character_id)
+        .filter(|order| {
+            order.settlement_id == settlement_id
+                && order.ready_at_minutes <= now
+                && item_id
+                    .as_ref()
+                    .is_none_or(|item_id| item_id == &order.item_id)
+                && ctx.db.item().id().find(&order.item_id).is_some_and(|item| {
+                    if armourer {
+                        item.kind == ItemKind::Armor
+                    } else {
+                        matches!(item.kind, ItemKind::Weapon | ItemKind::Shield)
+                    }
+                })
+        })
+        .map(|order| (order.submitted_at_minutes, order.id, order.quoted_cost))
+        .collect();
+    ids.sort_unstable();
+    ids.truncate(limit as usize);
+    if ids.is_empty() {
+        return Err("No completed matching repairs are ready to retrieve".into());
+    }
+    let available_gold: u64 = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, &"gold_coin".to_string()))
+        .map(|stack| u64::from(stack.quantity))
+        .sum();
+    let affordable = adventuresim_core::durability::affordable_repair_prefix(
+        available_gold,
+        &ids.iter().map(|(_, _, cost)| *cost).collect::<Vec<_>>(),
+    );
+    if affordable == 0 {
+        return Err("Not enough personal gold to retrieve the next completed repair".into());
+    }
+    for (_, order_id, _) in ids.into_iter().take(affordable) {
+        retrieve(ctx, character_id, order_id)?;
+    }
     Ok(())
 }
 

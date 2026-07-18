@@ -503,8 +503,8 @@ impl LiveRunner {
         Ok(())
     }
 
-    /// NPCs use the same custody/rest/retrieval reducers as players. Completed
-    /// work is always collected before another quest, so an order cannot be stranded.
+    /// NPCs use the same custody/rest/retrieval reducers and stable quotes as
+    /// players, reserving current personal gold before entrusting work.
     fn maintain_equipment(&mut self, agent: u32) -> Result<(), String> {
         let character_id = self.character_ids[agent as usize];
         let character = self
@@ -525,6 +525,14 @@ impl LiveRunner {
             .find(|row| row.character_id == character_id)
             .ok_or("missing maintenance clock")?
             .minutes;
+        let mut repair_budget: u64 = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .map(|row| u64::from(row.quantity))
+            .sum();
 
         let mut orders: Vec<_> = self
             .connection
@@ -533,6 +541,17 @@ impl LiveRunner {
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.settlement_id == settlement)
             .collect();
+        repair_budget = adventuresim_core::durability::repair_budget_after_reservations(
+            repair_budget,
+            &self
+                .connection
+                .db
+                .repair_order()
+                .iter()
+                .filter(|order| order.owner_character_id == character_id)
+                .map(|order| order.quoted_cost)
+                .collect::<Vec<_>>(),
+        );
         if orders.is_empty() {
             let smith = self
                 .connection
@@ -582,8 +601,15 @@ impl LiveRunner {
                 let total: f32 = bins.iter().sum();
                 let red: f32 = bins[2..].iter().sum();
                 let repairable: f32 = bins.iter().take(skill as usize).sum();
+                let quote = adventuresim_core::durability::repair_quote(
+                    definition.base_value.unwrap_or(1),
+                    repairable,
+                );
                 // Mild yellow wear is handled automatically by ordinary rest.
-                if repairable > f32::EPSILON && (red >= 0.02 || total >= 0.35) {
+                if repairable > f32::EPSILON
+                    && (red >= 0.02 || total >= 0.35)
+                    && u64::from(quote) <= repair_budget
+                {
                     let result = reducer_call!(self, "submit_item_for_repair", |cb| self
                         .connection
                         .reducers
@@ -595,11 +621,12 @@ impl LiveRunner {
                         ));
                     self.call(result)?;
                     self.metrics.repair_submissions += 1;
+                    repair_budget -= u64::from(quote);
                     self.event(
                         agent,
                         CoreLoopEventKind::SubmitRepair,
                         format!(
-                            "item={};condition={:.3};smith={skill}",
+                            "item={};condition={:.3};smith={skill};quote={quote}",
                             owned.item_id,
                             1.0 - total
                         ),
@@ -619,7 +646,31 @@ impl LiveRunner {
         if orders.is_empty() {
             return Ok(());
         }
-        let ready_at = orders
+        orders.sort_by_key(|order| (order.ready_at_minutes, order.id));
+        let mut retrieval_budget: u64 = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .map(|row| u64::from(row.quantity))
+            .sum();
+        let affordable: Vec<_> = orders
+            .into_iter()
+            .filter(|order| {
+                let cost = u64::from(order.quoted_cost);
+                if cost <= retrieval_budget {
+                    retrieval_budget -= cost;
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect();
+        if affordable.is_empty() {
+            return Ok(());
+        }
+        let ready_at = affordable
             .iter()
             .map(|order| order.ready_at_minutes)
             .max()
@@ -635,10 +686,10 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::WaitForRepair,
-                format!("minutes={wait};orders={}", orders.len()),
+                format!("minutes={wait};orders={}", affordable.len()),
             );
         }
-        for order in orders {
+        for order in affordable {
             let result = reducer_call!(self, "retrieve_repaired_item", |cb| self
                 .connection
                 .reducers
@@ -648,7 +699,10 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::RetrieveRepair,
-                format!("item={};order={}", order.item_id, order.id),
+                format!(
+                    "item={};order={};cost={}",
+                    order.item_id, order.id, order.quoted_cost
+                ),
             );
         }
         Ok(())

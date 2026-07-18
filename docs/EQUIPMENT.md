@@ -69,7 +69,11 @@ one piece, preserving equipped references; pooled party equipment is migrated th
 Rest resolves health first, then automatic field maintenance, then scheduled downtime. Settlement
 rest recommendations also include unfinished local smith orders. Smiths have independently seeded
 Weaponsmith and Armourer ratings of 3--5. Repair orders escrow the exact item instance, have an ETA,
-retain damage beyond the smith's skill, and never expire.
+retain damage beyond the smith's skill, and never expire. A job's stable quote is
+`ceil(base_value * repairable_damage)`, with a minimum of one gold; only bins within that smith's
+skill contribute. The quote is charged atomically from personal gold when the repaired item is
+retrieved. Bulk collection is deterministic: orders are considered by submission time and ID, and
+the affordable prefix is retrieved without skipping an earlier unaffordable job.
 
 Impact damage uses each item's explicit yield, fracture, wear, and failure-share values. Ductile
 armor yields and dents readily but resists catastrophic fracture; stiff weapons resist ordinary

@@ -3342,7 +3342,7 @@ pub fn deposit_party_inventory_item(
     Ok(())
 }
 
-fn consume_personal_gold(
+pub(crate) fn consume_personal_gold(
     ctx: &ReducerContext,
     character_id: u64,
     mut amount: u64,

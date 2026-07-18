@@ -141,6 +141,10 @@ pub fn routes() -> Router<AppState> {
             "/settlements/{id}/{shop}/repairs/{order_id}/retrieve",
             post(retrieve_repair),
         )
+        .route(
+            "/settlements/{id}/{shop}/repairs/retrieve",
+            post(retrieve_repairs),
+        )
         .route("/settlements/{id}/clothing", get(clothing))
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
@@ -209,6 +213,38 @@ async fn retrieve_repair(
             .call(
                 "retrieve_repaired_item",
                 &[json!(character.id), json!(order_id)],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{id}/{shop}"))
+}
+
+#[derive(Deserialize)]
+struct RetrieveRepairsForm {
+    item_id: Option<String>,
+    limit: u32,
+}
+
+async fn retrieve_repairs(
+    State(state): State<AppState>,
+    Path((id, shop)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<RetrieveRepairsForm>,
+) -> Redirect {
+    if matches!(shop.as_str(), "weapons" | "armor")
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    {
+        let _ = state
+            .db
+            .call(
+                "retrieve_repaired_items",
+                &[
+                    json!(character.id),
+                    json!(id),
+                    json!(shop == "armor"),
+                    json!(form.item_id),
+                    json!(form.limit),
+                ],
             )
             .await;
     }

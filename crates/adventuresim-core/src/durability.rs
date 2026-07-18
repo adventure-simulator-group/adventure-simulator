@@ -29,6 +29,36 @@ pub fn legacy_durable_row_is_invalid(quantity: u32) -> bool {
     quantity == 0
 }
 
+/// Stable workshop quote for the complete portion of a job this smith can do.
+pub fn repair_quote(base_value: u32, repairable_damage: f32) -> u32 {
+    if !repairable_damage.is_finite() || repairable_damage <= f32::EPSILON {
+        return 0;
+    }
+    ((base_value.max(1) as f32 * repairable_damage.clamp(0.0, 1.0)).ceil() as u32).max(1)
+}
+
+/// Number of deterministically ordered completed jobs affordable from the
+/// current purse without skipping an unaffordable earlier job.
+pub fn affordable_repair_prefix(available_gold: u64, ordered_costs: &[u32]) -> usize {
+    let mut remaining = available_gold;
+    ordered_costs
+        .iter()
+        .take_while(|cost| {
+            let cost = u64::from(**cost);
+            if cost > remaining {
+                false
+            } else {
+                remaining -= cost;
+                true
+            }
+        })
+        .count()
+}
+
+pub fn repair_budget_after_reservations(available_gold: u64, outstanding_costs: &[u32]) -> u64 {
+    available_gold.saturating_sub(outstanding_costs.iter().map(|cost| u64::from(*cost)).sum())
+}
+
 pub fn bounded_durable_change(by_quantity: i32) -> Result<(u32, u32), &'static str> {
     let amount = by_quantity.unsigned_abs();
     if amount > MAX_DURABLE_QUANTITY_CHANGE {
@@ -273,6 +303,27 @@ mod tests {
     fn zero_quantity_legacy_durable_rows_are_invalid() {
         assert!(legacy_durable_row_is_invalid(0));
         assert!(!legacy_durable_row_is_invalid(1));
+    }
+
+    #[test]
+    fn repair_quote_scales_with_value_and_repairable_job_share() {
+        assert_eq!(repair_quote(100, 0.25), 25);
+        assert_eq!(repair_quote(3, 0.01), 1);
+        assert_eq!(repair_quote(100, 0.0), 0);
+        assert_eq!(repair_quote(100, f32::NAN), 0);
+    }
+
+    #[test]
+    fn bulk_retrieval_uses_an_affordable_ordered_prefix() {
+        assert_eq!(affordable_repair_prefix(10, &[4, 6, 1]), 2);
+        assert_eq!(affordable_repair_prefix(5, &[6, 1]), 0);
+        assert_eq!(affordable_repair_prefix(7, &[3, 5, 1]), 1);
+    }
+
+    #[test]
+    fn npc_budget_reserves_every_outstanding_quote() {
+        assert_eq!(repair_budget_after_reservations(30, &[5, 7, 3]), 15);
+        assert_eq!(repair_budget_after_reservations(10, &[8, 9]), 0);
     }
 
     #[test]

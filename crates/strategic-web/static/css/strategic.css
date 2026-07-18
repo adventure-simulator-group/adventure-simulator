@@ -352,11 +352,56 @@
 .condition-green { background: #4c9b55; }
 .condition-yellow { background: #d5a936; }
 .condition-red { background: #9f3e3e; }
-.condition-number { font-size: var(--font-size-xs); color: var(--text-muted); white-space: nowrap; }
-.row-repair-form { display: inline-block; margin-inline-start: 0.25rem; }
-.disabled-repair-explanation { display: inline-block; cursor: help; }
+.condition-repairable {
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / 72%) 3px 4px);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 58%);
+  animation: repairable-damage-pulse 1.2s ease-in-out infinite;
+}
+@keyframes repairable-damage-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { background: #fff; filter: brightness(1.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .condition-repairable { animation: none; }
+}
+.inventory-durability { min-width: 5.6rem; text-align: center; }
+.inventory-column-durability { min-width: 5.8rem; }
+.row-repair-form {
+  display: block;
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.disabled-repair-explanation {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: help;
+}
+.repair-item-button {
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0.1rem;
+  border: 0;
+  background: transparent;
+}
+.repair-all-button {
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0.15rem;
+  border: 0;
+  background: transparent;
+}
 .repair-item-button:disabled { cursor: not-allowed; opacity: 0.42; }
-.repair-all-form { padding: 0.35rem var(--padding); border-bottom: 1px solid var(--border-light); }
+.repair-action-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+  -webkit-mask: url('/static/icons/character/repair.png') center / contain no-repeat;
+  mask: url('/static/icons/character/repair.png') center / contain no-repeat;
+}
+.durability-header-label { display: block; }
+.repair-all-form { display: inline-block; }
 
 .smith-wares-column {
   display: flex;
@@ -369,7 +414,39 @@
   display: flex;
   flex-direction: column;
 }
-.smith-wares-scroll { min-height: 0; overflow-y: auto; }
+.smith-wares-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.smith-wares-scroll .trade-inventory-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.smith-wares-scroll .trade-inventory-table col.inventory-column-item { width: auto; }
+.smith-wares-scroll .trade-inventory-table col.inventory-column-count { width: 1.6rem; }
+.smith-wares-scroll .trade-inventory-table col.inventory-column-weight { width: 1.9rem; }
+.smith-wares-scroll .trade-inventory-table col.inventory-column-gold { width: 1.65rem; }
+.smith-wares-scroll .trade-inventory-table .inventory-column-count,
+.smith-wares-scroll .trade-inventory-table .inventory-column-weight,
+.smith-wares-scroll .trade-inventory-table .inventory-column-gold,
+.smith-wares-scroll .trade-inventory-table .inventory-count,
+.smith-wares-scroll .trade-inventory-table .inventory-weight,
+.smith-wares-scroll .trade-inventory-table .inventory-gold {
+  min-width: 0;
+  padding-inline: 0.08rem;
+}
+.smith-wares-scroll .trade-inventory-table .inventory-item-name {
+  min-width: 0;
+  padding-left: 0.35rem;
+}
+.smith-wares-scroll .trade-inventory-table .inventory-item-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .repair-custody-panel {
   flex: 0 1 50%;
   max-height: 50%;
@@ -380,16 +457,32 @@
   display: flex;
   flex-direction: column;
 }
+.repair-custody-header { position: relative; display: flex; align-items: center; justify-content: space-between; }
 .repair-custody-panel h3 { margin: 0; padding: 0.55rem var(--padding); font-size: var(--font-size-sm); }
+.repair-retrieve-all-form { display: inline-block; margin-inline-start: 0.35rem; }
+.repair-custody-item-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+.repair-custody-table thead .repair-retrieve-all {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 2rem;
+  height: 1.5rem;
+  opacity: 0.75;
+  transform: none;
+}
 .repair-custody-scroll { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .repair-custody-list { margin-top: auto; }
-.repair-order-row {
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.5rem var(--padding);
-  border-top: 1px solid var(--border-light);
-}
-.repair-order-row form { justify-self: end; }
+.repair-custody-table { table-layout: auto; }
+.repair-column-eta { min-width: 3.6rem; padding-inline: 0.25rem; text-align: center; white-space: nowrap; }
+.repair-order-row form { display: contents; }
+.repair-order-row .trade-transfer:disabled { opacity: 0.25; }
 
 .trade-inventory-table th {
   height: 1.8rem;
@@ -419,6 +512,49 @@
 }
 
 .inventory-column-item { width: 100%; }
+
+/* Six smith-inventory columns must fit the 20vw rail at normal desktop widths. */
+.smith-player-inventory-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.smith-player-inventory-table col.inventory-column-count { width: 1.6rem; }
+.smith-player-inventory-table col.inventory-column-equipped { width: 1.35rem; }
+.smith-player-inventory-table col.inventory-column-durability { width: 3.65rem; }
+.smith-player-inventory-table col.inventory-column-weight { width: 1.9rem; }
+.smith-player-inventory-table col.inventory-column-gold { width: 1.65rem; }
+.smith-player-inventory-table .inventory-column-count,
+.smith-player-inventory-table .inventory-column-equipped,
+.smith-player-inventory-table .inventory-column-durability,
+.smith-player-inventory-table .inventory-column-weight,
+.smith-player-inventory-table .inventory-column-gold,
+.smith-player-inventory-table .inventory-count,
+.smith-player-inventory-table .inventory-equipped,
+.smith-player-inventory-table .inventory-durability,
+.smith-player-inventory-table .inventory-weight,
+.smith-player-inventory-table .inventory-gold {
+  min-width: 0;
+  padding-inline: 0.08rem;
+}
+.smith-player-inventory-table th.inventory-column-durability {
+  font-size: 0.55rem;
+  letter-spacing: -0.035em;
+}
+.smith-player-inventory-table .inventory-durability .condition-bar {
+  width: 3.15rem;
+  margin-inline: 0;
+}
+.smith-player-inventory-table .inventory-item-name {
+  min-width: 0;
+  padding-left: 0.35rem;
+}
+.smith-player-inventory-table .inventory-item-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .inventory-column-count,
 .inventory-column-equipped,

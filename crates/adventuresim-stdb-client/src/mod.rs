@@ -261,6 +261,7 @@ pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod retrieve_repaired_item_reducer;
+pub mod retrieve_repaired_items_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
@@ -627,6 +628,7 @@ pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
+pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
@@ -1044,6 +1046,13 @@ pub enum Reducer {
         character_id: u64,
         order_id: u64,
     },
+    RetrieveRepairedItems {
+        character_id: u64,
+        settlement_id: String,
+        armourer: bool,
+        item_id: Option<String>,
+        limit: u32,
+    },
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
@@ -1236,6 +1245,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
+            Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
@@ -1797,6 +1807,19 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&retrieve_repaired_item_reducer::RetrieveRepairedItemArgs {
                 character_id: character_id.clone(),
                 order_id: order_id.clone(),
+}),
+            Reducer::RetrieveRepairedItems{
+                character_id,
+                settlement_id,
+                armourer,
+                item_id,
+                limit,
+}             => __sats::bsatn::to_vec(&retrieve_repaired_items_reducer::RetrieveRepairedItemsArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                armourer: armourer.clone(),
+                item_id: item_id.clone(),
+                limit: limit.clone(),
 }),
             Reducer::SaveRecruitmentRole{
                 owner_id,

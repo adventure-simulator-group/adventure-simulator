@@ -354,7 +354,8 @@ document.addEventListener("click", (event) => {
     sells.set(id, currentDraft + amount);
     (strategicTradeUi.state.merchantSaleDetails ||= new Map()).set(id, { itemId: merchantSell.dataset.itemName, price: Number(merchantSell.dataset.merchantSellPrice) });
     changeTradeDraftCount(sourceRow, -amount);
-    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
+    const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
+    if (stockRow) changeTradeDraftCount(stockRow, amount);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;

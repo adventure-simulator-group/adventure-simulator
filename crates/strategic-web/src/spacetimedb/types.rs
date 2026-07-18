@@ -571,6 +571,7 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    pub quoted_cost: u32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]

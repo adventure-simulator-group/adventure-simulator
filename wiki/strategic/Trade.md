@@ -26,7 +26,13 @@ Weaponsmith and Armourer storefronts also accept individual equipment instances 
 separate actions that never enter the sale draft. A smith repairs only condition bins at or below
 their independently seeded skill (minimum 3), but may accept an item with additional harder damage
 and leave that residual condition untouched. Custody and the quoted ETA persist across travel and
-have no collection deadline.
+have no collection deadline. The smith quotes the full job when accepting it: the item's base value
+multiplied by the share of damage that smith can repair, rounded up to at least one gold. The quote
+is stable while the item is in custody and is paid from personal gold when completed work is
+retrieved. The custody table shows durability, ETA, and this full-job cost. A row's one-arrow action
+retrieves that exact quoted order; its two- and three-arrow actions retrieve the affordable ordered
+prefix of matching ready work. The header does the same across all ready work in that shop, stopping
+before the first order the character cannot afford rather than failing already-affordable retrievals.
 Removing a staged purchase before offering it simply cancels that purchase;
 it does not create a sale or apply a merchant fee.
 The confirmation popup appears in the center of the view only while an
