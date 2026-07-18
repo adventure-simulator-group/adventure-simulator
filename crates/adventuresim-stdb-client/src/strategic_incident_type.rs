@@ -19,3 +19,54 @@ pub struct StrategicIncident {
 impl __sdk::InModule for StrategicIncident {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `StrategicIncident`.
+///
+/// Provides typed access to columns for query building.
+pub struct StrategicIncidentCols {
+    pub quest_id: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub party_id: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub settlement_id: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub instigator_id: __sdk::__query_builder::Col<StrategicIncident, u64>,
+    pub previous_active_quest_id: __sdk::__query_builder::Col<StrategicIncident, Option<String>>,
+    pub kind: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub status: __sdk::__query_builder::Col<StrategicIncident, String>,
+}
+
+impl __sdk::__query_builder::HasCols for StrategicIncident {
+    type Cols = StrategicIncidentCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        StrategicIncidentCols {
+            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            instigator_id: __sdk::__query_builder::Col::new(table_name, "instigator_id"),
+            previous_active_quest_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "previous_active_quest_id",
+            ),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            status: __sdk::__query_builder::Col::new(table_name, "status"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `StrategicIncident`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct StrategicIncidentIxCols {
+    pub party_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
+    pub quest_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for StrategicIncident {
+    type IxCols = StrategicIncidentIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        StrategicIncidentIxCols {
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for StrategicIncident {}

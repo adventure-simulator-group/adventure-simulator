@@ -24,8 +24,6 @@ impl __sdk::InModule for TurnInQuestArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct TurnInQuestCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `turn_in_quest`.
 ///
@@ -35,82 +33,49 @@ pub trait turn_in_quest {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_turn_in_quest`] callbacks.
-    fn turn_in_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `turn_in_quest`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`turn_in_quest:turn_in_quest_then`] to run a callback after the reducer completes.
+    fn turn_in_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
+        self.turn_in_quest_then(character_id, quest_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `turn_in_quest` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`TurnInQuestCallbackId`] can be passed to [`Self::remove_on_turn_in_quest`]
-    /// to cancel the callback.
-    fn on_turn_in_quest(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn turn_in_quest_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> TurnInQuestCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_turn_in_quest`],
-    /// causing it not to run in the future.
-    fn remove_on_turn_in_quest(&self, callback: TurnInQuestCallbackId);
+        character_id: u64,
+        quest_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl turn_in_quest for super::RemoteReducers {
-    fn turn_in_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "turn_in_quest",
+    fn turn_in_quest_then(
+        &self,
+        character_id: u64,
+        quest_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             TurnInQuestArgs {
                 character_id,
                 quest_id,
             },
+            callback,
         )
-    }
-    fn on_turn_in_quest(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> TurnInQuestCallbackId {
-        TurnInQuestCallbackId(self.imp.on_reducer(
-            "turn_in_quest",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::TurnInQuest {
-                                    character_id,
-                                    quest_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, quest_id)
-            }),
-        ))
-    }
-    fn remove_on_turn_in_quest(&self, callback: TurnInQuestCallbackId) {
-        self.imp.remove_on_reducer("turn_in_quest", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `turn_in_quest`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_turn_in_quest {
-    /// Set the call-reducer flags for the reducer `turn_in_quest` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn turn_in_quest(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_turn_in_quest for super::SetReducerFlags {
-    fn turn_in_quest(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("turn_in_quest", flags);
     }
 }

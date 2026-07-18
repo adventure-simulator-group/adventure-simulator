@@ -14,3 +14,39 @@ pub struct TacticalServerRequest {
 impl __sdk::InModule for TacticalServerRequest {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `TacticalServerRequest`.
+///
+/// Provides typed access to columns for query building.
+pub struct TacticalServerRequestCols {
+    pub mission_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
+    pub scene_key: __sdk::__query_builder::Col<TacticalServerRequest, String>,
+}
+
+impl __sdk::__query_builder::HasCols for TacticalServerRequest {
+    type Cols = TacticalServerRequestCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        TacticalServerRequestCols {
+            mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
+            scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `TacticalServerRequest`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct TacticalServerRequestIxCols {
+    pub mission_id: __sdk::__query_builder::IxCol<TacticalServerRequest, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for TacticalServerRequest {
+    type IxCols = TacticalServerRequestIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        TacticalServerRequestIxCols {
+            mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for TacticalServerRequest {}

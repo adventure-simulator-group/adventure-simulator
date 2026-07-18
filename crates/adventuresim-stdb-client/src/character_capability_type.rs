@@ -31,3 +31,76 @@ pub struct CharacterCapability {
 impl __sdk::InModule for CharacterCapability {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterCapability`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterCapabilityCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterCapability, u64>,
+    pub melee: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub ranged: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub precise: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub heavy: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub quarter_armor: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub half_armor: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub three_quarter_armor: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub full_armor: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub blunt: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub slash: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub pierce: __sdk::__query_builder::Col<CharacterCapability, bool>,
+    pub athletics: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub endurance: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub medicine: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub surgery: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub charisma: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub faith: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub weapon_precision: __sdk::__query_builder::Col<CharacterCapability, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterCapability {
+    type Cols = CharacterCapabilityCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterCapabilityCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            melee: __sdk::__query_builder::Col::new(table_name, "melee"),
+            ranged: __sdk::__query_builder::Col::new(table_name, "ranged"),
+            precise: __sdk::__query_builder::Col::new(table_name, "precise"),
+            heavy: __sdk::__query_builder::Col::new(table_name, "heavy"),
+            quarter_armor: __sdk::__query_builder::Col::new(table_name, "quarter_armor"),
+            half_armor: __sdk::__query_builder::Col::new(table_name, "half_armor"),
+            three_quarter_armor: __sdk::__query_builder::Col::new(
+                table_name,
+                "three_quarter_armor",
+            ),
+            full_armor: __sdk::__query_builder::Col::new(table_name, "full_armor"),
+            blunt: __sdk::__query_builder::Col::new(table_name, "blunt"),
+            slash: __sdk::__query_builder::Col::new(table_name, "slash"),
+            pierce: __sdk::__query_builder::Col::new(table_name, "pierce"),
+            athletics: __sdk::__query_builder::Col::new(table_name, "athletics"),
+            endurance: __sdk::__query_builder::Col::new(table_name, "endurance"),
+            medicine: __sdk::__query_builder::Col::new(table_name, "medicine"),
+            surgery: __sdk::__query_builder::Col::new(table_name, "surgery"),
+            charisma: __sdk::__query_builder::Col::new(table_name, "charisma"),
+            faith: __sdk::__query_builder::Col::new(table_name, "faith"),
+            weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterCapability`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterCapabilityIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterCapability, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterCapability {
+    type IxCols = CharacterCapabilityIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterCapabilityIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterCapability {}

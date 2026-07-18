@@ -20,3 +20,49 @@ pub struct PartyRecruitmentRole {
 impl __sdk::InModule for PartyRecruitmentRole {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyRecruitmentRole`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyRecruitmentRoleCols {
+    pub id: __sdk::__query_builder::Col<PartyRecruitmentRole, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyRecruitmentRole, String>,
+    pub name: __sdk::__query_builder::Col<PartyRecruitmentRole, String>,
+    pub requirements: __sdk::__query_builder::Col<PartyRecruitmentRole, RecruitmentRequirements>,
+    pub quantity: __sdk::__query_builder::Col<PartyRecruitmentRole, u32>,
+    pub weapon_precision: __sdk::__query_builder::Col<PartyRecruitmentRole, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyRecruitmentRole {
+    type Cols = PartyRecruitmentRoleCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyRecruitmentRoleCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
+            quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
+            weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyRecruitmentRole`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyRecruitmentRoleIxCols {
+    pub id: __sdk::__query_builder::IxCol<PartyRecruitmentRole, u64>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyRecruitmentRole, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyRecruitmentRole {
+    type IxCols = PartyRecruitmentRoleIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyRecruitmentRoleIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyRecruitmentRole {}

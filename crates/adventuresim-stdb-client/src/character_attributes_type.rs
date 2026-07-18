@@ -29,3 +29,69 @@ pub struct CharacterAttributes {
 impl __sdk::InModule for CharacterAttributes {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterAttributes`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterAttributesCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterAttributes, u64>,
+    pub endurance: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub immunity: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub gut: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub precision: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub intelligence: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub instinct: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub eyesight: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub hearing: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub left_arm_strength: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub right_arm_strength: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub left_leg_strength: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub right_leg_strength: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub left_arm_agility: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub right_arm_agility: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub left_leg_agility: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+    pub right_leg_agility: __sdk::__query_builder::Col<CharacterAttributes, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterAttributes {
+    type Cols = CharacterAttributesCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterAttributesCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            endurance: __sdk::__query_builder::Col::new(table_name, "endurance"),
+            immunity: __sdk::__query_builder::Col::new(table_name, "immunity"),
+            gut: __sdk::__query_builder::Col::new(table_name, "gut"),
+            precision: __sdk::__query_builder::Col::new(table_name, "precision"),
+            intelligence: __sdk::__query_builder::Col::new(table_name, "intelligence"),
+            instinct: __sdk::__query_builder::Col::new(table_name, "instinct"),
+            eyesight: __sdk::__query_builder::Col::new(table_name, "eyesight"),
+            hearing: __sdk::__query_builder::Col::new(table_name, "hearing"),
+            left_arm_strength: __sdk::__query_builder::Col::new(table_name, "left_arm_strength"),
+            right_arm_strength: __sdk::__query_builder::Col::new(table_name, "right_arm_strength"),
+            left_leg_strength: __sdk::__query_builder::Col::new(table_name, "left_leg_strength"),
+            right_leg_strength: __sdk::__query_builder::Col::new(table_name, "right_leg_strength"),
+            left_arm_agility: __sdk::__query_builder::Col::new(table_name, "left_arm_agility"),
+            right_arm_agility: __sdk::__query_builder::Col::new(table_name, "right_arm_agility"),
+            left_leg_agility: __sdk::__query_builder::Col::new(table_name, "left_leg_agility"),
+            right_leg_agility: __sdk::__query_builder::Col::new(table_name, "right_leg_agility"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterAttributes`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterAttributesIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterAttributes, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterAttributes {
+    type IxCols = CharacterAttributesIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterAttributesIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterAttributes {}

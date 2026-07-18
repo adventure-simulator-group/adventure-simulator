@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-#[table(name = character_capability, public)]
+#[table(accessor = character_capability, public)]
 pub struct CharacterCapability {
     #[primary_key]
     pub character_id: u64,

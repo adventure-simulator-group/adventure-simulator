@@ -18,8 +18,6 @@ impl __sdk::InModule for CalibrateWeaponPrecisionArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct CalibrateWeaponPrecisionCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `calibrate_weapon_precision`.
 ///
@@ -29,77 +27,40 @@ pub trait calibrate_weapon_precision {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_calibrate_weapon_precision`] callbacks.
-    fn calibrate_weapon_precision(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `calibrate_weapon_precision`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`calibrate_weapon_precision:calibrate_weapon_precision_then`] to run a callback after the reducer completes.
+    fn calibrate_weapon_precision(&self) -> __sdk::Result<()> {
+        self.calibrate_weapon_precision_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `calibrate_weapon_precision` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`CalibrateWeaponPrecisionCallbackId`] can be passed to [`Self::remove_on_calibrate_weapon_precision`]
-    /// to cancel the callback.
-    fn on_calibrate_weapon_precision(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn calibrate_weapon_precision_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> CalibrateWeaponPrecisionCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_calibrate_weapon_precision`],
-    /// causing it not to run in the future.
-    fn remove_on_calibrate_weapon_precision(&self, callback: CalibrateWeaponPrecisionCallbackId);
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl calibrate_weapon_precision for super::RemoteReducers {
-    fn calibrate_weapon_precision(&self) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "calibrate_weapon_precision",
-            CalibrateWeaponPrecisionArgs {},
-        )
-    }
-    fn on_calibrate_weapon_precision(
+    fn calibrate_weapon_precision_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> CalibrateWeaponPrecisionCallbackId {
-        CalibrateWeaponPrecisionCallbackId(self.imp.on_reducer(
-            "calibrate_weapon_precision",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::CalibrateWeaponPrecision {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_calibrate_weapon_precision(&self, callback: CalibrateWeaponPrecisionCallbackId) {
-        self.imp
-            .remove_on_reducer("calibrate_weapon_precision", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `calibrate_weapon_precision`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_calibrate_weapon_precision {
-    /// Set the call-reducer flags for the reducer `calibrate_weapon_precision` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn calibrate_weapon_precision(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_calibrate_weapon_precision for super::SetReducerFlags {
-    fn calibrate_weapon_precision(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("calibrate_weapon_precision", flags);
+            .invoke_reducer_with_callback(CalibrateWeaponPrecisionArgs {}, callback)
     }
 }

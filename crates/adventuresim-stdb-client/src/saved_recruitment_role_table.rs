@@ -81,11 +81,6 @@ impl<'ctx> __sdk::Table for SavedRecruitmentRoleTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<SavedRecruitmentRole>("saved_recruitment_role");
-    _table.add_unique_constraint::<u64>("id", |row| &row.id);
-}
 pub struct SavedRecruitmentRoleUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SavedRecruitmentRoleTableHandle<'ctx> {
@@ -101,17 +96,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SavedRecruitmentRoleTableHandle<'ctx> 
     fn remove_on_update(&self, callback: SavedRecruitmentRoleUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<SavedRecruitmentRole>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<SavedRecruitmentRole>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `saved_recruitment_role`,
@@ -141,5 +125,38 @@ impl<'ctx> SavedRecruitmentRoleIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<SavedRecruitmentRole> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<SavedRecruitmentRole>("saved_recruitment_role");
+    _table.add_unique_constraint::<u64>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<SavedRecruitmentRole>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<SavedRecruitmentRole>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `SavedRecruitmentRole`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait saved_recruitment_roleQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `SavedRecruitmentRole`.
+    fn saved_recruitment_role(&self) -> __sdk::__query_builder::Table<SavedRecruitmentRole>;
+}
+
+impl saved_recruitment_roleQueryTableAccess for __sdk::QueryTableAccessor {
+    fn saved_recruitment_role(&self) -> __sdk::__query_builder::Table<SavedRecruitmentRole> {
+        __sdk::__query_builder::Table::new("saved_recruitment_role")
     }
 }

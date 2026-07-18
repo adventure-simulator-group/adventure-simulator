@@ -22,3 +22,57 @@ pub struct ReligiousDemand {
 impl __sdk::InModule for ReligiousDemand {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ReligiousDemand`.
+///
+/// Provides typed access to columns for query building.
+pub struct ReligiousDemandCols {
+    pub id: __sdk::__query_builder::Col<ReligiousDemand, u64>,
+    pub character_id: __sdk::__query_builder::Col<ReligiousDemand, u64>,
+    pub kind: __sdk::__query_builder::Col<ReligiousDemand, String>,
+    pub title: __sdk::__query_builder::Col<ReligiousDemand, String>,
+    pub description: __sdk::__query_builder::Col<ReligiousDemand, String>,
+    pub fervor: __sdk::__query_builder::Col<ReligiousDemand, f32>,
+    pub status: __sdk::__query_builder::Col<ReligiousDemand, String>,
+    pub created_at_minute: __sdk::__query_builder::Col<ReligiousDemand, u64>,
+    pub resolved_at_minute: __sdk::__query_builder::Col<ReligiousDemand, Option<u64>>,
+    pub resolution: __sdk::__query_builder::Col<ReligiousDemand, Option<String>>,
+}
+
+impl __sdk::__query_builder::HasCols for ReligiousDemand {
+    type Cols = ReligiousDemandCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ReligiousDemandCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            title: __sdk::__query_builder::Col::new(table_name, "title"),
+            description: __sdk::__query_builder::Col::new(table_name, "description"),
+            fervor: __sdk::__query_builder::Col::new(table_name, "fervor"),
+            status: __sdk::__query_builder::Col::new(table_name, "status"),
+            created_at_minute: __sdk::__query_builder::Col::new(table_name, "created_at_minute"),
+            resolved_at_minute: __sdk::__query_builder::Col::new(table_name, "resolved_at_minute"),
+            resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ReligiousDemand`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ReligiousDemandIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<ReligiousDemand, u64>,
+    pub id: __sdk::__query_builder::IxCol<ReligiousDemand, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for ReligiousDemand {
+    type IxCols = ReligiousDemandIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ReligiousDemandIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for ReligiousDemand {}

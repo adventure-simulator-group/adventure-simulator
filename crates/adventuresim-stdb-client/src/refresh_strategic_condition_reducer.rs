@@ -22,8 +22,6 @@ impl __sdk::InModule for RefreshStrategicConditionArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct RefreshStrategicConditionCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `refresh_strategic_condition`.
 ///
@@ -33,77 +31,42 @@ pub trait refresh_strategic_condition {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_refresh_strategic_condition`] callbacks.
-    fn refresh_strategic_condition(&self, character_id: u64) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `refresh_strategic_condition`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`refresh_strategic_condition:refresh_strategic_condition_then`] to run a callback after the reducer completes.
+    fn refresh_strategic_condition(&self, character_id: u64) -> __sdk::Result<()> {
+        self.refresh_strategic_condition_then(character_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `refresh_strategic_condition` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`RefreshStrategicConditionCallbackId`] can be passed to [`Self::remove_on_refresh_strategic_condition`]
-    /// to cancel the callback.
-    fn on_refresh_strategic_condition(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn refresh_strategic_condition_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> RefreshStrategicConditionCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_refresh_strategic_condition`],
-    /// causing it not to run in the future.
-    fn remove_on_refresh_strategic_condition(&self, callback: RefreshStrategicConditionCallbackId);
+        character_id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl refresh_strategic_condition for super::RemoteReducers {
-    fn refresh_strategic_condition(&self, character_id: u64) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "refresh_strategic_condition",
-            RefreshStrategicConditionArgs { character_id },
-        )
-    }
-    fn on_refresh_strategic_condition(
+    fn refresh_strategic_condition_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> RefreshStrategicConditionCallbackId {
-        RefreshStrategicConditionCallbackId(self.imp.on_reducer(
-            "refresh_strategic_condition",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::RefreshStrategicCondition { character_id },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id)
-            }),
-        ))
-    }
-    fn remove_on_refresh_strategic_condition(&self, callback: RefreshStrategicConditionCallbackId) {
-        self.imp
-            .remove_on_reducer("refresh_strategic_condition", callback.0)
-    }
-}
+        character_id: u64,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `refresh_strategic_condition`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_refresh_strategic_condition {
-    /// Set the call-reducer flags for the reducer `refresh_strategic_condition` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn refresh_strategic_condition(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_refresh_strategic_condition for super::SetReducerFlags {
-    fn refresh_strategic_condition(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("refresh_strategic_condition", flags);
+            .invoke_reducer_with_callback(RefreshStrategicConditionArgs { character_id }, callback)
     }
 }

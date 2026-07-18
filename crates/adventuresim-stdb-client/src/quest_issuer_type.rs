@@ -15,3 +15,45 @@ pub struct QuestIssuer {
 impl __sdk::InModule for QuestIssuer {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `QuestIssuer`.
+///
+/// Provides typed access to columns for query building.
+pub struct QuestIssuerCols {
+    pub quest_id: __sdk::__query_builder::Col<QuestIssuer, String>,
+    pub settlement_id: __sdk::__query_builder::Col<QuestIssuer, String>,
+    pub service_id: __sdk::__query_builder::Col<QuestIssuer, String>,
+}
+
+impl __sdk::__query_builder::HasCols for QuestIssuer {
+    type Cols = QuestIssuerCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        QuestIssuerCols {
+            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            service_id: __sdk::__query_builder::Col::new(table_name, "service_id"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `QuestIssuer`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct QuestIssuerIxCols {
+    pub quest_id: __sdk::__query_builder::IxCol<QuestIssuer, String>,
+    pub service_id: __sdk::__query_builder::IxCol<QuestIssuer, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<QuestIssuer, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for QuestIssuer {
+    type IxCols = QuestIssuerIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        QuestIssuerIxCols {
+            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+            service_id: __sdk::__query_builder::IxCol::new(table_name, "service_id"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for QuestIssuer {}

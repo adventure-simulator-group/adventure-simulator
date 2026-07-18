@@ -24,3 +24,59 @@ pub struct CharacterStrategicCondition {
 impl __sdk::InModule for CharacterStrategicCondition {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterStrategicCondition`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterStrategicConditionCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterStrategicCondition, u64>,
+    pub morale: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub morale_bonus: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub morale_bonus_cap: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub fervor: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub pain: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub blood_loss: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub fear: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub fatigue: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub incapacitation: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub check_multiplier: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
+    pub status: __sdk::__query_builder::Col<CharacterStrategicCondition, String>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterStrategicCondition {
+    type Cols = CharacterStrategicConditionCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterStrategicConditionCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            morale: __sdk::__query_builder::Col::new(table_name, "morale"),
+            morale_bonus: __sdk::__query_builder::Col::new(table_name, "morale_bonus"),
+            morale_bonus_cap: __sdk::__query_builder::Col::new(table_name, "morale_bonus_cap"),
+            fervor: __sdk::__query_builder::Col::new(table_name, "fervor"),
+            pain: __sdk::__query_builder::Col::new(table_name, "pain"),
+            blood_loss: __sdk::__query_builder::Col::new(table_name, "blood_loss"),
+            fear: __sdk::__query_builder::Col::new(table_name, "fear"),
+            fatigue: __sdk::__query_builder::Col::new(table_name, "fatigue"),
+            incapacitation: __sdk::__query_builder::Col::new(table_name, "incapacitation"),
+            check_multiplier: __sdk::__query_builder::Col::new(table_name, "check_multiplier"),
+            status: __sdk::__query_builder::Col::new(table_name, "status"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterStrategicCondition`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterStrategicConditionIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterStrategicCondition, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterStrategicCondition {
+    type IxCols = CharacterStrategicConditionIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterStrategicConditionIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterStrategicCondition {}

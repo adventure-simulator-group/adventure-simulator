@@ -20,8 +20,6 @@ impl __sdk::InModule for CreateCharacterArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct CreateCharacterCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `create_character`.
 ///
@@ -31,73 +29,42 @@ pub trait create_character {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_create_character`] callbacks.
-    fn create_character(&self, id: u64) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `create_character`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`create_character:create_character_then`] to run a callback after the reducer completes.
+    fn create_character(&self, id: u64) -> __sdk::Result<()> {
+        self.create_character_then(id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `create_character` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`CreateCharacterCallbackId`] can be passed to [`Self::remove_on_create_character`]
-    /// to cancel the callback.
-    fn on_create_character(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn create_character_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> CreateCharacterCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_create_character`],
-    /// causing it not to run in the future.
-    fn remove_on_create_character(&self, callback: CreateCharacterCallbackId);
+        id: u64,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl create_character for super::RemoteReducers {
-    fn create_character(&self, id: u64) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("create_character", CreateCharacterArgs { id })
-    }
-    fn on_create_character(
+    fn create_character_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64) + Send + 'static,
-    ) -> CreateCharacterCallbackId {
-        CreateCharacterCallbackId(self.imp.on_reducer(
-            "create_character",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::CreateCharacter { id },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, id)
-            }),
-        ))
-    }
-    fn remove_on_create_character(&self, callback: CreateCharacterCallbackId) {
-        self.imp.remove_on_reducer("create_character", callback.0)
-    }
-}
+        id: u64,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `create_character`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_create_character {
-    /// Set the call-reducer flags for the reducer `create_character` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn create_character(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_create_character for super::SetReducerFlags {
-    fn create_character(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("create_character", flags);
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(CreateCharacterArgs { id }, callback)
     }
 }

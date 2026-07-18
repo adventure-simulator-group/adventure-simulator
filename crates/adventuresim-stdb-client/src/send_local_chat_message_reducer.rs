@@ -28,8 +28,6 @@ impl __sdk::InModule for SendLocalChatMessageArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SendLocalChatMessageCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `send_local_chat_message`.
 ///
@@ -39,33 +37,8 @@ pub trait send_local_chat_message {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_send_local_chat_message`] callbacks.
-    fn send_local_chat_message(
-        &self,
-        sender_id: u64,
-        subject_kind: String,
-        subject_id: String,
-        body: String,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `send_local_chat_message`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SendLocalChatMessageCallbackId`] can be passed to [`Self::remove_on_send_local_chat_message`]
-    /// to cancel the callback.
-    fn on_send_local_chat_message(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-        + Send
-        + 'static,
-    ) -> SendLocalChatMessageCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_send_local_chat_message`],
-    /// causing it not to run in the future.
-    fn remove_on_send_local_chat_message(&self, callback: SendLocalChatMessageCallbackId);
-}
-
-impl send_local_chat_message for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`send_local_chat_message:send_local_chat_message_then`] to run a callback after the reducer completes.
     fn send_local_chat_message(
         &self,
         sender_id: u64,
@@ -73,70 +46,52 @@ impl send_local_chat_message for super::RemoteReducers {
         subject_id: String,
         body: String,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "send_local_chat_message",
+        self.send_local_chat_message_then(sender_id, subject_kind, subject_id, body, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `send_local_chat_message` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn send_local_chat_message_then(
+        &self,
+        sender_id: u64,
+        subject_kind: String,
+        subject_id: String,
+        body: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl send_local_chat_message for super::RemoteReducers {
+    fn send_local_chat_message_then(
+        &self,
+        sender_id: u64,
+        subject_kind: String,
+        subject_id: String,
+        body: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             SendLocalChatMessageArgs {
                 sender_id,
                 subject_kind,
                 subject_id,
                 body,
             },
+            callback,
         )
-    }
-    fn on_send_local_chat_message(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String, &String, &String)
-        + Send
-        + 'static,
-    ) -> SendLocalChatMessageCallbackId {
-        SendLocalChatMessageCallbackId(self.imp.on_reducer(
-            "send_local_chat_message",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::SendLocalChatMessage {
-                                    sender_id,
-                                    subject_kind,
-                                    subject_id,
-                                    body,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, sender_id, subject_kind, subject_id, body)
-            }),
-        ))
-    }
-    fn remove_on_send_local_chat_message(&self, callback: SendLocalChatMessageCallbackId) {
-        self.imp
-            .remove_on_reducer("send_local_chat_message", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `send_local_chat_message`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_send_local_chat_message {
-    /// Set the call-reducer flags for the reducer `send_local_chat_message` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn send_local_chat_message(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_send_local_chat_message for super::SetReducerFlags {
-    fn send_local_chat_message(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("send_local_chat_message", flags);
     }
 }

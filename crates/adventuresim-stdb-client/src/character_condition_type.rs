@@ -17,3 +17,45 @@ pub struct CharacterCondition {
 impl __sdk::InModule for CharacterCondition {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterCondition`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterConditionCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterCondition, u64>,
+    pub body_weight_kg: __sdk::__query_builder::Col<CharacterCondition, f32>,
+    pub current_blood_ml: __sdk::__query_builder::Col<CharacterCondition, f32>,
+    pub maximum_blood_ml: __sdk::__query_builder::Col<CharacterCondition, f32>,
+    pub religion_id: __sdk::__query_builder::Col<CharacterCondition, Option<String>>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterCondition {
+    type Cols = CharacterConditionCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterConditionCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            body_weight_kg: __sdk::__query_builder::Col::new(table_name, "body_weight_kg"),
+            current_blood_ml: __sdk::__query_builder::Col::new(table_name, "current_blood_ml"),
+            maximum_blood_ml: __sdk::__query_builder::Col::new(table_name, "maximum_blood_ml"),
+            religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterCondition`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterConditionIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterCondition, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterCondition {
+    type IxCols = CharacterConditionIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterConditionIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterCondition {}

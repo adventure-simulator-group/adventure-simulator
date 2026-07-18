@@ -15,3 +15,41 @@ pub struct WorldClock {
 impl __sdk::InModule for WorldClock {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `WorldClock`.
+///
+/// Provides typed access to columns for query building.
+pub struct WorldClockCols {
+    pub id: __sdk::__query_builder::Col<WorldClock, u64>,
+    pub official_minutes: __sdk::__query_builder::Col<WorldClock, u64>,
+    pub epoch_micros: __sdk::__query_builder::Col<WorldClock, i64>,
+}
+
+impl __sdk::__query_builder::HasCols for WorldClock {
+    type Cols = WorldClockCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        WorldClockCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            official_minutes: __sdk::__query_builder::Col::new(table_name, "official_minutes"),
+            epoch_micros: __sdk::__query_builder::Col::new(table_name, "epoch_micros"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `WorldClock`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct WorldClockIxCols {
+    pub id: __sdk::__query_builder::IxCol<WorldClock, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for WorldClock {
+    type IxCols = WorldClockIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        WorldClockIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for WorldClock {}

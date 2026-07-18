@@ -24,8 +24,6 @@ impl __sdk::InModule for DefineClothingArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DefineClothingCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `define_clothing`.
 ///
@@ -35,73 +33,44 @@ pub trait define_clothing {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_define_clothing`] callbacks.
-    fn define_clothing(&self, item_id: String, weight: f32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `define_clothing`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`define_clothing:define_clothing_then`] to run a callback after the reducer completes.
+    fn define_clothing(&self, item_id: String, weight: f32) -> __sdk::Result<()> {
+        self.define_clothing_then(item_id, weight, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `define_clothing` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DefineClothingCallbackId`] can be passed to [`Self::remove_on_define_clothing`]
-    /// to cancel the callback.
-    fn on_define_clothing(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn define_clothing_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32) + Send + 'static,
-    ) -> DefineClothingCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_define_clothing`],
-    /// causing it not to run in the future.
-    fn remove_on_define_clothing(&self, callback: DefineClothingCallbackId);
+        item_id: String,
+        weight: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl define_clothing for super::RemoteReducers {
-    fn define_clothing(&self, item_id: String, weight: f32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("define_clothing", DefineClothingArgs { item_id, weight })
-    }
-    fn on_define_clothing(
+    fn define_clothing_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32) + Send + 'static,
-    ) -> DefineClothingCallbackId {
-        DefineClothingCallbackId(self.imp.on_reducer(
-            "define_clothing",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::DefineClothing { item_id, weight },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, item_id, weight)
-            }),
-        ))
-    }
-    fn remove_on_define_clothing(&self, callback: DefineClothingCallbackId) {
-        self.imp.remove_on_reducer("define_clothing", callback.0)
-    }
-}
+        item_id: String,
+        weight: f32,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `define_clothing`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_define_clothing {
-    /// Set the call-reducer flags for the reducer `define_clothing` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn define_clothing(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_define_clothing for super::SetReducerFlags {
-    fn define_clothing(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("define_clothing", flags);
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(DefineClothingArgs { item_id, weight }, callback)
     }
 }

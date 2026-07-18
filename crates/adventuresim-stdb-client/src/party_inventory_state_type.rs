@@ -14,3 +14,39 @@ pub struct PartyInventoryState {
 impl __sdk::InModule for PartyInventoryState {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyInventoryState`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyInventoryStateCols {
+    pub party_id: __sdk::__query_builder::Col<PartyInventoryState, String>,
+    pub reserve_value: __sdk::__query_builder::Col<PartyInventoryState, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyInventoryState {
+    type Cols = PartyInventoryStateCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyInventoryStateCols {
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            reserve_value: __sdk::__query_builder::Col::new(table_name, "reserve_value"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyInventoryState`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyInventoryStateIxCols {
+    pub party_id: __sdk::__query_builder::IxCol<PartyInventoryState, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyInventoryState {
+    type IxCols = PartyInventoryStateIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyInventoryStateIxCols {
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyInventoryState {}

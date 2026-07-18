@@ -26,8 +26,6 @@ impl __sdk::InModule for DefineShieldArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DefineShieldCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `define_shield`.
 ///
@@ -37,84 +35,52 @@ pub trait define_shield {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_define_shield`] callbacks.
-    fn define_shield(&self, item_id: String, weight: f32, block: f32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `define_shield`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`define_shield:define_shield_then`] to run a callback after the reducer completes.
+    fn define_shield(&self, item_id: String, weight: f32, block: f32) -> __sdk::Result<()> {
+        self.define_shield_then(item_id, weight, block, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `define_shield` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DefineShieldCallbackId`] can be passed to [`Self::remove_on_define_shield`]
-    /// to cancel the callback.
-    fn on_define_shield(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn define_shield_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32) + Send + 'static,
-    ) -> DefineShieldCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_define_shield`],
-    /// causing it not to run in the future.
-    fn remove_on_define_shield(&self, callback: DefineShieldCallbackId);
+        item_id: String,
+        weight: f32,
+        block: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl define_shield for super::RemoteReducers {
-    fn define_shield(&self, item_id: String, weight: f32, block: f32) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "define_shield",
+    fn define_shield_then(
+        &self,
+        item_id: String,
+        weight: f32,
+        block: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             DefineShieldArgs {
                 item_id,
                 weight,
                 block,
             },
+            callback,
         )
-    }
-    fn on_define_shield(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &f32, &f32) + Send + 'static,
-    ) -> DefineShieldCallbackId {
-        DefineShieldCallbackId(self.imp.on_reducer(
-            "define_shield",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::DefineShield {
-                                    item_id,
-                                    weight,
-                                    block,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, item_id, weight, block)
-            }),
-        ))
-    }
-    fn remove_on_define_shield(&self, callback: DefineShieldCallbackId) {
-        self.imp.remove_on_reducer("define_shield", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `define_shield`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_define_shield {
-    /// Set the call-reducer flags for the reducer `define_shield` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn define_shield(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_define_shield for super::SetReducerFlags {
-    fn define_shield(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("define_shield", flags);
     }
 }

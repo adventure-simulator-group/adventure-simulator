@@ -80,11 +80,6 @@ impl<'ctx> __sdk::Table for PartyInventoryItemTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PartyInventoryItem>("party_inventory_item");
-    _table.add_unique_constraint::<u64>("id", |row| &row.id);
-}
 pub struct PartyInventoryItemUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PartyInventoryItemTableHandle<'ctx> {
@@ -100,17 +95,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PartyInventoryItemTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PartyInventoryItemUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PartyInventoryItem>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PartyInventoryItem>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `party_inventory_item`,
@@ -140,5 +124,38 @@ impl<'ctx> PartyInventoryItemIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<PartyInventoryItem> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PartyInventoryItem>("party_inventory_item");
+    _table.add_unique_constraint::<u64>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<PartyInventoryItem>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PartyInventoryItem>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PartyInventoryItem`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait party_inventory_itemQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PartyInventoryItem`.
+    fn party_inventory_item(&self) -> __sdk::__query_builder::Table<PartyInventoryItem>;
+}
+
+impl party_inventory_itemQueryTableAccess for __sdk::QueryTableAccessor {
+    fn party_inventory_item(&self) -> __sdk::__query_builder::Table<PartyInventoryItem> {
+        __sdk::__query_builder::Table::new("party_inventory_item")
     }
 }

@@ -26,8 +26,6 @@ impl __sdk::InModule for RestAtSettlementArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct RestAtSettlementCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `rest_at_settlement`.
 ///
@@ -37,94 +35,57 @@ pub trait rest_at_settlement {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_rest_at_settlement`] callbacks.
-    fn rest_at_settlement(
-        &self,
-        character_id: u64,
-        requested_days: u16,
-        at_inn: bool,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `rest_at_settlement`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`RestAtSettlementCallbackId`] can be passed to [`Self::remove_on_rest_at_settlement`]
-    /// to cancel the callback.
-    fn on_rest_at_settlement(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u16, &bool) + Send + 'static,
-    ) -> RestAtSettlementCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_rest_at_settlement`],
-    /// causing it not to run in the future.
-    fn remove_on_rest_at_settlement(&self, callback: RestAtSettlementCallbackId);
-}
-
-impl rest_at_settlement for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`rest_at_settlement:rest_at_settlement_then`] to run a callback after the reducer completes.
     fn rest_at_settlement(
         &self,
         character_id: u64,
         requested_days: u16,
         at_inn: bool,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "rest_at_settlement",
+        self.rest_at_settlement_then(character_id, requested_days, at_inn, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `rest_at_settlement` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn rest_at_settlement_then(
+        &self,
+        character_id: u64,
+        requested_days: u16,
+        at_inn: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl rest_at_settlement for super::RemoteReducers {
+    fn rest_at_settlement_then(
+        &self,
+        character_id: u64,
+        requested_days: u16,
+        at_inn: bool,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             RestAtSettlementArgs {
                 character_id,
                 requested_days,
                 at_inn,
             },
+            callback,
         )
-    }
-    fn on_rest_at_settlement(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u16, &bool) + Send + 'static,
-    ) -> RestAtSettlementCallbackId {
-        RestAtSettlementCallbackId(self.imp.on_reducer(
-            "rest_at_settlement",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::RestAtSettlement {
-                                    character_id,
-                                    requested_days,
-                                    at_inn,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, requested_days, at_inn)
-            }),
-        ))
-    }
-    fn remove_on_rest_at_settlement(&self, callback: RestAtSettlementCallbackId) {
-        self.imp.remove_on_reducer("rest_at_settlement", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `rest_at_settlement`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_rest_at_settlement {
-    /// Set the call-reducer flags for the reducer `rest_at_settlement` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn rest_at_settlement(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_rest_at_settlement for super::SetReducerFlags {
-    fn rest_at_settlement(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("rest_at_settlement", flags);
     }
 }

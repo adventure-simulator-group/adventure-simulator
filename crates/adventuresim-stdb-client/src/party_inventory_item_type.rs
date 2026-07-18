@@ -16,3 +16,47 @@ pub struct PartyInventoryItem {
 impl __sdk::InModule for PartyInventoryItem {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyInventoryItem`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyInventoryItemCols {
+    pub id: __sdk::__query_builder::Col<PartyInventoryItem, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyInventoryItem, String>,
+    pub item_id: __sdk::__query_builder::Col<PartyInventoryItem, String>,
+    pub quantity: __sdk::__query_builder::Col<PartyInventoryItem, u32>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyInventoryItem {
+    type Cols = PartyInventoryItemCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyInventoryItemCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            item_id: __sdk::__query_builder::Col::new(table_name, "item_id"),
+            quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyInventoryItem`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyInventoryItemIxCols {
+    pub id: __sdk::__query_builder::IxCol<PartyInventoryItem, u64>,
+    pub item_id: __sdk::__query_builder::IxCol<PartyInventoryItem, String>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyInventoryItem, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyInventoryItem {
+    type IxCols = PartyInventoryItemIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyInventoryItemIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            item_id: __sdk::__query_builder::IxCol::new(table_name, "item_id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyInventoryItem {}

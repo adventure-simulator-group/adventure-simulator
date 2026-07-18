@@ -14,3 +14,39 @@ pub struct CharacterTime {
 impl __sdk::InModule for CharacterTime {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterTime`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterTimeCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterTime, u64>,
+    pub minutes: __sdk::__query_builder::Col<CharacterTime, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterTime {
+    type Cols = CharacterTimeCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterTimeCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            minutes: __sdk::__query_builder::Col::new(table_name, "minutes"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterTime`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterTimeIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterTime, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterTime {
+    type IxCols = CharacterTimeIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterTimeIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterTime {}

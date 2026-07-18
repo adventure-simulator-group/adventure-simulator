@@ -23,3 +23,63 @@ pub struct Party {
 impl __sdk::InModule for Party {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Party`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyCols {
+    pub id: __sdk::__query_builder::Col<Party, String>,
+    pub name: __sdk::__query_builder::Col<Party, String>,
+    pub leader_id: __sdk::__query_builder::Col<Party, u64>,
+    pub current_settlement_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub current_quest_location_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub active_quest_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub is_solo: __sdk::__query_builder::Col<Party, bool>,
+    pub medicine_target: __sdk::__query_builder::Col<Party, f32>,
+    pub surgery_target: __sdk::__query_builder::Col<Party, f32>,
+    pub charisma_target: __sdk::__query_builder::Col<Party, f32>,
+    pub faith_target: __sdk::__query_builder::Col<Party, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for Party {
+    type Cols = PartyCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            leader_id: __sdk::__query_builder::Col::new(table_name, "leader_id"),
+            current_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_settlement_id",
+            ),
+            current_quest_location_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_quest_location_id",
+            ),
+            active_quest_id: __sdk::__query_builder::Col::new(table_name, "active_quest_id"),
+            is_solo: __sdk::__query_builder::Col::new(table_name, "is_solo"),
+            medicine_target: __sdk::__query_builder::Col::new(table_name, "medicine_target"),
+            surgery_target: __sdk::__query_builder::Col::new(table_name, "surgery_target"),
+            charisma_target: __sdk::__query_builder::Col::new(table_name, "charisma_target"),
+            faith_target: __sdk::__query_builder::Col::new(table_name, "faith_target"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Party`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyIxCols {
+    pub id: __sdk::__query_builder::IxCol<Party, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for Party {
+    type IxCols = PartyIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for Party {}

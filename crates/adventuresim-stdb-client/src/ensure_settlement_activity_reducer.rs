@@ -22,8 +22,6 @@ impl __sdk::InModule for EnsureSettlementActivityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct EnsureSettlementActivityCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `ensure_settlement_activity`.
 ///
@@ -33,77 +31,42 @@ pub trait ensure_settlement_activity {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_ensure_settlement_activity`] callbacks.
-    fn ensure_settlement_activity(&self, settlement_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `ensure_settlement_activity`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`ensure_settlement_activity:ensure_settlement_activity_then`] to run a callback after the reducer completes.
+    fn ensure_settlement_activity(&self, settlement_id: String) -> __sdk::Result<()> {
+        self.ensure_settlement_activity_then(settlement_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `ensure_settlement_activity` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`EnsureSettlementActivityCallbackId`] can be passed to [`Self::remove_on_ensure_settlement_activity`]
-    /// to cancel the callback.
-    fn on_ensure_settlement_activity(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn ensure_settlement_activity_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
-    ) -> EnsureSettlementActivityCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_ensure_settlement_activity`],
-    /// causing it not to run in the future.
-    fn remove_on_ensure_settlement_activity(&self, callback: EnsureSettlementActivityCallbackId);
+        settlement_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl ensure_settlement_activity for super::RemoteReducers {
-    fn ensure_settlement_activity(&self, settlement_id: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "ensure_settlement_activity",
-            EnsureSettlementActivityArgs { settlement_id },
-        )
-    }
-    fn on_ensure_settlement_activity(
+    fn ensure_settlement_activity_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
-    ) -> EnsureSettlementActivityCallbackId {
-        EnsureSettlementActivityCallbackId(self.imp.on_reducer(
-            "ensure_settlement_activity",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::EnsureSettlementActivity { settlement_id },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, settlement_id)
-            }),
-        ))
-    }
-    fn remove_on_ensure_settlement_activity(&self, callback: EnsureSettlementActivityCallbackId) {
-        self.imp
-            .remove_on_reducer("ensure_settlement_activity", callback.0)
-    }
-}
+        settlement_id: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `ensure_settlement_activity`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_ensure_settlement_activity {
-    /// Set the call-reducer flags for the reducer `ensure_settlement_activity` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn ensure_settlement_activity(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_ensure_settlement_activity for super::SetReducerFlags {
-    fn ensure_settlement_activity(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("ensure_settlement_activity", flags);
+            .invoke_reducer_with_callback(EnsureSettlementActivityArgs { settlement_id }, callback)
     }
 }

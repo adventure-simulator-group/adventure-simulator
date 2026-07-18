@@ -8,7 +8,7 @@ use crate::{
 
 /// General character info
 #[derive(Clone, Debug)]
-#[table(name = character, public)]
+#[table(accessor = character, public)]
 pub struct Character {
     #[primary_key]
     pub id: u64,
@@ -34,10 +34,9 @@ pub struct Character {
 
 /// [`Character`] attributes
 #[derive(Clone, Debug)]
-#[table(name = character_attributes, public)]
+#[table(accessor = character_attributes, public)]
 pub struct CharacterAttributes {
-    #[index(direct)]
-    #[unique]
+    #[primary_key]
     pub character_id: u64,
     pub endurance: f32,
     pub immunity: f32,
@@ -59,10 +58,9 @@ pub struct CharacterAttributes {
 
 /// [`Character`] stats
 #[derive(Clone, Debug)]
-#[table(name = character_stats, public)]
+#[table(accessor = character_stats, public)]
 pub struct CharacterStats {
-    #[index(direct)]
-    #[unique]
+    #[primary_key]
     pub character_id: u64,
     pub calories_used: f32,
     pub focus: f32,
@@ -70,10 +68,9 @@ pub struct CharacterStats {
 
 /// [`Character`] skills
 #[derive(Clone, Debug)]
-#[table(name = character_skills, public)]
+#[table(accessor = character_skills, public)]
 pub struct CharacterSkills {
-    #[index(direct)]
-    #[unique]
+    #[primary_key]
     pub character_id: u64,
     pub melee_hours: f32,
     pub dodge_hours: f32,
@@ -90,10 +87,9 @@ pub struct CharacterSkills {
 
 /// [`Character`] limbs
 #[derive(Clone, Debug)]
-#[table(name = character_limbs, public)]
+#[table(accessor = character_limbs, public)]
 pub struct CharacterLimbs {
-    #[index(direct)]
-    #[unique]
+    #[primary_key]
     pub character_id: u64,
     pub left_arm_health: f32,
     pub right_arm_health: f32,
@@ -106,10 +102,9 @@ pub struct CharacterLimbs {
 
 /// [`Character`] equipment
 #[derive(Clone, Debug)]
-#[table(name = character_equip, public)]
+#[table(accessor = character_equip, public)]
 pub struct CharacterEquip {
-    #[index(direct)]
-    #[unique]
+    #[primary_key]
     pub character_id: u64,
     // weapon or shield
     pub left_hand_item_id: Option<u64>,

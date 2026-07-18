@@ -18,3 +18,49 @@ pub struct LocalChatMessage {
 impl __sdk::InModule for LocalChatMessage {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `LocalChatMessage`.
+///
+/// Provides typed access to columns for query building.
+pub struct LocalChatMessageCols {
+    pub id: __sdk::__query_builder::Col<LocalChatMessage, u64>,
+    pub conversation_key: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub sender_id: __sdk::__query_builder::Col<LocalChatMessage, u64>,
+    pub sender_name: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub body: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub created_micros: __sdk::__query_builder::Col<LocalChatMessage, i64>,
+}
+
+impl __sdk::__query_builder::HasCols for LocalChatMessage {
+    type Cols = LocalChatMessageCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        LocalChatMessageCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            conversation_key: __sdk::__query_builder::Col::new(table_name, "conversation_key"),
+            sender_id: __sdk::__query_builder::Col::new(table_name, "sender_id"),
+            sender_name: __sdk::__query_builder::Col::new(table_name, "sender_name"),
+            body: __sdk::__query_builder::Col::new(table_name, "body"),
+            created_micros: __sdk::__query_builder::Col::new(table_name, "created_micros"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `LocalChatMessage`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct LocalChatMessageIxCols {
+    pub conversation_key: __sdk::__query_builder::IxCol<LocalChatMessage, String>,
+    pub id: __sdk::__query_builder::IxCol<LocalChatMessage, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for LocalChatMessage {
+    type IxCols = LocalChatMessageIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        LocalChatMessageIxCols {
+            conversation_key: __sdk::__query_builder::IxCol::new(table_name, "conversation_key"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for LocalChatMessage {}

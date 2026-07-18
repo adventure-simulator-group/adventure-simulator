@@ -13,7 +13,7 @@ use strum::VariantArray;
 
 /// Request to start a new [`TacticalServer`]
 #[derive(Clone, Debug)]
-#[table(name = tactical_server_request, public)]
+#[table(accessor = tactical_server_request, public)]
 pub struct TacticalServerRequest {
     #[primary_key]
     #[unique]
@@ -23,7 +23,7 @@ pub struct TacticalServerRequest {
 
 /// Active tactical server instance
 #[derive(Clone, Debug)]
-#[table(name = tactical_server, public)]
+#[table(accessor = tactical_server, public)]
 pub struct TacticalServer {
     #[primary_key]
     pub identity: Identity,
@@ -53,12 +53,12 @@ pub struct ConnectedPlayerItem {
 }
 
 /// View of [`ConnectedPlayer`] for this [`TacticalServer`].
-#[view(name = connected_players, public)]
+#[view(accessor = connected_players, public)]
 pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
     ctx.db
         .character()
         .server()
-        .filter(ctx.sender)
+        .filter(ctx.sender())
         .filter_map(|character| {
             let limbs = ctx.db.character_limbs().character_id().find(character.id)?;
             let attrs = ctx
@@ -259,10 +259,10 @@ pub fn create_tactical_server(
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
-    if let Some(_previous) = ctx.db.tactical_server().identity().find(ctx.sender) {
+    if let Some(_previous) = ctx.db.tactical_server().identity().find(ctx.sender()) {
         return Err(format!(
             "{} already hosting a tactical server !",
-            ctx.sender
+            ctx.sender()
         ));
     }
     if let Some(previous) = ctx.db.tactical_server().mission_id().find(&mission_id) {
@@ -272,7 +272,7 @@ pub fn create_tactical_server(
 
     log::info!("Tactical server for mission '{mission_id}' is ready on {addr}");
     let server = TacticalServer {
-        identity: ctx.sender,
+        identity: ctx.sender(),
         mission_id,
         scene_key,
         addr,
@@ -289,10 +289,10 @@ pub fn end_tactical_server(
     success: bool,
     xp_gained: i32,
 ) -> Result<(), String> {
-    let Some(server) = ctx.db.tactical_server().identity().find(ctx.sender) else {
+    let Some(server) = ctx.db.tactical_server().identity().find(ctx.sender()) else {
         return Err(format!(
             "Can't end tactical server: sender's server with identity {} not found",
-            ctx.sender
+            ctx.sender()
         ));
     };
 

@@ -10,7 +10,9 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
-use adventuresim_stdb_client::{DbConnection, TacticalServerRequestTableAccess};
+use adventuresim_stdb_client::{
+    DbConnection, TacticalServerRequestTableAccess, tactical_server_requestQueryTableAccess,
+};
 use clap::Parser;
 use tracing::{error, info, warn};
 
@@ -62,7 +64,7 @@ fn main() {
     // Connect to SpacetimeDB
     let conn = DbConnection::builder()
         .with_uri(&args.spacetimedb_url)
-        .with_module_name(&args.spacetimedb_module)
+        .with_database_name(&args.spacetimedb_module)
         .on_connect(|_ctx, _identity, _address| {
             info!("Connected to SpacetimeDB");
         })
@@ -83,7 +85,8 @@ fn main() {
                 );
             }
         })
-        .subscribe(["SELECT * FROM tactical_server_request"]);
+        .add_query(|query| query.from.tactical_server_request())
+        .subscribe();
 
     // Set up callback for new tactical server requests
     let spawned_clone = spawned.clone();

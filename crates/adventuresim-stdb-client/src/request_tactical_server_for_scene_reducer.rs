@@ -22,8 +22,6 @@ impl __sdk::InModule for RequestTacticalServerForSceneArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct RequestTacticalServerForSceneCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `request_tactical_server_for_scene`.
 ///
@@ -33,83 +31,42 @@ pub trait request_tactical_server_for_scene {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_request_tactical_server_for_scene`] callbacks.
-    fn request_tactical_server_for_scene(&self, scene_key: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `request_tactical_server_for_scene`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`request_tactical_server_for_scene:request_tactical_server_for_scene_then`] to run a callback after the reducer completes.
+    fn request_tactical_server_for_scene(&self, scene_key: String) -> __sdk::Result<()> {
+        self.request_tactical_server_for_scene_then(scene_key, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `request_tactical_server_for_scene` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`RequestTacticalServerForSceneCallbackId`] can be passed to [`Self::remove_on_request_tactical_server_for_scene`]
-    /// to cancel the callback.
-    fn on_request_tactical_server_for_scene(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn request_tactical_server_for_scene_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
-    ) -> RequestTacticalServerForSceneCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_request_tactical_server_for_scene`],
-    /// causing it not to run in the future.
-    fn remove_on_request_tactical_server_for_scene(
-        &self,
-        callback: RequestTacticalServerForSceneCallbackId,
-    );
+        scene_key: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl request_tactical_server_for_scene for super::RemoteReducers {
-    fn request_tactical_server_for_scene(&self, scene_key: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "request_tactical_server_for_scene",
-            RequestTacticalServerForSceneArgs { scene_key },
-        )
-    }
-    fn on_request_tactical_server_for_scene(
+    fn request_tactical_server_for_scene_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
-    ) -> RequestTacticalServerForSceneCallbackId {
-        RequestTacticalServerForSceneCallbackId(self.imp.on_reducer(
-            "request_tactical_server_for_scene",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::RequestTacticalServerForScene { scene_key },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, scene_key)
-            }),
-        ))
-    }
-    fn remove_on_request_tactical_server_for_scene(
-        &self,
-        callback: RequestTacticalServerForSceneCallbackId,
-    ) {
-        self.imp
-            .remove_on_reducer("request_tactical_server_for_scene", callback.0)
-    }
-}
+        scene_key: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `request_tactical_server_for_scene`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_request_tactical_server_for_scene {
-    /// Set the call-reducer flags for the reducer `request_tactical_server_for_scene` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn request_tactical_server_for_scene(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_request_tactical_server_for_scene for super::SetReducerFlags {
-    fn request_tactical_server_for_scene(&self, flags: __ws::CallReducerFlags) {
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("request_tactical_server_for_scene", flags);
+            .invoke_reducer_with_callback(RequestTacticalServerForSceneArgs { scene_key }, callback)
     }
 }

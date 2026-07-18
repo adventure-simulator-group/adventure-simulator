@@ -31,3 +31,77 @@ pub struct Quest {
 impl __sdk::InModule for Quest {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Quest`.
+///
+/// Provides typed access to columns for query building.
+pub struct QuestCols {
+    pub id: __sdk::__query_builder::Col<Quest, String>,
+    pub title: __sdk::__query_builder::Col<Quest, String>,
+    pub description: __sdk::__query_builder::Col<Quest, String>,
+    pub difficulty: __sdk::__query_builder::Col<Quest, i32>,
+    pub gold_reward: __sdk::__query_builder::Col<Quest, i32>,
+    pub xp_reward: __sdk::__query_builder::Col<Quest, i32>,
+    pub settlement_id: __sdk::__query_builder::Col<Quest, String>,
+    pub status: __sdk::__query_builder::Col<Quest, QuestStatus>,
+    pub accepted_by: __sdk::__query_builder::Col<Quest, Option<String>>,
+    pub enemy_type: __sdk::__query_builder::Col<Quest, String>,
+    pub enemy_count: __sdk::__query_builder::Col<Quest, i32>,
+    pub location_description: __sdk::__query_builder::Col<Quest, String>,
+    pub location_scene_key: __sdk::__query_builder::Col<Quest, String>,
+    pub location_coord_x: __sdk::__query_builder::Col<Quest, f64>,
+    pub location_coord_y: __sdk::__query_builder::Col<Quest, f64>,
+    pub coordinates_are_geographic: __sdk::__query_builder::Col<Quest, bool>,
+    pub distance_m: __sdk::__query_builder::Col<Quest, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for Quest {
+    type Cols = QuestCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        QuestCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            title: __sdk::__query_builder::Col::new(table_name, "title"),
+            description: __sdk::__query_builder::Col::new(table_name, "description"),
+            difficulty: __sdk::__query_builder::Col::new(table_name, "difficulty"),
+            gold_reward: __sdk::__query_builder::Col::new(table_name, "gold_reward"),
+            xp_reward: __sdk::__query_builder::Col::new(table_name, "xp_reward"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            status: __sdk::__query_builder::Col::new(table_name, "status"),
+            accepted_by: __sdk::__query_builder::Col::new(table_name, "accepted_by"),
+            enemy_type: __sdk::__query_builder::Col::new(table_name, "enemy_type"),
+            enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
+            location_description: __sdk::__query_builder::Col::new(
+                table_name,
+                "location_description",
+            ),
+            location_scene_key: __sdk::__query_builder::Col::new(table_name, "location_scene_key"),
+            location_coord_x: __sdk::__query_builder::Col::new(table_name, "location_coord_x"),
+            location_coord_y: __sdk::__query_builder::Col::new(table_name, "location_coord_y"),
+            coordinates_are_geographic: __sdk::__query_builder::Col::new(
+                table_name,
+                "coordinates_are_geographic",
+            ),
+            distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Quest`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct QuestIxCols {
+    pub id: __sdk::__query_builder::IxCol<Quest, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<Quest, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for Quest {
+    type IxCols = QuestIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        QuestIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for Quest {}

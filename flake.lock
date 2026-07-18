@@ -89,16 +89,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1768482757,
-        "narHash": "sha256-3e/uxyvxWsEpKV0ynDZ2rqLNIeuBtiG8EEoawswg+0o=",
+        "lastModified": 1782766938,
+        "narHash": "sha256-EeErq5O95ejDeY3CTCfVs+V8wpHd3fu1igkLIB5mP08=",
         "owner": "clockworklabs",
         "repo": "SpacetimeDB",
-        "rev": "02449737ca3b29e7e39679fccbef541a50f32094",
+        "rev": "052c83fe984a4c4eb7bb4f9afa5c6b1903891d87",
         "type": "github"
       },
       "original": {
         "owner": "clockworklabs",
-        "ref": "v1.11.3",
+        "ref": "v2.6.1",
         "repo": "SpacetimeDB",
         "type": "github"
       }

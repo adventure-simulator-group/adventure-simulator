@@ -24,8 +24,6 @@ impl __sdk::InModule for RequestGeneralPartyJoinArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct RequestGeneralPartyJoinCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `request_general_party_join`.
 ///
@@ -35,92 +33,53 @@ pub trait request_general_party_join {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_request_general_party_join`] callbacks.
-    fn request_general_party_join(
-        &self,
-        character_id: u64,
-        target_party_id: String,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `request_general_party_join`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`RequestGeneralPartyJoinCallbackId`] can be passed to [`Self::remove_on_request_general_party_join`]
-    /// to cancel the callback.
-    fn on_request_general_party_join(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> RequestGeneralPartyJoinCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_request_general_party_join`],
-    /// causing it not to run in the future.
-    fn remove_on_request_general_party_join(&self, callback: RequestGeneralPartyJoinCallbackId);
-}
-
-impl request_general_party_join for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`request_general_party_join:request_general_party_join_then`] to run a callback after the reducer completes.
     fn request_general_party_join(
         &self,
         character_id: u64,
         target_party_id: String,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "request_general_party_join",
+        self.request_general_party_join_then(character_id, target_party_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `request_general_party_join` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn request_general_party_join_then(
+        &self,
+        character_id: u64,
+        target_party_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl request_general_party_join for super::RemoteReducers {
+    fn request_general_party_join_then(
+        &self,
+        character_id: u64,
+        target_party_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             RequestGeneralPartyJoinArgs {
                 character_id,
                 target_party_id,
             },
+            callback,
         )
-    }
-    fn on_request_general_party_join(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> RequestGeneralPartyJoinCallbackId {
-        RequestGeneralPartyJoinCallbackId(self.imp.on_reducer(
-            "request_general_party_join",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::RequestGeneralPartyJoin {
-                                    character_id,
-                                    target_party_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, target_party_id)
-            }),
-        ))
-    }
-    fn remove_on_request_general_party_join(&self, callback: RequestGeneralPartyJoinCallbackId) {
-        self.imp
-            .remove_on_reducer("request_general_party_join", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `request_general_party_join`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_request_general_party_join {
-    /// Set the call-reducer flags for the reducer `request_general_party_join` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn request_general_party_join(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_request_general_party_join for super::SetReducerFlags {
-    fn request_general_party_join(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("request_general_party_join", flags);
     }
 }

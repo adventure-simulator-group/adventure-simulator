@@ -17,3 +17,52 @@ pub struct InventoryQuantityTarget {
 impl __sdk::InModule for InventoryQuantityTarget {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `InventoryQuantityTarget`.
+///
+/// Provides typed access to columns for query building.
+pub struct InventoryQuantityTargetCols {
+    pub id: __sdk::__query_builder::Col<InventoryQuantityTarget, String>,
+    pub owner_character_id: __sdk::__query_builder::Col<InventoryQuantityTarget, u64>,
+    pub party_scope: __sdk::__query_builder::Col<InventoryQuantityTarget, bool>,
+    pub item_id: __sdk::__query_builder::Col<InventoryQuantityTarget, String>,
+    pub quantity: __sdk::__query_builder::Col<InventoryQuantityTarget, u32>,
+}
+
+impl __sdk::__query_builder::HasCols for InventoryQuantityTarget {
+    type Cols = InventoryQuantityTargetCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        InventoryQuantityTargetCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            party_scope: __sdk::__query_builder::Col::new(table_name, "party_scope"),
+            item_id: __sdk::__query_builder::Col::new(table_name, "item_id"),
+            quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `InventoryQuantityTarget`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct InventoryQuantityTargetIxCols {
+    pub id: __sdk::__query_builder::IxCol<InventoryQuantityTarget, String>,
+    pub item_id: __sdk::__query_builder::IxCol<InventoryQuantityTarget, String>,
+    pub owner_character_id: __sdk::__query_builder::IxCol<InventoryQuantityTarget, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for InventoryQuantityTarget {
+    type IxCols = InventoryQuantityTargetIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        InventoryQuantityTargetIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            item_id: __sdk::__query_builder::IxCol::new(table_name, "item_id"),
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for InventoryQuantityTarget {}

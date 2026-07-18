@@ -1,7 +1,5 @@
-// Auto-generated SpacetimeDB client bindings.
-// Regenerate with: just generate-stdb-client
-//
-// DO NOT EDIT - changes will be overwritten.
+// Handwritten facade over the generated SpacetimeDB client bindings.
+// Regenerate `mod.rs` and its sibling binding files with: just generate-db-client
 
 #[path = "mod.rs"]
 mod bindings;

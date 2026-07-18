@@ -20,3 +20,55 @@ pub struct TravelEdge {
 impl __sdk::InModule for TravelEdge {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `TravelEdge`.
+///
+/// Provides typed access to columns for query building.
+pub struct TravelEdgeCols {
+    pub id: __sdk::__query_builder::Col<TravelEdge, u64>,
+    pub from_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
+    pub to_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
+    pub kind: __sdk::__query_builder::Col<TravelEdge, String>,
+    pub length_m: __sdk::__query_builder::Col<TravelEdge, u32>,
+    pub slope_multiplier: __sdk::__query_builder::Col<TravelEdge, f32>,
+    pub certainty: __sdk::__query_builder::Col<TravelEdge, u8>,
+    pub section: __sdk::__query_builder::Col<TravelEdge, String>,
+}
+
+impl __sdk::__query_builder::HasCols for TravelEdge {
+    type Cols = TravelEdgeCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        TravelEdgeCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            from_node_id: __sdk::__query_builder::Col::new(table_name, "from_node_id"),
+            to_node_id: __sdk::__query_builder::Col::new(table_name, "to_node_id"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            length_m: __sdk::__query_builder::Col::new(table_name, "length_m"),
+            slope_multiplier: __sdk::__query_builder::Col::new(table_name, "slope_multiplier"),
+            certainty: __sdk::__query_builder::Col::new(table_name, "certainty"),
+            section: __sdk::__query_builder::Col::new(table_name, "section"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `TravelEdge`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct TravelEdgeIxCols {
+    pub from_node_id: __sdk::__query_builder::IxCol<TravelEdge, u64>,
+    pub id: __sdk::__query_builder::IxCol<TravelEdge, u64>,
+    pub to_node_id: __sdk::__query_builder::IxCol<TravelEdge, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for TravelEdge {
+    type IxCols = TravelEdgeIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        TravelEdgeIxCols {
+            from_node_id: __sdk::__query_builder::IxCol::new(table_name, "from_node_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            to_node_id: __sdk::__query_builder::IxCol::new(table_name, "to_node_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for TravelEdge {}

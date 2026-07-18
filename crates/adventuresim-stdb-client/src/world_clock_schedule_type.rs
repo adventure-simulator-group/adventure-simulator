@@ -14,3 +14,39 @@ pub struct WorldClockSchedule {
 impl __sdk::InModule for WorldClockSchedule {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `WorldClockSchedule`.
+///
+/// Provides typed access to columns for query building.
+pub struct WorldClockScheduleCols {
+    pub scheduled_id: __sdk::__query_builder::Col<WorldClockSchedule, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<WorldClockSchedule, __sdk::ScheduleAt>,
+}
+
+impl __sdk::__query_builder::HasCols for WorldClockSchedule {
+    type Cols = WorldClockScheduleCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        WorldClockScheduleCols {
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `WorldClockSchedule`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct WorldClockScheduleIxCols {
+    pub scheduled_id: __sdk::__query_builder::IxCol<WorldClockSchedule, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for WorldClockSchedule {
+    type IxCols = WorldClockScheduleIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        WorldClockScheduleIxCols {
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for WorldClockSchedule {}

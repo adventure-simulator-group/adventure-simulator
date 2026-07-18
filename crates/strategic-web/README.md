@@ -28,7 +28,7 @@ SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
 
 ### Prerequisites
 
-1. SpacetimeDB running locally with `adventuresim-stdb-module` module published
+1. SpacetimeDB CLI/server 2.6.1 running locally with `adventuresim-stdb-module` published
 2. Rust toolchain
 
 ### Start SpacetimeDB
@@ -38,7 +38,8 @@ SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
 spacetime start
 
 # Publish the adventuresim-stdb-module module
-spacetime publish adventuresim-stdb-module --project-path crates/adventuresim-stdb-module
+cd crates/adventuresim-stdb-module
+spacetime publish adventuresim-stdb-module
 
 # Seed the world (optional)
 spacetime call adventuresim-stdb-module seed_world

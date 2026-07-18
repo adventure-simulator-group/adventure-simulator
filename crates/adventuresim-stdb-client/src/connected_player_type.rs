@@ -25,3 +25,29 @@ pub struct ConnectedPlayer {
 impl __sdk::InModule for ConnectedPlayer {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ConnectedPlayer`.
+///
+/// Provides typed access to columns for query building.
+pub struct ConnectedPlayerCols {
+    pub character: __sdk::__query_builder::Col<ConnectedPlayer, Character>,
+    pub items: __sdk::__query_builder::Col<ConnectedPlayer, Vec<ConnectedPlayerItem>>,
+    pub skills: __sdk::__query_builder::Col<ConnectedPlayer, CharacterSkills>,
+    pub stats: __sdk::__query_builder::Col<ConnectedPlayer, CharacterStats>,
+    pub attrs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterAttributes>,
+    pub limbs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterLimbs>,
+}
+
+impl __sdk::__query_builder::HasCols for ConnectedPlayer {
+    type Cols = ConnectedPlayerCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ConnectedPlayerCols {
+            character: __sdk::__query_builder::Col::new(table_name, "character"),
+            items: __sdk::__query_builder::Col::new(table_name, "items"),
+            skills: __sdk::__query_builder::Col::new(table_name, "skills"),
+            stats: __sdk::__query_builder::Col::new(table_name, "stats"),
+            attrs: __sdk::__query_builder::Col::new(table_name, "attrs"),
+            limbs: __sdk::__query_builder::Col::new(table_name, "limbs"),
+        }
+    }
+}

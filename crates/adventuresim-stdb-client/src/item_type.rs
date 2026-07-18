@@ -36,3 +36,77 @@ pub struct Item {
 impl __sdk::InModule for Item {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Item`.
+///
+/// Provides typed access to columns for query building.
+pub struct ItemCols {
+    pub id: __sdk::__query_builder::Col<Item, String>,
+    pub weight: __sdk::__query_builder::Col<Item, f32>,
+    pub slot: __sdk::__query_builder::Col<Item, ItemSlot>,
+    pub kind: __sdk::__query_builder::Col<Item, ItemKind>,
+    pub accuracy: __sdk::__query_builder::Col<Item, f32>,
+    pub reach: __sdk::__query_builder::Col<Item, f32>,
+    pub block: __sdk::__query_builder::Col<Item, f32>,
+    pub coverage: __sdk::__query_builder::Col<Item, f32>,
+    pub penetration: __sdk::__query_builder::Col<Item, f32>,
+    pub resistance: __sdk::__query_builder::Col<Item, f32>,
+    pub padding: __sdk::__query_builder::Col<Item, f32>,
+    pub flexibility: __sdk::__query_builder::Col<Item, f32>,
+    pub range_of_motion: __sdk::__query_builder::Col<Item, f32>,
+    pub precise: __sdk::__query_builder::Col<Item, bool>,
+    pub balance: __sdk::__query_builder::Col<Item, f32>,
+    pub melee: __sdk::__query_builder::Col<Item, bool>,
+    pub ranged: __sdk::__query_builder::Col<Item, bool>,
+    pub blunt: __sdk::__query_builder::Col<Item, bool>,
+    pub slash: __sdk::__query_builder::Col<Item, bool>,
+    pub pierce: __sdk::__query_builder::Col<Item, bool>,
+    pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
+}
+
+impl __sdk::__query_builder::HasCols for Item {
+    type Cols = ItemCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ItemCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            weight: __sdk::__query_builder::Col::new(table_name, "weight"),
+            slot: __sdk::__query_builder::Col::new(table_name, "slot"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            accuracy: __sdk::__query_builder::Col::new(table_name, "accuracy"),
+            reach: __sdk::__query_builder::Col::new(table_name, "reach"),
+            block: __sdk::__query_builder::Col::new(table_name, "block"),
+            coverage: __sdk::__query_builder::Col::new(table_name, "coverage"),
+            penetration: __sdk::__query_builder::Col::new(table_name, "penetration"),
+            resistance: __sdk::__query_builder::Col::new(table_name, "resistance"),
+            padding: __sdk::__query_builder::Col::new(table_name, "padding"),
+            flexibility: __sdk::__query_builder::Col::new(table_name, "flexibility"),
+            range_of_motion: __sdk::__query_builder::Col::new(table_name, "range_of_motion"),
+            precise: __sdk::__query_builder::Col::new(table_name, "precise"),
+            balance: __sdk::__query_builder::Col::new(table_name, "balance"),
+            melee: __sdk::__query_builder::Col::new(table_name, "melee"),
+            ranged: __sdk::__query_builder::Col::new(table_name, "ranged"),
+            blunt: __sdk::__query_builder::Col::new(table_name, "blunt"),
+            slash: __sdk::__query_builder::Col::new(table_name, "slash"),
+            pierce: __sdk::__query_builder::Col::new(table_name, "pierce"),
+            base_value: __sdk::__query_builder::Col::new(table_name, "base_value"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Item`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ItemIxCols {
+    pub id: __sdk::__query_builder::IxCol<Item, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for Item {
+    type IxCols = ItemIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ItemIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for Item {}

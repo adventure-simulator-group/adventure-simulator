@@ -28,8 +28,6 @@ impl __sdk::InModule for TransferPartyItemArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct TransferPartyItemCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `transfer_party_item`.
 ///
@@ -39,31 +37,8 @@ pub trait transfer_party_item {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_transfer_party_item`] callbacks.
-    fn transfer_party_item(
-        &self,
-        from_character_id: u64,
-        to_character_id: u64,
-        inventory_item_id: u64,
-        quantity: u32,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `transfer_party_item`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`TransferPartyItemCallbackId`] can be passed to [`Self::remove_on_transfer_party_item`]
-    /// to cancel the callback.
-    fn on_transfer_party_item(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &u64, &u32) + Send + 'static,
-    ) -> TransferPartyItemCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_transfer_party_item`],
-    /// causing it not to run in the future.
-    fn remove_on_transfer_party_item(&self, callback: TransferPartyItemCallbackId);
-}
-
-impl transfer_party_item for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`transfer_party_item:transfer_party_item_then`] to run a callback after the reducer completes.
     fn transfer_party_item(
         &self,
         from_character_id: u64,
@@ -71,74 +46,58 @@ impl transfer_party_item for super::RemoteReducers {
         inventory_item_id: u64,
         quantity: u32,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "transfer_party_item",
+        self.transfer_party_item_then(
+            from_character_id,
+            to_character_id,
+            inventory_item_id,
+            quantity,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `transfer_party_item` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn transfer_party_item_then(
+        &self,
+        from_character_id: u64,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl transfer_party_item for super::RemoteReducers {
+    fn transfer_party_item_then(
+        &self,
+        from_character_id: u64,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             TransferPartyItemArgs {
                 from_character_id,
                 to_character_id,
                 inventory_item_id,
                 quantity,
             },
+            callback,
         )
-    }
-    fn on_transfer_party_item(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &u64, &u64, &u32) + Send + 'static,
-    ) -> TransferPartyItemCallbackId {
-        TransferPartyItemCallbackId(self.imp.on_reducer(
-            "transfer_party_item",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::TransferPartyItem {
-                                    from_character_id,
-                                    to_character_id,
-                                    inventory_item_id,
-                                    quantity,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    from_character_id,
-                    to_character_id,
-                    inventory_item_id,
-                    quantity,
-                )
-            }),
-        ))
-    }
-    fn remove_on_transfer_party_item(&self, callback: TransferPartyItemCallbackId) {
-        self.imp
-            .remove_on_reducer("transfer_party_item", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `transfer_party_item`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_transfer_party_item {
-    /// Set the call-reducer flags for the reducer `transfer_party_item` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn transfer_party_item(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_transfer_party_item for super::SetReducerFlags {
-    fn transfer_party_item(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("transfer_party_item", flags);
     }
 }

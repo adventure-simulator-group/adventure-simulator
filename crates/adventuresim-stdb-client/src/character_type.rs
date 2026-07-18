@@ -25,3 +25,69 @@ pub struct Character {
 impl __sdk::InModule for Character {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Character`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterCols {
+    pub id: __sdk::__query_builder::Col<Character, u64>,
+    pub name: __sdk::__query_builder::Col<Character, String>,
+    pub xp: __sdk::__query_builder::Col<Character, u32>,
+    pub level: __sdk::__query_builder::Col<Character, u32>,
+    pub gold: __sdk::__query_builder::Col<Character, u32>,
+    pub current_settlement_id: __sdk::__query_builder::Col<Character, Option<String>>,
+    pub current_quest_location_id: __sdk::__query_builder::Col<Character, Option<String>>,
+    pub party_id: __sdk::__query_builder::Col<Character, Option<String>>,
+    pub server: __sdk::__query_builder::Col<Character, __sdk::Identity>,
+    pub in_server: __sdk::__query_builder::Col<Character, bool>,
+    pub temporary: __sdk::__query_builder::Col<Character, bool>,
+    pub age_years: __sdk::__query_builder::Col<Character, u16>,
+    pub alive: __sdk::__query_builder::Col<Character, bool>,
+}
+
+impl __sdk::__query_builder::HasCols for Character {
+    type Cols = CharacterCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            xp: __sdk::__query_builder::Col::new(table_name, "xp"),
+            level: __sdk::__query_builder::Col::new(table_name, "level"),
+            gold: __sdk::__query_builder::Col::new(table_name, "gold"),
+            current_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_settlement_id",
+            ),
+            current_quest_location_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_quest_location_id",
+            ),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            server: __sdk::__query_builder::Col::new(table_name, "server"),
+            in_server: __sdk::__query_builder::Col::new(table_name, "in_server"),
+            temporary: __sdk::__query_builder::Col::new(table_name, "temporary"),
+            age_years: __sdk::__query_builder::Col::new(table_name, "age_years"),
+            alive: __sdk::__query_builder::Col::new(table_name, "alive"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Character`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterIxCols {
+    pub id: __sdk::__query_builder::IxCol<Character, u64>,
+    pub server: __sdk::__query_builder::IxCol<Character, __sdk::Identity>,
+}
+
+impl __sdk::__query_builder::HasIxCols for Character {
+    type IxCols = CharacterIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            server: __sdk::__query_builder::IxCol::new(table_name, "server"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for Character {}

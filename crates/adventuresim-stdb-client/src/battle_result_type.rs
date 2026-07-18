@@ -15,3 +15,43 @@ pub struct BattleResult {
 impl __sdk::InModule for BattleResult {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `BattleResult`.
+///
+/// Provides typed access to columns for query building.
+pub struct BattleResultCols {
+    pub quest_id: __sdk::__query_builder::Col<BattleResult, String>,
+    pub party_id: __sdk::__query_builder::Col<BattleResult, String>,
+    pub mission_id: __sdk::__query_builder::Col<BattleResult, String>,
+}
+
+impl __sdk::__query_builder::HasCols for BattleResult {
+    type Cols = BattleResultCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        BattleResultCols {
+            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `BattleResult`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct BattleResultIxCols {
+    pub party_id: __sdk::__query_builder::IxCol<BattleResult, String>,
+    pub quest_id: __sdk::__query_builder::IxCol<BattleResult, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for BattleResult {
+    type IxCols = BattleResultIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        BattleResultIxCols {
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for BattleResult {}

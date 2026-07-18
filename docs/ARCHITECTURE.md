@@ -191,6 +191,8 @@ When the tactical mission ends (timeout, victory, or defeat):
 
 ```bash
 curl -sSL https://install.spacetimedb.com | sh
+spacetime version install 2.6.1
+spacetime version use 2.6.1
 ```
 
 ### 2. Start SpacetimeDB
@@ -205,6 +207,16 @@ spacetime start
 cd crates/adventuresim-stdb-module
 spacetime publish adventuresim-stdb-module
 ```
+
+The repository's module and SDK are pinned to SpacetimeDB 2.6.1 and should be
+built, published, and used to generate bindings with the matching CLI. This
+pre-launch 1.x upgrade deliberately does not support an in-place schema/data
+migration: stop the old server, retain an operator backup if wanted, move the
+old data directory aside or provision a new empty one, select 2.6.1, and run
+`just web-reset`. That explicit startup resets, reseeds, and permanently
+discards prior database contents. Once the reset is complete, return to
+`just dev` / `just web` and plain `just publish`; ordinary startup and module
+updates are non-destructive.
 
 ### 4. Open the UI
 

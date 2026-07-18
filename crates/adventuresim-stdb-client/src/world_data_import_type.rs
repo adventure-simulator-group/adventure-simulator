@@ -14,3 +14,39 @@ pub struct WorldDataImport {
 impl __sdk::InModule for WorldDataImport {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `WorldDataImport`.
+///
+/// Provides typed access to columns for query building.
+pub struct WorldDataImportCols {
+    pub id: __sdk::__query_builder::Col<WorldDataImport, u8>,
+    pub owner: __sdk::__query_builder::Col<WorldDataImport, __sdk::Identity>,
+}
+
+impl __sdk::__query_builder::HasCols for WorldDataImport {
+    type Cols = WorldDataImportCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        WorldDataImportCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            owner: __sdk::__query_builder::Col::new(table_name, "owner"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `WorldDataImport`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct WorldDataImportIxCols {
+    pub id: __sdk::__query_builder::IxCol<WorldDataImport, u8>,
+}
+
+impl __sdk::__query_builder::HasIxCols for WorldDataImport {
+    type IxCols = WorldDataImportIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        WorldDataImportIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for WorldDataImport {}

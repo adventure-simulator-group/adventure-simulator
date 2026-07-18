@@ -46,6 +46,11 @@ Tactical state lives in the `tactical-server` game state and is discarded when m
 
 ## Publishing
 
+Use the repository-pinned SpacetimeDB CLI 2.6.1. The pre-launch upgrade from
+1.x is a deliberate reset/reseed and does not preserve existing database data.
+After that reset, use plain publishing for normal updates; reset publishing
+always deletes data and must not be used once player data needs preservation.
+
 ```bash
 # Start SpacetimeDB
 spacetime start

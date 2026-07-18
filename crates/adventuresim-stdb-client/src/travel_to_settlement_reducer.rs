@@ -24,8 +24,6 @@ impl __sdk::InModule for TravelToSettlementArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct TravelToSettlementCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `travel_to_settlement`.
 ///
@@ -35,84 +33,49 @@ pub trait travel_to_settlement {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_travel_to_settlement`] callbacks.
-    fn travel_to_settlement(&self, character_id: u64, settlement_id: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `travel_to_settlement`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`travel_to_settlement:travel_to_settlement_then`] to run a callback after the reducer completes.
+    fn travel_to_settlement(&self, character_id: u64, settlement_id: String) -> __sdk::Result<()> {
+        self.travel_to_settlement_then(character_id, settlement_id, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `travel_to_settlement` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`TravelToSettlementCallbackId`] can be passed to [`Self::remove_on_travel_to_settlement`]
-    /// to cancel the callback.
-    fn on_travel_to_settlement(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn travel_to_settlement_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> TravelToSettlementCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_travel_to_settlement`],
-    /// causing it not to run in the future.
-    fn remove_on_travel_to_settlement(&self, callback: TravelToSettlementCallbackId);
+        character_id: u64,
+        settlement_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl travel_to_settlement for super::RemoteReducers {
-    fn travel_to_settlement(&self, character_id: u64, settlement_id: String) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "travel_to_settlement",
+    fn travel_to_settlement_then(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             TravelToSettlementArgs {
                 character_id,
                 settlement_id,
             },
+            callback,
         )
-    }
-    fn on_travel_to_settlement(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, &String) + Send + 'static,
-    ) -> TravelToSettlementCallbackId {
-        TravelToSettlementCallbackId(self.imp.on_reducer(
-            "travel_to_settlement",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::TravelToSettlement {
-                                    character_id,
-                                    settlement_id,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, character_id, settlement_id)
-            }),
-        ))
-    }
-    fn remove_on_travel_to_settlement(&self, callback: TravelToSettlementCallbackId) {
-        self.imp
-            .remove_on_reducer("travel_to_settlement", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `travel_to_settlement`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_travel_to_settlement {
-    /// Set the call-reducer flags for the reducer `travel_to_settlement` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn travel_to_settlement(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_travel_to_settlement for super::SetReducerFlags {
-    fn travel_to_settlement(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("travel_to_settlement", flags);
     }
 }

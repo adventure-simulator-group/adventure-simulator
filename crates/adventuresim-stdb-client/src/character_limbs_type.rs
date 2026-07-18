@@ -20,3 +20,51 @@ pub struct CharacterLimbs {
 impl __sdk::InModule for CharacterLimbs {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `CharacterLimbs`.
+///
+/// Provides typed access to columns for query building.
+pub struct CharacterLimbsCols {
+    pub character_id: __sdk::__query_builder::Col<CharacterLimbs, u64>,
+    pub left_arm_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub right_arm_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub left_leg_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub right_leg_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub head_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub chest_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+    pub stomach_health: __sdk::__query_builder::Col<CharacterLimbs, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for CharacterLimbs {
+    type Cols = CharacterLimbsCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        CharacterLimbsCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            left_arm_health: __sdk::__query_builder::Col::new(table_name, "left_arm_health"),
+            right_arm_health: __sdk::__query_builder::Col::new(table_name, "right_arm_health"),
+            left_leg_health: __sdk::__query_builder::Col::new(table_name, "left_leg_health"),
+            right_leg_health: __sdk::__query_builder::Col::new(table_name, "right_leg_health"),
+            head_health: __sdk::__query_builder::Col::new(table_name, "head_health"),
+            chest_health: __sdk::__query_builder::Col::new(table_name, "chest_health"),
+            stomach_health: __sdk::__query_builder::Col::new(table_name, "stomach_health"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `CharacterLimbs`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct CharacterLimbsIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<CharacterLimbs, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for CharacterLimbs {
+    type IxCols = CharacterLimbsIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        CharacterLimbsIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for CharacterLimbs {}

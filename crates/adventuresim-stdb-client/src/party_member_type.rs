@@ -17,3 +17,52 @@ pub struct PartyMember {
 impl __sdk::InModule for PartyMember {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PartyMember`.
+///
+/// Provides typed access to columns for query building.
+pub struct PartyMemberCols {
+    pub id: __sdk::__query_builder::Col<PartyMember, u64>,
+    pub party_id: __sdk::__query_builder::Col<PartyMember, String>,
+    pub character_id: __sdk::__query_builder::Col<PartyMember, u64>,
+    pub role: __sdk::__query_builder::Col<PartyMember, Option<String>>,
+    pub recruitment_role_id: __sdk::__query_builder::Col<PartyMember, Option<u64>>,
+}
+
+impl __sdk::__query_builder::HasCols for PartyMember {
+    type Cols = PartyMemberCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PartyMemberCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            role: __sdk::__query_builder::Col::new(table_name, "role"),
+            recruitment_role_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "recruitment_role_id",
+            ),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PartyMember`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PartyMemberIxCols {
+    pub character_id: __sdk::__query_builder::IxCol<PartyMember, u64>,
+    pub id: __sdk::__query_builder::IxCol<PartyMember, u64>,
+    pub party_id: __sdk::__query_builder::IxCol<PartyMember, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PartyMember {
+    type IxCols = PartyMemberIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PartyMemberIxCols {
+            character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for PartyMember {}

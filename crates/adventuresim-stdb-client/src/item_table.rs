@@ -80,11 +80,6 @@ impl<'ctx> __sdk::Table for ItemTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<Item>("item");
-    _table.add_unique_constraint::<String>("id", |row| &row.id);
-}
 pub struct ItemUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ItemTableHandle<'ctx> {
@@ -100,17 +95,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ItemTableHandle<'ctx> {
     fn remove_on_update(&self, callback: ItemUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Item>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Item>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `id` unique index on the table `item`,
@@ -140,5 +124,38 @@ impl<'ctx> ItemIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<Item> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<Item>("item");
+    _table.add_unique_constraint::<String>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Item>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<Item>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Item`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait itemQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Item`.
+    fn item(&self) -> __sdk::__query_builder::Table<Item>;
+}
+
+impl itemQueryTableAccess for __sdk::QueryTableAccessor {
+    fn item(&self) -> __sdk::__query_builder::Table<Item> {
+        __sdk::__query_builder::Table::new("item")
     }
 }

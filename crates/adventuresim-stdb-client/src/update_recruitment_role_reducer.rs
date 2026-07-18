@@ -34,8 +34,6 @@ impl __sdk::InModule for UpdateRecruitmentRoleArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateRecruitmentRoleCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_recruitment_role`.
 ///
@@ -45,42 +43,8 @@ pub trait update_recruitment_role {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_update_recruitment_role`] callbacks.
-    fn update_recruitment_role(
-        &self,
-        leader_id: u64,
-        role_id: u64,
-        name: String,
-        quantity: u32,
-        requirements: RecruitmentRequirements,
-        weapon_precision: f32,
-    ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `update_recruitment_role`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`UpdateRecruitmentRoleCallbackId`] can be passed to [`Self::remove_on_update_recruitment_role`]
-    /// to cancel the callback.
-    fn on_update_recruitment_role(
-        &self,
-        callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &u64,
-            &String,
-            &u32,
-            &RecruitmentRequirements,
-            &f32,
-        ) + Send
-        + 'static,
-    ) -> UpdateRecruitmentRoleCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_update_recruitment_role`],
-    /// causing it not to run in the future.
-    fn remove_on_update_recruitment_role(&self, callback: UpdateRecruitmentRoleCallbackId);
-}
-
-impl update_recruitment_role for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`update_recruitment_role:update_recruitment_role_then`] to run a callback after the reducer completes.
     fn update_recruitment_role(
         &self,
         leader_id: u64,
@@ -90,8 +54,57 @@ impl update_recruitment_role for super::RemoteReducers {
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "update_recruitment_role",
+        self.update_recruitment_role_then(
+            leader_id,
+            role_id,
+            name,
+            quantity,
+            requirements,
+            weapon_precision,
+            |_, _| {},
+        )
+    }
+
+    /// Request that the remote module invoke the reducer `update_recruitment_role` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn update_recruitment_role_then(
+        &self,
+        leader_id: u64,
+        role_id: u64,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()>;
+}
+
+impl update_recruitment_role for super::RemoteReducers {
+    fn update_recruitment_role_then(
+        &self,
+        leader_id: u64,
+        role_id: u64,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(
             UpdateRecruitmentRoleArgs {
                 leader_id,
                 role_id,
@@ -100,79 +113,7 @@ impl update_recruitment_role for super::RemoteReducers {
                 requirements,
                 weapon_precision,
             },
+            callback,
         )
-    }
-    fn on_update_recruitment_role(
-        &self,
-        mut callback: impl FnMut(
-            &super::ReducerEventContext,
-            &u64,
-            &u64,
-            &String,
-            &u32,
-            &RecruitmentRequirements,
-            &f32,
-        ) + Send
-        + 'static,
-    ) -> UpdateRecruitmentRoleCallbackId {
-        UpdateRecruitmentRoleCallbackId(self.imp.on_reducer(
-            "update_recruitment_role",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer:
-                                super::Reducer::UpdateRecruitmentRole {
-                                    leader_id,
-                                    role_id,
-                                    name,
-                                    quantity,
-                                    requirements,
-                                    weapon_precision,
-                                },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(
-                    ctx,
-                    leader_id,
-                    role_id,
-                    name,
-                    quantity,
-                    requirements,
-                    weapon_precision,
-                )
-            }),
-        ))
-    }
-    fn remove_on_update_recruitment_role(&self, callback: UpdateRecruitmentRoleCallbackId) {
-        self.imp
-            .remove_on_reducer("update_recruitment_role", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `update_recruitment_role`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_update_recruitment_role {
-    /// Set the call-reducer flags for the reducer `update_recruitment_role` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn update_recruitment_role(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_update_recruitment_role for super::SetReducerFlags {
-    fn update_recruitment_role(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("update_recruitment_role", flags);
     }
 }

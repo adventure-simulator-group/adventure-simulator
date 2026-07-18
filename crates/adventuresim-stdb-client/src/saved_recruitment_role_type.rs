@@ -19,3 +19,50 @@ pub struct SavedRecruitmentRole {
 impl __sdk::InModule for SavedRecruitmentRole {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `SavedRecruitmentRole`.
+///
+/// Provides typed access to columns for query building.
+pub struct SavedRecruitmentRoleCols {
+    pub id: __sdk::__query_builder::Col<SavedRecruitmentRole, u64>,
+    pub owner_character_id: __sdk::__query_builder::Col<SavedRecruitmentRole, u64>,
+    pub name: __sdk::__query_builder::Col<SavedRecruitmentRole, String>,
+    pub requirements: __sdk::__query_builder::Col<SavedRecruitmentRole, RecruitmentRequirements>,
+    pub weapon_precision: __sdk::__query_builder::Col<SavedRecruitmentRole, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for SavedRecruitmentRole {
+    type Cols = SavedRecruitmentRoleCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        SavedRecruitmentRoleCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
+            weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `SavedRecruitmentRole`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct SavedRecruitmentRoleIxCols {
+    pub id: __sdk::__query_builder::IxCol<SavedRecruitmentRole, u64>,
+    pub owner_character_id: __sdk::__query_builder::IxCol<SavedRecruitmentRole, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for SavedRecruitmentRole {
+    type IxCols = SavedRecruitmentRoleIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        SavedRecruitmentRoleIxCols {
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for SavedRecruitmentRole {}

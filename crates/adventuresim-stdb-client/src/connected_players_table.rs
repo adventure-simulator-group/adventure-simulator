@@ -91,11 +91,27 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<ConnectedPlayer>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<ConnectedPlayer>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ConnectedPlayer`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait connected_playersQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ConnectedPlayer`.
+    fn connected_players(&self) -> __sdk::__query_builder::Table<ConnectedPlayer>;
+}
+
+impl connected_playersQueryTableAccess for __sdk::QueryTableAccessor {
+    fn connected_players(&self) -> __sdk::__query_builder::Table<ConnectedPlayer> {
+        __sdk::__query_builder::Table::new("connected_players")
+    }
 }
