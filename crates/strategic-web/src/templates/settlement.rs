@@ -1704,23 +1704,23 @@ fn personality_tags(
     };
     let mut tags = Vec::new();
     match personality.nerve {
-        Brave => tags.push(("Brave", "Raw morale loss from being outmatched ×0.5.")),
-        Fearful => tags.push(("Fearful", "Raw morale loss from being outmatched ×2.")),
+        Brave => tags.push(("Brave", "Morale loss from being outmatched ×0.5.")),
+        Fearful => tags.push(("Fearful", "Morale loss from being outmatched ×2.")),
         _ => {}
     }
     match personality.drive {
-        Ambitious => tags.push(("Ambitious", "Raw morale from victories and defeats ×1.5.")),
-        Content => tags.push(("Content", "Raw morale from victories and defeats ×0.5.")),
+        Ambitious => tags.push(("Ambitious", "Morale from victories and defeats ×1.5.")),
+        Content => tags.push(("Content", "Morale from victories and defeats ×0.5.")),
         _ => {}
     }
     match personality.outlook {
         Sanguine => tags.push((
             "Sanguine",
-            "Positive raw morale ×1.25; negative raw morale ×0.75; negative-event duration ×0.5.",
+            "Positive morale ×1.25; negative morale ×0.75; negative-event duration ×0.5.",
         )),
         Brooding => tags.push((
             "Brooding",
-            "Positive raw morale ×0.75; negative raw morale ×1.25; negative-event duration ×2.",
+            "Positive morale ×0.75; negative morale ×1.25; negative-event duration ×2.",
         )),
         _ => {}
     }
@@ -1745,21 +1745,15 @@ fn personality_tags(
         _ => {}
     }
     match personality.self_regard {
-        Proud => tags.push((
-            "Proud",
-            "Raw morale from victory ×1.5; raw morale from defeat ×3.",
-        )),
-        Humble => tags.push(("Humble", "Raw morale from victories and defeats ×0.75.")),
+        Proud => tags.push(("Proud", "Morale from victory ×1.5; morale from defeat ×3.")),
+        Humble => tags.push(("Humble", "Morale from victories and defeats ×0.75.")),
         _ => {}
     }
     match personality.conviction {
-        Zealous => tags.push((
-            "Zealous",
-            "Raw morale from religious sources and events ×1.5.",
-        )),
+        Zealous => tags.push(("Zealous", "Morale from religious sources and events ×1.5.")),
         Irreverent => tags.push((
             "Irreverent",
-            "Raw morale from religious sources and events ×0.5.",
+            "Morale from religious sources and events ×0.5.",
         )),
         _ => {}
     }
