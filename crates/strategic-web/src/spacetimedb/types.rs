@@ -52,6 +52,61 @@ pub struct Character {
     pub temporary: bool,
 }
 
+macro_rules! personality_axis {
+    ($name:ident { $($variant:ident),+ $(,)? }) => {
+        #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+        pub enum $name { $($variant),+ }
+    };
+}
+personality_axis!(Nerve {
+    Neutral,
+    Brave,
+    Fearful
+});
+personality_axis!(Drive {
+    Neutral,
+    Ambitious,
+    Content
+});
+personality_axis!(Outlook {
+    Neutral,
+    Sanguine,
+    Brooding
+});
+personality_axis!(Sociability {
+    Neutral,
+    Gregarious,
+    Solitary
+});
+personality_axis!(Conscience {
+    Neutral,
+    Compassionate,
+    Callous,
+    Cruel
+});
+personality_axis!(SelfRegard {
+    Neutral,
+    Proud,
+    Humble
+});
+personality_axis!(Conviction {
+    Neutral,
+    Zealous,
+    Irreverent
+});
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterPersonality {
+    pub character_id: u64,
+    pub nerve: Nerve,
+    pub drive: Drive,
+    pub outlook: Outlook,
+    pub sociability: Sociability,
+    pub conscience: Conscience,
+    pub self_regard: SelfRegard,
+    pub conviction: Conviction,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settlement {
     pub id: String,

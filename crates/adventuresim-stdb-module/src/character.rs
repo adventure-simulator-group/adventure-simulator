@@ -349,6 +349,25 @@ pub(crate) fn insert_new_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
+    insert_character_with_origin(ctx, name, id, temporary, temporary)
+}
+
+pub(crate) fn insert_new_npc_character(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    temporary: bool,
+) -> Result<(), String> {
+    insert_character_with_origin(ctx, name, id, temporary, true)
+}
+
+fn insert_character_with_origin(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    temporary: bool,
+    npc: bool,
+) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
 
     let settlements: Vec<Settlement> = ctx.db.settlement().iter().collect();
@@ -433,6 +452,7 @@ pub(crate) fn insert_new_character(
         left_leg_agility: 3.0,
         right_leg_agility: 3.0,
     });
+    crate::personality::initialize_personality(ctx, id, npc);
 
     // Starter items
     add_inventory_item(ctx, character.id, "gold_coin", 100);

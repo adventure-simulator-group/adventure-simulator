@@ -793,6 +793,7 @@ pub fn party_personal_page(
     schedule: Option<&CharacterTrainingSchedule>,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     notoriety: f32,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
     theme: &str,
 ) -> Markup {
     let content = html! {
@@ -812,7 +813,7 @@ pub fn party_personal_page(
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
             }
-            (character_bio_rail(active_character, religion_id, notoriety, true, &location.base_path()))
+            (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name), theme)
@@ -860,6 +861,7 @@ pub fn party_stats_page(
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
     notoriety: f32,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -881,6 +883,7 @@ pub fn party_stats_page(
                 selected,
                 religion_id,
                 notoriety,
+                personality,
                 selected.id == active_character.id,
                 &location.base_path(),
             ))
@@ -1658,6 +1661,7 @@ fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
     notoriety: f32,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
@@ -1666,6 +1670,16 @@ fn character_bio_rail(
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
                 div { dt { "Notoriety" } dd title="Tracked now; consequences will be added later." { (format!("{notoriety:.1}")) } }
+                @if let Some(personality) = personality {
+                    @let tags = personality_tags(personality);
+                    @if !tags.is_empty() {
+                        div { dt { "Personality" } dd class="personality-tags" {
+                            @for (name, description) in tags {
+                                span class="personality-tag" title=(description) { (name) }
+                            }
+                        } }
+                    }
+                }
                 div class="character-religion" {
                     dt { "Religion" }
                     dd {
@@ -1679,6 +1693,86 @@ fn character_bio_rail(
                 }
             }
         }))
+    }
+}
+
+fn personality_tags(
+    personality: &crate::spacetimedb::CharacterPersonality,
+) -> Vec<(&'static str, &'static str)> {
+    use crate::spacetimedb::{
+        Conscience::*, Conviction::*, Drive::*, Nerve::*, Outlook::*, SelfRegard::*, Sociability::*,
+    };
+    let mut tags = Vec::new();
+    match personality.nerve {
+        Brave => tags.push(("Brave", "Less troubled when outmatched.")),
+        Fearful => tags.push(("Fearful", "More troubled when outmatched.")),
+        _ => {}
+    }
+    match personality.drive {
+        Ambitious => tags.push(("Ambitious", "Feels victories and defeats more strongly.")),
+        Content => tags.push(("Content", "Feels victories and defeats less strongly.")),
+        _ => {}
+    }
+    match personality.outlook {
+        Sanguine => tags.push((
+            "Sanguine",
+            "Favors good news and recovers from setbacks quickly.",
+        )),
+        Brooding => tags.push(("Brooding", "Dwells on setbacks and discounts good news.")),
+        _ => {}
+    }
+    match personality.sociability {
+        Gregarious => tags.push(("Gregarious", "Responds strongly to encouragement.")),
+        Solitary => tags.push(("Solitary", "Responds weakly to encouragement.")),
+        _ => {}
+    }
+    match personality.conscience {
+        Compassionate => tags.push(("Compassionate", "Cares deeply about the welfare of others.")),
+        Callous => tags.push(("Callous", "Is unmoved by the suffering of others.")),
+        Cruel => tags.push(("Cruel", "Takes satisfaction in causing suffering.")),
+        _ => {}
+    }
+    match personality.self_regard {
+        Proud => tags.push(("Proud", "Exults in victory and takes defeat personally.")),
+        Humble => tags.push(("Humble", "Is less concerned with personal glory.")),
+        _ => {}
+    }
+    match personality.conviction {
+        Zealous => tags.push((
+            "Zealous",
+            "Responds strongly to religious life and conflict.",
+        )),
+        Irreverent => tags.push((
+            "Irreverent",
+            "Responds weakly to religious life and conflict.",
+        )),
+        _ => {}
+    }
+    tags
+}
+
+#[cfg(test)]
+mod personality_tests {
+    use super::*;
+    use crate::spacetimedb::*;
+
+    #[test]
+    fn neutral_axes_are_omitted_from_bio_tags() {
+        let personality = CharacterPersonality {
+            character_id: 1,
+            nerve: Nerve::Brave,
+            drive: Drive::Neutral,
+            outlook: Outlook::Neutral,
+            sociability: Sociability::Neutral,
+            conscience: Conscience::Cruel,
+            self_regard: SelfRegard::Neutral,
+            conviction: Conviction::Neutral,
+        };
+        let tags = personality_tags(&personality);
+        assert_eq!(
+            tags.iter().map(|tag| tag.0).collect::<Vec<_>>(),
+            ["Brave", "Cruel"]
+        );
     }
 }
 

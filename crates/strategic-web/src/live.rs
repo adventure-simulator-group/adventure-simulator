@@ -28,6 +28,7 @@ use adventuresim_stdb_client::{
     character_morale_source_table::CharacterMoraleSourceTableAccess,
     character_needs_table::CharacterNeedsTableAccess,
     character_notoriety_table::CharacterNotorietyTableAccess,
+    character_personality_table::CharacterPersonalityTableAccess,
     character_skills_table::CharacterSkillsTableAccess,
     character_stats_table::CharacterStatsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
@@ -149,6 +150,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_needs());
         invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
         invalidate_on_changes!(state.0._connection.db.character_morale_source());
+        invalidate_on_changes!(state.0._connection.db.character_personality());
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
@@ -186,6 +188,7 @@ impl LiveState {
             .add_query(|query| query.from.character_equip())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.character_morale_source())
+            .add_query(|query| query.from.character_personality())
             .add_query(|query| query.from.character_needs())
             .add_query(|query| query.from.character_notoriety())
             .add_query(|query| query.from.character_skills())

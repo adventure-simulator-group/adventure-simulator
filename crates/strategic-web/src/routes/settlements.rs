@@ -28,11 +28,12 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterSkills,
-    CharacterStats, CharacterStrategicCondition, CharacterTrainingSchedule, InventoryItem,
-    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyJourney, PartyMember,
-    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
-    ReligiousDemand, Settlement, SettlementAlias, SettlementDescription, TravelEdge,
+    CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
+    CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
+    SettlementAlias, SettlementDescription, TravelEdge,
 };
 use crate::templates::settlement::{
     LocationKind, LocationView, MerchantShop, RestSummary, camp_page, inn_page,
@@ -1200,6 +1201,8 @@ async fn party_personal(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
+    let personality =
+        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
     let religious_demand = state
         .db
         .query::<ReligiousDemand>(&format!(
@@ -1224,6 +1227,7 @@ async fn party_personal(
             schedule.first(),
             religious_demand.as_ref(),
             notoriety,
+            personality.as_ref(),
             session.theme(),
         )
         .into_string(),
@@ -1780,6 +1784,8 @@ async fn party_stats(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
+    let personality =
+        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
     Html(
         party_stats_page(
             &location,
@@ -1796,6 +1802,7 @@ async fn party_stats(
             active_party.as_ref(),
             selected_party.as_ref(),
             notoriety,
+            personality.as_ref(),
             session.theme(),
         )
         .into_string(),
