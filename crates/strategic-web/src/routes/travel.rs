@@ -343,7 +343,10 @@ fn journey_minutes(distance_m: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_world_schema::{LandRoute, TravelRoute};
+    use adventuresim_world_schema::{
+        FallbackIndustry, IndustryEvidence, InferredIndustryProfile, LandRoute, RouteTerrain,
+        TravelRoute,
+    };
 
     fn settlement(id: &str, node: u64) -> Settlement {
         Settlement {
@@ -353,6 +356,10 @@ mod tests {
             coord_y: 0.0,
             population_level: 0,
             population_estimate: 0,
+            industries: InferredIndustryProfile::new(vec![IndustryEvidence::Fallback(
+                FallbackIndustry::WoodlandFuelwood,
+            )])
+            .unwrap(),
             scene_key: String::new(),
             religion_id: String::new(),
             source_node_id: Some(node),
@@ -370,6 +377,7 @@ mod tests {
             }),
             length_m: 1_000,
             slope_multiplier: 1.0,
+            terrain: RouteTerrain::stage_placeholder(),
             certainty: 100,
             section: String::new(),
         }
