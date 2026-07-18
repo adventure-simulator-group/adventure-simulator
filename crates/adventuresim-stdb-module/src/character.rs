@@ -320,14 +320,14 @@ pub(crate) fn insert_new_character(
 
     // Starter equip
     add_and_equip_item(ctx, character.id, "buckler", ItemSlot::LeftHolding)?;
-    add_and_equip_item(ctx, character.id, "short_sword", ItemSlot::RightHolding)?;
-    add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::LeftArm)?;
-    add_and_equip_item(ctx, character.id, "leather_armguard", ItemSlot::RightArm)?;
-    add_and_equip_item(ctx, character.id, "leather_helmet", ItemSlot::Head)?;
-    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Chest)?;
-    add_and_equip_item(ctx, character.id, "leather_vest", ItemSlot::Stomach)?;
-    add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::LeftLeg)?;
-    add_and_equip_item(ctx, character.id, "leather_cuisse", ItemSlot::RightLeg)?;
+    add_and_equip_item(ctx, character.id, "katzbalger", ItemSlot::RightHolding)?;
+    add_and_equip_item(ctx, character.id, "quilted_sleeve", ItemSlot::LeftArm)?;
+    add_and_equip_item(ctx, character.id, "quilted_sleeve", ItemSlot::RightArm)?;
+    add_and_equip_item(ctx, character.id, "arming_cap", ItemSlot::Head)?;
+    add_and_equip_item(ctx, character.id, "arming_doublet", ItemSlot::Chest)?;
+    add_and_equip_item(ctx, character.id, "padded_skirt", ItemSlot::Stomach)?;
+    add_and_equip_item(ctx, character.id, "padded_chausses", ItemSlot::LeftLeg)?;
+    add_and_equip_item(ctx, character.id, "padded_chausses", ItemSlot::RightLeg)?;
 
     crate::strategic::create_solo_party_for_character(ctx, character.id)?;
     crate::capability::refresh_character_capability(ctx, character.id)?;
