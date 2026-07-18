@@ -189,7 +189,7 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
 | `character_strategic_condition` | Refreshable derived morale, ally-restoration percentage, and incapacitation projection for server-authoritative UI and action gating |
-| `character_personality` | Immutable strategic personality axes; one typed row per character, with missing legacy rows interpreted as neutral |
+| `character_personality` | Immutable strategic personality axes; one typed row per newly created character, with missing legacy rows interpreted as neutral without requiring a materialized backfill |
 | `inventory_item` | Persistent items |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |

@@ -18,7 +18,6 @@ pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backfill_character_deaths_and_leadership_reducer;
-pub mod backfill_character_personalities_reducer;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
@@ -372,7 +371,6 @@ pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
-pub use backfill_character_personalities_reducer::backfill_character_personalities;
 pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
@@ -744,7 +742,6 @@ pub enum Reducer {
         quest_id: String,
     },
     BackfillCharacterDeathsAndLeadership,
-    BackfillCharacterPersonalities,
     BackfillItemValues,
     BackfillSoloParties,
     BeginWorldDataImport {
@@ -1157,7 +1154,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
             }
-            Reducer::BackfillCharacterPersonalities => "backfill_character_personalities",
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
@@ -1284,8 +1280,6 @@ impl __sdk::Reducer for Reducer {
                 quest_id: quest_id.clone(),
 }),
             Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
-                }),
-Reducer::BackfillCharacterPersonalities => __sats::bsatn::to_vec(&backfill_character_personalities_reducer::BackfillCharacterPersonalitiesArgs {
                 }),
 Reducer::BackfillItemValues => __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {
                 }),

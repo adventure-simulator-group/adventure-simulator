@@ -1,5 +1,4 @@
-use crate::character::character;
-use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, table};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum Nerve {
@@ -307,24 +306,6 @@ pub fn ally_restoration_multiplier(
         Sociability::Solitary => (0.5, Some("Solitary")),
         Sociability::Neutral => (1.0, None),
     }
-}
-
-/// Idempotently gives legacy characters a safe neutral profile.
-#[reducer]
-pub fn backfill_character_personalities(ctx: &ReducerContext) -> Result<(), String> {
-    if ctx.sender() != ctx.database_identity() {
-        return Err("Character personalities may only be backfilled by the database itself".into());
-    }
-    let ids: Vec<_> = ctx
-        .db
-        .character()
-        .iter()
-        .map(|character| character.id)
-        .collect();
-    for id in ids {
-        initialize_personality(ctx, id, false);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
