@@ -64,6 +64,8 @@ pub struct ItemCols {
     pub slash: __sdk::__query_builder::Col<Item, bool>,
     pub pierce: __sdk::__query_builder::Col<Item, bool>,
     pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
+    pub nutrition_kcal: __sdk::__query_builder::Col<Item, f32>,
+    pub water_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for Item {
@@ -91,6 +93,8 @@ impl __sdk::__query_builder::HasCols for Item {
             slash: __sdk::__query_builder::Col::new(table_name, "slash"),
             pierce: __sdk::__query_builder::Col::new(table_name, "pierce"),
             base_value: __sdk::__query_builder::Col::new(table_name, "base_value"),
+            nutrition_kcal: __sdk::__query_builder::Col::new(table_name, "nutrition_kcal"),
+            water_capacity_ml: __sdk::__query_builder::Col::new(table_name, "water_capacity_ml"),
         }
     }
 }

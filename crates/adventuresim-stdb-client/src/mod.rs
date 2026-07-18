@@ -80,6 +80,7 @@ pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
+pub mod finish_world_data_import_reducer;
 pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
@@ -162,6 +163,7 @@ pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
+pub mod travel_edge_kind_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_to_quest_reducer;
@@ -256,6 +258,7 @@ pub use enter_mission_reducer::enter_mission;
 pub use equip_item_reducer::equip_item;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
+pub use finish_world_data_import_reducer::finish_world_data_import;
 pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
@@ -338,6 +341,7 @@ pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_import_type::TravelEdgeImport;
+pub use travel_edge_kind_type::TravelEdgeKind;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_to_quest_reducer::travel_to_quest;
@@ -389,7 +393,10 @@ pub enum Reducer {
     },
     BackfillItemValues,
     BackfillSoloParties,
-    BeginWorldDataImport,
+    BeginWorldDataImport {
+        schema_version: u32,
+        artifact_id: String,
+    },
     CalibrateWeaponPrecision,
     CancelMissionRequest {
         mission_id: String,
@@ -532,6 +539,9 @@ pub enum Reducer {
         to_character_ids: Vec<u64>,
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
+    },
+    FinishWorldDataImport {
+        artifact_id: String,
     },
     ImportSettlements {
         settlements: Vec<SettlementImport>,
@@ -750,7 +760,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
-            Reducer::BeginWorldDataImport => "begin_world_data_import",
+            Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
@@ -780,6 +790,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
+            Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
@@ -871,8 +882,14 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillSoloParties => {
                 __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {})
             }
-            Reducer::BeginWorldDataImport => {
-                __sats::bsatn::to_vec(&begin_world_data_import_reducer::BeginWorldDataImportArgs {})
+            Reducer::BeginWorldDataImport {
+                schema_version,
+                artifact_id,
+            } => {
+                __sats::bsatn::to_vec(&begin_world_data_import_reducer::BeginWorldDataImportArgs {
+                    schema_version: schema_version.clone(),
+                    artifact_id: artifact_id.clone(),
+                })
             }
             Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(
                 &calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs {},
@@ -1141,6 +1158,11 @@ impl __sdk::Reducer for Reducer {
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
             }),
+            Reducer::FinishWorldDataImport { artifact_id } => __sats::bsatn::to_vec(
+                &finish_world_data_import_reducer::FinishWorldDataImportArgs {
+                    artifact_id: artifact_id.clone(),
+                },
+            ),
             Reducer::ImportSettlements { settlements } => {
                 __sats::bsatn::to_vec(&import_settlements_reducer::ImportSettlementsArgs {
                     settlements: settlements.clone(),
@@ -1382,16 +1404,20 @@ impl __sdk::Reducer for Reducer {
             Reducer::TravelToQuest {
                 character_id,
                 quest_id,
+                provision,
             } => __sats::bsatn::to_vec(&travel_to_quest_reducer::TravelToQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
+                provision: provision.clone(),
             }),
             Reducer::TravelToSettlement {
                 character_id,
                 settlement_id,
+                provision,
             } => __sats::bsatn::to_vec(&travel_to_settlement_reducer::TravelToSettlementArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
+                provision: provision.clone(),
             }),
             Reducer::TurnInQuest {
                 character_id,
@@ -1958,6 +1984,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_morale_source" => db_update
                     .character_morale_source
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_needs" => db_update
+                    .character_needs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2099,6 +2128,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_morale_source" => db_update
                     .character_morale_source
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_needs" => db_update
+                    .character_needs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_notoriety" => db_update
                     .character_notoriety
@@ -3171,6 +3203,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_equip",
         "character_limbs",
         "character_morale_source",
+        "character_needs",
         "character_notoriety",
         "character_skills",
         "character_stats",

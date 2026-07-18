@@ -9,6 +9,21 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 
 **Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the adventuresim-tactical-server game state.**
 
+## Offline world compilation
+
+Raw historical and geographic datasets are compiled outside SpacetimeDB by the
+native `adventuresim-world-import` crate. Each upstream format has an isolated
+source module; the outer builder combines them into a validated canonical
+world. `adventuresim-world-schema` contains the dependency-light, versioned
+import types shared by the compiler and strategic module. The strategic module
+accepts those records through reducers but never parses raw datasets or depends
+on native geospatial libraries.
+
+Each compiled artifact is identified by a content hash. An interrupted load may
+resume only with the same artifact; a different artifact requires a database
+reset. Successful loads explicitly complete their import session so later
+batches cannot mutate an already-loaded world.
+
 ## Strategic browser updates
 
 The strategic browser is server-authoritative. Browsers submit discrete commands

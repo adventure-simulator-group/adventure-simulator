@@ -6,52 +6,45 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BeginWorldDataImportArgs {
-    pub schema_version: u32,
+pub(super) struct FinishWorldDataImportArgs {
     pub artifact_id: String,
 }
 
-impl From<BeginWorldDataImportArgs> for super::Reducer {
-    fn from(args: BeginWorldDataImportArgs) -> Self {
-        Self::BeginWorldDataImport {
-            schema_version: args.schema_version,
+impl From<FinishWorldDataImportArgs> for super::Reducer {
+    fn from(args: FinishWorldDataImportArgs) -> Self {
+        Self::FinishWorldDataImport {
             artifact_id: args.artifact_id,
         }
     }
 }
 
-impl __sdk::InModule for BeginWorldDataImportArgs {
+impl __sdk::InModule for FinishWorldDataImportArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `begin_world_data_import`.
+/// Extension trait for access to the reducer `finish_world_data_import`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait begin_world_data_import {
-    /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible.
+pub trait finish_world_data_import {
+    /// Request that the remote module invoke the reducer `finish_world_data_import` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`begin_world_data_import:begin_world_data_import_then`] to run a callback after the reducer completes.
-    fn begin_world_data_import(
-        &self,
-        schema_version: u32,
-        artifact_id: String,
-    ) -> __sdk::Result<()> {
-        self.begin_world_data_import_then(schema_version, artifact_id, |_, _| {})
+    /// /// Use [`finish_world_data_import:finish_world_data_import_then`] to run a callback after the reducer completes.
+    fn finish_world_data_import(&self, artifact_id: String) -> __sdk::Result<()> {
+        self.finish_world_data_import_then(artifact_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `begin_world_data_import` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `finish_world_data_import` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn begin_world_data_import_then(
+    fn finish_world_data_import_then(
         &self,
-        schema_version: u32,
         artifact_id: String,
 
         callback: impl FnOnce(
@@ -62,10 +55,9 @@ pub trait begin_world_data_import {
     ) -> __sdk::Result<()>;
 }
 
-impl begin_world_data_import for super::RemoteReducers {
-    fn begin_world_data_import_then(
+impl finish_world_data_import for super::RemoteReducers {
+    fn finish_world_data_import_then(
         &self,
-        schema_version: u32,
         artifact_id: String,
 
         callback: impl FnOnce(
@@ -74,12 +66,7 @@ impl begin_world_data_import for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            BeginWorldDataImportArgs {
-                schema_version,
-                artifact_id,
-            },
-            callback,
-        )
+        self.imp
+            .invoke_reducer_with_callback(FinishWorldDataImportArgs { artifact_id }, callback)
     }
 }

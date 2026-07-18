@@ -103,8 +103,9 @@ just generate-db-client # Regenerate and format the Rust client bindings
 
 # World-data source
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
-just normalise-viabundus # Write the 1544 strategic graph to target/
-just load-viabundus-world # Load it into a published local SpacetimeDB module
+just compile-world      # Compile and validate the 1544 strategic world in target/
+just normalise-viabundus # Compatibility alias for compile-world
+just load-world         # Load it into a published local SpacetimeDB module
 ```
 
 `just test` runs the native test suites across the workspace. The
@@ -148,12 +149,16 @@ Use `python3 scripts/init_viabundus.py --force` only when replacing an existing
 local download. The command records the source URLs and SHA-256 checksums in
 `viabundus/.viabundus-source.json`.
 
-`just normalise-viabundus` retains active 1544 land and ferry segments, all
-nodes needed to connect those segments, and active settlements. It writes a
-deterministic, generated artifact to `target/viabundus-v2-1544.json` and emits
-a validation report. `just load-viabundus-world` sends that same normalized
+`just compile-world` retains active 1544 land and ferry segments, all nodes
+needed to connect those segments, and active settlements. The Rust world
+compiler writes a deterministic, schema-versioned artifact to
+`target/world-1544.json`, validates its references and invariants, and emits a
+build report. `just load-world` sends that same compiled
 data in bounded batches to a published local module. Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
+Interrupted loads can be resumed with the identical compiled artifact. The
+module rejects a different artifact or any additional batches after completion;
+use `just publish-reset` before loading changed source data or a different year.
 
 The loader claims a one-time import identity before sending batches. For a
 production deployment, the operator must make that first call before allowing
