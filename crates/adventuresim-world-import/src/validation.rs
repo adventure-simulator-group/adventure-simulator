@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
 use adventuresim_world_schema::{
-    CompiledWorld, DroughtProfile, SettlementHydrology, SoilProfile, SurfaceGeology, TravelRoute,
-    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, valid_sources_markdown,
+    CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DroughtProfile, SettlementHydrology,
+    SoilProfile, SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    valid_sources_markdown,
 };
 
 use crate::{Error, Result};
@@ -12,6 +13,12 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",
             world.metadata.schema_version
+        )));
+    }
+    if world.metadata.inference_rules_version != CURRENT_INFERENCE_RULES_VERSION {
+        return Err(Error::Validation(format!(
+            "inference rules version {} is not supported (expected {CURRENT_INFERENCE_RULES_VERSION})",
+            world.metadata.inference_rules_version
         )));
     }
 
@@ -485,6 +492,11 @@ fn elevation_counts_are_consistent(
 
 #[cfg(test)]
 mod tests {
+    use adventuresim_world_schema::{
+        CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, SpatialGridSpec, WORLD_SCHEMA_VERSION,
+        WorldBuildReport, WorldMetadata,
+    };
+
     use super::elevation_counts_are_consistent;
     use super::forest_counts_are_consistent;
     use super::land_use_counts_are_consistent;
@@ -494,6 +506,47 @@ mod tests {
         hydrology_counts_are_consistent, religion_counts_are_consistent,
         soil_counts_are_consistent, tree_species_counts_are_consistent,
     };
+
+    fn empty_world(schema_version: u32, inference_rules_version: u32) -> CompiledWorld {
+        CompiledWorld {
+            metadata: WorldMetadata {
+                schema_version,
+                inference_rules_version,
+                spatial_grid: SpatialGridSpec::default(),
+                world_year: 1544,
+                sources: Vec::new(),
+                road_types: Vec::new(),
+            },
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            settlements: Vec::new(),
+            settlement_aliases: Vec::new(),
+            settlement_descriptions: Vec::new(),
+            report: WorldBuildReport::default(),
+        }
+    }
+
+    #[test]
+    fn metadata_validation_rejects_wrong_schema_and_inference_versions() {
+        assert!(
+            super::validate(&empty_world(
+                WORLD_SCHEMA_VERSION - 1,
+                CURRENT_INFERENCE_RULES_VERSION
+            ))
+            .unwrap_err()
+            .to_string()
+            .contains("schema version")
+        );
+        assert!(
+            super::validate(&empty_world(
+                WORLD_SCHEMA_VERSION,
+                CURRENT_INFERENCE_RULES_VERSION + 1
+            ))
+            .unwrap_err()
+            .to_string()
+            .contains("inference rules version")
+        );
+    }
 
     #[test]
     fn elevation_report_requires_complete_consistent_counts() {

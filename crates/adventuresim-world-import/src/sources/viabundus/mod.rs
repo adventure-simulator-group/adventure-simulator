@@ -4,7 +4,8 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    EdgeEndpoint, SourceProvenance, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
+    EdgeEndpoint, SourceProvenance, SpatialGridSpec, TravelEdgeKind, WorldBuildReport,
+    WorldNodeImport,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -81,7 +82,11 @@ struct RawPopulation {
     inhabitants: String,
 }
 
-pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<SettlementDraft>> {
+pub(crate) fn compile(
+    directory: &Path,
+    year: i32,
+    spatial_grid: SpatialGridSpec,
+) -> Result<WorldDraft<SettlementDraft>> {
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
     let population_path = require(directory, "population.csv")?;
@@ -310,6 +315,7 @@ pub(crate) fn compile(directory: &Path, year: i32) -> Result<WorldDraft<Settleme
 
     Ok(WorldDraft {
         year,
+        spatial_grid,
         sources: vec![SourceProvenance {
             name: SOURCE_NAME.into(),
             url: SOURCE_DOI.into(),
