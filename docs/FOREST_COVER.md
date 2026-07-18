@@ -10,11 +10,12 @@ about the exact historical tree cover around a settlement.
 - DLT dataset DOI: <https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a>
 - Terms: Copernicus full, free, and open data policy
 
-The Copernicus download requires an authenticated data-service workflow that
-was not available while this integration was developed. The raw source
-directory is therefore empty, the integration is verified against synthetic
-GeoTIFF fixtures, and a full-source build is not claimed. It is not yet part of
-the data-initialization script.
+The Copernicus download requires authenticated CLMS access. `just
+plan-forest-cover` checks only whether `CLMS_TOKEN_FILE` names a bounded local
+credential file and redacts its value. Because product item IDs and every
+consumed tile identity are not pinned, `init-forest-cover` refuses network
+preparation. `verify-forest-cover` checks an exact local inventory. The source
+remains release-blocked and a full-source build is not claimed.
 
 ## Manual preparation contract
 

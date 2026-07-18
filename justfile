@@ -246,6 +246,56 @@ init-jung-pnv:
 init-soilgrids:
 	@python3 scripts/init_soilgrids.py
 
+# Plan, initialize, or verify the remaining accepted world-data sources.
+plan-glo30:
+	@python3 scripts/world_source_init.py glo30 --plan
+init-glo30:
+	@python3 scripts/world_source_init.py glo30 --init
+verify-glo30:
+	@python3 scripts/world_source_init.py glo30 --verify-only
+
+plan-hyde:
+	@python3 scripts/world_source_init.py hyde --plan
+init-hyde:
+	@python3 scripts/world_source_init.py hyde --init
+verify-hyde:
+	@python3 scripts/world_source_init.py hyde --verify-only
+
+plan-forest-cover:
+	@python3 scripts/world_source_init.py forest --plan
+init-forest-cover:
+	@python3 scripts/world_source_init.py forest --init
+verify-forest-cover:
+	@python3 scripts/world_source_init.py forest --verify-only
+
+plan-tree-species:
+	@python3 scripts/world_source_init.py trees4f --plan
+init-tree-species:
+	@python3 scripts/world_source_init.py trees4f --init
+verify-tree-species:
+	@python3 scripts/world_source_init.py trees4f --verify-only
+
+plan-geology:
+	@python3 scripts/world_source_init.py egdi --plan
+init-geology:
+	@python3 scripts/world_source_init.py egdi --init
+verify-geology:
+	@python3 scripts/world_source_init.py egdi --verify-only
+
+plan-religion:
+	@python3 scripts/world_source_init.py religion --plan
+init-religion:
+	@python3 scripts/world_source_init.py religion --init
+verify-religion:
+	@python3 scripts/world_source_init.py religion --verify-only
+
+plan-hydrology:
+	@python3 scripts/world_source_init.py eu-hydro --plan
+init-hydrology:
+	@python3 scripts/world_source_init.py eu-hydro --init
+verify-hydrology:
+	@python3 scripts/world_source_init.py eu-hydro --verify-only
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

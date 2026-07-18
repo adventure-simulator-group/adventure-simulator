@@ -67,3 +67,17 @@ strict prepared manifest supplies the actual retrieval timestamp and snapshot
 identity; that does not make raw `latest` reacquisition reproducible. These
 entries do not claim legal resolution or
 reproducibility that is not present.
+
+`scripts/world_source_init.py` provides bounded plan/init/verify workflows for
+these accepted sources. Only the immutable EU-Trees4F archive is acquired; the
+authenticated or incompletely pinned sources fail closed until reviewed
+inventories are committed. The curated IEG CSV is validated in place and its
+rights-reserved reference images are never mirrored. Sidecars use sorted fixed
+metadata and actual sizes/hashes, reject unknown inventory fields, traversal,
+symlinks, redirects outside fixed hosts, oversized content, and partial or
+checksum-failing publication.
+
+The EU-Trees4F initializer pins the exact JRC ENS_CLIM archive. It retains the
+EU-Trees4F v2 Figshare citation and CC0 notice, but does not claim that a
+Figshare-hosted archive is byte-identical; confirming that relationship remains
+an explicit provenance blocker.

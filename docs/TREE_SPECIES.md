@@ -9,11 +9,21 @@ treat them as observations from 1544.
 - Dataset and CC0 licence: <https://doi.org/10.6084/m9.figshare.17032328>
 - Data descriptor: <https://doi.org/10.1038/s41597-022-01128-5>
 - Archive SHA-256: `be115f771e5598e6fd180621e1a32922880cf7ac8e2cb59ba0eabd7f15bfeda4`
+- Archive size: `73,796,217` bytes
+- Pinned JRC ENS_CLIM URL: <https://ies-ows.jrc.ec.europa.eu/efdac/download/EU-Trees4F/EU-Trees4F_ens-clim.zip>
+
+The automated identity applies to that exact JRC ENS_CLIM archive. Its byte
+equivalence to a Figshare-hosted archive has not been established and remains
+an explicit confirmation blocker; the EU-Trees4F v2 Figshare citation and CC0
+notice are retained without making an equivalence claim.
 
 Keep `EU-Trees4F_ens-clim.zip` at
-`target/world-data-sources/raw/tree-species/`. Override it with
-`--tree-species-archive`. The archive remains a manually initialized source
-until its game usefulness is accepted.
+`target/world-data-sources/raw/tree-species/`. `just init-tree-species`
+downloads into a temporary candidate, verifies size and SHA-256, publishes a
+content-addressed generation and canonical sidecar, then atomically replaces
+the active archive. `--force` is required to replace an invalid existing file.
+Use `plan-tree-species` or `verify-tree-species` for non-mutating workflows.
+Override it with `--tree-species-archive`.
 
 ## Source semantics and parsing
 

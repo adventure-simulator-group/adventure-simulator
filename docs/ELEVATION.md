@@ -9,9 +9,12 @@ terrain height is sufficiently stable for the game's plausibility-oriented
 - Product information: <https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM>
 - Terms: Copernicus DEM licence
 
-The manually downloaded `*_DEM.tif` tiles belong in the Git-ignored
-`target/world-data-sources/raw/elevation/` directory. This source is not yet
-part of an initialization script while its suitability is being evaluated.
+The `*_DEM.tif` tiles belong in the Git-ignored
+`target/world-data-sources/raw/elevation/` directory. `just plan-glo30` prints
+the deterministic request and redacted `CDSE_TOKEN_FILE` preflight,
+`init-glo30` refuses until the complete tile inventory is pinned, and
+`verify-glo30` checks a strict local `source-inventory.json`. This
+release-blocked workflow never logs or stores a token.
 
 `sources::elevation` uses the pure-Rust `tiff` crate and does not require GDAL
 or PROJ. It groups settlements by one-degree GLO-30 tile, decodes only the 159
