@@ -63,6 +63,20 @@ $$
 	3. Though not necessarily relevant for the MVP, critical attacks are relevant even when targets are unarmored because this allows the damage multiplier to exceed 1.0, allowing for instantaneous stealth one-hit-kills.
 	4. If a critical hit cannot be made, then attack just stays at 1.0 for a direct hit
 
+### Ranged attacks
+
+Ranged attacks use the same attack-minus-defense exchange, armor coverage,
+penetration, padding, and critical-hit rules as melee attacks. The attacker's
+Ranged check replaces Melee, both arms contribute to aiming, and the weapon's
+projectile energy replaces muscular striking force. Focus adds the character's
+Precision to both melee and ranged accuracy; Agility remains the reflex term.
+
+An alert defender may dodge a projectile or interpose a shield using the normal
+Dodge and Block checks. An unaware defender has no active defense. A missed
+projectile does not unbalance its attacker. Current projectile energy defaults
+to 40 joules per kilogram of ranged weapon, giving the one-kilogram short bow a
+40-joule baseline until ammunition carries its own mass and velocity.
+
 ## Incapacitation
 A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
 
@@ -173,3 +187,54 @@ Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low
 - Padded gambeson (60r, 40p, 250, 0.3, 0.6, 0)
 - 3mm steel brigandine (100r, 40p, 600, 0.4, 0)
 - 7mm wooden shield (100r, 20p, 100, 0.1, 0.9)
+
+## Strategic autoresolve
+
+The strategic autoresolver is a bounded abstract battle built from the pure
+melee and ranged exchanges in `adventuresim-core`. It begins with two symmetric
+pre-engagement phases:
+
+1. Every melee combatant makes a contested Stealth attempt against a randomly
+   selected enemy's average Eyesight and Hearing. Both checks add a seeded
+   random value from 0 to 5. Success grants one full-precision melee attack
+   against the flat-footed target, with no active or facing defense.
+2. Ranged combatants fire while enemy melee combatants close. Their number of
+   opening attacks is the ranged weapon's range divided by the fastest closer's
+   movement speed and the weapon's attack interval. Melee combatants form a
+   screen at two-meter intervals. If the closing side has surplus melee
+   combatants able to bypass that screen, they must travel a semicircle around
+   it; this detour increases the ranged firing window. Weapon melee reach and
+   ranged range are separate autoresolve inputs.
+
+During the main engagement, pairings are recomputed every round. Every active
+defender receives one melee opponent before surplus attackers are distributed
+for a second opponent, then a third, and so on. Every surplus attacker applies
+the current 90-degree flanking penalty. A melee screen therefore forces an
+equal number of enemy melee combatants to target it before exposed ranged
+combatants, and the same rules apply to allies and enemies.
+
+Melee remains round-based: every capable melee combatant attacks once per main
+round. A faster melee weapon instead reduces the simulated input reflex of the
+defender, representing less time to react. Ranged combat runs on elapsed time;
+weapon attack interval determines how many shots occur in each one-second main
+round. Ranged combatants target opposing ranged combatants before melee targets.
+Every defender chooses dodge, parry/block, or no active response according to
+the response with the best expected result.
+
+Every ranged attack consumes one generic arrow. When a combatant runs out, it
+becomes a melee combatant and uses its separately equipped melee weapon, if it
+has one. Player ammunition spent in autoresolve is removed from personal
+inventory. Enemy ranged profiles carry a bounded encounter supply and a melee
+fallback.
+
+Targeted body part and hit precision are drawn from a deterministic seeded
+random stream. Pain, blood loss, existing strategic incapacitation, and
+temporary imbalance can remove a combatant from the fight. The battle ends
+when one side is incapacitated or after 256 main rounds, in which case it is a
+stalemate.
+
+Autoresolve persists final player wounds, blood loss, and spent ammunition. It
+also writes a compact report containing the seed, victor, round count, summary,
+and an expandable exchange log. Enemy health and temporary combat state remain
+transient, so this diagnostic report does not change the tactical persistence
+boundary.

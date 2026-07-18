@@ -1,3 +1,4 @@
+use adventuresim_core::prelude::*;
 use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CrossingWatercourse,
@@ -36,7 +37,6 @@ const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
-const AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const SURGERY_CHECK_PER_HEALTH_DAMAGE: f32 = 20.0;
 
 /// Untreated autoresolve wounds can deteriorate by as much as their original
@@ -53,9 +53,305 @@ fn post_battle_wound_deterioration(damage: f32, surgery_check: f32) -> f32 {
     damage * untreated_fraction
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EnemyArchetype {
+    Bandit,
+    Goblin,
+    Spider,
+    Wolf,
+    Other,
+}
+
+#[derive(Clone, Copy)]
+struct EnemyProfile {
+    ranged: bool,
+    precise: bool,
+    weight_kg: f32,
+    block_training_multiplier: f32,
+    blunt: bool,
+    slash: bool,
+    pierce: bool,
+    accuracy: f32,
+    weapon_weight_kg: f32,
+    penetration: f32,
+    reach: f32,
+    ranged_force_joules: f32,
+    armored: bool,
+    drop: Option<&'static str>,
+}
+
+impl EnemyArchetype {
+    fn from_label(enemy_type: &str) -> Self {
+        let label = enemy_type.to_ascii_lowercase();
+        if label.contains("bandit") || label.contains("thieve") {
+            Self::Bandit
+        } else if label.contains("goblin") {
+            Self::Goblin
+        } else if label.contains("spider") {
+            Self::Spider
+        } else if label.contains("wolf") {
+            Self::Wolf
+        } else {
+            Self::Other
+        }
+    }
+
+    fn profile(self) -> EnemyProfile {
+        match self {
+            Self::Bandit => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 70.0,
+                block_training_multiplier: 1.0,
+                blunt: false,
+                slash: true,
+                pierce: false,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: true,
+                drop: Some("short_sword"),
+            },
+            Self::Goblin => EnemyProfile {
+                ranged: true,
+                precise: true,
+                weight_kg: 70.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 1.4,
+                weapon_weight_kg: 1.0,
+                penetration: 0.8,
+                reach: 20.0,
+                ranged_force_joules: 40.0,
+                armored: false,
+                drop: Some("short_bow"),
+            },
+            Self::Spider => EnemyProfile {
+                ranged: false,
+                precise: true,
+                weight_kg: 35.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 1.4,
+                weapon_weight_kg: 1.5,
+                penetration: 2.0,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: None,
+            },
+            Self::Wolf => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 45.0,
+                block_training_multiplier: 0.4,
+                blunt: false,
+                slash: false,
+                pierce: true,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: None,
+            },
+            Self::Other => EnemyProfile {
+                ranged: false,
+                precise: false,
+                weight_kg: 70.0,
+                block_training_multiplier: 0.4,
+                blunt: true,
+                slash: false,
+                pierce: false,
+                accuracy: 0.8,
+                weapon_weight_kg: 1.5,
+                penetration: 0.8,
+                reach: 0.8,
+                ranged_force_joules: 0.0,
+                armored: false,
+                drop: Some("club"),
+            },
+        }
+    }
+}
+
+fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
+    let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
+    let profile = EnemyArchetype::from_label(enemy_type).profile();
+    let mut combatant = Combatant::new(id);
+    combatant.attributes = CombatAttributes {
+        endurance: rating,
+        immunity: rating,
+        gut: rating,
+        precision: if profile.precise {
+            rating + 0.5
+        } else {
+            rating
+        },
+        intelligence: rating * 0.7,
+        instinct: rating,
+        eyesight: rating,
+        hearing: rating,
+        left_arm_strength: rating,
+        right_arm_strength: rating,
+        left_leg_strength: rating,
+        right_leg_strength: rating,
+        left_arm_agility: rating,
+        right_arm_agility: rating,
+        left_leg_agility: rating,
+        right_leg_agility: rating,
+    };
+    let training = rating * 1_500.0;
+    combatant.skills = CombatSkills {
+        melee_hours: training,
+        ranged_hours: if profile.ranged { training * 2.0 } else { 0.0 },
+        dodge_hours: training,
+        block_hours: training * profile.block_training_multiplier,
+        will_hours: training,
+        balance_hours: training,
+        ..CombatSkills::default()
+    };
+    combatant.body.weight_kg = profile.weight_kg;
+    let weapon = CombatWeapon {
+        melee: !profile.ranged,
+        ranged: profile.ranged,
+        blunt: profile.blunt,
+        slash: profile.slash,
+        pierce: profile.pierce,
+        accuracy: profile.accuracy,
+        weight: profile.weapon_weight_kg,
+        penetration: profile.penetration,
+        melee_reach: if profile.ranged { 0.0 } else { profile.reach },
+        ranged_range: if profile.ranged { profile.reach } else { 0.0 },
+        attack_interval_seconds: if profile.ranged { 1.0 } else { 0.75 },
+        precise: profile.precise,
+        balance: 0.3,
+        ranged_force_joules: profile.ranged_force_joules,
+    };
+    combatant.equipment.weapon = Some(weapon);
+    if profile.ranged {
+        combatant.equipment.ranged_weapon = Some(weapon);
+        combatant.equipment.melee_weapon = Some(CombatWeapon {
+            melee: true,
+            slash: true,
+            pierce: true,
+            accuracy: 1.0,
+            weight: 0.5,
+            penetration: 0.5,
+            melee_reach: 0.5,
+            attack_interval_seconds: 0.6,
+            balance: 0.5,
+            ..CombatWeapon::default()
+        });
+        combatant.equipment.ammunition = 12;
+        combatant.initial_ammunition = 12;
+    } else {
+        combatant.equipment.melee_weapon = Some(weapon);
+    }
+    if profile.armored {
+        combatant.equipment.shield_block_bonus = 1.0;
+        combatant.equipment.armor.fill(CombatArmor {
+            resistance: 25.0,
+            padding: 15.0,
+            flexibility: 0.8,
+            range_of_motion: 0.9,
+            coverage: 0.5,
+        });
+    }
+    combatant
+}
+
+fn autoresolve_drop(enemy_type: &str) -> Option<&'static str> {
+    EnemyArchetype::from_label(enemy_type).profile().drop
+}
+
+fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut quantity: u32) {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, "arrow"))
+        .collect();
+    for mut stack in stacks {
+        if quantity == 0 {
+            break;
+        }
+        let consumed = quantity.min(stack.quantity);
+        quantity -= consumed;
+        stack.quantity -= consumed;
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+    }
+}
+
+fn record_autoresolve_report(
+    ctx: &ReducerContext,
+    quest_id: &str,
+    party_id: &str,
+    outcome: &BattleOutcome,
+) {
+    ctx.db
+        .autoresolve_report()
+        .quest_id()
+        .delete(quest_id.to_string());
+    let summary = format!(
+        "{} rounds; {} stealth successes from {} attempts; {} opening shots; {} ranged attacks; {} melee attacks; {} hits; {:.3} health damage; {} ammunition used",
+        outcome.rounds,
+        outcome.summary.stealth_successes,
+        outcome.summary.stealth_attempts,
+        outcome.summary.opening_ranged_attacks,
+        outcome.summary.ranged_attacks,
+        outcome.summary.melee_attacks,
+        outcome.summary.hits,
+        outcome.summary.total_health_damage,
+        outcome.summary.ammunition_used,
+    );
+    let log = outcome
+        .log
+        .iter()
+        .map(|entry| {
+            format!(
+                "#{} {} round {}: {} used {} against {}'s {:?}: {}",
+                entry.sequence + 1,
+                entry.phase,
+                entry.round,
+                entry.attacker_id,
+                entry.attack_kind,
+                entry.defender_id,
+                entry.body_part,
+                entry.outcome,
+            )
+        })
+        .collect();
+    ctx.db.autoresolve_report().insert(AutoresolveReport {
+        quest_id: quest_id.to_string(),
+        party_id: party_id.to_string(),
+        seed: outcome.seed,
+        victor: match outcome.victor {
+            BattleVictor::Allies => "allies",
+            BattleVictor::Enemies => "enemies",
+            BattleVictor::Stalemate => "stalemate",
+        }
+        .to_string(),
+        rounds: outcome.rounds as u32,
+        summary,
+        log,
+    });
+}
+
 #[cfg(test)]
 mod healing_tests {
-    use super::post_battle_wound_deterioration;
+    use super::{EnemyArchetype, autoresolve_drop, post_battle_wound_deterioration};
 
     #[test]
     fn surgery_prevents_deterioration_when_it_meets_wound_severity() {
@@ -67,6 +363,20 @@ mod healing_tests {
     fn surgery_shortfall_proportionally_worsens_the_wound() {
         assert!((post_battle_wound_deterioration(0.20, 2.0) - 0.10).abs() < f32::EPSILON);
         assert!((post_battle_wound_deterioration(0.20, 0.0) - 0.20).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn enemy_archetypes_keep_combat_and_loot_classification_together() {
+        let goblin = EnemyArchetype::from_label("forest goblins").profile();
+        assert!(goblin.ranged);
+        assert_eq!(goblin.drop, Some("short_bow"));
+
+        let bandit = EnemyArchetype::from_label("guild thieves").profile();
+        assert!(bandit.armored);
+        assert_eq!(autoresolve_drop("guild thieves"), Some("short_sword"));
+
+        assert_eq!(autoresolve_drop("giant spiders"), None);
+        assert_eq!(autoresolve_drop("unknown menace"), Some("club"));
     }
 }
 
@@ -1033,6 +1343,22 @@ pub struct BattleResult {
     #[index(btree)]
     pub party_id: String,
     pub mission_id: String,
+}
+
+/// Reproducible strategic-combat diagnostics retained whether the party wins
+/// or loses. Clients can show `summary` immediately and expand `log` on demand.
+#[derive(Clone, Debug)]
+#[table(accessor = autoresolve_report, public)]
+pub struct AutoresolveReport {
+    #[primary_key]
+    pub quest_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub seed: u64,
+    pub victor: String,
+    pub rounds: u32,
+    pub summary: String,
+    pub log: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -4152,40 +4478,93 @@ pub fn autoresolve_quest(
         .collect::<Result<Vec<_>, _>>()?;
     let surgery_check = aggregate_bounded_party_check(surgery_checks);
 
-    for member_id in member_ids {
-        if let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member_id) {
+    let allies = member_ids
+        .iter()
+        .map(|member_id| {
             let condition =
-                crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
-            let base_damage = 0.05 + (ctx.random::<u64>() % 16) as f32 / 100.0;
-            let damage = base_damage * (2.0 - condition.check_multiplier);
-            let deterioration = post_battle_wound_deterioration(damage, surgery_check);
-            let final_damage = damage + deterioration;
-            match ctx.random::<u64>() % 7 {
-                0 => limbs.left_arm_health = (limbs.left_arm_health - final_damage).max(0.0),
-                1 => limbs.right_arm_health = (limbs.right_arm_health - final_damage).max(0.0),
-                2 => limbs.left_leg_health = (limbs.left_leg_health - final_damage).max(0.0),
-                3 => limbs.right_leg_health = (limbs.right_leg_health - final_damage).max(0.0),
-                4 => limbs.head_health = (limbs.head_health - final_damage).max(0.0),
-                5 => limbs.chest_health = (limbs.chest_health - final_damage).max(0.0),
-                _ => limbs.stomach_health = (limbs.stomach_health - final_damage).max(0.0),
-            }
-            ctx.db.character_limbs().character_id().update(limbs);
-            crate::condition::apply_blood_loss(
+                crate::condition::refresh_character_strategic_condition(ctx, *member_id)?;
+            crate::capability::load_combatant(
+                ctx,
+                *member_id,
+                condition.incapacitation,
+                condition.pain,
+                condition.blood_loss,
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let enemies = (0..quest.enemy_count.max(0) as u64)
+        .map(|index| {
+            autoresolve_enemy(
+                u64::MAX.saturating_sub(index),
+                &quest.enemy_type,
+                quest.difficulty,
+            )
+        })
+        .collect();
+    let seed = ctx.random();
+    let outcome = resolve_battle(allies, enemies, seed);
+    record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
+
+    for member in &outcome.allies {
+        consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
+        let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member.id) else {
+            continue;
+        };
+        let old_health = [
+            limbs.left_arm_health,
+            limbs.right_arm_health,
+            limbs.left_leg_health,
+            limbs.right_leg_health,
+            limbs.chest_health,
+            limbs.stomach_health,
+            limbs.head_health,
+        ];
+        let mut final_health = member.body.health;
+        let mut deterioration_blood_loss = 0.0;
+        for index in 0..final_health.len() {
+            let fresh_damage = (old_health[index] - final_health[index]).max(0.0);
+            let deterioration = post_battle_wound_deterioration(fresh_damage, surgery_check);
+            final_health[index] = (final_health[index] - deterioration).max(0.0);
+            deterioration_blood_loss += deterioration * 0.5;
+        }
+        limbs.left_arm_health = final_health[0];
+        limbs.right_arm_health = final_health[1];
+        limbs.left_leg_health = final_health[2];
+        limbs.right_leg_health = final_health[3];
+        limbs.chest_health = final_health[4];
+        limbs.stomach_health = final_health[5];
+        limbs.head_health = final_health[6];
+        ctx.db.character_limbs().character_id().update(limbs);
+        crate::condition::apply_blood_loss(
+            ctx,
+            member.id,
+            member.blood_loss_fraction + deterioration_blood_loss,
+        )?;
+        crate::capability::refresh_character_capability(ctx, member.id)?;
+    }
+
+    if outcome.victor != BattleVictor::Allies {
+        for member_id in member_ids {
+            crate::condition::record_morale_event(
                 ctx,
                 member_id,
-                final_damage * AUTORE_SOLVE_BLOOD_LOSS_PER_HEALTH_DAMAGE,
+                "defeat",
+                -(5.0 + quest.difficulty.max(0) as f32),
+                Some(quest_id.clone()),
             )?;
-            crate::capability::refresh_character_capability(ctx, member_id)?;
         }
+        return Ok(());
     }
-    // The current enemy generator equips its placeholder enemies with clubs.
-    let dropped_item = "club";
+
+    let dropped_items = autoresolve_drop(&quest.enemy_type)
+        .map(|item| vec![(item.to_string(), quest.enemy_count.max(0) as u32)])
+        .unwrap_or_default();
     record_battle_result(
         ctx,
         &party_id,
         &quest_id,
         &format!("autoresolve-{quest_id}"),
-        vec![(dropped_item.to_string(), quest.enemy_count.max(0) as u32)],
+        dropped_items,
         true,
     )?;
     complete_quest(ctx, quest_id)

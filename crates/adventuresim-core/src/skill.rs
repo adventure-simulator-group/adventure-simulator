@@ -107,7 +107,13 @@ pub trait PlayerSkills {
             ),
             SkillKind::Physical => (
                 attr.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights),
-                attr.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights),
+                if skill == Skill::Block {
+                    // Precision improves the poise damage dealt by a parry,
+                    // not the chance of successfully blocking an attack.
+                    0.0
+                } else {
+                    attr.precision_by_parts(body, weights)
+                },
             ),
         };
         let attribute_check = reflex + focus * essentials.focus_level();
