@@ -34,14 +34,22 @@ non-unknown class inferred from already typed forest, elevation, latitude, and
 HYDE context. Reports reconcile posterior, categorical, and inferred outcomes
 exactly to settlement count.
 
-Inference-rules version 2 records the replacement of the former formation-level
-fallback with this closed six-class coverage inference. Together with world
-schema version 15, it prevents older artifacts or caches from sharing identity
-with Jung-derived results.
+Inference-rules version 4 and world schema version 17 identify the complete
+post-hydrology synthesis contract. Older artifacts or caches cannot share
+identity with Jung-derived or reconstructed historical results.
 
-This branch changes source ingestion and canonical evidence only. Reconstructing
-`HistoricalVegetation1544` is intentionally deferred until the SoilGrids work in
-#68 supplies the post-hydrology inputs required by the final #67 synthesis.
+Potential vegetation remains stored unchanged as the modern-climate ecological
+envelope. After soil and hydrology finalization, the compiler separately stores
+dominant 1544 cover. The greatest sampled HYDE human fraction is selected first
+(stable tie order: built, cropland, pasture), then becomes direct only when it
+meets its own threshold: 10% built or 35% cropland/pasture.
+Deterministic missing-HYDE profiles are never labeled direct. Natural cover is
+derived from Jung, Copernicus forest structure,
+EU-Trees4F candidates, soil/geology, elevation, hydrology, latitude, and OWDA
+moisture. Only genuinely close natural scores use coordinate-and-schema hashing
+as a deterministic tie-break. Fallback Jung wetland/marine classes cannot emit
+water cover: wetlands require wet soil plus freshwater/tidal convergence, while
+transitional water requires tidal evidence.
 
 Attribution/modification notice: Adventure Simulator downloads Jung's published
 v1.1 rasters unchanged, then projects settlement cells, area-aggregates posterior

@@ -77,7 +77,12 @@ layers are prepared. Plan and unit-test modes remain useful without GDAL.
    hydrology together—organic carbon alone never creates peat. Shallow/rock
    uses Leptosols plus geology/elevation. Drainage/flooding use WRB, retention,
    and hydrology.
+6. The final historical-environment stage consumes the finalized profile. It
+   can use acidity/fertility for heath, shallow/rocky/dry conditions for sparse
+   cover, and convergent soil/hydrology/Jung evidence for wetland. It does not
+   mutate peat from SOC alone, invent slope/roughness, or replace geology-derived
+   parent material.
 
-Rules are deterministic and versioned. Slope/roughness refinement and a full
-prepared-source audit remain follow-up work for issue #68; this wave does not
-close the issue.
+Rules are deterministic and versioned. A full prepared-source audit remains
+blocked by the absent official HYDE, forest, EU-Hydro, and prepared SoilGrids
+inputs; this repository does not claim full #67/#68 source coverage.

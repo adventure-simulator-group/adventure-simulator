@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
 use adventuresim_world_schema::{
-    CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DroughtProfile, SettlementHydrology,
-    SoilEvidence, SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
-    valid_sources_markdown,
+    CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DerivedHistoricalVegetationMethod,
+    DroughtProfile, HistoricalVegetation, SettlementHydrology, SettlementImport, SoilEvidence,
+    SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    historical_vegetation_matches_context, valid_sources_markdown,
 };
 
 use crate::{Error, Result};
@@ -152,6 +153,18 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 settlement.id
             )));
         }
+        if !historical_vegetation_matches_context(
+            settlement.historical_vegetation,
+            settlement.land_use,
+            &settlement.potential_vegetation,
+            settlement.soil,
+            settlement.hydrology,
+        ) {
+            return Err(Error::Validation(format!(
+                "settlement {} has historical vegetation inconsistent with its evidence",
+                settlement.id
+            )));
+        }
     }
     let alias_ids: HashSet<_> = world
         .settlement_aliases
@@ -211,6 +224,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             )));
         }
     }
+    let actual_historical = actual_historical_counts(&world.settlements)?;
     if world.report.nodes != world.nodes.len()
         || world.report.edges != world.edges.len()
         || world.report.settlements != world.settlements.len()
@@ -291,6 +305,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 .count(),
             world.settlements.len(),
         )
+        || !historical_report_matches(&world.report, actual_historical)
         || !geology_counts_are_consistent(
             world.report.geology_features_read,
             world.report.geology_samples,
@@ -353,6 +368,46 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn actual_historical_counts(
+    settlements: &[SettlementImport],
+) -> Result<(usize, usize, usize, usize)> {
+    settlements.iter().try_fold(
+        (0_usize, 0_usize, 0_usize, 0_usize),
+        |mut counts, settlement| {
+            let target = match settlement.historical_vegetation {
+                HistoricalVegetation::Direct(_) => &mut counts.0,
+                HistoricalVegetation::Derived(value) => {
+                    if value.method == DerivedHistoricalVegetationMethod::MultiSourceRulesV4TieBreak
+                    {
+                        counts.3 = counts.3.checked_add(1).ok_or_else(|| {
+                            Error::Validation("historical tie-break count overflow".into())
+                        })?;
+                    }
+                    &mut counts.1
+                }
+                HistoricalVegetation::Fallback(_) => &mut counts.2,
+            };
+            *target = target
+                .checked_add(1)
+                .ok_or_else(|| Error::Validation("historical evidence count overflow".into()))?;
+            Ok(counts)
+        },
+    )
+}
+
+fn historical_report_matches(
+    report: &adventuresim_world_schema::WorldBuildReport,
+    actual: (usize, usize, usize, usize),
+) -> bool {
+    actual
+        == (
+            report.historical_vegetation_direct_samples,
+            report.historical_vegetation_derived_samples,
+            report.historical_vegetation_fallback_samples,
+            report.historical_vegetation_tie_breaks,
+        )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -563,6 +618,26 @@ mod tests {
         assert!(!elevation_counts_are_consistent(2, 2, 0, 3));
         assert!(!elevation_counts_are_consistent(2, 3, 4, 3));
         assert!(!elevation_counts_are_consistent(4, 3, 0, 3));
+    }
+
+    #[test]
+    fn historical_synthesis_report_reconciles_all_evidence_methods() {
+        let valid = WorldBuildReport::default();
+        assert!(super::historical_report_matches(&valid, (0, 0, 0, 0)));
+        for field in 0..4 {
+            let mut mislabeled = WorldBuildReport::default();
+            match field {
+                0 => mislabeled.historical_vegetation_direct_samples = 1,
+                1 => mislabeled.historical_vegetation_derived_samples = 1,
+                2 => mislabeled.historical_vegetation_fallback_samples = 1,
+                _ => mislabeled.historical_vegetation_tie_breaks = 1,
+            }
+            assert!(!super::historical_report_matches(&mislabeled, (0, 0, 0, 0)));
+        }
+        let mut overflow = WorldBuildReport::default();
+        overflow.historical_vegetation_direct_samples = usize::MAX;
+        overflow.historical_vegetation_derived_samples = usize::MAX;
+        assert!(!super::historical_report_matches(&overflow, (0, 0, 0, 0)));
     }
 
     #[test]
