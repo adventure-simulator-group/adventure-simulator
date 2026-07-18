@@ -8,7 +8,7 @@
       });
       if (!response.ok) return;
 
-      const { pending_join_requests: joins = 0, role_join_requests: roles = [], action_requests: actions = [], succession_required: succession = false, leader_votes: votes = [] } = await response.json();
+      const { pending_join_requests: joins = 0, role_join_requests: roles = [], action_requests: actions = [], succession_required: succession = false, leader_id: leaderId = null, leader_votes: votes = [] } = await response.json();
       const count = joins + actions.length;
       document.title = count > 0 ? `(${count}) ${baseTitle}` : baseTitle;
       const counts = new Map(roles.map((role) => [String(role.role_id), role.count]));
@@ -54,9 +54,22 @@
           const form = document.createElement("form");
           form.method = "post";
           form.action = `/party-leader-votes/${portrait.dataset.characterId}`;
-          form.className = "party-succession-vote";
+          const selected = String(ownVote?.candidate_id) === portrait.dataset.characterId;
+          const currentLeader = String(leaderId) === portrait.dataset.characterId;
+          form.className = `party-succession-vote${selected ? " selected" : ""}${currentLeader ? " current-leader" : ""}`;
           form.dataset.partySuccessionVote = "true";
-          form.innerHTML = `<button title="Assign leadership vote to this member" aria-label="Assign leadership vote to this member" aria-pressed="${String(ownVote?.candidate_id) === portrait.dataset.characterId}" class="${String(ownVote?.candidate_id) === portrait.dataset.characterId ? "selected" : ""}">✓</button>`;
+          form.innerHTML = `<button aria-pressed="${selected}"><span aria-hidden="true">♛</span></button>`;
+          const voteButton = form.querySelector("button");
+          const voteLabel = `Vote for ${portrait.title} as party leader`;
+          voteButton.title = voteLabel;
+          voteButton.setAttribute("aria-label", voteLabel);
+          form.addEventListener("submit", (event) => {
+            if (form.classList.contains("dropping")) return;
+            event.preventDefault();
+            form.classList.add("dropping");
+            voteButton.setAttribute("aria-pressed", "true");
+            window.setTimeout(() => form.submit(), 240);
+          });
           portrait.prepend(form);
         });
       }

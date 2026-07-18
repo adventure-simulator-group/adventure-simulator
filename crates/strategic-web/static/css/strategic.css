@@ -844,17 +844,6 @@
   text-decoration: none;
 }
 
-.party-leader-crown {
-  position: absolute;
-  z-index: 4;
-  top: -0.65rem;
-  left: 50%;
-  color: #d8a82d;
-  font-size: 1.2rem;
-  filter: drop-shadow(0 1px 1px #000);
-  transform: translateX(-50%);
-}
-
 .party-recruitment-plus {
   position: absolute;
   z-index: 5;
@@ -1657,18 +1646,51 @@ button.party-portrait-action {
 }
 
 .party-action-request form { display: contents; }
-.party-action-request button,
-.party-succession-vote button { padding: 0 0.25rem; cursor: pointer; }
+.party-action-request button { padding: 0 0.25rem; cursor: pointer; }
 .party-action-request form:last-child button { color: var(--danger); }
 
 .party-succession-vote {
   position: absolute;
-  z-index: 4;
-  top: calc(100% + 1.65rem);
+  z-index: 6;
+  top: -1.35rem;
   left: 50%;
-  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -0.35rem);
+  transition: opacity 120ms ease, transform 220ms cubic-bezier(0.2, 0.75, 0.25, 1.35);
 }
-.party-succession-vote button.selected { color: var(--accent); }
+
+.party-succession-vote button {
+  display: grid;
+  width: 2rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  color: #8b8b8b;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 1px #000);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.party-portrait:hover .party-succession-vote,
+.party-portrait:focus-within .party-succession-vote,
+.party-succession-vote.selected,
+.party-succession-vote.dropping {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.party-succession-vote.current-leader button {
+  color: #d8a82d;
+}
+
+.party-succession-vote.selected,
+.party-succession-vote.dropping {
+  transform: translate(-50%, 0.72rem);
+}
 
 .party-portrait.dead {
   filter: grayscale(1);

@@ -640,6 +640,7 @@ struct PartyNotifications {
     role_join_requests: Vec<RoleNotification>,
     action_requests: Vec<PartyActionRequest>,
     succession_required: bool,
+    leader_id: Option<u64>,
     leader_votes: Vec<PartyLeaderVote>,
 }
 
@@ -659,6 +660,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -668,6 +670,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -677,6 +680,7 @@ async fn party_notifications(
             role_join_requests: Vec::new(),
             action_requests: Vec::new(),
             succession_required: false,
+            leader_id: None,
             leader_votes: Vec::new(),
         });
     };
@@ -734,6 +738,7 @@ async fn party_notifications(
             .collect(),
         action_requests,
         succession_required: !actual_leader_alive,
+        leader_id: parties.first().map(|party| party.leader_id),
         leader_votes,
     })
 }
