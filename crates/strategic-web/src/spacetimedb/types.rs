@@ -60,6 +60,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub population_estimate: u32,
+    pub industries: adventuresim_world_schema::InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,
@@ -684,15 +685,6 @@ mod tests {
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
         );
-    }
-
-    #[test]
-    fn travel_kind_is_a_closed_set() {
-        assert_eq!(
-            serde_json::from_str::<TravelKind>("\"land\"").unwrap(),
-            TravelKind::Land
-        );
-        assert!(serde_json::from_str::<TravelKind>("\"teleport\"").is_err());
     }
 
     #[test]

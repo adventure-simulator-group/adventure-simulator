@@ -8,6 +8,7 @@ use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
 use super::forest_cover_type::ForestCover;
 use super::historical_vegetation_type::HistoricalVegetation;
+use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_hydrology_type::SettlementHydrology;
@@ -36,6 +37,7 @@ pub struct Settlement {
     pub religious_status: SettlementReligiousStatus,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
+    pub industries: InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,
     pub source_node_id: Option<u64>,
@@ -60,12 +62,14 @@ pub struct SettlementCols {
     pub land_use: __sdk::__query_builder::Col<Settlement, LandUseProfile>,
     pub forest_cover: __sdk::__query_builder::Col<Settlement, ForestCover>,
     pub potential_vegetation: __sdk::__query_builder::Col<Settlement, PotentialVegetation>,
+    pub historical_vegetation: __sdk::__query_builder::Col<Settlement, HistoricalVegetation>,
     pub tree_species: __sdk::__query_builder::Col<Settlement, TreeSpeciesProfile>,
     pub soil: __sdk::__query_builder::Col<Settlement, SoilProfile>,
     pub geology: __sdk::__query_builder::Col<Settlement, SurfaceGeology>,
     pub religious_status: __sdk::__query_builder::Col<Settlement, SettlementReligiousStatus>,
     pub drought: __sdk::__query_builder::Col<Settlement, DroughtProfile>,
     pub hydrology: __sdk::__query_builder::Col<Settlement, SettlementHydrology>,
+    pub industries: __sdk::__query_builder::Col<Settlement, InferredIndustryProfile>,
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
     pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
@@ -92,12 +96,17 @@ impl __sdk::__query_builder::HasCols for Settlement {
                 table_name,
                 "potential_vegetation",
             ),
+            historical_vegetation: __sdk::__query_builder::Col::new(
+                table_name,
+                "historical_vegetation",
+            ),
             tree_species: __sdk::__query_builder::Col::new(table_name, "tree_species"),
             soil: __sdk::__query_builder::Col::new(table_name, "soil"),
             geology: __sdk::__query_builder::Col::new(table_name, "geology"),
             religious_status: __sdk::__query_builder::Col::new(table_name, "religious_status"),
             drought: __sdk::__query_builder::Col::new(table_name, "drought"),
             hydrology: __sdk::__query_builder::Col::new(table_name, "hydrology"),
+            industries: __sdk::__query_builder::Col::new(table_name, "industries"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
             source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),

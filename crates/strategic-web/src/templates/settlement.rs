@@ -2063,6 +2063,12 @@ mod tests {
             coord_y: 53.0,
             population_level: 4,
             population_estimate: 12_000,
+            industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
+                adventuresim_world_schema::IndustryEvidence::Fallback(
+                    adventuresim_world_schema::FallbackIndustry::CroplandGrain,
+                ),
+            ])
+            .unwrap(),
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             source_node_id: Some(1),
