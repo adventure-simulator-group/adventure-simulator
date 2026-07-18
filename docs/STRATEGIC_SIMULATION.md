@@ -86,6 +86,14 @@ weighted equipment utility (protection, mobility, price, and reach) for
 unarmored, light, heavy, and ranged styles. An upgrade counts only after the
 authoritative equipment row shows the purchased inventory item.
 
+Live simulated NPCs inspect persistent equipment condition before choosing quests or settlement
+activity. They submit repairable damaged equipment to the appropriate local smith, wait through the
+ordinary rest reducer until the longest ETA, and retrieve every completed order before continuing.
+Their replacement utility is discounted by current condition, so maintenance competes coherently
+with buying a replacement. Reports include submissions, retrievals, repair wait time, worst final
+condition, and outstanding orders; deterministic simulation setup seeds damage through a reducer
+guarded to registered simulation characters.
+
 Safety is intentionally strict. URLs are parsed structurally and must be an
 exact credential-free HTTP loopback origin with no path, query, or fragment.
 The command accepts only an `adventuresim-sim-*` database and refuses any

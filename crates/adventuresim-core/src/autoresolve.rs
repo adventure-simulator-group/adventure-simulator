@@ -147,6 +147,7 @@ pub struct CombatSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 impl PlayerSkills for CombatSkills {
@@ -163,6 +164,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::Surgeon => self.surgeon_hours,
+            Skill::Smithing => self.smithing_hours,
         }
     }
 }
@@ -200,6 +202,10 @@ pub struct CombatEquipment {
     pub weapon: Option<CombatWeapon>,
     pub melee_weapon: Option<CombatWeapon>,
     pub ranged_weapon: Option<CombatWeapon>,
+    pub melee_weapon_id: Option<u64>,
+    pub ranged_weapon_id: Option<u64>,
+    /// Shield instance used for blocks, falling back to the melee weapon used to parry.
+    pub defense_item_id: Option<u64>,
     pub ammunition: u32,
     pub holding_side: BodySide,
     pub melee_holding_side: BodySide,
@@ -215,6 +221,9 @@ impl Default for CombatEquipment {
             weapon: None,
             melee_weapon: None,
             ranged_weapon: None,
+            melee_weapon_id: None,
+            ranged_weapon_id: None,
+            defense_item_id: None,
             ammunition: 0,
             holding_side: BodySide::Right,
             melee_holding_side: BodySide::Right,
@@ -446,9 +455,18 @@ pub struct BattleLogEntry {
     pub attacker_id: u64,
     pub defender_id: u64,
     pub attack_kind: String,
+    /// Exact strategic inventory instance used, when the combatant came from
+    /// persistent equipment rather than an abstract enemy profile.
+    pub weapon_inventory_item_id: Option<u64>,
+    /// Exact shield or parrying weapon contacted on a successful defense.
+    pub defender_contact_item_id: Option<u64>,
     pub body_part: BodyPart,
     pub outcome: String,
     pub health_damage: f32,
+    /// Pre-absorption contact force; remains positive when armor absorbs all
+    /// health damage.
+    pub contact_stress: f32,
+    pub armor_contact: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -506,6 +524,8 @@ impl BattleRecorder {
         attacker_id: u64,
         defender_id: u64,
         mode: AttackMode,
+        weapon_inventory_item_id: Option<u64>,
+        defender_contact_item_id: Option<u64>,
         part: BodyPart,
         result: AttackResult,
         effect: AttackEffect,
@@ -519,6 +539,10 @@ impl BattleRecorder {
         }
         self.summary.total_health_damage += effect.health_damage;
         let outcome = match result {
+            AttackResult::ToAttacker {
+                physical_contact: true,
+                ..
+            } => "blocked".to_string(),
             AttackResult::ToAttacker { .. } => "missed".to_string(),
             AttackResult::ToDefender { .. } if effect.health_damage > 0.0 => {
                 format!("hit for {:.3} health", effect.health_damage)
@@ -536,11 +560,36 @@ impl BattleRecorder {
                 AttackMode::Ranged => "ranged",
             }
             .to_string(),
+            weapon_inventory_item_id,
+            defender_contact_item_id,
             body_part: part,
             outcome,
             health_damage: effect.health_damage,
+            contact_stress: match result {
+                AttackResult::ToDefender { contact_force, .. } => contact_force.max(0.0),
+                AttackResult::ToAttacker { contact_force, .. } => contact_force.max(0.0),
+            },
+            armor_contact: matches!(
+                result,
+                AttackResult::ToDefender {
+                    armor_contact: true,
+                    ..
+                }
+            ),
         });
     }
+}
+
+fn defender_contact_item_id(result: AttackResult, equipment: &CombatEquipment) -> Option<u64> {
+    matches!(
+        result,
+        AttackResult::ToAttacker {
+            physical_contact: true,
+            ..
+        }
+    )
+    .then_some(equipment.defense_item_id)
+    .flatten()
 }
 
 /// Resolve an abstract battle using the same attack calculations as direct
@@ -748,6 +797,11 @@ fn apply_pending_attacks(
             attackers[attack.attacker_index].id,
             defenders[attack.target_index].id,
             attack.mode,
+            match attack.mode {
+                AttackMode::Melee => attackers[attack.attacker_index].equipment.melee_weapon_id,
+                AttackMode::Ranged => attackers[attack.attacker_index].equipment.ranged_weapon_id,
+            },
+            defender_contact_item_id(attack.result, &defenders[attack.target_index].equipment),
             attack.part,
             attack.result,
             effect,
@@ -942,6 +996,8 @@ fn take_opening_volley_step(
             attackers[attacker_index].id,
             defenders[target_index].id,
             AttackMode::Ranged,
+            attackers[attacker_index].equipment.ranged_weapon_id,
+            defender_contact_item_id(result, &defenders[target_index].equipment),
             part,
             result,
             effect,
@@ -1049,6 +1105,8 @@ fn take_side_turns(
             attackers[attacker_index].id,
             defenders[target_index].id,
             AttackMode::Melee,
+            attackers[attacker_index].equipment.melee_weapon_id,
+            defender_contact_item_id(result, &defenders[target_index].equipment),
             part,
             result,
             effect,
@@ -1131,7 +1189,7 @@ fn apply_attack_result(
     part: BodyPart,
 ) -> AttackEffect {
     match result {
-        AttackResult::ToAttacker { balance_damage } => {
+        AttackResult::ToAttacker { balance_damage, .. } => {
             attacker.imbalance += balance_damage.max(0.0);
             AttackEffect {
                 hit: false,
@@ -1266,11 +1324,12 @@ fn optimal_ranged_exchange(
 
 fn attack_harm(result: AttackResult) -> f32 {
     match result {
-        AttackResult::ToAttacker { balance_damage } => -balance_damage,
+        AttackResult::ToAttacker { balance_damage, .. } => -balance_damage,
         AttackResult::ToDefender {
             cut_damage,
             blunt_damage,
             balance_damage,
+            ..
         } => cut_damage + blunt_damage + balance_damage,
     }
 }
@@ -1456,6 +1515,48 @@ mod tests {
     }
 
     #[test]
+    fn melee_parry_carries_contact_force_while_dodge_does_not() {
+        let attacker = fighter(1, 0.1, false);
+        let mut defender = fighter(2, 5.0, false);
+        defender.equipment.shield_block_bonus = 5.0;
+
+        let parry = melee_exchange(
+            &attacker,
+            &defender,
+            0.65,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::Parry { input_reflex: 1.0 },
+        );
+        assert!(matches!(
+            parry,
+            AttackResult::ToAttacker {
+                physical_contact: true,
+                contact_force,
+                ..
+            } if contact_force > 0.0
+        ));
+
+        let dodge = melee_exchange(
+            &attacker,
+            &defender,
+            0.65,
+            0.0,
+            BodyPart::Chest,
+            DefenderResponse::Dodge { input_reflex: 1.0 },
+        );
+        if let AttackResult::ToAttacker {
+            physical_contact,
+            contact_force,
+            ..
+        } = dodge
+        {
+            assert!(!physical_contact);
+            assert_eq!(contact_force, 0.0);
+        }
+    }
+
+    #[test]
     fn precision_does_not_increase_block_defense() {
         let mut low_precision = fighter(1, 3.0, false);
         let mut high_precision = low_precision.clone();
@@ -1512,6 +1613,9 @@ mod tests {
 
         assert!(health_damage_from_attack(critical, BodyPart::Chest) > 0.0);
         assert_eq!(health_damage_from_attack(armored, BodyPart::Chest), 0.0);
+        assert!(
+            matches!(armored, AttackResult::ToDefender { contact_force, armor_contact: true, .. } if contact_force > 0.0)
+        );
     }
 
     #[test]
@@ -1561,6 +1665,89 @@ mod tests {
 
         hybrid.equipment.ammunition = 0;
         assert_eq!(preferred_attack_mode(&hybrid), AttackMode::Melee);
+    }
+
+    #[test]
+    fn battle_log_attributes_bow_and_sidearm_to_distinct_instances() {
+        let result = AttackResult::ToDefender {
+            cut_damage: 0.0,
+            blunt_damage: 0.0,
+            balance_damage: 0.1,
+            contact_force: 40.0,
+            armor_contact: true,
+        };
+        let effect = AttackEffect {
+            hit: true,
+            health_damage: 0.0,
+        };
+        let mut recorder = BattleRecorder::default();
+        recorder.record_attack(
+            "opening",
+            0,
+            1,
+            2,
+            AttackMode::Ranged,
+            Some(101),
+            None,
+            BodyPart::Chest,
+            result,
+            effect,
+        );
+        recorder.record_attack(
+            "main",
+            1,
+            1,
+            2,
+            AttackMode::Melee,
+            Some(202),
+            None,
+            BodyPart::Chest,
+            result,
+            effect,
+        );
+        assert_eq!(recorder.log[0].weapon_inventory_item_id, Some(101));
+        assert_eq!(recorder.log[1].weapon_inventory_item_id, Some(202));
+        assert!(
+            recorder
+                .log
+                .iter()
+                .all(|entry| entry.contact_stress == 40.0)
+        );
+    }
+
+    #[test]
+    fn successful_parry_records_wear_for_both_contacting_instances() {
+        let result = AttackResult::ToAttacker {
+            balance_damage: 0.2,
+            contact_force: 55.0,
+            physical_contact: true,
+        };
+        let defender = CombatEquipment {
+            defense_item_id: Some(303),
+            ..CombatEquipment::default()
+        };
+        let mut recorder = BattleRecorder::default();
+        recorder.record_attack(
+            "main",
+            1,
+            1,
+            2,
+            AttackMode::Melee,
+            Some(202),
+            defender_contact_item_id(result, &defender),
+            BodyPart::Chest,
+            result,
+            AttackEffect {
+                hit: false,
+                health_damage: 0.0,
+            },
+        );
+
+        assert_eq!(recorder.log[0].weapon_inventory_item_id, Some(202));
+        assert_eq!(recorder.log[0].defender_contact_item_id, Some(303));
+        assert_eq!(recorder.log[0].contact_stress, 55.0);
+        assert_eq!(recorder.log[0].outcome, "blocked");
+        assert!(!recorder.log[0].armor_contact);
     }
 
     #[test]

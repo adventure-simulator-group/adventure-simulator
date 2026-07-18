@@ -33,6 +33,13 @@ pub struct Item {
     pub base_value: Option<u32>,
     pub nutrition_kcal: f32,
     pub water_capacity_ml: u32,
+    pub quality: u8,
+    pub durability_yield: f32,
+    pub durability_fracture: f32,
+    pub durability_wear: f32,
+    pub durability_failure_share: f32,
+    pub edge_sensitivity: f32,
+    pub handling_sensitivity: f32,
 }
 
 impl __sdk::InModule for Item {
@@ -66,6 +73,13 @@ pub struct ItemCols {
     pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
     pub nutrition_kcal: __sdk::__query_builder::Col<Item, f32>,
     pub water_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
+    pub quality: __sdk::__query_builder::Col<Item, u8>,
+    pub durability_yield: __sdk::__query_builder::Col<Item, f32>,
+    pub durability_fracture: __sdk::__query_builder::Col<Item, f32>,
+    pub durability_wear: __sdk::__query_builder::Col<Item, f32>,
+    pub durability_failure_share: __sdk::__query_builder::Col<Item, f32>,
+    pub edge_sensitivity: __sdk::__query_builder::Col<Item, f32>,
+    pub handling_sensitivity: __sdk::__query_builder::Col<Item, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for Item {
@@ -95,6 +109,22 @@ impl __sdk::__query_builder::HasCols for Item {
             base_value: __sdk::__query_builder::Col::new(table_name, "base_value"),
             nutrition_kcal: __sdk::__query_builder::Col::new(table_name, "nutrition_kcal"),
             water_capacity_ml: __sdk::__query_builder::Col::new(table_name, "water_capacity_ml"),
+            quality: __sdk::__query_builder::Col::new(table_name, "quality"),
+            durability_yield: __sdk::__query_builder::Col::new(table_name, "durability_yield"),
+            durability_fracture: __sdk::__query_builder::Col::new(
+                table_name,
+                "durability_fracture",
+            ),
+            durability_wear: __sdk::__query_builder::Col::new(table_name, "durability_wear"),
+            durability_failure_share: __sdk::__query_builder::Col::new(
+                table_name,
+                "durability_failure_share",
+            ),
+            edge_sensitivity: __sdk::__query_builder::Col::new(table_name, "edge_sensitivity"),
+            handling_sensitivity: __sdk::__query_builder::Col::new(
+                table_name,
+                "handling_sensitivity",
+            ),
         }
     }
 }

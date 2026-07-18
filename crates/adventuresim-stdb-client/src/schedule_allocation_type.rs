@@ -18,6 +18,7 @@ pub struct ScheduleAllocation {
     pub stealth_minutes: u16,
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
+    pub smithing_minutes: u16,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,

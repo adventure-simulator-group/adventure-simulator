@@ -3,6 +3,7 @@ use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::condition::{character_condition as _, character_needs as _};
 use crate::item::item as _;
+use crate::repair::item_condition as _;
 use crate::{
     CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
     InventoryItem, Item, ItemKind, character_attributes, character_equip, character_limbs,
@@ -218,6 +219,7 @@ impl PlayerSkills for CharacterSkills {
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::Surgeon => self.surgeon_hours,
+            Skill::Smithing => self.smithing_hours,
         }
     }
 }
@@ -226,11 +228,14 @@ pub(crate) struct StrategicEquipment {
     weapon: Option<Item>,
     weapon_side: Option<BodySide>,
     melee_weapon: Option<Item>,
+    melee_weapon_inventory_id: Option<u64>,
     melee_weapon_side: Option<BodySide>,
     ranged_weapon: Option<Item>,
+    ranged_weapon_inventory_id: Option<u64>,
     ranged_weapon_side: Option<BodySide>,
     ammunition: u32,
     shield: Option<Item>,
+    shield_inventory_id: Option<u64>,
     armor: [Option<Item>; 7],
     inventory_weight: f32,
 }
@@ -238,9 +243,20 @@ pub(crate) struct StrategicEquipment {
 impl StrategicEquipment {
     pub(crate) fn load(ctx: &ReducerContext, character_id: u64, equip: &CharacterEquip) -> Self {
         let definition = |inventory_id: Option<u64>| {
-            inventory_id
-                .and_then(|id| ctx.db.inventory_item().id().find(id))
-                .and_then(|inventory| ctx.db.item().id().find(&inventory.item_id))
+            let id = inventory_id?;
+            let inventory = ctx.db.inventory_item().id().find(id)?;
+            let mut item = ctx.db.item().id().find(&inventory.item_id)?;
+            if let Some(condition) = ctx.db.item_condition().inventory_item_id().find(id) {
+                let damage = condition.bins();
+                item.accuracy = effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity);
+                item.penetration =
+                    effective_weapon_stat(item.penetration, damage, item.edge_sensitivity * 0.6);
+                item.block = effective_weapon_stat(item.block, damage, item.handling_sensitivity);
+                item.range_of_motion =
+                    effective_handling(item.range_of_motion, damage, item.handling_sensitivity);
+                item.resistance = effective_weapon_stat(item.resistance, damage, 0.1);
+            }
+            Some(item)
         };
         let hands = [
             definition(equip.left_hand_item_id),
@@ -263,6 +279,13 @@ impl StrategicEquipment {
             .flatten()
             .find(|item| item.kind == ItemKind::Shield)
             .cloned();
+        let shield_inventory_id = hands
+            .iter()
+            .position(|item| {
+                item.as_ref()
+                    .is_some_and(|item| item.kind == ItemKind::Shield)
+            })
+            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
         let melee_weapon = hands
             .iter()
             .flatten()
@@ -275,6 +298,13 @@ impl StrategicEquipment {
                     .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
             })
             .map(hand_side);
+        let melee_weapon_inventory_id = hands
+            .iter()
+            .position(|item| {
+                item.as_ref()
+                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
+            })
+            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
         let ranged_weapon = hands
             .iter()
             .flatten()
@@ -287,6 +317,13 @@ impl StrategicEquipment {
                     .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
             })
             .map(hand_side);
+        let ranged_weapon_inventory_id = hands
+            .iter()
+            .position(|item| {
+                item.as_ref()
+                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
+            })
+            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
         let ammunition = ctx
             .db
             .inventory_item()
@@ -327,11 +364,14 @@ impl StrategicEquipment {
             weapon,
             weapon_side,
             melee_weapon,
+            melee_weapon_inventory_id,
             melee_weapon_side,
             ranged_weapon,
+            ranged_weapon_inventory_id,
             ranged_weapon_side,
             ammunition,
             shield,
+            shield_inventory_id,
             armor,
             inventory_weight: dry_inventory_weight + carried_water_weight,
         }
@@ -371,6 +411,9 @@ impl StrategicEquipment {
             weapon: self.weapon.as_ref().map(combat_weapon),
             melee_weapon: self.melee_weapon.as_ref().map(combat_weapon),
             ranged_weapon: self.ranged_weapon.as_ref().map(combat_weapon),
+            melee_weapon_id: self.melee_weapon_inventory_id,
+            ranged_weapon_id: self.ranged_weapon_inventory_id,
+            defense_item_id: self.shield_inventory_id.or(self.melee_weapon_inventory_id),
             ammunition: self.ammunition,
             holding_side: self.weapon_side.unwrap_or(BodySide::Right),
             melee_holding_side: self.melee_weapon_side.unwrap_or(BodySide::Right),
@@ -577,6 +620,7 @@ pub(crate) fn load_combatant(
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
             surgeon_hours: skills.surgeon_hours,
+            smithing_hours: skills.smithing_hours,
         },
         starting_incapacitation: (strategic_incapacitation - strategic_pain - strategic_blood_loss)
             .max(0.0),

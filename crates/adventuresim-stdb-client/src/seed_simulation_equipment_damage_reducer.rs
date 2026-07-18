@@ -4,61 +4,55 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::schedule_allocation_type::ScheduleAllocation;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct UpdateTrainingScheduleArgs {
+pub(super) struct SeedSimulationEquipmentDamageArgs {
     pub character_id: u64,
-    pub downtime: ScheduleAllocation,
-    pub travel: ScheduleAllocation,
+    pub inventory_item_id: u64,
 }
 
-impl From<UpdateTrainingScheduleArgs> for super::Reducer {
-    fn from(args: UpdateTrainingScheduleArgs) -> Self {
-        Self::UpdateTrainingSchedule {
+impl From<SeedSimulationEquipmentDamageArgs> for super::Reducer {
+    fn from(args: SeedSimulationEquipmentDamageArgs) -> Self {
+        Self::SeedSimulationEquipmentDamage {
             character_id: args.character_id,
-            downtime: args.downtime,
-            travel: args.travel,
+            inventory_item_id: args.inventory_item_id,
         }
     }
 }
 
-impl __sdk::InModule for UpdateTrainingScheduleArgs {
+impl __sdk::InModule for SeedSimulationEquipmentDamageArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `update_training_schedule`.
+/// Extension trait for access to the reducer `seed_simulation_equipment_damage`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait update_training_schedule {
-    /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible.
+pub trait seed_simulation_equipment_damage {
+    /// Request that the remote module invoke the reducer `seed_simulation_equipment_damage` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`update_training_schedule:update_training_schedule_then`] to run a callback after the reducer completes.
-    fn update_training_schedule(
+    /// /// Use [`seed_simulation_equipment_damage:seed_simulation_equipment_damage_then`] to run a callback after the reducer completes.
+    fn seed_simulation_equipment_damage(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        inventory_item_id: u64,
     ) -> __sdk::Result<()> {
-        self.update_training_schedule_then(character_id, downtime, travel, |_, _| {})
+        self.seed_simulation_equipment_damage_then(character_id, inventory_item_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `seed_simulation_equipment_damage` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn update_training_schedule_then(
+    fn seed_simulation_equipment_damage_then(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -68,12 +62,11 @@ pub trait update_training_schedule {
     ) -> __sdk::Result<()>;
 }
 
-impl update_training_schedule for super::RemoteReducers {
-    fn update_training_schedule_then(
+impl seed_simulation_equipment_damage for super::RemoteReducers {
+    fn seed_simulation_equipment_damage_then(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -82,10 +75,9 @@ impl update_training_schedule for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            UpdateTrainingScheduleArgs {
+            SeedSimulationEquipmentDamageArgs {
                 character_id,
-                downtime,
-                travel,
+                inventory_item_id,
             },
             callback,
         )

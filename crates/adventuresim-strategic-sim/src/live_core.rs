@@ -37,17 +37,22 @@ use adventuresim_stdb_client::{
     create_named_character_with_id_reducer::create_named_character_with_id,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
     finalize_merchant_trade_reducer::finalize_merchant_trade,
-    inventory_item_table::InventoryItemTableAccess, item_table::ItemTableAccess,
-    liquidate_party_inventory_reducer::liquidate_party_inventory,
+    inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
+    item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
     party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
     party_table::PartyTableAccess, quest_status_type::QuestStatus, quest_table::QuestTableAccess,
+    repair_order_table::RepairOrderTableAccess,
     request_general_party_join_reducer::request_general_party_join,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
-    seed_world_reducer::seed_world, simulation_run_table::SimulationRunTableAccess,
-    store_battle_loot_reducer::store_battle_loot, travel_to_quest_reducer::travel_to_quest,
-    travel_to_settlement_reducer::travel_to_settlement, turn_in_quest_reducer::turn_in_quest,
+    retrieve_repaired_item_reducer::retrieve_repaired_item,
+    seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
+    seed_world_reducer::seed_world, settlement_smith_table::SettlementSmithTableAccess,
+    simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
+    submit_item_for_repair_reducer::submit_item_for_repair,
+    travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
+    turn_in_quest_reducer::turn_in_quest,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
 };
 
@@ -151,6 +156,9 @@ pub struct CoreLoopMetrics {
     pub sale_proceeds: u64,
     pub equipment_purchases: u32,
     pub equipment_upgrades: u32,
+    pub repair_submissions: u32,
+    pub repair_retrievals: u32,
+    pub repair_wait_minutes: u64,
     pub earned_gold_withdrawn: u64,
     pub activity_days: u32,
     pub reducer_failures: u32,
@@ -177,6 +185,9 @@ pub enum CoreLoopEventKind {
     Liquidate,
     Purchase,
     Equip,
+    SubmitRepair,
+    RetrieveRepair,
+    WaitForRepair,
     Activity,
 }
 
@@ -198,6 +209,8 @@ pub struct FinalAgentState {
     pub equipment_item_ids: Vec<String>,
     pub capability_summary: String,
     pub condition_status: String,
+    pub worst_equipment_condition: f32,
+    pub outstanding_repair_orders: u32,
     pub elapsed_minutes: u64,
     pub personal_gold_coin: u64,
     pub party_treasury: u64,
@@ -269,6 +282,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         stealth_hours: s.stealth,
         balance_hours: s.balance,
         surgeon_hours: s.surgeon,
+        smithing_hours: s.smithing,
     }
 }
 
@@ -286,6 +300,7 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         stealth_minutes: s.stealth,
         balance_minutes: s.balance,
         surgeon_minutes: s.surgeon,
+        smithing_minutes: s.smithing,
         labor_minutes: s.labor,
         prayer_minutes: s.prayer,
         thievery_minutes: s.thievery,
@@ -468,6 +483,7 @@ impl LiveRunner {
     fn settlement_activity_day(&mut self, leader_agent: u32) -> Result<(), String> {
         let leader = self.character_ids[leader_agent as usize];
         for agent in self.party_agents(leader)? {
+            self.maintain_equipment(agent)?;
             let character_id = self.character_ids[agent as usize];
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
@@ -483,6 +499,157 @@ impl LiveRunner {
                 ),
             );
             self.metrics.activity_days += 1;
+        }
+        Ok(())
+    }
+
+    /// NPCs use the same custody/rest/retrieval reducers as players. Completed
+    /// work is always collected before another quest, so an order cannot be stranded.
+    fn maintain_equipment(&mut self, agent: u32) -> Result<(), String> {
+        let character_id = self.character_ids[agent as usize];
+        let character = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+            .ok_or("missing maintenance character")?;
+        let Some(settlement) = character.current_settlement_id.clone() else {
+            return Ok(());
+        };
+        let now = self
+            .connection
+            .db
+            .character_time()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .ok_or("missing maintenance clock")?
+            .minutes;
+
+        let mut orders: Vec<_> = self
+            .connection
+            .db
+            .repair_order()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.settlement_id == settlement)
+            .collect();
+        if orders.is_empty() {
+            let smith = self
+                .connection
+                .db
+                .settlement_smith()
+                .iter()
+                .find(|row| row.settlement_id == settlement)
+                .ok_or("missing settlement smith services")?;
+            let inventory: Vec<_> = self
+                .connection
+                .db
+                .inventory_item()
+                .iter()
+                .filter(|row| row.character_id == character_id)
+                .collect();
+            for owned in inventory {
+                let Some(definition) = self
+                    .connection
+                    .db
+                    .item()
+                    .iter()
+                    .find(|row| row.id == owned.item_id)
+                else {
+                    continue;
+                };
+                let skill = match definition.kind {
+                    ItemKind::Weapon | ItemKind::Shield => smith.weaponsmith_skill,
+                    ItemKind::Armor => smith.armourer_skill,
+                    _ => continue,
+                };
+                let Some(condition) = self
+                    .connection
+                    .db
+                    .item_condition()
+                    .iter()
+                    .find(|row| row.inventory_item_id == owned.id)
+                else {
+                    continue;
+                };
+                let bins = [
+                    condition.tier_1,
+                    condition.tier_2,
+                    condition.tier_3,
+                    condition.tier_4,
+                    condition.tier_5,
+                ];
+                let total: f32 = bins.iter().sum();
+                let red: f32 = bins[2..].iter().sum();
+                let repairable: f32 = bins.iter().take(skill as usize).sum();
+                // Mild yellow wear is handled automatically by ordinary rest.
+                if repairable > f32::EPSILON && (red >= 0.02 || total >= 0.35) {
+                    let result = reducer_call!(self, "submit_item_for_repair", |cb| self
+                        .connection
+                        .reducers
+                        .submit_item_for_repair_then(
+                            character_id,
+                            settlement.clone(),
+                            owned.id,
+                            cb
+                        ));
+                    self.call(result)?;
+                    self.metrics.repair_submissions += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::SubmitRepair,
+                        format!(
+                            "item={};condition={:.3};smith={skill}",
+                            owned.item_id,
+                            1.0 - total
+                        ),
+                    );
+                }
+            }
+            orders = self
+                .connection
+                .db
+                .repair_order()
+                .iter()
+                .filter(|row| {
+                    row.owner_character_id == character_id && row.settlement_id == settlement
+                })
+                .collect();
+        }
+        if orders.is_empty() {
+            return Ok(());
+        }
+        let ready_at = orders
+            .iter()
+            .map(|order| order.ready_at_minutes)
+            .max()
+            .unwrap_or(now);
+        if ready_at > now {
+            let wait = ready_at - now;
+            let result = reducer_call!(self, "wait_for_repairs", |cb| self
+                .connection
+                .reducers
+                .rest_at_settlement_hours_then(character_id, wait, false, cb));
+            self.call(result)?;
+            self.metrics.repair_wait_minutes += wait;
+            self.event(
+                agent,
+                CoreLoopEventKind::WaitForRepair,
+                format!("minutes={wait};orders={}", orders.len()),
+            );
+        }
+        for order in orders {
+            let result = reducer_call!(self, "retrieve_repaired_item", |cb| self
+                .connection
+                .reducers
+                .retrieve_repaired_item_then(character_id, order.id, cb));
+            self.call(result)?;
+            self.metrics.repair_retrievals += 1;
+            self.event(
+                agent,
+                CoreLoopEventKind::RetrieveRepair,
+                format!("item={};order={}", order.item_id, order.id),
+            );
         }
         Ok(())
     }
@@ -506,6 +673,9 @@ impl LiveRunner {
 
     fn cycle(&mut self, leader_agent: u32, cycle: u32) -> Result<(), String> {
         let leader = self.character_ids[leader_agent as usize];
+        for agent in self.party_agents(leader)? {
+            self.maintain_equipment(agent)?;
+        }
         let party = self.party_for(leader)?;
         let quest = self
             .choose_quest(&party, &self.profiles[leader_agent as usize])
@@ -773,7 +943,24 @@ impl LiveRunner {
         let equipped_definitions = inventories
             .iter()
             .filter(|row| equipped_ids.contains(&row.id))
-            .filter_map(|row| definitions.iter().find(|item| item.id == row.item_id))
+            .filter_map(|row| {
+                let definition = definitions.iter().find(|item| item.id == row.item_id)?;
+                let condition = self
+                    .connection
+                    .db
+                    .item_condition()
+                    .iter()
+                    .find(|value| value.inventory_item_id == row.id)
+                    .map_or(1.0, |value| {
+                        1.0 - (value.tier_1
+                            + value.tier_2
+                            + value.tier_3
+                            + value.tier_4
+                            + value.tier_5)
+                            .clamp(0.0, 1.0)
+                    });
+                Some((definition, condition))
+            })
             .collect::<Vec<_>>();
         let character = self
             .connection
@@ -797,7 +984,7 @@ impl LiveRunner {
                 let armor = matches!(candidate.kind, ItemKind::Armor | ItemKind::Clothing);
                 let current = equipped_definitions
                     .iter()
-                    .filter(|item| {
+                    .filter(|(item, _)| {
                         if candidate.melee || candidate.ranged {
                             item.melee || item.ranged
                         } else {
@@ -806,7 +993,9 @@ impl LiveRunner {
                                 && item.slot == candidate.slot
                         }
                     })
-                    .filter_map(|item| equipment_utility(&profile, item))
+                    .filter_map(|(item, condition)| {
+                        equipment_utility(&profile, item).map(|utility| utility * *condition)
+                    })
                     .fold(0.0, f32::max);
                 let cost = adventuresim_core::strategic_economy::merchant_buy_price(
                     candidate.base_value.unwrap_or(1),
@@ -1058,6 +1247,32 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 cb,
             ));
         runner.call(result)?;
+        let fixture_item = runner
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .find(|row| {
+                row.character_id == character_id
+                    && runner
+                        .connection
+                        .db
+                        .item()
+                        .iter()
+                        .find(|item| item.id == row.item_id)
+                        .is_some_and(|item| {
+                            matches!(
+                                item.kind,
+                                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                            )
+                        })
+            })
+            .ok_or("simulation character has no durable fixture item")?;
+        let result = reducer_call!(runner, "seed_simulation_equipment_damage", |cb| runner
+            .connection
+            .reducers
+            .seed_simulation_equipment_damage_then(character_id, fixture_item.id, cb));
+        runner.call(result)?;
         runner.metrics.parties_formed += 1;
         runner.event(agent as u32, CoreLoopEventKind::FormParty, name);
     }
@@ -1226,6 +1441,29 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .filter(|row| row.character_id == *character_id && row.item_id == "gold_coin")
                 .map(|row| u64::from(row.quantity))
                 .sum();
+            let worst_equipment_condition = equipped_ids
+                .into_iter()
+                .flatten()
+                .filter_map(|id| {
+                    runner
+                        .connection
+                        .db
+                        .item_condition()
+                        .iter()
+                        .find(|row| row.inventory_item_id == id)
+                })
+                .map(|row| {
+                    1.0 - (row.tier_1 + row.tier_2 + row.tier_3 + row.tier_4 + row.tier_5)
+                        .clamp(0.0, 1.0)
+                })
+                .fold(1.0_f32, f32::min);
+            let outstanding_repair_orders = runner
+                .connection
+                .db
+                .repair_order()
+                .iter()
+                .filter(|row| row.owner_character_id == *character_id)
+                .count() as u32;
             let party_id = character.party_id.clone().ok_or("missing final party")?;
             let party_treasury = runner
                 .connection
@@ -1256,6 +1494,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                     capability.endurance
                 ),
                 condition_status: condition.status,
+                worst_equipment_condition,
+                outstanding_repair_orders,
                 elapsed_minutes,
                 personal_gold_coin,
                 party_treasury,

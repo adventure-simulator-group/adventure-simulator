@@ -36,6 +36,7 @@ use adventuresim_stdb_client::{
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
+    item_condition_table::ItemConditionTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
     morale_event_table::MoraleEventTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
@@ -48,10 +49,11 @@ use adventuresim_stdb_client::{
     party_recruitment_role_table::PartyRecruitmentRoleTableAccess,
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
-    religious_demand_table::ReligiousDemandTableAccess,
+    religious_demand_table::ReligiousDemandTableAccess, repair_order_table::RepairOrderTableAccess,
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
     settlement_alias_table::SettlementAliasTableAccess,
     settlement_description_table::SettlementDescriptionTableAccess,
+    settlement_smith_table::SettlementSmithTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
@@ -140,6 +142,10 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_alias());
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
+        invalidate_on_changes!(state.0._connection.db.item_condition());
+        invalidate_on_changes!(state.0._connection.db.repair_order());
+        invalidate_on_changes!(state.0._connection.db.settlement_smith());
+        invalidate_on_changes!(state.0._connection.db.character_time());
         invalidate_on_changes!(state.0._connection.db.inventory_quantity_target());
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
@@ -200,6 +206,7 @@ impl LiveState {
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())
+            .add_query(|query| query.from.item_condition())
             .add_query(|query| query.from.local_chat_message())
             .add_query(|query| query.from.morale_event())
             .add_query(|query| query.from.party())
@@ -214,10 +221,12 @@ impl LiveState {
             .add_query(|query| query.from.quest())
             .add_query(|query| query.from.quest_issuer())
             .add_query(|query| query.from.religious_demand())
+            .add_query(|query| query.from.repair_order())
             .add_query(|query| query.from.saved_recruitment_role())
             .add_query(|query| query.from.settlement())
             .add_query(|query| query.from.settlement_alias())
             .add_query(|query| query.from.settlement_description())
+            .add_query(|query| query.from.settlement_smith())
             .add_query(|query| query.from.strategic_incident())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())

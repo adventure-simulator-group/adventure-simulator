@@ -69,7 +69,7 @@ fn on_attack_action_triggered(
 
     // TODO: apply damage
     match result {
-        AttackResult::ToAttacker { balance_damage } => {
+        AttackResult::ToAttacker { balance_damage, .. } => {
             info!(
                 "{entity:?} failed to hit {:?} on {:?} and receiver {balance_damage:.1} balance damage",
                 event.target, event.body_part,
@@ -79,6 +79,7 @@ fn on_attack_action_triggered(
             cut_damage,
             blunt_damage,
             balance_damage,
+            ..
         } => {
             info!(
                 "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut_damage:.1} cut + {blunt_damage:.1} blunt) and {balance_damage:.1} balance damage",

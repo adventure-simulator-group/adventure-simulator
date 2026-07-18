@@ -50,9 +50,35 @@ pub enum Skill {
     /// Physical. Trained. Post-battle wound stabilization. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
     Surgeon,
+    /// Physical. Trained. Field maintenance and equipment repair. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
+    Smithing,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Skill;
+
+    #[test]
+    fn smithing_uses_its_documented_shared_training_curve() {
+        assert!((Skill::Smithing.training_rank(5_000.0) - 2.5).abs() < 0.001);
+        assert_eq!(Skill::Smithing.training_rank(f32::NAN), 0.0);
+    }
 }
 
 impl Skill {
+    /// Training-only contribution on the shared five-point curve. `max_hours`
+    /// is the documented asymptotic calibration; half of it is the half-rank
+    /// point used consistently by simulation, persistence, and UI.
+    pub fn training_rank(self, hours: f32) -> f32 {
+        let hours = if hours.is_finite() {
+            hours.max(0.0)
+        } else {
+            0.0
+        };
+        MAX_CHECK * (hours / (hours + self.max_hours() * 0.5))
+    }
+
     pub const fn is_intuitive(&self) -> bool {
         !self.is_trained()
     }
@@ -68,7 +94,12 @@ impl Skill {
     pub const fn is_upper_body(&self) -> bool {
         matches!(
             self,
-            Skill::Melee | Skill::Ranged | Skill::Block | Skill::Stealth | Skill::Surgeon
+            Skill::Melee
+                | Skill::Ranged
+                | Skill::Block
+                | Skill::Stealth
+                | Skill::Surgeon
+                | Skill::Smithing
         )
     }
 }
@@ -98,7 +129,7 @@ pub trait PlayerSkills {
         weights: LimbWeights,
     ) -> f32 {
         let hours_trained = self.skill_hours_trained(skill);
-        let training = MAX_CHECK * (hours_trained / (hours_trained + skill.max_hours() * 0.5));
+        let training = skill.training_rank(hours_trained);
 
         let (reflex, focus) = match skill.kind() {
             SkillKind::Mental => (

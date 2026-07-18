@@ -3,7 +3,7 @@
 use crate::{activity::*, strategic_time::training_hours_increment};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 11;
+pub const SKILL_COUNT: usize = 12;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,6 +19,7 @@ pub struct SkillHours {
     pub stealth: f32,
     pub balance: f32,
     pub surgeon: f32,
+    pub smithing: f32,
 }
 
 impl SkillHours {
@@ -35,6 +36,7 @@ impl SkillHours {
             self.stealth,
             self.balance,
             self.surgeon,
+            self.smithing,
         ]
     }
 
@@ -57,6 +59,7 @@ pub struct DailySchedule {
     pub stealth: u16,
     pub balance: u16,
     pub surgeon: u16,
+    pub smithing: u16,
     pub labor: u16,
     pub prayer: u16,
     pub thievery: u16,
@@ -77,6 +80,7 @@ impl DailySchedule {
             self.stealth,
             self.balance,
             self.surgeon,
+            self.smithing,
             self.labor,
             self.prayer,
             self.thievery,
@@ -117,6 +121,7 @@ pub fn apply_schedule_training(
     skills.stealth += increment(schedule.stealth);
     skills.balance += increment(schedule.balance);
     skills.surgeon += increment(schedule.surgeon);
+    skills.smithing += increment(schedule.smithing);
     skills.faith += increment(schedule.prayer) * ACTIVITY_TRAINING_RATE;
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;

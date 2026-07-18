@@ -204,6 +204,7 @@ pub struct CharacterSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 /// [`Character`] limbs
@@ -409,6 +410,7 @@ fn insert_character_with_origin(
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
         surgeon_hours: 1000.0,
+        smithing_hours: 1000.0,
     });
     crate::time::initialize_character_time(ctx, id)?;
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {

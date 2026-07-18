@@ -133,6 +133,7 @@ pub struct Skills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 impl PlayerSkills for Skills {
@@ -149,6 +150,7 @@ impl PlayerSkills for Skills {
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::Surgeon => self.surgeon_hours,
+            Skill::Smithing => self.smithing_hours,
         }
     }
 }

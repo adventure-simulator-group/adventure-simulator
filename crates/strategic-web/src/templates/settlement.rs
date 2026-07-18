@@ -4,6 +4,7 @@
 //! settlement-owned information on the left, service context in the center,
 //! and the active player's party on the right.
 
+use adventuresim_core::prelude::Skill;
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
@@ -135,11 +136,11 @@ impl MerchantShop {
     fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
         match self {
             Self::General => kind != crate::spacetimedb::ItemKind::Currency,
-            Self::Weapons => kind == crate::spacetimedb::ItemKind::Weapon,
-            Self::Armor => matches!(
+            Self::Weapons => matches!(
                 kind,
-                crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield
+                crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield
             ),
+            Self::Armor => kind == crate::spacetimedb::ItemKind::Armor,
             Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
         }
     }
@@ -658,6 +659,8 @@ pub fn inn_page(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -672,7 +675,13 @@ pub fn inn_page(
         party_members,
         logged_in_as,
         theme,
-        rest_default_minutes(limbs, stats, condition),
+        rest_default_minutes(
+            limbs,
+            stats,
+            condition,
+            field_repair_minutes,
+            smith_wait_minutes,
+        ),
         None,
     )
 }
@@ -686,6 +695,8 @@ pub fn religion_page(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -700,7 +711,13 @@ pub fn religion_page(
         party_members,
         logged_in_as,
         theme,
-        rest_default_minutes(limbs, stats, condition),
+        rest_default_minutes(
+            limbs,
+            stats,
+            condition,
+            field_repair_minutes,
+            smith_wait_minutes,
+        ),
         None,
     )
 }
@@ -1121,11 +1138,16 @@ pub fn live_merchant_shop_page(
     pooled: &[PartyInventoryItem],
     theme: &str,
     shop: MerchantShop,
+    conditions: &[crate::spacetimedb::ItemCondition],
+    smith: Option<&crate::spacetimedb::SettlementSmith>,
+    repair_orders: &[crate::spacetimedb::RepairOrder],
+    now_minutes: u64,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
     let content = html! {
-        aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
+        aside class="left-sidebar smith-wares-column" { (sidebar_section("Merchant stock", html! {
+            div class="smith-wares-scroll" {
             (trade_inventory_table(false, html! {
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
@@ -1135,7 +1157,12 @@ pub fn live_merchant_shop_page(
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
-        })) }
+            }
+        }))
+        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
+            (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes))
+        }
+        }
         main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
@@ -1144,6 +1171,11 @@ pub fn live_merchant_shop_page(
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
+                @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
+                    form class="repair-all-form" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
+                        button type="submit" { "Repair all eligible" }
+                    }
+                }
                 (trade_inventory_table(true, html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1152,7 +1184,10 @@ pub fn live_merchant_shop_page(
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
-                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.qty, target)) } }
+                        @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
+                        @let repair_skill = smith.map(|smith| if matches!(shop, MerchantShop::Armor) { smith.armourer_skill } else { smith.weaponsmith_skill }).unwrap_or(0);
+                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
+                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.qty, target)) } @if service_matches { (repair_submit_control(settlement, service_id, item.id, condition, repair_skill)) } (condition_bar(condition)) }
                         td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
@@ -1369,6 +1404,116 @@ fn merchant_sell_controls(
     } }
 }
 
+fn condition_bar(condition: Option<&crate::spacetimedb::ItemCondition>) -> Markup {
+    let bins = condition.map(|value| value.bins()).unwrap_or([0.0; 5]);
+    let yellow = (bins[0] + bins[1]).clamp(0.0, 1.0);
+    let red = bins[2..].iter().sum::<f32>().clamp(0.0, 1.0);
+    let green = (1.0 - yellow - red).max(0.0);
+    let label = format!(
+        "{:.0}% condition; {:.0}% field damage; {:.0}% workshop damage",
+        green * 100.0,
+        yellow * 100.0,
+        red * 100.0
+    );
+    html! {
+        span class="condition-bar" title=(&label) aria-label=(&label) {
+            span class="condition-green" style=(format!("width:{}%", green * 100.0)) {}
+            span class="condition-yellow" style=(format!("width:{}%", yellow * 100.0)) {}
+            span class="condition-red" style=(format!("width:{}%", red * 100.0)) {}
+        }
+        span class="condition-number" { (format!("{:.0}%", green * 100.0)) }
+    }
+}
+
+fn repair_submit_control(
+    settlement: &Settlement,
+    service_id: &str,
+    inventory_item_id: u64,
+    condition: Option<&crate::spacetimedb::ItemCondition>,
+    skill: u8,
+) -> Markup {
+    let total = condition.map_or(0.0, |value| value.total());
+    let repairable = condition.map_or(0.0, |value| value.repairable(skill));
+    let residual = condition.map_or(0.0, |value| value.residual(skill));
+    let disabled = total <= f32::EPSILON || repairable <= f32::EPSILON;
+    let explanation = if total <= f32::EPSILON {
+        "Item is already in full condition".to_string()
+    } else if repairable <= f32::EPSILON {
+        format!("All damage requires Smithing above this smith's level {skill}")
+    } else if residual > f32::EPSILON {
+        format!(
+            "Repair {:.0}% now; {:.0}% higher-skill damage will remain",
+            repairable * 100.0,
+            residual * 100.0
+        )
+    } else {
+        format!(
+            "Repair all {:.0}% damage (smith level {skill})",
+            repairable * 100.0
+        )
+    };
+    html! {
+        form class="row-repair-form" action=(format!("/settlements/{}/{}/repair", settlement.id, service_id)) method="post" {
+            input type="hidden" name="inventory_item_id" value=(inventory_item_id);
+            @if disabled {
+                span class="disabled-repair-explanation" tabindex="0" title=(&explanation) aria-label=(&explanation) {
+                    button type="submit" class="repair-item-button" disabled { "Repair" }
+                }
+            } @else {
+                button type="submit" class="repair-item-button" title=(&explanation) aria-label=(&explanation) { "Repair" }
+            }
+        }
+    }
+}
+
+fn repair_custody_panel(
+    settlement: &Settlement,
+    shop: MerchantShop,
+    orders: &[crate::spacetimedb::RepairOrder],
+    conditions: &[crate::spacetimedb::ItemCondition],
+    items: &[crate::spacetimedb::ItemDefinition],
+    now: u64,
+) -> Markup {
+    let service_id = shop.service_id();
+    let mut matching: Vec<_> = orders
+        .iter()
+        .filter(|order| {
+            order.settlement_id == settlement.id
+                && items
+                    .iter()
+                    .find(|item| item.id == order.item_id)
+                    .is_some_and(|item| shop.stocks(item.kind))
+        })
+        .collect();
+    matching.sort_by_key(|order| (order.submitted_at_minutes, order.id));
+    html! {
+        section class="repair-custody-panel" aria-label="Items entrusted for repair" {
+            h3 { "In the smith's care" }
+            div class="repair-custody-scroll" {
+                @if matching.is_empty() { p class="text-muted small-copy" { "No items entrusted." } }
+                div class="repair-custody-list" {
+                @for order in matching {
+                    @let condition = conditions.iter().find(|condition| condition.inventory_item_id == order.inventory_item_id);
+                    @let ready = now >= order.ready_at_minutes;
+                    @let remaining = order.ready_at_minutes.saturating_sub(now);
+                    @let residual = condition.map_or(0.0, |value| value.residual(order.smith_skill));
+                    article class="repair-order-row" {
+                        strong { (&order.item_id) }
+                        (condition_bar(condition))
+                        span { @if ready { "Ready" } @else { (format!("Ready in {}h {}m", remaining / 60, remaining % 60)) } }
+                        span title="Condition achievable by this smith" { (format!("Target {:.0}%", order.target_condition * 100.0)) }
+                        @if residual > f32::EPSILON { span class="text-muted" { (format!("{:.0}% damage remains beyond skill {}", residual * 100.0, order.smith_skill)) } }
+                        form action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) method="post" {
+                            button type="submit" disabled[!ready] title=(if ready { "Retrieve repaired item" } else { "Repair is still underway" }) { "Retrieve" }
+                        }
+                    }
+                }
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn inventory_footer_controls(
     action: &str,
     target_label: &str,
@@ -1448,17 +1593,18 @@ fn skills_table(
                     } }
                 }
                 tbody {
-                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
-                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
-                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
-                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
-                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
-                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
-                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
-                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
-                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
-                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
-                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
+                    (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
+                    (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
+                    (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
+                    (party_skill_row("Faith", "faith", Skill::Faith, skills.faith_hours, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
+                    (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
+                    (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
+                    (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
+                    (party_skill_row("Block", "block", Skill::Block, skills.block_hours, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
+                    (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
+                    (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
+                    (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
+                    (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| (s.downtime.smithing_minutes, s.travel.smithing_minutes))))
                     @if let Some(schedule) = schedule {
                         tr class="schedule-divider" { td colspan="5" {} }
                         tr class="schedule-section-heading" { td colspan="5" { "Activities" } }
@@ -1476,12 +1622,12 @@ fn skills_table(
 fn party_skill_row(
     name: &str,
     icon: &str,
+    skill: Skill,
     hours: f32,
-    half_hours: f32,
     health: f32,
     schedule_minutes: Option<(u16, u16)>,
 ) -> Markup {
-    let rank = 5.0 * hours / (hours + half_hours);
+    let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
     let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
     let damage_width = ((rank - effective_rank).max(0.0) / 5.0) * 100.0;
@@ -2029,10 +2175,15 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
 }
 
 fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
+    let path = if icon == "smithing" {
+        "/static/icons/character/repair.png".to_string()
+    } else {
+        format!("/static/icons/stats/{category}/{icon}.png")
+    };
     html! {
         span
             class=(format!("stat-icon stat-icon-{icon}"))
-            style=(format!("--stat-icon: url('/static/icons/stats/{category}/{icon}.png')"))
+            style=(format!("--stat-icon: url('{path}')"))
             role="img"
             aria-label=(label)
             title=(label)
@@ -2399,6 +2550,8 @@ fn rest_default_minutes(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
 ) -> Option<u64> {
     let healing_days = limbs.map(days_to_full_health).unwrap_or(0);
     let healing_minutes = u64::from(healing_days) * 1_440;
@@ -2409,7 +2562,9 @@ fn rest_default_minutes(
     (limbs.is_some() || stats.is_some() || condition.is_some()).then_some(
         healing_minutes
             .max(fatigue_minutes)
-            .max(blood_recovery_minutes),
+            .max(blood_recovery_minutes)
+            .saturating_add(field_repair_minutes)
+            .max(smith_wait_minutes),
     )
 }
 
@@ -2427,7 +2582,10 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 }
 #[cfg(test)]
 mod tests {
-    use super::{CharacterCondition, LocationKind, rest_default_minutes};
+    use super::{
+        CharacterCondition, LocationKind, MerchantShop, repair_custody_panel,
+        repair_submit_control, rest_default_minutes,
+    };
 
     #[test]
     fn location_kind_rejects_unknown_path_segments() {
@@ -2446,8 +2604,8 @@ mod tests {
         };
 
         assert_eq!(
-            rest_default_minutes(None, None, Some(&condition)),
-            Some(1_440)
+            rest_default_minutes(None, None, Some(&condition), 0, 0),
+            Some(2_880)
         );
     }
 
@@ -2483,6 +2641,100 @@ mod tests {
             religion_id: "western_church".into(),
             source_node_id: Some(1),
         }
+    }
+
+    #[test]
+    fn disabled_repair_explanation_is_hoverable_and_focusable() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.0,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.2,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "weapons", 4, Some(&condition), 3).into_string();
+        assert!(rendered.contains("disabled-repair-explanation"));
+        assert!(rendered.contains("tabindex=\"0\""));
+        assert!(rendered.contains("All damage requires Smithing"));
+        assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn smith_custody_panel_shows_only_matching_service_orders() {
+        let orders = [
+            crate::spacetimedb::RepairOrder {
+                id: 1,
+                owner_character_id: 9,
+                inventory_item_id: 11,
+                item_id: "sword".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+            },
+            crate::spacetimedb::RepairOrder {
+                id: 2,
+                owner_character_id: 9,
+                inventory_item_id: 12,
+                item_id: "cuirass".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+            },
+        ];
+        let items = [
+            crate::spacetimedb::ItemDefinition {
+                id: "sword".into(),
+                weight: 1.0,
+                kind: crate::spacetimedb::ItemKind::Weapon,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+            },
+            crate::spacetimedb::ItemDefinition {
+                id: "cuirass".into(),
+                weight: 1.0,
+                kind: crate::spacetimedb::ItemKind::Armor,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+            },
+        ];
+        let weapons = repair_custody_panel(
+            &settlement(),
+            MerchantShop::Weapons,
+            &orders,
+            &[],
+            &items,
+            0,
+        )
+        .into_string();
+        let armor =
+            repair_custody_panel(&settlement(), MerchantShop::Armor, &orders, &[], &items, 0)
+                .into_string();
+        assert!(weapons.contains("sword"));
+        assert!(!weapons.contains("cuirass"));
+        assert!(armor.contains("cuirass"));
+        assert!(!armor.contains("sword"));
     }
 
     #[test]
@@ -2688,7 +2940,9 @@ mod tests {
             .expect("chat should enhance its fallback with color-mix");
 
         assert!(fallback < enhanced);
-        assert!(css.contains(".settlement-chat-filters {\n    flex-wrap: nowrap;"));
+        assert!(css.contains("flex-wrap: nowrap;"));
         assert!(css.contains("min-height: 10rem;"));
+        assert!(css.contains(".repair-custody-list { margin-top: auto; }"));
+        assert!(css.contains("max-height: 50%;"));
     }
 }

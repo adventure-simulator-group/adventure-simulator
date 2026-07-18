@@ -21,6 +21,12 @@ quantity changes on both sides; inventory changes only persist after choosing
 **Offer**.
 Trades are bound to the settlement where the character is currently located;
 visiting another settlement's URL does not allow remote trading.
+
+Weaponsmith and Armourer storefronts also accept individual equipment instances for repair through
+separate actions that never enter the sale draft. A smith repairs only condition bins at or below
+their independently seeded skill (minimum 3), but may accept an item with additional harder damage
+and leave that residual condition untouched. Custody and the quoted ETA persist across travel and
+have no collection deadline.
 Removing a staged purchase before offering it simply cancels that purchase;
 it does not create a sale or apply a merchant fee.
 The confirmation popup appears in the center of the view only while an

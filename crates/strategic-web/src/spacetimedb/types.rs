@@ -492,6 +492,7 @@ pub struct CharacterEquip {
     pub stomach_armor_id: Option<u64>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ItemDefinition {
     pub id: String,
@@ -503,6 +504,73 @@ pub struct ItemDefinition {
     pub nutrition_kcal: f32,
     #[serde(default)]
     pub water_capacity_ml: u32,
+    #[serde(default)]
+    pub quality: u8,
+    #[serde(default)]
+    pub durability_yield: f32,
+    #[serde(default)]
+    pub durability_fracture: f32,
+    #[serde(default)]
+    pub durability_wear: f32,
+    #[serde(default)]
+    pub durability_failure_share: f32,
+    #[serde(default)]
+    pub edge_sensitivity: f32,
+    #[serde(default)]
+    pub handling_sensitivity: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ItemCondition {
+    pub inventory_item_id: u64,
+    pub tier_1: f32,
+    pub tier_2: f32,
+    pub tier_3: f32,
+    pub tier_4: f32,
+    pub tier_5: f32,
+}
+
+impl ItemCondition {
+    pub fn bins(&self) -> [f32; 5] {
+        [
+            self.tier_1,
+            self.tier_2,
+            self.tier_3,
+            self.tier_4,
+            self.tier_5,
+        ]
+    }
+    pub fn total(&self) -> f32 {
+        self.bins().iter().sum::<f32>().clamp(0.0, 1.0)
+    }
+    pub fn repairable(&self, skill: u8) -> f32 {
+        self.bins().iter().take(skill.min(5) as usize).sum()
+    }
+    pub fn residual(&self, skill: u8) -> f32 {
+        self.bins().iter().skip(skill.min(5) as usize).sum()
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct SettlementSmith {
+    pub settlement_id: String,
+    pub weaponsmith_skill: u8,
+    pub armourer_skill: u8,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct RepairOrder {
+    pub id: u64,
+    pub owner_character_id: u64,
+    pub inventory_item_id: u64,
+    pub item_id: String,
+    pub settlement_id: String,
+    pub smith_skill: u8,
+    pub submitted_at_minutes: u64,
+    pub ready_at_minutes: u64,
+    pub target_condition: f32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -558,6 +626,7 @@ pub struct CharacterSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -586,6 +655,7 @@ pub struct ScheduleAllocation {
     pub stealth_minutes: u16,
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,
+    pub smithing_minutes: u16,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,

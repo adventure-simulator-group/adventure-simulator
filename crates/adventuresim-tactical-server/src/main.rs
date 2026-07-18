@@ -196,6 +196,7 @@ fn spawn_connected_player(
         stealth_hours: player.skills.stealth_hours,
         balance_hours: player.skills.balance_hours,
         surgeon_hours: player.skills.surgeon_hours,
+        smithing_hours: player.skills.smithing_hours,
     };
     let limbs = Limbs {
         left_arm: player.limbs.left_arm_health,

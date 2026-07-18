@@ -18,11 +18,19 @@ const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
 pub enum AttackResult {
     ToAttacker {
         balance_damage: f32,
+        /// Physical force exchanged with a successful block or parry.
+        contact_force: f32,
+        /// False for a clean miss or dodge; true when equipment intercepted the attack.
+        physical_contact: bool,
     },
     ToDefender {
         cut_damage: f32,
         blunt_damage: f32,
         balance_damage: f32,
+        /// Physical force delivered at contact before armor absorption.
+        contact_force: f32,
+        /// Whether this contact actually intersected the armor coverage roll.
+        armor_contact: bool,
     },
 }
 
@@ -31,17 +39,27 @@ impl Mul<f32> for AttackResult {
 
     fn mul(self, rhs: f32) -> Self::Output {
         match self {
-            Self::ToAttacker { balance_damage } => Self::ToAttacker {
+            Self::ToAttacker {
+                balance_damage,
+                contact_force,
+                physical_contact,
+            } => Self::ToAttacker {
                 balance_damage: balance_damage * rhs,
+                contact_force: contact_force * rhs,
+                physical_contact,
             },
             Self::ToDefender {
                 cut_damage,
                 blunt_damage,
                 balance_damage,
+                contact_force,
+                armor_contact,
             } => Self::ToDefender {
                 cut_damage: cut_damage * rhs,
                 blunt_damage: blunt_damage * rhs,
                 balance_damage: balance_damage * rhs,
+                contact_force: contact_force * rhs,
+                armor_contact,
             },
         }
     }
@@ -158,6 +176,13 @@ pub fn resolve_melee_attack_by_parts(
         // (7) Missed the attack, unbalance damage to attacker
         ..0.0 => AttackResult::ToAttacker {
             balance_damage: attack.abs(),
+            contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
+                attack_force(attacker_attr, attacker_body, attacker_equip)
+                    * accuracy.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
         },
         // (9) Critical attack for precise weapons
         1.0.. if attacker_equip.weapon_is_precise() => {
@@ -253,6 +278,12 @@ pub fn resolve_ranged_attack_by_parts(
             // Missing with a projectile does not physically unbalance the
             // attacker. Keep the common result shape for callers.
             balance_damage: 0.0,
+            contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
+                attacker_equip.weapon_ranged_force_joules() * accuracy.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
         };
     }
 
@@ -413,6 +444,8 @@ fn calculate_damage_from_force(
         cut_damage,
         blunt_damage,
         balance_damage,
+        contact_force: attack_force,
+        armor_contact: armor_applies,
     }
 }
 

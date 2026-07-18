@@ -181,7 +181,6 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 
 | Table | Description |
 |-------|-------------|
-| `player` | Maps SpacetimeDB identity to character |
 | `character` | Character progression, location, and life state; no tactical tick state |
 | `character_limbs` | Final persistent body-part injury outcomes used by strategic recovery and checks |
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
@@ -232,6 +231,14 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 | `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit final injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, apply Surgery deterioration, and complete or retain the quest according to the outcome |
 
+The current strategic module does not yet persist a player-identity-to-character ownership mapping.
+Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's
+database connection as a system-wide trust boundary; character IDs alone are not authorization.
+Reducers that already have a concrete identity relationship (world imports, simulation runs,
+tactical servers, and religious-demand ownership) validate `ctx.sender()` directly. Equipment
+repair follows the existing strategic boundary until ownership is introduced consistently for all
+player-facing strategic reducers.
+
 ## adventuresim-tactical-server
 
 The tactical server is a headless Bevy application that:
@@ -242,7 +249,7 @@ The tactical server is a headless Bevy application that:
 - **Maintains ALL tactical state in game memory** (HP, damage, positions, enemies, loot)
 - **Commits only the final results** to SpacetimeDB when the mission ends
 
-Strategic incapacitation deliberately excludes tactical imbalance, breath exhaustion, animation state, and knockdown. Only durable inputs and final outcomes cross the boundary: body-part injuries, blood volume, spent strategic ammunition, fatigue accumulated by strategic travel, morale history, encounter results, and diagnostic autoresolve reports. The report records exchanges for explanation and replay; it does not persist live tactical state.
+Strategic incapacitation deliberately excludes tactical imbalance, breath exhaustion, animation state, and knockdown. Only durable inputs and final outcomes cross the boundary: body-part injuries, blood volume, spent strategic ammunition, equipment condition, fatigue accumulated by strategic travel, morale history, encounter results, and diagnostic autoresolve reports. Tactical sessions receive condition-adjusted equipment snapshots, but tactical tick impacts remain transient until the tactical result handoff grows an explicit equipment-wear summary. Autoresolve commits its final equipment wear directly. The report records exchanges for explanation and replay; it does not persist live tactical state.
 
 ### Command-Line Arguments
 

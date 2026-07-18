@@ -2,6 +2,7 @@ use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
 
+use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
     ItemSlot, character::character, character__view, character_attributes__view, character_equip,
@@ -48,9 +49,11 @@ pub struct ConnectedPlayer {
 
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct ConnectedPlayerItem {
+    pub inventory_item_id: u64,
     pub quantity: u32,
     pub item: Item,
     pub equipped: Option<ItemSlot>,
+    pub condition: Option<ItemCondition>,
 }
 
 /// View of [`ConnectedPlayer`] for this [`TacticalServer`].
@@ -98,13 +101,43 @@ fn connected_player_items(
         .character_id()
         .filter(character_id)
         .filter_map(move |inventory_item| {
-            let item = ctx.db.item().id().find(inventory_item.item_id)?;
+            let mut item = ctx.db.item().id().find(inventory_item.item_id)?;
+            let condition = ctx
+                .db
+                .item_condition()
+                .inventory_item_id()
+                .find(inventory_item.id);
+            if let Some(condition) = &condition {
+                let damage = condition.bins();
+                item.accuracy = adventuresim_core::durability::effective_weapon_stat(
+                    item.accuracy,
+                    damage,
+                    item.edge_sensitivity,
+                );
+                item.penetration = adventuresim_core::durability::effective_weapon_stat(
+                    item.penetration,
+                    damage,
+                    item.edge_sensitivity * 0.6,
+                );
+                item.block = adventuresim_core::durability::effective_weapon_stat(
+                    item.block,
+                    damage,
+                    item.handling_sensitivity,
+                );
+                item.range_of_motion = adventuresim_core::durability::effective_handling(
+                    item.range_of_motion,
+                    damage,
+                    item.handling_sensitivity,
+                );
+            }
             let equipped = equip.as_ref().and_then(|e| e.is_equiped(inventory_item.id));
 
             Some(ConnectedPlayerItem {
+                inventory_item_id: inventory_item.id,
                 quantity: inventory_item.quantity,
                 item,
                 equipped,
+                condition,
             })
         })
 }
