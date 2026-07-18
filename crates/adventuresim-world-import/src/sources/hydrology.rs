@@ -11,12 +11,11 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    CURRENT_INFERENCE_RULES_VERSION, CanalWatercourse, CompiledWorld, CrossingTraversal,
-    CrossingWatercourse, EdgeEndpoint, EdgeProgressPermille, FerryRoute, FerryWaterway,
-    FlowPersistence, FlowingWaterAccess, InlandWaterAccess, InlandWaterSize, LandRoute,
-    LandWaterCrossing, MarineWaterAccess, RiverAccess, RiverAndCanalAccess, RiverWatercourse,
-    SettlementHydrology, SettlementImport, SourceProvenance, StrahlerOrder, TravelEdgeImport,
-    TravelRoute, WORLD_SCHEMA_VERSION, WaterDistanceMeters, WorldMetadata,
+    CanalWatercourse, CrossingTraversal, CrossingWatercourse, EdgeEndpoint, EdgeProgressPermille,
+    FerryRoute, FerryWaterway, FlowPersistence, FlowingWaterAccess, InlandWaterAccess,
+    InlandWaterSize, LandRoute, LandWaterCrossing, MarineWaterAccess, RiverAccess,
+    RiverAndCanalAccess, RiverWatercourse, SettlementHydrology, SourceProvenance, StrahlerOrder,
+    TravelEdgeImport, TravelRoute, WaterDistanceMeters,
 };
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, Point};
 use geozero::{ToGeo, wkb::GpkgWkb};
@@ -25,8 +24,8 @@ use rusqlite::{Connection, OpenFlags, params};
 use crate::{
     Error, Result,
     draft::{
-        DroughtSettlementDraft, SettlementDraftAccess, TravelEdgeDraft, TravelRouteDraft,
-        WorldDraft, push_source_note,
+        DroughtSettlementDraft, HydrologySettlementDraft, HydrologyWorldDraft,
+        SettlementDraftAccess, TravelEdgeDraft, TravelRouteDraft, WorldDraft, push_source_note,
     },
     spatial::SpatialProjection,
 };
@@ -45,7 +44,7 @@ const INDEX_CELL_METERS: f64 = 10_000.0;
 pub(crate) fn enrich(
     mut draft: WorldDraft<DroughtSettlementDraft>,
     source_directory: &Path,
-) -> Result<CompiledWorld> {
+) -> Result<HydrologyWorldDraft> {
     let projection = SpatialProjection::new()?;
     let projected_nodes = draft
         .nodes
@@ -109,7 +108,7 @@ pub(crate) fn enrich(
                     "**[EU-Hydro v1.3](https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c):** Flowing, inland, and marine access is derived by exact geometry distance within two kilometers. Missing/sentinel source attributes are resolved by documented parser-boundary defaults rather than stored as unknown."
                 },
             );
-            finish_settlement(drought, hydrology)
+            HydrologySettlementDraft { drought, hydrology }
         })
         .collect::<Vec<_>>();
 
@@ -129,15 +128,11 @@ pub(crate) fn enrich(
         .filter(|edge| edge.route.has_crossing())
         .count();
 
-    Ok(CompiledWorld {
-        metadata: WorldMetadata {
-            schema_version: WORLD_SCHEMA_VERSION,
-            inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
-            spatial_grid: draft.spatial_grid,
-            world_year: draft.year,
-            sources: draft.sources,
-            road_types: draft.road_types,
-        },
+    Ok(HydrologyWorldDraft {
+        year: draft.year,
+        spatial_grid: draft.spatial_grid,
+        sources: draft.sources,
+        road_types: draft.road_types,
         nodes: draft.nodes,
         edges,
         settlement_aliases: draft.settlement_aliases,
@@ -159,42 +154,6 @@ fn finish_edge(edge: TravelEdgeDraft, route: TravelRoute) -> TravelEdgeImport {
         certainty: edge.certainty,
         section: edge.section,
         sources: edge.sources,
-    }
-}
-
-fn finish_settlement(
-    drought: DroughtSettlementDraft,
-    hydrology: SettlementHydrology,
-) -> SettlementImport {
-    let religious = drought.religious;
-    let geologic = religious.geologic;
-    let soil = geologic.soil;
-    let trees = soil.trees;
-    let vegetated = trees.vegetated;
-    let forest = vegetated.forest;
-    let land = forest.land;
-    let elevated = land.elevated;
-    let settlement = elevated.settlement;
-    SettlementImport {
-        id: settlement.id,
-        source_node_id: settlement.source_node_id,
-        name: settlement.name,
-        longitude: settlement.longitude,
-        latitude: settlement.latitude,
-        population_level: settlement.population_level,
-        population_estimate: settlement.population_estimate,
-        elevation: elevated.elevation,
-        land_use: land.land_use,
-        forest_cover: forest.forest_cover,
-        potential_vegetation: vegetated.potential_vegetation,
-        tree_species: trees.tree_species,
-        soil: soil.soil,
-        geology: geologic.geology,
-        religious_status: religious.religious_status,
-        drought: drought.drought,
-        hydrology,
-        scene_key: settlement.scene_key,
-        sources: settlement.sources,
     }
 }
 

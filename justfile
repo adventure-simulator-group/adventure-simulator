@@ -242,6 +242,10 @@ init-owda:
 init-jung-pnv:
 	@python3 scripts/init_jung_pnv.py
 
+# Plan SoilGrids preparation. Pass `--prepare` manually after installing GDAL.
+init-soilgrids:
+	@python3 scripts/init_soilgrids.py
+
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
 	@cargo run --package adventuresim-world-import --

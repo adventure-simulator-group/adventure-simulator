@@ -274,7 +274,7 @@ pub(crate) fn enrich(
         .into_iter()
         .map(|mut geologic| {
             let settlement = &geologic
-                .soil
+                .predicted
                 .trees
                 .vegetated
                 .forest

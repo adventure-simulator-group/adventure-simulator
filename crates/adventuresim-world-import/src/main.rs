@@ -5,17 +5,17 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, CrossingTraversal,
-    CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
-    FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover, GeologicAgeEvidence,
-    GeologicEra, GeologicLithologyEvidence, GridCellSizeMeters, IgneousRock, InlandWaterSize,
-    MarineWaterAccess, MetamorphicRock, MineralSoilTexture, MixedLithology, NativeRangeEvidence,
-    PotentialVegetation, PotentialVegetationClass, SedimentaryRock, SettlementAliasImport,
-    SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
-    SettlementReligiousStatus, SoilDepth, SoilProfile, SoilSubstrate, SoilWaterRegime,
-    SpatialGridSpec, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesProfile, UnconsolidatedDeposit, WesternChristianArrangement,
-    WorldNodeImport, WrbReferenceGroup,
+    AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
+    CrossingTraversal, CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile,
+    EdgeEndpoint, FerryWaterway, FlowPersistence, FlowingWaterAccess, ForestCover,
+    GeologicAgeEvidence, GeologicEra, GeologicLithologyEvidence, GridCellSizeMeters, IgneousRock,
+    InlandWaterSize, MarineWaterAccess, MetamorphicRock, MineralSoilTexture, MixedLithology,
+    NativeRangeEvidence, PotentialVegetation, PotentialVegetationClass, SedimentaryRock,
+    SettlementAliasImport, SettlementDescriptionImport, SettlementDescriptionKind,
+    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilDepth, SoilEvidence,
+    SoilFertility, SoilProfile, SoilSubstrate, SoilWaterRegime, SpatialGridSpec, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile,
+    UnconsolidatedDeposit, WesternChristianArrangement, WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -40,8 +40,8 @@ struct Args {
     potential_vegetation_dir: PathBuf,
     #[arg(long, default_value_os_t = default_tree_species_archive())]
     tree_species_archive: PathBuf,
-    #[arg(long, default_value_os_t = default_soil_directory())]
-    soil_dir: PathBuf,
+    #[arg(long, default_value_os_t = default_soilgrids_directory())]
+    soilgrids_dir: PathBuf,
     #[arg(long, default_value_os_t = default_geology_geopackage())]
     geology_geopackage: PathBuf,
     #[arg(long, default_value_os_t = default_religion_regions())]
@@ -91,7 +91,7 @@ fn run(args: Args) -> Result<()> {
             &args.forest_cover_dir,
             &args.potential_vegetation_dir,
             &args.tree_species_archive,
-            &args.soil_dir,
+            &args.soilgrids_dir,
             &args.geology_geopackage,
             &args.religion_regions,
             &args.drought_netcdf,
@@ -572,15 +572,16 @@ fn encode_soil(profile: &SoilProfile) -> Value {
             }),
         })
     };
-    match profile {
-        SoilProfile::Mapped(mapped) => json!({ "Mapped": {
-            "mapping_unit": { "smu": mapped.mapping_unit.smu(), "dominant_stu": mapped.mapping_unit.dominant_stu(), "dominance_percent": mapped.mapping_unit.dominance_percent() },
-            "wrb_group": enum_unit(wrb_name(mapped.wrb_group)),
-            "parent_material": { "code": mapped.parent_material.as_str() },
-            "properties": properties(&mapped.properties),
-        }}),
-        SoilProfile::Inferred(inferred) => json!({ "Inferred": properties(inferred) }),
-    }
+    json!({
+        "wrb_group": enum_unit(wrb_name(profile.wrb_group)),
+        "parent_material": encode_lithology(profile.parent_material),
+        "properties": properties(&profile.properties),
+        "acidity": enum_unit(match profile.acidity { SoilAcidity::StronglyAcid => "StronglyAcid", SoilAcidity::Acid => "Acid", SoilAcidity::Neutral => "Neutral", SoilAcidity::Alkaline => "Alkaline" }),
+        "cation_exchange_capacity": enum_unit(match profile.cation_exchange_capacity { CationExchangeCapacity::VeryLow => "VeryLow", CationExchangeCapacity::Low => "Low", CationExchangeCapacity::Medium => "Medium", CationExchangeCapacity::High => "High", CationExchangeCapacity::VeryHigh => "VeryHigh" }),
+        "fertility": enum_unit(match profile.fertility { SoilFertility::VeryLow => "VeryLow", SoilFertility::Low => "Low", SoilFertility::Medium => "Medium", SoilFertility::High => "High", SoilFertility::VeryHigh => "VeryHigh" }),
+        "confidence": { "value": profile.confidence.get() },
+        "evidence": enum_unit(match profile.evidence { SoilEvidence::SoilGridsPrediction => "SoilGridsPrediction", SoilEvidence::DeterministicInference => "DeterministicInference" }),
+    })
 }
 
 fn encode_soil_substrate(substrate: SoilSubstrate) -> Value {
@@ -665,6 +666,7 @@ fn wrb_name(group: WrbReferenceGroup) -> &'static str {
         W::Regosol => "Regosol",
         W::Solonchak => "Solonchak",
         W::Solonetz => "Solonetz",
+        W::Stagnosol => "Stagnosol",
         W::Umbrisol => "Umbrisol",
         W::Vertisol => "Vertisol",
     }
@@ -827,8 +829,8 @@ fn default_tree_species_archive() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/tree-species/EU-Trees4F_ens-clim.zip")
 }
 
-fn default_soil_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes")
+fn default_soilgrids_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/prepared/soilgrids")
 }
 
 fn default_geology_geopackage() -> PathBuf {
@@ -855,20 +857,21 @@ fn default_output(year: i32) -> PathBuf {
 mod tests {
     use adventuresim_world_schema::{
         AgriculturalLimitation, AvailableWaterCapacity, CURRENT_INFERENCE_RULES_VERSION,
-        CanopyDensity, CompiledWorld, DominantLeafType, DroughtHistory, DroughtProfile,
-        EdgeEndpoint, ElevationMeters, ForestCover, GeologicAgeEvidence, GeologicEra,
-        GeologicLithologyEvidence, GeologicSetting, GeologicUnitId, GridCellSizeMeters,
-        HabitatSuitability, IgneousRock, InferredGeologicSetting, InferredTreeSpeciesProfile,
-        LandRoute, LandUseFraction, LandUseProfile, LanguageCode, MappedSoilProfile,
+        CanopyDensity, CationExchangeCapacity, CompiledWorld, DominantLeafType, DroughtHistory,
+        DroughtProfile, EdgeEndpoint, ElevationMeters, ForestCover, GeologicAgeEvidence,
+        GeologicEra, GeologicLithologyEvidence, GeologicSetting, GeologicUnitId,
+        GridCellSizeMeters, HabitatSuitability, IgneousRock, InferredGeologicSetting,
+        InferredTreeSpeciesProfile, LandRoute, LandUseFraction, LandUseProfile, LanguageCode,
         MappedSurfaceGeology, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
         ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
-        PalmerDroughtSeverityIndex, ParentMaterialCode, PotentialVegetation,
-        PotentialVegetationClass, SettlementDescriptionImport, SettlementDescriptionKind,
-        SettlementImport, SettlementReligiousStatus, SoilDepth, SoilMappingUnit, SoilProfile,
-        SoilProperties, SoilSubstrate, SoilWaterRegime, SpatialGridSpec, StoneContentPercent,
-        SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute,
-        TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland,
-        WorldBuildReport, WorldMetadata, WrbReferenceGroup,
+        PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
+        SettlementDescriptionImport, SettlementDescriptionKind, SettlementImport,
+        SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth, SoilEvidence,
+        SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+        SpatialGridSpec, StoneContentPercent, SurfaceGeology, SurfaceLithology,
+        TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+        UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldBuildReport, WorldMetadata,
+        WrbReferenceGroup,
     };
     use clap::Parser;
 
@@ -1028,27 +1031,18 @@ mod tests {
     }
 
     #[test]
-    fn encodes_mapped_and_inferred_soil_profiles_for_spacetimedb_sats_json() {
-        let mut settlement = settlement(ForestCover::Open);
+    fn encodes_final_soil_profile_for_spacetimedb_sats_json() {
+        let settlement = settlement(ForestCover::Open);
         assert_eq!(
-            encode_settlement(&settlement).unwrap()["soil"]["Inferred"]["substrate"]["Mineral"]["texture"],
+            encode_settlement(&settlement).unwrap()["soil"]["properties"]["substrate"]["Mineral"]["texture"],
             serde_json::json!({ "Medium": [] })
         );
-        let SoilProfile::Inferred(properties) = settlement.soil.clone() else {
-            unreachable!()
-        };
-        settlement.soil = SoilProfile::Mapped(MappedSoilProfile {
-            mapping_unit: SoilMappingUnit::new(10, 100, 75).unwrap(),
-            wrb_group: WrbReferenceGroup::Cambisol,
-            parent_material: ParentMaterialCode::new("110").unwrap(),
-            properties,
-        });
         assert_eq!(
-            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["mapping_unit"],
-            serde_json::json!({ "smu": 10, "dominant_stu": 100, "dominance_percent": 75 })
+            encode_settlement(&settlement).unwrap()["soil"]["parent_material"],
+            serde_json::json!({ "Unconsolidated": { "Alluvium": [] } })
         );
         assert_eq!(
-            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["wrb_group"],
+            encode_settlement(&settlement).unwrap()["soil"]["wrb_group"],
             serde_json::json!({ "Cambisol": [] })
         );
     }
@@ -1145,17 +1139,26 @@ mod tests {
                 InferredTreeSpeciesProfile::new(vec![TreeSpeciesId::new("Quercus_robur").unwrap()])
                     .unwrap(),
             ),
-            soil: SoilProfile::Inferred(SoilProperties {
-                substrate: SoilSubstrate::Mineral(MineralSoil {
-                    texture: MineralSoilTexture::Medium,
-                    depth: SoilDepth::Deep,
-                    available_water: AvailableWaterCapacity::Medium,
-                    organic_carbon: TopsoilOrganicCarbon::Medium,
-                    stones: StoneContentPercent::new(10).unwrap(),
-                }),
-                water_regime: SoilWaterRegime::SeasonallyWet,
-                agricultural_limitation: AgriculturalLimitation::None,
-            }),
+            soil: SoilProfile {
+                wrb_group: WrbReferenceGroup::Cambisol,
+                parent_material: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
+                properties: SoilProperties {
+                    substrate: SoilSubstrate::Mineral(MineralSoil {
+                        texture: MineralSoilTexture::Medium,
+                        depth: SoilDepth::Deep,
+                        available_water: AvailableWaterCapacity::Medium,
+                        organic_carbon: TopsoilOrganicCarbon::Medium,
+                        stones: StoneContentPercent::new(10).unwrap(),
+                    }),
+                    water_regime: SoilWaterRegime::SeasonallyWet,
+                    agricultural_limitation: AgriculturalLimitation::None,
+                },
+                acidity: SoilAcidity::Acid,
+                cation_exchange_capacity: CationExchangeCapacity::Medium,
+                fertility: SoilFertility::Medium,
+                confidence: SoilBasisPoints::new(5_000).unwrap(),
+                evidence: SoilEvidence::DeterministicInference,
+            },
             geology: SurfaceGeology::Inferred(InferredGeologicSetting {
                 lithology: SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Alluvium),
                 age: GeologicEra::Quaternary,

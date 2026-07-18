@@ -202,13 +202,12 @@ documented in `docs/TREE_SPECIES.md`. Override it with
 `--tree-species-archive`. This stage requires all 67 current-climate
 probability, potential, and native-range rasters in the pinned archive.
 
-European Soil Database v2 vector data requires ESDAC registration and
-project-specific permission; it is not redistributed by this repository.
-After authorization, extract the required SGDBE/PTRDB files under
-`target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes/`, as
-documented in `docs/SOIL.md`. Override that directory with `--soil-dir`.
-Until the official archive is available, only the synthetic source boundary is
-verified and the stacked compiler will stop at this stage.
+SoilGrids preparation is explicit because the fixed European subset contains
+hundreds of layers and requires GDAL. `just init-soilgrids` prints the bounded
+plan. Run `python scripts/init_soilgrids.py --prepare`, then `--verify-only`,
+and pass a non-default prepared directory with `--soilgrids-dir`. See
+`docs/SOIL.md`. A complete official-source audit remains blocked until the
+prepared subset exists locally.
 
 EGDI surface geology is read from the indexed EPSG:3034 GeoPackage at
 `target/world-data-sources/raw/geology/GeologicUnitView.gpkg`, as documented in
