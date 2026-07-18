@@ -2,14 +2,21 @@ use adventuresim_render_contracts::{MapPackage, Point, StartupMode};
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     math::primitives::{Cuboid, Cylinder},
+    picking::{
+        mesh_picking::{MeshPickingCamera, MeshPickingPlugin, MeshPickingSettings},
+        pointer::PointerButton,
+        prelude::{Click, Pickable, Pointer},
+    },
     prelude::*,
 };
 
-use crate::{RendererConfig, RendererMode, renderer_suspended};
+use crate::{RendererConfig, RendererMode, publish_marker_selection, renderer_suspended};
 
 pub struct StrategicRendererPlugin;
 #[derive(Component)]
 struct StrategicEntity;
+#[derive(Component)]
+struct NavigableMarkerId(String);
 #[derive(Component)]
 struct Idle {
     phase: f32,
@@ -19,21 +26,33 @@ struct MapTransform {
     min: Point,
     scale: f64,
 }
+#[derive(Resource, Default)]
+struct DragIntent(f32);
 
 impl Plugin for StrategicRendererPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(
-            Update,
-            (
-                set_strategic_render_active,
-                pan_zoom
-                    .run_if(in_state(RendererMode::StrategicMap))
-                    .run_if(strategic_running),
-                animate_idle
-                    .run_if(in_state(RendererMode::StrategicScene))
-                    .run_if(strategic_running),
-            ),
-        );
+        app.add_plugins(MeshPickingPlugin)
+            .insert_resource(MeshPickingSettings {
+                require_markers: true,
+                ..default()
+            })
+            .init_resource::<DragIntent>()
+            .add_systems(OnEnter(RendererMode::StrategicMap), setup)
+            .add_systems(OnEnter(RendererMode::StrategicScene), setup)
+            .add_systems(OnExit(RendererMode::StrategicMap), cleanup)
+            .add_systems(OnExit(RendererMode::StrategicScene), cleanup)
+            .add_systems(
+                Update,
+                (
+                    set_strategic_render_active,
+                    pan_zoom
+                        .run_if(in_state(RendererMode::StrategicMap))
+                        .run_if(strategic_running),
+                    animate_idle
+                        .run_if(in_state(RendererMode::StrategicScene))
+                        .run_if(strategic_running),
+                ),
+            );
     }
 }
 
@@ -59,6 +78,7 @@ fn setup(
             ..OrthographicProjection::default_3d()
         }),
         Transform::from_xyz(0., 18., 0.01).looking_at(Vec3::ZERO, Vec3::Z),
+        MeshPickingCamera,
         StrategicEntity,
     ));
     match &config.0.startup {
@@ -166,7 +186,7 @@ fn spawn_map(
             }
             _ => Color::srgb(0.2, 0.7, 0.25),
         };
-        commands.spawn((
+        let mut entity = commands.spawn((
             Mesh3d(town.clone()),
             MeshMaterial3d(materials.add(color)),
             Transform::from_translation(map_point(marker.point, tx) + Vec3::Y * 0.32)
@@ -174,6 +194,31 @@ fn spawn_map(
             StrategicEntity,
             Name::new(marker.label.clone()),
         ));
+        if marker.href.is_some()
+            && matches!(
+                marker.kind,
+                adventuresim_render_contracts::MarkerKind::Destination
+                    | adventuresim_render_contracts::MarkerKind::SelectedDestination
+                    | adventuresim_render_contracts::MarkerKind::ActiveQuest
+            )
+        {
+            entity
+                .insert((Pickable::default(), NavigableMarkerId(marker.id.clone())))
+                .observe(on_marker_click);
+        }
+    }
+}
+
+fn on_marker_click(
+    click: On<Pointer<Click>>,
+    markers: Query<&NavigableMarkerId>,
+    drag: Res<DragIntent>,
+) {
+    if click.button != PointerButton::Primary || drag.0 > 4.0 {
+        return;
+    }
+    if let Ok(marker) = markers.get(click.entity) {
+        publish_marker_selection(&marker.0);
     }
 }
 fn map_point(p: Point, t: MapTransform) -> Vec3 {
@@ -187,17 +232,28 @@ fn pan_zoom(
     mut motion: MessageReader<MouseMotion>,
     mut wheel: MessageReader<MouseWheel>,
     buttons: Res<ButtonInput<MouseButton>>,
-    mut camera: Single<(&mut Transform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<(&mut Transform, &mut Projection), With<StrategicEntity>>,
+    mut drag: ResMut<DragIntent>,
 ) {
     if buttons.pressed(MouseButton::Left) {
         let delta = motion.read().fold(Vec2::ZERO, |a, e| a + e.delta);
+        drag.0 += delta.length();
         camera.0.translation.x -= delta.x * 0.015;
         camera.0.translation.z -= delta.y * 0.015;
+    } else {
+        drag.0 = 0.0;
     }
     let scroll: f32 = wheel.read().map(|e| e.y).sum();
     if let Projection::Orthographic(p) = &mut *camera.1 {
         p.scale = (p.scale * (1. - scroll * 0.1)).clamp(4., 40.);
     }
+}
+
+fn cleanup(mut commands: Commands, entities: Query<Entity, With<StrategicEntity>>) {
+    for entity in &entities {
+        commands.entity(entity).despawn();
+    }
+    commands.remove_resource::<MapTransform>();
 }
 fn animate_idle(time: Res<Time>, mut actors: Query<(&Idle, &mut Transform)>) {
     for (idle, mut transform) in &mut actors {

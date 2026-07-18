@@ -26,6 +26,8 @@ Quest destinations use the shared strategic location shell but expose no settlem
 
 The active quest remains in the left side of every location header. A red exclamation mark to its left means the objective is still in progress; it becomes gold once the objective has been resolved and the party should return to the quest giver. Quest locations do not display a separate resolution badge over the center view.
 
+Interactive map markers do not own navigation URLs. A primary click on a navigable marker emits only its stable marker ID; the browser finds the exact canonical destination anchor with the matching `data-map-marker-id` and follows it. Dragging, secondary clicks, roads, the map base, and the party marker never navigate. The selected SSR anchor carries `aria-current`, so URL navigation and browser Back resynchronize the HTML and Bevy selection normally.
+
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations
 TODO: come up with a first-pass starting point to use to assess party power level.

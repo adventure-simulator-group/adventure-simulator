@@ -13,6 +13,7 @@ pub const MAX_ROUTE_POINTS: usize = 250_000;
 pub const MAX_SCENE_ACTORS: usize = 25_000;
 pub const MAX_SOURCES: usize = 10_000;
 pub const MAX_SOURCE_NOTICES: usize = 100_000;
+pub const TACTICAL_HANDOFF_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum ContractError {
@@ -103,7 +104,7 @@ impl MapManifest {
                 "artifact identities must be 64-character hashes",
             ));
         }
-        if !valid_url(&self.package_url) || !valid_url(&self.paper_map_url) {
+        if !valid_resource_url(&self.package_url) || !valid_resource_url(&self.paper_map_url) {
             return Err(ContractError::Invalid("artifact URLs are required"));
         }
         if !self
@@ -121,7 +122,7 @@ impl MapManifest {
         for source in &self.sources {
             notice_count = notice_count.saturating_add(source.required_notices.len());
             if !valid_text(&source.name, MAX_LABEL_BYTES)
-                || !valid_url(&source.canonical_url)
+                || !valid_resource_url(&source.canonical_url)
                 || source
                     .required_notices
                     .iter()
@@ -234,7 +235,10 @@ impl MapOverlay {
             if !valid_text(&marker.id, MAX_ID_BYTES)
                 || !valid_text(&marker.label, MAX_LABEL_BYTES)
                 || !bounds.contains(marker.point)
-                || marker.href.as_deref().is_some_and(|url| !valid_url(url))
+                || marker
+                    .href
+                    .as_deref()
+                    .is_some_and(|url| !valid_navigation_path(url))
             {
                 return Err(ContractError::Invalid("invalid map marker"));
             }
@@ -327,6 +331,32 @@ pub struct StartupConfig {
     pub canvas_selector: String,
     pub startup: StartupMode,
 }
+
+/// Validated command delivered to an already-running strategic renderer.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TacticalHandoffCommand {
+    pub handoff_schema: u32,
+    pub player_id: u64,
+    pub server_url: String,
+}
+
+impl TacticalHandoffCommand {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        if self.handoff_schema != TACTICAL_HANDOFF_SCHEMA_VERSION {
+            return Err(ContractError::Invalid(
+                "unsupported tactical handoff schema",
+            ));
+        }
+        if self.player_id == 0 {
+            return Err(ContractError::Invalid("tactical player ID must be nonzero"));
+        }
+        if !valid_tactical_server_address(&self.server_url) {
+            return Err(ContractError::Invalid("invalid tactical server address"));
+        }
+        Ok(())
+    }
+}
 impl StartupConfig {
     pub fn validate(&self) -> Result<(), ContractError> {
         validate_version(self.renderer_schema)?;
@@ -339,14 +369,20 @@ impl StartupConfig {
                 package,
                 overlay,
             } => {
-                if package_url.as_deref().is_some_and(|url| !valid_url(url)) {
+                if package_url
+                    .as_deref()
+                    .is_some_and(|url| !valid_navigation_path(url))
+                {
                     return Err(ContractError::Invalid("invalid map manifest URL"));
                 }
                 package.validate()?;
                 overlay.validate(package.bounds)
             }
             StartupMode::StrategicScene { scene } => scene.validate(),
-            StartupMode::Tactical { server_url, .. } if valid_url(server_url) => Ok(()),
+            StartupMode::Tactical {
+                player_id,
+                server_url,
+            } if *player_id != 0 && valid_tactical_server_address(server_url) => Ok(()),
             StartupMode::Tactical { .. } => {
                 Err(ContractError::Invalid("invalid tactical server URL"))
             }
@@ -358,9 +394,33 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
     !value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
-fn valid_url(value: &str) -> bool {
+pub fn valid_navigation_path(value: &str) -> bool {
     valid_text(value, MAX_URL_BYTES)
-        && (value.starts_with('/') || value.contains("://") || value.contains(':'))
+        && value.starts_with('/')
+        && !value.starts_with("//")
+        && !value.contains('\\')
+}
+
+fn valid_resource_url(value: &str) -> bool {
+    valid_navigation_path(value)
+        || (valid_text(value, MAX_URL_BYTES)
+            && (value.starts_with("https://") || value.starts_with("http://"))
+            && !value.contains('\\'))
+}
+
+pub fn valid_tactical_server_address(value: &str) -> bool {
+    if !valid_text(value, MAX_URL_BYTES) || value.chars().any(char::is_whitespace) {
+        return false;
+    }
+    let authority = value
+        .strip_prefix("ws://")
+        .or_else(|| value.strip_prefix("wss://"))
+        .unwrap_or(value);
+    !authority.is_empty()
+        && !authority.contains('/')
+        && authority.rsplit_once(':').is_some_and(|(host, port)| {
+            !host.is_empty() && port.parse::<u16>().is_ok_and(|port| port != 0)
+        })
 }
 
 fn valid_hash(value: &str) -> bool {
@@ -489,5 +549,59 @@ mod tests {
         };
         overlay.focus = Point { x: 11., y: 5. };
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn navigation_paths_and_server_addresses_have_separate_rules() {
+        for path in ["/map?destination=a", "/locations/quest/one"] {
+            assert!(valid_navigation_path(path), "{path}");
+        }
+        for hostile in [
+            "//evil.example/path",
+            "/\\evil.example",
+            "javascript:alert(1)",
+            "data:text/html,boom",
+            "https://evil.example/path",
+            "/line\nbreak",
+        ] {
+            assert!(!valid_navigation_path(hostile), "{hostile}");
+        }
+        for address in [
+            "127.0.0.1:6000",
+            "ws://game.example:443",
+            "wss://game.example:443",
+        ] {
+            assert!(valid_tactical_server_address(address), "{address}");
+        }
+        for address in [
+            "",
+            "game.example",
+            "http://game.example:80",
+            "ws://game.example:0",
+            "ws://game.example:1/path",
+        ] {
+            assert!(!valid_tactical_server_address(address), "{address}");
+        }
+    }
+
+    #[test]
+    fn tactical_handoff_is_versioned_recursive_and_requires_a_player() {
+        let valid = TacticalHandoffCommand {
+            handoff_schema: TACTICAL_HANDOFF_SCHEMA_VERSION,
+            player_id: 42,
+            server_url: "wss://game.example:443".into(),
+        };
+        assert_eq!(valid.validate(), Ok(()));
+        let json = serde_json::to_string(&valid).unwrap();
+        assert_eq!(
+            serde_json::from_str::<TacticalHandoffCommand>(&json).unwrap(),
+            valid
+        );
+        let mut invalid = valid.clone();
+        invalid.handoff_schema += 1;
+        assert!(invalid.validate().is_err());
+        invalid = valid;
+        invalid.player_id = 0;
+        assert!(invalid.validate().is_err());
     }
 }

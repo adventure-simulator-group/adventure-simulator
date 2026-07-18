@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (604)
+## Files (605)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -547,6 +547,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
+- `crates/strategic-web/static/strategic-renderer-helpers.js` — Repository support file.
 - `crates/strategic-web/static/strategic-renderer.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.

@@ -61,6 +61,7 @@
 
   document.addEventListener("submit", (event) => {
     if (event.defaultPrevented || event.target.target === "_blank") return;
+    if (event.target.matches("[data-live-tactical-handoff][data-handoff-intercept-ready]")) return;
     beginNavigation();
   });
 

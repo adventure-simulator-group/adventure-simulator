@@ -18,7 +18,7 @@ use bevy::{
 use bevy_flair::prelude::*;
 
 use crate::{
-    Args,
+    Args, RendererMode, TacticalEntity,
     player::{AttackState, ClientPlayer},
 };
 
@@ -27,7 +27,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FlairPlugin)
-            .add_systems(Startup, setup_ui)
+            .add_systems(OnEnter(RendererMode::Tactical), setup_ui)
             .add_systems(
                 Update,
                 (
@@ -37,11 +37,15 @@ impl Plugin for UiPlugin {
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
-                ),
+                )
+                    .run_if(in_state(RendererMode::Tactical)),
             )
             .add_observer(on_new_player_added_hook)
             .add_observer(on_successful_attack_display)
-            .add_systems(Update, update_attack_result_ui);
+            .add_systems(
+                Update,
+                update_attack_result_ui.run_if(in_state(RendererMode::Tactical)),
+            );
     }
 }
 
@@ -111,6 +115,7 @@ struct PlayerSpan(Vec<Entity>);
 
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
+        TacticalEntity,
         Node::default(),
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![

@@ -11,8 +11,8 @@ use crate::spacetimedb::{
 use crate::{
     spacetimedb::Character,
     templates::settlement::{
-        map_destination_detail, map_destination_list, party_portrait_overlay, settlement_chat_area,
-        travel_planner_bar, visual_stage,
+        map_destination_detail, map_destination_list, party_portrait_overlay,
+        party_scene_visual_stage, settlement_chat_area, travel_planner_bar, visual_stage,
     },
 };
 
@@ -120,12 +120,17 @@ fn quest_location_center(
                 None,
             ))
             div class="quest-visual-wrap" {
-                (visual_stage("map", &quest.title, "TODO: quest location image"))
+                @if can_fight {
+                    (party_scene_visual_stage(&quest.title, party_members))
+                } @else {
+                    (visual_stage("map", &quest.title, "TODO: quest location image"))
+                }
                 @if can_fight || !resolved {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
-                        form action="/missions/enter" method="post" {
-                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                        form action="/missions/enter" method="post" data-live-tactical-handoff {
+                            button type="submit" class="btn btn-danger" data-tactical-submit { "Initiate Combat" }
+                            p class="text-muted small-copy" role="status" aria-live="polite" data-tactical-status {}
                         }
                         form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }

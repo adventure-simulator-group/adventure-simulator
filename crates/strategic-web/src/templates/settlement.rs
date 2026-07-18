@@ -311,6 +311,8 @@ pub(crate) fn map_destination_list(
                         @for destination in destinations {
                             a href=(format!("{}?destination={}", base_path, destination.id))
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item travel-destination-row active" } else { "list-item travel-destination-row" })
+                                data-map-marker-id=(&destination.id)
+                                aria-current=(if selected_id == Some(destination.id.as_str()) { "location" } else { "false" })
                                 data-travel-name=(&destination.name)
                                 data-travel-minutes=(destination.journey_minutes)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
@@ -1917,14 +1919,17 @@ pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup
 }
 
 fn renderer_host(config: &StartupConfig, fallback: Markup, label: &str) -> Markup {
-    let config = serde_json::to_string(config).expect("renderer descriptor is serializable");
+    let mut config = config.clone();
+    config.canvas_selector = "#strategic-renderer-canvas".into();
+    let config = serde_json::to_string(&config).expect("renderer descriptor is serializable");
     html! {
-        figure class="service-visual renderer-host" data-render-config=(config) aria-label=(label) {
+        figure id="strategic-renderer-host" class="service-visual renderer-host" data-render-config=(config) aria-label=(label) {
             div class="renderer-fallback" data-renderer-fallback { (fallback) }
-            canvas class="strategic-render-canvas" data-renderer-canvas aria-label=(label) hidden {}
+            canvas id="strategic-renderer-canvas" class="strategic-render-canvas" data-renderer-canvas aria-label=(label) hidden {}
             p class="renderer-status text-muted small-copy" data-renderer-status { "Interactive renderer loading; the accessible map remains available." }
         }
-        script type="module" src="/static/strategic-renderer.js?v=renderer-1" {}
+        script src="/static/strategic-renderer-helpers.js?v=renderer-2" {}
+        script type="module" src="/static/strategic-renderer.js?v=renderer-2" {}
     }
 }
 
@@ -2129,6 +2134,28 @@ fn scene_visual_stage(npc_name: &str, party_members: &[Character]) -> Markup {
         &config,
         html! {div class="service-visual-placeholder" role="img" aria-label=(format!("{} and the visible party",npc_name)){span class="visual-symbol"{(npc_name.chars().next().unwrap_or('?'))}span class="visual-label"{(npc_name)}}},
         &format!("{} and party scene", npc_name),
+    )
+}
+
+pub(crate) fn party_scene_visual_stage(title: &str, party_members: &[Character]) -> Markup {
+    let actors = party_members
+        .iter()
+        .map(|member| scene_actor(member.id.to_string(), &member.name))
+        .collect();
+    let config = StartupConfig {
+        renderer_schema: RENDER_SCHEMA_VERSION,
+        canvas_selector: "#strategic-renderer-canvas".into(),
+        startup: StartupMode::StrategicScene {
+            scene: SceneDescriptor {
+                renderer_schema: RENDER_SCHEMA_VERSION,
+                actors,
+            },
+        },
+    };
+    renderer_host(
+        &config,
+        html! {div class="service-visual-placeholder" role="img" aria-label=(format!("Visible party at {title}")){span class="visual-symbol"{"⚔"}span class="visual-label"{(title)}}},
+        &format!("Visible party at {title}"),
     )
 }
 fn scene_actor(id: String, label: &str) -> SceneActor {
@@ -2696,6 +2723,22 @@ mod tests {
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("Active quest destination"));
         assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn destination_anchor_is_the_canonical_marker_target_and_marks_selection() {
+        let destination = quest_destination();
+        let markup = map_destination_list(
+            std::slice::from_ref(&destination),
+            Some(&destination.id),
+            "/locations/settlement/test/map",
+        )
+        .into_string();
+        assert!(markup.contains("data-map-marker-id=\"quest-location\""));
+        assert!(markup.contains("aria-current=\"location\""));
+        assert!(
+            markup.contains("href=\"/locations/settlement/test/map?destination=quest-location\"")
+        );
     }
 
     #[test]

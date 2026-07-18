@@ -7,7 +7,8 @@
 //! - Ground plane and skybox
 //! - Ready for Lightyear networking integration
 
-use adventuresim_render_contracts::{StartupConfig, StartupMode};
+use adventuresim_render_contracts::{StartupConfig, StartupMode, TacticalHandoffCommand};
+use adventuresim_tactical_core::avian3d::schedule::PhysicsTime;
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
@@ -29,7 +30,10 @@ use bevy::{
 use clap::Parser;
 #[cfg(target_family = "wasm")]
 use console_error_panic_hook;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicBool, AtomicU8, Ordering},
+};
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -40,16 +44,34 @@ mod strategic;
 mod ui;
 
 static SUSPENDED: AtomicBool = AtomicBool::new(false);
+static HANDOFF: Mutex<Option<TacticalHandoffCommand>> = Mutex::new(None);
+static HANDOFF_ACCEPTED: AtomicBool = AtomicBool::new(false);
+static RENDERER_STATUS: AtomicU8 = AtomicU8::new(0);
+static MARKER_SELECTION: Mutex<Option<String>> = Mutex::new(None);
+
+#[cfg(target_family = "wasm")]
+const STATUS_STRATEGIC: u8 = 0;
+#[cfg(target_family = "wasm")]
+const STATUS_ALLOCATING: u8 = 1;
+const STATUS_TACTICAL_CONNECTING: u8 = 2;
+const STATUS_TACTICAL_CONNECTED: u8 = 3;
+const STATUS_TACTICAL_FAILED: u8 = 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
-enum RendererMode {
+pub(crate) enum RendererMode {
     StrategicMap,
     StrategicScene,
     #[default]
     Tactical,
 }
 #[derive(Resource, Clone)]
-struct RendererConfig(StartupConfig);
+pub(crate) struct RendererConfig(StartupConfig);
+
+#[derive(Component)]
+pub(crate) struct TacticalEntity;
+
+#[derive(Resource, Clone, Copy)]
+struct StrategicReturnMode(Option<RendererMode>);
 
 #[derive(Parser, Debug, Resource)]
 #[command(version, about)]
@@ -108,13 +130,61 @@ pub fn wasm_set_suspended(suspended: bool) {
     SUSPENDED.store(suspended, Ordering::Relaxed);
 }
 
-/// Reserved command boundary for an eventual in-page strategic-to-tactical handoff.
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
-pub fn wasm_tactical_handoff(_player_id: u64, _server_url: &str) -> Result<(), JsValue> {
-    Err(JsValue::from_str(
-        "hot tactical handoff is not enabled yet; use the tactical page fallback",
-    ))
+pub fn wasm_tactical_handoff(json: &str) -> Result<(), JsValue> {
+    let command: TacticalHandoffCommand =
+        serde_json::from_str(json).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    command
+        .validate()
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    queue_handoff(command).map_err(JsValue::from_str)
+}
+
+#[cfg(any(target_family = "wasm", test))]
+fn queue_handoff(command: TacticalHandoffCommand) -> Result<(), &'static str> {
+    if HANDOFF_ACCEPTED.swap(true, Ordering::AcqRel) {
+        return Err("a tactical handoff is already pending or active");
+    }
+    let mut mailbox = HANDOFF.lock().map_err(|_| "handoff mailbox unavailable")?;
+    if mailbox.is_some() {
+        HANDOFF_ACCEPTED.store(false, Ordering::Release);
+        return Err("a tactical handoff is already queued");
+    }
+    *mailbox = Some(command);
+    Ok(())
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_renderer_status() -> String {
+    match RENDERER_STATUS.load(Ordering::Acquire) {
+        STATUS_ALLOCATING => "allocating",
+        STATUS_TACTICAL_CONNECTING => "tactical_connecting",
+        STATUS_TACTICAL_CONNECTED => "tactical_connected",
+        STATUS_TACTICAL_FAILED => "tactical_failed",
+        _ => "strategic",
+    }
+    .into()
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_set_allocating(allocating: bool) {
+    RENDERER_STATUS.store(
+        if allocating {
+            STATUS_ALLOCATING
+        } else {
+            STATUS_STRATEGIC
+        },
+        Ordering::Release,
+    );
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_take_marker_selection() -> Option<String> {
+    MARKER_SELECTION.lock().ok()?.take()
 }
 
 fn run(args: Args) {
@@ -155,48 +225,67 @@ fn run_config(config: StartupConfig) {
     ))
     .insert_state(mode)
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .add_systems(Update, apply_lifecycle)
+    .add_systems(
+        Update,
+        (
+            apply_lifecycle,
+            drain_handoff,
+            publish_connection_status,
+            monitor_connection_failure,
+        ),
+    )
     .insert_resource(RendererConfig(config.clone()));
 
-    if mode == RendererMode::Tactical {
-        let StartupMode::Tactical {
+    let (player_id, server_addr) = match &config.startup {
+        StartupMode::Tactical {
             player_id,
             server_url,
-        } = config.startup
-        else {
-            unreachable!()
-        };
-        app.add_plugins((
-            AdventureSimulatorCorePlugins
-                .build()
-                .set(AdventureSimulatorPhysicsPlugin {
-                    enable_simulation: false,
-                }),
-            AdventureSimulatorNetPlugins,
-        ))
-        .add_input_context::<Player>()
-        .add_plugins((ui::UiPlugin, player::PlayerPlugin))
-        .add_systems(Startup, (setup_scene, setup_client))
-        .add_systems(
-            Update,
-            (
-                capture_cursor.run_if(
-                    input_just_pressed(MouseButton::Left)
-                        .and(any_with_component::<CharacterController>),
-                ),
-                release_cursor.run_if(
-                    input_just_pressed(KeyCode::Escape)
-                        .and(any_with_component::<CharacterController>),
-                ),
+        } => (*player_id, server_url.clone()),
+        _ => (0, String::new()),
+    };
+    app.add_plugins((
+        AdventureSimulatorCorePlugins
+            .build()
+            .set(AdventureSimulatorPhysicsPlugin {
+                enable_simulation: true,
+            }),
+        AdventureSimulatorNetPlugins,
+        strategic::StrategicRendererPlugin,
+        ui::UiPlugin,
+        player::PlayerPlugin,
+    ))
+    .add_input_context::<Player>()
+    .add_systems(OnEnter(RendererMode::StrategicMap), pause_physics)
+    .add_systems(OnEnter(RendererMode::StrategicScene), pause_physics)
+    .add_systems(OnEnter(RendererMode::Tactical), resume_physics)
+    .add_systems(OnEnter(RendererMode::Tactical), (setup_scene, setup_client))
+    .add_systems(OnExit(RendererMode::Tactical), cleanup_tactical)
+    .add_systems(
+        Update,
+        (
+            capture_cursor.run_if(
+                input_just_pressed(MouseButton::Left)
+                    .and(any_with_component::<CharacterController>),
             ),
-        )
-        .add_observer(on_game_scene_added_hook)
-        .insert_resource(Args {
-            id: player_id,
-            server_addr: server_url,
-        });
+            release_cursor.run_if(
+                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
+            ),
+        ),
+    )
+    .add_observer(on_game_scene_added_hook)
+    .insert_resource(Args {
+        id: player_id,
+        server_addr,
+    })
+    .insert_resource(StrategicReturnMode(match mode {
+        RendererMode::StrategicMap | RendererMode::StrategicScene => Some(mode),
+        RendererMode::Tactical => None,
+    }));
+
+    if mode == RendererMode::Tactical {
+        app.world_mut().resource_mut::<Time<Physics>>().unpause();
     } else {
-        app.add_plugins(strategic::StrategicRendererPlugin);
+        app.world_mut().resource_mut::<Time<Physics>>().pause();
     }
 
     #[cfg(feature = "debug")]
@@ -215,16 +304,27 @@ fn apply_lifecycle(mut time: ResMut<Time<Virtual>>) {
     }
 }
 
+fn pause_physics(mut time: ResMut<Time<Physics>>) {
+    time.pause();
+}
+fn resume_physics(mut time: ResMut<Time<Physics>>) {
+    time.unpause();
+}
+
 fn renderer_suspended() -> bool {
     SUSPENDED.load(Ordering::Relaxed)
 }
 
 fn setup_client(mut commands: Commands, args: Res<Args>) {
-    commands.spawn(AdventureSimulatorClient {
-        player_id: args.id,
-        server_url: args.server_addr.clone(),
-        ..default()
-    });
+    RENDERER_STATUS.store(STATUS_TACTICAL_CONNECTING, Ordering::Release);
+    commands.spawn((
+        AdventureSimulatorClient {
+            player_id: args.id,
+            server_url: args.server_addr.clone(),
+            ..default()
+        },
+        TacticalEntity,
+    ));
 }
 
 fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<ScatteringMedium>>) {
@@ -236,6 +336,7 @@ fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<Sca
             illuminance: lux::DIRECT_SUNLIGHT,
             ..default()
         },
+        TacticalEntity,
     ));
 
     // Camera
@@ -252,7 +353,153 @@ fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<Sca
         Bloom::NATURAL,
         Msaa::Off,
         ScreenSpaceAmbientOcclusion::default(),
+        TacticalEntity,
     ));
+}
+
+fn drain_handoff(
+    mode: Res<State<RendererMode>>,
+    mut next_mode: ResMut<NextState<RendererMode>>,
+    mut args: ResMut<Args>,
+) {
+    if *mode.get() == RendererMode::Tactical {
+        return;
+    }
+    let command = HANDOFF.lock().ok().and_then(|mut mailbox| mailbox.take());
+    let Some(command) = command else {
+        return;
+    };
+    args.id = command.player_id;
+    args.server_addr = command.server_url;
+    next_mode.set(RendererMode::Tactical);
+}
+
+fn publish_connection_status(
+    mode: Res<State<RendererMode>>,
+    client_state: Res<State<adventuresim_tactical_netcode::bevy_replicon::prelude::ClientState>>,
+) {
+    if *mode.get() == RendererMode::Tactical
+        && *client_state.get()
+            == adventuresim_tactical_netcode::bevy_replicon::prelude::ClientState::Connected
+    {
+        RENDERER_STATUS.store(STATUS_TACTICAL_CONNECTED, Ordering::Release);
+    }
+}
+
+fn monitor_connection_failure(
+    mode: Res<State<RendererMode>>,
+    client_state: Res<State<adventuresim_tactical_netcode::bevy_replicon::prelude::ClientState>>,
+    return_mode: Res<StrategicReturnMode>,
+    mut next_mode: ResMut<NextState<RendererMode>>,
+    mut saw_connecting: Local<bool>,
+    mut reached_play: Local<bool>,
+    controlled_players: Query<(), With<ControlledPlayer>>,
+) {
+    use adventuresim_tactical_netcode::bevy_replicon::prelude::ClientState;
+    if *mode.get() != RendererMode::Tactical || return_mode.0.is_none() {
+        return;
+    }
+    match client_state.get() {
+        ClientState::Connecting => *saw_connecting = true,
+        ClientState::Connected => {
+            *saw_connecting = true;
+            if !controlled_players.is_empty() {
+                *reached_play = true;
+            }
+        }
+        ClientState::Disconnected
+            if *saw_connecting
+                && !*reached_play
+                && matches!(
+                    RENDERER_STATUS.load(Ordering::Acquire),
+                    STATUS_TACTICAL_CONNECTING | STATUS_TACTICAL_CONNECTED
+                ) =>
+        {
+            RENDERER_STATUS.store(STATUS_TACTICAL_FAILED, Ordering::Release);
+            HANDOFF_ACCEPTED.store(false, Ordering::Release);
+            next_mode.set(return_mode.0.expect("checked above"));
+            *saw_connecting = false;
+        }
+        _ => {}
+    }
+}
+
+fn cleanup_tactical(mut commands: Commands, entities: Query<Entity, With<TacticalEntity>>) {
+    for entity in &entities {
+        commands.entity(entity).despawn();
+    }
+}
+
+pub(crate) fn publish_marker_selection(id: &str) {
+    if let Ok(mut selection) = MARKER_SELECTION.lock() {
+        *selection = Some(id.to_owned());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use adventuresim_render_contracts::TACTICAL_HANDOFF_SCHEMA_VERSION;
+
+    fn command() -> TacticalHandoffCommand {
+        TacticalHandoffCommand {
+            handoff_schema: TACTICAL_HANDOFF_SCHEMA_VERSION,
+            player_id: 9,
+            server_url: "127.0.0.1:6000".into(),
+        }
+    }
+
+    #[test]
+    fn handoff_mailbox_accepts_exactly_once() {
+        *HANDOFF.lock().unwrap() = None;
+        HANDOFF_ACCEPTED.store(false, Ordering::Release);
+        assert_eq!(queue_handoff(command()), Ok(()));
+        assert_eq!(
+            queue_handoff(command()),
+            Err("a tactical handoff is already pending or active")
+        );
+        assert_eq!(HANDOFF.lock().unwrap().as_ref().unwrap().player_id, 9);
+
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin))
+            .insert_state(RendererMode::StrategicScene)
+            .insert_resource(Args {
+                id: 0,
+                server_addr: String::new(),
+            })
+            .add_systems(Update, drain_handoff)
+            .add_systems(OnEnter(RendererMode::Tactical), setup_client);
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<AdventureSimulatorClient>>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+        app.update();
+        app.update();
+        assert_eq!(
+            *app.world().resource::<State<RendererMode>>().get(),
+            RendererMode::Tactical
+        );
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<AdventureSimulatorClient>>()
+                .iter(app.world())
+                .count(),
+            1
+        );
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<AdventureSimulatorClient>>()
+                .iter(app.world())
+                .count(),
+            1
+        );
+        HANDOFF_ACCEPTED.store(false, Ordering::Release);
+    }
 }
 
 fn on_game_scene_added_hook(
