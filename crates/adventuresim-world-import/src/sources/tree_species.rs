@@ -979,7 +979,9 @@ mod tests {
                             LandUseFraction::new(5_900).unwrap(),
                         )
                         .unwrap(),
-                        evidence: crate::draft::LandUseEvidence::Luh1Sampled { normalized: false },
+                        evidence: crate::draft::LandUseEvidence::Hyde35Sampled {
+                            normalized: false,
+                        },
                     },
                     forest_cover: ForestCover::Open,
                 },

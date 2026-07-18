@@ -251,34 +251,37 @@ pub(crate) fn elevation() -> SourceProvenance {
     )
 }
 
-pub(crate) fn luh1() -> SourceProvenance {
+pub(crate) fn hyde35() -> SourceProvenance {
     source(
-        "luh1-luha-u2-v1",
-        "LUH1 Harmonized Global Land Use LUHa_u2.v1",
+        "hyde-3-5-c9",
+        "History Database of the Global Environment 3.5",
         SourceRelease::Immutable {
-            version: "LUHa_u2.v1".into(),
-            released: "2012".into(),
+            version: "3.5 c9".into(),
+            released: "2025-03".into(),
         },
-        "https://doi.org/10.3334/ORNLDAAC/1248",
-        Some("10.3334/ORNLDAAC/1248"),
-        SourceLicense::RightsReserved,
-        &["Cite the LUH1 dataset and follow the current official acquisition terms."],
+        "https://landuse.sites.uu.nl/hyde-project/",
+        None,
+        SourceLicense::CcBy3_0,
+        &[
+            "HYDE 3.5 is licensed CC BY 3.0; retain attribution, the license link, and an indication of Adventure Simulator's interpolation and classification changes.",
+            "Cite the HYDE project and the HYDE 3.5 release README.",
+        ],
         SourceAccess::ManualPreparation,
         SourceSpatialCoverage::Geographic {
             crs: "EPSG:4326".into(),
-            resolution: "0.5 degrees".into(),
+            resolution: "5 arc-minutes".into(),
             coverage: "global land".into(),
         },
         SourceTemporalCoverage::Years {
-            first: 1500,
-            last: 2100,
+            first: -10_000,
+            last: 2023,
         },
-        "luh1-annual-netcdf-state-sampling",
+        "hyde35-netcdf-area-interpolation",
         1,
         SourceContentIdentity::ReleaseBlocked {
-            reason: "the five manually acquired LUH1 NetCDF files are not content-pinned".into(),
+            reason: "the four manually acquired HYDE 3.5 files are not yet checked into a content inventory".into(),
         },
-        "[LUH1 LUHa_u2.v1](https://doi.org/10.3334/ORNLDAAC/1248), sampled as a regional modelled baseline.",
+        "[HYDE 3.5](https://landuse.sites.uu.nl/hyde-project/), sampled as a regional historical reconstruction.",
     )
 }
 
@@ -771,8 +774,8 @@ mod tests {
 
     #[test]
     fn canonicalization_is_order_independent_and_rejects_duplicates() {
-        let mut first = vec![luh1(), elevation()];
-        let mut second = vec![elevation(), luh1()];
+        let mut first = vec![hyde35(), elevation()];
+        let mut second = vec![elevation(), hyde35()];
         canonicalize(&mut first).unwrap();
         canonicalize(&mut second).unwrap();
         assert_eq!(first, second);
@@ -889,7 +892,7 @@ mod tests {
         let sources = [
             viabundus(Path::new("missing")).unwrap(),
             elevation(),
-            luh1(),
+            hyde35(),
             forest(Path::new("missing")).unwrap(),
             geology(Path::new("manual.gpkg")),
             religion(
@@ -909,7 +912,7 @@ mod tests {
         for required in [
             "CC BY-SA",
             "liable",
-            "follow the current official acquisition terms",
+            "HYDE 3.5 is licensed CC BY 3.0",
             "modifications",
             "Malta",
             "not redistributed",
@@ -926,7 +929,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "0d048b844e3b9e5291e8478381c6b61028b185c9dc71ff2020798a5efe804680"
+            "0c3e8de83fc03592402d80e8788a4d368fd1dd56aa26ad79f03765c9f1911cc2"
         );
     }
 

@@ -839,7 +839,7 @@ fn encode_historical_vegetation(vegetation: HistoricalVegetation) -> Value {
     };
     match vegetation {
         HistoricalVegetation::Direct(v) => {
-            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::Luh1DominantLandUse => "Luh1DominantLandUse" }) } })
+            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::Hyde35DominantLandUse => "Hyde35DominantLandUse" }) } })
         }
         HistoricalVegetation::Derived(v) => {
             json!({ "Derived": { "cover": derived_cover(v.cover), "method": enum_unit(match v.method { D::MultiSourceRulesV4 => "MultiSourceRulesV4", D::MultiSourceRulesV4TieBreak => "MultiSourceRulesV4TieBreak" }) } })
@@ -967,7 +967,7 @@ fn default_elevation_directory() -> PathBuf {
 }
 
 fn default_land_use_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/historical-land-use")
+    repository_root().join("target/world-data-sources/raw/hyde35-land-use")
 }
 
 fn default_forest_cover_directory() -> PathBuf {

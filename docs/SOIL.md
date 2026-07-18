@@ -87,5 +87,5 @@ layers are prepared. Plan and unit-test modes remain useful without GDAL.
    parent material.
 
 Rules are deterministic and versioned. A full prepared-source audit remains
-blocked by the absent official LUH1, forest, EU-Hydro, and prepared SoilGrids
+blocked by the absent official HYDE 3.5, forest, EU-Hydro, and prepared SoilGrids
 inputs; this repository does not claim full #67/#68 source coverage.

@@ -245,12 +245,12 @@ init-glo30:
 verify-glo30:
 	@python3 scripts/world_source_init.py glo30 --verify-only
 
-plan-luh1:
-	@python3 scripts/world_source_init.py luh1 --plan
-init-luh1:
-	@python3 scripts/world_source_init.py luh1 --init
-verify-luh1:
-	@python3 scripts/world_source_init.py luh1 --verify-only
+plan-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --plan
+init-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --init
+verify-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --verify-only
 
 plan-forest-cover:
 	@python3 scripts/world_source_init.py forest --plan

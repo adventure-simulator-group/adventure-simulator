@@ -169,15 +169,15 @@ class InitializerTests(unittest.TestCase):
     def test_traversal_symlink_duplicate_and_extra_inventory_fail(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            contract = init.CONTRACTS["luh1"]
-            self.inventory(root, "luh1", [{"name": "../escape", "size": 1, "sha256": "0" * 64}])
+            contract = init.CONTRACTS["hyde35"]
+            self.inventory(root, "hyde35", [{"name": "../escape", "size": 1, "sha256": "0" * 64}])
             with self.assertRaises(RuntimeError):
                 init.load_inventory(root, contract)
-            duplicate = [{"name": "LUHa_u2.v1_gcrop.nc4", "size": 1, "sha256": "0" * 64}] * 2
-            self.inventory(root, "luh1", duplicate)
+            duplicate = [{"name": "cropland.nc", "size": 1, "sha256": "0" * 64}] * 2
+            self.inventory(root, "hyde35", duplicate)
             with self.assertRaisesRegex(RuntimeError, "duplicate"):
                 init.load_inventory(root, contract)
-            self.inventory(root, "luh1", [{"name": "extra.nc4", "size": 1, "sha256": "0" * 64}])
+            self.inventory(root, "hyde35", [{"name": "extra.nc4", "size": 1, "sha256": "0" * 64}])
             with self.assertRaisesRegex(RuntimeError, "missing or adds"):
                 init.load_inventory(root, contract)
             outside = root.parent / "outside-world-source-test"
@@ -208,7 +208,7 @@ class InitializerTests(unittest.TestCase):
             Path(credential).unlink(missing_ok=True)
 
     def test_manifest_order_is_deterministic(self):
-        contract = init.CONTRACTS["luh1"]
+        contract = init.CONTRACTS["hyde35"]
         value = init.canonical_manifest(contract, [
             {"name": "z", "size": 1, "sha256": "0" * 64},
             {"name": "a", "size": 1, "sha256": "1" * 64},
@@ -219,7 +219,7 @@ class InitializerTests(unittest.TestCase):
     def test_contract_ids_and_versions_match_compiler_manifests(self):
         expected = {
             "glo30": ("copernicus-dem-glo30", "GLO-30"),
-            "luh1": ("luh1-luha-u2-v1", "LUHa_u2.v1"),
+            "hyde35": ("hyde-3-5-c9", "3.5 c9"),
             "forest": ("clms-forest-2018", "2018"),
             "trees4f": ("eu-trees4f-v2", "2"),
             "egdi": ("egdi-surface-geology-1m", "EGDI-GE-1M-SURFACE"),

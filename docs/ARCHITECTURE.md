@@ -40,7 +40,7 @@ Source modules first parse into importer-only draft types. The outer builder
 enriches that draft in dependency order and only then constructs the canonical
 world schema. For example, Viabundus supplies settlement identity and road
 topology, while GLO-30 supplies the required typed elevation for each draft
-settlement. LUH1 then adds an exhaustive typed land-use profile and constructs
+settlement. HYDE 3.5 then adds an exhaustive typed land-use profile and constructs
 an enriched draft. Copernicus forest cover consumes that draft and constructs
 another enriched draft with a typed open-or-wooded state. Jung/IIASA European
 PNV v1.1 then adds typed posterior, categorical, or inferred potential
@@ -68,7 +68,7 @@ Rules-v6 industry inference then attaches a bounded strategic production
 profile. Incident route accessibility may downgrade scale but never creates a
 resource; the evidence model is documented in `docs/INDUSTRIES.md`.
 Land-use sampled/normalized/fallback evidence remains private through this
-stage so a deterministic missing-LUH1 profile cannot masquerade as direct.
+stage so a deterministic missing-HYDE profile cannot masquerade as direct.
 The generic draft is a typestate boundary: each enrichment
 stage consumes only settlements that have all of its required predecessor data.
 This keeps source-specific placeholders out of canonical records and prevents
