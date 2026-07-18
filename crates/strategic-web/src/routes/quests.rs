@@ -12,6 +12,7 @@ use serde_json::json;
 
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
+    participates_in_party_readiness,
     settlements::get_active_party_members,
     travel::{TravelDestination, TravelForm, populate_camp_forecasts, settlement_destination},
 };
@@ -560,7 +561,10 @@ async fn render_quest_location(
 }
 
 async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
-    for member in members {
+    for member in members
+        .iter()
+        .filter(|member| participates_in_party_readiness(member.alive))
+    {
         if state
             .db
             .call(

@@ -45,6 +45,12 @@ pub(crate) enum PartyActionOutcome {
     Requested,
 }
 
+/// Corpses remain party members for rendering and history, but do not
+/// participate in readiness checks that gate survivor actions.
+pub(crate) fn participates_in_party_readiness(alive: bool) -> bool {
+    alive
+}
+
 /// Execute a leader action immediately, or persist the same validated intent for
 /// the party leader when a member attempts it.
 pub(crate) async fn execute_or_request_party_action(
@@ -74,17 +80,29 @@ pub(crate) async fn execute_or_request_party_action(
             ))
             .await
             .map_err(|error| error.to_string())?;
-        for member in members {
+        for membership in members {
+            let member = state
+                .db
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM character WHERE id = {}",
+                    membership.character_id
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Party member not found")?;
+            if !participates_in_party_readiness(member.alive) {
+                continue;
+            }
             state
                 .db
-                .call("refresh_strategic_condition", &[json!(member.character_id)])
+                .call("refresh_strategic_condition", &[json!(member.id)])
                 .await
                 .map_err(|error| error.to_string())?;
             let condition = state
                 .db
                 .query_one::<CharacterStrategicCondition>(&format!(
                     "SELECT * FROM character_strategic_condition WHERE character_id = {}",
-                    member.character_id
+                    member.id
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -154,6 +172,17 @@ pub(crate) async fn execute_or_request_party_action(
         });
     }
     Ok(PartyActionOutcome::Requested)
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::participates_in_party_readiness;
+
+    #[test]
+    fn corpses_do_not_participate_in_party_readiness() {
+        assert!(participates_in_party_readiness(true));
+        assert!(!participates_in_party_readiness(false));
+    }
 }
 
 pub(crate) async fn approve_party_action(
