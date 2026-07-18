@@ -14,7 +14,7 @@ use crate::character::character;
 use crate::strategic::party;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
-    character_equip, character_limbs, character_skills, character_stats, party_member, settlement,
+    character_equip, character_limbs, character_skills, character_stats, settlement,
 };
 
 /// Natural recovery without useful medical support while taking full
@@ -470,12 +470,7 @@ fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, 
         .find(character_id)
         .ok_or_else(|| "Character not found".to_string())?;
     let member_ids: Vec<u64> = if let Some(party_id) = character.party_id {
-        ctx.db
-            .party_member()
-            .party_id()
-            .filter(&party_id)
-            .map(|member| member.character_id)
-            .collect()
+        crate::strategic::living_party_member_ids(ctx, &party_id)
     } else {
         vec![character_id]
     };
@@ -715,31 +710,18 @@ pub fn rest_at_camp(
     if party.camp_destination_id.is_none() {
         return Err("The party is not camped while travelling".into());
     }
-    for membership in ctx.db.party_member().party_id().filter(&party_id) {
-        if ctx
-            .db
-            .character()
-            .id()
-            .find(membership.character_id)
-            .is_some_and(|character| !character.alive)
-        {
-            continue;
-        }
-        ensure_character_time(ctx, membership.character_id)?;
+    for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+        ensure_character_time(ctx, member_id)?;
         let mut time = ctx
             .db
             .character_time()
             .character_id()
-            .find(membership.character_id)
+            .find(member_id)
             .ok_or("Character time record not found")?;
         time.minutes = time.minutes.saturating_add(requested_minutes);
         ctx.db.character_time().character_id().update(time);
-        crate::condition::apply_camp_rest_condition(
-            ctx,
-            membership.character_id,
-            requested_minutes,
-        )?;
-        crate::capability::refresh_character_capability(ctx, membership.character_id)?;
+        crate::condition::apply_camp_rest_condition(ctx, member_id, requested_minutes)?;
+        crate::capability::refresh_character_capability(ctx, member_id)?;
     }
     // Reforecast the untravelled part from the fatigue that this particular
     // rest actually removed. The journey record retains all reached camps.

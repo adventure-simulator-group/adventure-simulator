@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod attribute;
 pub mod autoresolve;
+pub mod battle_rewards;
 pub mod body;
 pub mod capability;
 pub mod combat;

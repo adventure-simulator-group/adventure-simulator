@@ -380,14 +380,33 @@ mod healing_tests {
     }
 }
 
-fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
-    let character_ids: Vec<_> = ctx
+/// Returns the living members who participate in strategic party activity.
+/// Membership rows for dead characters remain durable, but corpses never
+/// advance time, travel, consume provisions, affect readiness, or enter combat.
+pub(crate) fn living_party_member_ids(ctx: &ReducerContext, party_id: &str) -> Vec<u64> {
+    let mut character_ids: Vec<_> = ctx
         .db
         .party_member()
         .party_id()
         .filter(party_id)
-        .map(|membership| membership.character_id)
+        .filter_map(|membership| {
+            ctx.db
+                .character()
+                .id()
+                .find(membership.character_id)
+                .filter(|character| character.alive)
+                .map(|character| character.id)
+        })
         .collect();
+    character_ids.sort_unstable();
+    character_ids
+}
+
+fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+    let character_ids = living_party_member_ids(ctx, party_id);
+    if character_ids.is_empty() {
+        return Err("Party has no living members".into());
+    }
     crate::condition::require_characters_ready(ctx, &character_ids)
 }
 
@@ -1976,20 +1995,7 @@ pub(crate) fn normalize_and_elect_party_leader(
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
-    let living: Vec<u64> = ctx
-        .db
-        .party_member()
-        .party_id()
-        .filter(party_id)
-        .filter_map(|member| {
-            ctx.db
-                .character()
-                .id()
-                .find(member.character_id)
-                .filter(|character| character.alive)
-                .map(|character| character.id)
-        })
-        .collect();
+    let living = living_party_member_ids(ctx, party_id);
     let living_set: std::collections::HashSet<_> = living.iter().copied().collect();
     for vote in ctx
         .db
@@ -2011,6 +2017,10 @@ pub(crate) fn normalize_and_elect_party_leader(
                 put_leader_vote(ctx, party_id, *voter_id, party.leader_id);
             }
         }
+    } else if let [sole_survivor] = living.as_slice() {
+        // Public self-votes remain forbidden. This system ballot prevents a
+        // two-member party from deadlocking when its incumbent dies.
+        put_leader_vote(ctx, party_id, *sole_survivor, *sole_survivor);
     }
     let leader_alive = living_set.contains(&party.leader_id);
     let ballots: Vec<_> = ctx
@@ -3044,15 +3054,15 @@ pub(crate) fn record_battle_result(
         party_id: party_id.to_string(),
         mission_id: mission_id.to_string(),
     });
-    for member in ctx.db.party_member().party_id().filter(party_id) {
+    for member_id in living_party_member_ids(ctx, party_id) {
         ctx.db.battle_participant().insert(BattleParticipant {
             id: 0,
             quest_id: quest_id.to_string(),
-            character_id: member.character_id,
+            character_id: member_id,
         });
         crate::condition::record_morale_event(
             ctx,
-            member.character_id,
+            member_id,
             "victory",
             5.0 + quest.difficulty.max(0) as f32,
             Some(quest_id.to_string()),
@@ -3146,12 +3156,28 @@ pub fn store_battle_loot(
             objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(entry.quantity)),
         );
     }
-    let participants: Vec<_> = ctx
+    let recorded_participants: Vec<_> = ctx
         .db
         .battle_participant()
         .quest_id()
         .filter(&quest_id)
+        .map(|participant| participant.character_id)
         .collect();
+    let living_recorded: Vec<_> = recorded_participants
+        .iter()
+        .copied()
+        .filter(|participant_id| {
+            ctx.db
+                .character()
+                .id()
+                .find(*participant_id)
+                .is_some_and(|character| character.alive)
+        })
+        .collect();
+    let participants = adventuresim_core::battle_rewards::living_participant_ids(
+        &recorded_participants,
+        &living_recorded,
+    );
     if participants.is_empty() {
         return Err("Battle has no eligible participants".into());
     }
@@ -3168,8 +3194,8 @@ pub fn store_battle_loot(
     }
     let participant_count = participants.len() as u64;
     let share = total_value / participant_count;
-    for participant in participants {
-        credit_party_stake(ctx, &party_id, participant.character_id, share);
+    for participant_id in participants {
+        credit_party_stake(ctx, &party_id, participant_id, share);
     }
     credit_party_reserve(ctx, &party_id, total_value % participant_count);
     Ok(())
@@ -4229,13 +4255,7 @@ fn create_strategic_incident(
         status: QuestStatus::Accepted,
         accepted_by: Some(party_id.into()),
         enemy_type: spec.enemy_type.into(),
-        enemy_count: ctx
-            .db
-            .party_member()
-            .party_id()
-            .filter(party_id)
-            .count()
-            .max(2) as i32,
+        enemy_count: living_party_member_ids(ctx, party_id).len().max(2) as i32,
         location_description: spec.description,
         location_scene_key: settlement.scene_key.clone(),
         location_coord_x: settlement.coord_x,
@@ -4253,8 +4273,8 @@ fn create_strategic_incident(
         status: "pending".into(),
     });
 
-    for membership in ctx.db.party_member().party_id().filter(party_id) {
-        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+    for member_id in living_party_member_ids(ctx, party_id) {
+        if let Some(mut member) = ctx.db.character().id().find(member_id) {
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
             ctx.db.character().id().update(member);
@@ -4282,13 +4302,13 @@ fn maybe_trigger_religious_incident(
         return Ok(None);
     }
     let mut instigator = None;
-    for membership in ctx.db.party_member().party_id().filter(party_id) {
-        crate::condition::initialize_character_condition(ctx, membership.character_id)?;
+    for member_id in living_party_member_ids(ctx, party_id) {
+        crate::condition::initialize_character_condition(ctx, member_id)?;
         let religion = ctx
             .db
             .character_condition()
             .character_id()
-            .find(membership.character_id)
+            .find(member_id)
             .and_then(|condition| condition.religion_id);
         if religion
             .as_deref()
@@ -4296,13 +4316,12 @@ fn maybe_trigger_religious_incident(
         {
             continue;
         }
-        let condition =
-            crate::condition::refresh_character_strategic_condition(ctx, membership.character_id)?;
+        let condition = crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
         if instigator
             .as_ref()
             .is_none_or(|(_, fervor)| condition.fervor > *fervor)
         {
-            instigator = Some((membership.character_id, condition.fervor));
+            instigator = Some((member_id, condition.fervor));
         }
     }
     let Some((instigator_id, instigator_fervor)) = instigator else {
@@ -4441,24 +4460,24 @@ fn party_travel_fatigue_inputs(
     fully_rested: bool,
 ) -> Result<Vec<TravelFatigueInputs>, String> {
     let mut members = Vec::new();
-    for membership in ctx.db.party_member().party_id().filter(party_id) {
+    for member_id in living_party_member_ids(ctx, party_id) {
         let attributes = ctx
             .db
             .character_attributes()
             .character_id()
-            .find(membership.character_id)
+            .find(member_id)
             .ok_or("Party member attributes not found")?;
         let limbs = ctx
             .db
             .character_limbs()
             .character_id()
-            .find(membership.character_id)
+            .find(member_id)
             .ok_or("Party member limbs not found")?;
         let stats = ctx
             .db
             .character_stats()
             .character_id()
-            .find(membership.character_id)
+            .find(member_id)
             .ok_or("Party member stats not found")?;
         members.push(TravelFatigueInputs {
             fatigue_capacity: attributes
@@ -4648,6 +4667,7 @@ pub fn travel_to_quest(
         return Err("Travel to the quest must begin at its posting settlement".into());
     }
     require_party_ready(ctx, &party_id)?;
+    let traveler_ids = living_party_member_ids(ctx, &party_id);
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
     let origin = ctx
@@ -4669,12 +4689,8 @@ pub fn travel_to_quest(
     )?;
     if provision {
         let planning_minutes = travel_minutes.saturating_mul(2);
-        for membership in ctx.db.party_member().party_id().filter(&party_id) {
-            crate::condition::provision_character_for_travel(
-                ctx,
-                membership.character_id,
-                planning_minutes,
-            )?;
+        for member_id in traveler_ids.iter().copied() {
+            crate::condition::provision_character_for_travel(ctx, member_id, planning_minutes)?;
         }
     }
     let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
@@ -4683,13 +4699,13 @@ pub fn travel_to_quest(
         party.camp_fatigue_percent,
     )?);
     if leg_minutes < travel_minutes {
-        for membership in ctx.db.party_member().party_id().filter(&party_id) {
-            advance_character_time(ctx, membership.character_id, leg_minutes)?;
+        for member_id in traveler_ids.iter().copied() {
+            advance_character_time(ctx, member_id, leg_minutes)?;
             let mut member = ctx
                 .db
                 .character()
                 .id()
-                .find(membership.character_id)
+                .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
             member.current_quest_location_id = None;
@@ -4704,8 +4720,8 @@ pub fn travel_to_quest(
         record_party_journey_camp(ctx, &party_id, leg_minutes)?;
         return Ok(());
     }
-    for membership in ctx.db.party_member().party_id().filter(&party_id) {
-        if let Some(mut member) = ctx.db.character().id().find(membership.character_id) {
+    for member_id in traveler_ids {
+        if let Some(mut member) = ctx.db.character().id().find(member_id) {
             advance_character_time(ctx, member.id, travel_minutes)?;
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
@@ -4813,12 +4829,7 @@ pub fn travel_to_settlement(
 
     let departing_quest = character.current_quest_location_id.clone();
     let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
-        ctx.db
-            .party_member()
-            .party_id()
-            .filter(&party.id)
-            .map(|membership| membership.character_id)
-            .collect()
+        living_party_member_ids(ctx, &party.id)
     } else {
         vec![character_id]
     };
@@ -4983,8 +4994,9 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     if leg_minutes == 0 {
         return Err("Camp journey has no remaining travel time".into());
     }
-    for membership in ctx.db.party_member().party_id().filter(&party_id) {
-        advance_character_time(ctx, membership.character_id, leg_minutes)?;
+    let traveler_ids = living_party_member_ids(ctx, &party_id);
+    for member_id in traveler_ids.iter().copied() {
+        advance_character_time(ctx, member_id, leg_minutes)?;
     }
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {
@@ -5000,24 +5012,20 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                 .id()
                 .find(&destination_id)
                 .ok_or("Camp destination settlement not found")?;
-            for membership in ctx.db.party_member().party_id().filter(&party_id) {
+            for member_id in traveler_ids.iter().copied() {
                 let mut member = ctx
                     .db
                     .character()
                     .id()
-                    .find(membership.character_id)
+                    .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = Some(destination_id.clone());
                 member.current_quest_location_id = None;
                 ctx.db.character().id().update(member);
-                crate::condition::replenish_needs_at_settlement(ctx, membership.character_id)?;
-                crate::condition::refresh_character_strategic_condition(
-                    ctx,
-                    membership.character_id,
-                )?;
+                crate::condition::replenish_needs_at_settlement(ctx, member_id)?;
+                crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
                 crate::time::rest_temporary_party_member_until_healed_at_settlement(
-                    ctx,
-                    membership.character_id,
+                    ctx, member_id,
                 )?;
             }
             party.current_settlement_id = Some(destination_id);
@@ -5030,20 +5038,17 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                 .id()
                 .find(&destination_id)
                 .ok_or("Camp destination quest not found")?;
-            for membership in ctx.db.party_member().party_id().filter(&party_id) {
+            for member_id in traveler_ids.iter().copied() {
                 let mut member = ctx
                     .db
                     .character()
                     .id()
-                    .find(membership.character_id)
+                    .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = None;
                 member.current_quest_location_id = Some(destination_id.clone());
                 ctx.db.character().id().update(member);
-                crate::condition::refresh_character_strategic_condition(
-                    ctx,
-                    membership.character_id,
-                )?;
+                crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
             }
             party.current_settlement_id = None;
             party.current_quest_location_id = Some(destination_id);
@@ -5078,23 +5083,11 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         return Err("This is not the party's active quest".into());
     }
 
-    let members: Vec<_> = ctx
-        .db
-        .party_member()
-        .party_id()
-        .filter(&party_id)
-        .filter(|member| {
-            ctx.db
-                .character()
-                .id()
-                .find(member.character_id)
-                .is_some_and(|character| character.alive)
-        })
-        .collect();
+    let members = living_party_member_ids(ctx, &party_id);
     let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
 
-    for member in members {
-        if let Some(mut character) = ctx.db.character().id().find(member.character_id) {
+    for member_id in members {
+        if let Some(mut character) = ctx.db.character().id().find(member_id) {
             character.xp += xp_per_member;
             character.level = 1 + character.xp / 100;
             ctx.db.character().id().update(character);
@@ -5146,20 +5139,7 @@ pub fn turn_in_quest(
     let reward = quest.gold_reward.max(0) as u64;
     if reward > 0 {
         add_to_party_inventory(ctx, &party_id, "gold_coin", reward as u32);
-        let recipients: Vec<u64> = ctx
-            .db
-            .party_member()
-            .party_id()
-            .filter(&party_id)
-            .filter_map(|member| {
-                ctx.db
-                    .character()
-                    .id()
-                    .find(member.character_id)
-                    .filter(|character| character.alive)
-                    .map(|character| character.id)
-            })
-            .collect();
+        let recipients = living_party_member_ids(ctx, &party_id);
         let recipient_count = recipients.len().max(1) as u64;
         let share = reward / recipient_count;
         for recipient in recipients {
@@ -5221,13 +5201,7 @@ pub fn autoresolve_quest(
         return Ok(());
     }
 
-    let member_ids: Vec<u64> = ctx
-        .db
-        .party_member()
-        .party_id()
-        .filter(&party_id)
-        .map(|member| member.character_id)
-        .collect();
+    let member_ids = living_party_member_ids(ctx, &party_id);
     let surgery_checks = member_ids
         .iter()
         .map(|member_id| {

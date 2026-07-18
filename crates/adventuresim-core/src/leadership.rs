@@ -69,6 +69,11 @@ mod tests {
     }
 
     #[test]
+    fn sole_survivor_can_succeed_a_dead_leader_with_system_ballot() {
+        assert_eq!(elect_leader(1, false, &[2], &[(2, 2)]), Some(2));
+    }
+
+    #[test]
     fn highest_tally_then_lowest_id_wins() {
         let votes = [(1, 9), (2, 9), (8, 8), (9, 8)];
         assert_eq!(elect_leader(7, false, &[1, 2, 8, 9], &votes), Some(8));

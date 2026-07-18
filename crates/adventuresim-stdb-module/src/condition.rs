@@ -9,7 +9,7 @@ use crate::strategic::{quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
-    character_training_schedule, inventory_item, party_member,
+    character_training_schedule, inventory_item,
 };
 
 pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
@@ -498,14 +498,7 @@ fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u6
         .ok_or("Character not found")?;
     Ok(character.party_id.as_ref().map_or_else(
         || vec![character_id],
-        |party_id| {
-            ctx.db
-                .party_member()
-                .party_id()
-                .filter(party_id)
-                .map(|member| member.character_id)
-                .collect()
-        },
+        |party_id| crate::strategic::living_party_member_ids(ctx, party_id),
     ))
 }
 
