@@ -16,6 +16,8 @@ pub enum Error {
         path: PathBuf,
         source: shapefile::Error,
     },
+    #[error("failed to read dBase table {path}: {source}")]
+    Dbase { path: PathBuf, source: dbase::Error },
     #[error("failed to read ZIP archive {path}: {source}")]
     Archive {
         path: PathBuf,

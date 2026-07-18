@@ -5,9 +5,11 @@ use std::{
 
 use adventuresim_world_import::{Error, Result, WorldBuilder};
 use adventuresim_world_schema::{
-    CompiledWorld, DominantLeafType, EdgeEndpoint, ForestCover, NativeRangeEvidence,
-    PotentialVegetation, PotentialVegetationFormation, SettlementImport, TravelEdgeImport,
-    TravelRoute, TreeSpeciesProfile, WorldNodeImport,
+    AgriculturalLimitation, AvailableWaterCapacity, CompiledWorld, DominantLeafType, EdgeEndpoint,
+    ForestCover, MineralSoilTexture, NativeRangeEvidence, PotentialVegetation,
+    PotentialVegetationFormation, SettlementImport, SoilDepth, SoilProfile, SoilSubstrate,
+    SoilWaterRegime, TopsoilOrganicCarbon, TravelEdgeImport, TravelRoute, TreeSpeciesProfile,
+    WorldNodeImport, WrbReferenceGroup,
 };
 use clap::Parser;
 use serde_json::{Value, json};
@@ -32,6 +34,8 @@ struct Args {
     potential_vegetation_dir: PathBuf,
     #[arg(long, default_value_os_t = default_tree_species_archive())]
     tree_species_archive: PathBuf,
+    #[arg(long, default_value_os_t = default_soil_directory())]
+    soil_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long)]
@@ -69,6 +73,7 @@ fn run(args: Args) -> Result<()> {
         &args.forest_cover_dir,
         &args.potential_vegetation_dir,
         &args.tree_species_archive,
+        &args.soil_dir,
     )?;
     let output = args
         .output
@@ -215,9 +220,129 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "forest_cover": encode_forest_cover(settlement.forest_cover),
         "potential_vegetation": encode_potential_vegetation(&settlement.potential_vegetation),
         "tree_species": encode_tree_species(&settlement.tree_species),
+        "soil": encode_soil(&settlement.soil),
         "scene_key": settlement.scene_key,
         "religion_id": settlement.religion_id,
     }))
+}
+
+fn encode_soil(profile: &SoilProfile) -> Value {
+    let properties = |properties: &adventuresim_world_schema::SoilProperties| {
+        json!({
+            "substrate": encode_soil_substrate(properties.substrate),
+            "water_regime": enum_unit(match properties.water_regime { SoilWaterRegime::UsuallyDry => "UsuallyDry", SoilWaterRegime::SeasonallyWet => "SeasonallyWet", SoilWaterRegime::LongSeasonWet => "LongSeasonWet", SoilWaterRegime::PermanentlyWet => "PermanentlyWet" }),
+            "agricultural_limitation": enum_unit(match properties.agricultural_limitation {
+                AgriculturalLimitation::None => "None", AgriculturalLimitation::Gravelly => "Gravelly",
+                AgriculturalLimitation::Stony => "Stony", AgriculturalLimitation::ShallowRock => "ShallowRock",
+                AgriculturalLimitation::Concretionary => "Concretionary", AgriculturalLimitation::CementedCalcic => "CementedCalcic",
+                AgriculturalLimitation::Saline => "Saline", AgriculturalLimitation::Sodic => "Sodic",
+                AgriculturalLimitation::GlacierOrSnow => "GlacierOrSnow", AgriculturalLimitation::Disturbed => "Disturbed",
+                AgriculturalLimitation::Fragic => "Fragic", AgriculturalLimitation::Drained => "Drained",
+                AgriculturalLimitation::Flooded => "Flooded", AgriculturalLimitation::Eroded => "Eroded",
+                AgriculturalLimitation::ShallowWaterTable => "ShallowWaterTable",
+            }),
+        })
+    };
+    match profile {
+        SoilProfile::Mapped(mapped) => json!({ "Mapped": {
+            "mapping_unit": { "smu": mapped.mapping_unit.smu(), "dominant_stu": mapped.mapping_unit.dominant_stu(), "dominance_percent": mapped.mapping_unit.dominance_percent() },
+            "wrb_group": enum_unit(wrb_name(mapped.wrb_group)),
+            "parent_material": { "code": mapped.parent_material.as_str() },
+            "properties": properties(&mapped.properties),
+        }}),
+        SoilProfile::Inferred(inferred) => json!({ "Inferred": properties(inferred) }),
+    }
+}
+
+fn encode_soil_substrate(substrate: SoilSubstrate) -> Value {
+    let depth = |value| {
+        enum_unit(match value {
+            SoilDepth::Shallow => "Shallow",
+            SoilDepth::Moderate => "Moderate",
+            SoilDepth::Deep => "Deep",
+            SoilDepth::VeryDeep => "VeryDeep",
+        })
+    };
+    let water = |value| {
+        enum_unit(match value {
+            AvailableWaterCapacity::VeryLow => "VeryLow",
+            AvailableWaterCapacity::Low => "Low",
+            AvailableWaterCapacity::Medium => "Medium",
+            AvailableWaterCapacity::High => "High",
+            AvailableWaterCapacity::VeryHigh => "VeryHigh",
+        })
+    };
+    let carbon = |value| {
+        enum_unit(match value {
+            TopsoilOrganicCarbon::VeryLow => "VeryLow",
+            TopsoilOrganicCarbon::Low => "Low",
+            TopsoilOrganicCarbon::Medium => "Medium",
+            TopsoilOrganicCarbon::High => "High",
+        })
+    };
+    let texture = |value| {
+        enum_unit(match value {
+            MineralSoilTexture::Coarse => "Coarse",
+            MineralSoilTexture::Medium => "Medium",
+            MineralSoilTexture::MediumFine => "MediumFine",
+            MineralSoilTexture::Fine => "Fine",
+            MineralSoilTexture::VeryFine => "VeryFine",
+        })
+    };
+    match substrate {
+        SoilSubstrate::Mineral(soil) => json!({ "Mineral": {
+            "texture": texture(soil.texture), "depth": depth(soil.depth), "available_water": water(soil.available_water), "organic_carbon": carbon(soil.organic_carbon), "stones": { "percent": soil.stones.percent() }
+        }}),
+        SoilSubstrate::Organic(soil) => json!({ "Organic": {
+            "depth": depth(soil.depth), "available_water": water(soil.available_water), "stones": { "percent": soil.stones.percent() }
+        }}),
+        SoilSubstrate::RockOutcrop(soil) => {
+            json!({ "RockOutcrop": { "stones": { "percent": soil.stones.percent() } }})
+        }
+        SoilSubstrate::OtherNonTextured(soil) => json!({ "OtherNonTextured": {
+            "depth": depth(soil.depth), "available_water": water(soil.available_water), "organic_carbon": carbon(soil.organic_carbon), "stones": { "percent": soil.stones.percent() }
+        }}),
+    }
+}
+
+fn wrb_name(group: WrbReferenceGroup) -> &'static str {
+    use WrbReferenceGroup as W;
+    match group {
+        W::Albeluvisol => "Albeluvisol",
+        W::Acrisol => "Acrisol",
+        W::Alisol => "Alisol",
+        W::Andosol => "Andosol",
+        W::Arenosol => "Arenosol",
+        W::Anthrosol => "Anthrosol",
+        W::Chernozem => "Chernozem",
+        W::Calcisol => "Calcisol",
+        W::Cambisol => "Cambisol",
+        W::Cryosol => "Cryosol",
+        W::Durisol => "Durisol",
+        W::Fluvisol => "Fluvisol",
+        W::Ferralsol => "Ferralsol",
+        W::Gleysol => "Gleysol",
+        W::Gypsisol => "Gypsisol",
+        W::Histosol => "Histosol",
+        W::Kastanozem => "Kastanozem",
+        W::Leptosol => "Leptosol",
+        W::Luvisol => "Luvisol",
+        W::Lixisol => "Lixisol",
+        W::Nitisol => "Nitisol",
+        W::Phaeozem => "Phaeozem",
+        W::Planosol => "Planosol",
+        W::Plinthosol => "Plinthosol",
+        W::Podzol => "Podzol",
+        W::Regosol => "Regosol",
+        W::Solonchak => "Solonchak",
+        W::Solonetz => "Solonetz",
+        W::Umbrisol => "Umbrisol",
+        W::Vertisol => "Vertisol",
+    }
+}
+
+fn enum_unit(name: &str) -> Value {
+    json!({ (name): [] })
 }
 
 fn encode_potential_vegetation(vegetation: &PotentialVegetation) -> Value {
@@ -350,6 +475,10 @@ fn default_tree_species_archive() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/tree-species/EU-Trees4F_ens-clim.zip")
 }
 
+fn default_soil_directory() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/soil/soilDB_shapefiles_and_attributes")
+}
+
 fn default_output(year: i32) -> PathBuf {
     repository_root().join(format!("target/world-{year}.json"))
 }
@@ -357,11 +486,15 @@ fn default_output(year: i32) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use adventuresim_world_schema::{
-        CanopyDensity, DominantLeafType, EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode,
-        ForestCover, HabitatSuitability, InferredTreeSpeciesProfile, LandUseFraction,
-        LandUseProfile, MappedPotentialVegetation, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, PotentialVegetation, PotentialVegetationFormation, SettlementImport,
+        AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, DominantLeafType,
+        EdgeEndpoint, ElevationMeters, EuroVegMapUnitCode, ForestCover, HabitatSuitability,
+        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, MappedPotentialVegetation,
+        MappedSoilProfile, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, ParentMaterialCode, PotentialVegetation,
+        PotentialVegetationFormation, SettlementImport, SoilDepth, SoilMappingUnit, SoilProfile,
+        SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, TopsoilOrganicCarbon,
         TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, Woodland,
+        WrbReferenceGroup,
     };
 
     use super::{
@@ -484,6 +617,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encodes_mapped_and_inferred_soil_profiles_for_spacetimedb_sats_json() {
+        let mut settlement = settlement(ForestCover::Open);
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["soil"]["Inferred"]["substrate"]["Mineral"]["texture"],
+            serde_json::json!({ "Medium": [] })
+        );
+        let SoilProfile::Inferred(properties) = settlement.soil.clone() else {
+            unreachable!()
+        };
+        settlement.soil = SoilProfile::Mapped(MappedSoilProfile {
+            mapping_unit: SoilMappingUnit::new(10, 100, 75).unwrap(),
+            wrb_group: WrbReferenceGroup::Cambisol,
+            parent_material: ParentMaterialCode::new("110").unwrap(),
+            properties,
+        });
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["mapping_unit"],
+            serde_json::json!({ "smu": 10, "dominant_stu": 100, "dominance_percent": 75 })
+        );
+        assert_eq!(
+            encode_settlement(&settlement).unwrap()["soil"]["Mapped"]["wrb_group"],
+            serde_json::json!({ "Cambisol": [] })
+        );
+    }
+
     fn settlement(forest_cover: ForestCover) -> SettlementImport {
         SettlementImport {
             id: "test".into(),
@@ -509,6 +668,17 @@ mod tests {
                 InferredTreeSpeciesProfile::new(vec![TreeSpeciesId::new("Quercus_robur").unwrap()])
                     .unwrap(),
             ),
+            soil: SoilProfile::Inferred(SoilProperties {
+                substrate: SoilSubstrate::Mineral(MineralSoil {
+                    texture: MineralSoilTexture::Medium,
+                    depth: SoilDepth::Deep,
+                    available_water: AvailableWaterCapacity::Medium,
+                    organic_carbon: TopsoilOrganicCarbon::Medium,
+                    stones: StoneContentPercent::new(10).unwrap(),
+                }),
+                water_regime: SoilWaterRegime::SeasonallyWet,
+                agricultural_limitation: AgriculturalLimitation::None,
+            }),
             scene_key: "village".into(),
             religion_id: "catholic".into(),
         }
