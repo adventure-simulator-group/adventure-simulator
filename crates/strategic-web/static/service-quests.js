@@ -74,32 +74,6 @@
     action();
   });
 
-  const updateTracker = (quest) => {
-    const summary = document.querySelector("[data-current-quest]");
-    if (!summary) return;
-    const name = summary.querySelector("[data-current-quest-name]");
-    const status = summary.querySelector("[data-current-quest-status]");
-    const abandon = summary.querySelector("[data-current-quest-abandon]");
-    if (name) {
-      name.textContent = quest.title;
-    }
-    if (status) {
-      status.classList.remove("resolved");
-      status.title = "Quest in progress";
-      status.setAttribute("aria-label", status.title);
-    }
-    if (abandon) {
-      abandon.action = `/quests/${encodeURIComponent(quest.quest_id)}/abandon`;
-      abandon.hidden = false;
-    }
-    summary.hidden = false;
-  };
-
-  const clearTracker = () => {
-    const summary = document.querySelector("[data-current-quest]");
-    if (summary) summary.hidden = true;
-  };
-
   const clearRoleInspection = () => {
     document.querySelectorAll("[data-service-role-inspection]").forEach((panel) => panel.remove());
     document.querySelectorAll(".service-role-inspection-hidden").forEach((element) => {
@@ -176,7 +150,6 @@
         return;
       }
       line("npc", quest.npc_name, quest.acceptance);
-      updateTracker(result);
       const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
       const badge = tab?.querySelector("[data-service-quest-badge]");
       if (badge) badge.hidden = true;
@@ -200,12 +173,9 @@
       chat,
       `${result.reward} gold has been added to your party inventory.`,
     );
-    clearTracker();
     const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
     const badge = tab?.querySelector("[data-service-quest-badge]");
     if (badge) badge.hidden = true;
-    const settlementBadge = document.querySelector("[data-settlement-turn-in-badge]");
-    if (settlementBadge) settlementBadge.hidden = true;
   };
 
   const beginRecruitmentConversation = (quest) => {
@@ -410,7 +380,11 @@
     .then(([quests, religion]) => {
       services.querySelectorAll("[data-service-quest-badge]").forEach((badge) => {
         badge.hidden = true;
-        badge.classList.remove("service-turn-in-badge", "service-recruitment-badge");
+        badge.classList.remove(
+          "service-available-quest-badge",
+          "service-turn-in-badge",
+          "service-recruitment-badge",
+        );
       });
       const serviceIds = new Set(quests.map((quest) => quest.service_id));
       serviceIds.forEach((serviceId) => {
@@ -418,20 +392,25 @@
         const tab = services.querySelector(`[data-service-id="${CSS.escape(serviceId)}"]`);
         const badge = tab?.querySelector("[data-service-quest-badge]");
         if (badge) {
+          const hasReadyQuest = serviceQuests.some((quest) => quest.state === "ready");
+          const hasAvailableQuest = serviceQuests.some((quest) => quest.state === "available");
           badge.hidden = !serviceQuests.some((quest) => quest.state !== "underway");
           badge.classList.toggle(
             "service-turn-in-badge",
-            serviceQuests.some((quest) => quest.state === "ready"),
+            hasReadyQuest,
+          );
+          badge.classList.toggle(
+            "service-available-quest-badge",
+            !hasReadyQuest && hasAvailableQuest,
           );
           badge.classList.toggle(
             "service-recruitment-badge",
-            !serviceQuests.some((quest) => quest.state === "ready")
+            !hasReadyQuest
+              && !hasAvailableQuest
               && serviceQuests.some((quest) => quest.state === "recruiting"),
           );
         }
       });
-      const settlementBadge = document.querySelector("[data-settlement-turn-in-badge]");
-      if (settlementBadge) settlementBadge.hidden = !quests.some((quest) => quest.state === "ready");
       if (!chat || chat.dataset.serviceQuestSettlement !== settlementId) return;
       const serviceQuests = quests.filter((entry) => entry.service_id === chat.dataset.serviceQuestId);
       const quest = serviceQuests.find((entry) => entry.state === "ready")

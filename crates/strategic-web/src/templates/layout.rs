@@ -87,13 +87,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                link rel="stylesheet" href="/static/css/base.css?v=environment-11";
+                link rel="stylesheet" href="/static/css/base.css?v=environment-12";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=environment-11";
+                link rel="stylesheet" href="/static/css/layout.css?v=environment-12";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=environment-11";
-                link rel="stylesheet" href="/static/css/utilities.css?v=environment-11";
+                link rel="stylesheet" href="/static/css/strategic.css?v=environment-13";
+                link rel="stylesheet" href="/static/css/utilities.css?v=environment-12";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -108,7 +108,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=herbalist-care-2" defer {}
+                    script src="/static/service-quests.js?v=map-markers-2" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
@@ -176,13 +176,10 @@ fn settlement_top_bar(
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
-                span class="settlement-turn-in-badge" data-settlement-turn-in-badge hidden
-                    title="A quest is ready to turn in here" aria-label="Quest ready to turn in" { "!" }
                 span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
                 }
                 }
-                (current_quest_summary())
             }
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
@@ -218,15 +215,11 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    span class="player-name" { "Party: " strong { (name) } }
-                    (switch_character_button())
-                } @else {
-                    span class="player-name player-name-none" { "No active party" }
+                    (character_switcher(name))
                 }
             }
         }
         script src="/static/strategic-time.js?v=environment-2" {}
-        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
 
@@ -251,7 +244,6 @@ fn quest_location_top_bar(
                     a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
-                (current_quest_summary())
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 a href=(format!("/locations/quest/{}/map", location_id))
@@ -271,15 +263,11 @@ fn quest_location_top_bar(
             }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    span class="player-name" { "Party: " strong { (name) } }
-                    (switch_character_button())
-                } @else {
-                    span class="player-name player-name-none" { "No active party" }
+                    (character_switcher(name))
                 }
             }
         }
         script src="/static/strategic-time.js?v=client-clock-2" {}
-        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
 
@@ -316,23 +304,21 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     format!("hsl({hue} {saturation}% {lightness}%)")
 }
 
-fn current_quest_summary() -> Markup {
+fn character_switcher(name: &str) -> Markup {
+    let initial = name.chars().next().unwrap_or('?');
     html! {
-        div class="current-quest-summary" data-current-quest hidden {
-            span class="current-quest-status" data-current-quest-status
-                title="Quest in progress" aria-label="Quest in progress" { "!" }
-            span class="current-quest-name" data-current-quest-name {}
-            form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
-                button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
+        details class="character-switcher" {
+            summary class="character-switcher-toggle"
+                aria-label=(format!("Character menu for {name}")) title=(name) {
+                span class="party-portrait-initial character-switcher-portrait" aria-hidden="true" {
+                    span class="party-portrait-face" { (initial) }
+                }
             }
-        }
-    }
-}
-
-fn switch_character_button() -> Markup {
-    html! {
-        form action="/characters/switch" method="post" {
-            button type="submit" class="btn btn-secondary btn-small" { "Switch character" }
+            div class="character-switcher-menu" {
+                form action="/characters/switch" method="post" {
+                    button type="submit" class="btn btn-small" { "Character select" }
+                }
+            }
         }
     }
 }
@@ -438,6 +424,28 @@ mod tests {
             ":root{{--active-building-tint:{};}}",
             building_tint("s", "religion", "stone")
         )));
+    }
+
+    #[test]
+    fn strategic_header_uses_portrait_menu_without_quest_or_party_labels() {
+        let markup = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "map",
+            None,
+            Some("Ada"),
+        )
+        .into_string();
+        assert!(markup.contains("class=\"character-switcher\""));
+        assert!(markup.contains("Character menu for Ada"));
+        assert!(markup.contains("character-switcher-portrait"));
+        assert!(markup.contains("Character select"));
+        assert!(markup.contains("action=\"/characters/switch\""));
+        assert!(!markup.contains("Party: "));
+        assert!(!markup.contains("data-current-quest"));
+        assert!(!markup.contains("current-quest.js"));
+        assert!(!markup.contains("data-settlement-turn-in-badge"));
     }
 
     #[test]

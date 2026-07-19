@@ -110,7 +110,7 @@ The SSE stream patches a stable, server-rendered revision marker. Strategic UI
 components subscribe to that marker and refresh only their relevant state. This
 drives canonical-location navigation (including en-route camps), party portraits, party requests and
 notifications, recruitment roles and applicants, inventories and loot, map and
-quest rails, selected-character details, the active quest indicator, service
+quest rails, selected-character details, map quest markers, service
 quest badges and conversations, mission readiness, incoming
 local-chat portraits, and local conversation history. Shared page regions are
 refetched from their canonical server-rendered URL and replaced only when their

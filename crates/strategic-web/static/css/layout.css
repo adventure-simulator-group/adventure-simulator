@@ -133,75 +133,6 @@
   box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009, 0 1px 3px #0008;
 }
 
-.current-quest-summary {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.38rem 0.55rem;
-  border: 1px solid rgb(255 255 255 / 16%);
-  background: rgb(5 8 13 / 72%);
-  box-shadow: 0 1px 3px #0008;
-}
-
-.current-quest-summary[hidden] { display: none; }
-
-.current-quest-status {
-  display: inline-grid;
-  width: 1.15rem;
-  height: 1.15rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid #db5960;
-  border-radius: 999px;
-  background: #b4232c;
-  color: #fff;
-  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
-  font: 800 0.72rem/1 sans-serif;
-}
-
-.current-quest-status.resolved {
-  border-color: #f2c66f;
-  background: #d39a32;
-  color: #211506;
-  box-shadow: 0 0 0.5rem rgb(211 154 50 / 75%);
-}
-
-.current-quest-name {
-  display: block;
-  max-width: 11rem;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-family: var(--font-display), serif;
-  font-size: var(--font-size-sm);
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.current-quest-name:hover {
-  color: var(--accent-dark);
-}
-
-.current-quest-abandon {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  left: 2.6rem;
-  z-index: 110;
-  visibility: hidden;
-  opacity: 0;
-  transform: translateY(-0.2rem);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-}
-
-.current-quest-summary:hover .current-quest-abandon,
-.current-quest-summary:focus-within .current-quest-abandon {
-  visibility: visible;
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .settlement-name {
   font-family: var(--font-display), serif;
   font-size: var(--font-size-lg);
@@ -342,6 +273,47 @@
   font-style: italic;
   color: var(--text-muted);
 }
+
+.character-switcher {
+  position: relative;
+}
+
+.character-switcher-toggle {
+  display: block;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 50%;
+  cursor: pointer;
+  list-style: none;
+  box-shadow: 0 1px 3px #0008;
+}
+
+.character-switcher-toggle::-webkit-details-marker { display: none; }
+
+.character-switcher-toggle:hover,
+.character-switcher-toggle:focus-visible,
+.character-switcher[open] .character-switcher-toggle {
+  border-color: var(--accent-light);
+  filter: brightness(1.1);
+}
+
+.character-switcher-portrait {
+  width: 3.35rem;
+  height: 3.35rem;
+}
+
+.character-switcher-menu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  min-width: 9.5rem;
+  padding: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--active-building-tint) 65%, white);
+  background: rgb(5 8 13 / 92%);
+  box-shadow: var(--shadow-md);
+}
+
+.character-switcher-menu .btn { width: 100%; }
 
 /* ============================================
    MAIN GRID (Three Columns)
@@ -551,9 +523,6 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     width: auto;
   }
 
-  .current-quest-name {
-    max-width: 8rem;
-  }
   .settlement-services {
     order: 3;
     width: 100%;

@@ -6,7 +6,7 @@ use adventuresim_core::prelude::{TravelFatigueInputs, party_travel_leg_minutes};
 use serde::{Deserialize, Serialize};
 
 use crate::spacetimedb::{
-    CharacterAttributes, CharacterLimbs, CharacterStats, Settlement, TravelEdge,
+    CharacterAttributes, CharacterLimbs, CharacterStats, Quest, QuestStatus, Settlement, TravelEdge,
 };
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
@@ -68,6 +68,49 @@ pub struct TravelDestination {
     /// posting settlement of the party's active quest.
     pub active_quest_route: bool,
     pub turn_in_ready: bool,
+    /// At least one unaccepted quest is posted at this settlement.
+    pub open_quest_available: bool,
+}
+
+/// Quest markers shared by settlement and off-road Map views. Available
+/// settlements are indexed once so decorating destination lists remains
+/// linear even as the quest history grows.
+pub(crate) struct QuestMapMarkers<'a> {
+    available_settlement_ids: HashSet<&'a str>,
+    active_quest: Option<&'a Quest>,
+}
+
+impl<'a> QuestMapMarkers<'a> {
+    pub(crate) fn new(quests: &'a [Quest], active_quest_id: Option<&str>) -> Self {
+        Self {
+            available_settlement_ids: quests
+                .iter()
+                .filter(|quest| quest.status == QuestStatus::Available)
+                .map(|quest| quest.settlement_id.as_str())
+                .collect(),
+            active_quest: active_quest_id
+                .and_then(|quest_id| quests.iter().find(|quest| quest.id == quest_id)),
+        }
+    }
+
+    pub(crate) fn active_quest(&self) -> Option<&'a Quest> {
+        self.active_quest
+    }
+
+    pub(crate) fn has_open_quest_at(&self, settlement_id: &str) -> bool {
+        self.available_settlement_ids.contains(settlement_id)
+    }
+
+    pub(crate) fn completed_quest_turn_in_at(&self, settlement_id: &str) -> bool {
+        self.active_quest.is_some_and(|quest| {
+            quest.status == QuestStatus::Completed && quest.settlement_id == settlement_id
+        })
+    }
+
+    pub(crate) fn decorate_settlement(&self, destination: &mut TravelDestination) {
+        destination.open_quest_available = self.has_open_quest_at(&destination.id);
+        destination.turn_in_ready = self.completed_quest_turn_in_at(&destination.id);
+    }
 }
 
 pub(crate) fn settlement_destination(
@@ -97,6 +140,7 @@ pub(crate) fn settlement_destination(
         quest_in_progress: false,
         active_quest_route: false,
         turn_in_ready: false,
+        open_quest_available: false,
     }
 }
 
@@ -383,6 +427,29 @@ mod tests {
             section: String::new(),
         }
     }
+
+    fn quest(id: &str, settlement_id: &str, status: QuestStatus) -> Quest {
+        Quest {
+            id: id.to_string(),
+            title: id.to_string(),
+            description: String::new(),
+            difficulty: 1,
+            gold_reward: 1,
+            xp_reward: 1,
+            settlement_id: settlement_id.to_string(),
+            status,
+            accepted_by: None,
+            enemy_type: String::new(),
+            enemy_count: 1,
+            location_description: String::new(),
+            location_scene_key: String::new(),
+            location_coord_x: 0.0,
+            location_coord_y: 0.0,
+            coordinates_are_geographic: false,
+            distance_m: 1_000,
+        }
+    }
+
     #[test]
     fn walking_time_rounds_up_to_a_minute() {
         assert_eq!(journey_minutes(1), 1);
@@ -411,5 +478,20 @@ mod tests {
             next_settlement_toward(&settlements[0], "quest-giver", &settlements, &edges),
             Some("next".to_string())
         );
+    }
+
+    #[test]
+    fn quest_markers_index_open_settlements_and_completed_active_issuer() {
+        let quests = vec![
+            quest("open", "market", QuestStatus::Available),
+            quest("active", "chapel", QuestStatus::Completed),
+            quest("old", "market", QuestStatus::Completed),
+        ];
+        let markers = QuestMapMarkers::new(&quests, Some("active"));
+
+        assert!(markers.has_open_quest_at("market"));
+        assert!(!markers.has_open_quest_at("chapel"));
+        assert!(markers.completed_quest_turn_in_at("chapel"));
+        assert!(!markers.completed_quest_turn_in_at("market"));
     }
 }

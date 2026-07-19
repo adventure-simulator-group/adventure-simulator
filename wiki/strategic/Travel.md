@@ -78,11 +78,12 @@ across camp rests and page navigations. A shorter-than-recommended camp rest
 can legitimately add a future projected camp, but camps already reached never
 disappear. A party's
 active quest destination is added to the settlement Map list only while the
-party is at the quest's posting settlement; it then carries the same red
-exclamation used by the active quest tracker. From any other settlement, the
-Map traces the shortest road/ferry path to the posting settlement and marks the
-next available settlement leg with that red exclamation. Once resolved, the
-issuing settlement instead carries a gold turn-in exclamation. Quest-offer
+party is at the quest's posting settlement; it carries a red exclamation. From
+any other settlement, the Map traces the shortest road/ferry path to the
+posting settlement and marks the next available settlement leg red. The current
+settlement is a non-traveling Map row; it shows available quests in gold or a
+completed active quest ready to report in red, with red taking priority. Once an active objective is
+resolved, its route or issuing settlement remains red until turn-in. Quest-offer
 dialogue itself never presents a separate travel action.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.

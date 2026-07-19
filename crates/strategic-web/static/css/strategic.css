@@ -1294,16 +1294,20 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   box-shadow: 0 0 0.45rem rgb(79 119 184 / 70%);
 }
 
-.service-notification-badge.service-turn-in-badge,
-.settlement-turn-in-badge,
-.destination-turn-in-badge {
-  background: #d39a32;
-  color: #211506;
-  box-shadow: 0 0 0.5rem rgb(211 154 50 / 75%);
+.service-notification-badge.service-available-quest-badge,
+.destination-open-quest-badge {
+  background: #87580f;
+  color: #fff4d6;
+  box-shadow: 0 0 0.5rem rgb(135 88 15 / 75%);
 }
 
-.settlement-turn-in-badge,
-.destination-turn-in-badge,
+.service-notification-badge.service-turn-in-badge {
+  background: #b4232c;
+  color: #fff;
+  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
+}
+
+.destination-open-quest-badge,
 .destination-quest-badge {
   display: inline-grid;
   width: 1.15rem;
@@ -1315,16 +1319,30 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   font: 800 0.72rem/1 sans-serif;
 }
 
-.settlement-identity .settlement-turn-in-badge {
-  position: absolute;
-  z-index: 2;
-  top: -0.45rem;
-  right: -0.45rem;
+.current-location-row {
+  cursor: default;
 }
 
-.settlement-turn-in-badge[hidden] { display: none; }
+.current-location-label {
+  margin-left: auto;
+}
 
-.destination-turn-in-badge,
+.current-location-row .destination-open-quest-badge,
+.current-location-row .destination-quest-badge {
+  margin-left: 0.45rem;
+}
+
+.map-active-quest-actions {
+  margin-top: 0.8rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+
+.map-active-quest-actions p {
+  margin: 0 0 0.55rem;
+}
+
+.destination-open-quest-badge,
 .destination-quest-badge { margin-left: auto; }
 
 .destination-quest-badge {
