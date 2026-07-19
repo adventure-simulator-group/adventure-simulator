@@ -101,7 +101,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/medical-examination.js?v=one-shot-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
-                    script src="/static/live-regions.js?v=inventory-browser-5" defer {}
+                    script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/inventory-browser.js?v=inventory-browser-8" defer {}

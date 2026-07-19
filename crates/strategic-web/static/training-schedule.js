@@ -364,7 +364,7 @@
     const name = nameFor(display);
     const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
     if (!name || !state.inputs[name] || !religionInputActive(state.inputs[name], autoTrain)
-      || display.dataset.editing || root.querySelector('.schedule-time-editor')) return;
+      || display.dataset.editing || document.querySelector('.schedule-time-editor')) return;
     display.dataset.editing = 'true';
     const originalMinutes = Number(state.inputs[name].value);
     const editor = document.createElement('span');
@@ -408,6 +408,14 @@
     cancel.textContent = '×';
     editor.append(confirm, inputStack, cancel);
 
+    const anchor = display.closest('.party-skill-allocation');
+    const rail = display.closest('.left-sidebar');
+    const positionEditor = () => {
+      const rect = anchor.getBoundingClientRect();
+      editor.style.left = `${rect.left + rect.width / 2}px`;
+      editor.style.top = `${rect.top + rect.height / 2}px`;
+    };
+
     let finished = false;
     const finish = (commit) => {
       if (finished) return;
@@ -423,7 +431,10 @@
         save(root);
       }
       delete display.dataset.editing;
-      editor.replaceWith(display);
+      rail?.removeEventListener('scroll', positionEditor);
+      window.removeEventListener('resize', positionEditor);
+      editor.remove();
+      display.hidden = false;
       render(root, state);
       display.focus();
     };
@@ -454,7 +465,11 @@
     cancel.addEventListener('click', () => finish(false));
     editor.addEventListener('click', (event) => event.stopPropagation());
 
-    display.replaceWith(editor);
+    display.hidden = true;
+    document.body.append(editor);
+    positionEditor();
+    rail?.addEventListener('scroll', positionEditor, { passive: true });
+    window.addEventListener('resize', positionEditor);
     input.focus();
     input.select();
   }

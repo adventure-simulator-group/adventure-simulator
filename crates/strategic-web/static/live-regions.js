@@ -20,6 +20,7 @@
     const editing = active?.matches?.("input, textarea, select, [contenteditable='true'], [role='slider']");
     return hasStagedInventoryChanges()
       || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection]"))
+      || Boolean(document.querySelector('.schedule-time-editor'))
       || Boolean(editing);
   };
 

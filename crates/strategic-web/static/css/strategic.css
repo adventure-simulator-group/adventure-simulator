@@ -3203,8 +3203,8 @@ body.chat-resizing {
 .party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; cursor: text; }
 
 .schedule-time-editor {
-  position: absolute;
-  z-index: 10;
+  position: fixed;
+  z-index: 80;
   top: 50%;
   right: auto;
   left: 50%;

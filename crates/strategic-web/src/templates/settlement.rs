@@ -2164,14 +2164,14 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=explicit-time-editor-1" {}
+                    script src="/static/training-schedule.js?v=floating-time-editor-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
                     ))
-                    script src="/static/training-schedule.js?v=explicit-time-editor-1" {}
+                    script src="/static/training-schedule.js?v=floating-time-editor-1" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -5215,16 +5215,21 @@ mod tests {
         assert!(live_regions.contains("const scrollOffsets = (selector)"));
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
+        assert!(live_regions.contains("document.querySelector('.schedule-time-editor')"));
         assert!(live_regions.contains("scheduleEditorIsPending"));
         assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
         assert!(css.contains(".schedule-time-input {"));
-        assert!(css.contains("position: absolute;"));
+        assert!(css.contains("position: fixed;"));
+        assert!(css.contains("z-index: 80;"));
         assert!(css.contains(".schedule-time-editor {"));
         assert!(css.contains("right: auto;"));
         assert!(css.contains("left: 50%;"));
         assert!(css.contains("transform: translate(-50%, -50%);"));
         assert!(css.contains(".schedule-time-input::selection {"));
+        assert!(schedule.contains("document.body.append(editor)"));
+        assert!(schedule.contains("display.hidden = true"));
+        assert!(schedule.contains("window.addEventListener('resize', positionEditor)"));
         assert!(!css.contains(".party-skill-icon-column"));
         assert!(css.contains(".schedule-time-editor-action {"));
         assert!(css.contains(".schedule-time-confirm { background: #2f7d3d; }"));
