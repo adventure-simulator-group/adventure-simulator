@@ -2548,12 +2548,12 @@ button.party-portrait-action {
 
 .party-skill-name-column { width: 2.35rem; }
 .party-skill-time-column { width: 3.65rem; }
-.religion-expand-column { width: 1rem; }
-.skill-schedule .party-skill-name-column { width: 2.35rem; }
-.skill-schedule .schedule-effect-column { width: 1.55rem; }
-.skill-schedule .religion-auto-column { width: 1.5rem; }
-.skill-schedule .party-skill-time-column { width: 2.55rem; }
-.skill-schedule .religion-expand-column { width: 1.5rem; }
+.religion-expand-column { width: 1.2rem; }
+.skill-schedule .party-skill-name-column { width: 2rem; }
+.skill-schedule .schedule-effect-column { width: 1.3rem; }
+.skill-schedule .religion-auto-column { width: 1.45rem; }
+.skill-schedule .party-skill-time-column { width: 2.25rem; }
+.skill-schedule .religion-expand-column { width: 1.35rem; }
 
 .party-skills-table td,
 .party-skills-table tbody th {
@@ -2576,8 +2576,8 @@ button.party-portrait-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 1.5rem;
-  width: 1.5rem;
+  flex: 0 0 1.2rem;
+  width: 1.2rem;
   min-height: 1.5rem;
   padding: 0;
   border: 0;
@@ -2620,7 +2620,7 @@ button.party-portrait-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5rem;
+  min-width: 1.15rem;
   min-height: 1.5rem;
   cursor: pointer;
 }

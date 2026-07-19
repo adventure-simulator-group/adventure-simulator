@@ -88,6 +88,14 @@ test("strategic left rails keep their scrollbars on the outer edge", () => {
   assert.match(strategicCss, /\.left-sidebar \.encumbrance-inventory-scroll > \* \{ direction: ltr; \}/);
 });
 
+test("skill schedule columns fit inside a framed left rail", () => {
+  assert.match(strategicCss, /\.skill-schedule \.party-skill-name-column \{ width: 2rem; \}/);
+  assert.match(strategicCss, /\.skill-schedule \.schedule-effect-column \{ width: 1\.3rem; \}/);
+  assert.match(strategicCss, /\.skill-schedule \.religion-auto-column \{ width: 1\.45rem; \}/);
+  assert.match(strategicCss, /\.skill-schedule \.party-skill-time-column \{ width: 2\.25rem; \}/);
+  assert.match(strategicCss, /\.skill-schedule \.religion-expand-column \{ width: 1\.35rem; \}/);
+});
+
 test("building state is re-applied when live regions replace party links", () => {
   assert.match(buildingSource, /new MutationObserver/);
   assert.match(buildingSource, /mutation\.addedNodes/);
