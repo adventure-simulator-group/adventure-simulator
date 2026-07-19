@@ -2746,8 +2746,71 @@ async fn inn(
 
 #[derive(Deserialize)]
 struct RestForm {
-    duration: u64,
+    duration: String,
     unit: String,
+    #[serde(default, deserialize_with = "deserialize_optional_u64")]
+    requested_minutes: Option<u64>,
+}
+
+fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.parse().map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
+
+fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+    let minutes = match form.unit.as_str() {
+        "hours" => {
+            let (hours, minutes) = form
+                .duration
+                .split_once(':')
+                .ok_or("Rest duration must use HH:MM")?;
+            if minutes.len() != 2 || !minutes.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err("Rest duration must use HH:MM");
+            }
+            let hours = hours
+                .parse::<u64>()
+                .map_err(|_| "Rest duration must use HH:MM")?;
+            let minutes = minutes
+                .parse::<u64>()
+                .map_err(|_| "Rest duration must use HH:MM")?;
+            if minutes >= 60 {
+                return Err("Rest duration minutes must be between 00 and 59");
+            }
+            let duration_minutes = hours
+                .checked_mul(60)
+                .and_then(|value| value.checked_add(minutes))
+                .ok_or("Rest duration is too large")?;
+            if let Some(requested_minutes) = form.requested_minutes
+                && requested_minutes != duration_minutes
+            {
+                return Err("Rest duration does not match the selected wake time");
+            }
+            form.requested_minutes.unwrap_or(duration_minutes)
+        }
+        "days" => {
+            let days = form
+                .duration
+                .parse::<u64>()
+                .map_err(|_| "Rest days must be a whole number")?;
+            days.saturating_mul(1_440)
+        }
+        _ => return Err("Unknown rest duration unit"),
+    };
+    if minutes < 1_440 {
+        return Err("Settlement rest must last at least one day");
+    }
+    if minutes > MAX_SETTLEMENT_REST_MINUTES {
+        return Err("Settlement rest cannot exceed 365 days");
+    }
+    Ok(minutes)
 }
 
 async fn rest(
@@ -2764,6 +2827,16 @@ async fn rest(
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
+    let requested_minutes = match settlement_rest_minutes(&form) {
+        Ok(minutes) => minutes,
+        Err(message) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Html(format!("<h1>Unable to rest</h1><p>{message}</p>")),
+            )
+                .into_response();
+        }
+    };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
         query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
@@ -2778,11 +2851,7 @@ async fn rest(
         .db
         .call(
             "rest_at_settlement_hours",
-            &[
-                json!(character_id),
-                json!(rest_duration_minutes(form.duration, &form.unit)),
-                json!(at_inn),
-            ],
+            &[json!(character_id), json!(requested_minutes), json!(at_inn)],
         )
         .await
     {
@@ -3847,6 +3916,61 @@ pub(crate) async fn get_active_party_members(
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
+}
+
+#[cfg(test)]
+mod rest_form_tests {
+    use super::{RestForm, settlement_rest_minutes};
+
+    fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
+        RestForm {
+            duration: duration.into(),
+            unit: unit.into(),
+            requested_minutes,
+        }
+    }
+
+    #[test]
+    fn exact_hours_preserve_minutes_and_enforce_one_day() {
+        assert_eq!(
+            settlement_rest_minutes(&form("24:01", "hours", Some(1_441))),
+            Ok(1_441)
+        );
+        assert!(settlement_rest_minutes(&form("23:59", "hours", Some(1_439))).is_err());
+    }
+
+    #[test]
+    fn hours_fallback_parses_hh_mm() {
+        assert_eq!(
+            settlement_rest_minutes(&form("24:31", "hours", None)),
+            Ok(1_471),
+        );
+        assert!(settlement_rest_minutes(&form("24:60", "hours", None)).is_err());
+        assert!(settlement_rest_minutes(&form("24.5", "hours", None)).is_err());
+    }
+
+    #[test]
+    fn days_are_independent_whole_days_with_a_minimum_of_one() {
+        assert_eq!(
+            settlement_rest_minutes(&form("2", "days", Some(1_441))),
+            Ok(2_880)
+        );
+        assert!(settlement_rest_minutes(&form("0", "days", None)).is_err());
+        assert!(settlement_rest_minutes(&form("1.5", "days", None)).is_err());
+    }
+
+    #[test]
+    fn days_form_omits_disabled_exact_minutes_and_hours_reject_contradictions() {
+        let parsed: RestForm =
+            serde_urlencoded::from_str("duration=2&unit=days").expect("days form parses");
+        assert_eq!(parsed.requested_minutes, None);
+        assert_eq!(settlement_rest_minutes(&parsed), Ok(2_880));
+        let blank: RestForm = serde_urlencoded::from_str("duration=2&unit=days&requested_minutes=")
+            .expect("blank disabled-field fallback parses");
+        assert_eq!(blank.requested_minutes, None);
+        assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
+        assert!(settlement_rest_minutes(&form("24:00", "hours", Some(1_441))).is_err());
+    }
 }
 
 #[cfg(test)]

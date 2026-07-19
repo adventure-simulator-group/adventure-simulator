@@ -66,11 +66,15 @@
   window.queueStrategicInitialLoad(() => window.strategicBackgroundFetch("strategic-time", "/time"))
     .then((response) => response.json())
     .then(({ character_minutes: characterMinutes, official_minutes: officialMinutes }) => {
+      window.strategicCharacterMinutes = characterMinutes;
       document.querySelectorAll("[data-player-time]").forEach((element) => {
         element.textContent = format(characterMinutes);
         element.title = `Official time: ${format(officialMinutes)}`;
       });
       applyLighting(characterMinutes);
+      document.dispatchEvent(new CustomEvent("strategic-time-ready", {
+        detail: { characterMinutes, officialMinutes },
+      }));
     })
     .catch((error) => window.reportStrategicError(error, "strategic time"));
 })();
