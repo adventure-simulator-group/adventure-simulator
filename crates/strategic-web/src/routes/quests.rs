@@ -526,7 +526,6 @@ async fn render_quest_location(
             resolved,
             autoresolve_report.as_ref(),
             logged_in_as,
-            session.theme(),
         ),
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
@@ -539,7 +538,6 @@ async fn render_quest_location(
             resolved,
             autoresolve_report.as_ref(),
             logged_in_as,
-            session.theme(),
         ),
         QuestLocationTab::Loot => quest_location_page(
             quest,
@@ -554,7 +552,6 @@ async fn render_quest_location(
             &items,
             &targets,
             logged_in_as,
-            session.theme(),
         ),
     };
     Html(page.into_string())

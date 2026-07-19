@@ -16,6 +16,61 @@ use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+const BUILDINGS: &[&str] = &[
+    "map",
+    "merchants",
+    "weapons",
+    "armor",
+    "clothing",
+    "inn",
+    "religion",
+];
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct BuildingQuery {
+    building: Option<String>,
+}
+
+impl BuildingQuery {
+    fn valid(&self) -> Option<&str> {
+        self.building
+            .as_deref()
+            .filter(|value| BUILDINGS.contains(value))
+    }
+
+    fn append_to(&self, path: String) -> String {
+        self.valid().map_or_else(
+            || path.clone(),
+            |building| format!("{path}?building={building}"),
+        )
+    }
+}
+
+#[cfg(test)]
+mod building_query_tests {
+    use super::BuildingQuery;
+
+    #[test]
+    fn building_query_is_closed_and_preserved_on_redirects() {
+        let valid = BuildingQuery {
+            building: Some("inn".into()),
+        };
+        assert_eq!(valid.valid(), Some("inn"));
+        assert_eq!(
+            valid.append_to("/locations/settlement/x/party/1".into()),
+            "/locations/settlement/x/party/1?building=inn"
+        );
+        let invalid = BuildingQuery {
+            building: Some("../religion".into()),
+        };
+        assert_eq!(invalid.valid(), None);
+        assert_eq!(
+            invalid.append_to("/locations/settlement/x/party/1".into()),
+            "/locations/settlement/x/party/1"
+        );
+    }
+}
+
 use super::AppState;
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
@@ -458,7 +513,6 @@ async fn show_settlement_location(
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )
@@ -627,7 +681,6 @@ async fn settlement_map(
             active_character
                 .as_ref()
                 .map(|(character, _)| character.name.as_str()),
-            session.theme(),
         )
         .into_string(),
     )
@@ -761,7 +814,6 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &party_members,
             default_rest_minutes,
             Some(&character.name),
-            session.theme(),
         )
         .into_string(),
     )
@@ -1384,6 +1436,7 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
         name,
         religion_id,
         category,
+        active_building: None,
     })
 }
 
@@ -1401,6 +1454,7 @@ fn character_is_at_location(character: &Character, location: &LocationView) -> b
 async fn party_personal(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
     if let Some(character_id) = session.character_id_u64() {
@@ -1412,13 +1466,14 @@ async fn party_personal(
             tracing::error!("Failed to liquidate party inventory: {error:?}");
         }
     }
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -1540,6 +1595,7 @@ struct ReligiousDemandForm {
 async fn resolve_religious_demand(
     State(state): State<AppState>,
     Path((kind, id, character_id, demand_id)): Path<(String, String, u64, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<ReligiousDemandForm>,
 ) -> Redirect {
@@ -1554,7 +1610,7 @@ async fn resolve_religious_demand(
     {
         tracing::warn!(%error, character_id, demand_id, "failed to resolve religious demand");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 #[derive(Deserialize)]
@@ -1580,6 +1636,7 @@ struct TrainingScheduleForm {
 async fn update_training_schedule(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<TrainingScheduleForm>,
 ) -> Redirect {
@@ -1613,21 +1670,23 @@ async fn update_training_schedule(
             )
             .await;
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 async fn party_member(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
 
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -1707,7 +1766,6 @@ async fn party_member(
                 &items,
                 &party_members,
                 active_equip.first(),
-                session.theme(),
             )
             .into_string(),
         );
@@ -1726,7 +1784,6 @@ async fn party_member(
             active_equip.first(),
             &selected_targets,
             &active_targets,
-            session.theme(),
         )
         .into_string(),
     )
@@ -1735,15 +1792,17 @@ async fn party_member(
 async fn party_pool_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -1802,7 +1861,6 @@ async fn party_pool_inventory(
             equip.first(),
             &personal_targets,
             &party_targets,
-            session.theme(),
         )
         .into_string(),
     )
@@ -1961,6 +2019,7 @@ async fn set_equipment(
 async fn deposit_party_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -1975,12 +2034,13 @@ async fn deposit_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 async fn withdraw_party_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -1995,7 +2055,7 @@ async fn withdraw_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
@@ -2014,6 +2074,7 @@ fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
 async fn liquidate_party_assets(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -2034,12 +2095,13 @@ async fn liquidate_party_assets(
             )
             .await;
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 async fn remove_party_member(
     State(state): State<AppState>,
     Path((kind, id, member_character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
     if let Some(actor_character_id) = session.character_id_u64() {
@@ -2064,21 +2126,23 @@ async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")))
 }
 
 async fn party_stats(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -2348,6 +2412,7 @@ struct PartyTransferForm {
 async fn discard_inventory_items(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<DiscardInventoryForm>,
 ) -> Redirect {
@@ -2369,14 +2434,15 @@ async fn discard_inventory_items(
             }
         }
     }
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    ))
+    )))
 }
 
 async fn finalize_party_offer(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
@@ -2414,14 +2480,15 @@ async fn finalize_party_offer(
             }
         }
     }
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    ))
+    )))
 }
 
 async fn transfer_party_item(
     State(state): State<AppState>,
     Path((kind, id, recipient_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyTransferForm>,
 ) -> Redirect {
@@ -2431,7 +2498,7 @@ async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&format!("/locations/{kind}/{id}"));
+        return Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")));
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -2458,9 +2525,9 @@ async fn transfer_party_item(
     } else {
         form.from_character_id
     };
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
-    ))
+    )))
 }
 
 async fn merchants(
@@ -2582,7 +2649,6 @@ async fn inn(
             field_repair_minutes,
             smith_wait_minutes,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )
@@ -2691,7 +2757,6 @@ async fn rest(
             &items,
             &party_members,
             logged_in_as.as_deref(),
-            session.theme(),
             at_inn,
             &summary,
         )
@@ -3138,6 +3203,7 @@ async fn set_religion(
 async fn renounce_religion(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
     if session.character_id_u64() == Some(character_id) {
@@ -3149,7 +3215,7 @@ async fn renounce_religion(
             tracing::warn!(%error, character_id, "failed to renounce character religion");
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 type ServiceRenderer = fn(
@@ -3164,7 +3230,6 @@ type ServiceRenderer = fn(
     u64,
     u64,
     Option<&str>,
-    &str,
 ) -> maud::Markup;
 
 async fn merchant_shop(
@@ -3195,7 +3260,6 @@ async fn merchant_shop(
                 &[],
                 &party_members,
                 logged_in_as.as_deref(),
-                session.theme(),
             )
             .into_string(),
         );
@@ -3239,7 +3303,6 @@ async fn merchant_shop(
             &personal_targets,
             &party_targets,
             &pooled,
-            session.theme(),
             shop,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
@@ -3384,7 +3447,6 @@ async fn render_service_page(
             equipment_recovery.0,
             equipment_recovery.1,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )

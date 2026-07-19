@@ -24,7 +24,6 @@ pub fn quest_location_base_page(
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -48,7 +47,6 @@ pub fn quest_location_base_page(
         "",
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -63,7 +61,6 @@ pub fn quest_location_map_page(
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
     let content = html! {
@@ -98,7 +95,6 @@ pub fn quest_location_map_page(
         "map",
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -173,7 +169,6 @@ pub fn quest_location_page(
     items: &[ItemDefinition],
     targets: &[InventoryQuantityTarget],
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -255,7 +250,6 @@ pub fn quest_location_page(
         "loot",
         content,
         logged_in_as,
-        theme,
     )
 }
 

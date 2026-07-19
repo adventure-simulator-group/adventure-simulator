@@ -585,13 +585,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/dark-arcanum.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/fraktur-nocturne.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/fraktur-texturina.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/imperial-crimson.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/northern-frost.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/renaissance-gold.css` — Browser UI styling.
-- `crates/strategic-web/static/css/themes/verdant-chronicle.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
@@ -746,6 +739,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.

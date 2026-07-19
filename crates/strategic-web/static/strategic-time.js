@@ -24,13 +24,14 @@
     const left = Math.max(0, right - 1);
     const span = stops[right][0] - stops[left][0] || 1;
     const amount = (hour - stops[left][0]) / span;
-    const sunProgress = Math.min(1, Math.max(0, (hour - 6) / 12));
+    const orbit = ((hour - 6) / 24) * Math.PI * 2;
     return {
       low: rgb(mix(stops[left][1], stops[right][1], amount)),
       high: rgb(mix(stops[left][2], stops[right][2], amount)),
       stars: stops[left][3] + (stops[right][3] - stops[left][3]) * amount,
       building: Math.round(stops[left][4] + (stops[right][4] - stops[left][4]) * amount),
-      glowX: Math.round(8 + sunProgress * 84),
+      glowX: 50 + 46 * Math.sin(orbit),
+      glowY: 112 - 100 * Math.abs(Math.sin(orbit)),
       glow: hour >= 6 && hour < 18 ? "rgb(143 103 54 / 45%)" : "rgb(112 132 170 / 24%)",
     };
   };
@@ -42,6 +43,7 @@
     root.setProperty("--sky-high", value.high);
     root.setProperty("--sky-glow", value.glow);
     root.setProperty("--sky-glow-x", `${value.glowX}%`);
+    root.setProperty("--sky-glow-y", `${value.glowY}%`);
     root.setProperty("--star-opacity", value.stars.toFixed(2));
     root.setProperty("--building-light", `${value.building}%`);
   };

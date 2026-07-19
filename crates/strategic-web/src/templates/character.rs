@@ -9,11 +9,7 @@ use super::{
 use crate::spacetimedb::Character;
 
 /// List all characters and select the adventurer who enters the strategic layer.
-pub fn characters_list_page(
-    characters: &[Character],
-    current_character_id: Option<u64>,
-    theme: &str,
-) -> Markup {
+pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Choose an adventurer", html! {
@@ -68,7 +64,7 @@ pub fn characters_list_page(
         }
     };
 
-    entry_layout("Select Adventurer", content, theme)
+    entry_layout("Select Adventurer", content)
 }
 
 #[cfg(test)]
@@ -92,7 +88,7 @@ mod tests {
             temporary: false,
         };
 
-        let markup = characters_list_page(&[character], Some(7), "light").into_string();
+        let markup = characters_list_page(&[character], Some(7)).into_string();
         assert!(markup.contains("Dead"));
         assert!(markup.contains("Currently viewed"));
         assert!(markup.contains("View Fallen Adventurer"));
@@ -102,7 +98,7 @@ mod tests {
 }
 
 /// Character creation form.
-pub fn character_new_page(_logged_in_as: Option<&str>, theme: &str) -> Markup {
+pub fn character_new_page(_logged_in_as: Option<&str>) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Tips", html! {
@@ -143,7 +139,7 @@ pub fn character_new_page(_logged_in_as: Option<&str>, theme: &str) -> Markup {
         }
     };
 
-    entry_layout("Create Character", content, theme)
+    entry_layout("Create Character", content)
 }
 
 #[cfg(test)]

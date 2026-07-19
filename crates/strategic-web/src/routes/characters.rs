@@ -41,16 +41,13 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
         }
     };
 
-    Html(
-        characters_list_page(&characters, session.character_id_u64(), session.theme())
-            .into_string(),
-    )
-    .into_response()
+    Html(characters_list_page(&characters, session.character_id_u64()).into_string())
+        .into_response()
 }
 
 async fn new_character_form(State(state): State<AppState>, session: Session) -> Html<String> {
     let logged_in_as = get_character_name(&state, session.character_id_u64()).await;
-    Html(character_new_page(logged_in_as.as_deref(), session.theme()).into_string())
+    Html(character_new_page(logged_in_as.as_deref()).into_string())
 }
 
 async fn create_character(

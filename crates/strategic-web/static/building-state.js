@@ -5,8 +5,8 @@
   const current = new URL(window.location.href);
   const requested = current.searchParams.get("building");
   const serverActive = nav.querySelector(".nav-tab.active")?.dataset.serviceId;
-  const building = services.has(requested) ? requested : (services.has(serverActive) ? serverActive : "map");
-  if (requested && !services.has(requested)) {
+  const building = services.has(serverActive) ? serverActive : (services.has(requested) ? requested : "map");
+  if (requested && (!services.has(requested) || services.has(serverActive))) {
     current.searchParams.delete("building");
     history.replaceState(null, "", current);
   }

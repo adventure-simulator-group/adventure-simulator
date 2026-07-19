@@ -136,10 +136,7 @@ async fn mission_status(
     if query.fragment {
         Html(mission_status_fragment(&server).into_string()).into_response()
     } else {
-        Html(
-            mission_status_page(&server, Some(viewer.name.as_str()), session.theme()).into_string(),
-        )
-        .into_response()
+        Html(mission_status_page(&server, Some(viewer.name.as_str())).into_string()).into_response()
     }
 }
 

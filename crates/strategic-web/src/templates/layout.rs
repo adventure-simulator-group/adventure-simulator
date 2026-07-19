@@ -13,18 +13,12 @@ enum ScriptProfile {
 
 /// Minimal shell for selecting or creating a character. It intentionally omits
 /// strategic navigation: an adventurer must be selected before play begins.
-pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
-    let _ = theme;
+pub fn entry_layout(title: &str, content: Markup) -> Markup {
     page_shell(title, entry_top_bar(), content, ScriptProfile::Entry)
 }
 
 /// Transitional shell shown while a tactical server is being allocated.
-pub fn mission_layout(
-    title: &str,
-    content: Markup,
-    logged_in_as: Option<&str>,
-    _theme: &str,
-) -> Markup {
+pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
     let header = html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
@@ -50,7 +44,6 @@ pub fn settlement_layout_with_session(
     religion_id: Option<&str>,
     content: Markup,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     page_shell(
         title,
@@ -61,7 +54,6 @@ pub fn settlement_layout_with_session(
             active_service,
             religion_id,
             logged_in_as,
-            theme,
         ),
         content,
         ScriptProfile::Strategic,
@@ -77,11 +69,10 @@ pub fn quest_location_layout_with_session(
     active_tab: &str,
     content: Markup,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     page_shell(
         title,
-        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
+        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as),
         content,
         ScriptProfile::Strategic,
     )
@@ -162,7 +153,6 @@ fn settlement_top_bar(
     active_service: &str,
     religion_id: Option<&str>,
     logged_in_as: Option<&str>,
-    _current_theme: &str,
 ) -> Markup {
     let services = [
         ("map", "Map", "map"),
@@ -177,7 +167,8 @@ fn settlement_top_bar(
 
     html! {
         @let material = if matches!(category, SettlementCategory::City | SettlementCategory::Capital) { "stone" } else { "wood" };
-        @let active_tint = building_tint(settlement_id, active_service, material);
+        @let active_material = if active_service == "religion" { "stone" } else { material };
+        @let active_tint = building_tint(settlement_id, active_service, active_material);
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
         header class=(format!("top-bar settlement-top-bar material-{material}")) data-environment="settlement" {
             div class="top-bar-left settlement-location" {
@@ -244,10 +235,16 @@ fn quest_location_top_bar(
     location_id: &str,
     active_tab: &str,
     logged_in_as: Option<&str>,
-    _current_theme: &str,
 ) -> Markup {
+    let map_tint = "hsl(126 30% 22%)";
+    let loot_tint = "hsl(105 27% 19%)";
+    let active_tint = if active_tab == "loot" {
+        loot_tint
+    } else {
+        map_tint
+    };
     html! {
-        style { ":root{--active-building-tint:hsl(126 28% 18%);}" }
+        style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
         header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
@@ -259,14 +256,14 @@ fn quest_location_top_bar(
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 a href=(format!("/locations/quest/{}/map", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
-                    style="--building-tint:hsl(126 30% 22%)"
+                    style=(format!("--building-tint:{map_tint}"))
                     aria-current=(if active_tab == "map" { "page" } else { "false" })
                     aria-label="Map" title="Map" {
                     span class="service-tab-icon service-tab-icon-map" aria-hidden="true" {}
                 }
                 a href=(format!("/locations/quest/{}/loot", location_id))
                     class=(if active_tab == "loot" { "nav-tab active" } else { "nav-tab" })
-                    style="--building-tint:hsl(105 27% 19%)"
+                    style=(format!("--building-tint:{loot_tint}"))
                     aria-current=(if active_tab == "loot" { "page" } else { "false" })
                     aria-label="Loot" title="Loot" {
                     span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
@@ -343,7 +340,9 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 
 #[cfg(test)]
 mod tests {
-    use super::{building_tint, settlement_layout_with_session};
+    use super::{
+        building_tint, quest_location_top_bar, settlement_layout_with_session, settlement_top_bar,
+    };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
 
@@ -372,7 +371,6 @@ mod tests {
             "inn",
             html! {},
             None,
-            "",
         )
         .into_string();
         assert!(markup.contains("aria-current=\"page\""));
@@ -389,6 +387,25 @@ mod tests {
         assert!(time.contains("applyLighting(characterMinutes)"));
         assert!(building.contains("searchParams.get(\"building\")"));
         assert!(building.contains("searchParams.set(\"building\", building)"));
+        assert!(building.contains("services.has(serverActive) ? serverActive"));
+    }
+
+    #[test]
+    fn wilderness_and_church_roots_match_the_active_tab_material() {
+        let wilderness = quest_location_top_bar("Ruins", "q", "loot", None).into_string();
+        assert!(wilderness.contains(":root{--active-building-tint:hsl(105 27% 19%);}"));
+        let church = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "religion",
+            None,
+        )
+        .into_string();
+        assert!(church.contains(&format!(
+            ":root{{--active-building-tint:{};}}",
+            building_tint("s", "religion", "stone")
+        )));
     }
 
     #[test]

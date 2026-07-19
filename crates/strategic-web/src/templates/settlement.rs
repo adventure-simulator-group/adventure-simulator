@@ -39,6 +39,7 @@ pub struct LocationView {
     pub name: String,
     pub religion_id: Option<String>,
     pub category: Option<SettlementCategory>,
+    pub active_building: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -159,13 +160,7 @@ impl LocationView {
         format!("/locations/{}/{}", self.kind, self.id)
     }
 
-    fn render_layout(
-        &self,
-        title: &str,
-        content: Markup,
-        logged_in_as: Option<&str>,
-        theme: &str,
-    ) -> Markup {
+    fn render_layout(&self, title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
         if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
                 title,
@@ -174,11 +169,10 @@ impl LocationView {
                 self.category
                     .as_ref()
                     .unwrap_or(&SettlementCategory::Unknown),
-                "",
+                self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
                 content,
                 logged_in_as,
-                theme,
             )
         } else {
             quest_location_layout_with_session(
@@ -188,7 +182,6 @@ impl LocationView {
                 "",
                 content,
                 logged_in_as,
-                theme,
             )
         }
     }
@@ -352,7 +345,6 @@ pub fn settlement_overview_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let alias_labels = settlement_alias_labels(settlement, aliases);
     let historical_description = preferred_settlement_description(descriptions);
@@ -397,7 +389,6 @@ pub fn settlement_overview_page(
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -455,7 +446,6 @@ pub fn settlement_map_page(
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
@@ -486,7 +476,6 @@ pub fn settlement_map_page(
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -680,7 +669,6 @@ pub fn camp_page(
     party_members: &[Character],
     default_rest_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let rest_hours = default_rest_minutes.div_ceil(60);
     let content = html! {
@@ -716,15 +704,7 @@ pub fn camp_page(
             }
         }
     };
-    quest_location_layout_with_session(
-        "Camp",
-        "Camp",
-        &party.id,
-        "camp",
-        content,
-        logged_in_as,
-        theme,
-    )
+    quest_location_layout_with_session("Camp", "Camp", &party.id, "camp", content, logged_in_as)
 }
 
 fn rest_duration_control(_id_prefix: &str, value: u64, unit: &str, label: &str) -> Markup {
@@ -833,7 +813,6 @@ pub fn merchants_page(
     inventory: &[InventoryItem],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -846,7 +825,6 @@ pub fn merchants_page(
         &[],
         party_members,
         logged_in_as,
-        theme,
         None,
         None,
     )
@@ -865,7 +843,6 @@ pub fn inn_page(
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -878,7 +855,6 @@ pub fn inn_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         rest_default_minutes(
             limbs,
             stats,
@@ -903,7 +879,6 @@ pub fn religion_page(
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -916,7 +891,6 @@ pub fn religion_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         rest_default_minutes(
             limbs,
             stats,
@@ -941,7 +915,6 @@ pub fn party_inventory_page(
     active_equip: Option<&CharacterEquip>,
     selected_targets: &[InventoryQuantityTarget],
     active_targets: &[InventoryQuantityTarget],
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -960,7 +933,7 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
         }
     };
-    location.render_layout("Party", content, Some(&active_character.name), theme)
+    location.render_layout("Party", content, Some(&active_character.name))
 }
 
 /// The active character's inventory with a staged discard list.
@@ -971,7 +944,6 @@ pub fn party_discard_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -998,7 +970,7 @@ pub fn party_discard_page(
             (discard_inventory_rail(active_character, inventory, items, equip))
         }
     };
-    location.render_layout("Inventory", content, Some(&active_character.name), theme)
+    location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
 /// Active character's combined strategic view.
@@ -1050,7 +1022,7 @@ pub fn party_personal_page(
             (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
         }
     };
-    location.render_layout("Party", content, Some(&active_character.name), theme)
+    location.render_layout("Party", content, Some(&active_character.name))
 }
 
 fn religious_demand_rail(
@@ -1160,7 +1132,7 @@ pub fn party_stats_page(
             }
         }
     };
-    location.render_layout("Party stats", content, Some(&active_character.name), theme)
+    location.render_layout("Party stats", content, Some(&active_character.name))
 }
 
 fn service_page(
@@ -1174,7 +1146,6 @@ fn service_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
 ) -> Markup {
@@ -1278,7 +1249,6 @@ fn service_page(
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -1374,7 +1344,6 @@ pub fn live_merchant_shop_page(
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     pooled: &[PartyInventoryItem],
-    theme: &str,
     shop: MerchantShop,
     conditions: &[crate::spacetimedb::ItemCondition],
     smith: Option<&crate::spacetimedb::SettlementSmith>,
@@ -1504,7 +1473,6 @@ pub fn live_merchant_shop_page(
         Some(&settlement.religion_id),
         content,
         Some(&character.name),
-        theme,
     )
 }
 
@@ -1520,7 +1488,6 @@ pub fn party_pool_page(
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1585,7 +1552,7 @@ pub fn party_pool_page(
         }
         form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
     };
-    location.render_layout("Party inventory", content, Some(&character.name), theme)
+    location.render_layout("Party inventory", content, Some(&character.name))
 }
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
@@ -3388,7 +3355,6 @@ pub fn rest_result_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
     at_inn: bool,
     summary: &RestSummary,
 ) -> Markup {
@@ -3403,7 +3369,6 @@ pub fn rest_result_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         None,
         Some(summary),
     )
@@ -4144,7 +4109,6 @@ mod tests {
             None,
             &[],
             None,
-            "system",
         )
         .into_string();
 
@@ -4253,7 +4217,7 @@ mod tests {
         // Dark themes use the lightest possible 88% panel composite (over
         // white); light themes use the darkest possible composite (over
         // black). This brackets the image content beneath the translucent chat.
-        let themes = [
+        let legacy_palettes = [
             (
                 "Dark Arcanum",
                 [46, 49, 67],
@@ -4325,7 +4289,7 @@ mod tests {
                 [58, 122, 58],
             ),
         ];
-        for (theme, surface, primary, secondary, info, gold, dm, success) in themes {
+        for (palette, surface, primary, secondary, info, gold, dm, success) in legacy_palettes {
             let channels = [
                 ("Local", primary),
                 ("Party", mix(info, primary, 40)),
@@ -4341,12 +4305,12 @@ mod tests {
             assert_eq!(
                 distinct.len(),
                 channels.len(),
-                "{theme} channels must remain visually distinct"
+                "{palette} channels must remain visually distinct"
             );
             for (channel, color) in channels {
                 assert!(
                     contrast(color, surface) >= 4.5,
-                    "{theme} {channel} does not meet WCAG AA text contrast"
+                    "{palette} {channel} does not meet WCAG AA text contrast"
                 );
             }
         }
@@ -4362,7 +4326,7 @@ mod tests {
             .expect("chat needs a background fallback");
         let enhanced = css
             .find("background: color-mix(in srgb, var(--panel-bg) 88%, transparent);")
-            .expect("chat should derive its translucent surface from the theme");
+            .expect("chat should derive its translucent surface from the fixed palette");
 
         assert!(fallback < enhanced);
         assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));

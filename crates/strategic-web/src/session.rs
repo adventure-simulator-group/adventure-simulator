@@ -47,10 +47,6 @@ impl Session {
     pub fn character_id_u64(&self) -> Option<u64> {
         self.character_id.map(CharacterId::get)
     }
-
-    pub fn theme(&self) -> &str {
-        ""
-    }
 }
 
 /// Extractor for session from cookies
