@@ -224,7 +224,6 @@
 .travel-fatigue-track,
 .travel-daylight-track { position: relative; top: 3%; width: var(--travel-rail-width); height: 94%; overflow: visible; background: var(--panel-bg); }
 .travel-fatigue-segment { position: absolute; right: 0; left: 0; min-height: 1px; }
-.travel-fatigue-segment.camp { opacity: .8; }
 .travel-resource-row.fatigue.warning .travel-resource-icon { color: var(--danger); }
 .travel-midnight-tick { position: absolute; z-index: 7; right: -1.3rem; width: 1.6rem; border-top: 1px solid color-mix(in srgb, #fff 72%, transparent); transform: translateY(-50%); }
 .travel-midnight-tick svg { position: absolute; top: -.55rem; right: -1.05rem; width: 1rem; height: 1rem; }

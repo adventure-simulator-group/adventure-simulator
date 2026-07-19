@@ -77,6 +77,7 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.match(source, /M 11 0 C 3 0[\s\S]+3 100 11 100/);
   const css = fs.readFileSync(path.join(root, "static", "css", "strategic.css"), "utf8");
   assert.match(css, /\.travel-camp-tent \{[^}]*top: 50%[^}]*translateY\(-50%\)/);
+  assert.doesNotMatch(css, /\.travel-fatigue-segment\.camp\s*\{[^}]*opacity/);
   assert.match(template, /data-selected-round-trip/);
   assert.match(source, /planner\.dataset\.selectedRoundTrip === "true"/);
   assert.match(source, /strategic-live-regions-refreshed/);
