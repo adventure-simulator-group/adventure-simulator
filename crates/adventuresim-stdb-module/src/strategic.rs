@@ -1523,6 +1523,10 @@ pub struct PartyJourney {
     pub forecast_camp_stop_minutes: Vec<u64>,
     /// A journey keeps the leader's chosen threshold from departure.
     pub fatigue_percent: u8,
+    /// Zero identifies a pre elapsed-itinerary row requiring conservative
+    /// reconstruction from the party's current absolute time.
+    #[default(0u8)]
+    pub plan_version: u8,
     /// Additive v2 itinerary coordinates. Legacy minute fields above remain
     /// route-movement coordinates for compatibility.
     #[default(0u64)]
@@ -5012,20 +5016,37 @@ fn party_itinerary_members(
 }
 
 fn itinerary_camps(forecast: &ItineraryForecast) -> Vec<JourneyCampInterval> {
-    forecast
+    let mut camps: Vec<JourneyCampInterval> = Vec::new();
+    for segment in forecast
         .segments
         .iter()
         .filter(|segment| segment.kind == ItinerarySegmentKind::Camp)
-        .take(MAX_ITINERARY_SEGMENTS)
-        .map(|segment| JourneyCampInterval {
+    {
+        if let Some(last) = camps.last_mut()
+            && last.movement_minute == segment.movement_start
+            && last
+                .elapsed_start_minute
+                .saturating_add(last.elapsed_minutes)
+                == segment.elapsed_start
+        {
+            last.elapsed_minutes = last.elapsed_minutes.saturating_add(segment.elapsed_minutes);
+            last.average_fatigue_end = segment.average_fatigue_end;
+            last.maximum_fatigue_end = last.maximum_fatigue_end.max(segment.maximum_fatigue_end);
+            continue;
+        }
+        if camps.len() >= MAX_ITINERARY_SEGMENTS {
+            break;
+        }
+        camps.push(JourneyCampInterval {
             movement_minute: segment.movement_start,
             elapsed_start_minute: segment.elapsed_start,
             elapsed_minutes: segment.elapsed_minutes,
             average_fatigue_start: segment.average_fatigue_start,
             average_fatigue_end: segment.average_fatigue_end,
             maximum_fatigue_end: segment.maximum_fatigue_end,
-        })
-        .collect()
+        });
+    }
+    camps
 }
 
 fn forecast_camp_stop_minutes(
@@ -5046,6 +5067,9 @@ fn forecast_camp_stop_minutes(
         };
         elapsed = elapsed.saturating_add(leg_minutes).min(total_minutes);
         if elapsed < total_minutes {
+            if stops.len() >= MAX_ITINERARY_SEGMENTS {
+                return Err("Journey requires too many legacy camp checkpoints".into());
+            }
             stops.push(elapsed);
         }
         use_current_fatigue = false;
@@ -5112,6 +5136,7 @@ fn start_party_journey(
         camp_stop_minutes: Vec::new(),
         forecast_camp_stop_minutes,
         fatigue_percent,
+        plan_version: 1,
         departure_minute,
         total_elapsed_minutes: itinerary.total_elapsed_minutes,
         completed_elapsed_minutes: 0,
@@ -5168,6 +5193,17 @@ pub(crate) fn refresh_party_journey_forecast(
     else {
         return Ok(());
     };
+    if journey.plan_version == 0 {
+        let current = living_party_member_ids(ctx, party_id)
+            .into_iter()
+            .filter_map(|id| ctx.db.character_time().character_id().find(id))
+            .map(|time| time.minutes)
+            .max()
+            .unwrap_or(0);
+        (journey.departure_minute, journey.completed_elapsed_minutes) =
+            reconstruct_legacy_journey_coordinates(current, journey.completed_minutes);
+        journey.plan_version = 1;
+    }
     journey.forecast_camp_stop_minutes = forecast_camp_stop_minutes(
         ctx,
         party_id,
@@ -5395,6 +5431,89 @@ fn redirect_camped_party_to_settlement(
     Ok(())
 }
 
+fn revalidate_party_after_departure_sync(
+    ctx: &ReducerContext,
+    party_id: &str,
+    leader_id: u64,
+    expected_settlement_id: Option<&str>,
+    expected_quest_location_id: Option<&str>,
+    expected_active_quest_id: Option<&str>,
+) -> Result<Party, String> {
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party changed during departure synchronization")?;
+    let party_matches = party.leader_id == leader_id
+        && party.camp_destination_id.is_none()
+        && party.current_settlement_id.as_deref() == expected_settlement_id
+        && party.current_quest_location_id.as_deref() == expected_quest_location_id
+        && !expected_active_quest_id.is_some_and(|id| party.active_quest_id.as_deref() != Some(id));
+    let pending_incident = ctx
+        .db
+        .strategic_incident()
+        .party_id()
+        .filter(party_id)
+        .any(|incident| incident.status == "pending");
+    if !departure_snapshot_allows_travel(party_matches, true, pending_incident) {
+        return Err("Travel was interrupted while the party synchronized its clocks".into());
+    }
+    let members = living_party_member_ids(ctx, party_id);
+    let members_match = !members.is_empty()
+        && !members.iter().any(|id| {
+            ctx.db.character().id().find(*id).is_none_or(|member| {
+                member.current_settlement_id.as_deref() != expected_settlement_id
+                    || member.current_quest_location_id.as_deref() != expected_quest_location_id
+            })
+        });
+    if !departure_snapshot_allows_travel(true, members_match, false) {
+        return Err("A party member changed location during departure synchronization".into());
+    }
+    require_party_ready(ctx, party_id)?;
+    Ok(party)
+}
+
+fn departure_snapshot_allows_travel(
+    party_matches: bool,
+    members_match: bool,
+    pending_incident: bool,
+) -> bool {
+    party_matches && members_match && !pending_incident
+}
+
+fn reconstruct_legacy_journey_coordinates(
+    current_minute: u64,
+    completed_movement: u64,
+) -> (u64, u64) {
+    (
+        current_minute.saturating_sub(completed_movement),
+        completed_movement,
+    )
+}
+
+#[cfg(test)]
+mod departure_invariant_tests {
+    use super::{departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates};
+
+    #[test]
+    fn scheduled_activity_incident_prevents_stale_requested_journey() {
+        assert!(!departure_snapshot_allows_travel(true, true, true));
+        assert!(!departure_snapshot_allows_travel(false, true, false));
+        assert!(!departure_snapshot_allows_travel(true, false, false));
+        assert!(departure_snapshot_allows_travel(true, true, false));
+    }
+
+    #[test]
+    fn legacy_journey_never_falls_back_to_day_one() {
+        assert_eq!(
+            reconstruct_legacy_journey_coordinates(20_000, 600),
+            (19_400, 600)
+        );
+        assert_eq!(reconstruct_legacy_journey_coordinates(300, 600), (0, 600));
+    }
+}
+
 #[reducer]
 pub fn travel_to_quest(
     ctx: &ReducerContext,
@@ -5432,6 +5551,23 @@ pub fn travel_to_quest(
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    party = revalidate_party_after_departure_sync(
+        ctx,
+        &party_id,
+        character_id,
+        Some(&quest.settlement_id),
+        None,
+        Some(&quest_id),
+    )?;
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .filter(|quest| {
+            quest.status == QuestStatus::Accepted && quest.accepted_by.as_ref() == Some(&party_id)
+        })
+        .ok_or("Quest changed during departure synchronization")?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
@@ -5605,11 +5741,17 @@ pub fn travel_to_settlement(
     } else {
         vec![character_id]
     };
-    let departure_minute = if party.is_some() {
-        crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
-    } else {
-        crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
-    };
+    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    if let Some(current_party) = party.as_ref() {
+        party = Some(revalidate_party_after_departure_sync(
+            ctx,
+            &current_party.id,
+            character_id,
+            (origin_kind == "settlement").then_some(origin_id.as_str()),
+            (origin_kind == "quest").then_some(origin_id.as_str()),
+            None,
+        )?);
+    }
     let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
         living_party_member_ids(ctx, &party.id)
     } else {
@@ -5822,6 +5964,9 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .camp_destination_kind
         .clone()
         .ok_or("Camp destination is missing")?;
+    // This also upgrades pre elapsed-itinerary rows before any celestial or
+    // progress coordinates are used.
+    refresh_party_journey_forecast(ctx, &party_id)?;
     let leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
         &party.id,

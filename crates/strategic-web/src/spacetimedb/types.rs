@@ -253,6 +253,7 @@ pub struct PartyJourney {
     pub camp_stop_minutes: Vec<u64>,
     pub forecast_camp_stop_minutes: Vec<u64>,
     pub fatigue_percent: u8,
+    pub plan_version: u8,
     pub departure_minute: u64,
     pub total_elapsed_minutes: u64,
     pub completed_elapsed_minutes: u64,

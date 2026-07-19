@@ -4,6 +4,7 @@
   const MAX_U32 = 4294967295;
   const TRACK_START = 3;
   const TRACK_END = 97;
+  let moonSequence = 0;
   const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
   const parseStops = (value) => (value || "").split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
   const parseSegments = (value) => (value || "").split("|").filter(Boolean).map((entry) => {
@@ -15,6 +16,19 @@
     if (!path) return;
     path.setAttribute("d", `M 16 ${position(start, total)} V ${position(end, total)}`);
   };
+  const turnaroundElapsed = (segments, oneWay, fallback) => {
+    for (const segment of segments) {
+      if (segment.kind === "w" && segment.movementStart + segment.movementDuration >= oneWay) {
+        const fraction = segment.movementDuration > 0 ? (oneWay - segment.movementStart) / segment.movementDuration : 0;
+        return segment.start + segment.duration * clamp(fraction);
+      }
+    }
+    return fallback;
+  };
+  const provisionQuantities = ({ remainingDays, target, foodDays, waterDays, members, rationKcal, skinMl }) => ({
+    rations: rationKcal > 0 ? Math.ceil(Math.max(0, (remainingDays + target - foodDays) * members * 6000) / rationKcal) : 0,
+    skins: skinMl > 0 ? Math.ceil(Math.max(0, (remainingDays + target - waterDays) * members * 4000) / skinMl) : 0,
+  });
 
   const fatigueColor = (fraction) => {
     const value = clamp(fraction, 0, 1.5);
@@ -32,21 +46,44 @@
     if (phase < .8125) return "last quarter";
     return "waning crescent";
   };
+  const moonGeometry = (phase) => {
+    const illumination = (1 - Math.cos(Math.PI * 2 * phase)) / 2;
+    const waxing = phase <= .5;
+    const halfPhase = waxing ? phase : 1 - phase;
+    const terminatorRadius = Math.abs(Math.cos(Math.PI * 2 * halfPhase) * 8);
+    const terminatorSweep = halfPhase < .25 ? 0 : 1;
+    return {
+      illumination,
+      path: illumination <= .0001 ? "" : illumination >= .9999 ? "M 10 2 A 8 8 0 1 1 9.999 2 Z" : `M 10 2 A 8 8 0 0 1 10 18 A ${terminatorRadius.toFixed(3)} 8 0 0 ${terminatorSweep} 10 2 Z`,
+      transform: waxing ? "" : "translate(20 0) scale(-1 1)",
+    };
+  };
 
   const moonSvg = (absoluteMinute) => {
     const phase = ((absoluteMinute % LUNAR_CYCLE) + LUNAR_CYCLE) % LUNAR_CYCLE / LUNAR_CYCLE;
-    const illumination = (1 - Math.cos(Math.PI * 2 * phase)) / 2;
+    const geometry = moonGeometry(phase);
+    const illumination = geometry.illumination;
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 20 20");
     svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", `${moonName(phase)}, ${Math.round(illumination * 100)}% illuminated`);
     const title = document.createElementNS(svg.namespaceURI, "title");
     title.textContent = svg.getAttribute("aria-label");
+    const clipId = `travel-moon-clip-${moonSequence++}`;
+    const defs = document.createElementNS(svg.namespaceURI, "defs");
+    const clip = document.createElementNS(svg.namespaceURI, "clipPath");
+    clip.setAttribute("id", clipId);
+    const clipCircle = document.createElementNS(svg.namespaceURI, "circle");
+    clipCircle.setAttribute("cx", "10"); clipCircle.setAttribute("cy", "10"); clipCircle.setAttribute("r", "8");
+    clip.append(clipCircle); defs.append(clip);
     const dark = document.createElementNS(svg.namespaceURI, "circle");
     dark.setAttribute("cx", "10"); dark.setAttribute("cy", "10"); dark.setAttribute("r", "8"); dark.setAttribute("class", "moon-dark");
-    const lit = document.createElementNS(svg.namespaceURI, "circle");
-    lit.setAttribute("cx", "10"); lit.setAttribute("cy", "10"); lit.setAttribute("r", "8"); lit.setAttribute("class", "moon-lit"); lit.setAttribute("opacity", String(illumination));
-    svg.append(title, dark, lit);
+    const lit = document.createElementNS(svg.namespaceURI, "path");
+    lit.setAttribute("d", geometry.path);
+    lit.setAttribute("class", "moon-lit");
+    lit.setAttribute("clip-path", `url(#${clipId})`);
+    if (geometry.transform) lit.setAttribute("transform", geometry.transform);
+    svg.append(title, defs, dark, lit);
     return svg;
   };
 
@@ -99,7 +136,7 @@
       maximum = Math.max(maximum, segment.fatigueStart, segment.fatigueEnd);
       peak = Math.max(peak, segment.fatigueMax, segment.fatigueStart, segment.fatigueEnd);
       const part = document.createElement("span");
-      part.className = `travel-fatigue-segment ${segment.kind === "c" ? "camp" : "walking"}`;
+      part.className = `travel-fatigue-segment ${segment.kind === "w" ? "walking" : "camp"}`;
       part.style.top = `${segment.start / total * 100}%`;
       part.style.height = `${segment.duration / total * 100}%`;
       part.style.background = `linear-gradient(to bottom, ${fatigueColor(segment.fatigueStart)}, ${fatigueColor(segment.fatigueEnd)})`;
@@ -108,7 +145,8 @@
     if (summary && Number.isFinite(minimum)) {
       summary.textContent = `${Math.round(minimum * 100)}–${Math.round(maximum * 100)}% · max ${Math.round(peak * 100)}%`;
       summary.title = `Average party fatigue ranges from ${Math.round(minimum * 100)}% to ${Math.round(maximum * 100)}%; highest member reaches ${Math.round(peak * 100)}%.`;
-      summary.classList.toggle("warning", peak >= 1);
+      summary.setAttribute("aria-label", summary.title);
+      summary.closest(".travel-resource-row")?.classList.toggle("warning", peak >= 1);
     }
   };
 
@@ -123,31 +161,30 @@
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "" }) => {
       if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
       const roundTrip = movementTotal > oneWay;
-      let turnaroundElapsed = elapsedTotal;
-      for (const segment of segments) {
-        if (segment.movementStart + segment.movementDuration >= oneWay) {
-          turnaroundElapsed = segment.start + Math.max(0, oneWay - segment.movementStart);
-          break;
-        }
-      }
-      const camps = segments.filter((segment) => segment.kind === "c");
+      const turnaround = turnaroundElapsed(segments, oneWay, elapsedTotal);
+      const camps = segments.filter((segment) => segment.kind !== "w");
       const nodes = [
         { kind: "start", label: "Start", title: origin, minute: 0 },
-        ...camps.map((camp, index) => ({ kind: "camp", label: `Camp ${index + 1}`, title: `Camp ${index + 1}: ${Math.ceil(camp.duration / 60)}h; ${Math.round(camp.fatigueEnd * 100)}% average fatigue after rest`, minute: camp.start, duration: camp.duration, completed: camp.start + camp.duration <= completedElapsed })),
-        { kind: "destination", label: roundTrip ? "Quest" : "End", title: description || name, minute: roundTrip ? turnaroundElapsed : elapsedTotal },
+        ...camps.map((camp, index) => ({ kind: "camp", label: `Camp ${index + 1}`, title: `Camp ${index + 1}: ${Math.ceil(camp.duration / 60)}h; ${Math.round(camp.fatigueEnd * 100)}% average fatigue after rest`, minute: camp.start, duration: camp.duration, completed: camp.kind === "a" || camp.start + camp.duration <= completedElapsed, partial: camp.kind === "m" })),
+        { kind: "destination", label: roundTrip ? "Quest" : "End", title: description || name, minute: roundTrip ? turnaround : elapsedTotal },
         ...(roundTrip ? [{ kind: "return", label: "End", title: origin, minute: elapsedTotal }] : []),
       ].sort((a, b) => a.minute - b.minute);
       route.replaceChildren(...nodes.map((node) => {
         const element = document.createElement("div");
-        element.className = `travel-plan-node travel-plan-${node.kind}${node.completed ? " reached" : ""}`;
+        element.className = `travel-plan-node travel-plan-${node.kind}${node.completed ? " reached" : ""}${node.partial ? " partial" : ""}`;
         element.style.top = `${position(node.minute, elapsedTotal)}%`;
         element.title = node.title;
         element.setAttribute("role", "separator");
         element.setAttribute("aria-label", node.title);
         if (node.kind === "camp") {
-          const tent = document.createElement("span"); tent.className = "travel-camp-tent"; tent.textContent = "⛺";
-          const bracket = document.createElement("span"); bracket.className = "travel-camp-bracket"; bracket.textContent = "}"; bracket.style.height = `${node.duration / elapsedTotal * 100 * (route.clientHeight || 1)}px`;
-          element.append(tent, bracket);
+          const tent = document.createElement("span"); tent.className = "travel-camp-tent"; tent.setAttribute("aria-hidden", "true");
+          const brace = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          brace.setAttribute("class", "travel-camp-brace"); brace.setAttribute("viewBox", "0 0 12 100"); brace.setAttribute("preserveAspectRatio", "none"); brace.setAttribute("aria-hidden", "true");
+          brace.style.height = `${Math.max(.4, node.duration / elapsedTotal * 100)}%`;
+          const bracePath = document.createElementNS(brace.namespaceURI, "path");
+          bracePath.setAttribute("d", "M 1 0 C 9 0 9 20 6 32 C 5 39 8 47 11 50 C 8 53 5 61 6 68 C 9 80 9 100 1 100");
+          brace.append(bracePath);
+          element.append(tent, brace);
         } else {
           const label = document.createElement("span"); label.className = "travel-plan-endpoint-label"; label.textContent = node.label; element.append(label);
         }
@@ -195,8 +232,7 @@
       const rationKcal = Number(planner.dataset.provisionRationKcal);
       const skinMl = Number(planner.dataset.provisionWaterskinMl);
       const remainingDays = Math.max(0, totalDays - completedDays);
-      const rations = rationKcal > 0 ? Math.ceil(Math.max(0, (remainingDays + target - foodDays) * members * 6000) / rationKcal) : 0;
-      const skins = skinMl > 0 ? Math.ceil(Math.max(0, (remainingDays + target - waterDays) * members * 4000) / skinMl) : 0;
+      const { rations, skins } = provisionQuantities({ remainingDays, target, foodDays, waterDays, members, rationKcal, skinMl });
       const buy = document.querySelector("[data-provision-buy]");
       if (buy) {
         const params = new URLSearchParams({ inventory_scope: "party" });

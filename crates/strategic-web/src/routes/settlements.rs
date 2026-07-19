@@ -899,6 +899,30 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
     let party_members = get_active_party_members(&state, Some(&character)).await;
+    if let Some(legacy) = journey.as_mut().filter(|journey| journey.plan_version == 0) {
+        let member_times: Vec<CharacterTime> = state
+            .db
+            .query("SELECT * FROM character_time")
+            .await
+            .unwrap_or_default();
+        let current = party_members
+            .iter()
+            .filter_map(|member| {
+                member_times
+                    .iter()
+                    .find(|time| time.character_id == member.id)
+            })
+            .map(|time| time.minutes)
+            .max()
+            .unwrap_or(0);
+        legacy.completed_elapsed_minutes = legacy.completed_minutes;
+        legacy.departure_minute = current.saturating_sub(legacy.completed_elapsed_minutes);
+        legacy.total_elapsed_minutes = if legacy.destination_kind == "quest" {
+            legacy.total_minutes.saturating_mul(2)
+        } else {
+            legacy.total_minutes
+        };
+    }
     let itinerary = state
         .db
         .query_one::<PartyJourneyItinerary>(&format!(

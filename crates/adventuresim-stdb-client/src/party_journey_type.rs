@@ -21,6 +21,7 @@ pub struct PartyJourney {
     pub camp_stop_minutes: Vec<u64>,
     pub forecast_camp_stop_minutes: Vec<u64>,
     pub fatigue_percent: u8,
+    pub plan_version: u8,
     pub departure_minute: u64,
     pub total_elapsed_minutes: u64,
     pub completed_elapsed_minutes: u64,
@@ -49,6 +50,7 @@ pub struct PartyJourneyCols {
     pub camp_stop_minutes: __sdk::__query_builder::Col<PartyJourney, Vec<u64>>,
     pub forecast_camp_stop_minutes: __sdk::__query_builder::Col<PartyJourney, Vec<u64>>,
     pub fatigue_percent: __sdk::__query_builder::Col<PartyJourney, u8>,
+    pub plan_version: __sdk::__query_builder::Col<PartyJourney, u8>,
     pub departure_minute: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub total_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub completed_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
@@ -76,6 +78,7 @@ impl __sdk::__query_builder::HasCols for PartyJourney {
                 "forecast_camp_stop_minutes",
             ),
             fatigue_percent: __sdk::__query_builder::Col::new(table_name, "fatigue_percent"),
+            plan_version: __sdk::__query_builder::Col::new(table_name, "plan_version"),
             departure_minute: __sdk::__query_builder::Col::new(table_name, "departure_minute"),
             total_elapsed_minutes: __sdk::__query_builder::Col::new(
                 table_name,

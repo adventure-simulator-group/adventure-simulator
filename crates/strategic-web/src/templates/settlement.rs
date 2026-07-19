@@ -832,28 +832,28 @@ pub(crate) fn travel_planner_bar_for(
                 div class="travel-planner-route" data-travel-planner-route {}
                 div class="travel-resource-meters" data-travel-resource-meters {
                     div class="travel-resource-row food" aria-label="Food provisions" {
-                        span class="travel-resource-icon" { "Food" }
+                        span class="travel-resource-icon" { (game_icon("Food", "meal")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
-                        span class="travel-resource-summary" data-surplus-summary="food" {}
+                        span class="sr-only" data-surplus-summary="food" {}
                     }
                     div class="travel-resource-row water" aria-label="Water provisions" {
-                        span class="travel-resource-icon" { "Water" }
+                        span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
-                        span class="travel-resource-summary" data-surplus-summary="water" {}
+                        span class="sr-only" data-surplus-summary="water" {}
                     }
                     div class="travel-resource-row fatigue" aria-label="Party fatigue" {
-                        span class="travel-resource-icon" { "Fatigue" }
+                        span class="travel-resource-icon" { (game_icon("Fatigue", "heart-minus")) }
                         div class="travel-fatigue-track" data-fatigue-track {}
-                        span class="travel-resource-summary" data-fatigue-summary {}
+                        span class="sr-only" data-fatigue-summary aria-live="polite" {}
                     }
                     div class="travel-resource-row daylight" aria-label="Day and night" {
-                        span class="travel-resource-icon" { "Day/night" }
+                        span class="travel-resource-icon" { (game_icon("Day and night", "sun")) }
                         div class="travel-daylight-track" data-daylight-track {}
                     }
                 }
@@ -913,25 +913,119 @@ fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String {
         .join("|")
 }
 
-fn format_persisted_itinerary(itinerary: &PartyJourneyItinerary) -> String {
-    itinerary
+fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyItinerary) -> String {
+    let mut camps: Vec<_> = itinerary
         .actual_camp_intervals
         .iter()
-        .chain(&itinerary.forecast_camp_intervals)
-        .map(|camp| {
-            format!(
-                "c,{},{},{},0,{:.4},{:.4},{:.4},{}",
-                camp.elapsed_start_minute,
-                camp.elapsed_minutes,
-                camp.movement_minute,
+        .cloned()
+        .map(|camp| (camp, true, false))
+        .chain(
+            itinerary
+                .forecast_camp_intervals
+                .iter()
+                .cloned()
+                .map(|camp| (camp, false, true)),
+        )
+        .collect();
+    camps.sort_by_key(|(camp, _, _)| camp.elapsed_start_minute);
+    let mut merged: Vec<(crate::spacetimedb::JourneyCampInterval, bool, bool)> = Vec::new();
+    for (camp, actual, forecast) in camps {
+        if let Some((last, was_actual, was_forecast)) = merged.last_mut()
+            && last.movement_minute == camp.movement_minute
+            && camp.elapsed_start_minute
+                <= last
+                    .elapsed_start_minute
+                    .saturating_add(last.elapsed_minutes)
+        {
+            let end = last
+                .elapsed_start_minute
+                .saturating_add(last.elapsed_minutes)
+                .max(
+                    camp.elapsed_start_minute
+                        .saturating_add(camp.elapsed_minutes),
+                );
+            last.elapsed_minutes = end.saturating_sub(last.elapsed_start_minute);
+            last.average_fatigue_end = camp.average_fatigue_end;
+            last.maximum_fatigue_end = last.maximum_fatigue_end.max(camp.maximum_fatigue_end);
+            *was_actual |= actual;
+            *was_forecast |= forecast;
+        } else {
+            merged.push((camp, actual, forecast));
+        }
+    }
+    let total_movement = if journey.destination_kind == "quest" {
+        journey.total_minutes.saturating_mul(2)
+    } else {
+        journey.total_minutes
+    };
+    let mut output = Vec::new();
+    let mut elapsed_cursor = 0;
+    let mut movement_cursor = 0;
+    let mut fatigue = merged
+        .first()
+        .map_or(0.0, |(camp, _, _)| camp.average_fatigue_start);
+    for (camp, actual, forecast) in merged {
+        if camp.elapsed_start_minute > elapsed_cursor {
+            let movement = camp.movement_minute.saturating_sub(movement_cursor);
+            output.push(format!(
+                "w,{},{},{},{},{:.4},{:.4},{:.4},0",
+                elapsed_cursor,
+                camp.elapsed_start_minute - elapsed_cursor,
+                movement_cursor,
+                movement,
+                fatigue,
                 camp.average_fatigue_start,
-                camp.average_fatigue_end,
-                camp.maximum_fatigue_end,
-                camp.elapsed_minutes,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|")
+                camp.average_fatigue_start
+            ));
+        }
+        let kind = if actual && forecast {
+            "m"
+        } else if actual {
+            "a"
+        } else {
+            "f"
+        };
+        output.push(format!(
+            "{kind},{},{},{},0,{:.4},{:.4},{:.4},{}",
+            camp.elapsed_start_minute,
+            camp.elapsed_minutes,
+            camp.movement_minute,
+            camp.average_fatigue_start,
+            camp.average_fatigue_end,
+            camp.maximum_fatigue_end,
+            camp.elapsed_minutes
+        ));
+        elapsed_cursor = camp
+            .elapsed_start_minute
+            .saturating_add(camp.elapsed_minutes);
+        movement_cursor = camp.movement_minute;
+        fatigue = camp.average_fatigue_end;
+    }
+    if elapsed_cursor < journey.total_elapsed_minutes {
+        output.push(format!(
+            "w,{},{},{},{},{:.4},{:.4},{:.4},0",
+            elapsed_cursor,
+            journey.total_elapsed_minutes - elapsed_cursor,
+            movement_cursor,
+            total_movement.saturating_sub(movement_cursor),
+            fatigue,
+            fatigue,
+            fatigue
+        ));
+    }
+    output.join("|")
+}
+
+fn format_legacy_persisted_itinerary(journey: &PartyJourney) -> String {
+    let total_movement = if journey.destination_kind == "quest" {
+        journey.total_minutes.saturating_mul(2)
+    } else {
+        journey.total_minutes
+    };
+    format!(
+        "w,0,{},{},{},0.0000,0.0000,0.0000,0",
+        journey.total_elapsed_minutes, 0, total_movement
+    )
 }
 
 pub(crate) struct CampTravelDestination {
@@ -990,7 +1084,7 @@ pub fn camp_page(
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &itinerary.map_or_else(String::new, format_persisted_itinerary)))
+                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
@@ -5857,5 +5951,55 @@ mod tests {
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
+    }
+
+    #[test]
+    fn persisted_quest_camp_keeps_turnaround_movement_after_elapsed_rest() {
+        let journey = PartyJourney {
+            party_id: "party".into(),
+            origin_kind: "settlement".into(),
+            origin_id: "home".into(),
+            origin_name: "Home".into(),
+            destination_kind: "quest".into(),
+            destination_id: "quest".into(),
+            destination_name: "Quest".into(),
+            total_minutes: 720,
+            completed_minutes: 480,
+            camp_stop_minutes: vec![480],
+            forecast_camp_stop_minutes: vec![480],
+            fatigue_percent: 50,
+            plan_version: 1,
+            departure_minute: 10_000,
+            total_elapsed_minutes: 2_040,
+            completed_elapsed_minutes: 780,
+            walking_minutes_per_day: 480,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+        };
+        let camp = |start, duration, from, to| crate::spacetimedb::JourneyCampInterval {
+            movement_minute: 480,
+            elapsed_start_minute: start,
+            elapsed_minutes: duration,
+            average_fatigue_start: from,
+            average_fatigue_end: to,
+            maximum_fatigue_end: to,
+        };
+        let itinerary = PartyJourneyItinerary {
+            party_id: "party".into(),
+            actual_camp_intervals: vec![camp(480, 300, 0.5, 0.2)],
+            forecast_camp_intervals: vec![camp(780, 300, 0.2, 0.0)],
+        };
+        let encoded = format_persisted_itinerary(&journey, &itinerary);
+        assert!(encoded.contains("w,0,480,0,480"));
+        assert!(encoded.contains("m,480,600,480,0"));
+        assert!(encoded.contains("w,1080,960,480,960"));
+        assert_eq!(
+            encoded
+                .split('|')
+                .filter(|segment| segment.starts_with("m,"))
+                .count(),
+            1,
+            "one physical camp marker"
+        );
     }
 }

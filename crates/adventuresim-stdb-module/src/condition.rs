@@ -1626,6 +1626,16 @@ pub fn apply_camp_rest_condition(
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
     apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
+    apply_camp_rest_recovery_condition(ctx, character_id, elapsed_minutes)
+}
+
+/// Apply only the recovery portion of camp rest. Callers that must process a
+/// disease terminal boundary consume needs first, then skip this after death.
+pub fn apply_camp_rest_recovery_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
     let days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut condition = ctx
         .db

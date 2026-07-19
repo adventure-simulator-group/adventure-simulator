@@ -94,6 +94,12 @@ settlement is a non-traveling Map row; it shows available quests in gold or a
 completed active quest ready to report in red, with red taking priority. Once an active objective is
 resolved, its route or issuing settlement remains red until turn-in. Quest-offer
 dialogue itself never presents a separate travel action.
+
+Journey rows carry an itinerary plan version. A pre-version active journey is
+conservatively reconstructed from the party's current synchronized minute minus
+its completed movement, then upgraded before travel continues. This may omit
+unknown historical rest from an old row, but it never silently renders the
+journey against Day 1 celestial chronology.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.

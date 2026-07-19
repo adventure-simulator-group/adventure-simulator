@@ -832,6 +832,7 @@ fn advance_personal_camp_time(
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
     if terminal.is_some() {
         return Ok(());
@@ -842,7 +843,7 @@ fn advance_personal_camp_time(
         .character_id()
         .find(member_id)
         .map_or(0.0, |stats| stats.calories_used.max(0.0));
-    crate::condition::apply_camp_rest_condition(ctx, member_id, elapsed)?;
+    crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, elapsed)?;
     let fatigue_rest =
         adventuresim_core::strategic_time::minutes_until_fatigue_clears(starting_fatigue)
             .min(elapsed);
@@ -972,6 +973,7 @@ pub fn rest_at_camp(
         time.minutes = time.minutes.saturating_add(elapsed);
         let interval_end_minute = time.minutes;
         ctx.db.character_time().character_id().update(time);
+        crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
         if terminal.is_some() {
             continue;
@@ -982,7 +984,7 @@ pub fn rest_at_camp(
             .character_id()
             .find(member_id)
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
-        crate::condition::apply_camp_rest_condition(ctx, member_id, elapsed)?;
+        crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, elapsed)?;
         let mut limbs = ctx
             .db
             .character_limbs()
