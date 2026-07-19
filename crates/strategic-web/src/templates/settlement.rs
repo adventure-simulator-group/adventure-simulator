@@ -1665,7 +1665,7 @@ fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     );
     html! {
         div class="encumbrance" {
-            span class="encumbrance-weight" { (weight_text) }
+            span class="encumbrance-weight" aria-hidden="true" { (weight_text) }
             div class="encumbrance-meter"
                 role="meter"
                 aria-label="Encumbrance"
@@ -1676,7 +1676,7 @@ fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
                 span class="encumbrance-marker"
                     style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
             }
-            span class="encumbrance-penalty" { (penalty_text) }
+            span class="encumbrance-penalty" aria-hidden="true" { (penalty_text) }
         }
     }
 }
@@ -3639,6 +3639,8 @@ mod tests {
         assert!(!markup.contains(">Weight"));
         assert!(!markup.contains(">Penalty"));
         assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
+        assert!(markup.contains("class=\"encumbrance-weight\" aria-hidden=\"true\""));
+        assert!(markup.contains("class=\"encumbrance-penalty\" aria-hidden=\"true\""));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("aria-valuenow=\"56.9\""));
         assert!(markup.contains("--encumbrance-position: 56.9067%"));
@@ -3676,9 +3678,13 @@ mod tests {
         assert!(css.contains(".sidebar-section:has(> .encumbrance-inventory-rail)"));
         assert!(css.contains(".encumbrance-inventory-scroll"));
         assert!(css.contains("overflow-y: auto"));
-        assert!(css.contains("padding-left: 1.75rem"));
+        assert!(css.contains("padding-left: 3.25rem"));
         assert!(css.contains("padding-right: 1.75rem"));
         assert!(css.contains("grid-template-columns: auto minmax(2.5rem, 1fr) auto"));
+        assert!(css.contains("container-type: inline-size"));
+        assert!(css.contains("@container (max-width: 18rem)"));
+        assert!(css.contains("@container (max-width: 11rem)"));
+        assert!(css.contains("grid-template-columns: auto minmax(0.75rem, 1fr) auto"));
     }
 
     #[test]

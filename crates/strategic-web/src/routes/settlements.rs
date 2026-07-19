@@ -3677,16 +3677,22 @@ impl EncumbranceRows {
         let unique_ids: std::collections::BTreeSet<u64> = character_ids.iter().copied().collect();
         let lookups = stream::iter(unique_ids)
             .map(|character_id| async move {
-                tokio::join!(
-                    query_single::<CharacterAttributes>(
-                        state,
-                        "character_attributes",
-                        character_id,
-                    ),
-                    query_single::<CharacterLimbs>(state, "character_limbs", character_id),
-                    query_single::<CharacterCondition>(state, "character_condition", character_id,),
-                    query_single::<CharacterNeeds>(state, "character_needs", character_id),
+                // Keep each member's four lookups sequential so the outer
+                // buffer is a bound on actual in-flight database calls.
+                let attributes = query_single::<CharacterAttributes>(
+                    state,
+                    "character_attributes",
+                    character_id,
                 )
+                .await;
+                let limbs =
+                    query_single::<CharacterLimbs>(state, "character_limbs", character_id).await;
+                let condition =
+                    query_single::<CharacterCondition>(state, "character_condition", character_id)
+                        .await;
+                let needs =
+                    query_single::<CharacterNeeds>(state, "character_needs", character_id).await;
+                (attributes, limbs, condition, needs)
             })
             .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
             .collect::<Vec<_>>()

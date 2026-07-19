@@ -360,6 +360,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  container-type: inline-size;
 }
 
 .encumbrance-inventory-scroll {
@@ -377,8 +378,8 @@
 }
 
 .right-sidebar .encumbrance-inventory-scroll {
-  margin-left: -1.75rem;
-  padding-left: 1.75rem;
+  margin-left: -3.25rem;
+  padding-left: 3.25rem;
 }
 
 .encumbrance {
@@ -398,6 +399,24 @@
 .encumbrance-weight,
 .encumbrance-penalty {
   white-space: nowrap;
+}
+
+@container (max-width: 18rem) {
+  .encumbrance {
+    grid-template-columns: auto minmax(1.25rem, 1fr) auto;
+    gap: 0.25rem;
+    padding-inline: 0.35rem;
+    font-size: 0.68rem;
+  }
+}
+
+@container (max-width: 11rem) {
+  .encumbrance {
+    grid-template-columns: auto minmax(0.75rem, 1fr) auto;
+    gap: 0.12rem;
+    padding-inline: 0.2rem;
+    font-size: 0.58rem;
+  }
 }
 
 .encumbrance-meter {
