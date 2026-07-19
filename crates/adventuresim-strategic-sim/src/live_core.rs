@@ -474,6 +474,15 @@ impl LiveRunner {
             .ok_or_else(|| "party missing from coherent subscription".into())
     }
 
+    fn party_by_id(&self, party_id: &str) -> Result<Party, String> {
+        self.connection
+            .db
+            .party()
+            .iter()
+            .find(|row| row.id == party_id)
+            .ok_or_else(|| "party missing from coherent subscription".into())
+    }
+
     fn current_leader(&self, party_id: &str) -> Option<(u64, u32)> {
         let party = self
             .connection
@@ -524,31 +533,40 @@ impl LiveRunner {
         }
     }
 
-    fn travel_camps(&mut self, leader: u64, agent: u32) -> Result<(), String> {
+    fn travel_camps(&mut self, party_id: &str) -> Result<(), String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
-            let party = self.party_for(leader)?;
+            let party = self.party_by_id(party_id)?;
             if party.camp_destination_id.is_none() {
                 self.metrics.travel_legs += 1;
                 return Ok(());
             }
             let remaining_before = party.camp_remaining_minutes;
+            let Some((leader, _)) = self.current_leader(party_id) else {
+                self.observe_deaths();
+                return Ok(());
+            };
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
                 .rest_at_camp_then(leader, 1_440, cb));
             self.call(result)?;
+            self.observe_deaths();
+            let Some((leader, agent)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
             let result = reducer_call!(self, "continue_camp_travel", |cb| self
                 .connection
                 .reducers
                 .continue_camp_travel_then(leader, cb));
             self.call(result)?;
+            self.observe_deaths();
             self.metrics.camp_stops += 1;
             self.event(
                 agent,
                 CoreLoopEventKind::Camp,
                 format!("remaining_before={remaining_before}"),
             );
-            let after = self.party_for(leader)?;
+            let after = self.party_by_id(party_id)?;
             if after.camp_destination_id.is_some()
                 && after.camp_remaining_minutes >= remaining_before
             {
@@ -1346,7 +1364,7 @@ impl LiveRunner {
             CoreLoopEventKind::Travel,
             format!("outbound={}", quest.id),
         );
-        self.travel_camps(leader, leader_agent)?;
+        self.travel_camps(party_id)?;
 
         // Travel advances every member's disease clock. Re-observe public
         // life/condition state before attempting a living-only combat reducer.
@@ -1382,17 +1400,16 @@ impl LiveRunner {
                 );
             }
             self.observe_deaths();
-            let Some((current, current_agent)) = self.current_leader(party_id) else {
+            let Some((current, _)) = self.current_leader(party_id) else {
                 return Ok(());
             };
             leader = current;
-            leader_agent = current_agent;
             let result = reducer_call!(self, "illness_retreat_to_settlement", |cb| self
                 .connection
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
             self.call(result)?;
-            self.travel_camps(leader, leader_agent)?;
+            self.travel_camps(party_id)?;
             for agent in party_agents {
                 self.ensure_medically_safe(agent)?;
             }
@@ -1461,22 +1478,25 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
             self.call(result)?;
-            self.travel_camps(leader, leader_agent)?;
+            self.travel_camps(party_id)?;
             self.observe_deaths();
-            for agent in self.party_agents(leader)? {
-                self.ensure_medically_safe(agent)?;
-            }
-            let Some((current, current_agent)) = self.current_leader(party_id) else {
+            let Some((current, _)) = self.current_leader(party_id) else {
                 return Ok(());
             };
             leader = current;
-            leader_agent = current_agent;
+            for agent in self.party_agents(leader)? {
+                self.ensure_medically_safe(agent)?;
+            }
+            let Some((current, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
             let result = reducer_call!(self, "retry_travel_to_quest", |cb| self
                 .connection
                 .reducers
                 .travel_to_quest_then(leader, quest.id.clone(), true, cb));
             self.call(result)?;
-            self.travel_camps(leader, leader_agent)?;
+            self.travel_camps(party_id)?;
             self.observe_deaths();
             let Some((current, current_agent)) = self.current_leader(party_id) else {
                 return Ok(());
@@ -1490,8 +1510,12 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
             self.call(result)?;
-            self.travel_camps(leader, leader_agent)?;
+            self.travel_camps(party_id)?;
             self.observe_deaths();
+            let Some((current, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
             for agent in self.party_agents(leader)? {
                 self.ensure_medically_safe(agent)?;
             }
@@ -1561,7 +1585,7 @@ impl LiveRunner {
             CoreLoopEventKind::Travel,
             format!("return={}", quest.settlement_id),
         );
-        self.travel_camps(leader, leader_agent)?;
+        self.travel_camps(party_id)?;
         self.observe_deaths();
         let Some((current, current_agent)) = self.current_leader(party_id) else {
             return Ok(());
