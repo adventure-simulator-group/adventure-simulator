@@ -646,8 +646,11 @@
 }
 .smith-wares-scroll {
   --inventory-merchant-action-overhang: calc(1.35rem + var(--building-frame-corner-size, 0rem) + .3rem);
+  --inventory-merchant-scrollbar-reserve: 8px;
   min-height: 0;
+  margin-left: calc(-1 * var(--inventory-merchant-scrollbar-reserve));
   margin-right: calc(-1 * var(--inventory-merchant-action-overhang));
+  padding-left: var(--inventory-merchant-scrollbar-reserve);
   padding-right: var(--inventory-merchant-action-overhang);
   direction: rtl;
   overflow-x: clip;

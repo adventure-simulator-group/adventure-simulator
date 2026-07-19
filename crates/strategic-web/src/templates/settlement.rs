@@ -4863,6 +4863,8 @@ mod tests {
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
         assert!(css.contains("--inventory-merchant-action-overhang"));
+        assert!(css.contains("--inventory-merchant-scrollbar-reserve: 8px;"));
+        assert!(css.contains("padding-left: var(--inventory-merchant-scrollbar-reserve);"));
         assert!(css.contains("padding-right: var(--inventory-merchant-action-overhang);"));
         assert!(css.contains("direction: rtl;"));
         assert!(css.contains(".smith-wares-scroll > * { direction: ltr; }"));
@@ -4876,6 +4878,7 @@ mod tests {
         assert!(css.contains("padding-right: var(--repair-custody-action-overhang);"));
         assert!(css.contains("scrollbar-gutter: stable;"));
         assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
+        assert!(utilities.contains("--inventory-action-bridge:.3rem"));
         assert!(!utilities.contains(".smith-wares-scroll .inventory-row-actions"));
         assert!(utilities.contains(".inventory-actions-cell"));
         assert!(

@@ -70,7 +70,7 @@
 .inventory-actions-header { width:0; min-width:0; padding:0 !important; }
 .inventory-actions-cell { position:static; overflow:visible; }
 .inventory-actions-header { position:relative; overflow:visible; }
-.inventory-row-actions { --inventory-action-bridge:calc(var(--building-frame-corner-size, 0rem) + .3rem); position:absolute; z-index:40; top:0; bottom:0; box-sizing:border-box; display:grid; align-items:center; grid-template-columns:1.35rem; gap:2px; width:calc(1.35rem + var(--inventory-action-bridge)); border-bottom:1px solid var(--border-light); background:var(--inventory-row-background, var(--building-interactive-hover)); opacity:0; transition:opacity .12s; }
+.inventory-row-actions { --inventory-action-bridge:.3rem; position:absolute; z-index:40; top:0; bottom:0; box-sizing:border-box; display:grid; align-items:center; grid-template-columns:1.35rem; gap:2px; width:calc(1.35rem + var(--inventory-action-bridge)); border-bottom:1px solid var(--border-light); background:var(--inventory-row-background, var(--building-interactive-hover)); opacity:0; transition:opacity .12s; }
 .left-sidebar .inventory-actions-cell > .inventory-row-actions { left:100%; padding-left:var(--inventory-action-bridge); }
 .right-sidebar .inventory-actions-cell > .inventory-row-actions { right:100%; padding-right:var(--inventory-action-bridge); }
 .inventory-row-actions.smith-player-actions { grid-template-columns:repeat(2,1.35rem); width:calc(2.85rem + var(--inventory-action-bridge)); }
