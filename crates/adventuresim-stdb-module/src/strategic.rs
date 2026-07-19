@@ -890,6 +890,7 @@ pub fn import_settlements(
         }
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
         crate::repair::ensure_settlement_smith(ctx, &settlement_id);
+        crate::disease::ensure_settlement_herbalist(ctx, &settlement_id);
     }
     Ok(())
 }
@@ -5727,6 +5728,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
     for settlement_id in settlement_ids {
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
         crate::repair::ensure_settlement_smith(ctx, &settlement_id);
+        crate::disease::ensure_settlement_herbalist(ctx, &settlement_id);
     }
 
     Ok(())

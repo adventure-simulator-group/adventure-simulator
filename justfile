@@ -445,7 +445,7 @@ check:
     @cargo check --workspace
 
 test-chat:
-    @node --test crates/strategic-web/tests/local-chat.test.cjs
+    @node --test crates/strategic-web/tests/local-chat.test.cjs crates/strategic-web/tests/service-quests.test.cjs
 
 test-schedule:
     @node --test crates/strategic-web/tests/training-schedule.test.cjs

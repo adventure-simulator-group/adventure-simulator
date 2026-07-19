@@ -46,8 +46,15 @@ the 15-minute examination directly; the character details rail does not repeat
 the action. The same character sees an alchemy action beneath their own portrait.
 Alchemy lists all recipes at or below their Medicine rank regardless of current
 diagnoses, and its ingredient rail switches between personal and party inventory
-while retaining the normal quantity-target controls. Herbalists sell the recipe
-ingredients; foraging is intentionally deferred.
+while retaining the normal quantity-target controls. Herbalists greet visitors
+through the same dialogue stream used by service quests, offer a clickable
+**Feeling ill** examination, and sell both recipe ingredients and all eight
+prepared medication courses. Their persistent Medicine skill is deterministically
+2–4, never 5. The examination charges personal gold and advances only the
+patient by 15 minutes; a successful reply names only the illness and recommended
+course. Prepared medication is purchased into personal rather than party
+inventory so every course remains an individual equippable item. Foraging is
+intentionally deferred.
 
 Every settlement currently has one church with a fixed faith. Its priest offers conversion only to that faith through the dialogue system; changing the settlement's stored religion changes the priest's topic, profession, and the faith-specific church icon in the settlement navigation. Multiple churches in one large city are deferred until the settlement service model supports distinct church instances.
 

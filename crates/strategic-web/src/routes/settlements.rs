@@ -31,11 +31,11 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
-    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
-    ItemSlot, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyMember,
-    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
-    ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, TravelEdge,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemSlot, MedicalExaminationRow, Party, PartyInventoryItem,
+    PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
+    RecruitmentRequirements, ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, alchemy_page,
@@ -68,6 +68,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/settlements/{id}/religion",
             get(religion_dialogue).post(set_religion),
+        )
+        .route(
+            "/api/settlements/{id}/herbalist/examination",
+            post(herbalist_examination),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
@@ -165,6 +169,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/settlements/{id}/clothing", get(clothing))
         .route("/settlements/{id}/herbalist", get(herbalist))
+        .route(
+            "/settlements/{id}/herbalist/purchase",
+            post(purchase_from_herbalist),
+        )
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
@@ -2861,6 +2869,126 @@ async fn herbalist(
     merchant_shop(state, id, session, MerchantShop::Herbalist).await
 }
 
+async fn purchase_from_herbalist(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<MerchantOfferForm>,
+) -> Redirect {
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Redirect::to("/characters");
+    };
+    // Prepared courses are individual equipment-like items, so this storefront
+    // intentionally has no party-scope purchase path.
+    if form.inventory_scope == "player"
+        && let Ok(buys) = form.buys()
+        && !buys.is_empty()
+    {
+        let (items, quantities): (Vec<_>, Vec<_>) = buys
+            .into_iter()
+            .map(|entry| (entry.id, entry.quantity))
+            .unzip();
+        if let Err(error) = state
+            .db
+            .call(
+                "purchase_from_herbalist",
+                &[
+                    json!(character.id),
+                    json!(id),
+                    json!(items),
+                    json!(quantities),
+                ],
+            )
+            .await
+        {
+            tracing::warn!(%error, character_id = character.id, "herbalist purchase rejected");
+        }
+    }
+    Redirect::to(&format!("/settlements/{id}/herbalist"))
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct HerbalistDiagnosisDto {
+    disease_name: String,
+    medication_name: String,
+}
+
+#[derive(Serialize)]
+struct HerbalistExaminationResponse {
+    diagnoses: Vec<HerbalistDiagnosisDto>,
+    message: &'static str,
+}
+
+fn herbalist_diagnosis_dtos(row: &HerbalistExaminationRow) -> Vec<HerbalistDiagnosisDto> {
+    row.disease_names
+        .iter()
+        .zip(&row.medication_names)
+        .map(|(disease_name, medication_name)| HerbalistDiagnosisDto {
+            disease_name: disease_name.clone(),
+            medication_name: medication_name.clone(),
+        })
+        .collect()
+}
+
+async fn herbalist_examination(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Json<HerbalistExaminationResponse> {
+    const UNABLE: &str = "I am sorry, but I cannot name your illness with confidence. Seek a more skilled physician.";
+    let Some((patient, _)) = get_active_character(&state, session.character_id_u64()).await else {
+        return Json(HerbalistExaminationResponse {
+            diagnoses: Vec::new(),
+            message: "Choose a character before asking for an examination.",
+        });
+    };
+    if let Err(error) = state
+        .db
+        .call("examine_by_herbalist", &[json!(patient.id), json!(id)])
+        .await
+    {
+        tracing::warn!(%error, patient_id = patient.id, "herbalist examination rejected");
+        return Json(HerbalistExaminationResponse {
+            diagnoses: Vec::new(),
+            message: "I cannot examine you until my fee can be paid and you stand before me.",
+        });
+    }
+
+    let result = state
+        .db
+        .query::<HerbalistExaminationRow>(&format!(
+            "SELECT * FROM backend_herbalist_examinations WHERE patient_id = {}",
+            patient.id
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.settlement_id == id)
+        .max_by_key(|row| row.id);
+    let Some(result) = result else {
+        return Json(HerbalistExaminationResponse {
+            diagnoses: Vec::new(),
+            message: UNABLE,
+        });
+    };
+    let diagnoses = herbalist_diagnosis_dtos(&result);
+    if let Err(error) = state
+        .db
+        .call(
+            "dismiss_herbalist_examination",
+            &[json!(patient.id), json!(result.id)],
+        )
+        .await
+    {
+        tracing::warn!(%error, patient_id = patient.id, "name-only herbalist result was not dismissed");
+    }
+    Json(HerbalistExaminationResponse {
+        message: if diagnoses.is_empty() { UNABLE } else { "" },
+        diagnoses,
+    })
+}
+
 async fn religion(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -3369,4 +3497,49 @@ pub(crate) async fn get_active_party_members(
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
+}
+
+#[cfg(test)]
+mod herbalist_tests {
+    use super::{HerbalistDiagnosisDto, herbalist_diagnosis_dtos};
+    use crate::spacetimedb::HerbalistExaminationRow;
+
+    #[test]
+    fn npc_examination_dto_contains_only_canonical_name_pairs() {
+        let row = HerbalistExaminationRow {
+            id: 1,
+            patient_id: 7,
+            settlement_id: "riverdale".into(),
+            disease_names: vec!["Catarrhal fever".into(), "Bloody flux".into()],
+            medication_names: vec![
+                "Catarrhal fever cordial".into(),
+                "Bloody flux electuary".into(),
+            ],
+        };
+        assert_eq!(
+            herbalist_diagnosis_dtos(&row),
+            vec![
+                HerbalistDiagnosisDto {
+                    disease_name: "Catarrhal fever".into(),
+                    medication_name: "Catarrhal fever cordial".into(),
+                },
+                HerbalistDiagnosisDto {
+                    disease_name: "Bloody flux".into(),
+                    medication_name: "Bloody flux electuary".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_parallel_result_fails_closed_without_inventing_details() {
+        let row = HerbalistExaminationRow {
+            id: 2,
+            patient_id: 7,
+            settlement_id: "riverdale".into(),
+            disease_names: vec!["Catarrhal fever".into(), "unpaired".into()],
+            medication_names: vec!["Catarrhal fever cordial".into()],
+        };
+        assert_eq!(herbalist_diagnosis_dtos(&row).len(), 1);
+    }
 }

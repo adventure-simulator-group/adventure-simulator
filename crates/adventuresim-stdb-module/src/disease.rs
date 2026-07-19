@@ -9,8 +9,8 @@ use crate::character::character as _;
 use crate::{
     character_attributes, character_capability, character_condition, character_skills,
     character_time,
-    item::inventory_item,
-    strategic::{party, party_inventory_item},
+    item::{inventory_item, item},
+    strategic::{party, party_inventory_item, settlement},
 };
 
 /// The complete per-character disease state. This table is deliberately
@@ -98,6 +98,33 @@ pub struct MedicalExamination {
     pub confirmed_stages: Vec<String>,
 }
 
+/// Persistent settlement service parameters. This is private because the
+/// browser needs the herbalist's offer and result, not their hidden skill roll.
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_herbalist)]
+pub struct SettlementHerbalist {
+    #[primary_key]
+    pub settlement_id: String,
+    pub medicine_skill: u8,
+}
+
+/// Narrow, one-shot NPC result. Unlike a player-doctor examination it never
+/// contains symptoms, vitals, stages, infection IDs, or a differential.
+#[derive(Clone, Debug)]
+#[table(
+    accessor = herbalist_examination,
+    index(accessor = patient_id, btree(columns = [patient_id]))
+)]
+pub struct HerbalistExamination {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub patient_id: u64,
+    pub settlement_id: String,
+    pub disease_names: Vec<String>,
+    pub medication_names: Vec<String>,
+}
+
 /// Medication courses currently being taken. This is deliberately a separate,
 /// unbounded equipment list rather than one of the character's physical slots.
 #[derive(Clone, Debug)]
@@ -140,6 +167,43 @@ pub fn backend_medical_examinations(ctx: &ViewContext) -> Vec<MedicalExamination
         .doctor_id()
         .filter(0u64..)
         .collect()
+}
+
+/// Server-network-only SSR boundary for the one-shot name-only NPC result.
+#[view(accessor = backend_herbalist_examinations, public)]
+pub fn backend_herbalist_examinations(ctx: &ViewContext) -> Vec<HerbalistExamination> {
+    ctx.db
+        .herbalist_examination()
+        .patient_id()
+        .filter(0u64..)
+        .collect()
+}
+
+pub(crate) fn ensure_settlement_herbalist(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> SettlementHerbalist {
+    if let Some(row) = ctx
+        .db
+        .settlement_herbalist()
+        .settlement_id()
+        .find(settlement_id.to_owned())
+    {
+        return row;
+    }
+    ctx.db.settlement_herbalist().insert(SettlementHerbalist {
+        settlement_id: settlement_id.to_owned(),
+        medicine_skill: adventuresim_core::strategic_economy::settlement_herbalist_medicine_skill(
+            settlement_id,
+        ),
+    })
+}
+
+#[reducer]
+pub fn backfill_settlement_herbalists(ctx: &ReducerContext) {
+    for settlement in ctx.db.settlement().iter().collect::<Vec<_>>() {
+        ensure_settlement_herbalist(ctx, &settlement.id);
+    }
 }
 
 fn notice(
@@ -1039,6 +1103,157 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 const EXAMINATION_MINUTES: u64 = 15;
+
+#[reducer]
+pub fn examine_by_herbalist(
+    ctx: &ReducerContext,
+    patient_id: u64,
+    settlement_id: String,
+) -> Result<(), String> {
+    let patient = crate::require_living_character(ctx, patient_id)?;
+    if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
+        return Err("Patient must be at this herbalist's settlement".into());
+    }
+    let herbalist = ensure_settlement_herbalist(ctx, &settlement_id);
+    crate::strategic::consume_personal_gold(
+        ctx,
+        patient_id,
+        u64::from(adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE),
+    )?;
+
+    for prior in ctx
+        .db
+        .herbalist_examination()
+        .patient_id()
+        .filter(patient_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.herbalist_examination().id().delete(prior.id);
+    }
+
+    if !crate::time::advance_character_time(ctx, patient_id, EXAMINATION_MINUTES)? {
+        ctx.db.herbalist_examination().insert(HerbalistExamination {
+            id: 0,
+            patient_id,
+            settlement_id,
+            disease_names: Vec::new(),
+            medication_names: Vec::new(),
+        });
+        return Ok(());
+    }
+
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(patient_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(patient_id)
+        .ok_or("Patient attributes not found")?
+        .immunity;
+    let mut disease_names = Vec::new();
+    let mut medication_names = Vec::new();
+    for infection in character_episodes(ctx, patient_id)? {
+        let state = disease::evaluate(infection, now, immunity);
+        if matches!(
+            state.stage,
+            disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
+        ) || f32::from(herbalist.medicine_skill) < state.diagnosis_dc
+        {
+            continue;
+        }
+        let (disease_name, medication_name) = disease::herbalist_diagnosis(infection.disease_id);
+        if !disease_names.iter().any(|name| name == disease_name) {
+            disease_names.push(disease_name.to_owned());
+            medication_names.push(medication_name.to_owned());
+        }
+    }
+    ctx.db.herbalist_examination().insert(HerbalistExamination {
+        id: 0,
+        patient_id,
+        settlement_id,
+        disease_names,
+        medication_names,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn dismiss_herbalist_examination(
+    ctx: &ReducerContext,
+    patient_id: u64,
+    examination_id: u64,
+) -> Result<(), String> {
+    let result = ctx
+        .db
+        .herbalist_examination()
+        .id()
+        .find(examination_id)
+        .ok_or("Herbalist examination result is no longer available")?;
+    if result.patient_id != patient_id {
+        return Err("This herbalist examination belongs to another patient".into());
+    }
+    ctx.db.herbalist_examination().id().delete(examination_id);
+    Ok(())
+}
+
+/// A typed herbalist-only purchasing path. Medication remains forbidden to
+/// generic merchants, and every course is inserted as an individual personal
+/// inventory row so it can be equipped independently.
+#[reducer]
+pub fn purchase_from_herbalist(
+    ctx: &ReducerContext,
+    patient_id: u64,
+    settlement_id: String,
+    item_ids: Vec<String>,
+    quantities: Vec<u32>,
+) -> Result<(), String> {
+    let patient = crate::require_living_character(ctx, patient_id)?;
+    if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
+        return Err("Patient must be at this herbalist's settlement".into());
+    }
+    if item_ids.len() != quantities.len() || item_ids.is_empty() {
+        return Err("Herbalist purchase entries must be aligned".into());
+    }
+    ensure_settlement_herbalist(ctx, &settlement_id);
+
+    let mut cost = 0u64;
+    for (item_id, quantity) in item_ids.iter().zip(&quantities) {
+        if *quantity == 0 {
+            return Err("Herbalist purchase quantities must be positive".into());
+        }
+        let definition = ctx
+            .db
+            .item()
+            .id()
+            .find(item_id)
+            .ok_or("Herbalist item not found")?;
+        let unit_price = match definition.kind {
+            crate::ItemKind::Ingredient => {
+                adventuresim_core::strategic_economy::merchant_buy_price(
+                    definition.base_value.unwrap_or(1),
+                )
+            }
+            crate::ItemKind::Medication => {
+                let recipe = disease::medication_recipe_for_item(item_id)
+                    .ok_or("Unknown prepared medication")?;
+                adventuresim_core::strategic_economy::herbalist_medication_price(recipe)
+            }
+            _ => return Err("The herbalist sells only ingredients and prepared medication".into()),
+        };
+        cost = cost.saturating_add(u64::from(unit_price) * u64::from(*quantity));
+    }
+    crate::strategic::consume_personal_gold(ctx, patient_id, cost)?;
+    for (item_id, quantity) in item_ids.iter().zip(&quantities) {
+        crate::add_inventory_item(ctx, patient_id, item_id, *quantity);
+    }
+    Ok(())
+}
 
 fn advance_medical_participants(
     ctx: &ReducerContext,

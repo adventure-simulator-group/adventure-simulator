@@ -18,11 +18,13 @@ pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backend_committed_cuts_table;
+pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
 pub mod backend_medical_examinations_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
+pub mod backfill_settlement_herbalists_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
 pub mod battle_loot_item_type;
@@ -116,6 +118,7 @@ pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod disease_notice_type;
+pub mod dismiss_herbalist_examination_reducer;
 pub mod dismiss_medical_examination_reducer;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
@@ -134,6 +137,7 @@ pub mod equip_item_reducer;
 pub mod equip_medication_reducer;
 pub mod equipped_medication_table;
 pub mod equipped_medication_type;
+pub mod examine_by_herbalist_reducer;
 pub mod examine_patient_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
@@ -157,6 +161,7 @@ pub mod geologic_lithology_evidence_type;
 pub mod geologic_setting_type;
 pub mod geologic_unit_id_type;
 pub mod habitat_suitability_type;
+pub mod herbalist_examination_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
@@ -246,6 +251,7 @@ pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod production_scale_type;
+pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
 pub mod quest_issuer_table;
@@ -320,6 +326,7 @@ pub mod settlement_description_batch_row_type;
 pub mod settlement_description_kind_type;
 pub mod settlement_description_table;
 pub mod settlement_description_type;
+pub mod settlement_herbalist_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_outbreak_table;
@@ -402,11 +409,13 @@ pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backend_committed_cuts_table::*;
+pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
 pub use backend_medical_examinations_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
+pub use backfill_settlement_herbalists_reducer::backfill_settlement_herbalists;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
 pub use battle_loot_item_type::BattleLootItem;
@@ -500,6 +509,7 @@ pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use disease_notice_type::DiseaseNotice;
+pub use dismiss_herbalist_examination_reducer::dismiss_herbalist_examination;
 pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
@@ -518,6 +528,7 @@ pub use equip_item_reducer::equip_item;
 pub use equip_medication_reducer::equip_medication;
 pub use equipped_medication_table::*;
 pub use equipped_medication_type::EquippedMedication;
+pub use examine_by_herbalist_reducer::examine_by_herbalist;
 pub use examine_patient_reducer::examine_patient;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
@@ -541,6 +552,7 @@ pub use geologic_lithology_evidence_type::GeologicLithologyEvidence;
 pub use geologic_setting_type::GeologicSetting;
 pub use geologic_unit_id_type::GeologicUnitId;
 pub use habitat_suitability_type::HabitatSuitability;
+pub use herbalist_examination_type::HerbalistExamination;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
@@ -630,6 +642,7 @@ pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use production_scale_type::ProductionScale;
+pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
 pub use quest_issuer_table::*;
@@ -704,6 +717,7 @@ pub use settlement_description_batch_row_type::SettlementDescriptionBatchRow;
 pub use settlement_description_kind_type::SettlementDescriptionKind;
 pub use settlement_description_table::*;
 pub use settlement_description_type::SettlementDescription;
+pub use settlement_herbalist_type::SettlementHerbalist;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_outbreak_table::*;
@@ -806,6 +820,7 @@ pub enum Reducer {
     BackfillCharacterDeathsAndLeadership,
     BackfillEquipmentConditionAndSmiths,
     BackfillItemValues,
+    BackfillSettlementHerbalists,
     BackfillSoloParties,
     BeginWorldDataImport {
         schema_version: u32,
@@ -938,6 +953,10 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    DismissHerbalistExamination {
+        patient_id: u64,
+        examination_id: u64,
+    },
     DismissMedicalExamination {
         doctor_id: u64,
         target_id: u64,
@@ -971,6 +990,10 @@ pub enum Reducer {
     EquipMedication {
         character_id: u64,
         inventory_item_id: u64,
+    },
+    ExamineByHerbalist {
+        patient_id: u64,
+        settlement_id: String,
     },
     ExaminePatient {
         doctor_id: u64,
@@ -1028,6 +1051,12 @@ pub enum Reducer {
         character_id: u64,
         settlement_id: String,
         party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    },
+    PurchaseFromHerbalist {
+        patient_id: u64,
+        settlement_id: String,
+        item_ids: Vec<String>,
         quantities: Vec<u32>,
     },
     RecordLocalNpcMessage {
@@ -1241,6 +1270,7 @@ impl __sdk::Reducer for Reducer {
                 "backfill_equipment_condition_and_smiths"
             }
             Reducer::BackfillItemValues => "backfill_item_values",
+            Reducer::BackfillSettlementHerbalists => "backfill_settlement_herbalists",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
@@ -1268,6 +1298,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
+            Reducer::DismissHerbalistExamination { .. } => "dismiss_herbalist_examination",
             Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
@@ -1276,6 +1307,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipMedication { .. } => "equip_medication",
+            Reducer::ExamineByHerbalist { .. } => "examine_by_herbalist",
             Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
@@ -1290,6 +1322,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RecordLocalNpcMessage { .. } => "record_local_npc_message",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
@@ -1381,6 +1414,8 @@ impl __sdk::Reducer for Reducer {
 Reducer::BackfillEquipmentConditionAndSmiths => __sats::bsatn::to_vec(&backfill_equipment_condition_and_smiths_reducer::BackfillEquipmentConditionAndSmithsArgs {
                 }),
 Reducer::BackfillItemValues => __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {
+                }),
+Reducer::BackfillSettlementHerbalists => __sats::bsatn::to_vec(&backfill_settlement_herbalists_reducer::BackfillSettlementHerbalistsArgs {
                 }),
 Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
                 }),
@@ -1621,6 +1656,13 @@ Reducer::CancelMissionRequest{
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::DismissHerbalistExamination{
+                patient_id,
+                examination_id,
+}             => __sats::bsatn::to_vec(&dismiss_herbalist_examination_reducer::DismissHerbalistExaminationArgs {
+                patient_id: patient_id.clone(),
+                examination_id: examination_id.clone(),
+}),
             Reducer::DismissMedicalExamination{
                 doctor_id,
                 target_id,
@@ -1680,6 +1722,13 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&equip_medication_reducer::EquipMedicationArgs {
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::ExamineByHerbalist{
+                patient_id,
+                settlement_id,
+}             => __sats::bsatn::to_vec(&examine_by_herbalist_reducer::ExamineByHerbalistArgs {
+                patient_id: patient_id.clone(),
+                settlement_id: settlement_id.clone(),
 }),
             Reducer::ExaminePatient{
                 doctor_id,
@@ -1781,6 +1830,17 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
+                quantities: quantities.clone(),
+}),
+            Reducer::PurchaseFromHerbalist{
+                patient_id,
+                settlement_id,
+                item_ids,
+                quantities,
+}             => __sats::bsatn::to_vec(&purchase_from_herbalist_reducer::PurchaseFromHerbalistArgs {
+                patient_id: patient_id.clone(),
+                settlement_id: settlement_id.clone(),
+                item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
 }),
             Reducer::RecordLocalNpcMessage{
@@ -2134,6 +2194,7 @@ Reducer::SendLocalChatMessage{
 pub struct DbUpdate {
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
+    backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
@@ -2207,6 +2268,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
                 ),
+                "backend_herbalist_examinations" => {
+                    db_update.backend_herbalist_examinations.append(
+                        backend_herbalist_examinations_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_infection_episodes" => db_update.backend_infection_episodes.append(
                     backend_infection_episodes_table::parse_table_update(table_update)?,
                 ),
@@ -2654,6 +2720,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_committed_cuts",
             &self.backend_committed_cuts,
         );
+        diff.backend_herbalist_examinations = cache.apply_diff_to_table::<HerbalistExamination>(
+            "backend_herbalist_examinations",
+            &self.backend_herbalist_examinations,
+        );
         diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>(
             "backend_infection_episodes",
             &self.backend_infection_episodes,
@@ -2676,6 +2746,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_herbalist_examinations" => db_update
+                    .backend_herbalist_examinations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
@@ -2873,6 +2946,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_herbalist_examinations" => db_update
+                    .backend_herbalist_examinations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3067,6 +3143,7 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
+    backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
@@ -3147,6 +3224,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<HerbalistExamination>(
+            "backend_herbalist_examinations",
+            &self.backend_herbalist_examinations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
@@ -4070,6 +4152,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         autoresolve_report_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
+        backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
@@ -4133,6 +4216,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "autoresolve_report",
         "backend_committed_cuts",
+        "backend_herbalist_examinations",
         "backend_infection_episodes",
         "backend_medical_examinations",
         "battle_loot_item",

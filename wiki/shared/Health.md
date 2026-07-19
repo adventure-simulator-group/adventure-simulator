@@ -31,6 +31,16 @@ difficulty confirms the disease. Repeating an unchanged
 examination does not reroll the deterministic findings or check. Party-aggregate
 Medicine does not grant medical knowledge.
 
+At any settlement, the herbalist's **Feeling ill** dialogue option provides an
+NPC examination for a positive gold fee. Only the patient's personal clock
+advances by 15 minutes. Each herbalist has a stable Medicine rank from 2 through
+4 and therefore may fail to identify difficult illnesses. On success they say
+only the canonical disease name and recommended prepared medicine name; they do
+not disclose symptoms, findings, vitals, humour channels, differential, stage,
+contagion, infection identity, or their skill. Multiple confirmed active
+diseases produce deduplicated disease/medicine pairs. Player-doctor examinations
+remain free, time-only, and use their richer private one-shot presentation.
+
 Body-region health is always perceptible, but its cause is not. A lay view uses
 only white for sound tissue, red for visible cut damage, light purple for blunt
 damage, and green for every other impairment. After a Medicine 2 character
@@ -48,8 +58,11 @@ character has an alchemy panel listing every preparation at or below their own
 Medicine rank; recipe access is intentionally independent of diagnosis and each
 recipe has its own treatment DC. Preparation consumes its explicit ingredients
 from either personal or shared inventory and advances only the apothecary's
-personal time. Herbalists sell ingredients, while future foraging will provide
-another source.
+personal time. Herbalists sell ingredients and all eight pre-prepared courses,
+including Medicine 5 preparations that exceed their current personal skill
+because unlimited stock represents earlier or supplied inventory. Prepared
+courses cost strictly more than buying their ingredients for player crafting.
+Future foraging will provide another ingredient source.
 
 Medication is a normal transferable inventory item until the patient equips it.
 Medication uses an unbounded equipment list rather than body slots. Equipping
