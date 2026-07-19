@@ -70,16 +70,19 @@
 .inventory-actions-header { width:0; min-width:0; padding:0 !important; }
 .inventory-actions-cell { position:static; overflow:visible; }
 .inventory-actions-header { position:relative; overflow:visible; }
-.inventory-row-actions { --inventory-action-bridge:calc(var(--building-frame-corner-size, 0rem) + .3rem); position:absolute; z-index:40; top:50%; box-sizing:border-box; display:grid; align-items:center; grid-template-columns:1.35rem; gap:2px; width:calc(1.35rem + var(--inventory-action-bridge)); height:2.45rem; border-bottom:1px solid var(--border-light); background:var(--inventory-row-background, var(--building-interactive-hover)); opacity:0; transform:translateY(-50%); transition:opacity .12s; }
+.inventory-row-actions { --inventory-action-bridge:calc(var(--building-frame-corner-size, 0rem) + .3rem); position:absolute; z-index:40; top:0; bottom:0; box-sizing:border-box; display:grid; align-items:center; grid-template-columns:1.35rem; gap:2px; width:calc(1.35rem + var(--inventory-action-bridge)); border-bottom:1px solid var(--border-light); background:var(--inventory-row-background, var(--building-interactive-hover)); opacity:0; transition:opacity .12s; }
 .left-sidebar .inventory-actions-cell > .inventory-row-actions { left:100%; padding-left:var(--inventory-action-bridge); }
 .right-sidebar .inventory-actions-cell > .inventory-row-actions { right:100%; padding-right:var(--inventory-action-bridge); }
 .inventory-row-actions.smith-player-actions { grid-template-columns:repeat(2,1.35rem); width:calc(2.85rem + var(--inventory-action-bridge)); }
+.trade-inventory-row:not(:last-child) .inventory-row-actions { bottom:-1px; }
 .trade-inventory-row:last-child .inventory-row-actions { border-bottom:0; }
 .smith-player-actions .row-repair-form { position:static; order:0; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
 .trade-inventory-row:hover .inventory-row-actions, .trade-inventory-row:focus-within .inventory-row-actions, .inventory-row-actions:focus-within { opacity:1; }
 .inventory-row-actions .trade-transfer { position:static; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
+.inventory-row-actions button:not(:disabled) { color:var(--text-primary); }
+.inventory-row-actions .trade-transfer:disabled { color:var(--text-muted); opacity:.42; }
 .inventory-row-actions .trade-transfer::before, .inventory-footer-transfer::before { display:none; }
-.trade-inventory-row:hover .inventory-row-actions .trade-transfer, .trade-inventory-row:focus-within .inventory-row-actions .trade-transfer { opacity:1; transform:none; }
+.trade-inventory-row:hover .inventory-row-actions .trade-transfer:not(:disabled), .trade-inventory-row:focus-within .inventory-row-actions .trade-transfer:not(:disabled) { opacity:1; transform:none; }
 .inventory-target-control { display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
 .inventory-target-denominator { display:inline-grid; grid-template-rows:.7rem 1.1rem .7rem; justify-items:center; align-items:center; min-width:1.4rem; }
 .inventory-target-step { opacity:0; border:0; background:transparent; color:var(--color-accent); line-height:.65rem; padding:0 .25rem; cursor:pointer; transition:opacity .12s; }
