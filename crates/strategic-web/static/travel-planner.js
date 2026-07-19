@@ -284,10 +284,6 @@
     path.setAttribute("d", `M ${HORIZONTAL_PATH_START} 16 H ${end}`);
     path.style.removeProperty("stroke-dasharray");
   };
-  const formatSurplusDays = (days) => {
-    const rounded = Math.max(0.01, Math.round(days * 100) / 100);
-    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "");
-  };
   const refreshProvisioning = () => {
     const journeyMinutes = Number(planner.dataset.provisionPlanningMinutes);
     const members = Number(planner.dataset.provisionLivingMembers);
@@ -306,15 +302,6 @@
       setPathProgress(row.querySelector("[data-resource-target]"), (journeyDays + target) / journeyDays * 100);
       const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
       row.dataset.targetSign = sign;
-      const surplus = available - journeyDays;
-      const output = row.querySelector("[data-resource-surplus]");
-      output.hidden = surplus <= 0;
-      if (surplus > 0) {
-        const amount = formatSurplusDays(surplus);
-        output.textContent = `${amount} day${amount === "1" ? "" : "s"} surplus`;
-      } else {
-        output.textContent = "";
-      }
     });
     const rationKcal = Number(planner.dataset.provisionRationKcal);
     const skinMl = Number(planner.dataset.provisionWaterskinMl);

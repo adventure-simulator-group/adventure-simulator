@@ -50,7 +50,7 @@ test("travel planner renders horizontal journey provisions and exact staged mark
   assert.match(trade, /quantity <= 4294967295/);
 });
 
-test("travel provisioning keeps target math and positive surplus without shortfall prose", () => {
+test("travel provisioning keeps target math without forecast prose", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
   const template = fs.readFileSync(path.join(staticRoot, "src", "templates", "settlement.rs"), "utf8");
@@ -58,14 +58,14 @@ test("travel provisioning keeps target math and positive surplus without shortfa
   assert.doesNotMatch(planner, /Target:/);
   assert.doesNotMatch(planner, /shortfall/);
   assert.doesNotMatch(template, /data-resource-target-label/);
-  assert.match(template, /data-resource-surplus="food" hidden/);
-  assert.match(template, /data-resource-surplus="water" hidden/);
-  assert.match(planner, /day\$\{amount === "1" \? "" : "s"\} surplus/);
+  assert.doesNotMatch(template, /data-resource-surplus/);
   assert.match(template, /game_icon\("Food", "meal"\)/);
   assert.match(template, /game_icon\("Water", "water-drop"\)/);
   assert.match(template, /"days surplus"/);
   assert.match(css, /target-sign="negative"/);
+  assert.match(css, /grid-template-columns: max-content minmax\(0, 1fr\)/);
   assert.doesNotMatch(css, /travel-resource-path\.target[^}]*stroke-dasharray/);
+  assert.match(template, /@if selected\.is_some\(\) \{\s+p class="text-muted small-copy" data-provisioning-status/);
 });
 
 test("merchant provisioning initializes only once the Party tab DOM exists", () => {

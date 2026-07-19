@@ -652,8 +652,10 @@ pub(crate) fn map_destination_detail(
                                 button type="button" class="btn btn-secondary" disabled title="Provision estimates are unavailable" { "Buy" }
                             }
                         }
-                        p class="text-muted small-copy" data-provisioning-status {
-                            @if provision_forecast.is_none() { "Provision estimates are temporarily unavailable." }
+                        @if selected.is_some() {
+                            p class="text-muted small-copy" data-provisioning-status {
+                                @if provision_forecast.is_none() { "Provision estimates are temporarily unavailable." }
+                            }
                         }
                     }
                 }
@@ -770,7 +772,6 @@ pub(crate) fn travel_planner_bar_for(
                         path class="travel-resource-path target" data-resource-target pathLength="100" {}
                         path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                     }
-                    output data-resource-surplus="food" hidden {}
                 }
                 div class="travel-resource-row water" {
                     span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
@@ -778,7 +779,6 @@ pub(crate) fn travel_planner_bar_for(
                         path class="travel-resource-path target" data-resource-target pathLength="100" {}
                         path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                     }
-                    output data-resource-surplus="water" hidden {}
                 }
             }
         }
