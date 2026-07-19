@@ -928,9 +928,10 @@ pub fn party_personal_page(
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, condition, morale_sources, &location.base_path(), active_character.id, active_character.id))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, active_character.id))
         }
         aside class="right-sidebar" {
+            (strategic_condition_rail(condition, morale_sources))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -999,9 +1000,10 @@ pub fn party_stats_page(
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, condition, morale_sources, &location.base_path(), active_character.id, selected.id))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, selected.id))
         }
         aside class="right-sidebar" {
+            (strategic_condition_rail(condition, morale_sources))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
             (character_bio_rail(
                 selected,
@@ -2523,8 +2525,6 @@ fn medical_rail(
 
 fn medical_examination_popup(
     medical: &MedicalPresentation,
-    condition: Option<&CharacterStrategicCondition>,
-    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     location_path: &str,
     doctor_id: u64,
     target_id: u64,
@@ -2544,8 +2544,10 @@ fn medical_examination_popup(
                             p class="text-muted small-copy" { "Observed at personal minute " (examined_at) "." }
                         }
                     }
+                    form method="post" action=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
+                        button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
+                    }
                 }
-                (strategic_condition_rail(condition, morale_sources))
                 @if let Some(vitals)=medical.vitals {
                     div class="humour-vitals" aria-label="Four humours" {
                         (humour_bar("Sanguine", "Blood and circulation", vitals.sanguine, "sanguine"))
@@ -2586,10 +2588,6 @@ fn medical_examination_popup(
                 @if medical.findings.is_empty() && medical.possible_diagnoses.is_empty() && medical.diagnoses.is_empty() {
                     p class="text-muted" { "The examination did not reveal an identifiable internal cause." }
                 }
-                form method="post" action=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) class="medical-examination-dismiss" {
-                    button type="submit" class="btn" { "Do not treat" }
-                }
-                p class="text-muted small-copy" { "This result is discarded after treatment or dismissal." }
             }
         }
     }
@@ -4080,13 +4078,14 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let popup =
-            medical_examination_popup(&presentation, None, &[], "/location", 1, 2).into_string();
+        let popup = medical_examination_popup(&presentation, "/location", 1, 2).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
         assert!(popup.contains("Catarrhal fever"));
-        assert!(popup.contains("Do not treat"));
+        assert!(popup.contains("Close examination findings"));
+        assert!(popup.contains('×'));
+        assert!(!popup.contains("This result is discarded"));
         assert!(popup.contains("/examination/44/dismiss"));
         assert!(popup.contains("data-medical-examination"));
         let lifecycle = include_str!("../../static/medical-examination.js");

@@ -1636,12 +1636,28 @@
   box-shadow: var(--shadow-lg);
 }
 
+.medical-examination-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
 .medical-examination-heading h2 { margin: 0; }
 .medical-examination-heading p { margin: 0.25rem 0 0; }
+.medical-examination-close {
+  padding: 0 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.medical-examination-close:hover,
+.medical-examination-close:focus-visible { color: var(--text-primary); }
 .medical-examination-popup > .humour-vitals,
 .medical-examination-popup > .medical-diagnoses,
 .medical-examination-popup > h3 { margin-top: 1rem; }
-.medical-examination-dismiss { margin-top: 1rem; }
 
 .rest-summary ul {
   margin: 0.25rem 0 0;
