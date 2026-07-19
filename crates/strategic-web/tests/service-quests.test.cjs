@@ -28,7 +28,8 @@ test("herbalist result renderer consumes only canonical name fields", () => {
 });
 
 test("herbalist examination dialogue is visible but explicitly non-persisting", () => {
-  assert.match(source, /const privateLine = .*persist: false/);
+  assert.match(source, /const privateLine =[\s\S]*?persist: false/);
+  assert.match(source, /row\.dataset\.privateDialogue = "true"/);
   const examinationBlock = source.slice(
     source.indexOf("const requestHerbalistExamination"),
     source.indexOf("const beginHerbalistConversation"),

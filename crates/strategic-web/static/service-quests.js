@@ -45,7 +45,11 @@
 
   // Medical examination dialogue is patient-only, one-shot presentation. It
   // must remain visible in this browser without entering shared chat history.
-  const privateLine = (kind, speaker, content) => line(kind, speaker, content, { persist: false });
+  const privateLine = (kind, speaker, content) => {
+    const row = line(kind, speaker, content, { persist: false });
+    if (row) row.dataset.privateDialogue = "true";
+    return row;
+  };
 
   const link = (label, action) => {
     const anchor = document.createElement("a");

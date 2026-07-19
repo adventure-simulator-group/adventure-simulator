@@ -23,6 +23,12 @@
       .map(({ row }) => row);
   };
 
+  const pendingLocalRows = (existingRows, pendingInteractiveRows = []) => [
+    ...pendingInteractiveRows,
+    ...existingRows.filter((row) => row.dataset.chatChannel === "local"
+      && row.dataset.privateDialogue === "true"),
+  ];
+
   const applyChannelVisibility = (rows, visibleChannels) => {
     rows.forEach((message) => {
       message.hidden = !visibleChannels.has(message.dataset.chatChannel);
@@ -70,6 +76,7 @@
       chatTimestamp,
       createChannelRow,
       mergeChannelRows,
+      pendingLocalRows,
     };
   }
   if (typeof document === "undefined") return;
@@ -143,7 +150,9 @@
     const interactiveRows = [...new Set(
       [...messages.querySelectorAll(".chat-quest-link")]
         .map((anchor) => anchor.closest(".chat-npc-message, .chat-player-message"))
-        .filter((row) => row?.dataset.chatChannel === "local" && row.dataset.localChatBody),
+        .filter((row) => row?.dataset.chatChannel === "local"
+          && row.dataset.privateDialogue !== "true"
+          && row.dataset.localChatBody),
     )];
     const interactiveByMessage = new Map();
     const pendingInteractiveRows = [];
@@ -187,7 +196,12 @@
       row.append(time, name, document.createTextNode(message.body));
       return row;
     });
-    messages.replaceChildren(...mergeChannelRows(existingRows, "local", localRows, pendingInteractiveRows));
+    messages.replaceChildren(...mergeChannelRows(
+      existingRows,
+      "local",
+      localRows,
+      pendingLocalRows(existingRows, pendingInteractiveRows),
+    ));
     messages.scrollTop = messages.scrollHeight;
   };
   const submit = async () => {

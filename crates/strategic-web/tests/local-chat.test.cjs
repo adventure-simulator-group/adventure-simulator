@@ -7,6 +7,7 @@ const {
   chatTimestamp,
   createChannelRow,
   mergeChannelRows,
+  pendingLocalRows,
 } = require("../static/local-chat.js");
 
 const row = (channel, id, createdMicros) => ({
@@ -58,6 +59,20 @@ test("message IDs provide deterministic ordering when timestamps match", () => {
 
   assert.deepEqual(merged, [earlierId, laterId]);
   assert.equal(chatTimestamp(row("info", "pending")), Number.POSITIVE_INFINITY);
+});
+
+test("Local reconciliation preserves private one-shot dialogue absent from durable history", () => {
+  const request = row("local", undefined);
+  request.dataset.privateDialogue = "true";
+  const failure = row("local", undefined);
+  failure.dataset.privateDialogue = "true";
+  const diagnosis = row("local", undefined);
+  diagnosis.dataset.privateDialogue = "true";
+
+  const pending = pendingLocalRows([request, failure, diagnosis], []);
+  const merged = mergeChannelRows([request, failure, diagnosis], "local", [], pending);
+
+  assert.deepEqual(merged, [request, failure, diagnosis]);
 });
 
 const fakeDocument = () => {
