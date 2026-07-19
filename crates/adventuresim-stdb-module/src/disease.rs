@@ -1131,7 +1131,9 @@ pub fn examine_by_herbalist(
         ctx.db.herbalist_examination().id().delete(prior.id);
     }
 
-    if !crate::time::advance_character_time(ctx, patient_id, EXAMINATION_MINUTES)? {
+    // Reuse medical advancement so the patient's disease clock and capability
+    // update without applying travel hunger, thirst, fatigue, or observance.
+    if !advance_medical_participants(ctx, patient_id, patient_id, EXAMINATION_MINUTES)? {
         ctx.db.herbalist_examination().insert(HerbalistExamination {
             id: 0,
             patient_id,

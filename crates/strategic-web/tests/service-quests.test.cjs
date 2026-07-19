@@ -26,3 +26,15 @@ test("herbalist result renderer consumes only canonical name fields", () => {
   for (const forbidden of ["symptom", "finding", "vital", "stage", "infection", "skill"])
     assert.doesNotMatch(examinationBlock, new RegExp(`diagnosis\\.${forbidden}`, "i"));
 });
+
+test("herbalist examination dialogue is visible but explicitly non-persisting", () => {
+  assert.match(source, /const privateLine = .*persist: false/);
+  const examinationBlock = source.slice(
+    source.indexOf("const requestHerbalistExamination"),
+    source.indexOf("const beginHerbalistConversation"),
+  );
+  assert.match(examinationBlock, /privateLine\("player", "You"/);
+  assert.match(examinationBlock, /privateLine\("npc", "Herbalist", result\.message/);
+  assert.match(examinationBlock, /privateLine\("npc", "Herbalist", recommendation\)/);
+  assert.doesNotMatch(examinationBlock, /\bline\("(?:player|npc)"/);
+});

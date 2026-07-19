@@ -7,7 +7,7 @@
   const dialogueActions = new Map();
   let nextDialogueActionId = 0;
 
-  const line = (kind, speaker, content) => {
+  const line = (kind, speaker, content, { persist = true } = {}) => {
     if (!chat) return null;
     const messages = chat.querySelector(".settlement-chat-messages");
     if (!messages) return null;
@@ -31,7 +31,7 @@
     messages.append(row);
     messages.scrollTop = messages.scrollHeight;
     const subject = chat.dataset.localChatSubject;
-    if (subject) {
+    if (persist && subject) {
       const form = new URLSearchParams({ body: body || "", speaker: speaker || "" });
       const suffix = kind === "player" ? "" : "/npc";
       window.strategicFetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
@@ -42,6 +42,10 @@
     }
     return row;
   };
+
+  // Medical examination dialogue is patient-only, one-shot presentation. It
+  // must remain visible in this browser without entering shared chat history.
+  const privateLine = (kind, speaker, content) => line(kind, speaker, content, { persist: false });
 
   const link = (label, action) => {
     const anchor = document.createElement("a");
@@ -244,14 +248,14 @@
   };
 
   const requestHerbalistExamination = async () => {
-    line("player", "You", "I have been feeling ill.");
+    privateLine("player", "You", "I have been feeling ill.");
     const response = await window.strategicFetch(
       `/api/settlements/${encodeURIComponent(settlementId)}/herbalist/examination`,
       { method: "POST", headers: { Accept: "application/json" } },
     );
     const result = await response.json();
     if (!Array.isArray(result.diagnoses) || result.diagnoses.length === 0) {
-      line("npc", "Herbalist", result.message || "I cannot name your illness with confidence.");
+      privateLine("npc", "Herbalist", result.message || "I cannot name your illness with confidence.");
       return;
     }
     result.diagnoses.forEach((diagnosis) => {
@@ -261,7 +265,7 @@
         locateHerbalistMedication(diagnosis.medication_name);
       }));
       recommendation.append(document.createTextNode("."));
-      line("npc", "Herbalist", recommendation);
+      privateLine("npc", "Herbalist", recommendation);
     });
   };
 
