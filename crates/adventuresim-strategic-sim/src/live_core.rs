@@ -1391,7 +1391,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "travel_to_quest", |cb| self
             .connection
             .reducers
-            .travel_to_quest_then(leader, quest.id.clone(), true, cb));
+            .travel_to_quest_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         self.event(
             leader_agent,
@@ -1510,7 +1510,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "retreat_to_settlement", |cb| self
                 .connection
                 .reducers
-                .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
             self.travel_camps(party_id)?;
             self.observe_deaths();
@@ -1528,7 +1528,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "retry_travel_to_quest", |cb| self
                 .connection
                 .reducers
-                .travel_to_quest_then(leader, quest.id.clone(), true, cb));
+                .travel_to_quest_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.travel_camps(party_id)?;
             self.observe_deaths();
@@ -1542,7 +1542,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
                 .connection
                 .reducers
-                .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
             self.travel_camps(party_id)?;
             self.observe_deaths();
@@ -1612,7 +1612,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "return_to_settlement", |cb| self
             .connection
             .reducers
-            .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
+            .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
         self.call(result)?;
         self.event(
             leader_agent,

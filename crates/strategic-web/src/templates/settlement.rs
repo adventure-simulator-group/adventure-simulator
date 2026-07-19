@@ -224,7 +224,7 @@ impl MerchantShop {
 
     fn title(self) -> &'static str {
         match self {
-            Self::General => "Market Square",
+            Self::General => "General Market",
             Self::Weapons => "Weaponsmith",
             Self::Armor => "Armourer",
             Self::Clothing => "Tailor",
@@ -560,9 +560,19 @@ fn map_destination_list_with_context(
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item travel-destination-row active" } else { "list-item travel-destination-row" })
                                 data-travel-name=(&destination.name)
                                 data-travel-minutes=(destination.journey_minutes)
+                                data-travel-round-trip=(destination.quest_in_progress)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
                                 data-travel-camp-forecasts=(format_camp_forecasts(destination))
                                 data-travel-distance=(format_distance(destination.distance_m)) {
+                                @if let Some(forecast) = &destination.provision_forecast {
+                                    span hidden data-provision-payload
+                                        data-planning-minutes=(forecast.planning_minutes)
+                                        data-living-members=(forecast.living_members)
+                                        data-food-days=(forecast.food_days)
+                                        data-water-days=(forecast.water_days)
+                                        data-ration-kcal=(forecast.ration_kcal)
+                                        data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
+                                }
                                 strong { (&destination.name) }
                                 @if destination.quest_in_progress {
                                     span class="destination-quest-badge" title="Active quest destination"
@@ -605,6 +615,14 @@ pub(crate) fn map_destination_detail(
     map_path: &str,
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
+    let market_path = format!(
+        "/settlements/{}/merchants",
+        map_path
+            .trim_end_matches("/map")
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+    );
     html! {
         aside class="right-sidebar" {
             @if party.is_some() && can_configure_travel {
@@ -618,18 +636,35 @@ pub(crate) fn map_destination_detail(
                     }
                     p class="text-muted small-copy" data-travel-configuration-status { "Saved automatically when released." }
                 }
+                @if provisioning_available {
+                    div class="travel-provisioning-control" data-provisioning-control {
+                        label for="target-surplus" { "Provisioning" }
+                        p class="text-muted small-copy" { "Target surplus (days)" }
+                        div class="travel-provisioning-input" {
+                            input id="target-surplus" type="number" value="0" step="0.25" data-target-surplus aria-label="Target surplus in days" {}
+                            @if let Some(forecast) = provision_forecast {
+                                a class="btn btn-secondary" data-provision-buy
+                                    data-market-path=(&market_path)
+                                    data-initial-rations=(forecast.rations_to_buy)
+                                    data-initial-waterskins=(forecast.waterskins_to_buy)
+                                    href=(&market_path) { "Buy" }
+                            } @else {
+                                button type="button" class="btn btn-secondary" disabled title="Provision estimates are unavailable" { "Buy" }
+                            }
+                        }
+                        p class="text-muted small-copy" data-provisioning-status {
+                            @if provision_forecast.is_some() { "Purchases are staged in the General Market Party tab." }
+                            @else { "Provision estimates are temporarily unavailable." }
+                        }
+                    }
+                }
             }))
             }
             @if let Some(destination) = selected {
                 (sidebar_section(&destination.name, html! {
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) data-travel-submit {
-                            @if provisioning_available {
-                                button type="submit" name="provisioning" value="provision" class="btn btn-primary btn-block" { "Provision and begin journey" }
-                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-danger btn-block" { "Begin underprovisioned" }
-                            } @else {
-                                button type="submit" name="provisioning" value="underprovisioned" class="btn btn-primary btn-block" { "Begin journey" }
-                            }
+                            button type="submit" class="btn btn-primary btn-block" { "Begin journey" }
                         }
                         p class="travel-action-status" data-travel-action-status role="alert" hidden {}
                     }
@@ -638,9 +673,6 @@ pub(crate) fn map_destination_detail(
                         @if let Some(summary) = &destination.summary { (summary) " · " }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
-                    }
-                    @if can_travel && provisioning_available {
-                        (travel_provision_forecast(provision_forecast))
                     }
                 }))
             } @else {
@@ -664,6 +696,8 @@ pub(crate) fn travel_planner_bar(
         format_camp_stops(&destination.camp_stop_minutes)
     });
     let selected_camp_forecasts = selected.map_or_else(String::new, format_camp_forecasts);
+    let provision_forecast =
+        selected.and_then(|destination| destination.provision_forecast.as_ref());
     travel_planner_bar_for(
         selected_name,
         selected_minutes,
@@ -671,6 +705,7 @@ pub(crate) fn travel_planner_bar(
         &selected_camp_forecasts,
         camp_fatigue_percent,
         None,
+        provision_forecast,
     )
 }
 
@@ -681,6 +716,7 @@ pub(crate) fn travel_planner_bar_for(
     camp_forecasts: &str,
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
+    provision_forecast: Option<&TravelProvisionForecast>,
 ) -> Markup {
     let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
     let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
@@ -705,8 +741,22 @@ pub(crate) fn travel_planner_bar_for(
             data-journey-completed-minutes=(journey_completed_minutes)
             data-journey-camp-stops=(journey_camp_stops)
             data-journey-forecast-stops=(journey_forecast_stops)
+            data-provision-planning-minutes=[provision_forecast.map(|row| row.planning_minutes)]
+            data-provision-living-members=[provision_forecast.map(|row| row.living_members)]
+            data-provision-food-days=[provision_forecast.map(|row| row.food_days)]
+            data-provision-water-days=[provision_forecast.map(|row| row.water_days)]
+            data-provision-food-reserve=[provision_forecast.map(|row| row.food_reserve_kcal)]
+            data-provision-water-reserve=[provision_forecast.map(|row| row.water_reserve_ml)]
+            data-provision-rations=[provision_forecast.map(|row| row.ration_count)]
+            data-provision-waterskins=[provision_forecast.map(|row| row.waterskin_count)]
+            data-provision-ration-kcal=[provision_forecast.map(|row| row.ration_kcal)]
+            data-provision-waterskin-ml=[provision_forecast.map(|row| row.waterskin_capacity_ml)]
             aria-live="polite" hidden {
             div class="travel-planner-route" data-travel-planner-route {}
+            div class="travel-resource-meters" data-travel-resource-meters {
+                div class="travel-resource-row food" { span { "Food" } div class="travel-resource-track" { i data-resource-target {} b data-resource-fill {} } output data-resource-label="food" {} }
+                div class="travel-resource-row water" { span { "Water" } div class="travel-resource-track" { i data-resource-target {} b data-resource-fill {} } output data-resource-label="water" {} }
+            }
             p class="travel-planner-caption" data-travel-planner-caption {}
         }
     }
@@ -757,7 +807,7 @@ pub fn camp_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             (visual_stage("camp", "Camp", "The party is resting beside the road."))
-            (travel_planner_bar_for(destination_name, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey))
+            (travel_planner_bar_for(destination_name, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, None))
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar" {
@@ -804,29 +854,6 @@ fn rest_duration_control(_id_prefix: &str, value: u64, unit: &str, label: &str) 
                 span class="rest-days-unit" data-rest-unit-label { (unit) }
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration"
                     onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
-            }
-        }
-    }
-}
-
-fn travel_provision_forecast(forecast: Option<&TravelProvisionForecast>) -> Markup {
-    html! {
-        div class="travel-provision-forecast" {
-            strong { "Provision forecast" }
-            @if let Some(forecast) = forecast {
-                @for traveler in &forecast.travelers {
-                    p class="text-muted small-copy" {
-                        (&traveler.name) ": "
-                        (traveler.rations_to_buy) " ration" @if traveler.rations_to_buy != 1 { "s" }
-                        " · " (traveler.waterskins_to_buy) " waterskin" @if traveler.waterskins_to_buy != 1 { "s" }
-                        " · " (traveler.cost) " coin"
-                    }
-                }
-                p class="text-muted small-copy" {
-                    "Party total: " (forecast.total_cost) " coin · includes 30% reserve"
-                }
-            } @else {
-                p class="text-muted small-copy" { "Provision costs are temporarily unavailable." }
             }
         }
     }
@@ -5086,6 +5113,7 @@ mod tests {
             active_quest_route: false,
             turn_in_ready: false,
             open_quest_available: false,
+            provision_forecast: None,
         }
     }
 
@@ -5197,15 +5225,15 @@ mod tests {
     }
 
     #[test]
-    fn quest_location_travel_does_not_offer_unavailable_provisioning() {
+    fn quest_location_travel_has_one_plain_action_without_settlement_buying() {
         let destination = quest_destination();
         let markup =
             map_destination_detail(Some(&destination), true, false, None, None, false, "/map")
                 .into_string();
 
-        assert!(markup.contains("value=\"underprovisioned\""));
-        assert!(!markup.contains("Provision and travel"));
-        assert!(!markup.contains("Provision forecast"));
+        assert!(markup.contains("Begin journey"));
+        assert!(!markup.contains("name=\"provisioning\""));
+        assert!(!markup.contains("data-provision-buy"));
     }
 
     #[test]

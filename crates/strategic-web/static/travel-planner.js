@@ -4,6 +4,7 @@
 
   const route = planner.querySelector("[data-travel-planner-route]");
   const caption = planner.querySelector("[data-travel-planner-caption]");
+  const targetInput = document.querySelector("[data-target-surplus]");
   let currentPlan = null;
 
   const gameIcon = (name) => {
@@ -39,6 +40,7 @@
     completedMinutes = 0,
     originName = "Start",
     reachedStops = [],
+    turnaroundMinutes = 0,
   }) => {
     if (!destinationName || !totalMinutes) return;
     planner.dataset.activeName = destinationName;
@@ -47,6 +49,7 @@
     planner.dataset.activeCampStops = campStops.join(",");
 
     const reached = new Set(reachedStops);
+    const roundTrip = turnaroundMinutes > 0 && totalMinutes > turnaroundMinutes;
     const nodes = [
       { icon: "house", label: originName, kind: "start", minute: 0 },
       ...uniqueSortedStops(campStops, totalMinutes).map((minute, index) => ({
@@ -56,9 +59,11 @@
         minute,
         reached: reached.has(minute),
       })),
-      { icon: "castle", label: destinationName, kind: "destination", minute: totalMinutes },
+      { icon: "castle", label: destinationName, kind: "destination", minute: roundTrip ? turnaroundMinutes : totalMinutes },
+      ...(roundTrip ? [{ icon: "house", label: originName, kind: "return", minute: totalMinutes }] : []),
     ];
-    route.replaceChildren(...nodes.map((node, index) => {
+    route.classList.toggle("round-trip", roundTrip);
+    route.replaceChildren(...nodes.sort((a, b) => a.minute - b.minute).map((node, index) => {
       const element = document.createElement("div");
       element.className = `travel-plan-node travel-plan-${node.kind}${node.reached ? " reached" : ""}`;
       const pin = document.createElement("span");
@@ -68,6 +73,12 @@
       label.className = "travel-plan-label";
       label.textContent = node.label;
       element.append(pin, label);
+      const progress = node.minute / totalMinutes;
+      const horizontal = roundTrip
+        ? 5 + (progress > 0.5 ? (1 - progress) * 180 : progress * 180)
+        : 5 + progress * 90;
+      element.style.left = `${horizontal}%`;
+      element.style.top = roundTrip && progress > 0.5 ? "70%" : "8%";
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
     }));
@@ -97,24 +108,41 @@
     return currentPlan;
   };
 
-  const previewFor = (name, minutes, distance, stops, forecasts = "") => {
+  const previewFor = (name, minutes, distance, stops, forecasts = "", roundTrip = false) => {
     planner.dataset.activeCampForecasts = forecasts;
+    planner.dataset.activeRoundTrip = String(roundTrip);
     return showPlan({
       destinationName: name,
-      totalMinutes: minutes,
+      totalMinutes: roundTrip ? minutes * 2 : minutes,
+      turnaroundMinutes: roundTrip ? minutes : 0,
       distance,
       campStops: parseStops(stops),
     });
   };
 
   document.querySelectorAll(".travel-destination-row").forEach((row) => {
-    const show = () => previewFor(
-      row.dataset.travelName,
-      Number(row.dataset.travelMinutes),
-      row.dataset.travelDistance,
-      row.dataset.travelCampStops,
-      row.dataset.travelCampForecasts,
-    );
+    const show = () => {
+      const payload = row.querySelector("[data-provision-payload]");
+      if (payload) {
+        Object.assign(planner.dataset, {
+          provisionPlanningMinutes: payload.dataset.planningMinutes,
+          provisionLivingMembers: payload.dataset.livingMembers,
+          provisionFoodDays: payload.dataset.foodDays,
+          provisionWaterDays: payload.dataset.waterDays,
+          provisionRationKcal: payload.dataset.rationKcal,
+          provisionWaterskinMl: payload.dataset.waterskinMl,
+        });
+        targetInput?.dispatchEvent(new Event("input"));
+      }
+      previewFor(
+        row.dataset.travelName,
+        Number(row.dataset.travelMinutes),
+        row.dataset.travelDistance,
+        row.dataset.travelCampStops,
+        row.dataset.travelCampForecasts,
+        row.dataset.travelRoundTrip === "true",
+      );
+    };
     row.addEventListener("pointerenter", show);
     row.addEventListener("focus", show);
     row.addEventListener("click", show);
@@ -143,6 +171,7 @@
       "",
       planner.dataset.selectedCampStops,
       planner.dataset.selectedCampForecasts,
+      Number(planner.dataset.provisionPlanningMinutes) > Number(planner.dataset.selectedMinutes),
     );
   }
 
@@ -217,6 +246,7 @@
         planner.dataset.activeDistance,
         (forecasts.get(slider.value) || parseStops(planner.dataset.activeCampStops)).join(","),
         planner.dataset.activeCampForecasts,
+        planner.dataset.activeRoundTrip === "true",
       );
     };
     const save = async () => {
@@ -239,6 +269,52 @@
     slider.addEventListener("pointerup", save);
     slider.addEventListener("change", save);
   }
+
+  const formatDays = (days) => {
+    if (Math.abs(days) < 0.0001) return "0";
+    const rounded = Math.max(0.01, Math.round(Math.abs(days) * 100) / 100);
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "");
+  };
+  const refreshProvisioning = () => {
+    const journeyMinutes = Number(planner.dataset.provisionPlanningMinutes);
+    const members = Number(planner.dataset.provisionLivingMembers);
+    const foodDays = Number(planner.dataset.provisionFoodDays);
+    const waterDays = Number(planner.dataset.provisionWaterDays);
+    if (![journeyMinutes, members, foodDays, waterDays].every(Number.isFinite) || journeyMinutes <= 0 || members <= 0) {
+      planner.querySelector("[data-travel-resource-meters]")?.setAttribute("hidden", "");
+      return;
+    }
+    planner.querySelector("[data-travel-resource-meters]")?.removeAttribute("hidden");
+    const journeyDays = journeyMinutes / 1440;
+    const target = Math.max(-365, Math.min(365, Number(targetInput?.value || 0)));
+    [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
+      const row = planner.querySelector(`.travel-resource-row.${kind}`);
+      row.querySelector("[data-resource-fill]").style.width = `${Math.min(100, available / journeyDays * 100)}%`;
+      row.querySelector("[data-resource-target]").style.width = `${Math.min(100, Math.max(0, (journeyDays + target) / journeyDays * 100))}%`;
+      const surplus = available - journeyDays;
+      const amount = formatDays(surplus);
+      row.querySelector("[data-resource-label]").textContent = `${amount} day${amount === "1" ? "" : "s"} ${surplus >= 0 ? "surplus" : "shortfall"}`;
+    });
+    const rationKcal = Number(planner.dataset.provisionRationKcal);
+    const skinMl = Number(planner.dataset.provisionWaterskinMl);
+    const rations = rationKcal > 0 ? Math.ceil(Math.max(0, (journeyDays + target - foodDays) * members * 6000) / rationKcal) : 0;
+    const skins = skinMl > 0 ? Math.ceil(Math.max(0, (journeyDays + target - waterDays) * members * 4000) / skinMl) : 0;
+    const buy = document.querySelector("[data-provision-buy]");
+    if (buy) {
+      const params = new URLSearchParams({ inventory_scope: "party" });
+      if (rations) params.set("provision_rations", String(Math.min(10000, rations)));
+      if (skins) params.set("provision_waterskins", String(Math.min(10000, skins)));
+      buy.href = rations || skins ? `${buy.dataset.marketPath}?${params}` : buy.dataset.marketPath;
+      buy.dataset.empty = String(!(rations || skins));
+    }
+  };
+  targetInput?.addEventListener("input", refreshProvisioning);
+  document.querySelector("[data-provision-buy]")?.addEventListener("click", (event) => {
+    if (event.currentTarget.dataset.empty !== "true") return;
+    event.preventDefault();
+    document.querySelector("[data-provisioning-status]").textContent = "The party already meets this target; nothing was staged.";
+  });
+  refreshProvisioning();
 
   document.querySelectorAll("[data-rest-duration]").forEach((control) => {
     control.querySelectorAll("input[type=radio]").forEach((radio) => radio.addEventListener("change", () => {

@@ -223,6 +223,7 @@ pub struct Party {
     pub camp_destination_id: Option<String>,
     pub camp_destination_kind: Option<String>,
     pub camp_remaining_minutes: u64,
+    pub pooled_water_ml: f32,
     pub medicine_target: f32,
     pub surgery_target: f32,
     pub charisma_target: f32,

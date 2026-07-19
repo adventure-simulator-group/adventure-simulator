@@ -118,20 +118,25 @@ Recommendations of a day or longer are shown in days.
 
 ### Current provisioning implementation
 
-Every destination offers **Provision and travel** or **Travel
-underprovisioned**. Provisioning purchases each party member's personal
-shortfall and fills their waterskins. Settlement journeys plan for the one-way
-duration plus 30%. Quest journeys plan for the outbound and expected return
-duration plus 30%, because quest locations cannot resupply the party. Existing
-rations and waterskins reduce the purchase.
+Travel has one **Begin journey** action. The route preview aggregates the
+physiological reserves and provisions of every living member together with the
+shared party inventory. Food and water tracks show where each aggregate supply
+runs out and report a signed surplus or shortfall in days. Settlement journeys
+are one way; quest journeys use a continuous outbound-and-return runner track,
+including return-leg camp estimates, because a quest location cannot resupply
+the party.
 
-Each party member pays for their own provisions. The reducer validates and
-performs every purchase and the travel atomically, so insufficient funds leave
-the entire party unchanged. A party member's travel request records whether
-provisioning was requested for the captain's eventual approval.
+The leader can set a transient target surplus, including a negative target, in
+Travel configuration. **Buy** opens the current settlement's General Market,
+selects Party inventory, and stages the exact whole rations and waterskins
+needed to reach that target. It does not submit the offer. Party gold pays when
+the leader accepts the normal merchant offer; the former fixed 30% buffer and
+automatic provisioning purchase no longer apply.
 
-Travel consumes personal rations and carried water automatically. Settlement
-arrival immediately clears hunger and thirst and refills owned containers;
-quest arrival does not. Foraging, intermediate freshwater stops, weather-based
-water use, spoilage, food quality, and manual eating or drinking remain future
-layers.
+Travel consumes shared party rations before personal rations and shared
+waterskin water before personal carried water. Every personal and party-held
+waterskin fills freely immediately before departure from a settlement. Quest
+locations do not refill water. Settlement arrival continues to clear hunger
+and thirst and refill personal containers. Foraging, intermediate freshwater
+stops, weather-based water use, spoilage, food quality, and manual eating or
+drinking remain future layers.

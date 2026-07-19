@@ -555,6 +555,37 @@ document.addEventListener("wheel", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });
+
+function initializeProvisioningDraft() {
+  const params = new URLSearchParams(window.location.search);
+  const parseQuantity = (name) => {
+    const value = params.get(name);
+    return value && /^\d{1,5}$/.test(value) && Number(value) <= 10000 ? Number(value) : 0;
+  };
+  const requested = new Map([
+    ["travel_ration", parseQuantity("provision_rations")],
+    ["waterskin", parseQuantity("provision_waterskins")],
+  ].filter(([, quantity]) => quantity > 0));
+  if (!requested.size || params.get("inventory_scope") !== "party") return;
+
+  const partyTab = document.querySelector('[data-inventory-tab="party"]');
+  if (!partyTab) return;
+  partyTab.click();
+  const draft = strategicTradeUi.state.merchantDraft ||= new Map();
+  requested.forEach((quantity, itemId) => {
+    const source = merchantRow(itemId, document.querySelector(".left-sidebar"));
+    const button = source?.querySelector("[data-merchant-buy]");
+    if (!source || !button) return;
+    draft.set(itemId, quantity);
+    (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(itemId, Number(button.dataset.merchantBuyPrice));
+    setTradeDraftCount(source, -quantity);
+    setTradeDraftCount(ensureMerchantPlayerRow(itemId, source), quantity);
+  });
+  updateMerchantGoldDraft();
+  updateMerchantOfferForm();
+}
+
+initializeProvisioningDraft();
 document.addEventListener("keyup", (event) => {
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });

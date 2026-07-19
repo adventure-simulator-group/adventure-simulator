@@ -1221,12 +1221,10 @@ pub enum Reducer {
     TravelToQuest {
         character_id: u64,
         quest_id: String,
-        provision: bool,
     },
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
-        provision: bool,
     },
     TurnInQuest {
         character_id: u64,
@@ -2127,20 +2125,16 @@ Reducer::SendLocalChatMessage{
             Reducer::TravelToQuest{
                 character_id,
                 quest_id,
-                provision,
 }             => __sats::bsatn::to_vec(&travel_to_quest_reducer::TravelToQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
-                provision: provision.clone(),
 }),
             Reducer::TravelToSettlement{
                 character_id,
                 settlement_id,
-                provision,
 }             => __sats::bsatn::to_vec(&travel_to_settlement_reducer::TravelToSettlementArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                provision: provision.clone(),
 }),
             Reducer::TurnInQuest{
                 character_id,

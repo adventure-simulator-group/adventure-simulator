@@ -9,7 +9,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct TravelToSettlementArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub provision: bool,
 }
 
 impl From<TravelToSettlementArgs> for super::Reducer {
@@ -17,7 +16,6 @@ impl From<TravelToSettlementArgs> for super::Reducer {
         Self::TravelToSettlement {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
-            provision: args.provision,
         }
     }
 }
@@ -37,13 +35,8 @@ pub trait travel_to_settlement {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`travel_to_settlement:travel_to_settlement_then`] to run a callback after the reducer completes.
-    fn travel_to_settlement(
-        &self,
-        character_id: u64,
-        settlement_id: String,
-        provision: bool,
-    ) -> __sdk::Result<()> {
-        self.travel_to_settlement_then(character_id, settlement_id, provision, |_, _| {})
+    fn travel_to_settlement(&self, character_id: u64, settlement_id: String) -> __sdk::Result<()> {
+        self.travel_to_settlement_then(character_id, settlement_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `travel_to_settlement` to run as soon as possible,
@@ -56,7 +49,6 @@ pub trait travel_to_settlement {
         &self,
         character_id: u64,
         settlement_id: String,
-        provision: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,7 +63,6 @@ impl travel_to_settlement for super::RemoteReducers {
         &self,
         character_id: u64,
         settlement_id: String,
-        provision: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -83,7 +74,6 @@ impl travel_to_settlement for super::RemoteReducers {
             TravelToSettlementArgs {
                 character_id,
                 settlement_id,
-                provision,
             },
             callback,
         )

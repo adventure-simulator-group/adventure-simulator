@@ -1462,6 +1462,9 @@ pub struct Party {
     pub camp_destination_kind: Option<String>,
     #[default(0u64)]
     pub camp_remaining_minutes: u64,
+    /// Water currently held in shared party-inventory waterskins.
+    #[default(0.0)]
+    pub pooled_water_ml: f32,
     #[default(0.0)]
     pub medicine_target: f32,
     #[default(0.0)]
@@ -2172,6 +2175,7 @@ pub(crate) fn create_solo_party_for_character(
             camp_destination_id: None,
             camp_destination_kind: None,
             camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
             medicine_target: 0.0,
             surgery_target: 0.0,
             charisma_target: 0.0,
@@ -5022,7 +5026,6 @@ pub fn travel_to_quest(
     ctx: &ReducerContext,
     character_id: u64,
     quest_id: String,
-    provision: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
@@ -5073,11 +5076,9 @@ pub fn travel_to_quest(
         &quest.title,
         travel_minutes,
     )?;
-    if provision {
-        let planning_minutes = travel_minutes.saturating_mul(2);
-        for member_id in traveler_ids.iter().copied() {
-            crate::condition::provision_character_for_travel(ctx, member_id, planning_minutes)?;
-        }
+    crate::condition::prepare_party_waterskins(ctx, &party_id, true)?;
+    for member_id in traveler_ids.iter().copied() {
+        crate::condition::prepare_character_waterskins(ctx, member_id, true)?;
     }
     let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
         ctx,
@@ -5133,7 +5134,6 @@ pub fn travel_to_settlement(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
-    provision: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let Some(destination) = ctx.db.settlement().id().find(&settlement_id) else {
@@ -5236,10 +5236,12 @@ pub fn travel_to_settlement(
             travel_minutes,
         )?;
     }
-    if provision && character.current_settlement_id.is_some() {
-        for traveler_id in traveler_ids.iter().copied() {
-            crate::condition::provision_character_for_travel(ctx, traveler_id, travel_minutes)?;
-        }
+    let departing_settlement = character.current_settlement_id.is_some();
+    if let Some(party) = party.as_ref() {
+        crate::condition::prepare_party_waterskins(ctx, &party.id, departing_settlement)?;
+    }
+    for traveler_id in traveler_ids.iter().copied() {
+        crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
     }
     if let Some(ref mut party) = party {
         let leg_minutes = travel_minutes.min(party_travel_leg_minutes(

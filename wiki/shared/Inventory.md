@@ -28,14 +28,16 @@ Any items which _are_ in your equipment sets, but not in the currently configure
 ### Rations
 The trade/loot page can also have a red button+highlight for rations. When pressed, you will purchase however many rations would be required for the currently planned journey. It may also have a slider to increase/decrease the number of expected days in case you want some safety margin or to eat something at your destination (warning: orc and goblin meat is nasty and unsanitary).
 
-The current implementation defines personal `travel_ration` and `waterskin`
-items. A ration weighs 1 kg, costs 3 coin through automatic provisioning, and
-supplies 6,000 kcal. A waterskin weighs 0.5 kg empty, costs 2 coin, and adds 4
-litres of aggregate carried-water capacity. Water volume is tracked per
-character rather than per individual container; carried water adds one kilogram
-per litre to that character's encumbrance. Party-pool provisions are not
-automatically consumed because party inventory stake accounting does not yet
-define how communal consumables should be charged.
+The current implementation defines `travel_ration` and `waterskin` items for
+ both personal and shared party inventories. A ration weighs 1 kg, costs 3 gold, and
+supplies 6,000 kcal. A waterskin weighs 0.5 kg empty, costs 2 gold, and adds 4
+litres of aggregate carried-water capacity. Personal and pooled water volumes
+are tracked independently rather than per individual container. Settlement
+departure fills every owned container for free. During travel, each living
+member consumes shared party rations and pooled water before their own supply;
+ communal consumption does not alter party stakes. Provision purchases are
+ staged into the party inventory at the General Market and use party gold when
+ the offer is submitted.
 # Inventory icons
 
 Inventory tables include a narrow **Type** column before the item name. Its

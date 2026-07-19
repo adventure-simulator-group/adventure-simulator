@@ -3,7 +3,7 @@
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use adventuresim_core::prelude::{TravelFatigueInputs, party_travel_leg_minutes};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::spacetimedb::{
     CharacterAttributes, CharacterLimbs, CharacterStats, Quest, QuestStatus, Settlement, TravelEdge,
@@ -11,38 +11,23 @@ use crate::spacetimedb::{
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 
-/// Explicit travel-provision choice parsed at the HTTP boundary and persisted
-/// in party-action requests.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ProvisioningChoice {
-    Provision,
-    Underprovisioned,
-}
+#[derive(Debug, Default, Deserialize)]
+pub struct TravelForm {}
 
-impl ProvisioningChoice {
-    pub fn should_provision(self) -> bool {
-        matches!(self, Self::Provision)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TravelForm {
-    pub provisioning: ProvisioningChoice,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TravelerProvisionForecast {
-    pub name: String,
+#[derive(Clone, Debug, PartialEq)]
+pub struct TravelProvisionForecast {
+    pub planning_minutes: u64,
+    pub living_members: u32,
+    pub food_days: f32,
+    pub water_days: f32,
+    pub food_reserve_kcal: f32,
+    pub water_reserve_ml: f32,
+    pub ration_count: u32,
+    pub waterskin_count: u32,
+    pub ration_kcal: f32,
+    pub waterskin_capacity_ml: u32,
     pub rations_to_buy: u32,
     pub waterskins_to_buy: u32,
-    pub cost: u32,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct TravelProvisionForecast {
-    pub travelers: Vec<TravelerProvisionForecast>,
-    pub total_cost: u32,
 }
 
 #[derive(Clone)]
@@ -70,6 +55,7 @@ pub struct TravelDestination {
     pub turn_in_ready: bool,
     /// At least one unaccepted quest is posted at this settlement.
     pub open_quest_available: bool,
+    pub provision_forecast: Option<TravelProvisionForecast>,
 }
 
 /// Quest markers shared by settlement and off-road Map views. Available
@@ -113,6 +99,16 @@ impl<'a> QuestMapMarkers<'a> {
     }
 }
 
+impl TravelDestination {
+    pub fn forecast_minutes(&self) -> u64 {
+        if self.quest_in_progress {
+            self.journey_minutes.saturating_mul(2)
+        } else {
+            self.journey_minutes
+        }
+    }
+}
+
 pub(crate) fn settlement_destination(
     settlement: Settlement,
     distance_m: u64,
@@ -141,6 +137,7 @@ pub(crate) fn settlement_destination(
         active_quest_route: false,
         turn_in_ready: false,
         open_quest_available: false,
+        provision_forecast: None,
     }
 }
 
@@ -194,6 +191,7 @@ pub(crate) fn populate_camp_forecasts(
     selected_fatigue_percent: u8,
 ) {
     for destination in destinations {
+        let forecast_minutes = destination.forecast_minutes();
         destination.camp_forecasts = (10..=100)
             .step_by(5)
             .filter_map(|fatigue_percent| {
@@ -202,7 +200,7 @@ pub(crate) fn populate_camp_forecasts(
                     attributes,
                     limbs,
                     stats,
-                    destination.journey_minutes,
+                    forecast_minutes,
                     fatigue_percent,
                 )
                 .map(|camp_stop_minutes| TravelCampForecast {
@@ -458,11 +456,16 @@ mod tests {
     }
 
     #[test]
-    fn travel_form_requires_an_explicit_provisioning_choice() {
-        assert!(serde_json::from_str::<TravelForm>(r#"{}"#).is_err());
-        let form: TravelForm =
-            serde_json::from_str(r#"{"provisioning":"underprovisioned"}"#).unwrap();
-        assert_eq!(form.provisioning, ProvisioningChoice::Underprovisioned);
+    fn travel_form_has_no_provisioning_choice() {
+        assert!(serde_json::from_str::<TravelForm>(r#"{}"#).is_ok());
+    }
+
+    #[test]
+    fn quests_forecast_a_return_but_settlements_do_not() {
+        let mut destination = settlement_destination(settlement("town", 1), 1_000, 120);
+        assert_eq!(destination.forecast_minutes(), 120);
+        destination.quest_in_progress = true;
+        assert_eq!(destination.forecast_minutes(), 240);
     }
 
     #[test]

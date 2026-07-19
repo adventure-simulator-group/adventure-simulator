@@ -3,9 +3,8 @@
 use adventuresim_core::{
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
-        ProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
-        STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
-        STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
+        PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
+        STRATEGIC_TRAVEL_KCAL_PER_DAY, STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
     },
     strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
 };
@@ -85,8 +84,7 @@ use super::inventory_forms::{
 };
 use super::travel::{
     QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast,
-    TravelerProvisionForecast, connected_destinations, next_settlement_toward,
-    populate_camp_forecasts,
+    connected_destinations, next_settlement_toward, populate_camp_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -606,6 +604,7 @@ async fn settlement_map(
                 active_quest_route: false,
                 turn_in_ready: false,
                 open_quest_available: false,
+                provision_forecast: None,
             });
         } else if can_travel {
             if let Some(next_settlement_id) =
@@ -670,22 +669,25 @@ async fn settlement_map(
             );
         }
     }
-    let provision_forecast = if can_travel {
-        if let Some(destination) = query
-            .destination
-            .as_deref()
-            .and_then(|id| destinations.iter().find(|destination| destination.id == id))
-        {
-            travel_provision_forecast(&state, &party_members, destination)
-                .await
-                .ok()
-                .flatten()
-        } else {
-            None
+    if can_travel {
+        for destination in &mut destinations {
+            destination.provision_forecast = travel_provision_forecast(
+                &state,
+                active_party.as_ref(),
+                &party_members,
+                destination,
+                true,
+            )
+            .await
+            .ok()
+            .flatten();
         }
-    } else {
-        None
-    };
+    }
+    let provision_forecast = query
+        .destination
+        .as_deref()
+        .and_then(|id| destinations.iter().find(|destination| destination.id == id))
+        .and_then(|destination| destination.provision_forecast.as_ref());
     Html(
         settlement_map_page(
             settlement,
@@ -695,7 +697,7 @@ async fn settlement_map(
             active_party.as_ref(),
             &party_members,
             can_travel,
-            provision_forecast.as_ref(),
+            provision_forecast,
             is_current_settlement,
             markers.has_open_quest_at(&settlement.id),
             markers.completed_quest_turn_in_at(&settlement.id),
@@ -949,10 +951,12 @@ async fn continue_camp_travel(State(state): State<AppState>, session: Session) -
     }
 }
 
-async fn travel_provision_forecast(
+pub(crate) async fn travel_provision_forecast(
     state: &AppState,
+    party: Option<&Party>,
     travelers: &[Character],
     destination: &TravelDestination,
+    departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
     let items: Vec<ItemDefinition> = state
         .db
@@ -968,12 +972,11 @@ async fn travel_provision_forecast(
     let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
         return Ok(None);
     };
-    let planning_minutes = if destination.quest_in_progress {
-        destination.journey_minutes.saturating_mul(2)
-    } else {
-        destination.journey_minutes
-    };
-    let mut forecast = TravelProvisionForecast::default();
+    let planning_minutes = destination.forecast_minutes();
+    let mut food_reserve_kcal = 0.0;
+    let mut water_reserve_ml = 0.0;
+    let mut ration_count = 0;
+    let mut waterskin_count = 0;
     for traveler in travelers {
         let Some(needs) = state
             .db
@@ -994,17 +997,6 @@ async fn travel_provision_forecast(
             ))
             .await
             .map_err(|error| error.to_string())?;
-        let required = ProvisioningInputs {
-            planning_minutes,
-            buffer_percent: STRATEGIC_PROVISION_BUFFER_PERCENT,
-            food_balance_kcal: needs.food_balance_kcal,
-            water_balance_ml: needs.water_balance_ml,
-            travel_kcal_per_day: STRATEGIC_TRAVEL_KCAL_PER_DAY,
-            travel_water_ml_per_day: STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
-            ration_kcal: ration.nutrition_kcal,
-            waterskin_capacity_ml: waterskin.water_capacity_ml,
-        }
-        .required_units();
         let owned = |item_id: &str| {
             inventory
                 .iter()
@@ -1012,24 +1004,67 @@ async fn travel_provision_forecast(
                 .map(|entry| entry.qty)
                 .sum::<u32>()
         };
-        let rations_to_buy = required
-            .rations
-            .saturating_sub(owned(STANDARD_TRAVEL_RATION_ID));
-        let waterskins_to_buy = required
-            .waterskins
-            .saturating_sub(owned(STANDARD_WATERSKIN_ID));
-        let cost = rations_to_buy
-            .saturating_mul(ration.base_value.unwrap_or(0))
-            .saturating_add(waterskins_to_buy.saturating_mul(waterskin.base_value.unwrap_or(0)));
-        forecast.total_cost = forecast.total_cost.saturating_add(cost);
-        forecast.travelers.push(TravelerProvisionForecast {
-            name: traveler.name.clone(),
-            rations_to_buy,
-            waterskins_to_buy,
-            cost,
-        });
+        food_reserve_kcal += needs.food_balance_kcal;
+        water_reserve_ml += needs.water_balance_ml;
+        ration_count += owned(STANDARD_TRAVEL_RATION_ID);
+        let skins = owned(STANDARD_WATERSKIN_ID);
+        if departing_settlement {
+            waterskin_count += skins;
+        } else {
+            water_reserve_ml += needs.carried_water_ml.max(0.0);
+        }
     }
-    Ok(Some(forecast))
+    if let Some(party) = party {
+        let pooled: Vec<PartyInventoryItem> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
+                party.id
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+        ration_count += pooled
+            .iter()
+            .filter(|row| row.item_id == STANDARD_TRAVEL_RATION_ID)
+            .map(|row| row.quantity)
+            .sum::<u32>();
+        let party_skins = pooled
+            .iter()
+            .filter(|row| row.item_id == STANDARD_WATERSKIN_ID)
+            .map(|row| row.quantity)
+            .sum::<u32>();
+        if departing_settlement {
+            waterskin_count += party_skins;
+        } else {
+            water_reserve_ml += party.pooled_water_ml.max(0.0);
+        }
+    }
+    let inputs = PartyProvisioningInputs {
+        planning_minutes,
+        living_members: travelers.len() as u32,
+        food_reserve_kcal,
+        water_reserve_ml,
+        ration_count,
+        waterskin_count,
+        ration_kcal: ration.nutrition_kcal,
+        waterskin_capacity_ml: waterskin.water_capacity_ml,
+        ..Default::default()
+    };
+    let result = inputs.forecast();
+    Ok(Some(TravelProvisionForecast {
+        planning_minutes,
+        living_members: travelers.len() as u32,
+        food_days: result.food_days,
+        water_days: result.water_days,
+        food_reserve_kcal,
+        water_reserve_ml,
+        ration_count,
+        waterskin_count,
+        ration_kcal: ration.nutrition_kcal,
+        waterskin_capacity_ml: waterskin.water_capacity_ml,
+        rations_to_buy: result.rations_to_buy,
+        waterskins_to_buy: result.waterskins_to_buy,
+    }))
 }
 
 #[derive(Serialize)]
@@ -3195,7 +3230,7 @@ async fn travel(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-    Form(form): Form<TravelForm>,
+    Form(_form): Form<TravelForm>,
 ) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
@@ -3206,7 +3241,6 @@ async fn travel(
         character_id,
         super::PartyAction::TravelToSettlement {
             settlement_id: id.clone(),
-            provisioning: form.provisioning,
         },
     )
     .await;

@@ -220,7 +220,7 @@ async fn travel_to_quest(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-    axum::Form(form): axum::Form<TravelForm>,
+    axum::Form(_form): axum::Form<TravelForm>,
 ) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
@@ -230,7 +230,6 @@ async fn travel_to_quest(
         character_id,
         PartyAction::TravelToQuest {
             quest_id: id.clone(),
-            provisioning: form.provisioning,
         },
     )
     .await;
@@ -497,6 +496,18 @@ async fn render_quest_location(
             &stats,
             party.camp_fatigue_percent,
         );
+        for destination in &mut nearby {
+            destination.provision_forecast = super::settlements::travel_provision_forecast(
+                &state,
+                Some(party),
+                &party_members,
+                destination,
+                false,
+            )
+            .await
+            .ok()
+            .flatten();
+        }
     }
     let party_ready = party_is_ready(&state, &party_members).await;
     let can_fight = can_control

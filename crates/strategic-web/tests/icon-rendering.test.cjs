@@ -26,3 +26,16 @@ test("party notifications use safe local icons for decisions and leadership", ()
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.match(source, /setAttribute\("aria-label", label\)/);
 });
+
+test("travel planner renders return-track provisions and exact staged market quantities", () => {
+  const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
+  const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
+  assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
+  assert.match(planner, /node\.minute \/ totalMinutes/);
+  assert.match(planner, /day\$\{amount === "1"/);
+  assert.match(planner, /Math\.ceil\(Math\.max\(0, \(journeyDays \+ target - foodDays\)/);
+  assert.match(planner, /params\.set\("provision_rations"/);
+  assert.match(planner, /params\.set\("provision_waterskins"/);
+  assert.match(trade, /data-inventory-tab="party"/);
+  assert.match(trade, /draft\.set\(itemId, quantity\)/);
+});
