@@ -5220,7 +5220,11 @@ mod tests {
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
         assert!(css.contains(".schedule-time-input {"));
         assert!(css.contains("position: absolute;"));
-        assert!(css.contains("right: 0;"));
+        assert!(css.contains(".schedule-time-editor {"));
+        assert!(css.contains("right: auto;"));
+        assert!(css.contains("left: 50%;"));
+        assert!(css.contains("transform: translate(-50%, -50%);"));
+        assert!(css.contains(".schedule-time-input::selection {"));
         assert!(!css.contains(".party-skill-icon-column"));
         assert!(css.contains(".schedule-time-editor-action {"));
         assert!(css.contains(".schedule-time-confirm { background: #2f7d3d; }"));

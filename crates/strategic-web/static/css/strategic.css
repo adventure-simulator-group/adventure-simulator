@@ -3206,7 +3206,8 @@ body.chat-resizing {
   position: absolute;
   z-index: 10;
   top: 50%;
-  right: 0;
+  right: auto;
+  left: 50%;
   display: grid;
   grid-template-columns: 1.5rem 3.7rem 1.5rem;
   align-items: center;
@@ -3215,7 +3216,7 @@ body.chat-resizing {
   border: 1px solid var(--accent);
   background: var(--bg-secondary);
   box-shadow: 0 0.2rem 0.6rem rgb(0 0 0 / 55%);
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
 }
 
 .schedule-time-input-stack {
@@ -3240,6 +3241,11 @@ body.chat-resizing {
   background: #fffaf0;
   font: inherit;
   text-align: center;
+}
+
+.schedule-time-input::selection {
+  background: #d8bd70;
+  color: #17130f;
 }
 
 .schedule-time-input[aria-invalid="true"] {
