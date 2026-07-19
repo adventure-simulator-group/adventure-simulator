@@ -240,8 +240,6 @@
 .travel-resource-row.food .travel-resource-path.target { stroke: color-mix(in srgb, #e9a45d 32%, transparent); }
 .travel-resource-row.water .travel-resource-path.target { stroke: color-mix(in srgb, #579fd7 32%, transparent); }
 .travel-resource-row[data-target-sign="negative"] .travel-resource-path.target { stroke-linecap: butt; }
-.travel-resource-row[data-target-sign="zero"] .travel-resource-path.target { stroke-dasharray: 98 2 !important; }
-.travel-resource-row[data-target-sign="positive"] .travel-resource-path.target { stroke-dasharray: 92 3 !important; }
 .travel-resource-row[data-target-sign="positive"] [data-resource-target-label] { border-radius: 999px; background: color-mix(in srgb, currentColor 12%, transparent); padding: .1rem .35rem; }
 .travel-resource-row.food [data-resource-target-label] { color: #c77c31; }
 .travel-resource-row.water [data-resource-target-label] { color: #3d84ba; }

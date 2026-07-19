@@ -56,9 +56,9 @@ test("provision targets distinguish negative, zero, and positive endpoint goals"
   assert.match(planner, /Target: exact \$\{endpoint\}/);
   assert.match(planner, /after \$\{endpoint\}/);
   assert.match(planner, /\} short`/);
-  for (const sign of ["negative", "zero", "positive"]) {
-    assert.match(css, new RegExp(`target-sign="${sign}"`));
-  }
+  assert.match(css, /target-sign="negative"/);
+  assert.match(css, /target-sign="positive"/);
+  assert.doesNotMatch(css, /travel-resource-path\.target[^}]*stroke-dasharray/);
 });
 
 test("merchant provisioning initializes only once the Party tab DOM exists", () => {
