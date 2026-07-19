@@ -7,8 +7,7 @@
   const targetInput = document.querySelector("[data-target-surplus]");
   let currentPlan = null;
   const MAX_U32 = 4294967295;
-  const RETURN_PATH = "M 3 7 H 92 Q 97 7 97 12 V 20 Q 97 25 92 25 H 3";
-  const OUTBOUND_PATH = "M 3 16 H 97";
+  const HORIZONTAL_PATH = "M 3 16 H 97";
 
   const gameIcon = (name) => {
     const icon = document.createElement("span");
@@ -65,7 +64,6 @@
       { icon: "castle", label: destinationName, kind: "destination", minute: roundTrip ? turnaroundMinutes : totalMinutes },
       ...(roundTrip ? [{ icon: "house", label: originName, kind: "return", minute: totalMinutes }] : []),
     ];
-    route.classList.toggle("round-trip", roundTrip);
     planner.classList.toggle("round-trip", roundTrip);
     route.replaceChildren(...nodes.sort((a, b) => a.minute - b.minute).map((node, index) => {
       const element = document.createElement("div");
@@ -78,11 +76,9 @@
       label.textContent = node.label;
       element.append(pin, label);
       const progress = node.minute / totalMinutes;
-      const horizontal = roundTrip
-        ? 5 + (progress > 0.5 ? (1 - progress) * 180 : progress * 180)
-        : 5 + progress * 90;
+      const horizontal = 5 + progress * 90;
       element.style.left = `${horizontal}%`;
-      element.style.top = roundTrip && progress > 0.5 ? "70%" : "8%";
+      element.style.top = "8%";
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
     }));
@@ -285,8 +281,8 @@
     const rounded = Math.max(0.01, Math.round(Math.abs(days) * 100) / 100);
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "");
   };
-  const setPathProgress = (path, percent, roundTrip) => {
-    path.setAttribute("d", roundTrip ? RETURN_PATH : OUTBOUND_PATH);
+  const setPathProgress = (path, percent) => {
+    path.setAttribute("d", HORIZONTAL_PATH);
     path.style.strokeDasharray = `${Math.max(0, Math.min(100, percent))} 100`;
   };
   const targetDescription = (target, roundTrip) => {
@@ -310,8 +306,8 @@
     const roundTrip = planner.classList.contains("round-trip");
     [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
       const row = planner.querySelector(`.travel-resource-row.${kind}`);
-      setPathProgress(row.querySelector("[data-resource-fill]"), available / journeyDays * 100, roundTrip);
-      setPathProgress(row.querySelector("[data-resource-target]"), (journeyDays + target) / journeyDays * 100, roundTrip);
+      setPathProgress(row.querySelector("[data-resource-fill]"), available / journeyDays * 100);
+      setPathProgress(row.querySelector("[data-resource-target]"), (journeyDays + target) / journeyDays * 100);
       const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
       row.dataset.targetSign = sign;
       row.querySelector("[data-resource-target-label]").textContent = targetDescription(target, roundTrip);

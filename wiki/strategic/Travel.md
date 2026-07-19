@@ -121,10 +121,11 @@ Recommendations of a day or longer are shown in days.
 Travel has one **Begin journey** action. The route preview aggregates the
 physiological reserves and provisions of every living member together with the
 shared party inventory. Food and water tracks show where each aggregate supply
-runs out and report a signed surplus or shortfall in days. Settlement journeys
-are one way; quest journeys use a continuous outbound-and-return runner track,
-including return-leg camp estimates, because a quest location cannot resupply
-the party.
+runs out and report a signed surplus or shortfall in days. Route, food, and
+water share one horizontal timeline. Settlement journeys end at the settlement;
+quest journeys place the quest destination midway and extend the return journey
+to home after it, including return-leg camp estimates because a quest location
+cannot resupply the party.
 
 The leader can set a transient target surplus, including a negative target, in
 Travel configuration. **Buy** opens the current settlement's General Market,

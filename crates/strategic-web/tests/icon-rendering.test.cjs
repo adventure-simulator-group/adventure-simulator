@@ -27,12 +27,14 @@ test("party notifications use safe local icons for decisions and leadership", ()
   assert.match(source, /setAttribute\("aria-label", label\)/);
 });
 
-test("travel planner renders return-track provisions and exact staged market quantities", () => {
+test("travel planner renders horizontal journey provisions and exact staged market quantities", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
   assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
   assert.match(planner, /node\.minute \/ totalMinutes/);
-  assert.match(planner, /RETURN_PATH/);
+  assert.match(planner, /HORIZONTAL_PATH/);
+  assert.doesNotMatch(planner, /RETURN_PATH/);
+  assert.match(planner, /const horizontal = 5 \+ progress \* 90/);
   assert.match(planner, /startTop/);
   assert.match(planner, /endTop/);
   assert.match(planner, /day\$\{amount === "1"/);

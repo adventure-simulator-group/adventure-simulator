@@ -752,7 +752,10 @@ pub(crate) fn travel_planner_bar_for(
             data-provision-ration-kcal=[provision_forecast.map(|row| row.ration_kcal)]
             data-provision-waterskin-ml=[provision_forecast.map(|row| row.waterskin_capacity_ml)]
             aria-live="polite" hidden {
-            div class="travel-planner-route" data-travel-planner-route {}
+            div class="travel-route-row" {
+                span { "Route" }
+                div class="travel-planner-route" data-travel-planner-route {}
+            }
             div class="travel-resource-meters" data-travel-resource-meters {
                 div class="travel-resource-row food" {
                     span { "Food" }
