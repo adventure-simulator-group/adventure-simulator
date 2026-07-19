@@ -40,17 +40,21 @@ impl EncumbranceSummary {
 }
 
 fn finite_nonnegative(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
-    } else {
+    if value.is_nan() || value <= 0.0 {
         0.0
+    } else if value.is_infinite() {
+        f32::MAX
+    } else {
+        value
     }
 }
 
 pub fn encumbrance_capacity_kg(average_injury_adjusted_leg_strength: f32) -> f32 {
-    finite_nonnegative(average_injury_adjusted_leg_strength)
-        * LOWER_MUSCLE_MASS_PER_LEG_STRENGTH
-        * WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS
+    finite_nonnegative(
+        finite_nonnegative(average_injury_adjusted_leg_strength)
+            * LOWER_MUSCLE_MASS_PER_LEG_STRENGTH
+            * WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS,
+    )
 }
 
 /// Returns the multiplier left after encumbrance. A character with no usable
@@ -163,5 +167,28 @@ mod tests {
             EncumbranceSummary::new(60.0, 100.0).combined(EncumbranceSummary::new(30.0, 200.0));
         assert_eq!(party, EncumbranceSummary::new(90.0, 300.0));
         assert!((party.penalty_fraction() - 0.3).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn positive_infinite_burden_is_saturated_and_fully_penalizing() {
+        let summary = EncumbranceSummary::new(f32::INFINITY, 100.0);
+        assert_eq!(summary.burden_kg, f32::MAX);
+        assert_eq!(summary.penalty_fraction(), 1.0);
+    }
+
+    #[test]
+    fn positive_infinite_capacity_is_saturated_without_becoming_zero() {
+        let summary = EncumbranceSummary::new(100.0, f32::INFINITY);
+        assert_eq!(summary.capacity_kg, f32::MAX);
+        assert_eq!(summary.remaining_multiplier(), 1.0);
+    }
+
+    #[test]
+    fn finite_sum_overflow_cannot_erase_an_overload() {
+        let combined = EncumbranceSummary::new(f32::MAX, 100.0)
+            .combined(EncumbranceSummary::new(f32::MAX, 100.0));
+        assert_eq!(combined.burden_kg, f32::MAX);
+        assert_eq!(combined.capacity_kg, 200.0);
+        assert_eq!(combined.penalty_fraction(), 1.0);
     }
 }

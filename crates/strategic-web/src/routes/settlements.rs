@@ -15,7 +15,10 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
-use futures_util::future::join_all;
+use futures_util::{
+    future::join_all,
+    stream::{self, StreamExt},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -1926,28 +1929,28 @@ async fn party_pool_inventory(
         .await
         .unwrap_or_default();
     let members = get_active_party_members(&state, Some(&character)).await;
-    let member_ids: Vec<u64> = members.iter().map(|member| member.id).collect();
+    let (member_ids, encumbrance_ids) = encumbrance_query_ids(&members, character.id);
     let member_inventories = async {
         let state_ref = &state;
-        let lookups = member_ids.iter().copied().map(|member_id| async move {
-            state_ref
-                .db
-                .query::<InventoryItem>(&format!(
-                    "SELECT * FROM inventory_item WHERE character_id = {member_id}"
-                ))
-                .await
-                .unwrap_or_default()
-        });
-        join_all(lookups)
+        stream::iter(member_ids.iter().copied())
+            .map(|member_id| async move {
+                state_ref
+                    .db
+                    .query::<InventoryItem>(&format!(
+                        "SELECT * FROM inventory_item WHERE character_id = {member_id}"
+                    ))
+                    .await
+                    .unwrap_or_default()
+            })
+            .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
+            .collect::<Vec<_>>()
             .await
             .into_iter()
             .flatten()
             .collect::<Vec<_>>()
     };
-    let (all_inventories, encumbrance_rows) = tokio::join!(
-        member_inventories,
-        EncumbranceRows::query(&state, &member_ids),
-    );
+    let all_inventories = member_inventories.await;
+    let encumbrance_rows = EncumbranceRows::query(&state, &encumbrance_ids).await;
     let personal_encumbrance =
         personal_encumbrance(character.id, &inventory, &items, &encumbrance_rows);
     let party_encumbrance = party_encumbrance(
@@ -3621,19 +3624,43 @@ struct EncumbranceRows {
     needs: Vec<CharacterNeeds>,
 }
 
+const ENCUMBRANCE_QUERY_CONCURRENCY: usize = 4;
+
+fn encumbrance_query_ids(members: &[Character], active_character_id: u64) -> (Vec<u64>, Vec<u64>) {
+    let living_ids: std::collections::BTreeSet<u64> = members
+        .iter()
+        .filter(|member| member.alive)
+        .map(|member| member.id)
+        .collect();
+    let mut row_ids = living_ids.clone();
+    row_ids.insert(active_character_id);
+    (
+        living_ids.into_iter().collect(),
+        row_ids.into_iter().collect(),
+    )
+}
+
 impl EncumbranceRows {
     async fn query(state: &AppState, character_ids: &[u64]) -> Self {
         let unique_ids: std::collections::BTreeSet<u64> = character_ids.iter().copied().collect();
-        let lookups = unique_ids.into_iter().map(|character_id| async move {
-            tokio::join!(
-                query_single::<CharacterAttributes>(state, "character_attributes", character_id,),
-                query_single::<CharacterLimbs>(state, "character_limbs", character_id),
-                query_single::<CharacterCondition>(state, "character_condition", character_id),
-                query_single::<CharacterNeeds>(state, "character_needs", character_id),
-            )
-        });
+        let lookups = stream::iter(unique_ids)
+            .map(|character_id| async move {
+                tokio::join!(
+                    query_single::<CharacterAttributes>(
+                        state,
+                        "character_attributes",
+                        character_id,
+                    ),
+                    query_single::<CharacterLimbs>(state, "character_limbs", character_id),
+                    query_single::<CharacterCondition>(state, "character_condition", character_id,),
+                    query_single::<CharacterNeeds>(state, "character_needs", character_id),
+                )
+            })
+            .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
+            .collect::<Vec<_>>()
+            .await;
         let mut rows = Self::default();
-        for (attributes, limbs, condition, needs) in join_all(lookups).await {
+        for (attributes, limbs, condition, needs) in lookups {
             rows.attributes.extend(attributes);
             rows.limbs.extend(limbs);
             rows.conditions.extend(condition);
@@ -3831,7 +3858,10 @@ mod herbalist_tests {
 
 #[cfg(test)]
 mod encumbrance_tests {
-    use super::{EncumbranceRows, party_encumbrance, personal_encumbrance};
+    use super::{
+        ENCUMBRANCE_QUERY_CONCURRENCY, EncumbranceRows, encumbrance_query_ids, party_encumbrance,
+        personal_encumbrance,
+    };
     use crate::spacetimedb::{
         Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
         InventoryItem, ItemDefinition, PartyInventoryItem,
@@ -3963,6 +3993,17 @@ mod encumbrance_tests {
         );
         assert_eq!(summary.burden_kg, 92.5);
         assert_eq!(summary.capacity_kg, 300.0);
+    }
+
+    #[test]
+    fn query_ids_are_living_only_deduplicated_and_keep_active_personal_rows() {
+        let (inventory_ids, row_ids) = encumbrance_query_ids(
+            &[character(1, true), character(1, true), character(2, false)],
+            2,
+        );
+        assert_eq!(inventory_ids, vec![1]);
+        assert_eq!(row_ids, vec![1, 2]);
+        assert_eq!(ENCUMBRANCE_QUERY_CONCURRENCY, 4);
     }
 
     #[test]
