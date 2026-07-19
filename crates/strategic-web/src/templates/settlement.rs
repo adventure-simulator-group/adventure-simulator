@@ -2572,7 +2572,7 @@ fn strategic_condition_rail(
     html! {
         (sidebar_section("Condition", html! {
             div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
-                "Morale {:.1}; fear {}; personal share of party morale restoration {:.1}%",
+                "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
                 condition.morale_bonus * 100.0,
@@ -2589,7 +2589,7 @@ fn strategic_condition_rail(
                 div class="morale-meter-labels" {
                     span { "100% fear" }
                     span { "Neutral" }
-                    span { (format!("{:.1}% ally lift", condition.morale_bonus * 100.0)) }
+                    span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
                 }
                 div class="morale-source-popup" role="tooltip" {
                     strong { "Morale sources" }
@@ -2652,8 +2652,8 @@ fn strategic_condition_rail(
                 }
             }
             div class="need-balance-meters" aria-label="Food and water reserves" {
-                (need_balance_meter("Food", "meal", "Hunger", "hunger", condition.food_days, condition.hunger))
-                (need_balance_meter("Water", "water-drop", "Thirst", "thirst", condition.water_days, condition.thirst))
+                (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
+                (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
         }))
     }
@@ -2663,6 +2663,7 @@ fn need_balance_meter(
     label: &str,
     icon: &str,
     deficit_label: &str,
+    reserve_label: &str,
     color: &str,
     reserve_days: f32,
     incapacitation: f32,
@@ -2692,7 +2693,7 @@ fn need_balance_meter(
             div class="need-balance-labels" aria-hidden="true" {
                 span { (deficit_label) }
                 span { "0" }
-                span { "Reserve" }
+                span { (reserve_label) }
             }
         }
     }
@@ -3551,12 +3552,26 @@ mod tests {
     #[test]
     fn need_meter_places_reserve_right_and_incapacitation_left() {
         let reserve =
-            need_balance_meter("Food", "meal", "Hunger", "hunger", 0.5, 0.0).into_string();
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.5, 0.0).into_string();
         assert!(reserve.contains("--need-reserve: 50.0%; --need-deficit: 0.0%"));
         assert!(reserve.contains("aria-valuenow=\"50\""));
+        assert!(reserve.contains(">Full</span>"));
+
+        let hydration = need_balance_meter(
+            "Water",
+            "water-drop",
+            "Thirst",
+            "Hydrated",
+            "thirst",
+            1.0,
+            0.0,
+        )
+        .into_string();
+        assert!(hydration.contains(">Hydrated</span>"));
 
         let deficit =
-            need_balance_meter("Food", "meal", "Hunger", "hunger", 0.0, 1.0 / 9.0).into_string();
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.0, 1.0 / 9.0)
+                .into_string();
         assert!(deficit.contains("--need-reserve: 0.0%; --need-deficit: 11.1%"));
         assert!(deficit.contains("aria-valuenow=\"-11\""));
     }
