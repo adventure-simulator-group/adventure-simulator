@@ -6,6 +6,7 @@
 
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    equipment::EncumbranceSummary,
     prelude::Skill,
     strategic_schedule::{
         BASELINE_FATIGUE_PER_DAY, DailySchedule, FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
@@ -979,10 +980,12 @@ pub fn party_inventory_page(
     active_equip: Option<&CharacterEquip>,
     selected_targets: &[InventoryQuantityTarget],
     active_targets: &[InventoryQuantityTarget],
+    selected_encumbrance: EncumbranceSummary,
+    active_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets))
+            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets, selected_encumbrance))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
@@ -994,7 +997,7 @@ pub fn party_inventory_page(
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
+            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets, active_encumbrance))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -1008,6 +1011,7 @@ pub fn party_discard_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1031,7 +1035,7 @@ pub fn party_discard_page(
             }
         }
         aside class="right-sidebar" {
-            (discard_inventory_rail(active_character, inventory, items, equip))
+            (discard_inventory_rail(active_character, inventory, items, equip, encumbrance))
         }
     };
     location.render_layout("Inventory", content, Some(&active_character.name))
@@ -1322,33 +1326,35 @@ fn party_trade_inventory_rail(
     direction: &str,
     equip: Option<&CharacterEquip>,
     recipient_targets: &[InventoryQuantityTarget],
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
         (sidebar_section(&title, html! {
-            @if inventory.is_empty() {
-                p class="text-muted small-copy" { "No items carried." }
-            } @else {
-                (trade_inventory_table(true, None, html! {
-                    @for item in inventory {
-                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        @let target = target_quantity(recipient_targets, &item.item_id);
-                            tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
-                                td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                                td class="inventory-item-name" {
-                                    (item_name_with_quality(&item.item_id, definition))
-                                    @if !is_equipped { span class="inventory-row-actions" { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) } } }
+            (encumbrance_inventory_rail(html! {
+                @if inventory.is_empty() {
+                    p class="text-muted small-copy" { "No items carried." }
+                } @else {
+                    (trade_inventory_table(true, None, html! {
+                        @for item in inventory {
+                            @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let target = target_quantity(recipient_targets, &item.item_id);
+                                tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
+                                    td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                    td class="inventory-item-name" {
+                                        (item_name_with_quality(&item.item_id, definition))
+                                        @if !is_equipped { span class="inventory-row-actions" { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) } } }
+                                    }
+                                    td class="inventory-count" { (item.qty) }
+                                    td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
+                                    td class="inventory-weight" { (item_weight(definition)) }
+                                    td class="inventory-gold" { (item_value(definition)) }
                                 }
-                                td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
-                                td class="inventory-weight" { (item_weight(definition)) }
-                                td class="inventory-gold" { (item_value(definition)) }
                             }
-                    }
-                }))
-                (inventory_footer_controls(if direction == "left" { "party-left" } else { "party-right" }, "Transfer to targets", "Transfer everything"))
-            }
+                    }))
+                }
+            }, inventory_footer_controls(if direction == "left" { "party-left" } else { "party-right" }, "Transfer to targets", "Transfer everything"), encumbrance))
         }))
     }
 }
@@ -1358,40 +1364,43 @@ fn discard_inventory_rail(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     equip: Option<&CharacterEquip>,
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
         (sidebar_section(&title, html! {
-            @if inventory.is_empty() {
-                p class="text-muted small-copy" { "No items carried." }
-            } @else {
-                (trade_inventory_table(true, None, html! {
-                    @for item in inventory {
-                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
-                            td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                            td class="inventory-item-name" {
-                                (item_name_with_quality(&item.item_id, definition))
-                                @if !is_equipped {
-                                    button type="button" class="trade-transfer trade-transfer-left"
-                                        data-discard-item=(item.id) data-count=(item.qty)
-                                        data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                        data-label-one=(format!("Discard one {}", item.item_id))
-                                        data-label-target=(format!("Discard {} down to target", item.item_id))
-                                        data-label-all=(format!("Discard all {}", item.item_id))
-                                        aria-label=(format!("Discard {}", item.item_id))
-                                        title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
+            (encumbrance_inventory_rail(html! {
+                @if inventory.is_empty() {
+                    p class="text-muted small-copy" { "No items carried." }
+                } @else {
+                    (trade_inventory_table(true, None, html! {
+                        @for item in inventory {
+                            @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
+                                td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                td class="inventory-item-name" {
+                                    (item_name_with_quality(&item.item_id, definition))
+                                    @if !is_equipped {
+                                        button type="button" class="trade-transfer trade-transfer-left"
+                                            data-discard-item=(item.id) data-count=(item.qty)
+                                            data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                                            data-label-one=(format!("Discard one {}", item.item_id))
+                                            data-label-target=(format!("Discard {} down to target", item.item_id))
+                                            data-label-all=(format!("Discard all {}", item.item_id))
+                                            aria-label=(format!("Discard {}", item.item_id))
+                                            title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
+                                    }
                                 }
+                                td class="inventory-count" { (item.qty) }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
+                                td class="inventory-weight" { (item_weight(definition)) }
+                                td class="inventory-gold" { (item_value(definition)) }
                             }
-                            td class="inventory-count" { (item.qty) }
-                            td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
-                            td class="inventory-gold" { (item_value(definition)) }
                         }
-                    }
-                }))
-            }
+                    }))
+                }
+            }, html! {}, encumbrance))
         }))
     }
 }
@@ -1411,6 +1420,8 @@ pub fn live_merchant_shop_page(
     smith: Option<&crate::spacetimedb::SettlementSmith>,
     repair_orders: &[crate::spacetimedb::RepairOrder],
     now_minutes: u64,
+    personal_encumbrance: EncumbranceSummary,
+    party_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
@@ -1423,6 +1434,11 @@ pub fn live_merchant_shop_page(
             }
         })
         .unwrap_or(0);
+    let player_footer = if matches!(shop, MerchantShop::Herbalist) {
+        html! {}
+    } else {
+        inventory_footer_controls("sell", "Sell surplus", "Sell everything")
+    };
     let content = html! {
         aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
@@ -1458,6 +1474,7 @@ pub fn live_merchant_shop_page(
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
+                (encumbrance_inventory_rail(html! {
                 (trade_inventory_table(true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1488,13 +1505,12 @@ pub fn live_merchant_shop_page(
                         }
                     }
                 }))
-                @if !matches!(shop, MerchantShop::Herbalist) {
-                    (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
-                }
+                }, player_footer, personal_encumbrance))
             }
             }
             @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
+                (encumbrance_inventory_rail(html! {
                 (trade_inventory_table(false, None, html! {
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1520,7 +1536,7 @@ pub fn live_merchant_shop_page(
                         }
                     }
                 }))
-                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+                }, inventory_footer_controls("sell", "Sell surplus", "Sell everything"), party_encumbrance))
             }
             }
             }
@@ -1550,34 +1566,37 @@ pub fn party_pool_page(
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
+    party_encumbrance: EncumbranceSummary,
+    personal_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Party inventory", html! {
-                div class="party-stake-summary" {
-                    span { "Your available stake" }
-                    strong { (stake) " gold" }
-                }
-                p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
-                (trade_inventory_table(false, None, html! {
-                    @for item in pooled {
-                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
-                        @let target = target_quantity(personal_targets, &item.item_id);
-                        @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
-                        tr class="trade-inventory-row" {
-                            td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                            td class="inventory-item-name" {
-                                (item_name_with_quality(&item.item_id, definition))
-                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal gold required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
-                            }
-                            td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
-                            td class="inventory-gold" { (item_value(definition)) }
-                        }
+                (encumbrance_inventory_rail(html! {
+                    div class="party-stake-summary" {
+                        span { "Your available stake" }
+                        strong { (stake) " gold" }
                     }
-                }))
-                (inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"))
+                    p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
+                    (trade_inventory_table(false, None, html! {
+                        @for item in pooled {
+                            @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
+                            @let target = target_quantity(personal_targets, &item.item_id);
+                            @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
+                            tr class="trade-inventory-row" {
+                                td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                td class="inventory-item-name" {
+                                    (item_name_with_quality(&item.item_id, definition))
+                                    span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal gold required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
+                                }
+                                td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
+                                td class="inventory-weight" { (item_weight(definition)) }
+                                td class="inventory-gold" { (item_value(definition)) }
+                            }
+                        }
+                    }))
+                }, inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"), party_encumbrance))
             }))
         }
         main class="center-content settlement-main" {
@@ -1587,29 +1606,30 @@ pub fn party_pool_page(
         }
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
-                p class="small-copy text-muted" { "Add items at their objective gold value." }
-                (trade_inventory_table(true, None, html! {
-                    @for item in inventory {
-                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let target = target_quantity(party_targets, &item.item_id);
-                        @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
-                        tr class="trade-inventory-row" {
-                            td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                            td class="inventory-item-name" {
-                                (item_name_with_quality(&item.item_id, definition))
-                                @if !equipped {
-                                    span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) } }
+                (encumbrance_inventory_rail(html! {
+                    p class="small-copy text-muted" { "Add items at their objective gold value." }
+                    (trade_inventory_table(true, None, html! {
+                        @for item in inventory {
+                            @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let target = target_quantity(party_targets, &item.item_id);
+                            @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
+                            tr class="trade-inventory-row" {
+                                td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                td class="inventory-item-name" {
+                                    (item_name_with_quality(&item.item_id, definition))
+                                    @if !equipped {
+                                        span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) } }
+                                    }
                                 }
+                                td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped)) }
+                                td class="inventory-weight" { (item_weight(definition)) }
+                                td class="inventory-gold" { (item_value(definition)) }
                             }
-                            td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                            td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
-                            td class="inventory-gold" { (item_value(definition)) }
                         }
-                    }
-                }))
-                (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
+                    }))
+                }, inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"), personal_encumbrance))
             }))
         }
         form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
@@ -1619,6 +1639,50 @@ pub fn party_pool_page(
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn encumbrance_inventory_rail(
+    content: Markup,
+    footer_controls: Markup,
+    summary: EncumbranceSummary,
+) -> Markup {
+    html! {
+        div class="encumbrance-inventory-rail" {
+            div class="encumbrance-inventory-scroll" { (content) }
+            (footer_controls)
+            (encumbrance_meter(summary))
+        }
+    }
+}
+
+fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
+    let penalty_percent = summary.penalty_fraction() * 100.0;
+    let weight_text = format!("{:.1} / {:.1} kg", summary.burden_kg, summary.capacity_kg);
+    let penalty_text = format!("-{penalty_percent:.1}%");
+    let accessible_text = format!(
+        "Weight {:.1} / {:.1} kilograms; Penalty -{penalty_percent:.1}%",
+        summary.burden_kg, summary.capacity_kg
+    );
+    html! {
+        div class="encumbrance" {
+            div class="encumbrance-values" aria-hidden="true" {
+                span class="encumbrance-weight" { (weight_text) }
+                span class="encumbrance-penalty" { (penalty_text) }
+            }
+            div class="encumbrance-visual" {
+                div class="encumbrance-meter"
+                    role="meter"
+                    aria-label="Encumbrance"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow=(format!("{penalty_percent:.1}"))
+                    aria-valuetext=(accessible_text) {
+                    span class="encumbrance-marker"
+                        style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
+                }
+            }
+        }
+    }
 }
 
 fn equipment_checkbox(
@@ -3550,10 +3614,12 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterCondition, LocationKind, MerchantShop, need_balance_meter, repair_custody_panel,
+        Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
+        encumbrance_meter, live_merchant_shop_page, need_balance_meter, repair_custody_panel,
         repair_submit_control, rest_default_minutes,
     };
     use crate::spacetimedb::ItemKind;
+    use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
@@ -3566,6 +3632,126 @@ mod tests {
     fn location_kind_rejects_unknown_path_segments() {
         assert_eq!("quest".parse(), Ok(LocationKind::Quest));
         assert!("merchant".parse::<LocationKind>().is_err());
+    }
+
+    #[test]
+    fn encumbrance_meter_formats_exact_text_and_accessible_linear_position() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(85.36, 150.0)).into_string();
+        assert!(markup.contains(">85.4 / 150.0 kg<"));
+        assert!(markup.contains(">-56.9%<"));
+        assert!(!markup.contains(">Weight"));
+        assert!(!markup.contains(">Penalty"));
+        assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
+        assert!(markup.contains("class=\"encumbrance-values\" aria-hidden=\"true\""));
+        assert!(markup.contains(
+            "<span class=\"encumbrance-weight\">85.4 / 150.0 kg</span><span class=\"encumbrance-penalty\">-56.9%</span>"
+        ));
+        assert!(
+            markup.contains(
+                "</div><div class=\"encumbrance-visual\"><div class=\"encumbrance-meter\""
+            )
+        );
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("aria-valuenow=\"56.9\""));
+        assert!(markup.contains("--encumbrance-position: 56.9067%"));
+    }
+
+    #[test]
+    fn overloaded_meter_keeps_burden_but_clamps_penalty_and_marker() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(185.4, 150.0)).into_string();
+        assert!(markup.contains(">185.4 / 150.0 kg<"));
+        assert!(markup.contains(">-100.0%<"));
+        assert!(markup.contains("--encumbrance-position: 100.0000%"));
+    }
+
+    #[test]
+    fn encumbrance_css_uses_a_linear_midpoint_gradient_and_contrast_marker() {
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains("linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%)"));
+        assert!(css.contains(".encumbrance-marker"));
+        assert!(css.contains("background: #fff"));
+    }
+
+    #[test]
+    fn encumbrance_rail_scrolls_items_but_keeps_footer_and_meter_outside() {
+        let markup = encumbrance_inventory_rail(
+            maud::html! { table class="test-items" {} },
+            maud::html! { button class="test-footer" {} },
+            EncumbranceSummary::new(10.0, 100.0),
+        )
+        .into_string();
+        assert!(markup.contains(
+            "<div class=\"encumbrance-inventory-scroll\"><table class=\"test-items\"></table></div><button class=\"test-footer\"></button><div class=\"encumbrance\">"
+        ));
+
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains(".sidebar-section:has(> .encumbrance-inventory-rail)"));
+        assert!(css.contains(".encumbrance-inventory-scroll"));
+        assert!(css.contains("overflow-y: auto"));
+        assert!(css.contains("padding-left: 3.25rem"));
+        assert!(css.contains("padding-right: 1.75rem"));
+        assert!(css.contains("container-type: inline-size"));
+        assert!(css.contains("flex: 0 0 50%"));
+        assert!(css.contains("width: 50%"));
+        assert!(css.contains("font-size: clamp(0.55rem, 4cqi, 0.78rem)"));
+        assert!(css.contains(".encumbrance-meter"));
+        assert!(css.contains("width: 100%"));
+        assert!(css.contains("@container (max-width: 12rem)"));
+        assert!(css.contains("padding-inline: 0.2rem"));
+        assert!(css.contains("font-size: 0.5rem"));
+        assert!(css.contains("@container (max-width: 10rem)"));
+        assert!(css.contains("padding-inline: 0.1rem"));
+        assert!(css.contains("padding-right: 0.05rem"));
+        assert!(css.contains("padding-left: 0.05rem"));
+        assert!(css.contains("font-size: 0.43rem"));
+    }
+
+    #[test]
+    fn merchant_tabs_render_personal_and_party_encumbrance_as_applicable() {
+        let character = Character {
+            id: 1,
+            name: "Trader".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("viabundus-1".into()),
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let render = |shop| {
+            live_merchant_shop_page(
+                &settlement(),
+                &character,
+                &[],
+                &[],
+                &[],
+                None,
+                &[],
+                &[],
+                &[],
+                shop,
+                &[],
+                None,
+                &[],
+                0,
+                EncumbranceSummary::new(10.0, 100.0),
+                EncumbranceSummary::new(30.0, 200.0),
+            )
+            .into_string()
+        };
+        let merchant = render(MerchantShop::Weapons);
+        assert!(merchant.contains("data-inventory-pane=\"player\""));
+        assert!(merchant.contains("data-inventory-pane=\"party\""));
+        assert!(merchant.contains(">10.0 / 100.0 kg<"));
+        assert!(merchant.contains(">30.0 / 200.0 kg<"));
+
+        let herbalist = render(MerchantShop::Herbalist);
+        assert!(herbalist.contains(">10.0 / 100.0 kg<"));
+        assert!(!herbalist.contains("data-inventory-pane=\"party\""));
+        assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
     }
 
     #[test]

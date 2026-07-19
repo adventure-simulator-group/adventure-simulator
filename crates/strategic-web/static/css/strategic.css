@@ -338,6 +338,143 @@
   background: var(--panel-bg);
 }
 
+.sidebar-section:has(> .encumbrance-inventory-rail) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.inventory-owner-panel:has(.encumbrance-inventory-rail) {
+  display: flex;
+  flex-direction: column;
+}
+
+.inventory-owner-panel:has(.encumbrance-inventory-rail) > [data-inventory-pane] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.encumbrance-inventory-rail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  container-type: inline-size;
+}
+
+.encumbrance-inventory-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* Keep center-facing row actions inside the scoped scroll viewport. */
+.left-sidebar .encumbrance-inventory-scroll {
+  margin-right: -1.75rem;
+  padding-right: 1.75rem;
+}
+
+.right-sidebar .encumbrance-inventory-scroll {
+  margin-left: -3.25rem;
+  padding-left: 3.25rem;
+}
+
+.encumbrance {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-top: 0.45rem;
+  padding: 0.55rem var(--padding) 0.65rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--sidebar-bg);
+  font-variant-numeric: tabular-nums;
+}
+
+.encumbrance-values,
+.encumbrance-visual {
+  box-sizing: border-box;
+  flex: 0 0 50%;
+  width: 50%;
+  min-width: 0;
+}
+
+.encumbrance-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-right: 0.35rem;
+  font-size: clamp(0.55rem, 4cqi, 0.78rem);
+  line-height: 1.25;
+}
+
+.encumbrance-visual {
+  display: flex;
+  align-items: center;
+  padding-left: 0.35rem;
+}
+
+.encumbrance-weight,
+.encumbrance-penalty {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+@container (max-width: 12rem) {
+  .encumbrance {
+    padding-inline: 0.2rem;
+  }
+
+  .encumbrance-values {
+    padding-right: 0.1rem;
+    font-size: 0.5rem;
+    line-height: 1.15;
+  }
+
+  .encumbrance-visual {
+    padding-left: 0.1rem;
+  }
+}
+
+@container (max-width: 10rem) {
+  .encumbrance {
+    padding-inline: 0.1rem;
+  }
+
+  .encumbrance-values {
+    padding-right: 0.05rem;
+    font-size: 0.43rem;
+  }
+
+  .encumbrance-visual {
+    padding-left: 0.05rem;
+  }
+}
+
+.encumbrance-meter {
+  position: relative;
+  width: 100%;
+  height: 0.75rem;
+  border: 1px solid var(--text-primary);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%);
+}
+
+.encumbrance-marker {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  left: clamp(0%, var(--encumbrance-position), 100%);
+  width: 0.2rem;
+  border: 1px solid #000;
+  border-radius: 0.15rem;
+  background: #fff;
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000;
+  transform: translateX(-50%);
+}
+
 .condition-bar {
   display: inline-flex;
   width: 5rem;
