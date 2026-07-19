@@ -376,6 +376,7 @@ body:has(.settlement-top-bar) .main-grid {
 
 /* Left Sidebar */
 .left-sidebar {
+  --left-rail-scrollbar-reserve: 8px;
   direction: rtl;
   background: var(--building-surface);
   border-right: 1px solid var(--border-color);
@@ -441,15 +442,18 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   padding-inline: var(--building-frame-corner-size);
   background:
     linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) left top / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
-    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) right top / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) calc(100% + var(--left-rail-scrollbar-reserve, 0px)) top / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
     linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) left bottom / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
-    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) right bottom / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) calc(100% + var(--left-rail-scrollbar-reserve, 0px)) bottom / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) center top / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) center bottom / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) left center / 0.55rem 100% no-repeat local,
-    linear-gradient(var(--building-frame), var(--building-frame)) right center / 0.55rem 100% no-repeat local,
+    linear-gradient(var(--building-frame), var(--building-frame)) calc(100% + var(--left-rail-scrollbar-reserve, 0px)) center / 0.55rem 100% no-repeat local,
     var(--building-panel-recess);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 42%), inset 0 0 1.25rem rgb(0 0 0 / 22%);
+  box-shadow:
+    inset calc(-1 * var(--left-rail-scrollbar-reserve, 0px)) 0 0 var(--building-frame),
+    inset 0 0 0 1px rgb(0 0 0 / 42%),
+    inset 0 0 1.25rem rgb(0 0 0 / 22%);
 }
 
 /* ============================================

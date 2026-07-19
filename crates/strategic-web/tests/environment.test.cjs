@@ -75,17 +75,24 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
   assert.match(layoutCss, /left top \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
-  assert.match(layoutCss, /right bottom \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
+  assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) bottom \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat local/);
   assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat local/);
-  assert.ok(layoutCss.indexOf("right bottom / var(--building-frame-corner-size)") < layoutCss.indexOf("center top / 100% 0.55rem"));
+  assert.ok(layoutCss.indexOf("var(--left-rail-scrollbar-reserve, 0px)) bottom") < layoutCss.indexOf("center top / 100% 0.55rem"));
   assert.doesNotMatch(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
 });
 
 test("strategic left rails keep their scrollbars on the outer edge", () => {
+  assert.match(layoutCss, /--left-rail-scrollbar-reserve: 8px;/);
   assert.match(layoutCss, /\.left-sidebar \{[\s\S]*direction: rtl;[\s\S]*scrollbar-gutter: stable;/);
   assert.match(layoutCss, /\.left-sidebar > \* \{ direction: ltr; \}/);
   assert.match(strategicCss, /\.left-sidebar \.encumbrance-inventory-scroll \{[\s\S]*direction: rtl;/);
   assert.match(strategicCss, /\.left-sidebar \.encumbrance-inventory-scroll > \* \{ direction: ltr; \}/);
+});
+
+test("settlement frames compensate for the left scrollbar gutter", () => {
+  assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) top/);
+  assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) center \/ 0\.55rem 100% no-repeat local/);
+  assert.match(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
 });
 
 test("skill schedule columns fit inside a framed left rail", () => {
