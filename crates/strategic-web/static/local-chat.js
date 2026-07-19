@@ -1,13 +1,4 @@
 (() => {
-  const CHANNEL_LABELS = Object.freeze({
-    local: "Local",
-    party: "Party",
-    settlement: "Settlement",
-    dm: "DM",
-    guild: "Guild",
-    info: "Info",
-  });
-
   const chatTimestamp = (row) => {
     const value = Number(row.dataset.chatCreatedMicros);
     return Number.isFinite(value) && value > 0 ? value : Number.POSITIVE_INFINITY;
@@ -38,30 +29,52 @@
     });
   };
 
-  const channelBadge = (channel, ownerDocument) => {
-    const badge = ownerDocument.createElement("span");
-    badge.className = "chat-channel-badge";
-    badge.textContent = `[${CHANNEL_LABELS[channel] || channel}] `;
-    return badge;
+  const createChannelRow = (channel, content, options = {}, ownerDocument = document) => {
+    const row = ownerDocument.createElement("div");
+    row.className = options.className || (channel === "info" ? "chat-system-message" : "chat-player-message");
+    row.dataset.chatChannel = channel;
+    if (options.messageId !== undefined) row.dataset.chatMessageId = String(options.messageId);
+    if (options.createdMicros !== undefined) row.dataset.chatCreatedMicros = String(options.createdMicros);
+
+    const timestamp = ownerDocument.createElement("span");
+    timestamp.className = "chat-timestamp";
+    timestamp.textContent = options.timestamp || "[--:--] ";
+    row.append(timestamp);
+    if (options.speaker) {
+      const name = ownerDocument.createElement("strong");
+      name.textContent = `${options.speaker}: `;
+      row.append(name);
+    }
+    row.append(typeof content === "string" ? ownerDocument.createTextNode(content) : content);
+    return row;
   };
 
-  const decorateMessage = (message, ownerDocument) => {
-    if (message.querySelector(".chat-channel-badge")) return;
-    const badge = channelBadge(message.dataset.chatChannel, ownerDocument);
-    const timestamp = message.querySelector(".chat-timestamp");
-    if (timestamp) timestamp.after(badge);
-    else message.prepend(badge);
+  const appendChannelRow = (panel, channel, content, options = {}) => {
+    const messages = panel?.matches?.(".settlement-chat-messages")
+      ? panel
+      : panel?.querySelector?.(".settlement-chat-messages");
+    if (!messages) return null;
+    const row = createChannelRow(channel, content, options, messages.ownerDocument || document);
+    messages.append(row);
+    messages.scrollTop = messages.scrollHeight;
+    return row;
   };
+
+  const appendInfo = (panel, content, options = {}) => appendChannelRow(panel, "info", content, options);
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       applyChannelVisibility,
+      appendChannelRow,
+      appendInfo,
       chatTimestamp,
-      decorateMessage,
+      createChannelRow,
       mergeChannelRows,
     };
   }
   if (typeof document === "undefined") return;
+
+  window.strategicChat = Object.freeze({ appendChannelRow, appendInfo, createChannelRow });
 
   document.querySelectorAll(".settlement-chat").forEach((panel) => {
     const messages = panel.querySelector(".settlement-chat-messages");
@@ -73,7 +86,6 @@
         .filter((filter) => filter.checked)
         .map((filter) => filter.dataset.chatFilter));
       const rows = [...messages.querySelectorAll("[data-chat-channel]")];
-      rows.forEach((message) => decorateMessage(message, document));
       applyChannelVisibility(rows, visibleChannels);
     };
     filters.forEach((filter) => filter.addEventListener("change", applyFilters));
@@ -160,7 +172,6 @@
         if (time) {
           time.textContent = `[${new Date(message.created_micros / 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}] `;
         }
-        decorateMessage(row, document);
         return row;
       }
       const row = document.createElement("div");
@@ -171,10 +182,9 @@
       const time = document.createElement("span");
       time.className = "chat-timestamp";
       time.textContent = `[${new Date(message.created_micros / 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}] `;
-      const badge = channelBadge("local", document);
       const name = document.createElement("strong");
       name.textContent = `${message.sender_name}: `;
-      row.append(time, badge, name, document.createTextNode(message.body));
+      row.append(time, name, document.createTextNode(message.body));
       return row;
     });
     messages.replaceChildren(...mergeChannelRows(existingRows, "local", localRows, pendingInteractiveRows));

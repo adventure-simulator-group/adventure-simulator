@@ -3,8 +3,9 @@ const test = require("node:test");
 
 const {
   applyChannelVisibility,
+  appendInfo,
   chatTimestamp,
-  decorateMessage,
+  createChannelRow,
   mergeChannelRows,
 } = require("../static/local-chat.js");
 
@@ -59,21 +60,43 @@ test("message IDs provide deterministic ordering when timestamps match", () => {
   assert.equal(chatTimestamp(row("info", "pending")), Number.POSITIVE_INFINITY);
 });
 
-test("message decoration adds a visible channel label beside the timestamp", () => {
-  const inserted = [];
-  const timestamp = { after: (element) => inserted.push(element) };
-  const message = {
-    dataset: { chatChannel: "guild" },
-    prepend: (element) => inserted.unshift(element),
-    querySelector: (selector) => selector === ".chat-timestamp" ? timestamp : null,
-  };
+const fakeDocument = () => {
   const ownerDocument = {
-    createElement: () => ({ className: "", textContent: "" }),
+    createElement: (tagName) => ({
+      tagName,
+      className: "",
+      dataset: {},
+      children: [],
+      ownerDocument,
+      append(...children) { this.children.push(...children); },
+    }),
+    createTextNode: (textContent) => ({ textContent }),
   };
+  return ownerDocument;
+};
 
-  decorateMessage(message, ownerDocument);
+test("channel row creation includes content and timestamp without a channel badge", () => {
+  const row = createChannelRow("guild", "Guild news", {}, fakeDocument());
 
-  assert.equal(inserted.length, 1);
-  assert.equal(inserted[0].className, "chat-channel-badge");
-  assert.equal(inserted[0].textContent, "[Guild] ");
+  assert.equal(row.dataset.chatChannel, "guild");
+  assert.equal(row.children[0].className, "chat-timestamp");
+  assert.equal(row.children[1].textContent, "Guild news");
+  assert.equal(row.children.some((child) => child.className === "chat-channel-badge"), false);
+});
+
+test("Info notices append without changing filter state", () => {
+  const ownerDocument = fakeDocument();
+  const messages = ownerDocument.createElement("div");
+  messages.className = "settlement-chat-messages";
+  messages.matches = (selector) => selector === ".settlement-chat-messages";
+  messages.scrollHeight = 120;
+  const filters = [{ checked: false }, { checked: true }];
+
+  const inserted = appendInfo(messages, "25 gold has been added.");
+
+  assert.equal(messages.children[0], inserted);
+  assert.equal(inserted.dataset.chatChannel, "info");
+  assert.deepEqual(filters.map((filter) => filter.checked), [false, true]);
+  assert.equal(messages.scrollTop, 120);
+  assert.equal(inserted.children.some((child) => child.className === "chat-channel-badge"), false);
 });
