@@ -2218,7 +2218,7 @@ fn skills_table(
                 thead { tr class="schedule-context-heading" {
                         th scope="colgroup" colspan=(if schedule.is_some() { "5" } else { "2" }) class="schedule-table-title" { (title) }
                     @if schedule.is_some() {
-                        th scope="col" aria-label="Automatic training" title="Automatic training" {
+                        th scope="col" aria-label="Automatic training" title="Automatically distribute training to skills in section" {
                             (schedule_auto_header_icon())
                         }
                         th scope="col" title="Daily plan used while resting or waiting in a settlement" {
@@ -2249,9 +2249,7 @@ fn skills_table(
                             th scope="col" title="Virtue" { (schedule_header_icon("scales", "Virtue")) }
                             th scope="col" title="Morale" { (schedule_header_icon("sun", "Morale")) }
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
-                            th scope="col" aria-label="Automatic training" title="Automatic training" {
-                                (schedule_auto_header_icon())
-                            }
+                            th scope="col" {}
                             th scope="col" title="Daily allocation" { (schedule_header_icon("duration", "Daily allocation")) }
                             th scope="col" aria-label="Religion details" {}
                         }
@@ -4424,11 +4422,11 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
-        assert_eq!(rail.matches(">⚙</span>").count(), 2);
+        assert_eq!(rail.matches(">⚙</span>").count(), 1);
         assert_eq!(
-            rail.matches("aria-label=\"Automatic training\" title=\"Automatic training\"")
+            rail.matches("aria-label=\"Automatic training\" title=\"Automatically distribute training to skills in section\"")
                 .count(),
-            2
+            1
         );
     }
 
