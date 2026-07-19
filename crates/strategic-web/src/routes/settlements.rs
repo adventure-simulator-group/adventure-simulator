@@ -1308,6 +1308,7 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
     let settlement = if location.kind == LocationKind::Settlement {
         state
             .db
@@ -1327,6 +1328,7 @@ async fn party_personal(
         limbs.first(),
         capability.as_ref(),
         settlement.as_ref(),
+        stats.as_ref(),
     );
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;

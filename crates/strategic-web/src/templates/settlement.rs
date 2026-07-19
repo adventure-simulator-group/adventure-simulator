@@ -7,6 +7,12 @@
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
     prelude::Skill,
+    strategic_schedule::{
+        BASELINE_FATIGUE_PER_DAY, DailySchedule, FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+        LABOR_FATIGUE_PER_HOUR, LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT,
+        LEISURE_MORALE_SCALE_FATIGUE, LeisureOutcome, settlement_leisure_outcome,
+    },
+    strategic_time::MINUTES_PER_DAY,
 };
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
@@ -20,8 +26,8 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, Settlement, SettlementAlias, SettlementDescription,
-    SettlementDescriptionKind,
+    PartyInventoryItem, PartyJourney, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -38,6 +44,7 @@ pub struct ActivityPreviewRates {
     thievery_virtue_per_hour: f32,
     raiding_gold_per_hour: f32,
     raiding_virtue_per_hour: f32,
+    current_fatigue: f32,
 }
 
 impl ActivityPreviewRates {
@@ -47,11 +54,16 @@ impl ActivityPreviewRates {
         limbs: Option<&CharacterLimbs>,
         capability: Option<&CharacterCapability>,
         settlement: Option<&Settlement>,
+        stats: Option<&CharacterStats>,
     ) -> Self {
+        let current_fatigue = stats.map_or(0.0, |stats| stats.calories_used.max(0.0));
         let (Some(attributes), Some(skills), Some(limbs), Some(capability), Some(settlement)) =
             (attributes, skills, limbs, capability, settlement)
         else {
-            return Self::default();
+            return Self {
+                current_fatigue,
+                ..Self::default()
+            };
         };
         let limb_health = [
             limbs.left_arm_health,
@@ -101,6 +113,7 @@ impl ActivityPreviewRates {
             thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
             raiding_virtue_per_hour: -1.5,
+            current_fatigue,
         }
     }
 }
@@ -1794,7 +1807,7 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=serialized-save-2" {}
+                    script src="/static/training-schedule.js?v=leisure-preview-1" {}
                 } @else {
                     (skills_table(title, skills, head_health, upper_health, lower_health, None, None))
                 }
@@ -1864,11 +1877,12 @@ fn skills_table(
                             th scope="col" title="Fatigue" { (schedule_header_icon("💤", "Fatigue")) }
                             th scope="col" title="Daily allocation" { (schedule_header_icon("⌛", "Daily allocation")) }
                         }
-                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, ActivityEffectRates::prayer(), "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, 0.0), "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed."))
-                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, ActivityEffectRates::default(), "Unallocated downtime for sleep and personal needs."))
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, ActivityEffectRates::prayer(), None, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
             }
         }
@@ -1934,6 +1948,49 @@ struct ActivityEffectRates {
     prayer_morale: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LeisurePreview {
+    current_fatigue: f32,
+    outcome: LeisureOutcome,
+    fatigue_display: f32,
+}
+
+fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
+    DailySchedule {
+        melee: schedule.melee_minutes,
+        dodge: schedule.dodge_minutes,
+        block: schedule.block_minutes,
+        ranged: schedule.ranged_minutes,
+        will: schedule.will_minutes,
+        charisma: schedule.charisma_minutes,
+        medicine: schedule.medicine_minutes,
+        faith: schedule.faith_minutes,
+        stealth: schedule.stealth_minutes,
+        balance: schedule.balance_minutes,
+        surgeon: schedule.surgeon_minutes,
+        smithing: schedule.smithing_minutes,
+        labor: schedule.labor_minutes,
+        prayer: schedule.prayer_minutes,
+        thievery: schedule.thievery_minutes,
+        raiding: schedule.raiding_minutes,
+    }
+}
+
+fn leisure_preview(schedule: &ScheduleAllocation, current_fatigue: f32) -> LeisurePreview {
+    let outcome = settlement_leisure_outcome(
+        core_daily_schedule(schedule),
+        MINUTES_PER_DAY,
+        current_fatigue,
+    );
+    let labor_fatigue = f32::from(schedule.labor_minutes) / 60.0 * LABOR_FATIGUE_PER_HOUR;
+    LeisurePreview {
+        current_fatigue,
+        outcome,
+        fatigue_display: (outcome.fatigue_delta - labor_fatigue)
+            / FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+    }
+}
+
 impl ActivityEffectRates {
     const fn linear(gold: f32, virtue: f32, morale: f32, fatigue: f32) -> Self {
         Self {
@@ -1969,9 +2026,14 @@ impl ActivityEffectRates {
 }
 
 fn activity_effect_cell(kind: &str, value: f32) -> Markup {
-    let state = if value > 0.0005 {
+    let rounded = if kind == "gold" {
+        value.round()
+    } else {
+        (value * 10.0).round() / 10.0
+    };
+    let state = if rounded > 0.0 {
         "positive"
-    } else if value < -0.0005 {
+    } else if rounded < 0.0 {
         "negative"
     } else {
         "neutral"
@@ -1979,9 +2041,9 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     let display = if state == "neutral" {
         "0".to_string()
     } else if kind == "gold" {
-        format!("{value:+.0}")
+        format!("{rounded:+.0}")
     } else {
-        format!("{value:+.1}")
+        format!("{rounded:+.1}")
     };
     html! {
         td class=(format!("schedule-effect schedule-effect-{state}")) data-activity-effect=(kind) {
@@ -1997,9 +2059,13 @@ fn schedule_special_row(
     allocation_minutes: u16,
     editable: bool,
     effects: ActivityEffectRates,
+    leisure: Option<LeisurePreview>,
     description: &str,
 ) -> Markup {
-    let values = effects.values(allocation_minutes);
+    let values = leisure.map_or_else(
+        || effects.values(allocation_minutes),
+        |preview| [0.0, 0.0, preview.outcome.morale, preview.fatigue_display],
+    );
     html! {
         tr class="party-skill-row schedule-special-row" title=(description)
             data-activity-row data-activity-allocation=(allocation_name)
@@ -2009,7 +2075,14 @@ fn schedule_special_row(
             data-fatigue-rate=(effects.fatigue_per_hour)
             data-prayer-morale=[effects.prayer_morale.then_some("true")]
             data-prayer-morale-limit=[effects.prayer_morale.then_some(PRAYER_MORALE_LIMIT)]
-            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)] {
+            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)]
+            data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
+            data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
+            data-leisure-labor-fatigue-rate=[leisure.map(|_| LABOR_FATIGUE_PER_HOUR)]
+            data-leisure-recovery-rate=[leisure.map(|_| LEISURE_FATIGUE_RECOVERY_PER_HOUR)]
+            data-leisure-morale-limit=[leisure.map(|_| LEISURE_MORALE_LIMIT)]
+            data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
+            data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
             td class="party-skill-name" { strong { (label) } }
             (activity_effect_cell("gold", values[0]))
@@ -3173,6 +3246,7 @@ mod tests {
             120,
             true,
             ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            None,
             "Test activity",
         )
         .into_string();
@@ -3185,6 +3259,64 @@ mod tests {
         assert!(rendered.contains(">-2.0</td>"));
         assert!(!rendered.contains("schedule-allocation-fill"));
         assert!(!rendered.contains("schedule-special-track"));
+    }
+
+    #[test]
+    fn server_rendered_effects_normalize_negative_zero() {
+        let rendered = activity_effect_cell("fatigue", -0.0006).into_string();
+        assert!(rendered.contains("schedule-effect-neutral"));
+        assert!(rendered.contains(">0</td>"));
+        assert!(!rendered.contains("-0.0"));
+
+        let negative = activity_effect_cell("fatigue", -0.06).into_string();
+        assert!(negative.contains("schedule-effect-negative"));
+        assert!(negative.contains(">-0.1</td>"));
+    }
+
+    #[test]
+    fn leisure_and_labor_previews_decompose_the_shared_fatigue_outcome() {
+        let schedule = ScheduleAllocation {
+            labor_minutes: 240,
+            melee_minutes: 720,
+            ..Default::default()
+        };
+        let leisure = leisure_preview(&schedule, 0.0);
+        assert_eq!(leisure.outcome.leisure_hours, 8.0);
+        assert_eq!(leisure.outcome.fatigue_delta, 0.0);
+        assert_eq!(leisure.outcome.morale, 0.0);
+        assert_eq!(leisure.fatigue_display, -2.0);
+        assert_eq!(
+            ActivityEffectRates::linear(
+                0.0,
+                0.0,
+                0.0,
+                LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+            )
+            .values(schedule.labor_minutes)[3],
+            2.0
+        );
+        let rendered = schedule_special_row(
+            "Leisure",
+            "inn",
+            "leisure_minutes",
+            0,
+            false,
+            ActivityEffectRates::default(),
+            Some(leisure),
+            "Test leisure",
+        )
+        .into_string();
+        for attribute in [
+            "data-leisure-baseline-fatigue",
+            "data-leisure-labor-fatigue-rate",
+            "data-leisure-recovery-rate",
+            "data-leisure-morale-limit",
+            "data-leisure-morale-scale",
+            "data-leisure-fatigue-preview-divisor",
+        ] {
+            assert!(rendered.contains(attribute));
+        }
+        assert!(rendered.contains(">-2.0</td>"));
     }
 
     #[test]
@@ -3598,6 +3730,8 @@ mod tests {
         assert!(schedule.contains("/^\\d{3,4}$/"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
         assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
+        assert!(schedule.contains("function calculateLeisurePreview"));
+        assert!(schedule.contains("row.dataset.leisureFatiguePreviewDivisor"));
         assert!(schedule.contains("function mountSchedules(root = document)"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
@@ -3618,7 +3752,8 @@ mod tests {
         assert!(live_regions.contains("scheduleEditorIsPending"));
         assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
-        assert!(css.contains(".schedule-time-input {\n  position: absolute;"));
+        assert!(css.contains(".schedule-time-input {"));
+        assert!(css.contains("position: absolute;"));
         assert!(css.contains(".schedule-save-status"));
     }
 }

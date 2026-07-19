@@ -123,10 +123,25 @@
     return 'rgb(16 16 16)';
   }
 
+  function roundedEffectValue(kind, value) {
+    return kind === 'gold' ? Math.round(value) : Number(value.toFixed(1));
+  }
+
   function signedEffect(kind, value) {
-    if (Math.abs(value) < 0.0005) return '0';
-    const rounded = kind === 'gold' ? Math.round(value).toString() : value.toFixed(1);
-    return value > 0 ? `+${rounded}` : rounded;
+    const rounded = roundedEffectValue(kind, value);
+    if (rounded === 0) return '0';
+    const formatted = kind === 'gold' ? rounded.toString() : rounded.toFixed(1);
+    return rounded > 0 ? `+${formatted}` : formatted;
+  }
+
+  function renderEffect(row, kind, value) {
+    const cell = row.querySelector(`[data-activity-effect="${kind}"]`);
+    if (!cell) return;
+    const rounded = roundedEffectValue(kind, value);
+    cell.textContent = signedEffect(kind, value);
+    cell.classList.toggle('schedule-effect-positive', rounded > 0);
+    cell.classList.toggle('schedule-effect-negative', rounded < 0);
+    cell.classList.toggle('schedule-effect-neutral', rounded === 0);
   }
 
   function renderActivityPreview(row, minutes) {
@@ -139,14 +154,53 @@
         : hours * Number(row.dataset.moraleRate || 0),
       fatigue: hours * Number(row.dataset.fatigueRate || 0),
     };
-    Object.entries(effects).forEach(([kind, value]) => {
-      const cell = row.querySelector(`[data-activity-effect="${kind}"]`);
-      if (!cell) return;
-      cell.textContent = signedEffect(kind, value);
-      cell.classList.toggle('schedule-effect-positive', value > 0.0005);
-      cell.classList.toggle('schedule-effect-negative', value < -0.0005);
-      cell.classList.toggle('schedule-effect-neutral', Math.abs(value) <= 0.0005);
+    Object.entries(effects).forEach(([kind, value]) => renderEffect(row, kind, value));
+  }
+
+  function calculateLeisurePreview({
+    baselineFatigue,
+    currentFatigue,
+    fatiguePreviewDivisor,
+    laborFatigueRate,
+    laborMinutes,
+    leisureMinutes,
+    moraleLimit,
+    moraleScale,
+    recoveryRate,
+  }) {
+    const laborFatigue = laborMinutes / 60 * laborFatigueRate;
+    const recovery = leisureMinutes / 60 * recoveryRate;
+    const fatigueBeforeRecovery = Math.max(0, currentFatigue) + baselineFatigue + laborFatigue;
+    const fatigueAfter = Math.max(0, fatigueBeforeRecovery - recovery);
+    const fatigueDelta = fatigueAfter - Math.max(0, currentFatigue);
+    const surplusRecoveryRate = Math.max(0, recovery - baselineFatigue - laborFatigue);
+    const timeToClearFatigue = surplusRecoveryRate > 0
+      ? Math.max(0, currentFatigue) / surplusRecoveryRate
+      : Number.POSITIVE_INFINITY;
+    const qualifyingDays = Math.max(0, 1 - timeToClearFatigue);
+    const dailyMoraleQuality = moraleLimit
+      * (1 - Math.exp(-surplusRecoveryRate / Math.max(moraleScale, Number.EPSILON)));
+    return {
+      fatigueDelta,
+      leisureFatigue: (fatigueDelta - laborFatigue) / Math.max(fatiguePreviewDivisor, Number.EPSILON),
+      morale: qualifyingDays * dailyMoraleQuality,
+    };
+  }
+
+  function renderLeisurePreview(row, leisureMinutes, allocation) {
+    const preview = calculateLeisurePreview({
+      baselineFatigue: Number(row.dataset.leisureBaselineFatigue || 0),
+      currentFatigue: Number(row.dataset.leisureCurrentFatigue || 0),
+      fatiguePreviewDivisor: Number(row.dataset.leisureFatiguePreviewDivisor || 1),
+      laborFatigueRate: Number(row.dataset.leisureLaborFatigueRate || 0),
+      laborMinutes: Number(allocation.labor_minutes || 0),
+      leisureMinutes,
+      moraleLimit: Number(row.dataset.leisureMoraleLimit || 0),
+      moraleScale: Number(row.dataset.leisureMoraleScale || 0),
+      recoveryRate: Number(row.dataset.leisureRecoveryRate || 0),
     });
+    renderEffect(row, 'morale', preview.morale);
+    renderEffect(row, 'fatigue', preview.leisureFatigue);
   }
 
   function drainFromBottom(allocation, names, amount) {
@@ -207,7 +261,8 @@
     });
     root.querySelectorAll('[data-activity-row]').forEach((row) => {
       const name = row.dataset.activityAllocation;
-      renderActivityPreview(row, name === 'leisure_minutes' ? leisure : (allocation[name] || 0));
+      if (name === 'leisure_minutes') renderLeisurePreview(row, leisure, allocation);
+      else renderActivityPreview(row, allocation[name] || 0);
     });
     root.querySelector('[data-schedule-value="leisure_minutes"]')?.style.setProperty('--leisure-color', leisureColor(leisure));
     root.querySelector('[data-schedule-value="leisure_minutes"]')?.setAttribute('title', leisureTip);
@@ -287,7 +342,12 @@
     input.select();
   }
 
-  if (typeof module !== 'undefined') module.exports = { createLatestSaveQueue, parseClock };
+  if (typeof module !== 'undefined') module.exports = {
+    calculateLeisurePreview,
+    createLatestSaveQueue,
+    parseClock,
+    signedEffect,
+  };
   if (typeof document === 'undefined') return;
 
   function mountSchedules(root = document) {

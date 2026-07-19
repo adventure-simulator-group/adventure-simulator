@@ -2,11 +2,25 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  calculateLeisurePreview,
   createLatestSaveQueue,
   parseClock,
+  signedEffect,
 } = require("../static/training-schedule.js");
 
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+const leisurePreview = (overrides = {}) => calculateLeisurePreview({
+  baselineFatigue: 600,
+  currentFatigue: 0,
+  fatiguePreviewDivisor: 100,
+  laborFatigueRate: 50,
+  laborMinutes: 0,
+  leisureMinutes: 360,
+  moraleLimit: 4,
+  moraleScale: 200,
+  recoveryRate: 100,
+  ...overrides,
+});
 
 test("schedule time parser accepts clock and whole-hour forms", () => {
   assert.equal(parseClock("8"), 8 * 60);
@@ -27,6 +41,32 @@ test("schedule time parser retains day bounds and minute validation", () => {
   for (const invalid of ["", "25", "24:15", "2415", "8:60", "860", "12345", "noon"]) {
     assert.equal(parseClock(invalid), null, invalid);
   }
+});
+
+test("Leisure preview preserves fatigue through six hours and then offsets activity", () => {
+  assert.equal(leisurePreview({ leisureMinutes: 300 }).fatigueDelta, 100);
+  assert.equal(leisurePreview({ leisureMinutes: 360 }).fatigueDelta, 0);
+  const offset = leisurePreview({ laborMinutes: 240, leisureMinutes: 480 });
+  assert.equal(offset.fatigueDelta, 0);
+  assert.equal(offset.leisureFatigue, -2);
+});
+
+test("Leisure preview grants morale only after current and generated fatigue are gone", () => {
+  const carried = leisurePreview({ currentFatigue: 200, leisureMinutes: 480 });
+  assert.equal(carried.fatigueDelta, -200);
+  assert.equal(carried.morale, 0);
+  const partiallyCarried = leisurePreview({ currentFatigue: 100, leisureMinutes: 480 });
+  const fatigueFree = leisurePreview({ leisureMinutes: 480 });
+  assert.ok(Math.abs(partiallyCarried.morale - fatigueFree.morale / 2) < 0.0001);
+  const surplus = leisurePreview({ leisureMinutes: 540 });
+  assert.equal(surplus.fatigueDelta, 0);
+  assert.ok(surplus.morale > 0 && surplus.morale < 4);
+});
+
+test("signed effects normalize values that display as negative zero", () => {
+  assert.equal(signedEffect("fatigue", -0.0006), "0");
+  assert.equal(signedEffect("fatigue", -0.04), "0");
+  assert.equal(signedEffect("fatigue", -0.06), "-0.1");
 });
 
 test("schedule saves serialize requests and coalesce to the newest snapshot", async () => {

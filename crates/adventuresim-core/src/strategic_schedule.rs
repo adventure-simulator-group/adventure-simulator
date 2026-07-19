@@ -4,6 +4,18 @@ use crate::{activity::*, strategic_time::training_hours_increment};
 
 /// Stable order used by reports and schedule arrays.
 pub const SKILL_COUNT: usize = 12;
+/// Ordinary sleep pressure accumulated over a full day without tiring activity.
+pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
+/// Fatigue added by an hour of sustained ordinary labor.
+pub const LABOR_FATIGUE_PER_HOUR: f32 = 50.0;
+/// Fatigue removed by an hour of Leisure; six hours offsets baseline wakefulness.
+pub const LEISURE_FATIGUE_RECOVERY_PER_HOUR: f32 = 100.0;
+/// Maximum daily morale from Leisure left after all fatigue has been removed.
+pub const LEISURE_MORALE_LIMIT: f32 = 4.0;
+/// Surplus recovery producing about 63% of the Leisure morale limit.
+pub const LEISURE_MORALE_SCALE_FATIGUE: f32 = 200.0;
+/// Reservoir units represented by one compact Fatigue point in schedule previews.
+pub const FATIGUE_RESERVOIR_PER_PREVIEW_POINT: f32 = 100.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +101,62 @@ impl DailySchedule {
         .into_iter()
         .map(u64::from)
         .sum()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LeisureOutcome {
+    /// Signed change to the fatigue reservoir; negative values are recovery.
+    pub fatigue_delta: f32,
+    pub morale: f32,
+    /// Portion of the interval after carried and newly generated fatigue was
+    /// fully cleared, during which Leisure was actually earning morale.
+    pub morale_earning_minutes: f32,
+    pub leisure_hours: f32,
+}
+
+/// Resolve settlement Leisure against baseline wakefulness, scheduled exertion,
+/// and fatigue already carried into the interval. Recovery beyond all fatigue
+/// becomes a bounded morale benefit instead of driving fatigue below zero.
+pub fn settlement_leisure_outcome(
+    schedule: DailySchedule,
+    elapsed_minutes: u64,
+    current_fatigue: f32,
+) -> LeisureOutcome {
+    if elapsed_minutes == 0 {
+        return LeisureOutcome::default();
+    }
+    let days = elapsed_minutes as f32 / crate::strategic_time::MINUTES_PER_DAY as f32;
+    let leisure_hours_per_day = (crate::strategic_time::MINUTES_PER_DAY
+        .saturating_sub(schedule.allocated_minutes())) as f32
+        / 60.0;
+    let labor_hours = days * f32::from(schedule.labor) / 60.0;
+    let generated = days * BASELINE_FATIGUE_PER_DAY + labor_hours * LABOR_FATIGUE_PER_HOUR;
+    let recovery = days * leisure_hours_per_day * LEISURE_FATIGUE_RECOVERY_PER_HOUR;
+    let fatigue_before_recovery = current_fatigue.max(0.0) + generated;
+    let fatigue_after = (fatigue_before_recovery - recovery).max(0.0);
+    let surplus_recovery_per_day = (leisure_hours_per_day * LEISURE_FATIGUE_RECOVERY_PER_HOUR
+        - BASELINE_FATIGUE_PER_DAY
+        - f32::from(schedule.labor) / 60.0 * LABOR_FATIGUE_PER_HOUR)
+        .max(0.0);
+    let time_to_clear_fatigue = if surplus_recovery_per_day > 0.0 {
+        current_fatigue.max(0.0) / surplus_recovery_per_day
+    } else {
+        f32::INFINITY
+    };
+    let qualifying_days = (days - time_to_clear_fatigue).max(0.0);
+    let daily_morale_quality = LEISURE_MORALE_LIMIT
+        * (1.0
+            - (-surplus_recovery_per_day / LEISURE_MORALE_SCALE_FATIGUE.max(f32::EPSILON)).exp());
+    LeisureOutcome {
+        fatigue_delta: fatigue_after - current_fatigue.max(0.0),
+        // Morale begins only at the point within the interval where carried
+        // fatigue reaches zero. Both that crossing and the daily quality are
+        // rates, making the earned total independent of interval partitioning.
+        morale: qualifying_days * daily_morale_quality,
+        morale_earning_minutes: qualifying_days * crate::strategic_time::MINUTES_PER_DAY as f32,
+        leisure_hours: days * leisure_hours_per_day,
     }
 }
 
@@ -273,5 +341,129 @@ mod tests {
         assert_ne!(aggregate.gold_earned, repeated);
         assert_eq!(aggregate.gold_earned, 19);
         assert_eq!(repeated, 30);
+    }
+
+    #[test]
+    fn six_hours_of_leisure_exactly_offsets_baseline_fatigue() {
+        let six_hours = DailySchedule {
+            melee: 18 * 60,
+            ..Default::default()
+        };
+        assert_eq!(
+            settlement_leisure_outcome(six_hours, MINUTES_PER_DAY, 0.0).fatigue_delta,
+            0.0
+        );
+        let five_hours = DailySchedule {
+            melee: 19 * 60,
+            ..Default::default()
+        };
+        assert_eq!(
+            settlement_leisure_outcome(five_hours, MINUTES_PER_DAY, 0.0).fatigue_delta,
+            100.0
+        );
+    }
+
+    #[test]
+    fn leisure_offsets_labor_before_granting_morale() {
+        let exactly_offsets_labor = DailySchedule {
+            labor: 4 * 60,
+            melee: 12 * 60,
+            ..Default::default()
+        };
+        let offset = settlement_leisure_outcome(exactly_offsets_labor, MINUTES_PER_DAY, 0.0);
+        assert_eq!(offset.leisure_hours, 8.0);
+        assert_eq!(offset.fatigue_delta, 0.0);
+        assert_eq!(offset.morale, 0.0);
+
+        let surplus = settlement_leisure_outcome(
+            DailySchedule {
+                melee: 15 * 60,
+                ..Default::default()
+            },
+            MINUTES_PER_DAY,
+            0.0,
+        );
+        assert_eq!(surplus.leisure_hours, 9.0);
+        assert_eq!(surplus.fatigue_delta, 0.0);
+        assert!(surplus.morale > 0.0 && surplus.morale < LEISURE_MORALE_LIMIT);
+    }
+
+    #[test]
+    fn leisure_removes_carried_fatigue_before_morale() {
+        let schedule = DailySchedule {
+            melee: 16 * 60,
+            ..Default::default()
+        };
+        let outcome = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 200.0);
+        assert_eq!(outcome.fatigue_delta, -200.0);
+        assert_eq!(outcome.morale, 0.0);
+
+        let next_day = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 0.0);
+        assert_eq!(next_day.fatigue_delta, 0.0);
+        assert!(next_day.morale > 0.0);
+    }
+
+    #[test]
+    fn leisure_morale_is_proportional_to_elapsed_time() {
+        let schedule = DailySchedule {
+            melee: 15 * 60,
+            ..Default::default()
+        };
+        let daily = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 0.0);
+        let hourly = settlement_leisure_outcome(schedule, 60, 0.0);
+
+        assert!((daily.morale - hourly.morale * 24.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn leisure_morale_crossing_carried_fatigue_is_partition_independent() {
+        let schedule = DailySchedule {
+            melee: 16 * 60,
+            ..Default::default()
+        };
+        let starting_fatigue = 350.0;
+        let aggregate = settlement_leisure_outcome(schedule, 4 * MINUTES_PER_DAY, starting_fatigue);
+
+        let mut daily_fatigue = starting_fatigue;
+        let mut daily_morale = 0.0;
+        for _ in 0..4 {
+            let outcome = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, daily_fatigue);
+            daily_fatigue += outcome.fatigue_delta;
+            daily_morale += outcome.morale;
+        }
+
+        let mut hourly_fatigue = starting_fatigue;
+        let mut hourly_morale = 0.0;
+        for _ in 0..(4 * 24) {
+            let outcome = settlement_leisure_outcome(schedule, 60, hourly_fatigue);
+            hourly_fatigue += outcome.fatigue_delta;
+            hourly_morale += outcome.morale;
+        }
+
+        assert!((aggregate.morale - daily_morale).abs() < 0.001);
+        assert!((aggregate.morale - hourly_morale).abs() < 0.001);
+        assert!((starting_fatigue + aggregate.fatigue_delta - hourly_fatigue).abs() < 0.001);
+    }
+
+    #[test]
+    fn leisure_fatigue_is_chunk_invariant() {
+        let schedule = DailySchedule {
+            labor: 4 * 60,
+            melee: 12 * 60,
+            ..Default::default()
+        };
+        let aggregate = settlement_leisure_outcome(schedule, 30 * MINUTES_PER_DAY, 500.0);
+        let mut repeated_fatigue = 500.0;
+        for _ in 0..30 {
+            repeated_fatigue +=
+                settlement_leisure_outcome(schedule, MINUTES_PER_DAY, repeated_fatigue)
+                    .fatigue_delta;
+        }
+        assert!((500.0 + aggregate.fatigue_delta - repeated_fatigue).abs() < 0.001);
+        let aggregate_projection =
+            settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 500.0 + aggregate.fatigue_delta);
+        let repeated_projection =
+            settlement_leisure_outcome(schedule, MINUTES_PER_DAY, repeated_fatigue);
+        assert!((aggregate_projection.morale - repeated_projection.morale).abs() < 0.001);
     }
 }

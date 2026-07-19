@@ -283,7 +283,7 @@ fn apply_training(
     skills.smithing_hours = hours.smithing;
 }
 
-fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
+pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
         melee: schedule.melee_minutes,
         dodge: schedule.dodge_minutes,
@@ -330,6 +330,7 @@ fn apply_activity_outcomes(
     character_id: u64,
     schedule: &ScheduleAllocation,
     elapsed: u64,
+    interval_end_minute: u64,
 ) -> Result<ActivityRisks, String> {
     let character = ctx
         .db
@@ -431,6 +432,13 @@ fn apply_activity_outcomes(
             .character_id()
             .update(notoriety);
     }
+    crate::condition::apply_settlement_leisure_condition(
+        ctx,
+        character_id,
+        core_schedule(schedule),
+        elapsed,
+        interval_end_minute,
+    )?;
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
         raiding_retaliation: outcome.raiding_retaliation_chance,
@@ -593,6 +601,17 @@ fn rest_for_minutes(
     let training_elapsed = elapsed
         .saturating_sub(convalescing)
         .saturating_sub(maintenance_elapsed);
+    let priority_rest_elapsed = elapsed.saturating_sub(training_elapsed);
+    let starting_minute = character_time.minutes;
+    if priority_rest_elapsed > 0 {
+        crate::condition::apply_settlement_leisure_condition(
+            ctx,
+            character_id,
+            DailySchedule::default(),
+            priority_rest_elapsed,
+            starting_minute.saturating_add(priority_rest_elapsed),
+        )?;
+    }
     if training_elapsed > 0 {
         let schedule = ctx
             .db
@@ -614,8 +633,13 @@ fn rest_for_minutes(
             activities,
         );
         ctx.db.character_skills().character_id().update(skills);
-        let risks =
-            apply_activity_outcomes(ctx, character_id, &schedule.downtime, training_elapsed)?;
+        let risks = apply_activity_outcomes(
+            ctx,
+            character_id,
+            &schedule.downtime,
+            training_elapsed,
+            starting_minute.saturating_add(elapsed),
+        )?;
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
@@ -798,7 +822,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let activities = activity_training_profile(ctx, character_id)?;
     apply_training(&mut skills, &schedule.downtime, elapsed, activities);
     ctx.db.character_skills().character_id().update(skills);
-    let risks = apply_activity_outcomes(ctx, character_id, &schedule.downtime, elapsed)?;
+    let risks = apply_activity_outcomes(
+        ctx,
+        character_id,
+        &schedule.downtime,
+        elapsed,
+        target_minutes,
+    )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     character_time.minutes = target_minutes;
     ctx.db
@@ -883,6 +913,7 @@ mod tests {
             stealth_minutes: 0,
             balance_minutes: 0,
             surgeon_minutes: 0,
+            smithing_minutes: 0,
             labor_minutes: 480,
             prayer_minutes: 60,
             thievery_minutes: 0,
