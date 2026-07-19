@@ -3616,8 +3616,7 @@ mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
         encumbrance_meter, live_merchant_shop_page, need_balance_meter, repair_custody_panel,
-        repair_submit_control,
-        rest_default_minutes,
+        repair_submit_control, rest_default_minutes,
     };
     use crate::spacetimedb::ItemKind;
     use adventuresim_core::equipment::EncumbranceSummary;
@@ -3697,6 +3696,14 @@ mod tests {
         assert!(css.contains("font-size: clamp(0.55rem, 4cqi, 0.78rem)"));
         assert!(css.contains(".encumbrance-meter"));
         assert!(css.contains("width: 100%"));
+        assert!(css.contains("@container (max-width: 12rem)"));
+        assert!(css.contains("padding-inline: 0.2rem"));
+        assert!(css.contains("font-size: 0.5rem"));
+        assert!(css.contains("@container (max-width: 10rem)"));
+        assert!(css.contains("padding-inline: 0.1rem"));
+        assert!(css.contains("padding-right: 0.05rem"));
+        assert!(css.contains("padding-left: 0.05rem"));
+        assert!(css.contains("font-size: 0.43rem"));
     }
 
     #[test]
@@ -3725,7 +3732,6 @@ mod tests {
                 &[],
                 &[],
                 &[],
-                "dark-arcanum",
                 shop,
                 &[],
                 None,

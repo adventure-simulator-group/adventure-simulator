@@ -422,6 +422,37 @@
   white-space: nowrap;
 }
 
+@container (max-width: 12rem) {
+  .encumbrance {
+    padding-inline: 0.2rem;
+  }
+
+  .encumbrance-values {
+    padding-right: 0.1rem;
+    font-size: 0.5rem;
+    line-height: 1.15;
+  }
+
+  .encumbrance-visual {
+    padding-left: 0.1rem;
+  }
+}
+
+@container (max-width: 10rem) {
+  .encumbrance {
+    padding-inline: 0.1rem;
+  }
+
+  .encumbrance-values {
+    padding-right: 0.05rem;
+    font-size: 0.43rem;
+  }
+
+  .encumbrance-visual {
+    padding-left: 0.05rem;
+  }
+}
+
 .encumbrance-meter {
   position: relative;
   width: 100%;
