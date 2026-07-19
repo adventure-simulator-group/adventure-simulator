@@ -92,7 +92,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-provisioning-3";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-ui-compact-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
                 // Datastar
@@ -109,12 +109,12 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=coin-currencies-2" defer {}
+                    script src="/static/service-quests.js?v=coin-currencies-2-quest-description-tooltip-1" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
-                    script src="/static/travel-planner.js?v=travel-provisioning-4" defer {}
+                    script src="/static/travel-planner.js?v=travel-ui-compact-1" defer {}
                     script src="/static/rest-duration.js?v=wake-time-1" defer {}
                 }
             }

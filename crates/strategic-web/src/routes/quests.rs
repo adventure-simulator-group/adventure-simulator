@@ -47,6 +47,7 @@ pub fn routes() -> Router<AppState> {
 #[derive(Serialize)]
 struct ActiveQuestMarker {
     active: bool,
+    description: Option<String>,
 }
 
 async fn active_quest_marker(
@@ -54,7 +55,10 @@ async fn active_quest_marker(
     session: Session,
 ) -> Json<ActiveQuestMarker> {
     let Some(character_id) = session.character_id_u64() else {
-        return Json(ActiveQuestMarker { active: false });
+        return Json(ActiveQuestMarker {
+            active: false,
+            description: None,
+        });
     };
     let character = state
         .db
@@ -66,9 +70,12 @@ async fn active_quest_marker(
         .into_iter()
         .next();
     let Some(party_id) = character.and_then(|character| character.party_id) else {
-        return Json(ActiveQuestMarker { active: false });
+        return Json(ActiveQuestMarker {
+            active: false,
+            description: None,
+        });
     };
-    let active = state
+    let active_quest_id = state
         .db
         .query::<Party>(&format!(
             "SELECT * FROM party WHERE id = {}",
@@ -78,8 +85,26 @@ async fn active_quest_marker(
         .unwrap_or_default()
         .into_iter()
         .next()
-        .is_some_and(|party| party.active_quest_id.is_some());
-    Json(ActiveQuestMarker { active })
+        .and_then(|party| party.active_quest_id);
+    let description = if let Some(quest_id) = active_quest_id.as_deref() {
+        state
+            .db
+            .query::<Quest>(&format!(
+                "SELECT * FROM quest WHERE id = {}",
+                sql_string_literal(quest_id)
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .map(|quest| quest.description)
+    } else {
+        None
+    };
+    Json(ActiveQuestMarker {
+        active: active_quest_id.is_some(),
+        description,
+    })
 }
 
 #[derive(Serialize)]

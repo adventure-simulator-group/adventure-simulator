@@ -4,7 +4,7 @@ use adventuresim_core::{
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
-        STRATEGIC_TRAVEL_KCAL_PER_DAY, STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
+        STRATEGIC_TRAVEL_KCAL_PER_DAY, Skill,
     },
     strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
 };
@@ -1084,6 +1084,7 @@ pub(crate) fn living_party_members(members: &[Character]) -> Vec<Character> {
 struct ServiceQuestOffer {
     id: String,
     title: String,
+    description: String,
     service_id: String,
     npc_name: &'static str,
     greeting: String,
@@ -1324,6 +1325,7 @@ async fn service_quest_offers(
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
                     title: quest.title.clone(),
+                    description: quest.description.clone(),
                     service_id: issuer.service_id.clone(),
                     npc_name,
                     greeting: greeting.to_string(),

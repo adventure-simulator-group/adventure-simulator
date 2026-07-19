@@ -203,11 +203,12 @@
 
 .travel-route-row {
   display: grid;
-  grid-template-columns: 3.5rem minmax(8rem, 1fr) minmax(8rem, auto) 9rem;
+  grid-template-columns: 3.5rem minmax(8rem, 1fr);
   align-items: center;
   gap: .5rem;
   font-size: var(--font-size-xs);
 }
+.travel-route-row .travel-planner-route { grid-column: 2; }
 .travel-planner-route {
   display: block;
   min-height: 4.8rem;
@@ -229,9 +230,9 @@
 .travel-plan-label { max-width: 6rem; overflow: hidden; color: var(--text-secondary); font-size: var(--font-size-xs); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .travel-party-pin { position: absolute; z-index: 2; top: 1rem; left: 1.2rem; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border: 2px solid var(--success); border-radius: 50% 50% 0 50%; background: var(--panel-bg); transform: rotate(45deg); }
 .travel-party-pin > span { transform: rotate(-45deg); }
-.travel-planner-caption { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); text-align: center; }
 .travel-resource-meters { display: grid; gap: .3rem; margin-top: .35rem; }
-.travel-resource-row { display: grid; grid-template-columns: 3.5rem minmax(8rem, 1fr) minmax(8rem, auto) 9rem; align-items: center; gap: .5rem; font-size: var(--font-size-xs); }
+.travel-resource-row { display: grid; grid-template-columns: 3.5rem minmax(8rem, 1fr) minmax(6rem, auto); align-items: center; gap: .5rem; font-size: var(--font-size-xs); }
+.travel-resource-icon { display: grid; place-items: center; }
 .travel-resource-track { width: 100%; height: 2.2rem; overflow: visible; }
 .travel-resource-path { fill: none; stroke-linecap: round; stroke-width: 4; vector-effect: non-scaling-stroke; }
 .travel-resource-path.target { stroke-width: 8; }
@@ -240,11 +241,9 @@
 .travel-resource-row.food .travel-resource-path.target { stroke: color-mix(in srgb, #e9a45d 32%, transparent); }
 .travel-resource-row.water .travel-resource-path.target { stroke: color-mix(in srgb, #579fd7 32%, transparent); }
 .travel-resource-row[data-target-sign="negative"] .travel-resource-path.target { stroke-linecap: butt; }
-.travel-resource-row[data-target-sign="positive"] [data-resource-target-label] { border-radius: 999px; background: color-mix(in srgb, currentColor 12%, transparent); padding: .1rem .35rem; }
-.travel-resource-row.food [data-resource-target-label] { color: #c77c31; }
-.travel-resource-row.water [data-resource-target-label] { color: #3d84ba; }
-.travel-provisioning-input { display: flex; gap: .5rem; }
+.travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
+.travel-provisioning-unit { white-space: nowrap; }
 
 .trade-transfer:not(:disabled) { cursor: pointer; }
 

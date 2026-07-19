@@ -40,7 +40,6 @@ test("travel planner renders horizontal journey provisions and exact staged mark
   assert.match(planner, /const horizontal = 5 \+ progress \* 90/);
   assert.match(planner, /startTop/);
   assert.match(planner, /endTop/);
-  assert.match(planner, /day\$\{amount === "1"/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(journeyDays \+ target - foodDays\)/);
   assert.match(planner, /params\.set\("provision_rations"/);
   assert.match(planner, /params\.set\("provision_waterskins"/);
@@ -51,16 +50,21 @@ test("travel planner renders horizontal journey provisions and exact staged mark
   assert.match(trade, /quantity <= 4294967295/);
 });
 
-test("provision targets distinguish negative, zero, and positive endpoint goals", () => {
+test("travel provisioning keeps target math and positive surplus without shortfall prose", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
+  const template = fs.readFileSync(path.join(staticRoot, "src", "templates", "settlement.rs"), "utf8");
   assert.match(planner, /target < 0 \? "negative" : target > 0 \? "positive" : "zero"/);
-  assert.match(planner, /roundTrip \? "return" : "arrival"/);
-  assert.match(planner, /Target: exact \$\{endpoint\}/);
-  assert.match(planner, /after \$\{endpoint\}/);
-  assert.match(planner, /\} short`/);
+  assert.doesNotMatch(planner, /Target:/);
+  assert.doesNotMatch(planner, /shortfall/);
+  assert.doesNotMatch(template, /data-resource-target-label/);
+  assert.match(template, /data-resource-surplus="food" hidden/);
+  assert.match(template, /data-resource-surplus="water" hidden/);
+  assert.match(planner, /day\$\{amount === "1" \? "" : "s"\} surplus/);
+  assert.match(template, /game_icon\("Food", "meal"\)/);
+  assert.match(template, /game_icon\("Water", "water-drop"\)/);
+  assert.match(template, /"days surplus"/);
   assert.match(css, /target-sign="negative"/);
-  assert.match(css, /target-sign="positive"/);
   assert.doesNotMatch(css, /travel-resource-path\.target[^}]*stroke-dasharray/);
 });
 

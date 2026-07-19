@@ -43,9 +43,10 @@ test("herbalist examination dialogue is visible but explicitly non-persisting", 
 test("active quest state drives the red Map tab marker", () => {
   assert.match(source, /\[data-map-quest-badge\]/);
   assert.match(source, /\/api\/active-quest-marker/);
-  assert.match(source, /setMapQuestActive\(true\)/);
+  assert.match(source, /setMapQuestActive\(true, quest\.description\)/);
   assert.match(source, /setMapQuestActive\(false\)/);
   assert.match(source, /Map, active quest/);
+  assert.match(source, /marker\.description/);
   assert.match(source, /queueStrategicInitialLoad\(refreshMapQuestMarker\)/);
   assert.match(source, /strategic-live-update", refreshMapQuestMarker/);
 });

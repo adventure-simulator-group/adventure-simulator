@@ -5,9 +5,12 @@
   const settlementId = services.dataset.settlementId;
   const mapTab = services.querySelector('[data-service-id="map"]');
   const mapQuestBadge = services.querySelector("[data-map-quest-badge]");
-  const setMapQuestActive = (active) => {
+  const setMapQuestActive = (active, description = "") => {
     if (mapQuestBadge) mapQuestBadge.hidden = !active;
-    if (mapTab) mapTab.setAttribute("aria-label", active ? "Map, active quest" : "Map");
+    if (mapTab) {
+      mapTab.setAttribute("aria-label", active ? "Map, active quest" : "Map");
+      mapTab.setAttribute("title", active && description ? description : "Map");
+    }
   };
   const chat = document.querySelector("[data-service-quest-settlement][data-service-quest-id]");
   const dialogueActions = new Map();
@@ -156,7 +159,7 @@
         return;
       }
       line("npc", quest.npc_name, quest.acceptance);
-      setMapQuestActive(true);
+      setMapQuestActive(true, quest.description);
       const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
       const badge = tab?.querySelector("[data-service-quest-badge]");
       if (badge) badge.hidden = true;
@@ -379,7 +382,7 @@
     { headers: { Accept: "application/json" } },
   )
     .then((response) => (response.ok ? response.json() : { active: false }))
-    .then((marker) => setMapQuestActive(marker.active === true))
+    .then((marker) => setMapQuestActive(marker.active === true, marker.description || ""))
     .catch((error) => window.reportStrategicError(error, "active quest marker"));
   const refreshServiceQuests = () => window.strategicBackgroundFetch("service-quests", `/api/settlements/${encodeURIComponent(settlementId)}/service-quests`, {
     headers: { Accept: "application/json" },

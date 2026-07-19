@@ -1441,7 +1441,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "illness_retreat_to_settlement", |cb| self
                 .connection
                 .reducers
-                .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
             self.travel_camps(party_id)?;
             for agent in party_agents {
