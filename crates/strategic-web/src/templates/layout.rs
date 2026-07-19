@@ -90,7 +90,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-12";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
+                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-village-building-tabs-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
@@ -114,7 +114,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
-                    script src="/static/building-state.js?v=environment-2" defer {}
+                    script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-polish-6" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
@@ -173,7 +173,9 @@ fn settlement_top_bar(
         @let active_material = if active_service == "religion" { "stone" } else { material };
         @let active_tint = building_tint(settlement_id, active_service, active_material);
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
-        header class=(format!("top-bar settlement-top-bar material-{material}")) data-environment="settlement" {
+        header class=(format!("top-bar settlement-top-bar material-{material}"))
+            data-environment="settlement"
+            data-building-tier=(building_tier(category)) {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
@@ -205,6 +207,7 @@ fn settlement_top_bar(
                         title=(label)
                         aria-current=(if active_service == path { "page" } else { "false" })
                     {
+                        span class="service-tab-building" aria-hidden="true" {}
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
@@ -291,15 +294,16 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "weapons" => 2,
         "armor" => 3,
         "clothing" => 4,
-        "inn" => 5,
-        "religion" => 6,
-        _ => (hash % 7) as usize,
+        "herbalist" => 5,
+        "inn" => 6,
+        "religion" => 7,
+        _ => (hash % 8) as usize,
     };
     let settlement_shift = ((hash >> 24) % 9) as u64;
     let hue = if material == "stone" {
-        [205, 224, 252, 282, 164, 36, 214][service_slot] + settlement_shift
+        [205, 224, 252, 282, 164, 128, 36, 214][service_slot] + settlement_shift
     } else {
-        [8, 20, 31, 43, 56, 72, 350][service_slot] + settlement_shift
+        [8, 20, 31, 43, 56, 104, 72, 350][service_slot] + settlement_shift
     };
     let saturation = if material == "stone" {
         12 + (hash >> 8) % 13
@@ -308,6 +312,16 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     };
     let lightness = 19 + (hash >> 16) % 8;
     format!("hsl({hue} {saturation}% {lightness}%)")
+}
+
+fn building_tier(category: &SettlementCategory) -> &'static str {
+    match category {
+        SettlementCategory::Unknown | SettlementCategory::Hamlet | SettlementCategory::Village => {
+            "village"
+        }
+        SettlementCategory::Town => "town",
+        SettlementCategory::City | SettlementCategory::Capital => "city",
+    }
 }
 
 fn character_switcher(name: &str) -> Markup {
@@ -344,7 +358,8 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        building_tint, quest_location_top_bar, settlement_layout_with_session, settlement_top_bar,
+        building_tier, building_tint, quest_location_top_bar, settlement_layout_with_session,
+        settlement_top_bar,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -365,6 +380,7 @@ mod tests {
             "weapons",
             "armor",
             "clothing",
+            "herbalist",
             "inn",
             "religion",
         ]
@@ -379,6 +395,60 @@ mod tests {
         let hue = |tint: String| tint[4..].split(' ').next().unwrap().parse::<u64>().unwrap();
         assert!((8..=80).contains(&hue(building_tint("lubeck", "inn", "wood"))));
         assert!((36..=290).contains(&hue(building_tint("lubeck", "inn", "stone"))));
+    }
+
+    #[test]
+    fn settlement_categories_select_the_expected_building_tier() {
+        for (category, tier) in [
+            (SettlementCategory::Unknown, "village"),
+            (SettlementCategory::Hamlet, "village"),
+            (SettlementCategory::Village, "village"),
+            (SettlementCategory::Town, "town"),
+            (SettlementCategory::City, "city"),
+            (SettlementCategory::Capital, "city"),
+        ] {
+            assert_eq!(building_tier(&category), tier);
+            let markup =
+                settlement_top_bar("Place", "p", &category, "map", None, None).into_string();
+            assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
+        }
+    }
+
+    #[test]
+    fn settlement_tabs_layer_village_buildings_beneath_accessible_service_icons() {
+        let markup = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "religion",
+            Some("roman_catholic"),
+            None,
+        )
+        .into_string();
+        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 8);
+        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 8);
+        assert!(markup.contains("aria-label=\"Church\""));
+        assert!(markup.contains("aria-current=\"page\""));
+        assert!(markup.contains("--service-tab-icon: url("));
+        assert!(markup.contains("/static/icons/religion/catholic-crucifix.svg"));
+
+        let css = include_str!("../../static/css/layout.css");
+        for service in [
+            "map",
+            "merchants",
+            "weapons",
+            "armor",
+            "clothing",
+            "herbalist",
+            "inn",
+            "religion",
+        ] {
+            assert!(css.contains(&format!(
+                "/static/styles/timber-framed/building/village/{service}.png"
+            )));
+        }
+        assert!(css.contains("--service-building-image"));
+        assert!(css.contains("data-building-tier"));
     }
 
     #[test]

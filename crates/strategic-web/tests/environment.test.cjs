@@ -54,15 +54,27 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
 });
 
-test("building tabs have roofs without making the desktop header scroll", () => {
+test("settlement tabs layer tintable village buildings beneath service icons", () => {
   assert.match(baseCss, /--settlement-header-height:112px/);
   assert.match(layoutCss, /body:has\(\.settlement-top-bar\) \.main-grid \{[\s\S]*var\(--settlement-header-height\)/);
-  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.nav-tab::before/);
-  assert.match(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
-  assert.match(layoutCss, /\.settlement-services \.nav-tab \{[\s\S]*height: 4\.25rem/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building/);
+  assert.match(layoutCss, /background-blend-mode: color, normal/);
+  assert.match(layoutCss, /mask: var\(--service-building-image\) center \/ contain no-repeat/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building \{[\s\S]*display: block/);
+  assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
+  assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
+  assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
+  assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
+  assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
   assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
+  assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 2\.75rem/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
+  for (const service of ["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]) {
+    assert.match(layoutCss, new RegExp(`building/village/${service}\\.png`));
+  }
+  assert.match(layoutCss, /service-tab-icon-medical-pack[\s\S]*medical-pack\.svg/);
+  assert.match(buildingSource, /"clothing", "herbalist", "inn"/);
 });
 
 test("settlement side panels use tint-derived beams and corner blocks", () => {

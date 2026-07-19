@@ -191,7 +191,8 @@ rather than creating a new asset anatomy for every use:
 - Panel = surface + frame + optional ornament.
 - Sidebar = surface + frame or vertical supports.
 - Header = surface + horizontal band + optional ornament.
-- Service tab = building icon + horizontal-band plinth.
+- Service tab = grayscale building background + separate service icon +
+  horizontal-band plinth.
 - Dialog = surface + frame + horizontal band.
 - List section = surface + dividers.
 
@@ -205,8 +206,9 @@ be mixed and matched within an architectural family.
   and environmental tint at runtime.
 - Every shaded texture must contain both pure black and pure white among its
   visible pixels, with useful tonal detail between them. Transparent pixels do
-  not count toward this range requirement. Monochrome silhouette masks, such as
-  building icons, are exempt from the full tonal-range requirement.
+  not count toward this range requirement. Monochrome silhouette masks and the
+  three-tone service-building backgrounds specified below are exempt from the
+  full tonal-range requirement.
 - Prefer lossless PNG for raster textures that require alpha and SVG for
   artwork that benefits from resolution-independent detail. Do not use JPEG
   for modular interface textures.
@@ -221,21 +223,87 @@ be mixed and matched within an architectural family.
 
 ## Building icons
 
-Store architectural building icons directly under their architectural family
-and name them with stable service identifiers:
+### Art direction
+
+Treat service buildings as precise cut-paper compositions rather than miniature
+architectural illustrations. The intended result should look as though a small
+number of sheets of colored paper were cut and aligned with machine precision:
+flat, hard-edged, restrained, and slightly abstract. It must not read as a cozy
+cartoon village, a textured painting, or a detailed model building.
+
+- Construct each building from a small number of clean geometric shapes. Do
+  not use gradients, bevels, cast shadows, highlights, material noise, paper
+  fibers, weathering, or painterly marks.
+- Do not depict brick courses, individual roof tiles, wood grain, timber or
+  masonry patterns, or repeated surface linework. Architectural identity comes
+  from the silhouette and a few large structural shapes.
+- Give every building exactly three architectural tone roles: a light wall; a
+  noticeably darker roof, column, chimney, steeple, or structural shape; and a
+  near-black door, window, or narrow opening. The runtime tint supplies the hue.
+- The secondary tone should read about 30–40% darker than the wall at the
+  smallest supported tab size. Do not rely on a hue shift for separation.
+- The pale service mark, notification badge, focus treatment, and selected
+  underline are separate interface overlays and do not count against the
+  building's three architectural tones.
+- Prefer simple gable roofs: two pitched planes meeting at a ridge, like a
+  precisely folded sheet of paper. Use hipped or pyramidal roofs sparingly for
+  justified variation. A row should be predominantly gabled.
+- Reserve the largest uninterrupted facade field for the overlaid service mark.
+  Place doors beside that field, normally at a lower outer corner, rather than
+  centered beneath it; this keeps the building low and the mark large.
+- Keep openings sparse: normally one doorway and at most one additional window.
+  Market stalls may use open bays and supports instead of a door.
+- Vary silhouettes with a few historically grounded cues appropriate to circa
+  1544: an open market roof, smithy chimney, broad inn, or church bell-cote.
+  Avoid fantasy towers and later monumental forms. Historical grounding should
+  affect the large shapes, not introduce surface detail.
+
+Settlement scale and means change proportions and construction type, not the
+fundamental graphic vocabulary:
+
+- A small, relatively poor village uses low cottages, sheds, open stalls, squat
+  workshops, a broad but modest inn, and a small chapel. Most facades read as
+  one story. Show limited means through scale and simpler construction, not
+  dirt, damage, broken roofs, or comic destitution.
+- A medium town may use compact two- or three-story guildhouses, workshops,
+  market halls, and a modest late-Gothic church. Keep the strip compact enough
+  for the existing location header; it is not a town panorama.
+- A city may use taller, denser merchant houses, masonry civic buildings,
+  larger halls, and a more prominent church, while retaining the same sparse
+  geometry and tab-scale legibility. Monumentality comes from massing, not
+  extra surface marks.
+- Within one set, keep facade detail, service-mark scale, baseline, edge weight,
+  and tone contrast consistent. Buildings may vary in width and roofline, but
+  one service should not appear to belong to a different art system.
+
+### Asset and color contract
+
+Store transparent building backgrounds under their architectural family, tier,
+and stable service identifier:
 
 ```text
-styles/gothic/church.svg
-styles/gothic/inn.svg
-styles/gothic/market.svg
+styles/timber-framed/building/village/inn.png
+styles/timber-framed/building/town/inn.png
+styles/timber-framed/building/city/inn.png
 ```
 
-- Keep the service filename stable across architectural families so the active
-  family can be changed without changing service semantics.
-- Use a recognizable building silhouette and a consistent view box, baseline,
-  visual scale, and stroke or silhouette weight across a family.
-- Building icons are monochrome masks colored by CSS. They do not need both
-  black and white source values.
+- Keep the service filename stable across families and tiers. Use a consistent
+  512-by-512 transparent RGBA canvas, bottom baseline, padding, visual scale,
+  and silhouette weight across a set.
+- Source building backgrounds contain no service symbol. The existing local
+  Game Icons SVG is a separate semantic layer superimposed by the interface;
+  this also lets religion select its faith-specific SVG dynamically.
+- Visible source pixels are grayscale and use exactly three RGB values for the
+  architectural tone roles. Preserve alpha antialiasing at edges. CSS combines
+  that luminance with `--building-tint`; do not commit separately colorized
+  copies or bake settlement, time, selection, or notification state into PNGs.
+- `Unknown`, `Hamlet`, and `Village` use the village tier; `Town` uses town;
+  `City` and `Capital` use city. Define the village URL as each service's CSS
+  baseline. Add town or city overrides one service at a time only when the
+  corresponding asset exists, so an incomplete higher-tier set falls back to
+  village without requesting a missing file.
+- These three-tone service backgrounds are exempt from the general texture
+  rule requiring pure black, pure white, and intermediate detail.
 - Continue to use the locally vendored Game Icons collection in
   `static/icons/game/` for appropriate non-building interface symbols, as
   directed by the repository-level `AGENTS.md`.

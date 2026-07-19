@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (828)
+## Files (845)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -585,6 +585,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
@@ -761,8 +763,17 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
+- `crates/strategic-web/static/styles/timber-framed/building/village/armor.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/clothing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/herbalist.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/inn.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/map.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/merchants.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/religion.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/village/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
+- `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.

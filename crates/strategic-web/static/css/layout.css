@@ -187,15 +187,35 @@
   color: var(--text-primary);
 }
 
-.settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab::before {
+.settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
+  width: 3.25rem;
+  height: 4.75rem;
+  overflow: visible;
+  isolation: isolate;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.service-tab-building {
+  display: none;
+}
+
+.settlement-top-bar[data-environment="settlement"] .service-tab-building {
   position: absolute;
-  right: -1px;
-  bottom: calc(100% - 1px);
-  left: -1px;
-  height: 1.2rem;
-  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  content: "";
+  z-index: 0;
+  display: block;
+  inset: -0.25rem -0.35rem 0.15rem;
+  background-image:
+    linear-gradient(var(--building-tint), var(--building-tint)),
+    var(--service-building-image);
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-blend-mode: color, normal;
+  -webkit-mask: var(--service-building-image) center / contain no-repeat;
+  mask: var(--service-building-image) center / contain no-repeat;
   pointer-events: none;
 }
 
@@ -207,8 +227,50 @@
   border-bottom: 3px solid var(--accent-light);
 }
 
+.settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab.active {
+  background: transparent;
+  border-color: var(--accent-light);
+}
+
+/* Village art is the per-service baseline for every settlement tier. Town and
+   city overrides belong in equally specific per-service rules only when those
+   individual assets exist, so a missing higher-tier image never becomes a 404. */
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="map"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/map.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="merchants"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/merchants.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="weapons"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/weapons.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="armor"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/armor.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="clothing"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/clothing.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="herbalist"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/herbalist.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="inn"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/inn.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="religion"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/religion.png");
+}
+
 .service-notification-badge {
   position: absolute;
+  z-index: 3;
   top: -0.25rem;
   right: -0.25rem;
   display: grid;
@@ -228,19 +290,30 @@
 }
 
 .service-tab-icon {
+  position: relative;
+  z-index: 2;
   display: block;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2rem;
+  height: 2rem;
   background-color: var(--text-primary);
   -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
   mask: var(--service-tab-icon) center / contain no-repeat;
   transition: background-color var(--transition-fast);
 }
 
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon {
+  position: absolute;
+  left: 50%;
+  bottom: 0.65rem;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 65%));
+}
+
 .service-tab-icon-market { --service-tab-icon: url("/static/icons/game/scales.svg"); }
 .service-tab-icon-weapons { --service-tab-icon: url("/static/icons/game/sword-brandish.svg"); }
 .service-tab-icon-armor { --service-tab-icon: url("/static/icons/game/breastplate.svg"); }
 .service-tab-icon-clothing { --service-tab-icon: url("/static/icons/game/clothes.svg"); }
+.service-tab-icon-medical-pack { --service-tab-icon: url("/static/icons/game/medical-pack.svg"); }
 .service-tab-icon-inn { --service-tab-icon: url("/static/icons/game/beer-stein.svg"); }
 .service-tab-icon-church { --service-tab-icon: url("/static/icons/game/church.svg"); }
 
@@ -477,6 +550,9 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   .settlement-services .nav-tab {
     width: 2.35rem;
     padding: 0;
+  }
+  .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
+    width: 2.75rem;
   }
 }
 
