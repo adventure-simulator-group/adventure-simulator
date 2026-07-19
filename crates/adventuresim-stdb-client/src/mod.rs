@@ -315,6 +315,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
+pub mod seed_religion_scholar_character_reducer;
 pub mod seed_sick_character_reducer;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
@@ -712,6 +713,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
+pub use seed_religion_scholar_character_reducer::seed_religion_scholar_character;
 pub use seed_sick_character_reducer::seed_sick_character;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
@@ -1160,6 +1162,7 @@ pub enum Reducer {
     SeedPartyCompanions {
         leader_id: u64,
     },
+    SeedReligionScholarCharacter,
     SeedSickCharacter,
     SeedSimulationDisease {
         nonce: String,
@@ -1361,6 +1364,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
+            Reducer::SeedReligionScholarCharacter => "seed_religion_scholar_character",
             Reducer::SeedSickCharacter => "seed_sick_character",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
@@ -2019,7 +2023,9 @@ Reducer::SeedPartyCompanions{
 }             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
                 leader_id: leader_id.clone(),
 }),
-            Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
+            Reducer::SeedReligionScholarCharacter => __sats::bsatn::to_vec(&seed_religion_scholar_character_reducer::SeedReligionScholarCharacterArgs {
+                }),
+Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
                 }),
 Reducer::SeedSimulationDisease{
                 nonce,

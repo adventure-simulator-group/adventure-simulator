@@ -137,6 +137,10 @@ _seed-world server=spacetime_url: spacetime-version-check
 _seed-damaged-character server=spacetime_url: spacetime-version-check
     @spacetime call --server {{server}} {{spacetime_module}} seed_damaged_character
 
+# Create or reset the Religion Scholar Demo character used to verify religion skill expansion.
+_seed-religion-scholar-character server=spacetime_url: spacetime-version-check
+    @spacetime call --server {{server}} {{spacetime_module}} seed_religion_scholar_character
+
 # Start SpacetimeDB if it is not already listening
 spacetime-start: spacetime-version-check
     @mkdir -p "{{run_dir}}"
