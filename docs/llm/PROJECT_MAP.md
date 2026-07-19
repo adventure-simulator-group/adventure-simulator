@@ -546,6 +546,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/tests/viabundus_fixture.rs` — Rust source module.
 - `crates/adventuresim-world-schema/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-world-schema/src/lib.rs` — Rust source module for this component.
+- `crates/strategic-web/AGENTS.md` — Project documentation.
 - `crates/strategic-web/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/strategic-web/Dockerfile` — Container build definition.
 - `crates/strategic-web/README.md` — Component overview and usage notes.
