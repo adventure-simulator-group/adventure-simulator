@@ -202,8 +202,9 @@ flags manually against a public or player-bearing database unless data loss is
 explicitly approved and a verified recovery copy exists.
 
 `seed_world` is itself idempotent: it inserts only missing demo rows. The local
-seed workflow then resets `Sick Demo` to peak influenza so symptoms, diagnosis,
-and treatment can be tested immediately. It propagates every reducer failure
+seed workflow then resets `Sick Demo` and its party of staggered patients plus a
+high-Medicine physician so symptoms, diagnosis, and treatment can be tested
+immediately. It propagates every reducer failure
 instead of treating arbitrary errors as evidence that seeding already happened.
 
 Spawner metadata contains the resolved repository, profile, server/database,

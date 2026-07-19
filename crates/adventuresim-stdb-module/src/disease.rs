@@ -6,7 +6,7 @@ use adventuresim_core::disease::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character as _;
-use crate::{character_attributes, character_capability, character_time};
+use crate::{character_attributes, character_capability, character_skills, character_time};
 
 /// The complete per-character disease state. This table is deliberately
 /// private: strategic-web derives a viewer-specific presentation instead of
@@ -473,54 +473,127 @@ pub fn record_committed_cut(
     Ok(())
 }
 
-/// Create or reset the visibly ill character used by the default development
-/// seed. The fixture starts at influenza's peak so its symptoms and penalties
-/// are immediately available for UI and treatment testing.
+/// Create or reset the diagnostic party used by the default development seed.
+/// It includes a healthy physician and patients with staggered disease ages.
 #[reducer]
 pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     const SICK_CHARACTER_ID: u64 = 9_999_999_999_999_998;
-    const DEMO_DISEASE_AGE: u64 = 3 * 1_440;
-
-    if ctx.db.character().id().find(SICK_CHARACTER_ID).is_none() {
-        crate::character::insert_new_character(
-            ctx,
-            "Sick Demo".to_string(),
+    const PHYSICIAN_ID: u64 = 9_999_999_999_999_997;
+    const DAY: u64 = 1_440;
+    const FIXTURE_NOW: u64 = 60 * DAY;
+    const PATIENTS: [(u64, &str, DiseaseId, u64); 8] = [
+        (
             SICK_CHARACTER_ID,
-            false,
-        )?;
+            "Sick Demo",
+            DiseaseId::Influenza,
+            2 * DAY,
+        ),
+        (
+            9_999_999_999_999_996,
+            "Patient B",
+            DiseaseId::Dysentery,
+            3 * DAY,
+        ),
+        (
+            9_999_999_999_999_995,
+            "Patient C",
+            DiseaseId::Typhus,
+            8 * DAY,
+        ),
+        (
+            9_999_999_999_999_994,
+            "Patient D",
+            DiseaseId::Tetanus,
+            10 * DAY,
+        ),
+        (
+            9_999_999_999_999_993,
+            "Patient E",
+            DiseaseId::Erysipelas,
+            5 * DAY,
+        ),
+        (
+            9_999_999_999_999_992,
+            "Patient F",
+            DiseaseId::Smallpox,
+            12 * DAY,
+        ),
+        (
+            9_999_999_999_999_991,
+            "Patient G",
+            DiseaseId::Plague,
+            6 * DAY,
+        ),
+        (
+            9_999_999_999_999_990,
+            "Patient H",
+            DiseaseId::Consumption,
+            50 * DAY,
+        ),
+    ];
+
+    for (id, name) in std::iter::once((PHYSICIAN_ID, "Physician Demo"))
+        .chain(PATIENTS.iter().map(|(id, name, _, _)| (*id, *name)))
+    {
+        if ctx.db.character().id().find(id).is_none() {
+            crate::character::insert_new_character(ctx, name.into(), id, false)?;
+        }
+        let mut character_time = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(id)
+            .ok_or_else(|| format!("{name} is missing time data"))?;
+        character_time.minutes = character_time.minutes.max(FIXTURE_NOW);
+        ctx.db
+            .character_time()
+            .character_id()
+            .update(character_time);
     }
 
-    let mut character_time = ctx
+    for (id, _, _, _) in PATIENTS.iter().skip(1) {
+        crate::strategic::attach_seeded_party_member(ctx, SICK_CHARACTER_ID, *id, "Patient")?;
+    }
+    crate::strategic::attach_seeded_party_member(
+        ctx,
+        SICK_CHARACTER_ID,
+        PHYSICIAN_ID,
+        "Physician",
+    )?;
+
+    let mut physician_skills = ctx
         .db
-        .character_time()
+        .character_skills()
         .character_id()
-        .find(SICK_CHARACTER_ID)
-        .ok_or_else(|| "Sick demo character is missing time data".to_string())?;
-    character_time.minutes = character_time.minutes.max(DEMO_DISEASE_AGE);
-    let contracted_at = character_time.minutes - DEMO_DISEASE_AGE;
+        .find(PHYSICIAN_ID)
+        .ok_or_else(|| "Physician Demo is missing skill data".to_string())?;
+    physician_skills.medicine_hours = 1_000_000.0;
+    physician_skills.surgeon_hours = 1_000_000.0;
     ctx.db
-        .character_time()
+        .character_skills()
         .character_id()
-        .update(character_time);
+        .update(physician_skills);
 
-    let existing: Vec<_> = ctx
-        .db
-        .infection_episode()
-        .character_id()
-        .filter(SICK_CHARACTER_ID)
-        .map(|row| row.id)
-        .collect();
-    for id in existing {
-        ctx.db.infection_episode().id().delete(id);
+    for (id, _, disease_id, age) in PATIENTS {
+        for episode in ctx
+            .db
+            .infection_episode()
+            .character_id()
+            .filter(id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.infection_episode().id().delete(episode.id);
+        }
+        ctx.db.infection_episode().insert(InfectionEpisodeRow {
+            id: 0,
+            character_id: id,
+            disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+            contracted_at: FIXTURE_NOW - age,
+            treated_at: None,
+        });
+        crate::capability::refresh_character_capability(ctx, id)?;
     }
-    ctx.db.infection_episode().insert(InfectionEpisodeRow {
-        id: 0,
-        character_id: SICK_CHARACTER_ID,
-        disease_id: "influenza".into(),
-        contracted_at,
-        treated_at: None,
-    });
-    crate::capability::refresh_character_capability(ctx, SICK_CHARACTER_ID)?;
+    crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
     Ok(())
 }
 
