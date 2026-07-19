@@ -54,6 +54,14 @@ panel-namespaced URL query parameters. This keeps the left and right views
 independent, makes useful layouts bookmarkable, and lets browser Back and
 Forward restore prior layouts. Expanded rows are intentionally transient.
 
+Inventory rails grow to the width required by their currently visible columns
+instead of adding a horizontal table scrollbar. Per-item actions appear only
+while their row is hovered or focused and project from the center-facing edge
+of each rail over the portrait area. Bulk actions use the same center-facing
+gutter and align vertically with the column headers. Merchant-stock rails omit
+the quantity and target columns because merchant availability is not presented
+as a player-managed stack or restocking target.
+
 Weaponsmith inventories contain weapons, shields, and currency and offer
 precision, reach, penetration, damage-type, and block columns. Armourers show
 armor and currency and offer coverage, resistance, padding, flexibility, and

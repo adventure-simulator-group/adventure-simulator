@@ -367,7 +367,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: clip;
   scrollbar-gutter: stable;
 }
 
@@ -474,19 +474,15 @@
   box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000;
   transform: translateX(-50%);
 }
-.inventory-browser { box-sizing:border-box; width:100%; max-width:100%; min-width:0; container-type:inline-size; }
-.inventory-browser-table-scroll {
+.inventory-browser { box-sizing:border-box; width:max-content; min-width:16rem; container-type:inline-size; }
+.inventory-browser-table-frame {
   box-sizing:border-box;
-  width:100%;
-  max-width:100%;
-  overflow-x:auto;
-  overflow-y:hidden;
-  overscroll-behavior-inline:contain;
-  scrollbar-gutter:stable;
+  width:max-content;
+  min-width:100%;
+  overflow:visible;
 }
-.inventory-browser-table-scroll:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
-.inventory-browser-table-scroll > .trade-inventory-table { width:max-content; min-width:100%; }
-.inventory-browser-table-scroll [data-inventory-column] { min-width:4.75rem; }
+.inventory-browser-table-frame > .trade-inventory-table { width:max-content; min-width:100%; }
+.inventory-browser-table-frame [data-inventory-column] { min-width:4.75rem; }
 .inventory-browser-toolbar {
   display: flex;
   align-items: center;
@@ -647,7 +643,7 @@
 }
 .smith-wares-scroll {
   min-height: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto;
 }
 .smith-wares-scroll .trade-inventory-table {
@@ -766,10 +762,12 @@
 .inventory-item-type { width: 1.45rem; padding-inline: 0.18rem !important; text-align: center; }
 .inventory-item-type .game-icon { width: 0.95rem; height: 0.95rem; }
 
-/* Seven smith-inventory columns must fit the 20vw rail at normal desktop widths. */
+/* Smith inventories retain compact fixed-purpose columns while the rail grows
+   to accommodate them and any enabled optional statistics. */
 .smith-player-inventory-table {
-  width: 100%;
-  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 .smith-player-inventory-table col.inventory-column-count { width: 1.6rem; }
 .smith-player-inventory-table col.inventory-column-target { width: 2.25rem; }

@@ -1,5 +1,18 @@
 const strategicTradeUi = window.strategicTradeUi ||= { state: {} };
-const refreshInventoryPanel = (element) => { if (element) window.strategicInventoryBrowser?.refresh?.(element); };
+const refreshInventoryPanel = (element) => {
+  if (!element) return;
+  if (element === document) {
+    const grid = document.querySelector(".main-grid");
+    ["left", "right"].forEach((side) => {
+      const sidebar = grid?.querySelector(`.${side}-sidebar`);
+      const hasVisibleBrowser = [...(sidebar?.querySelectorAll("[data-inventory-browser]") || [])]
+        .some((browser) => !browser.closest("[hidden]"));
+      if (!hasVisibleBrowser) grid?.style.removeProperty(`--inventory-${side}-width`);
+    });
+  }
+  window.strategicInventoryBrowser?.refresh?.(element);
+  mountInventoryBulkControls(element);
+};
 
 function changeTradeDraftCount(row, change) {
   const count = row.querySelector(".inventory-count");
@@ -9,18 +22,36 @@ function changeTradeDraftCount(row, change) {
 
 function mountInventoryBulkControls(root = document) {
   if (!root?.querySelectorAll) root = document;
+  const browsers = root.matches?.("[data-inventory-browser]") ? [root] : [...root.querySelectorAll("[data-inventory-browser]")];
+  const closestBrowser = root.closest?.("[data-inventory-browser]");
+  if (closestBrowser && !browsers.includes(closestBrowser)) browsers.push(closestBrowser);
+
+  browsers.forEach((browser) => {
+    const placeAtStart = Boolean(browser.closest(".right-sidebar"));
+    const headerRow = browser.querySelector(".trade-inventory-table thead tr");
+    const headerCell = headerRow?.querySelector(":scope > .inventory-actions-header");
+    const actionColumn = browser.querySelector(".trade-inventory-table colgroup .inventory-column-actions");
+    if (headerCell) headerRow[placeAtStart ? "prepend" : "append"](headerCell);
+    if (actionColumn) actionColumn.parentElement[placeAtStart ? "prepend" : "append"](actionColumn);
+
+    browser.querySelectorAll("tbody > tr.trade-inventory-row:not(.inventory-detail-row)").forEach((row) => {
+      let cell = row.querySelector(":scope > .inventory-actions-cell");
+      if (!cell) {
+        cell = document.createElement("td");
+        cell.className = "inventory-actions-cell";
+        cell.setAttribute("aria-label", "Item actions");
+      }
+      const actions = row.querySelector(".inventory-row-actions");
+      if (actions && actions.parentElement !== cell) cell.append(actions);
+      row[placeAtStart ? "prepend" : "append"](cell);
+    });
+  });
+
   root.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
     if (actions.closest(".inventory-actions-header")) return;
-    const section = actions.closest(".sidebar-section");
-    const headerRow = section?.querySelector(".trade-inventory-table thead tr");
-    if (headerRow) {
-      const cell = document.createElement("th");
-      cell.scope = "col";
-      cell.className = "inventory-actions-header";
-      cell.setAttribute("aria-label", "Inventory actions");
-      cell.append(actions);
-      headerRow.append(cell);
-    }
+    const inventoryRegion = actions.closest(".encumbrance-inventory-rail, .smith-wares-scroll, .sidebar-section");
+    const headerCell = inventoryRegion?.querySelector("[data-inventory-browser] .inventory-actions-header");
+    if (headerCell) headerCell.append(actions);
   });
   applyDynamicTransferModifiers();
 }
@@ -128,7 +159,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   (row.querySelector(".inventory-target") || count).after(equipped);
   row.querySelector(".inventory-gold").textContent = sourceRow.dataset.merchantSellPrice;
   row.dataset.generatedMerchantRow = "true";
-  const name = row.querySelector(".inventory-item-name");
+  const actions = row.querySelector(".inventory-row-actions");
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.className = "trade-transfer trade-transfer-left";
@@ -142,7 +173,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   cancel.setAttribute("aria-label", cancel.dataset.labelOne);
   cancel.title = cancel.dataset.labelOne;
   cancel.innerHTML = '<span class="inventory-transfer-glyph arrows-1" aria-hidden="true"><i></i></span>';
-  name.append(cancel);
+  actions.append(cancel);
   applyDynamicTransferModifiers();
   playerSidebar.querySelector(".trade-inventory-table tbody").append(row);
   refreshInventoryPanel(playerSidebar);
@@ -283,6 +314,7 @@ document.addEventListener("click", (event) => {
     const scope = document.querySelector("#merchant-offer [name='inventory_scope']");
     if (scope) scope.value = tab.dataset.inventoryTab;
     resetTradeDraft(document.querySelector("#merchant-offer"));
+    refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
     return;
   }
   const targetStep = event.target.closest("[data-target-step]");
@@ -534,4 +566,4 @@ if (document.readyState === "loading") {
 } else {
   mountInventoryBulkControls();
 }
-document.addEventListener("strategic-live-regions-refreshed", () => mountInventoryBulkControls());
+document.addEventListener("strategic-live-regions-refreshed", () => refreshInventoryPanel(document));

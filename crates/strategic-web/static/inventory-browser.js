@@ -108,16 +108,26 @@
   }
 
   function normalizeDestinationRow(row, browser) {
-    ensureQuantityTargetSplit(row);
+    const wantsQuantities = Boolean(browser.querySelector("thead .inventory-column-count"));
+    if (wantsQuantities) {
+      const count = row.querySelector(":scope > .inventory-count");
+      if (count) count.hidden = false;
+      ensureQuantityTargetSplit(row);
+    }
+    else {
+      const count = row.querySelector(":scope > .inventory-count");
+      if (count) count.hidden = true;
+      row.querySelector(":scope > .inventory-target")?.remove();
+    }
     const target = row.querySelector(":scope > .inventory-target");
-    let cursor = target;
+    let cursor = target || row.querySelector(":scope > .inventory-item-name");
     const wantsEquipped = Boolean(browser.querySelector("thead .inventory-column-equipped"));
     let equipped = row.querySelector(":scope > .inventory-equipped");
     if (!wantsEquipped && equipped) { equipped.remove(); equipped = null; }
     if (wantsEquipped && !equipped) {
       equipped = document.createElement("td"); equipped.className = "inventory-equipped";
       equipped.innerHTML = '<input type="checkbox" disabled aria-label="Generated item is not equipped">';
-      cursor.after(equipped);
+      cursor?.after(equipped);
     }
     if (equipped && (row.dataset.generatedOfferRow === "true" || row.dataset.generatedMerchantRow === "true")) {
       const toggle = equipped.querySelector("input");
@@ -129,7 +139,7 @@
     if (!wantsDurability && durability) { durability.remove(); durability = null; }
     if (wantsDurability && !durability) {
       durability = document.createElement("td"); durability.className = "inventory-durability"; durability.textContent = "—";
-      cursor.after(durability);
+      cursor?.after(durability);
     }
   }
 
@@ -145,7 +155,9 @@
     const weaponColumn = ["accuracy", "reach", "penetration", "damage", "block"].includes(column);
     const applicable = weaponColumn ? ["weapon", "shield"].includes(kind) : kind === "armor";
     cell.textContent = applicable ? (label?.dataset[property] || "—") : "—";
-    row.append(cell);
+    const actionCell = row.querySelector(":scope > .inventory-actions-cell");
+    if (actionCell && actionCell === row.lastElementChild) row.insertBefore(cell, actionCell);
+    else row.append(cell);
     return cell;
   }
 
@@ -153,6 +165,19 @@
     const query = serializePanelState(global.location.search, browser.dataset.inventoryBrowser, state);
     const url = `${global.location.pathname}${query}${global.location.hash}`;
     global.history[replace ? "replaceState" : "pushState"]({}, "", url);
+  }
+
+  function syncPanelWidth(browser) {
+    if (!global.getComputedStyle || browser.closest("[hidden]")) return;
+    const aside = browser.closest(".left-sidebar, .right-sidebar");
+    const grid = aside?.closest(".main-grid");
+    if (!aside || !grid) return;
+    const styles = global.getComputedStyle(aside);
+    const frameWidth = (Number.parseFloat(styles.paddingLeft) || 0) + (Number.parseFloat(styles.paddingRight) || 0);
+    const tableWidth = browser.querySelector(".trade-inventory-table")?.scrollWidth || 0;
+    const contentWidth = Math.ceil(Math.max(browser.scrollWidth, tableWidth));
+    const side = aside.classList.contains("left-sidebar") ? "left" : "right";
+    grid.style.setProperty(`--inventory-${side}-width`, `${contentWidth + frameWidth}px`);
   }
 
   function apply(browser, state) {
@@ -181,6 +206,7 @@
       const indicator = button.querySelector(".inventory-sort-indicator");
       if (indicator) indicator.textContent = active ? (state.direction === "asc" ? "▲" : "▼") : "";
     });
+    syncPanelWidth(browser);
   }
 
   function createDetail(row, browser) {
@@ -245,7 +271,9 @@
       options.append(label);
       const th = document.createElement("th"); th.scope = "col"; th.dataset.inventoryColumn = column; th.innerHTML = `<button type="button" data-inventory-sort="${column}" aria-label="Sort by ${OPTIONAL_COLUMNS[column][0]}">${OPTIONAL_COLUMNS[column][0]} <span class="inventory-sort-indicator" aria-hidden="true"></span></button>`;
       const headerRow = browser.querySelector("thead tr");
-      headerRow.insertBefore(th, headerRow.querySelector(".inventory-actions-header"));
+      const actionHeader = headerRow.querySelector(":scope > .inventory-actions-header");
+      if (actionHeader && actionHeader === headerRow.lastElementChild) headerRow.insertBefore(th, actionHeader);
+      else headerRow.append(th);
     });
     search.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
     search.addEventListener("blur", () => { browser._searchEditing = false; });
@@ -272,7 +300,7 @@
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)));
     });
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, mountAll, refresh };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) { global.addEventListener("DOMContentLoaded", () => mountAll()); global.addEventListener("popstate", () => mountAll()); }

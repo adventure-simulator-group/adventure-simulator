@@ -9,6 +9,7 @@ const {
   normalizeSortValue,
   rowValue,
   refresh,
+  syncPanelWidth,
 } = require("../static/inventory-browser.js");
 
 test("panel state is independently namespaced", () => {
@@ -39,13 +40,27 @@ test("advertised sort types retain text damage and numeric target or durability 
 
 test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof refresh, "function");
+  assert.equal(typeof syncPanelWidth, "function");
 });
 
 test("bulk controls mount inside a semantic header cell", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
-  assert.match(source, /createElement\("th"\)/);
-  assert.match(source, /cell\.append\(actions\)/);
+  assert.match(source, /querySelector\("\[data-inventory-browser\] \.inventory-actions-header"\)/);
+  assert.match(source, /headerCell\.append\(actions\)/);
   assert.doesNotMatch(source, /headerRow\.append\(actions\)/);
+});
+
+test("row controls mount in center-facing action cells", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /createElement\("td"\)/);
+  assert.match(source, /cell\.className = "inventory-actions-cell"/);
+  assert.match(source, /row\[placeAtStart \? "prepend" : "append"\]\(cell\)/);
+});
+
+test("live sidebar replacement remeasures connected inventory rails", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /"strategic-live-regions-refreshed", \(\) => refreshInventoryPanel\(document\)/);
+  assert.match(source, /if \(!hasVisibleBrowser\) grid\?\.style\.removeProperty/);
 });
 
 test("serialization preserves unrelated params and round trips bookmarks", () => {

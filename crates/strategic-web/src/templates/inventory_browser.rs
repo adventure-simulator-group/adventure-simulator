@@ -32,6 +32,7 @@ impl InventoryColumnSet {
 pub struct InventoryBrowser<'a> {
     /// Stable URL-state namespace. Left and right panels must never share it.
     pub namespace: &'a str,
+    pub show_quantities: bool,
     pub show_equipped: bool,
     pub show_condition: bool,
     pub optional_columns: InventoryColumnSet,
@@ -67,23 +68,28 @@ impl InventoryBrowser<'_> {
                         }
                     }
                 }
-                div class="inventory-browser-table-scroll" tabindex="0" aria-label="Scrollable inventory table" {
+                div class="inventory-browser-table-frame" {
                 table class=(table_class) {
                     colgroup {
                         col class="inventory-column-type";
                         col class="inventory-column-item";
-                        col class="inventory-column-count";
-                        col class="inventory-column-target";
+                        @if self.show_quantities {
+                            col class="inventory-column-count";
+                            col class="inventory-column-target";
+                        }
                         @if self.show_equipped { col class="inventory-column-equipped"; }
                         @if self.show_condition { col class="inventory-column-durability"; }
                         col class="inventory-column-weight";
                         col class="inventory-column-gold";
+                        col class="inventory-column-actions";
                     }
                     thead { tr {
                         (sortable_icon_header("type", "inventory-column-type", "Item type", game_icon("Item type", "knapsack")))
                         (sortable_text_header("name", "Item", "inventory-column-item"))
-                        (sortable_text_header("quantity", "#", "inventory-column-count"))
-                        (sortable_text_header("target", "#?", "inventory-column-target"))
+                        @if self.show_quantities {
+                            (sortable_text_header("quantity", "#", "inventory-column-count"))
+                            (sortable_text_header("target", "#?", "inventory-column-target"))
+                        }
                         @if self.show_equipped {
                             (sortable_icon_header("equipped", "inventory-column-equipped", "Equipped", game_icon("Equipped", "check-mark")))
                         }
@@ -97,6 +103,7 @@ impl InventoryBrowser<'_> {
                         }
                         (sortable_icon_header("weight", "inventory-column-weight", "Weight", game_icon("Weight", "weight")))
                         (sortable_icon_header("value", "inventory-column-gold", "Currency", game_icon("Currency", "coins")))
+                        th class="inventory-actions-header" aria-label="Inventory actions" {}
                     } }
                     tbody { (self.rows) }
                 }
@@ -122,6 +129,7 @@ mod tests {
     fn renders_independent_state_namespace_and_quantity_target_headers() {
         let rendered = InventoryBrowser {
             namespace: "trade-left",
+            show_quantities: true,
             show_equipped: false,
             show_condition: false,
             optional_columns: InventoryColumnSet::Weapons,
@@ -133,14 +141,15 @@ mod tests {
         assert!(rendered.contains("data-inventory-sort=\"quantity\""));
         assert!(rendered.contains("data-inventory-sort=\"target\""));
         assert!(rendered.contains("accuracy,reach,penetration,damage,block"));
-        assert!(rendered.contains("inventory-browser-table-scroll"));
-        assert!(rendered.contains("aria-label=\"Scrollable inventory table\""));
+        assert!(rendered.contains("inventory-browser-table-frame"));
+        assert!(rendered.contains("inventory-actions-header"));
     }
 
     #[test]
     fn condition_header_is_a_dedicated_sort_control() {
         let rendered = InventoryBrowser {
             namespace: "smith",
+            show_quantities: true,
             show_equipped: true,
             show_condition: true,
             optional_columns: InventoryColumnSet::Weapons,
@@ -151,5 +160,23 @@ mod tests {
         assert!(rendered.contains("data-inventory-sort=\"durability\""));
         assert!(rendered.contains("hammer-nails.svg"));
         assert!(!rendered.contains("repair-all"));
+    }
+
+    #[test]
+    fn merchant_inventory_can_hide_quantity_and_target_columns() {
+        let rendered = InventoryBrowser {
+            namespace: "merchant-left",
+            show_quantities: false,
+            show_equipped: false,
+            show_condition: false,
+            optional_columns: InventoryColumnSet::Weapons,
+            rows: html! {},
+        }
+        .render()
+        .into_string();
+        assert!(!rendered.contains("inventory-column-count"));
+        assert!(!rendered.contains("inventory-column-target"));
+        assert!(!rendered.contains("data-inventory-sort=\"quantity\""));
+        assert!(!rendered.contains("data-inventory-sort=\"target\""));
     }
 }
