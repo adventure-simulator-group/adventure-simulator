@@ -6,6 +6,14 @@
   const caption = planner.querySelector("[data-travel-planner-caption]");
   let currentPlan = null;
 
+  const gameIcon = (name) => {
+    const icon = document.createElement("span");
+    icon.className = "game-icon";
+    icon.style.setProperty("--game-icon", `url('/static/icons/game/${name}.svg')`);
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  };
+
   const parseStops = (value) => (value || "")
     .split(",")
     .map(Number)
@@ -40,26 +48,35 @@
 
     const reached = new Set(reachedStops);
     const nodes = [
-      { icon: "🏠", label: originName, kind: "start", minute: 0 },
+      { icon: "house", label: originName, kind: "start", minute: 0 },
       ...uniqueSortedStops(campStops, totalMinutes).map((minute, index) => ({
-        icon: "⛺",
+        icon: "camping-tent",
         label: `Camp ${index + 1}`,
         kind: "camp",
         minute,
         reached: reached.has(minute),
       })),
-      { icon: "🏰", label: destinationName, kind: "destination", minute: totalMinutes },
+      { icon: "castle", label: destinationName, kind: "destination", minute: totalMinutes },
     ];
     route.replaceChildren(...nodes.map((node, index) => {
       const element = document.createElement("div");
       element.className = `travel-plan-node travel-plan-${node.kind}${node.reached ? " reached" : ""}`;
-      element.innerHTML = `<span class="travel-plan-pin"><span>${node.icon}</span></span><span class="travel-plan-label">${node.label}</span>`;
+      const pin = document.createElement("span");
+      pin.className = "travel-plan-pin";
+      pin.append(gameIcon(node.icon));
+      const label = document.createElement("span");
+      label.className = "travel-plan-label";
+      label.textContent = node.label;
+      element.append(pin, label);
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
     }));
     const party = document.createElement("span");
     party.className = "travel-party-pin";
-    party.innerHTML = "<span>🧑</span>";
+    party.setAttribute("role", "img");
+    party.setAttribute("aria-label", "Traveling party");
+    party.title = "Traveling party";
+    party.append(gameIcon("person"));
     route.append(party);
     planner.hidden = false;
 

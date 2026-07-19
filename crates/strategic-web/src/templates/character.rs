@@ -2,7 +2,10 @@
 
 use maud::{Markup, html};
 
-use super::{entry_layout, gold_display, input_field, panel, sidebar_section};
+use super::{
+    entry_layout, gold_display, input_field, item_type_header, item_type_icon, panel,
+    sidebar_section,
+};
 use crate::spacetimedb::Character;
 
 /// List all characters and select the adventurer who enters the strategic layer.
@@ -128,14 +131,11 @@ pub fn character_new_page(_logged_in_as: Option<&str>, theme: &str) -> Markup {
         aside class="right-sidebar" {
             (sidebar_section("Starting Equipment", html! {
                 (panel("", html! {
-                    div class="inventory-list" {
-                        div class="inventory-item" {
-                            span class="item-name" { "Torch" }
-                            span class="item-qty" { "x1" }
-                        }
-                        div class="inventory-item" {
-                            span class="item-name" { "Bandage" }
-                            span class="item-qty" { "x3" }
+                    table class="trade-inventory-table starting-equipment-table" {
+                        thead { tr { (item_type_header()) th scope="col" { "Item" } th scope="col" { "#" } } }
+                        tbody {
+                            tr { td class="inventory-item-type" { (item_type_icon("torch")) } td { "Torch" } td class="inventory-count" { "1" } }
+                            tr { td class="inventory-item-type" { (item_type_icon("bandage")) } td { "Bandage" } td class="inventory-count" { "3" } }
                         }
                     }
                 }))
@@ -144,4 +144,19 @@ pub fn character_new_page(_logged_in_as: Option<&str>, theme: &str) -> Markup {
     };
 
     entry_layout("Create Character", content, theme)
+}
+
+#[cfg(test)]
+mod creation_tests {
+    use super::character_new_page;
+
+    #[test]
+    fn starting_equipment_uses_accessible_exact_item_icons() {
+        let markup = character_new_page(None, "fraktur-nocturne").into_string();
+        assert!(markup.contains("starting-equipment-table"));
+        assert!(markup.contains("aria-label=\"Item type\""));
+        assert!(markup.contains("/static/icons/game/torch.svg"));
+        assert!(markup.contains("/static/icons/game/bandage-roll.svg"));
+        assert!(markup.find("inventory-column-type").unwrap() < markup.find(">Item</th>").unwrap());
+    }
 }

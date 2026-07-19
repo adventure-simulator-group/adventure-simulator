@@ -64,6 +64,9 @@ It's clear to us that _Adventure Simulator_ is very much the kind of project whi
 [^9]: Think of this as a high-effort tech demo in the spirit of Valve (cf. *Half-Life*). We really enjoy "weird fiction" like *Morrowind* and *Dune*, but at least for *Adventure Simulator*'s first iteration, the goal is to innovate in tech, not aesthetic. For now, our aesthetic is what has been proven to work.
 
 ### Procedural assets
+
+Third-party asset licenses and attribution are recorded in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 It should be easy for players to create content for the game, so to that end, we will use low-fidelity procedural assets to greatly reduce the barrier to entry. This doesn't mean that we don't care about fidelity at all; it means fidelity must necessarily come from procedural iteration rather than a trained CG artist's skill. The system Nintendo uses for [Miis](https://en.wikipedia.org/wiki/Mii), for example, is a better example of how we might approach a character creator than, say, [_Baldur's Gate III_](https://baldursgate3.game/). But that doesn't mean that we're going for an especially cartoony art style, either; there's nothing to prevent us applying a system like to more realistically proportioned characters ([as Nintendo did](https://www.reddit.com/r/Games/comments/kq4a65/npcs_in_the_legend_of_zelda_breath_of_the_wild/), more or less, with _Breath of the Wild_ and its sequel).
 
 The same principle for graphics applies to audio. A good introduction to procedural audio may be found in [*Designing Sound*](https://mitpress.mit.edu/9780262014410/designing-sound/) by Andy Farnell.

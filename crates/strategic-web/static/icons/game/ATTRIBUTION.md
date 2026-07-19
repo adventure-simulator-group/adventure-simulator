@@ -8,24 +8,28 @@ distributed by Iconify (`@iconify-json/game-icons` 1.2.4).
 - License: [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
 - Upstream license and credits: <https://github.com/game-icons/icons/blob/master/license.txt>
 
-Game-Icons.net credits the collection's contributing artists, including Lorc,
-Delapouite, John Colburn, Felbrigg, John Redman, Carl Olsen, sbed, PriorBlue,
-Willdabeast, Viscious Speed, Lucas, Faithtoken, Skoll, and other contributors
-identified in the upstream repository. This project conservatively attributes
-the complete upstream contributor group because Iconify's compiled collection
-does not retain per-glyph author metadata.
+Game-Icons.net credits Lorc, Delapouite, John Colburn, Felbrigg, John Redman,
+Carl Olsen, Sbed, PriorBlue, Willdabeast, Viscious Speed, Lord Berandas,
+Irongamer, HeavenlyDog, Lucas, Faithtoken, Skoll, Andy Meneely, Cathelineau,
+Kier Heyl, Aussiesim, Sparker, Zeromancer, Rihlsul, Quoting, Guard13007,
+DarkZaitzev, SpencerDub, GeneralAce135, Zajkonur, Catsu, Starseeker,
+Pepijn Poolman, Pierre Leducq, Caro Asercion, and SeregaCthtuf. This project
+conservatively attributes the complete upstream contributor group because
+Iconify's compiled collection does not retain per-glyph author metadata.
 
 Vendored icon names:
 
-ancient-sword, anvil, arm-bandage, armor-cuisses, armor-vest, awareness,
+ancient-sword, anvil, arm, arm-bandage, armor-cuisses, armor-vest, awareness,
 bandage-roll, barbute, beer-stein, belt-armor, biceps, bleeding-eye,
 bleeding-wound, bo, bordered-shield, bow-arrow, bowie-knife, bracer, brain,
 bread, breastplate, broad-dagger, broadsword, brodie-helmet, broken-heart,
-bullseye, calendar, campfire, chain-mail, check-mark, chest-armor, church,
-clothes, coins, coma, conversation, crested-helmet, crossbow, crossed-swords,
-daggers, dodge, duration, eye-target, flanged-mace, greaves, halberd,
+bullseye, calendar, campfire, camping-tent, castle, chain-mail, check-mark,
+chest-armor, church, clothes, coins, coma, conversation, crested-helmet,
+cross-mark, crossbow, crossed-swords, crown, daggers, dodge, duration,
+eye-target, flanged-mace, greaves, halberd,
 hammer-nails, hammer-sickle, heart-beats, heart-minus, heavy-helm, helmet, help,
-holy-symbol, hood, human-ear, inner-self, knapsack, layered-armor, light-helm,
+holy-symbol, hood, house, human-ear, inner-self, juggler, knapsack,
+layered-armor, leg, light-helm,
 lockpicks, mailed-fist, mail-shirt, meal, medical-pack, metal-skirt,
 mounted-knight, musket, night-sleep, open-chest, person, piercing-sword,
 plain-arrow, plain-dagger, pocket-bow, prayer, pteruges, relic-blade, rifle,
@@ -33,7 +37,8 @@ roman-shield, round-shield, running-ninja, saber-slash, scales, scalpel, shield,
 shield-echoes, shirt, shop, skirt, sleeveless-jacket, spear-hook, spears,
 stiletto, stomach, stopwatch, sun, sword-brandish, sword-hilt, templar-shield,
 terror, tightrope, torch, treasure-map, trousers, two-handed-sword, visored-helm,
-warhammer, water-bottle, water-drop, waterskin, weight, wood-axe, wood-club.
+warhammer, water-bottle, water-drop, waterskin, weight, wingfoot, wood-axe,
+wood-club.
 
 The files were converted from Iconify JSON bodies into standalone SVGs without
 altering the artwork. CSS masks supply colour at runtime.

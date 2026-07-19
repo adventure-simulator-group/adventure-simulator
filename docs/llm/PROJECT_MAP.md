@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (773)
+## Files (754)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -25,6 +25,7 @@ development, or wiki document before changing a subsystem.
 - `Cargo.toml` — Cargo package/workspace manifest.
 - `LICENSE` — Repository support file.
 - `README.md` — Component overview and usage notes.
+- `THIRD_PARTY_NOTICES.md` — Project documentation.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
@@ -561,12 +562,11 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
-- `crates/strategic-web/static/icons/character/inventory.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/character/repair.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/game/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/icons/game/ancient-sword.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/anvil.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/arm-bandage.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/arm.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/armor-cuisses.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/armor-vest.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/awareness.svg` — Vector UI or texture asset.
@@ -592,6 +592,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/bullseye.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/calendar.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/campfire.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/camping-tent.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/castle.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/chain-mail.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/check-mark.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/chest-armor.svg` — Vector UI or texture asset.
@@ -601,8 +603,10 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/coma.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/conversation.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/crested-helmet.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/cross-mark.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/crossbow.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/crossed-swords.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/crown.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/daggers.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/dodge.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/duration.svg` — Vector UI or texture asset.
@@ -619,10 +623,13 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/help.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/holy-symbol.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/hood.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/house.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/human-ear.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/inner-self.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/juggler.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/knapsack.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/layered-armor.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/leg.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/light-helm.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/lockpicks.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/mail-shirt.svg` — Vector UI or texture asset.
@@ -676,36 +683,9 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/water-drop.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/waterskin.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/weight.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/wingfoot.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-axe.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-club.svg` — Vector UI or texture asset.
-- `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/endurance.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/eyesight.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/gut.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/hearing.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/instinct.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/intelligence.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/strength-arm.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/attributes/strength-leg.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/balance.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/block.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/charisma.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/dodge.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/faith.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/medicine.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/melee.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/ranged.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/stealth.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/surgeon.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/stats/skills/will.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/armor.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/church.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/clothing.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/inn.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/market.png` — Binary game or UI asset.
-- `crates/strategic-web/static/icons/strategic/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
@@ -717,6 +697,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
+- `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.

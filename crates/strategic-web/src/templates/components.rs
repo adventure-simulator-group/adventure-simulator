@@ -12,6 +12,15 @@ pub fn game_icon(label: &str, icon: &str) -> Markup {
     }
 }
 
+/// A Game Icons mask that decorates adjacent visible text without creating a
+/// duplicate screen-reader announcement.
+pub fn decorative_game_icon(icon: &str) -> Markup {
+    html! {
+        span class="game-icon" style=(format!("--game-icon: url('{GAME_ICON_ROOT}/{icon}.svg')"))
+            aria-hidden="true" {}
+    }
+}
+
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {
@@ -111,8 +120,10 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "endurance" => "heart-beats",
         "immunity" => "shield-echoes",
         "gut" => "stomach",
-        "strength-arm" | "strength-leg" => "biceps",
-        "agility-arm" | "agility-leg" => "running-ninja",
+        "strength-arm" => "arm",
+        "strength-leg" => "leg",
+        "agility-arm" => "juggler",
+        "agility-leg" => "wingfoot",
         _ => "help",
     }
 }
@@ -165,6 +176,24 @@ pub fn gold_display(amount: impl std::fmt::Display) -> Markup {
 #[cfg(test)]
 mod icon_tests {
     use super::*;
+
+    #[test]
+    fn limb_stats_use_four_distinct_icons() {
+        let icons = [
+            stat_game_icon_name("strength-arm"),
+            stat_game_icon_name("strength-leg"),
+            stat_game_icon_name("agility-arm"),
+            stat_game_icon_name("agility-leg"),
+        ];
+
+        assert_eq!(icons, ["arm", "leg", "juggler", "wingfoot"]);
+        for (index, icon) in icons.iter().enumerate() {
+            assert!(
+                !icons[..index].contains(icon),
+                "duplicate limb icon: {icon}"
+            );
+        }
+    }
 
     #[test]
     fn all_seeded_items_have_exact_icons_and_unknowns_fallback() {
@@ -247,6 +276,9 @@ mod icon_tests {
         let header = item_type_header().into_string();
         assert!(header.contains("inventory-column-type"));
         assert!(header.contains("aria-label=\"Item type\""));
+        let decorative = decorative_game_icon("sun").into_string();
+        assert!(decorative.contains("aria-hidden=\"true\""));
+        assert!(!decorative.contains("role=\"img\""));
     }
 }
 

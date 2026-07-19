@@ -18,9 +18,9 @@ use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
 use super::{
-    empty_state, game_icon, item_type_header, item_type_icon, population_description,
-    quest_location_layout_with_session, settlement_layout_with_session, sidebar_section,
-    stat_game_icon_name,
+    decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
+    population_description, quest_location_layout_with_session, settlement_layout_with_session,
+    sidebar_section, stat_game_icon_name,
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
@@ -1712,7 +1712,7 @@ fn repair_custody_panel(
             header class="repair-custody-header" {
                 h3 { "In the smith's care" }
                 span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
-                    (stat_icon("Smithing", "skills", "smithing"))
+                    (stat_icon("Smithing", "skills", "smithing", false))
                     (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}")))
                 }
             }
@@ -1782,7 +1782,7 @@ fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Ma
         (item_type_header())
         th scope="col" class="inventory-column-item" { "Item" }
         th scope="col" class="inventory-column-count" { "#" }
-        @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { "✓" } }
+        @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { (game_icon("Equipped", "check-mark")) } }
         @if let Some(condition_header) = condition_header { th scope="col" class="inventory-column-durability" { (condition_header) } }
         th scope="col" class="inventory-column-weight" title="Weight" { (game_icon("Weight", "weight")) }
         th scope="col" class="inventory-column-gold" title="Currency" { (currency_header("Currency")) }
@@ -1919,7 +1919,7 @@ fn party_skill_row(
     let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
-            td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
+            td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon, true)) }
             td class="party-skill-name" { (name) }
             td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
                 (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
@@ -2131,14 +2131,12 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
     }
 }
 
-fn schedule_icon(label: &str, icon: &str) -> Markup {
+fn schedule_icon(_label: &str, icon: &str) -> Markup {
     html! {
         span
             class="stat-icon schedule-special-icon"
             style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
-            role="img"
-            aria-label=(label)
-            title=(label)
+            aria-hidden="true"
         {}
     }
 }
@@ -2227,8 +2225,8 @@ fn character_bio_rail(
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
-                div { dt class="metric-label" { (game_icon("Age", "calendar")) span { "Age" } } dd { (character.age_years) " years" } }
-                div { dt class="metric-label" { (game_icon("Virtue", "scales")) span { "Virtue" } } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
+                div { dt class="metric-label" { (decorative_game_icon("calendar")) span { "Age" } } dd { (character.age_years) " years" } }
+                div { dt class="metric-label" { (decorative_game_icon("scales")) span { "Virtue" } } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
                 @if let Some(personality) = personality {
                     @let tags = personality_tags(personality);
                     @if !tags.is_empty() {
@@ -2240,7 +2238,7 @@ fn character_bio_rail(
                     }
                 }
                 div class="character-religion" {
-                    dt class="metric-label" { (game_icon("Religion", "holy-symbol")) span { "Religion" } }
+                    dt class="metric-label" { (decorative_game_icon("holy-symbol")) span { "Religion" } }
                     dd {
                         (religion_name(religion_id))
                         @if can_renounce && religion_id.is_some() {
@@ -2414,7 +2412,7 @@ fn strategic_condition_rail(
                 condition.morale_bonus * 100.0,
             )) {
                 div class="morale-meter-heading" {
-                    strong class="metric-label" { (game_icon("Morale", "sun")) span { "Morale" } }
+                    strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
                     span { (format!("{:+.1}", condition.morale)) }
                 }
                 div class="morale-meter-track" aria-hidden="true" {
@@ -2445,7 +2443,7 @@ fn strategic_condition_rail(
             }
             div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
                 div class="fervor-meter-heading" {
-                    strong class="metric-label" { (game_icon("Fervor", "holy-symbol")) span { "Fervor" } }
+                    strong class="metric-label" { (decorative_game_icon("holy-symbol")) span { "Fervor" } }
                     span { (percent(condition.fervor)) }
                 }
                 div class="fervor-meter-track" aria-hidden="true" { span {} }
@@ -2460,16 +2458,16 @@ fn strategic_condition_rail(
             }
             dl class="character-bio strategic-condition-summary" {
                 div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
-                div { dt class="metric-label" { (game_icon("Incapacitation", "coma")) span { "Incapacitation" } } dd { (percent(condition.incapacitation)) } }
-                div { dt class="metric-label" { (game_icon("Pain", "broken-heart")) span { "Pain" } } dd { (percent(condition.pain)) } }
-                div { dt class="metric-label" { (game_icon("Blood loss", "bleeding-wound")) span { "Blood loss" } } dd { (percent(condition.blood_loss)) } }
-                div { dt class="metric-label" { (game_icon("Fear", "terror")) span { "Fear" } } dd { (percent(condition.fear)) } }
-                div { dt class="metric-label" { (game_icon("Fatigue", "night-sleep")) span { "Fatigue" } } dd { (percent(condition.fatigue)) } }
-                div { dt class="metric-label" { (game_icon("Hunger", "meal")) span { "Hunger" } } dd { (percent(condition.hunger)) } }
-                div { dt class="metric-label" { (game_icon("Thirst", "water-drop")) span { "Thirst" } } dd { (percent(condition.thirst)) } }
-                div { dt class="metric-label" { (game_icon("Food", "bread")) span { "Food" } } dd { (format!("{:.1} travel days", condition.food_days.max(0.0))) } }
-                div { dt class="metric-label" { (game_icon("Water", "waterskin")) span { "Water" } } dd { (format!("{:.1} travel days / {:.1} L capacity", condition.water_days.max(0.0), condition.water_capacity_ml as f32 / 1_000.0)) } }
-                div { dt class="metric-label" { (game_icon("Check effectiveness", "check-mark")) span { "Check effectiveness" } } dd { (percent(condition.check_multiplier)) } }
+                div { dt class="metric-label" { (decorative_game_icon("coma")) span { "Incapacitation" } } dd { (percent(condition.incapacitation)) } }
+                div { dt class="metric-label" { (decorative_game_icon("broken-heart")) span { "Pain" } } dd { (percent(condition.pain)) } }
+                div { dt class="metric-label" { (decorative_game_icon("bleeding-wound")) span { "Blood loss" } } dd { (percent(condition.blood_loss)) } }
+                div { dt class="metric-label" { (decorative_game_icon("terror")) span { "Fear" } } dd { (percent(condition.fear)) } }
+                div { dt class="metric-label" { (decorative_game_icon("night-sleep")) span { "Fatigue" } } dd { (percent(condition.fatigue)) } }
+                div { dt class="metric-label" { (decorative_game_icon("meal")) span { "Hunger" } } dd { (percent(condition.hunger)) } }
+                div { dt class="metric-label" { (decorative_game_icon("water-drop")) span { "Thirst" } } dd { (percent(condition.thirst)) } }
+                div { dt class="metric-label" { (decorative_game_icon("bread")) span { "Food" } } dd { (format!("{:.1} travel days", condition.food_days.max(0.0))) } }
+                div { dt class="metric-label" { (decorative_game_icon("waterskin")) span { "Water" } } dd { (format!("{:.1} travel days / {:.1} L capacity", condition.water_days.max(0.0), condition.water_capacity_ml as f32 / 1_000.0)) } }
+                div { dt class="metric-label" { (decorative_game_icon("check-mark")) span { "Check effectiveness" } } dd { (percent(condition.check_multiplier)) } }
             }
         }))
     }
@@ -2577,7 +2575,7 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
     let damage_width = ((value - effective_value).max(0.0) / 5.0) * 100.0;
     html! {
         div class=(if show_label { "party-attribute-row" } else { "party-attribute-row party-attribute-icon-only" }) {
-            (stat_icon(name, "attributes", icon))
+            (stat_icon(name, "attributes", icon, show_label))
             @if show_label { span class="party-attribute-name" { (name) } }
             div class="attribute-rank-bar" title=(format!("{effective_value:.1}")) {
                 span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
@@ -2587,16 +2585,17 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
     }
 }
 
-fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
+fn stat_icon(label: &str, category: &str, icon: &str, decorative: bool) -> Markup {
     let _ = category;
     let path = format!("/static/icons/game/{}.svg", stat_game_icon_name(icon));
     html! {
         span
             class=(format!("stat-icon stat-icon-{icon}"))
             style=(format!("--stat-icon: url('{path}')"))
-            role="img"
-            aria-label=(label)
-            title=(label)
+            role=[(!decorative).then_some("img")]
+            aria-label=[(!decorative).then_some(label)]
+            title=[(!decorative).then_some(label)]
+            aria-hidden=[decorative.then_some("true")]
         {}
     }
 }
@@ -2606,7 +2605,7 @@ pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup
         figure class=(format!("service-visual service-visual-{}", kind)) {
             div class="service-visual-placeholder" role="img" aria-label=(placeholder) {
                 @if kind == "map" {
-                    span class="visual-symbol" { (game_icon("Map", "treasure-map")) }
+                    span class="visual-symbol" { (decorative_game_icon("treasure-map")) }
                     span class="visual-label" { "Map placeholder" }
                 } @else {
                     span class="visual-symbol" { (title.chars().next().unwrap_or('?')) }
