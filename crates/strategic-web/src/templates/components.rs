@@ -143,11 +143,14 @@ pub fn stat_icon_path(category: &str, icon: &str) -> String {
     }
 }
 
-/// Open-source religious symbol for a supported profession. Christian
-/// denominations intentionally share a plain cross when no suitable distinct
-/// symbol is available in the selected Font Awesome Free set.
+/// Open-source religious symbol for a supported profession.
 pub fn religion_icon_path(religion_id: Option<&str>) -> &'static str {
     match religion_id {
+        Some("roman_catholic") => "/static/icons/religion/catholic-crucifix.svg",
+        Some("lutheran") => "/static/icons/religion/luther-rose.svg",
+        Some("reformed") => "/static/icons/religion/huguenot-cross.svg",
+        Some("anglican") => "/static/icons/religion/canterbury-cross.svg",
+        Some("eastern_orthodox") => "/static/icons/religion/orthodox-cross.svg",
         Some("islamic") => "/static/icons/religion/fontawesome-star-and-crescent.svg",
         Some("judaism") => "/static/icons/religion/fontawesome-star-of-david.svg",
         _ => "/static/icons/religion/fontawesome-cross.svg",
@@ -239,11 +242,23 @@ mod icon_tests {
         assert_eq!(stat_game_icon_name("dodge"), "acrobatic");
         assert_eq!(
             religion_icon_path(Some("roman_catholic")),
-            "/static/icons/religion/fontawesome-cross.svg"
+            "/static/icons/religion/catholic-crucifix.svg"
+        );
+        assert_eq!(
+            religion_icon_path(Some("lutheran")),
+            "/static/icons/religion/luther-rose.svg"
+        );
+        assert_eq!(
+            religion_icon_path(Some("reformed")),
+            "/static/icons/religion/huguenot-cross.svg"
+        );
+        assert_eq!(
+            religion_icon_path(Some("anglican")),
+            "/static/icons/religion/canterbury-cross.svg"
         );
         assert_eq!(
             religion_icon_path(Some("eastern_orthodox")),
-            "/static/icons/religion/fontawesome-cross.svg"
+            "/static/icons/religion/orthodox-cross.svg"
         );
         assert_eq!(
             religion_icon_path(Some("islamic")),
