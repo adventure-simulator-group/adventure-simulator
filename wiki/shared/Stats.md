@@ -1,4 +1,10 @@
 # Attributes
+
+The strategic interface represents attributes, skills, schedule activities,
+condition metrics, Fervor, Morale, Age, Virtue, and Religion with locally
+vendored monochrome Game Icons. The icons are CSS masks, so themes recolour them
+without alternate bitmap files; labels and tooltips remain available to
+assistive technology.
 The maximum value of your characters' attributes is determined by their genetics, but the actual value may be quite a bit lower if they are not properly conditioned. For example, even if you have the theoretical ability to build a large amount of muscle, if you have poor nutrition or don't exercise then you will realize very little of it. Conditioning is different for each attribute, but generally no one will be able to condition all of their attributes to their maximum potential due to there only being 24 hours in a day.
 
 Attributes are grouped between Chest/Stomach/Head/Limbs (L/R, A/L). Damage to one of these areas will affect all attributes within.

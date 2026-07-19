@@ -407,8 +407,8 @@
   width: 100%;
   height: 100%;
   background: currentColor;
-  -webkit-mask: url('/static/icons/character/repair.png') center / contain no-repeat;
-  mask: url('/static/icons/character/repair.png') center / contain no-repeat;
+  -webkit-mask: url('/static/icons/game/hammer-nails.svg') center / contain no-repeat;
+  mask: url('/static/icons/game/hammer-nails.svg') center / contain no-repeat;
 }
 .repair-all-form { display: inline-block; }
 
@@ -433,6 +433,7 @@
   table-layout: fixed;
 }
 .smith-wares-scroll .trade-inventory-table col.inventory-column-item { width: auto; }
+.smith-wares-scroll .trade-inventory-table col.inventory-column-type { width: 1.35rem; }
 .smith-wares-scroll .trade-inventory-table col.inventory-column-count { width: 1.6rem; }
 .smith-wares-scroll .trade-inventory-table col.inventory-column-weight { width: 1.9rem; }
 .smith-wares-scroll .trade-inventory-table col.inventory-column-gold { width: 1.65rem; }
@@ -515,15 +516,18 @@
 }
 
 .trade-inventory-table th:first-child {
-  padding-left: var(--padding);
-  text-align: left;
+  padding-left: 0.18rem;
+  text-align: center;
 }
+.trade-inventory-table th.inventory-column-item { padding-left: 0.35rem; text-align: left; }
 
 .inventory-column-count,
+.inventory-column-type,
 .inventory-column-equipped,
 .inventory-column-weight,
 .inventory-column-gold,
 .inventory-count,
+.inventory-item-type,
 .inventory-equipped,
 .inventory-weight,
 .inventory-gold {
@@ -533,8 +537,11 @@
 }
 
 .inventory-column-item { width: 100%; }
+.inventory-column-type { width: 1.45rem; min-width: 1.45rem; }
+.inventory-item-type { width: 1.45rem; padding-inline: 0.18rem !important; text-align: center; }
+.inventory-item-type .game-icon { width: 0.95rem; height: 0.95rem; }
 
-/* Six smith-inventory columns must fit the 20vw rail at normal desktop widths. */
+/* Seven smith-inventory columns must fit the 20vw rail at normal desktop widths. */
 .smith-player-inventory-table {
   width: 100%;
   table-layout: fixed;
@@ -1953,6 +1960,8 @@ button.party-portrait-action {
 
 .character-bio dt { color: var(--text-muted); }
 .character-bio dd { margin: 0; color: var(--text-primary); }
+.metric-label { display: inline-flex; gap: 0.3rem; align-items: center; }
+.metric-label .game-icon { flex: 0 0 0.9rem; width: 0.9rem; height: 0.9rem; }
 
 .personality-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; justify-content: flex-end; }
 .personality-tag { border: 1px solid var(--border-color); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: var(--font-size-xs); }
@@ -2457,6 +2466,19 @@ body.chat-resizing {
   -webkit-mask: var(--stat-icon) center / contain no-repeat;
   mask: var(--stat-icon) center / contain no-repeat;
 }
+.smith-player-inventory-table col.inventory-column-type { width: 1.35rem; }
+
+.game-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+  background: currentColor;
+  -webkit-mask: var(--game-icon) center / contain no-repeat;
+  mask: var(--game-icon) center / contain no-repeat;
+}
+
+.schedule-header-icon .game-icon { width: 0.78rem; height: 0.78rem; }
 
 .stat-icon-will,
 .stat-icon-charisma,

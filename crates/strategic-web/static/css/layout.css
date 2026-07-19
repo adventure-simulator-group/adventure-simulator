@@ -254,39 +254,22 @@
   transition: background-color var(--transition-fast);
 }
 
-.service-tab-icon-market { --service-tab-icon: url("/static/icons/strategic/market.png"); }
-.service-tab-icon-weapons { --service-tab-icon: url("/static/icons/strategic/weapons.png"); }
-.service-tab-icon-armor { --service-tab-icon: url("/static/icons/strategic/armor.png"); }
-.service-tab-icon-clothing { --service-tab-icon: url("/static/icons/strategic/clothing.png"); }
-.service-tab-icon-inn { --service-tab-icon: url("/static/icons/strategic/inn.png"); }
-.service-tab-icon-church { --service-tab-icon: url("/static/icons/strategic/church.png"); }
+.service-tab-icon-market { --service-tab-icon: url("/static/icons/game/shop.svg"); }
+.service-tab-icon-weapons { --service-tab-icon: url("/static/icons/game/sword-brandish.svg"); }
+.service-tab-icon-armor { --service-tab-icon: url("/static/icons/game/breastplate.svg"); }
+.service-tab-icon-clothing { --service-tab-icon: url("/static/icons/game/clothes.svg"); }
+.service-tab-icon-inn { --service-tab-icon: url("/static/icons/game/beer-stein.svg"); }
+.service-tab-icon-church { --service-tab-icon: url("/static/icons/game/church.svg"); }
 
-.service-tab-icon-map,
-.service-tab-icon-loot {
-  display: grid;
-  place-items: center;
-  background: none !important;
-  font-size: 1.15rem;
-  -webkit-mask: none;
-  mask: none;
-}
-
-.service-tab-icon-map::before { content: "⌖"; }
-.service-tab-icon-loot::before { content: "◇"; }
+.service-tab-icon-map { --service-tab-icon: url("/static/icons/game/treasure-map.svg"); }
+.service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
 
 .settlement-services .nav-tab:hover .service-tab-icon { background-color: var(--accent-hover); }
 .settlement-services .nav-tab.active .service-tab-icon { background-color: var(--accent-dark); }
 
-/* Provisions remains outside the new settlement-icon set. */
 .service-tab-icon-provisions {
-  background: none;
-  -webkit-mask: none;
-  mask: none;
-  color: var(--accent);
-  font-size: 0.98rem;
-  line-height: 1.25rem;
+  --service-tab-icon: url("/static/icons/game/bread.svg");
 }
-.service-tab-icon-provisions::before { content: "\1F35E"; }
 
 .player-name {
   font-size: var(--font-size-sm);
