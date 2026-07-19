@@ -80,7 +80,7 @@
 .trade-inventory-row:hover .inventory-row-actions, .trade-inventory-row:focus-within .inventory-row-actions, .inventory-row-actions:focus-within { opacity:1; }
 .inventory-row-actions .trade-transfer { position:static; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
 .inventory-row-actions button:not(:disabled) { color:var(--text-primary); }
-.inventory-row-actions .trade-transfer:disabled { color:var(--text-muted); opacity:.42; }
+.inventory-row-actions .trade-transfer:disabled { color:var(--text-muted); opacity:.42; transform:none; }
 .inventory-row-actions .trade-transfer::before, .inventory-footer-transfer::before { display:none; }
 .trade-inventory-row:hover .inventory-row-actions .trade-transfer:not(:disabled), .trade-inventory-row:focus-within .inventory-row-actions .trade-transfer:not(:disabled) { opacity:1; transform:none; }
 .inventory-target-control { display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }

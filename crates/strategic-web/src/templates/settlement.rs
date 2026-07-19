@@ -4872,6 +4872,7 @@ mod tests {
             ".trade-inventory-row:not(:last-child) .inventory-row-actions { bottom:-1px; }"
         ));
         assert!(utilities.contains(".inventory-row-actions .trade-transfer:disabled"));
+        assert!(utilities.contains("opacity:.42; transform:none;"));
         assert!(utilities.contains("left:100%; padding-left:var(--inventory-action-bridge);"));
         assert!(utilities.contains("right:100%; padding-right:var(--inventory-action-bridge);"));
         assert!(css.contains(".inventory-browser-table-frame"));

@@ -92,8 +92,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=inventory-panels-1";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-9";
-                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-9";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-10";
+                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-10";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
