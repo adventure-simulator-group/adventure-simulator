@@ -303,10 +303,12 @@ function updateMerchantGoldDraft() {
 }
 
 document.addEventListener("click", (event) => {
-  if (event.isTrusted && event.target.closest("[data-dynamic-transfer]")) {
+  const dynamicTransfer = event.target.closest?.("[data-dynamic-transfer]");
+  const clickTarget = dynamicTransfer || event.target;
+  if (event.isTrusted && dynamicTransfer) {
     applyDynamicTransferModifiers(event);
   }
-  const tab = event.target.closest("[data-inventory-tab]");
+  const tab = clickTarget.closest("[data-inventory-tab]");
   if (tab) {
     const root = tab.closest("[data-inventory-tabs]");
     root.querySelectorAll("[data-inventory-tab]").forEach((entry) => entry.classList.toggle("active", entry === tab));
@@ -317,20 +319,20 @@ document.addEventListener("click", (event) => {
     refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
     return;
   }
-  const targetStep = event.target.closest("[data-target-step]");
+  const targetStep = clickTarget.closest("[data-target-step]");
   if (targetStep) {
     event.preventDefault();
     changeInventoryTarget(targetStep.closest("[data-target-control]"), Number(targetStep.dataset.targetStep));
     return;
   }
-  const bulk = event.target.closest("[data-inventory-bulk]");
+  const bulk = clickTarget.closest("[data-inventory-bulk]");
   if (bulk) {
     const panel = bulk.closest("aside, section, .sidebar-section") || document;
     const selector = bulk.dataset.inventoryBulk === "buy" ? "[data-merchant-buy]" : bulk.dataset.inventoryBulk === "loot" ? "[data-loot-stage]" : ["deposit", "withdraw"].includes(bulk.dataset.inventoryBulk) ? `[data-pool-stage][data-pool-direction="${bulk.dataset.inventoryBulk}"]` : bulk.dataset.inventoryBulk.startsWith("party-") ? ".party-draft-transfer" : "[data-merchant-sell]";
     panel.querySelectorAll(`${selector}[data-transfer-mode="${bulk.dataset.transferMode}"]`).forEach((button) => button.click());
     return;
   }
-  const cancelLoot = event.target.closest("[data-cancel-loot]");
+  const cancelLoot = clickTarget.closest("[data-cancel-loot]");
   if (cancelLoot) {
     strategicTradeUi.state.lootTransferDraft = new Map();
     document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
@@ -340,7 +342,7 @@ document.addEventListener("click", (event) => {
     document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
-  const lootStage = event.target.closest("[data-loot-stage]");
+  const lootStage = clickTarget.closest("[data-loot-stage]");
   if (lootStage) {
     const row = lootStage.closest("tr");
     const draft = strategicTradeUi.state.lootTransferDraft ||= new Map();
@@ -360,9 +362,9 @@ document.addEventListener("click", (event) => {
     form.hidden = false; form.querySelector('[type="submit"]').disabled = false;
     return;
   }
-  const cancelPool = event.target.closest("[data-cancel-pool]");
+  const cancelPool = clickTarget.closest("[data-cancel-pool]");
   if (cancelPool) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
-  const poolStage = event.target.closest("[data-pool-stage]");
+  const poolStage = clickTarget.closest("[data-pool-stage]");
   if (poolStage) {
     const form = document.querySelector("#pool-transfer-offer");
     if (form.dataset.direction && form.dataset.direction !== poolStage.dataset.poolDirection) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); }
@@ -376,13 +378,13 @@ document.addEventListener("click", (event) => {
     for (const [name, values] of Object.entries({item_id:[...draft.keys()],quantity:[...draft.values()]})) { const input=document.createElement("input");input.type="hidden";input.name=name;input.value=values.join(",");form.append(input); }
     form.hidden=false;form.querySelector('[type="submit"]').disabled=false;return;
   }
-  const cancelTrade = event.target.closest("[data-cancel-trade]");
+  const cancelTrade = clickTarget.closest("[data-cancel-trade]");
   if (cancelTrade) {
     resetTradeDraft(cancelTrade.closest("form"));
     document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
-  const unstageDiscard = event.target.closest("[data-unstage-discard]");
+  const unstageDiscard = clickTarget.closest("[data-unstage-discard]");
   if (unstageDiscard) {
     const id = unstageDiscard.dataset.unstageDiscard;
     const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
@@ -405,7 +407,7 @@ document.addEventListener("click", (event) => {
     updateDiscardForm();
     return;
   }
-  const discardItem = event.target.closest("[data-discard-item]");
+  const discardItem = clickTarget.closest("[data-discard-item]");
   if (discardItem) {
     const id = discardItem.dataset.discardItem;
     const sourceRow = discardItem.closest("tr");
@@ -424,7 +426,7 @@ document.addEventListener("click", (event) => {
     updateDiscardForm();
     return;
   }
-  const cancelBuy = event.target.closest("[data-merchant-cancel-buy]");
+  const cancelBuy = clickTarget.closest("[data-merchant-cancel-buy]");
   if (cancelBuy) {
     const itemId = cancelBuy.dataset.merchantCancelBuy;
     const buys = strategicTradeUi.state.merchantDraft ||= new Map();
@@ -447,7 +449,7 @@ document.addEventListener("click", (event) => {
     updateMerchantOfferForm();
     return;
   }
-  const merchantSell = event.target.closest("[data-merchant-sell]");
+  const merchantSell = clickTarget.closest("[data-merchant-sell]");
   if (merchantSell) {
     const itemId = merchantSell.dataset.itemName;
     const buys = strategicTradeUi.state.merchantDraft ||= new Map();
@@ -480,7 +482,7 @@ document.addEventListener("click", (event) => {
     updateMerchantOfferForm();
     return;
   }
-  const merchantButton = event.target.closest("[data-merchant-buy]");
+  const merchantButton = clickTarget.closest("[data-merchant-buy]");
   if (merchantButton) {
     const draft = strategicTradeUi.state.merchantDraft ||= new Map();
     const item = merchantButton.dataset.merchantBuy;
@@ -505,7 +507,7 @@ document.addEventListener("click", (event) => {
     updateMerchantOfferForm();
     return;
   }
-  const button = event.target.closest(".party-draft-transfer");
+  const button = clickTarget.closest(".party-draft-transfer");
   if (!button) return;
   const key = button.dataset.item;
   const draft = strategicTradeUi.state.partyTradeDraft ||= new Map();

@@ -4851,8 +4851,9 @@ mod tests {
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
         assert!(css.contains("--inventory-merchant-action-overhang"));
-        assert!(css.contains("+ 8px)"));
         assert!(css.contains("padding-right: var(--inventory-merchant-action-overhang);"));
+        assert!(css.contains("direction: rtl;"));
+        assert!(css.contains(".smith-wares-scroll > * { direction: ltr; }"));
         assert!(css.contains("scrollbar-gutter: stable;"));
         assert!(css.contains("overflow-x: clip;"));
         assert!(css.contains("col.inventory-column-item { width: auto; }"));

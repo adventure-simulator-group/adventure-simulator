@@ -64,6 +64,14 @@ test("row controls mount in center-facing action cells", () => {
   assert.match(source, /row\[placeAtStart \? "prepend" : "append"\]\(cell\)/);
 });
 
+test("dynamic transfer routing survives glyph replacement", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /const dynamicTransfer = event\.target\.closest\?\.\("\[data-dynamic-transfer\]"\)/);
+  assert.match(source, /const clickTarget = dynamicTransfer \|\| event\.target/);
+  assert.match(source, /const merchantButton = clickTarget\.closest\("\[data-merchant-buy\]"\)/);
+  assert.doesNotMatch(source, /const merchantButton = event\.target\.closest/);
+});
+
 test("live sidebar replacement remeasures connected inventory rails", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
   assert.match(source, /"strategic-live-regions-refreshed", \(\) => refreshInventoryPanel\(document\)/);
