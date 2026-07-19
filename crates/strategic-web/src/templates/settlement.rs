@@ -2196,7 +2196,6 @@ fn skills_table(
     html! {
             table class="party-skills-table" {
                 colgroup {
-                    col class="party-skill-icon-column";
                     col class="party-skill-name-column";
                     @if schedule.is_some() {
                         col class="schedule-effect-column";
@@ -2217,7 +2216,7 @@ fn skills_table(
                     colgroup { col class="religion-expand-column"; }
                 }
                 thead { tr class="schedule-context-heading" {
-                        th scope="colgroup" colspan=(if schedule.is_some() { "6" } else { "3" }) class="schedule-table-title" { (title) }
+                        th scope="colgroup" colspan=(if schedule.is_some() { "5" } else { "2" }) class="schedule-table-title" { (title) }
                     @if schedule.is_some() {
                         th scope="col" aria-label="Automatic training" {}
                         th scope="col" title="Daily plan used while resting or waiting in a settlement" {
@@ -2241,9 +2240,9 @@ fn skills_table(
                     (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| s.downtime.smithing_minutes)))
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
-                        tr class="schedule-divider" { td colspan="9" {} }
+                        tr class="schedule-divider" { td colspan="8" {} }
                         tr class="schedule-section-heading" {
-                            th colspan="2" { "Activities" }
+                            th { span class="sr-only" { "Activities" } }
                             th scope="col" title="Currency" { (schedule_header_icon("coins", "Currency")) }
                             th scope="col" title="Virtue" { (schedule_header_icon("scales", "Virtue")) }
                             th scope="col" title="Morale" { (schedule_header_icon("sun", "Morale")) }
@@ -2305,8 +2304,7 @@ fn religion_skill_rows(
     });
     html! {
         tr class="party-skill-row religion-primary-row" data-religion-primary=(primary_id) {
-            td class="party-skill-icon-cell" {}
-            th scope="row" class="party-skill-name" {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
                 span class="religion-tradition-icon" title=(primary.label()) {
                     (religion_icon(primary.label(), Some(primary_id), false))
                 }
@@ -2361,8 +2359,7 @@ fn religion_skill_rows(
             @let effective = skills.religion_hours.effective(religion);
             @let minutes = schedule.map_or(0, |value| value.downtime.religion_minutes_by_tradition.get(religion));
             tr class="party-skill-row religion-detail-row" data-religion-detail hidden {
-                td class="party-skill-icon-cell" {}
-                th scope="row" class="party-skill-name religion-subskill-name" {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     span class="religion-tradition-icon" {
                         (religion_icon(religion.label(), Some(id), false))
                     }
@@ -2417,7 +2414,6 @@ fn party_skill_row(
     let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
-            td class="party-skill-icon-cell" {}
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon(name, "skills", icon, false))
             }
@@ -2614,8 +2610,10 @@ fn schedule_special_row(
             data-leisure-morale-limit=[leisure.map(|_| LEISURE_MORALE_LIMIT)]
             data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
             data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
-            td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
-            td class="party-skill-name" { strong { (label) } }
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (schedule_icon(label, icon))
+                span class="sr-only" { (label) }
+            }
             (activity_effect_cell("gold", values[0]))
             (activity_effect_cell("virtue", values[1]))
             (activity_effect_cell("morale", values[2]))
@@ -4440,6 +4438,8 @@ mod tests {
         assert!(rendered.contains(">+4</td>"));
         assert!(rendered.contains("schedule-effect-negative"));
         assert!(rendered.contains(">-2.0</td>"));
+        assert!(rendered.contains("<span class=\"sr-only\">Thievery</span>"));
+        assert!(!rendered.contains("<strong>Thievery</strong>"));
         assert!(!rendered.contains("schedule-allocation-fill"));
         assert!(!rendered.contains("schedule-special-track"));
     }
@@ -5220,6 +5220,8 @@ mod tests {
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
         assert!(css.contains(".schedule-time-input {"));
         assert!(css.contains("position: absolute;"));
+        assert!(css.contains("right: 0;"));
+        assert!(!css.contains(".party-skill-icon-column"));
         assert!(css.contains(".schedule-time-editor-action {"));
         assert!(css.contains(".schedule-time-confirm { background: #2f7d3d; }"));
         assert!(css.contains(".schedule-time-cancel { background: #9c3434; }"));

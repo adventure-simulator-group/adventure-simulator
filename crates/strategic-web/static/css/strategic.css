@@ -2543,12 +2543,10 @@ button.party-portrait-action {
   font-size: var(--font-size-sm);
 }
 
-.party-skill-icon-column { width: 1.55rem; }
-.party-skill-name-column { width: 5.75rem; }
+.party-skill-name-column { width: 2.35rem; }
 .party-skill-time-column { width: 3.65rem; }
 .religion-expand-column { width: 1rem; }
-.skill-schedule .party-skill-icon-column { width: 1.15rem; }
-.skill-schedule .party-skill-name-column { width: 3.6rem; }
+.skill-schedule .party-skill-name-column { width: 2.35rem; }
 .skill-schedule .schedule-effect-column { width: 1.55rem; }
 .skill-schedule .religion-auto-column { width: 1.5rem; }
 .skill-schedule .party-skill-time-column { width: 2.55rem; }
@@ -2561,7 +2559,7 @@ button.party-portrait-action {
   border-bottom: 1px solid var(--border-light);
 }
 
-.party-skill-icon-cell { padding-right: 0.4rem !important; }
+.party-skill-icon-cell { padding-inline: 0 !important; text-align: center; }
 
 .party-skill-name {
   overflow: hidden;
@@ -3205,7 +3203,7 @@ body.chat-resizing {
   position: absolute;
   z-index: 10;
   top: 50%;
-  right: -1.45rem;
+  right: 0;
   display: grid;
   grid-template-columns: 1.5rem 3.7rem 1.5rem;
   align-items: center;
@@ -3343,7 +3341,6 @@ body.chat-resizing {
 }
 
 .schedule-special-row .party-skill-name { font-weight: 700; }
-.schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-effect {
   padding-inline: 0.1rem !important;
