@@ -326,6 +326,15 @@
   overflow: hidden;
 }
 
+/* Inventory rails grow with their currently visible columns. The center track
+   yields space while row and bulk actions project into its portrait gutter. */
+.main-grid:has(.inventory-browser) {
+  grid-template-columns:
+    var(--inventory-left-width, 20%)
+    minmax(0, 1fr)
+    var(--inventory-right-width, 20%);
+}
+
 body:has(.settlement-top-bar) .main-grid {
   height: calc(100vh - var(--settlement-header-height));
 }
@@ -477,6 +486,9 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   .main-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
+  }
+  .main-grid:has(.inventory-browser) {
+    grid-template-columns: 1fr;
   }
   body:has(.settlement-top-bar) .main-grid {
     height: auto;

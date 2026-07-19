@@ -1,4 +1,18 @@
 const strategicTradeUi = window.strategicTradeUi ||= { state: {} };
+const refreshInventoryPanel = (element) => {
+  if (!element) return;
+  if (element === document) {
+    const grid = document.querySelector(".main-grid");
+    ["left", "right"].forEach((side) => {
+      const sidebar = grid?.querySelector(`.${side}-sidebar`);
+      const hasVisibleBrowser = [...(sidebar?.querySelectorAll("[data-inventory-browser]") || [])]
+        .some((browser) => !browser.closest("[hidden]"));
+      if (!hasVisibleBrowser) grid?.style.removeProperty(`--inventory-${side}-width`);
+    });
+  }
+  window.strategicInventoryBrowser?.refresh?.(element);
+  mountInventoryBulkControls(element);
+};
 
 function changeTradeDraftCount(row, change) {
   const count = row.querySelector(".inventory-count");
@@ -8,10 +22,36 @@ function changeTradeDraftCount(row, change) {
 
 function mountInventoryBulkControls(root = document) {
   if (!root?.querySelectorAll) root = document;
+  const browsers = root.matches?.("[data-inventory-browser]") ? [root] : [...root.querySelectorAll("[data-inventory-browser]")];
+  const closestBrowser = root.closest?.("[data-inventory-browser]");
+  if (closestBrowser && !browsers.includes(closestBrowser)) browsers.push(closestBrowser);
+
+  browsers.forEach((browser) => {
+    const placeAtStart = Boolean(browser.closest(".right-sidebar"));
+    const headerRow = browser.querySelector(".trade-inventory-table thead tr");
+    const headerCell = headerRow?.querySelector(":scope > .inventory-actions-header");
+    const actionColumn = browser.querySelector(".trade-inventory-table colgroup .inventory-column-actions");
+    if (headerCell) headerRow[placeAtStart ? "prepend" : "append"](headerCell);
+    if (actionColumn) actionColumn.parentElement[placeAtStart ? "prepend" : "append"](actionColumn);
+
+    browser.querySelectorAll("tbody > tr.trade-inventory-row:not(.inventory-detail-row)").forEach((row) => {
+      let cell = row.querySelector(":scope > .inventory-actions-cell");
+      if (!cell) {
+        cell = document.createElement("td");
+        cell.className = "inventory-actions-cell";
+        cell.setAttribute("aria-label", "Item actions");
+      }
+      const actions = row.querySelector(".inventory-row-actions");
+      if (actions && actions.parentElement !== cell) cell.append(actions);
+      row[placeAtStart ? "prepend" : "append"](cell);
+    });
+  });
+
   root.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
-    const section = actions.closest(".sidebar-section");
-    const headerRow = section?.querySelector(".trade-inventory-table thead tr");
-    if (headerRow) headerRow.append(actions);
+    if (actions.closest(".inventory-actions-header")) return;
+    const inventoryRegion = actions.closest(".encumbrance-inventory-rail, .smith-wares-scroll, .sidebar-section");
+    const headerCell = inventoryRegion?.querySelector("[data-inventory-browser] .inventory-actions-header");
+    if (headerCell) headerCell.append(actions);
   });
   applyDynamicTransferModifiers();
 }
@@ -116,10 +156,10 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   const equipped = document.createElement("td");
   equipped.className = "inventory-equipped";
   equipped.innerHTML = '<input type="checkbox" disabled>';
-  count.after(equipped);
+  (row.querySelector(".inventory-target") || count).after(equipped);
   row.querySelector(".inventory-gold").textContent = sourceRow.dataset.merchantSellPrice;
   row.dataset.generatedMerchantRow = "true";
-  const name = row.querySelector(".inventory-item-name");
+  const actions = row.querySelector(".inventory-row-actions");
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.className = "trade-transfer trade-transfer-left";
@@ -133,9 +173,10 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   cancel.setAttribute("aria-label", cancel.dataset.labelOne);
   cancel.title = cancel.dataset.labelOne;
   cancel.innerHTML = '<span class="inventory-transfer-glyph arrows-1" aria-hidden="true"><i></i></span>';
-  name.append(cancel);
+  actions.append(cancel);
   applyDynamicTransferModifiers();
   playerSidebar.querySelector(".trade-inventory-table tbody").append(row);
+  refreshInventoryPanel(playerSidebar);
   return row;
 }
 
@@ -181,6 +222,7 @@ function resetTradeDraft(form) {
   form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
   form.hidden = true;
   form.querySelector("[type='submit']").disabled = true;
+  window.strategicInventoryBrowser?.refresh?.(document);
 }
 
 function updateDiscardForm() {
@@ -233,8 +275,9 @@ function ensureDiscardRow(sourceRow, inventoryId) {
   count.textContent = "0";
   delete count.dataset.base;
   delete count.dataset.tradeDraftChange;
-  document.querySelector("[data-discard-list]").append(row);
+  document.querySelector("[data-discard-table] tbody").append(row);
   applyDynamicTransferModifiers();
+  refreshInventoryPanel(row);
   return row;
 }
 
@@ -260,10 +303,12 @@ function updateMerchantGoldDraft() {
 }
 
 document.addEventListener("click", (event) => {
-  if (event.isTrusted && event.target.closest("[data-dynamic-transfer]")) {
+  const dynamicTransfer = event.target.closest?.("[data-dynamic-transfer]");
+  const clickTarget = dynamicTransfer || event.target;
+  if (event.isTrusted && dynamicTransfer) {
     applyDynamicTransferModifiers(event);
   }
-  const tab = event.target.closest("[data-inventory-tab]");
+  const tab = clickTarget.closest("[data-inventory-tab]");
   if (tab) {
     const root = tab.closest("[data-inventory-tabs]");
     root.querySelectorAll("[data-inventory-tab]").forEach((entry) => entry.classList.toggle("active", entry === tab));
@@ -271,22 +316,23 @@ document.addEventListener("click", (event) => {
     const scope = document.querySelector("#merchant-offer [name='inventory_scope']");
     if (scope) scope.value = tab.dataset.inventoryTab;
     resetTradeDraft(document.querySelector("#merchant-offer"));
+    refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
     return;
   }
-  const targetStep = event.target.closest("[data-target-step]");
+  const targetStep = clickTarget.closest("[data-target-step]");
   if (targetStep) {
     event.preventDefault();
     changeInventoryTarget(targetStep.closest("[data-target-control]"), Number(targetStep.dataset.targetStep));
     return;
   }
-  const bulk = event.target.closest("[data-inventory-bulk]");
+  const bulk = clickTarget.closest("[data-inventory-bulk]");
   if (bulk) {
     const panel = bulk.closest("aside, section, .sidebar-section") || document;
     const selector = bulk.dataset.inventoryBulk === "buy" ? "[data-merchant-buy]" : bulk.dataset.inventoryBulk === "loot" ? "[data-loot-stage]" : ["deposit", "withdraw"].includes(bulk.dataset.inventoryBulk) ? `[data-pool-stage][data-pool-direction="${bulk.dataset.inventoryBulk}"]` : bulk.dataset.inventoryBulk.startsWith("party-") ? ".party-draft-transfer" : "[data-merchant-sell]";
     panel.querySelectorAll(`${selector}[data-transfer-mode="${bulk.dataset.transferMode}"]`).forEach((button) => button.click());
     return;
   }
-  const cancelLoot = event.target.closest("[data-cancel-loot]");
+  const cancelLoot = clickTarget.closest("[data-cancel-loot]");
   if (cancelLoot) {
     strategicTradeUi.state.lootTransferDraft = new Map();
     document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
@@ -296,7 +342,7 @@ document.addEventListener("click", (event) => {
     document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
-  const lootStage = event.target.closest("[data-loot-stage]");
+  const lootStage = clickTarget.closest("[data-loot-stage]");
   if (lootStage) {
     const row = lootStage.closest("tr");
     const draft = strategicTradeUi.state.lootTransferDraft ||= new Map();
@@ -316,9 +362,9 @@ document.addEventListener("click", (event) => {
     form.hidden = false; form.querySelector('[type="submit"]').disabled = false;
     return;
   }
-  const cancelPool = event.target.closest("[data-cancel-pool]");
+  const cancelPool = clickTarget.closest("[data-cancel-pool]");
   if (cancelPool) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
-  const poolStage = event.target.closest("[data-pool-stage]");
+  const poolStage = clickTarget.closest("[data-pool-stage]");
   if (poolStage) {
     const form = document.querySelector("#pool-transfer-offer");
     if (form.dataset.direction && form.dataset.direction !== poolStage.dataset.poolDirection) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); }
@@ -332,13 +378,13 @@ document.addEventListener("click", (event) => {
     for (const [name, values] of Object.entries({item_id:[...draft.keys()],quantity:[...draft.values()]})) { const input=document.createElement("input");input.type="hidden";input.name=name;input.value=values.join(",");form.append(input); }
     form.hidden=false;form.querySelector('[type="submit"]').disabled=false;return;
   }
-  const cancelTrade = event.target.closest("[data-cancel-trade]");
+  const cancelTrade = clickTarget.closest("[data-cancel-trade]");
   if (cancelTrade) {
     resetTradeDraft(cancelTrade.closest("form"));
     document.dispatchEvent(new Event("strategic-live-refresh-requested"));
     return;
   }
-  const unstageDiscard = event.target.closest("[data-unstage-discard]");
+  const unstageDiscard = clickTarget.closest("[data-unstage-discard]");
   if (unstageDiscard) {
     const id = unstageDiscard.dataset.unstageDiscard;
     const draft = strategicTradeUi.state.inventoryDiscardDraft ||= new Map();
@@ -356,10 +402,12 @@ document.addEventListener("click", (event) => {
       draft.set(id, quantity - amount);
       stagedRow.querySelector(".inventory-count").textContent = String(quantity - amount);
     }
+    refreshInventoryPanel(sourceRow || document.querySelector("[data-discard-table]"));
+    refreshInventoryPanel(document.querySelector("[data-discard-table]"));
     updateDiscardForm();
     return;
   }
-  const discardItem = event.target.closest("[data-discard-item]");
+  const discardItem = clickTarget.closest("[data-discard-item]");
   if (discardItem) {
     const id = discardItem.dataset.discardItem;
     const sourceRow = discardItem.closest("tr");
@@ -371,11 +419,14 @@ document.addEventListener("click", (event) => {
     const amount = mode === "one" ? 1 : available - quantity;
     draft.set(id, quantity + amount);
     setTradeDraftCount(sourceRow, -(quantity + amount));
-    ensureDiscardRow(sourceRow, id).querySelector(".inventory-count").textContent = String(quantity + amount);
+    const stagedRow = ensureDiscardRow(sourceRow, id);
+    stagedRow.querySelector(".inventory-count").textContent = String(quantity + amount);
+    refreshInventoryPanel(sourceRow);
+    refreshInventoryPanel(stagedRow);
     updateDiscardForm();
     return;
   }
-  const cancelBuy = event.target.closest("[data-merchant-cancel-buy]");
+  const cancelBuy = clickTarget.closest("[data-merchant-cancel-buy]");
   if (cancelBuy) {
     const itemId = cancelBuy.dataset.merchantCancelBuy;
     const buys = strategicTradeUi.state.merchantDraft ||= new Map();
@@ -389,13 +440,16 @@ document.addEventListener("click", (event) => {
     if (!amount) return;
     if (amount >= quantity) buys.delete(itemId); else buys.set(itemId, quantity - amount);
     changeTradeDraftCount(playerRow, -amount);
-    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
+    const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
+    changeTradeDraftCount(stockRow, amount);
     if (playerRow.dataset.generatedMerchantRow === "true" && Number(playerRow.querySelector(".inventory-count").dataset.tradeDraftChange || 0) === 0) playerRow.remove();
+    refreshInventoryPanel(stockRow);
+    refreshInventoryPanel(document.querySelector('[data-inventory-pane]:not([hidden])'));
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
   }
-  const merchantSell = event.target.closest("[data-merchant-sell]");
+  const merchantSell = clickTarget.closest("[data-merchant-sell]");
   if (merchantSell) {
     const itemId = merchantSell.dataset.itemName;
     const buys = strategicTradeUi.state.merchantDraft ||= new Map();
@@ -404,7 +458,9 @@ document.addEventListener("click", (event) => {
     if (pendingPurchase > 0) {
       if (pendingPurchase === 1) buys.delete(itemId); else buys.set(itemId, pendingPurchase - 1);
       changeTradeDraftCount(sourceRow, -1);
-      changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), 1);
+      const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
+      changeTradeDraftCount(stockRow, 1);
+      refreshInventoryPanel(sourceRow); refreshInventoryPanel(stockRow);
       updateMerchantGoldDraft();
       updateMerchantOfferForm();
       return;
@@ -421,11 +477,12 @@ document.addEventListener("click", (event) => {
     changeTradeDraftCount(sourceRow, -amount);
     const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
     if (stockRow) changeTradeDraftCount(stockRow, amount);
+    refreshInventoryPanel(sourceRow); refreshInventoryPanel(stockRow);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
   }
-  const merchantButton = event.target.closest("[data-merchant-buy]");
+  const merchantButton = clickTarget.closest("[data-merchant-buy]");
   if (merchantButton) {
     const draft = strategicTradeUi.state.merchantDraft ||= new Map();
     const item = merchantButton.dataset.merchantBuy;
@@ -442,12 +499,15 @@ document.addEventListener("click", (event) => {
     (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(item, Number(merchantButton.dataset.merchantBuyPrice));
     const sourceRow = merchantButton.closest("tr");
     changeTradeDraftCount(sourceRow, -amount);
-    changeTradeDraftCount(ensureMerchantPlayerRow(item, sourceRow), amount);
+    const playerRow = ensureMerchantPlayerRow(item, sourceRow);
+    changeTradeDraftCount(playerRow, amount);
+    refreshInventoryPanel(playerRow);
+    refreshInventoryPanel(sourceRow);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
   }
-  const button = event.target.closest(".party-draft-transfer");
+  const button = clickTarget.closest(".party-draft-transfer");
   if (!button) return;
   const key = button.dataset.item;
   const draft = strategicTradeUi.state.partyTradeDraft ||= new Map();
@@ -473,6 +533,8 @@ document.addEventListener("click", (event) => {
     targetSidebar.querySelector(".trade-inventory-table tbody").append(targetRow);
   }
   setTradeDraftCount(targetRow, entry.quantity);
+  refreshInventoryPanel(targetRow);
+  refreshInventoryPanel(button.closest("tr"));
   const form = document.querySelector("#party-offer");
   form.querySelectorAll("input").forEach((input) => input.remove());
   const fields = { from_character_ids: [], to_character_ids: [], inventory_item_ids: [], quantities: [] };
@@ -506,4 +568,4 @@ if (document.readyState === "loading") {
 } else {
   mountInventoryBulkControls();
 }
-document.addEventListener("strategic-live-regions-refreshed", () => mountInventoryBulkControls());
+document.addEventListener("strategic-live-regions-refreshed", () => refreshInventoryPanel(document));

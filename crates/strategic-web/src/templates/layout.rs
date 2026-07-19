@@ -90,10 +90,10 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-12";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=environment-12";
+                link rel="stylesheet" href="/static/css/layout.css?v=inventory-panels-1";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=environment-13-encumbrance-6";
-                link rel="stylesheet" href="/static/css/utilities.css?v=environment-12";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15";
+                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -101,10 +101,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/medical-examination.js?v=one-shot-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
-                    script src="/static/live-regions.js?v=schedule-pending-2" defer {}
+                    script src="/static/live-regions.js?v=inventory-browser-5" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
-                    script src="/static/party-trade.js?v=inventory-dynamic-transfer-2" {}
+                    script src="/static/inventory-browser.js?v=inventory-browser-8" defer {}
+                    script src="/static/party-trade.js?v=inventory-browser-8" {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}

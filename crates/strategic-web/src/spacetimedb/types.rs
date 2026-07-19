@@ -521,6 +521,38 @@ pub struct ItemDefinition {
     pub slot: ItemSlot,
     pub kind: ItemKind,
     #[serde(default)]
+    pub accuracy: f32,
+    #[serde(default)]
+    pub reach: f32,
+    #[serde(default)]
+    pub block: f32,
+    #[serde(default)]
+    pub coverage: f32,
+    #[serde(default)]
+    pub penetration: f32,
+    #[serde(default)]
+    pub resistance: f32,
+    #[serde(default)]
+    pub padding: f32,
+    #[serde(default)]
+    pub flexibility: f32,
+    #[serde(default)]
+    pub range_of_motion: f32,
+    #[serde(default)]
+    pub precise: bool,
+    #[serde(default)]
+    pub balance: f32,
+    #[serde(default)]
+    pub melee: bool,
+    #[serde(default)]
+    pub ranged: bool,
+    #[serde(default)]
+    pub blunt: bool,
+    #[serde(default)]
+    pub slash: bool,
+    #[serde(default)]
+    pub pierce: bool,
+    #[serde(default)]
     pub base_value: Option<u32>,
     #[serde(default)]
     pub nutrition_kcal: f32,
@@ -540,6 +572,43 @@ pub struct ItemDefinition {
     pub edge_sensitivity: f32,
     #[serde(default)]
     pub handling_sensitivity: f32,
+}
+
+impl Default for ItemDefinition {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            weight: 0.0,
+            slot: ItemSlot::None,
+            kind: ItemKind::Simple,
+            accuracy: 0.0,
+            reach: 0.0,
+            block: 0.0,
+            coverage: 0.0,
+            penetration: 0.0,
+            resistance: 0.0,
+            padding: 0.0,
+            flexibility: 0.0,
+            range_of_motion: 0.0,
+            precise: false,
+            balance: 0.0,
+            melee: false,
+            ranged: false,
+            blunt: false,
+            slash: false,
+            pierce: false,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 0,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -75,6 +75,7 @@
 
     // Match the post-mount table structure before comparing it with the live DOM.
     window.strategicTradeUi?.mountInventoryBulkControls?.(nextDocument);
+    window.strategicInventoryBrowser?.mountAll?.(nextDocument);
     const inventoryTab = selectedInventoryTab();
     const leftSidebarScroll = scrollOffsets(".left-sidebar");
     const rightSidebarScroll = scrollOffsets(".right-sidebar");

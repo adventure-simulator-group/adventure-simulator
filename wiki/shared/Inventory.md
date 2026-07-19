@@ -33,10 +33,37 @@ define how communal consumables should be charged.
 # Inventory icons
 
 Inventory tables include a narrow **Type** column before the item name. Its
-header is the compact letter `T` with the accessible label “Item type”. Every
+header uses a compact backpack symbol with the accessible label “Item type”. Every
 seeded item uses a specific, monochrome Game Icons illustration selected by its
 stable item ID (for example, swords, maces, polearms, shields, and armour pieces
 remain visually distinct). Unknown or modded IDs use a visible question-mark
 fallback; they never generate an unvalidated or broken asset URL. Icons expose
 tooltips/accessibility labels and inherit the active theme colour through CSS
 masks.
+
+## Inventory browser controls
+
+Two-sided inventory views use the same browser controls for each panel. A
+panel has its own name search, sortable headers, expanded item details, and a
+gear menu for optional columns. Quantity (`#`) is the displayed quantity after
+the current staged draft; target (`#?`) is the independently editable desired
+quantity used by shift-transfer and bulk actions.
+
+Search, sorting, direction, and visible optional columns are stored in
+panel-namespaced URL query parameters. This keeps the left and right views
+independent, makes useful layouts bookmarkable, and lets browser Back and
+Forward restore prior layouts. Expanded rows are intentionally transient.
+
+Inventory rails grow to the width required by their currently visible columns
+instead of adding a horizontal table scrollbar. Per-item actions appear only
+while their row is hovered or focused and project from the center-facing edge
+of each rail over the portrait area. Bulk actions use the same center-facing
+gutter and align vertically with the column headers. Merchant-stock rails omit
+the quantity and target columns because merchant availability is not presented
+as a player-managed stack or restocking target.
+
+Weaponsmith inventories contain weapons, shields, and currency and offer
+precision, reach, penetration, damage-type, and block columns. Armourers show
+armor and currency and offer coverage, resistance, padding, flexibility, and
+range-of-motion columns. General inventory views offer the union; merchants
+whose goods do not use combat statistics retain only the basic columns.

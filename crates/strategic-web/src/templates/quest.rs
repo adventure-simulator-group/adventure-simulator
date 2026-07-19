@@ -2,7 +2,8 @@
 
 use maud::{Markup, html};
 
-use super::{empty_state, item_type_header, item_type_icon, sidebar_section};
+use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
+use super::{empty_state, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     AutoresolveReport, BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
@@ -180,25 +181,23 @@ pub fn quest_location_page(
                         None,
                     ))
                 } @else {
-                    table class="trade-inventory-table" {
-                        thead { tr { (item_type_header()) th { "Item" } th { "#" } th { "Value" } } }
-                        tbody {
+                    (InventoryBrowser { namespace: "quest-loot-left", show_quantities: true, show_equipped: false, show_condition: false, optional_columns: InventoryColumnSet::All, rows: html! {
                             @for entry in loot {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
-                                @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
+                                @let target = inventory_target(targets, &entry.item_id);
                                 tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
-                                    td { (super::settlement::item_name_with_quality(&entry.item_id, definition)) span class="inventory-row-actions" {
+                                    td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) span class="inventory-row-actions" {
                                         button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-loot-stage=(entry.id) data-transfer-mode="one" data-label-one=(format!("Move one {}", entry.item_id)) data-label-target=(format!("Move {} to target", entry.item_id)) data-label-all=(format!("Move all {}", entry.item_id)) aria-label=(format!("Move one {}", entry.item_id)) title=(format!("Move one {}", entry.item_id)) { (super::settlement::transfer_glyph(1)) }
                                     } }
                                     td class="inventory-count" { (entry.quantity) }
-                                    td { (u64::from(value) * u64::from(entry.quantity)) }
+                                    td class="inventory-weight" { (definition.map_or_else(|| "—".to_string(), |item| item.weight.to_string())) }
+                                    td class="inventory-gold" { (u64::from(value) * u64::from(entry.quantity)) }
                                 }
                             }
-                        }
-                    }
+                    }}.render())
                     (loot_stage_form(&quest.id))
                     (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
@@ -224,21 +223,20 @@ pub fn quest_location_page(
                 @if pooled.is_empty() {
                     (empty_state("The party chest is empty.", None, None))
                 } @else {
-                    table class="trade-inventory-table" {
-                        thead { tr { (item_type_header()) th { "Item" } th { "#" } th { "Value" } } }
-                        tbody {
+                    (InventoryBrowser { namespace: "quest-party-right", show_quantities: true, show_equipped: false, show_condition: false, optional_columns: InventoryColumnSet::All, rows: html! {
                             @for entry in pooled {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
-                                tr {
+                                @let target = inventory_target(targets, &entry.item_id);
+                                tr class="trade-inventory-row" data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
-                                    td { (super::settlement::item_name_with_quality(&entry.item_id, definition)) }
-                                    td { (entry.quantity) }
-                                    td { (u64::from(value) * u64::from(entry.quantity)) }
+                                    td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) }
+                                    td class="inventory-count" { (entry.quantity) }
+                                    td class="inventory-weight" { (definition.map_or_else(|| "—".to_string(), |item| item.weight.to_string())) }
+                                    td class="inventory-gold" { (u64::from(value) * u64::from(entry.quantity)) }
                                 }
                             }
-                        }
-                    }
+                    }}.render())
                 }
             }))
         }
@@ -251,6 +249,13 @@ pub fn quest_location_page(
         content,
         logged_in_as,
     )
+}
+
+fn inventory_target(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
+    targets
+        .iter()
+        .find(|target| target.item_id == item_id)
+        .map_or(0, |target| target.quantity)
 }
 
 fn loot_stage_form(quest_id: &str) -> Markup {
@@ -292,5 +297,18 @@ mod tests {
         assert!(markup.contains("The bandit fell."));
         assert!(!markup.contains("autoresolve-report"));
         assert!(!markup.contains("chat-channel-badge"));
+    }
+
+    #[test]
+    fn quest_party_rows_use_the_matching_inventory_target() {
+        let targets = [InventoryQuantityTarget {
+            id: "7:true:sword".into(),
+            owner_character_id: 7,
+            party_scope: true,
+            item_id: "sword".into(),
+            quantity: 4,
+        }];
+        assert_eq!(inventory_target(&targets, "sword"), 4);
+        assert_eq!(inventory_target(&targets, "shield"), 0);
     }
 }
