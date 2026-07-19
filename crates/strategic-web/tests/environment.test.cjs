@@ -74,13 +74,18 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /padding-block: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
-  assert.match(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
-  assert.match(layoutCss, /z-index: 30/);
   assert.match(layoutCss, /left top \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
   assert.match(layoutCss, /right bottom \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
-  assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat/);
+  assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat local/);
   assert.ok(layoutCss.indexOf("right bottom / var(--building-frame-corner-size)") < layoutCss.indexOf("center top / 100% 0.55rem"));
-  assert.match(layoutCss, /pointer-events: none/);
+  assert.doesNotMatch(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
+});
+
+test("strategic left rails keep their scrollbars on the outer edge", () => {
+  assert.match(layoutCss, /\.left-sidebar \{[\s\S]*direction: rtl;[\s\S]*scrollbar-gutter: stable;/);
+  assert.match(layoutCss, /\.left-sidebar > \* \{ direction: ltr; \}/);
+  assert.match(strategicCss, /\.left-sidebar \.encumbrance-inventory-scroll \{[\s\S]*direction: rtl;/);
+  assert.match(strategicCss, /\.left-sidebar \.encumbrance-inventory-scroll > \* \{ direction: ltr; \}/);
 });
 
 test("building state is re-applied when live regions replace party links", () => {

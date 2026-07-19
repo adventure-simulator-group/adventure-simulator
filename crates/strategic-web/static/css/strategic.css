@@ -376,9 +376,12 @@
 
 /* Keep center-facing row actions inside the scoped scroll viewport. */
 .left-sidebar .encumbrance-inventory-scroll {
+  direction: rtl;
   margin-right: -1.75rem;
   padding-right: 1.75rem;
 }
+
+.left-sidebar .encumbrance-inventory-scroll > * { direction: ltr; }
 
 .right-sidebar .encumbrance-inventory-scroll {
   margin-left: -3.25rem;

@@ -376,10 +376,16 @@ body:has(.settlement-top-bar) .main-grid {
 
 /* Left Sidebar */
 .left-sidebar {
+  direction: rtl;
   background: var(--building-surface);
   border-right: 1px solid var(--border-color);
   padding: var(--padding);
+  scrollbar-gutter: stable;
 }
+
+/* Keep strategic left-rail content in its natural reading direction while the
+   rail's vertical scrollbar stays against the outer, left-hand edge. */
+.left-sidebar > * { direction: ltr; }
 
 .sidebar-section {
   margin-bottom: 1.5rem;
