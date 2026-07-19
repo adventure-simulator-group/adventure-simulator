@@ -13,7 +13,7 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
-    settlements::get_active_party_members,
+    settlements::{get_active_party_members, living_party_members},
     travel::{
         QuestMapMarkers, TravelDestination, TravelForm, populate_camp_forecasts,
         settlement_destination,
@@ -471,6 +471,7 @@ async fn render_quest_location(
         Vec::new()
     };
     let party_members = get_active_party_members(&state, character.as_ref()).await;
+    let living_party_members = living_party_members(&party_members);
     if let Some(party) = party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
@@ -487,7 +488,10 @@ async fn render_quest_location(
             .query("SELECT * FROM character_stats")
             .await
             .unwrap_or_default();
-        let member_ids: Vec<_> = party_members.iter().map(|member| member.id).collect();
+        let member_ids: Vec<_> = living_party_members
+            .iter()
+            .map(|member| member.id)
+            .collect();
         populate_camp_forecasts(
             &mut nearby,
             &member_ids,
@@ -500,7 +504,7 @@ async fn render_quest_location(
             destination.provision_forecast = super::settlements::travel_provision_forecast(
                 &state,
                 Some(party),
-                &party_members,
+                &living_party_members,
                 destination,
                 false,
             )

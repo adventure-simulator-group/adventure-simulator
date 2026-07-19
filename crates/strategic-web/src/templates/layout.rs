@@ -105,7 +105,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/inventory-browser.js?v=coin-currencies-3" defer {}
-                    script src="/static/party-trade.js?v=coin-currencies-2" {}
+                    script src="/static/party-trade.js?v=coin-currencies-2-travel-provisioning-2" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
@@ -114,7 +114,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
-                    script src="/static/travel-planner.js?v=travel-provisioning-1" defer {}
+                    script src="/static/travel-planner.js?v=travel-provisioning-2" defer {}
                     script src="/static/rest-duration.js?v=wake-time-1" defer {}
                 }
             }

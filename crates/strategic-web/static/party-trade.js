@@ -560,7 +560,9 @@ function initializeProvisioningDraft() {
   const params = new URLSearchParams(window.location.search);
   const parseQuantity = (name) => {
     const value = params.get(name);
-    return value && /^\d{1,5}$/.test(value) && Number(value) <= 10000 ? Number(value) : 0;
+    if (!/^(?:0|[1-9]\d{0,9})$/.test(value || "")) return 0;
+    const quantity = Number(value);
+    return Number.isSafeInteger(quantity) && quantity <= 4294967295 ? quantity : 0;
   };
   const requested = new Map([
     ["travel_ration", parseQuantity("provision_rations")],
@@ -585,7 +587,11 @@ function initializeProvisioningDraft() {
   updateMerchantOfferForm();
 }
 
-initializeProvisioningDraft();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeProvisioningDraft, { once: true });
+} else {
+  initializeProvisioningDraft();
+}
 document.addEventListener("keyup", (event) => {
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });

@@ -754,8 +754,24 @@ pub(crate) fn travel_planner_bar_for(
             aria-live="polite" hidden {
             div class="travel-planner-route" data-travel-planner-route {}
             div class="travel-resource-meters" data-travel-resource-meters {
-                div class="travel-resource-row food" { span { "Food" } div class="travel-resource-track" { i data-resource-target {} b data-resource-fill {} } output data-resource-label="food" {} }
-                div class="travel-resource-row water" { span { "Water" } div class="travel-resource-track" { i data-resource-target {} b data-resource-fill {} } output data-resource-label="water" {} }
+                div class="travel-resource-row food" {
+                    span { "Food" }
+                    svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
+                        path class="travel-resource-path target" data-resource-target pathLength="100" {}
+                        path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
+                    }
+                    small data-resource-target-label="food" {}
+                    output data-resource-label="food" {}
+                }
+                div class="travel-resource-row water" {
+                    span { "Water" }
+                    svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
+                        path class="travel-resource-path target" data-resource-target pathLength="100" {}
+                        path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
+                    }
+                    small data-resource-target-label="water" {}
+                    output data-resource-label="water" {}
+                }
             }
             p class="travel-planner-caption" data-travel-planner-caption {}
         }

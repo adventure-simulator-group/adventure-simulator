@@ -32,10 +32,38 @@ test("travel planner renders return-track provisions and exact staged market qua
   const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
   assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
   assert.match(planner, /node\.minute \/ totalMinutes/);
+  assert.match(planner, /RETURN_PATH/);
+  assert.match(planner, /startTop/);
+  assert.match(planner, /endTop/);
   assert.match(planner, /day\$\{amount === "1"/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(journeyDays \+ target - foodDays\)/);
   assert.match(planner, /params\.set\("provision_rations"/);
   assert.match(planner, /params\.set\("provision_waterskins"/);
   assert.match(trade, /data-inventory-tab="party"/);
   assert.match(trade, /draft\.set\(itemId, quantity\)/);
+  assert.doesNotMatch(planner, /Math\.min\(10000/);
+  assert.doesNotMatch(trade, /quantity\) <= 10000/);
+  assert.match(trade, /quantity <= 4294967295/);
+});
+
+test("provision targets distinguish negative, zero, and positive return goals", () => {
+  const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
+  const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
+  assert.match(planner, /target < 0 \? "negative" : target > 0 \? "positive" : "zero"/);
+  assert.match(planner, /Target: exact return/);
+  assert.match(planner, /after return/);
+  assert.match(planner, /\} short`/);
+  for (const sign of ["negative", "zero", "positive"]) {
+    assert.match(css, new RegExp(`target-sign="${sign}"`));
+  }
+});
+
+test("merchant provisioning initializes only once the Party tab DOM exists", () => {
+  const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
+  const layout = fs.readFileSync(path.join(staticRoot, "src", "templates", "layout.rs"), "utf8");
+  assert.match(layout, /party-trade\.js[^\n]+defer/);
+  assert.match(trade, /DOMContentLoaded", initializeProvisioningDraft, \{ once: true \}/);
+  assert.match(trade, /partyTab\.click\(\)/);
+  assert.match(trade, /\["travel_ration", parseQuantity\("provision_rations"\)\]/);
+  assert.match(trade, /\["waterskin", parseQuantity\("provision_waterskins"\)\]/);
 });

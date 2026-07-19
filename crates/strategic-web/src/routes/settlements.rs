@@ -641,6 +641,7 @@ async fn settlement_map(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
+    let living_party_members = living_party_members(&party_members);
     if can_travel {
         if let Some(party) = active_party.as_ref() {
             let attributes: Vec<CharacterAttributes> = state
@@ -658,7 +659,10 @@ async fn settlement_map(
                 .query("SELECT * FROM character_stats")
                 .await
                 .unwrap_or_default();
-            let member_ids: Vec<_> = party_members.iter().map(|member| member.id).collect();
+            let member_ids: Vec<_> = living_party_members
+                .iter()
+                .map(|member| member.id)
+                .collect();
             populate_camp_forecasts(
                 &mut destinations,
                 &member_ids,
@@ -674,7 +678,7 @@ async fn settlement_map(
             destination.provision_forecast = travel_provision_forecast(
                 &state,
                 active_party.as_ref(),
-                &party_members,
+                &living_party_members,
                 destination,
                 true,
             )
@@ -958,6 +962,7 @@ pub(crate) async fn travel_provision_forecast(
     destination: &TravelDestination,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
+    let travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -977,7 +982,7 @@ pub(crate) async fn travel_provision_forecast(
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
     let mut waterskin_count = 0;
-    for traveler in travelers {
+    for traveler in &travelers {
         let Some(needs) = state
             .db
             .query_one::<CharacterNeeds>(&format!(
@@ -1065,6 +1070,14 @@ pub(crate) async fn travel_provision_forecast(
         rations_to_buy: result.rations_to_buy,
         waterskins_to_buy: result.waterskins_to_buy,
     }))
+}
+
+pub(crate) fn living_party_members(members: &[Character]) -> Vec<Character> {
+    members
+        .iter()
+        .filter(|member| member.alive)
+        .cloned()
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -4217,8 +4230,36 @@ mod rest_form_tests {
 
 #[cfg(test)]
 mod herbalist_tests {
-    use super::{HerbalistDiagnosisDto, herbalist_diagnosis_dtos};
-    use crate::spacetimedb::HerbalistExaminationRow;
+    use super::{HerbalistDiagnosisDto, herbalist_diagnosis_dtos, living_party_members};
+    use crate::spacetimedb::{Character, HerbalistExaminationRow};
+
+    fn member(id: u64, alive: bool) -> Character {
+        Character {
+            id,
+            name: format!("Member {id}"),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive,
+            temporary: false,
+        }
+    }
+
+    #[test]
+    fn travel_forecasts_only_include_living_party_members() {
+        let members = [member(1, true), member(2, false), member(3, true)];
+
+        let living = living_party_members(&members);
+
+        assert_eq!(
+            living.iter().map(|member| member.id).collect::<Vec<_>>(),
+            [1, 3]
+        );
+    }
 
     #[test]
     fn npc_examination_dto_contains_only_canonical_name_pairs() {

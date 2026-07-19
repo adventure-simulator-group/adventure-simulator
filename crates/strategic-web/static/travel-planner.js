@@ -6,6 +6,9 @@
   const caption = planner.querySelector("[data-travel-planner-caption]");
   const targetInput = document.querySelector("[data-target-surplus]");
   let currentPlan = null;
+  const MAX_U32 = 4294967295;
+  const RETURN_PATH = "M 3 7 H 92 Q 97 7 97 12 V 20 Q 97 25 92 25 H 3";
+  const OUTBOUND_PATH = "M 3 16 H 97";
 
   const gameIcon = (name) => {
     const icon = document.createElement("span");
@@ -63,6 +66,7 @@
       ...(roundTrip ? [{ icon: "house", label: originName, kind: "return", minute: totalMinutes }] : []),
     ];
     route.classList.toggle("round-trip", roundTrip);
+    planner.classList.toggle("round-trip", roundTrip);
     route.replaceChildren(...nodes.sort((a, b) => a.minute - b.minute).map((node, index) => {
       const element = document.createElement("div");
       element.className = `travel-plan-node travel-plan-${node.kind}${node.reached ? " reached" : ""}`;
@@ -104,6 +108,7 @@
     requestAnimationFrame(() => {
       const currentNode = currentPlan.nodes[currentPlan.partyIndex] || currentPlan.nodes[0];
       party.style.left = `${currentNode.offsetLeft + currentNode.offsetWidth / 2 - party.offsetWidth / 2}px`;
+      party.style.top = `${currentNode.offsetTop + currentNode.offsetHeight / 2 - party.offsetHeight / 2}px`;
     });
     return currentPlan;
   };
@@ -132,7 +137,6 @@
           provisionRationKcal: payload.dataset.rationKcal,
           provisionWaterskinMl: payload.dataset.waterskinMl,
         });
-        targetInput?.dispatchEvent(new Event("input"));
       }
       previewFor(
         row.dataset.travelName,
@@ -142,6 +146,7 @@
         row.dataset.travelCampForecasts,
         row.dataset.travelRoundTrip === "true",
       );
+      targetInput?.dispatchEvent(new Event("input"));
     };
     row.addEventListener("pointerenter", show);
     row.addEventListener("focus", show);
@@ -181,7 +186,12 @@
     const to = currentPlan.nodes[currentPlan.partyIndex + 1];
     const start = from.offsetLeft + from.offsetWidth / 2 - currentPlan.party.offsetWidth / 2;
     const end = to.offsetLeft + to.offsetWidth / 2 - currentPlan.party.offsetWidth / 2;
-    currentPlan.party.animate([{ left: `${start}px` }, { left: `${end}px` }], {
+    const startTop = from.offsetTop + from.offsetHeight / 2 - currentPlan.party.offsetHeight / 2;
+    const endTop = to.offsetTop + to.offsetHeight / 2 - currentPlan.party.offsetHeight / 2;
+    currentPlan.party.animate([
+      { left: `${start}px`, top: `${startTop}px` },
+      { left: `${end}px`, top: `${endTop}px` },
+    ], {
       duration: 650,
       easing: "ease-in-out",
       fill: "forwards",
@@ -275,6 +285,15 @@
     const rounded = Math.max(0.01, Math.round(Math.abs(days) * 100) / 100);
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "");
   };
+  const setPathProgress = (path, percent, roundTrip) => {
+    path.setAttribute("d", roundTrip ? RETURN_PATH : OUTBOUND_PATH);
+    path.style.strokeDasharray = `${Math.max(0, Math.min(100, percent))} 100`;
+  };
+  const targetDescription = (target) => {
+    if (target < 0) return `Target: ${formatDays(target)} day${Math.abs(target) === 1 ? "" : "s"} short`;
+    if (target > 0) return `Target: +${formatDays(target)} day${target === 1 ? "" : "s"} after return`;
+    return "Target: exact return";
+  };
   const refreshProvisioning = () => {
     const journeyMinutes = Number(planner.dataset.provisionPlanningMinutes);
     const members = Number(planner.dataset.provisionLivingMembers);
@@ -287,10 +306,14 @@
     planner.querySelector("[data-travel-resource-meters]")?.removeAttribute("hidden");
     const journeyDays = journeyMinutes / 1440;
     const target = Math.max(-365, Math.min(365, Number(targetInput?.value || 0)));
+    const roundTrip = planner.classList.contains("round-trip");
     [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
       const row = planner.querySelector(`.travel-resource-row.${kind}`);
-      row.querySelector("[data-resource-fill]").style.width = `${Math.min(100, available / journeyDays * 100)}%`;
-      row.querySelector("[data-resource-target]").style.width = `${Math.min(100, Math.max(0, (journeyDays + target) / journeyDays * 100))}%`;
+      setPathProgress(row.querySelector("[data-resource-fill]"), available / journeyDays * 100, roundTrip);
+      setPathProgress(row.querySelector("[data-resource-target]"), (journeyDays + target) / journeyDays * 100, roundTrip);
+      const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
+      row.dataset.targetSign = sign;
+      row.querySelector("[data-resource-target-label]").textContent = targetDescription(target);
       const surplus = available - journeyDays;
       const amount = formatDays(surplus);
       row.querySelector("[data-resource-label]").textContent = `${amount} day${amount === "1" ? "" : "s"} ${surplus >= 0 ? "surplus" : "shortfall"}`;
@@ -302,14 +325,21 @@
     const buy = document.querySelector("[data-provision-buy]");
     if (buy) {
       const params = new URLSearchParams({ inventory_scope: "party" });
-      if (rations) params.set("provision_rations", String(Math.min(10000, rations)));
-      if (skins) params.set("provision_waterskins", String(Math.min(10000, skins)));
-      buy.href = rations || skins ? `${buy.dataset.marketPath}?${params}` : buy.dataset.marketPath;
+      const stageable = rations <= MAX_U32 && skins <= MAX_U32;
+      if (stageable && rations) params.set("provision_rations", String(rations));
+      if (stageable && skins) params.set("provision_waterskins", String(skins));
+      buy.href = stageable && (rations || skins) ? `${buy.dataset.marketPath}?${params}` : buy.dataset.marketPath;
       buy.dataset.empty = String(!(rations || skins));
+      buy.dataset.unstageable = String(!stageable);
     }
   };
   targetInput?.addEventListener("input", refreshProvisioning);
   document.querySelector("[data-provision-buy]")?.addEventListener("click", (event) => {
+    if (event.currentTarget.dataset.unstageable === "true") {
+      event.preventDefault();
+      document.querySelector("[data-provisioning-status]").textContent = "This target exceeds the maximum quantity that can be staged in one transaction.";
+      return;
+    }
     if (event.currentTarget.dataset.empty !== "true") return;
     event.preventDefault();
     document.querySelector("[data-provisioning-status]").textContent = "The party already meets this target; nothing was staged.";
