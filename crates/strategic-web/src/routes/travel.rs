@@ -356,6 +356,7 @@ mod tests {
             coord_y: 0.0,
             population_level: 0,
             population_estimate: 0,
+            category: crate::spacetimedb::SettlementCategory::Unknown,
             industries: InferredIndustryProfile::new(vec![IndustryEvidence::Fallback(
                 FallbackIndustry::WoodlandFuelwood,
             )])

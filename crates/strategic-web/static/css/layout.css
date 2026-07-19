@@ -89,6 +89,14 @@
 /* Settlement pages keep settlement identity and services visible at the top. */
 .settlement-top-bar {
   gap: 1rem;
+  isolation: isolate;
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at var(--sky-glow-x, 50%) 115%, var(--sky-glow, #555) 0, transparent 42%),
+    radial-gradient(circle at 18% 24%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 71% 17%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 43% 38%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    linear-gradient(100deg, var(--sky-low, #151d2b), var(--sky-high, #080b12));
 }
 
 .entry-top-bar {
@@ -190,7 +198,12 @@
   font-family: var(--font-display), serif;
   font-size: var(--font-size-lg);
   font-weight: 700;
-  color: var(--accent-dark);
+  color: var(--text-primary);
+  padding: 0.38rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--active-building-tint) 65%, white);
+  background: color-mix(in srgb, var(--active-building-tint) var(--building-light, 78%), black);
+  box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #fff2;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
@@ -222,6 +235,18 @@
   height: 2.35rem;
   padding: 0;
   font-size: var(--font-size-base);
+  border: 1px solid color-mix(in srgb, var(--building-tint) 72%, white);
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
+  color: var(--text-primary);
+}
+
+.settlement-services .nav-tab:hover { filter: brightness(1.12); }
+.settlement-services .nav-tab.active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
+  border-color: color-mix(in srgb, var(--building-tint) 72%, white);
+  border-bottom: 3px solid var(--accent-light);
 }
 
 .service-notification-badge {
@@ -248,7 +273,7 @@
   display: block;
   width: 1.25rem;
   height: 1.25rem;
-  background-color: var(--accent);
+  background-color: var(--text-primary);
   -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
   mask: var(--service-tab-icon) center / contain no-repeat;
   transition: background-color var(--transition-fast);
@@ -264,8 +289,8 @@
 .service-tab-icon-map { --service-tab-icon: url("/static/icons/game/treasure-map.svg"); }
 .service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
 
-.settlement-services .nav-tab:hover .service-tab-icon { background-color: var(--accent-hover); }
-.settlement-services .nav-tab.active .service-tab-icon { background-color: var(--accent-dark); }
+.settlement-services .nav-tab:hover .service-tab-icon,
+.settlement-services .nav-tab.active .service-tab-icon { background-color: var(--text-primary); }
 
 .service-tab-icon-provisions {
   --service-tab-icon: url("/static/icons/game/bread.svg");
@@ -335,7 +360,7 @@
 
 /* Left Sidebar */
 .left-sidebar {
-  background: var(--sidebar-bg);
+  background: color-mix(in srgb, var(--active-building-tint, var(--sidebar-bg)) var(--building-light, 78%), black);
   border-right: 1px solid var(--border-color);
   padding: var(--padding);
 }
@@ -377,71 +402,10 @@
 
 /* Right Sidebar */
 .right-sidebar {
-  background: var(--sidebar-bg);
+  background: color-mix(in srgb, var(--active-building-tint, var(--sidebar-bg)) var(--building-light, 78%), black);
   border-left: 1px solid var(--border-color);
   padding: var(--padding);
 }
-
-/* ============================================
-   THEME SWITCHER
-   ============================================ */
-.theme-switcher {
-  position: relative;
-}
-
-.theme-switcher > summary {
-  list-style: none;
-}
-
-.theme-switcher > summary::-webkit-details-marker {
-  display: none;
-}
-
-.theme-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 0.45rem);
-  right: 0;
-  display: none;
-  grid-template-columns: repeat(3, 16px);
-  gap: 0.4rem;
-  padding: 0.45rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  background: var(--panel-bg);
-  box-shadow: var(--shadow-md);
-}
-
-.theme-switcher[open] .theme-menu {
-  display: grid;
-}
-
-.theme-dot {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border-color);
-  border-radius: 50%;
-  transition: transform var(--transition-fast), border-color var(--transition-fast);
-  cursor: pointer;
-}
-
-.theme-dot:hover {
-  transform: scale(1.2);
-  border-color: var(--accent);
-}
-
-.theme-dot.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-light);
-}
-
-.theme-dot[data-theme="fraktur-texturina"] { background: #bd8a2c; }
-.theme-dot[data-theme="fraktur-nocturne"] { background: #3a2114; }
-.theme-dot[data-theme="dark-arcanum"] { background: #7c3aed; }
-.theme-dot[data-theme="northern-frost"] { background: #3a7bd5; }
-.theme-dot[data-theme="verdant-chronicle"] { background: #4a8c3f; }
-.theme-dot[data-theme="imperial-crimson"] { background: #8b0000; }
 
 /* ============================================
    RESPONSIVE

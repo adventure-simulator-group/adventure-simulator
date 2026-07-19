@@ -29,7 +29,7 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
     PartyInventoryItem, PartyJourney, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementDescriptionKind,
+    SettlementCategory, SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -38,6 +38,7 @@ pub struct LocationView {
     pub id: String,
     pub name: String,
     pub religion_id: Option<String>,
+    pub category: Option<SettlementCategory>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -170,6 +171,9 @@ impl LocationView {
                 title,
                 &self.name,
                 &self.id,
+                self.category
+                    .as_ref()
+                    .unwrap_or(&SettlementCategory::Unknown),
                 "",
                 self.religion_id.as_deref(),
                 content,
@@ -388,6 +392,7 @@ pub fn settlement_overview_page(
         &settlement.name,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         "",
         Some(&settlement.religion_id),
         content,
@@ -476,6 +481,7 @@ pub fn settlement_map_page(
         &format!("{} map", settlement.name),
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         "map",
         Some(&settlement.religion_id),
         content,
@@ -1267,6 +1273,7 @@ fn service_page(
         title,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         service_id,
         Some(&settlement.religion_id),
         content,
@@ -1492,6 +1499,7 @@ pub fn live_merchant_shop_page(
         title,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         service_id,
         Some(&settlement.religion_id),
         content,
@@ -3598,6 +3606,7 @@ mod tests {
             coord_y: 53.0,
             population_level: 4,
             population_estimate: 12_000,
+            category: crate::spacetimedb::SettlementCategory::City,
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,
@@ -4357,8 +4366,7 @@ mod tests {
 
         assert!(fallback < enhanced);
         assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
-        assert!(css.contains(".chat-channel-filter input::after"));
-        assert!(css.contains("border-radius: 0.05rem;"));
+        assert!(!css.contains(".chat-channel-filter input::after"));
         assert!(css.contains("outline: 2px solid var(--text-primary);"));
         assert!(css.contains("0 0 0 2px var(--panel-bg)"));
         assert!(css.contains(

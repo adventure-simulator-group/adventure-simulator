@@ -2614,19 +2614,6 @@ body.chat-resizing {
   cursor: pointer;
 }
 
-.chat-channel-filter input::after {
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 0.05rem;
-  background: #fff;
-  box-shadow: 0 0 0 1px #0008;
-  content: "";
-  opacity: 0;
-  transform: scale(0.45);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-}
-
-.chat-channel-filter input:checked::after { opacity: 1; transform: scale(1); }
 .chat-channel-filter input:focus-visible {
   outline: 2px solid var(--text-primary);
   outline-offset: 3px;

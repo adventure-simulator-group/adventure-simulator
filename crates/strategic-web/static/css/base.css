@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Texturina:opsz,wght@12..72,400..700&display=swap');
+
+:root {
+  color-scheme: dark;
+  --font-display: 'Texturina'; --font-body: system-ui, sans-serif; --font-mono: monospace;
+  --font-size-xs:.75rem; --font-size-sm:.875rem; --font-size-base:1rem; --font-size-lg:1.125rem;
+  --font-size-xl:1.25rem; --font-size-2xl:1.5rem; --font-size-3xl:2rem;
+  --bg-primary:#101216; --bg-secondary:#171a20; --bg-tertiary:#252a33;
+  --text-primary:#f4f6f8; --text-secondary:#d4dae1; --text-muted:#9ba6b2;
+  --accent:#d5b36a; --accent-hover:#ead08e; --accent-light:#f0dda9; --accent-dark:#d5b36a;
+  --border-color:#3e4652; --border-light:#292f38; --border-accent:#8c7448;
+  --panel-bg:#181c22; --panel-border:#3e4652; --header-bg:#090b10; --sidebar-bg:#13171c;
+  --success:#7fbd85; --warning:#dfb85f; --danger:#e27777; --info:#82acd8;
+  --gold-color:#dfb85f; --xp-color:#82acd8; --star-filled:#dfb85f; --star-empty:#3e4652;
+  --icon-default:#f4f6f8; --icon-mental:#c9b9ff; --icon-physical:#f0d77b;
+  --icon-intelligence:#91c5f4; --icon-instinct:#d9b0ed; --icon-strength:#f3a19a;
+  --sidebar-width:280px; --right-sidebar-width:300px; --header-height:56px;
+  --padding-sm:.5rem; --padding:1rem; --padding-lg:1.5rem; --radius:3px; --radius-lg:6px;
+  --shadow-sm:0 1px 3px rgb(0 0 0 / 45%); --shadow-md:0 3px 8px rgb(0 0 0 / 55%);
+  --shadow-lg:0 8px 24px rgb(0 0 0 / 65%); --transition-fast:150ms ease; --transition:250ms ease;
+}
+
+body { background:var(--bg-primary); color:var(--text-primary); }
+.btn-primary { background:#755f35; border-color:#a98a50; color:var(--text-primary); }
+.btn-primary:hover { background:#8b7240; color:var(--text-primary); }

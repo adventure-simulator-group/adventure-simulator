@@ -14,7 +14,7 @@ pub(crate) mod travel;
 
 use axum::{
     Router,
-    extract::{Path, Request, State},
+    extract::{Request, State},
     middleware::{self, Next},
     response::{IntoResponse, Json, Redirect, Response},
     routing::get,
@@ -25,7 +25,7 @@ use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::live::LiveState;
-use crate::session::{CHARACTER_COOKIE, Session, Theme, set_theme_cookie};
+use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::{
     Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyMember,
     SpacetimeClient, WorldClock,
@@ -213,7 +213,6 @@ pub(crate) async fn approve_party_action(
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .merge(characters::routes())
-        .route("/theme/{name}", get(set_theme))
         .merge(
             Router::new()
                 .merge(home::routes())
@@ -286,13 +285,6 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
         official_minutes,
     })
     .into_response()
-}
-
-async fn set_theme(Path(name): Path<String>) -> Response {
-    match name.parse::<Theme>() {
-        Ok(theme) => set_theme_cookie(theme, "/"),
-        Err(()) => (axum::http::StatusCode::BAD_REQUEST, "Unknown theme").into_response(),
-    }
 }
 
 /// Strategic screens have no anonymous mode. Character creation and selection

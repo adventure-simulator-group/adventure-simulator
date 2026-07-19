@@ -418,6 +418,81 @@ pub enum QuestStatus {
     Completed,
 }
 
+/// Stable gameplay/UI classification derived from the best population data on
+/// hand. The world artifact remains source-oriented; this public projection is
+/// assigned when a settlement row is materialized.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettlementCategory {
+    Unknown,
+    Hamlet,
+    Village,
+    Town,
+    City,
+    Capital,
+}
+
+pub(crate) const fn settlement_category(
+    population_estimate: u32,
+    population_level: i32,
+) -> SettlementCategory {
+    if population_estimate > 0 {
+        match population_estimate {
+            0..=1_999 => SettlementCategory::Hamlet,
+            2_000..=3_999 => SettlementCategory::Village,
+            4_000..=10_999 => SettlementCategory::Town,
+            11_000..=50_999 => SettlementCategory::City,
+            _ => SettlementCategory::Capital,
+        }
+    } else {
+        match population_level {
+            1 => SettlementCategory::Hamlet,
+            2 => SettlementCategory::Village,
+            3 => SettlementCategory::Town,
+            4 => SettlementCategory::City,
+            5 => SettlementCategory::Capital,
+            _ => SettlementCategory::Unknown,
+        }
+    }
+}
+
+#[cfg(test)]
+mod settlement_category_tests {
+    use super::{SettlementCategory, settlement_category};
+
+    #[test]
+    fn population_estimate_boundaries_use_existing_bands() {
+        let cases = [
+            (1, SettlementCategory::Hamlet),
+            (1_999, SettlementCategory::Hamlet),
+            (2_000, SettlementCategory::Village),
+            (3_999, SettlementCategory::Village),
+            (4_000, SettlementCategory::Town),
+            (10_999, SettlementCategory::Town),
+            (11_000, SettlementCategory::City),
+            (50_999, SettlementCategory::City),
+            (51_000, SettlementCategory::Capital),
+        ];
+        for (population, expected) in cases {
+            assert_eq!(settlement_category(population, -1), expected);
+        }
+    }
+
+    #[test]
+    fn missing_estimates_fall_back_to_levels_and_reject_invalid_levels() {
+        for (level, expected) in [
+            (1, SettlementCategory::Hamlet),
+            (2, SettlementCategory::Village),
+            (3, SettlementCategory::Town),
+            (4, SettlementCategory::City),
+            (5, SettlementCategory::Capital),
+        ] {
+            assert_eq!(settlement_category(0, level), expected);
+        }
+        assert_eq!(settlement_category(0, 0), SettlementCategory::Unknown);
+        assert_eq!(settlement_category(0, 6), SettlementCategory::Unknown);
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = settlement, public)]
 pub struct Settlement {
@@ -429,6 +504,7 @@ pub struct Settlement {
     pub population_level: i32,
     /// Approximate population in inhabitants; zero means the world data has no estimate.
     pub population_estimate: u32,
+    pub category: SettlementCategory,
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
@@ -865,6 +941,10 @@ pub fn import_settlements(
             coord_y: settlement.latitude,
             population_level: settlement.population_level,
             population_estimate: settlement.population_estimate,
+            category: settlement_category(
+                settlement.population_estimate,
+                settlement.population_level,
+            ),
             elevation,
             land_use,
             forest_cover,
@@ -5643,6 +5723,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 coord_y: y,
                 population_level: pop,
                 population_estimate: 0,
+                category: settlement_category(0, pop),
                 elevation: ElevationMeters::new(100).unwrap(),
                 land_use: LandUseProfile::new(
                     LandUseFraction::new(2_500).unwrap(),

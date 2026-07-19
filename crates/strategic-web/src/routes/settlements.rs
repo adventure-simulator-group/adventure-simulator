@@ -1350,20 +1350,28 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
     let Ok(kind) = kind.parse::<LocationKind>() else {
         return LocationLookup::NotFound;
     };
-    let details = match kind {
+    let location = match kind {
         LocationKind::Settlement => state
             .db
             .query_one::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|settlement| (settlement.name, Some(settlement.religion_id)))),
+            .map(|row| {
+                row.map(|settlement| {
+                    (
+                        settlement.name,
+                        Some(settlement.category),
+                        Some(settlement.religion_id),
+                    )
+                })
+            }),
         LocationKind::Quest => state
             .db
             .query_one::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|quest| (quest.title, None))),
+            .map(|row| row.map(|quest| (quest.title, None, None))),
     };
-    let (name, religion_id) = match details {
-        Ok(Some(details)) => details,
+    let (name, category, religion_id) = match location {
+        Ok(Some(location)) => location,
         Ok(None) => return LocationLookup::NotFound,
         Err(error) => {
             tracing::error!(%error, "failed to resolve location");
@@ -1375,6 +1383,7 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
         id: id.to_string(),
         name,
         religion_id,
+        category,
     })
 }
 
