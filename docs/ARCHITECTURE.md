@@ -207,7 +207,7 @@ the active character's Medicine gate before emitting HTML.
 The strategic web process is the trusted presentation and action boundary.
 Medical queries fail closed and visibly; medical action routes derive the acting
 character from the web session before invoking reducers. Public browser
-subscriptions never contain infection episodes, examination snapshots, or
+subscriptions never contain infection episodes, pending examination results, or
 disease notices.
 Public subscriptions never contain infection episodes or disease notices.
 

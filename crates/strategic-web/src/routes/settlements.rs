@@ -119,6 +119,10 @@ pub fn routes() -> Router<AppState> {
             post(examine_patient),
         )
         .route(
+            "/locations/{kind}/{id}/party/{target_id}/examination/{examination_id}/dismiss",
+            post(dismiss_medical_examination),
+        )
+        .route(
             "/locations/{kind}/{id}/players/{character_id}",
             get(party_stats),
         )
@@ -2106,6 +2110,25 @@ async fn examine_patient(
             .await
     {
         tracing::warn!(%error, doctor_id, target_id, "patient examination rejected");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+}
+
+async fn dismiss_medical_examination(
+    State(state): State<AppState>,
+    Path((kind, id, target_id, examination_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(doctor_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call(
+                "dismiss_medical_examination",
+                &[json!(doctor_id), json!(target_id), json!(examination_id)],
+            )
+            .await
+    {
+        tracing::warn!(%error, doctor_id, target_id, examination_id, "examination dismissal rejected");
     }
     Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
 }

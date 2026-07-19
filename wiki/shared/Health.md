@@ -17,7 +17,9 @@ deduplicated outward symptoms. A completed examination can additionally find
 deterministic incidental complaints that obscure the underlying cause. Vitals and diagnoses appear only after a
 specific character spends 15 personal minutes examining a co-located patient;
 the patient spends the same interval. Examination knowledge belongs to that
-doctor and remains a timestamped snapshot rather than a permanently live feed.
+doctor and appears in a centered one-shot result. The doctor must treat a
+confirmed condition immediately or dismiss the result; either choice discards
+it, so examinations never become medical history on the character sheet.
 
 An examination within one point of a disease's stage-dependent difficulty
 produces a weighted differential of compatible period ailments. Meeting the
@@ -34,8 +36,8 @@ symptoms; it never instantly cures disease.
 
 Episodes retain only identity/associations, contraction minute, and optional
 treatment minute. Severity and incidental findings are deterministically seeded
-from those associations. Doctor-owned examination snapshots are separate private
-knowledge records rather than additional disease state.
+from those associations. Pending examination results are transient action state,
+not additional disease state, and are deleted after treatment or dismissal.
 Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
 with Surgery reducing residual risk; blunt damage does not.

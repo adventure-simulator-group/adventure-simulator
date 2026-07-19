@@ -10,6 +10,7 @@ pub struct MedicalPresentation {
     pub obvious_cut: f32,
     pub symptoms: Vec<&'static str>,
     pub findings: Vec<String>,
+    pub examination_id: Option<u64>,
     pub examined_at: Option<u64>,
     pub vitals: Option<HumourVitals>,
     pub possible_diagnoses: Vec<&'static str>,
@@ -126,6 +127,7 @@ pub fn sanitize(
         obvious_cut: 0.0,
         symptoms,
         findings: examination.findings.clone(),
+        examination_id: Some(examination.id),
         examined_at: Some(examination.examined_at),
         vitals: (examination.reveals_vitals
             && viewer_medicine >= disease::MEDICINE_VITALS_THRESHOLD)

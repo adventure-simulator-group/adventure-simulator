@@ -71,8 +71,8 @@ pub struct DiseaseNotice {
     pub message: String,
 }
 
-/// Doctor-owned snapshot of a completed fifteen-minute examination. This is
-/// private medical knowledge, separate from the patient's disease state.
+/// Pending one-shot result of a completed fifteen-minute examination. It is
+/// removed when the doctor treats or declines and is never medical history.
 #[derive(Clone, Debug)]
 #[table(accessor = medical_examination)]
 pub struct MedicalExamination {
@@ -524,6 +524,7 @@ pub fn record_committed_cut(
 pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     const SICK_CHARACTER_ID: u64 = 9_999_999_999_999_998;
     const PHYSICIAN_ID: u64 = 9_999_999_999_999_997;
+    const AMBIGUOUS_PHYSICIAN_ID: u64 = 9_999_999_999_999_989;
     const DAY: u64 = 1_440;
     const FIXTURE_NOW: u64 = 60 * DAY;
     const PATIENTS: [(u64, &str, DiseaseId, u64); 8] = [
@@ -577,8 +578,12 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         ),
     ];
 
-    for (id, name) in std::iter::once((PHYSICIAN_ID, "Physician Demo"))
-        .chain(PATIENTS.iter().map(|(id, name, _, _)| (*id, *name)))
+    for (id, name) in [
+        (PHYSICIAN_ID, "Physician Demo"),
+        (AMBIGUOUS_PHYSICIAN_ID, "Physician Demo (Medicine 3)"),
+    ]
+    .into_iter()
+    .chain(PATIENTS.iter().map(|(id, name, _, _)| (*id, *name)))
     {
         if ctx.db.character().id().find(id).is_none() {
             crate::character::insert_new_character(ctx, name.into(), id, false)?;
@@ -596,7 +601,8 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
             .update(character_time);
     }
 
-    let fixture_ids = std::iter::once(PHYSICIAN_ID)
+    let fixture_ids = [PHYSICIAN_ID, AMBIGUOUS_PHYSICIAN_ID]
+        .into_iter()
         .chain(PATIENTS.iter().map(|(id, _, _, _)| *id))
         .collect::<Vec<_>>();
     for examination in ctx
@@ -620,6 +626,12 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         PHYSICIAN_ID,
         "Physician",
     )?;
+    crate::strategic::attach_seeded_party_member(
+        ctx,
+        SICK_CHARACTER_ID,
+        AMBIGUOUS_PHYSICIAN_ID,
+        "Physician",
+    )?;
 
     let mut physician_skills = ctx
         .db
@@ -633,6 +645,18 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         .character_skills()
         .character_id()
         .update(physician_skills);
+
+    let mut ambiguous_physician_skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(AMBIGUOUS_PHYSICIAN_ID)
+        .ok_or_else(|| "Medicine 3 physician is missing skill data".to_string())?;
+    ambiguous_physician_skills.medicine_hours = 7_500.0;
+    ctx.db
+        .character_skills()
+        .character_id()
+        .update(ambiguous_physician_skills);
 
     for (id, _, disease_id, age) in PATIENTS {
         for episode in ctx
@@ -654,6 +678,7 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         crate::capability::refresh_character_capability(ctx, id)?;
     }
     crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
+    crate::capability::refresh_character_capability(ctx, AMBIGUOUS_PHYSICIAN_ID)?;
     Ok(())
 }
 
@@ -773,39 +798,17 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
             }
         }
     }
-    if let Some(previous) = ctx
+    possible.retain(|candidate| !confirmed_diseases.contains(candidate));
+    for pending in ctx
         .db
         .medical_examination()
         .doctor_id()
         .filter(doctor_id)
         .filter(|exam| exam.target_id == target_id)
-        .max_by_key(|exam| exam.id)
+        .collect::<Vec<_>>()
     {
-        for ((infection_id, disease_id), _stage) in previous
-            .confirmed_infection_ids
-            .iter()
-            .zip(&previous.confirmed_disease_ids)
-            .zip(&previous.confirmed_stages)
-        {
-            let Some(infection) = episodes.iter().find(|episode| episode.id == *infection_id)
-            else {
-                continue;
-            };
-            let current = disease::evaluate(*infection, target_minute, immunity);
-            if matches!(
-                current.stage,
-                disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
-            ) {
-                continue;
-            }
-            if !confirmed_ids.contains(infection_id) {
-                confirmed_ids.push(*infection_id);
-                confirmed_diseases.push(disease_id.clone());
-                confirmed_stages.push(stage_key(current.stage).into());
-            }
-        }
+        ctx.db.medical_examination().id().delete(pending.id);
     }
-    possible.retain(|candidate| !confirmed_diseases.contains(candidate));
     ctx.db.medical_examination().insert(MedicalExamination {
         id: 0,
         doctor_id,
@@ -825,6 +828,26 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
         confirmed_disease_ids: confirmed_diseases,
         confirmed_stages,
     });
+    Ok(())
+}
+
+#[reducer]
+pub fn dismiss_medical_examination(
+    ctx: &ReducerContext,
+    doctor_id: u64,
+    target_id: u64,
+    examination_id: u64,
+) -> Result<(), String> {
+    let examination = ctx
+        .db
+        .medical_examination()
+        .id()
+        .find(examination_id)
+        .ok_or("Examination result is no longer available")?;
+    if examination.doctor_id != doctor_id || examination.target_id != target_id {
+        return Err("This examination result belongs to another doctor or patient".into());
+    }
+    ctx.db.medical_examination().id().delete(examination_id);
     Ok(())
 }
 
@@ -903,5 +926,6 @@ pub fn treat_disease(
         "treatment",
         "Treatment was administered.",
     );
+    ctx.db.medical_examination().id().delete(examination.id);
     Ok(())
 }

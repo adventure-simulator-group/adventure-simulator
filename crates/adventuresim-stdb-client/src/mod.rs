@@ -115,6 +115,7 @@ pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod disease_notice_type;
+pub mod dismiss_medical_examination_reducer;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
@@ -494,6 +495,7 @@ pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use disease_notice_type::DiseaseNotice;
+pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
@@ -923,6 +925,11 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    DismissMedicalExamination {
+        doctor_id: u64,
+        target_id: u64,
+        examination_id: u64,
+    },
     DismissPartyActionRequest {
         leader_id: u64,
         request_id: u64,
@@ -1244,6 +1251,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
+            Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
@@ -1585,6 +1593,15 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::DismissMedicalExamination{
+                doctor_id,
+                target_id,
+                examination_id,
+}             => __sats::bsatn::to_vec(&dismiss_medical_examination_reducer::DismissMedicalExaminationArgs {
+                doctor_id: doctor_id.clone(),
+                target_id: target_id.clone(),
+                examination_id: examination_id.clone(),
 }),
             Reducer::DismissPartyActionRequest{
                 leader_id,
