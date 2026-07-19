@@ -1898,7 +1898,7 @@ async fn party_religion_knowledge_check(
         return 0.0;
     };
     let mut checks = Vec::with_capacity(party_members.len());
-    for member in living_party_members(party_members) {
+    for member in living_party_member_refs(party_members) {
         let skills = query_single::<CharacterSkills>(state, "character_skills", member.id).await;
         let attributes =
             query_single::<CharacterAttributes>(state, "character_attributes", member.id).await;
@@ -1919,13 +1919,13 @@ async fn party_religion_knowledge_check(
     adventuresim_core::capability::aggregate_party_check(checks).clamp(0.0, 5.0)
 }
 
-fn living_party_members(party_members: &[Character]) -> impl Iterator<Item = &Character> {
+fn living_party_member_refs(party_members: &[Character]) -> impl Iterator<Item = &Character> {
     party_members.iter().filter(|member| member.alive)
 }
 
 #[cfg(test)]
 mod party_religion_knowledge_tests {
-    use super::living_party_members;
+    use super::living_party_member_refs;
     use crate::spacetimedb::Character;
 
     fn party_member(id: u64, alive: bool) -> Character {
@@ -1947,7 +1947,7 @@ mod party_religion_knowledge_tests {
     #[test]
     fn prayer_preview_knowledge_excludes_dead_party_members() {
         let members = [party_member(1, true), party_member(2, false)];
-        let ids = living_party_members(&members)
+        let ids = living_party_member_refs(&members)
             .map(|member| member.id)
             .collect::<Vec<_>>();
         assert_eq!(ids, vec![1]);

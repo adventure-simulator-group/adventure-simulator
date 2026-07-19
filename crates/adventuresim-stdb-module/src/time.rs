@@ -863,7 +863,7 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        apply_training(&mut skills, &allowed, downtime, activities);
+        apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
             ctx,
@@ -1028,7 +1028,7 @@ pub fn rest_at_camp(
                 .find(member_id)
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
-            apply_training(&mut skills, &allowed, downtime, activities);
+            apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
             ctx.db.character_skills().character_id().update(skills);
             crate::condition::apply_settlement_leisure_condition(
                 ctx,
