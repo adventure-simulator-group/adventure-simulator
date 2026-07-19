@@ -154,7 +154,7 @@ pub fn religion_game_icon_name(religion_id: Option<&str>) -> &'static str {
         Some("protestant") => "split-cross",
         Some("eastern_orthodox") => "byzantin-temple",
         Some("islamic") => "samara-mosque",
-        Some("judaism") => "holy-symbol",
+        Some("judaism") => "fontawesome-torah",
         Some("old_faith") => "holy-symbol",
         _ => "church",
     }
@@ -246,6 +246,10 @@ mod icon_tests {
             "byzantin-temple"
         );
         assert_eq!(religion_game_icon_name(Some("islamic")), "samara-mosque");
+        assert_eq!(
+            religion_game_icon_name(Some("judaism")),
+            "fontawesome-torah"
+        );
         assert_eq!(religion_game_icon_name(None), "church");
     }
 

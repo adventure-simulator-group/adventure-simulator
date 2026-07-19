@@ -47,3 +47,12 @@ wood-club.
 The files in `crates/strategic-web/static/icons/game/` were converted from
 Iconify JSON bodies into standalone SVGs without altering the artwork. CSS
 masks supply colour at runtime.
+
+## Font Awesome Free
+
+The Judaism skill icon `fontawesome-torah.svg` is from Font Awesome Free 7.3.1
+by Fonticons, Inc. It is licensed under
+[Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+- Source: <https://fontawesome.com/icons/torah>
+- License: <https://fontawesome.com/license/free>

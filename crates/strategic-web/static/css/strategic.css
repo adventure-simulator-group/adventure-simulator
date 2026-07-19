@@ -2581,23 +2581,43 @@ button.party-portrait-action {
     outline-offset: 2px;
 }
 
-.religion-aggregate-hours,
-.religion-hours-copy {
-    color: var(--text-muted, #a9a39a);
-    font-size: 0.75rem;
-}
-
-.religion-hours-copy {
-    display: block;
-    margin-top: 0.2rem;
+.religion-tradition-icon {
+    display: inline-flex;
+    color: var(--icon-mental);
+    font-size: 1.05rem;
+    vertical-align: middle;
 }
 
 .religion-subskill-name {
-    padding-left: 0.7rem;
+    padding-left: 0.15rem;
 }
 
 .religion-auto-cell {
     padding: 0.35rem 0.5rem 0.55rem 2rem;
+}
+
+.religion-auto-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.religion-auto-control input { margin: 0; }
+
+[data-religion-auto-control],
+[data-religion-primary-manual-control] {
+    display: inline;
+}
+
+[data-religion-auto-control][hidden],
+[data-religion-primary-manual-control][hidden] {
+    display: none;
+}
+
+.religion-allocation-inactive {
+    color: var(--text-muted);
+    opacity: 0.45;
 }
 
 .party-skill-meter .skill-rank-bar { width: 100%; overflow: visible; }

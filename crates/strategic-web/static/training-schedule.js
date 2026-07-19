@@ -260,13 +260,19 @@
 
   function syncReligionControls(root, autoTrain) {
     root.querySelectorAll('[data-religion-auto-budget]').forEach((input) => {
-      input.closest('[data-schedule-value]')?.querySelectorAll('button, [role="button"]')
+      const allocation = input.closest('[data-schedule-value]');
+      allocation?.classList.toggle('religion-allocation-inactive', !autoTrain);
+      allocation?.querySelectorAll('button, [role="button"]')
         .forEach((control) => { control.toggleAttribute('disabled', !autoTrain); control.setAttribute('aria-disabled', String(!autoTrain)); });
     });
     root.querySelectorAll('[data-religion-manual-budget]').forEach((input) => {
-      input.closest('[data-schedule-value]')?.querySelectorAll('button, [role="button"]')
+      const allocation = input.closest('[data-schedule-value]');
+      allocation?.classList.toggle('religion-allocation-inactive', autoTrain);
+      allocation?.querySelectorAll('button, [role="button"]')
         .forEach((control) => { control.toggleAttribute('disabled', autoTrain); control.setAttribute('aria-disabled', String(autoTrain)); });
     });
+    root.querySelectorAll('[data-religion-auto-control]').forEach((control) => { control.hidden = !autoTrain; });
+    root.querySelectorAll('[data-religion-primary-manual-control]').forEach((control) => { control.hidden = autoTrain; });
   }
 
   function religionAllocationTotal(allocation, autoTrain) {

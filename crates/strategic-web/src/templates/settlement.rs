@@ -22,8 +22,8 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
     decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
-    population_description, quest_location_layout_with_session, settlement_layout_with_session,
-    sidebar_section, stat_icon_path,
+    population_description, quest_location_layout_with_session, religion_game_icon_name,
+    settlement_layout_with_session, sidebar_section, stat_icon_path,
 };
 use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
@@ -1075,7 +1075,11 @@ pub fn party_personal_page(
             (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs, medical))
             @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action), Some(activity_preview), religion_id.is_some(), prayer_religion_check))
+            (party_skills_rail(
+                "Your skills", skills, limbs, schedule, Some(&schedule_action),
+                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
+                religion_id.or(location.religion_id.as_deref()),
+            ))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1153,7 +1157,10 @@ pub fn party_stats_page(
         aside class="left-sidebar" {
             (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical))
-            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None, None, religion_id.is_some(), 0.0))
+            (party_skills_rail(
+                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
+                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
+            ))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -2132,6 +2139,7 @@ fn party_skills_rail(
     activity_preview: Option<ActivityPreviewRates>,
     professes_religion: bool,
     prayer_religion_check: f32,
+    training_religion_id: Option<&str>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -2146,16 +2154,24 @@ fn party_skills_rail(
                 h3 class="sr-only" { (title) }
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
-                        (skills_table(title, skills, head_health, upper_health, lower_health, Some(schedule), activity_preview, professes_religion, prayer_religion_check))
+                        (skills_table(
+                            title, skills, head_health, upper_health, lower_health, Some(schedule),
+                            activity_preview, professes_religion, prayer_religion_check,
+                            training_religion_id.and_then(OfficialReligion::from_id),
+                        ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=leisure-preview-1" {}
+                    script src="/static/training-schedule.js?v=religion-primary-2" {}
                 } @else {
-                    (skills_table(title, skills, head_health, upper_health, lower_health, None, None, professes_religion, prayer_religion_check))
-                    script src="/static/training-schedule.js?v=religion-1" {}
+                    (skills_table(
+                        title, skills, head_health, upper_health, lower_health, None, None,
+                        professes_religion, prayer_religion_check,
+                        training_religion_id.and_then(OfficialReligion::from_id),
+                    ))
+                    script src="/static/training-schedule.js?v=religion-primary-2" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -2175,6 +2191,7 @@ fn skills_table(
     activity_preview: Option<ActivityPreviewRates>,
     professes_religion: bool,
     prayer_religion_check: f32,
+    training_religion: Option<OfficialReligion>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -2205,7 +2222,7 @@ fn skills_table(
                     (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
                     (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
                     (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| s.downtime.medicine_minutes)))
-                    (religion_skill_rows(skills, head_health, schedule))
+                    (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| s.downtime.melee_minutes)))
                     (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| s.downtime.ranged_minutes)))
                     (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| s.downtime.dodge_minutes)))
@@ -2251,65 +2268,97 @@ fn religion_skill_rows(
     skills: &CharacterSkills,
     health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
+    training_religion: Option<OfficialReligion>,
 ) -> Markup {
-    let direct_total = skills.religion_hours.total_direct();
+    let primary = training_religion.unwrap_or_else(|| {
+        OfficialReligion::ALL
+            .into_iter()
+            .max_by(|left, right| {
+                skills
+                    .religion_hours
+                    .effective(*left)
+                    .total_cmp(&skills.religion_hours.effective(*right))
+            })
+            .unwrap_or(OfficialReligion::RomanCatholic)
+    });
+    let primary_id = primary.religion_id();
+    let primary_effective = skills.religion_hours.effective(primary);
+    let primary_direct = skills.religion_hours.direct(primary);
     let auto = schedule.is_none_or(|value| value.downtime.religion_auto_train);
     let auto_minutes = schedule.map_or(0, |value| value.downtime.religion_minutes);
-    let aggregate_minutes = schedule.map_or(0, |value| {
-        if auto {
-            auto_minutes
-        } else {
-            u16::try_from(value.downtime.religion_minutes_by_tradition.total()).unwrap_or(u16::MAX)
-        }
+    let primary_minutes = schedule.map_or(0, |value| {
+        value.downtime.religion_minutes_by_tradition.get(primary)
     });
     html! {
-        tr class="party-skill-row religion-aggregate-row" {
-            td class="party-skill-icon-cell" { (stat_icon("Religion", "skills", "open-book", true)) }
+        tr class="party-skill-row religion-primary-row" data-religion-primary=(primary_id) {
+            td class="party-skill-icon-cell" {}
             th scope="row" class="party-skill-name" {
                 button type="button" class="religion-expand-button" data-religion-expand
-                    aria-expanded="false" aria-controls="religion-skill-details" {
-                    "Religion" span aria-hidden="true" { " >" }
+                    aria-expanded="false" aria-controls="religion-skill-details"
+                    aria-label=(format!("Expand {} Religion skill", primary.label()))
+                    title=(primary.label()) {
+                    span class="religion-tradition-icon" aria-hidden="true" {
+                        (decorative_game_icon(religion_game_icon_name(Some(primary_id))))
+                    }
+                    span class="religion-expand-chevron" aria-hidden="true" { " >" }
                 }
             }
-            td class="religion-aggregate-hours" colspan=[schedule.map(|_| "4")] {
-                (format!("{} direct hours", direct_total.max(0.0).floor() as u64))
+            td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
+                (skill_rank_bar(
+                    Skill::Religion.training_rank(primary_effective),
+                    Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
+                    &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                ))
             }
             @if schedule.is_some() {
-                td class="party-skill-allocation" data-schedule-value="religion_minutes" {
+                td class="party-skill-allocation religion-primary-allocation" data-religion-primary-allocation {
+                  span data-religion-auto-control data-schedule-value="religion_minutes" hidden[!auto] {
                     input type="hidden" name="religion_minutes" value=(auto_minutes)
                         data-schedule-input data-religion-auto-budget;
                     (schedule_step_button("Decrease Religion allocation", -15))
-                    span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(aggregate_minutes)) }
+                    span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(auto_minutes)) }
                     (schedule_step_button("Increase Religion allocation", 15))
+                  }
+                  span data-religion-primary-manual-control data-schedule-value=(format!("religion_{primary_id}_minutes")) hidden[auto] {
+                    input type="hidden" name=(format!("religion_{primary_id}_minutes")) value=(primary_minutes)
+                        data-schedule-input data-religion-manual-budget;
+                    (schedule_step_button("Decrease tradition allocation", -15))
+                    span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(primary_minutes)) }
+                    (schedule_step_button("Increase tradition allocation", 15))
+                  }
                 }
             }
         }
         @if schedule.is_some() {
             tr id="religion-skill-details" class="religion-detail-row" hidden {
                 td colspan="7" class="religion-auto-cell" {
-                    label title="You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in." {
+                    label class="religion-auto-control" title="You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in." {
                         input type="checkbox" name="religion_auto_train" value="true" checked[auto] data-religion-auto-toggle;
-                        " Auto-train"
+                        span { "Auto-train" }
                     }
                     span class="sr-only" { "You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in." }
                 }
             }
         }
         @for religion in OfficialReligion::ALL {
+          @if religion != primary {
             @let id = religion.religion_id();
             @let effective = skills.religion_hours.effective(religion);
             @let direct = skills.religion_hours.direct(religion);
             @let minutes = schedule.map_or(0, |value| value.downtime.religion_minutes_by_tradition.get(religion));
             tr class="party-skill-row religion-detail-row" data-religion-detail hidden {
                 td class="party-skill-icon-cell" {}
-                th scope="row" class="party-skill-name religion-subskill-name" { (religion.label()) }
+                th scope="row" class="party-skill-name religion-subskill-name" {
+                    span class="religion-tradition-icon" {
+                        (game_icon(religion.label(), religion_game_icon_name(Some(id))))
+                    }
+                }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
                     (skill_rank_bar(
                         Skill::Religion.training_rank(effective),
                         Skill::Religion.training_rank(effective) * health.clamp(0.0, 1.0),
                         &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
                     ))
-                    small class="religion-hours-copy" { (format!("{effective:.1} effective / {direct:.1} studied")) }
                 }
                 @if schedule.is_some() {
                     td class="party-skill-allocation" data-schedule-value=(format!("religion_{id}_minutes")) {
@@ -2321,6 +2370,7 @@ fn religion_skill_rows(
                     }
                 }
             }
+          }
         }
     }
 }
@@ -2621,7 +2671,10 @@ pub(crate) fn character_stats_panel(
     html! {
         (character_summary_rail(capability))
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical))
-        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None, None, false, 0.0))
+        (party_skills_rail(
+            &format!("{}'s skills", character.name), skills, limbs, None, None, None,
+            false, 0.0, None,
+        ))
         (medical_rail(medical, "", 0, character.id, false))
     }
 }
@@ -4230,7 +4283,10 @@ mod tests {
             will_hours: 0.0,
             charisma_hours: 0.0,
             medicine_hours: 0.0,
-            religion_hours: adventuresim_world_schema::ReligionHours::default(),
+            religion_hours: adventuresim_world_schema::ReligionHours {
+                roman_catholic: 1_000.0,
+                ..Default::default()
+            },
             stealth_hours: 0.0,
             balance_hours: 0.0,
             surgeon_hours: 0.0,
@@ -4259,6 +4315,7 @@ mod tests {
             None,
             false,
             0.0,
+            Some(OfficialReligion::Judaism),
         )
         .into_string();
 
@@ -4275,10 +4332,15 @@ mod tests {
         }
         assert!(rendered.contains("data-religion-expand"));
         assert!(rendered.contains("aria-expanded=\"false\""));
-        assert!(rendered.contains(">Religion<span aria-hidden=\"true\">"));
+        assert!(rendered.contains("data-religion-primary=\"judaism\""));
+        assert!(rendered.contains("Expand Judaism Religion skill"));
+        assert!(rendered.contains("title=\"Judaism\""));
+        assert!(rendered.contains("/static/icons/game/fontawesome-torah.svg"));
         assert!(rendered.contains("Auto-train"));
-        assert_eq!(rendered.matches("data-religion-detail").count(), 8);
+        assert_eq!(rendered.matches("data-religion-detail").count(), 7);
         assert!(rendered.contains("religion_judaism_minutes"));
+        assert!(!rendered.contains("effective /"));
+        assert!(rendered.contains("100.0 effective hours; 0.0 directly studied hours"));
         let auto_train_help = "You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in.";
         assert_eq!(rendered.matches(auto_train_help).count(), 2);
         assert!(rendered.contains("name=\"religion_minutes\" value=\"120\""));
@@ -4287,7 +4349,13 @@ mod tests {
         assert!(!rendered.contains("data-religion-manual-budget disabled"));
         let mut manual_schedule = schedule.clone();
         manual_schedule.downtime.religion_auto_train = false;
-        let remounted = religion_skill_rows(&skills, 1.0, Some(&manual_schedule)).into_string();
+        let remounted = religion_skill_rows(
+            &skills,
+            1.0,
+            Some(&manual_schedule),
+            Some(OfficialReligion::Judaism),
+        )
+        .into_string();
         assert!(remounted.contains("name=\"religion_minutes\" value=\"120\""));
         assert!(remounted.contains("name=\"religion_judaism_minutes\" value=\"45\""));
         assert!(!remounted.contains("data-religion-auto-budget disabled"));
@@ -4305,6 +4373,7 @@ mod tests {
             None,
             false,
             0.0,
+            Some("judaism"),
         )
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
