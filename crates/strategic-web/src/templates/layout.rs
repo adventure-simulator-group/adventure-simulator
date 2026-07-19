@@ -3,7 +3,7 @@
 use crate::spacetimedb::SettlementCategory;
 use maud::{DOCTYPE, Markup, html};
 
-use super::religion_game_icon_name;
+use super::religion_icon_path;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ScriptProfile {
     Entry,
@@ -205,7 +205,7 @@ fn settlement_top_bar(
                     {
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
-                            style=[(path == "religion").then(|| format!("--service-tab-icon: url('/static/icons/game/{}.svg')", religion_game_icon_name(religion_id)))]
+                            style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
                             aria-hidden="true" {}
                         @if path == "map" {
                             span class="service-notification-badge service-map-quest-badge"

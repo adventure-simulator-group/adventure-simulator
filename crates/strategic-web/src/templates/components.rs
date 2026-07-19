@@ -143,20 +143,24 @@ pub fn stat_icon_path(category: &str, icon: &str) -> String {
     }
 }
 
-/// Religion-specific church icon. These choices distinguish the supported
-/// confessions at a glance while retaining fallbacks for legacy seed IDs.
-pub fn religion_game_icon_name(religion_id: Option<&str>) -> &'static str {
+/// Open-source religious symbol for a supported profession. Christian
+/// denominations intentionally share a plain cross when no suitable distinct
+/// symbol is available in the selected Font Awesome Free set.
+pub fn religion_icon_path(religion_id: Option<&str>) -> &'static str {
     match religion_id {
-        Some("roman_catholic") | Some("western_church") => "holy-symbol",
-        Some("lutheran") => "rose",
-        Some("reformed") => "open-book",
-        Some("anglican") => "gothic-cross",
-        Some("protestant") => "split-cross",
-        Some("eastern_orthodox") => "byzantin-temple",
-        Some("islamic") => "samara-mosque",
-        Some("judaism") => "fontawesome-torah",
-        Some("old_faith") => "holy-symbol",
-        _ => "church",
+        Some("islamic") => "/static/icons/religion/fontawesome-star-and-crescent.svg",
+        Some("judaism") => "/static/icons/religion/fontawesome-star-of-david.svg",
+        _ => "/static/icons/religion/fontawesome-cross.svg",
+    }
+}
+
+pub fn religion_icon(label: &str, religion_id: Option<&str>, decorative: bool) -> Markup {
+    html! {
+        span class="game-icon" style=(format!("--game-icon: url('{}')", religion_icon_path(religion_id)))
+            role=[(!decorative).then_some("img")]
+            aria-label=[(!decorative).then_some(label)]
+            title=[(!decorative).then_some(label)]
+            aria-hidden=[decorative.then_some("true")] {}
     }
 }
 
@@ -234,23 +238,25 @@ mod icon_tests {
     fn requested_game_icon_replacements_and_faith_icons_are_exact() {
         assert_eq!(stat_game_icon_name("dodge"), "acrobatic");
         assert_eq!(
-            religion_game_icon_name(Some("roman_catholic")),
-            "holy-symbol"
+            religion_icon_path(Some("roman_catholic")),
+            "/static/icons/religion/fontawesome-cross.svg"
         );
-        assert_eq!(religion_game_icon_name(Some("lutheran")), "rose");
-        assert_eq!(religion_game_icon_name(Some("reformed")), "open-book");
-        assert_eq!(religion_game_icon_name(Some("anglican")), "gothic-cross");
-        assert_eq!(religion_game_icon_name(Some("protestant")), "split-cross");
         assert_eq!(
-            religion_game_icon_name(Some("eastern_orthodox")),
-            "byzantin-temple"
+            religion_icon_path(Some("eastern_orthodox")),
+            "/static/icons/religion/fontawesome-cross.svg"
         );
-        assert_eq!(religion_game_icon_name(Some("islamic")), "samara-mosque");
         assert_eq!(
-            religion_game_icon_name(Some("judaism")),
-            "fontawesome-torah"
+            religion_icon_path(Some("islamic")),
+            "/static/icons/religion/fontawesome-star-and-crescent.svg"
         );
-        assert_eq!(religion_game_icon_name(None), "church");
+        assert_eq!(
+            religion_icon_path(Some("judaism")),
+            "/static/icons/religion/fontawesome-star-of-david.svg"
+        );
+        assert_eq!(
+            religion_icon_path(None),
+            "/static/icons/religion/fontawesome-cross.svg"
+        );
     }
 
     #[test]

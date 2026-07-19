@@ -22,7 +22,7 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
     decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
-    population_description, quest_location_layout_with_session, religion_game_icon_name,
+    population_description, quest_location_layout_with_session, religion_icon,
     settlement_layout_with_session, sidebar_section, stat_icon_path,
 };
 use crate::medical::MedicalPresentation;
@@ -2298,7 +2298,7 @@ fn religion_skill_rows(
                     aria-label=(format!("Expand {} Religion skill", primary.label()))
                     title=(primary.label()) {
                     span class="religion-tradition-icon" aria-hidden="true" {
-                        (decorative_game_icon(religion_game_icon_name(Some(primary_id))))
+                        (religion_icon(primary.label(), Some(primary_id), true))
                     }
                     span class="religion-expand-chevron" aria-hidden="true" { " >" }
                 }
@@ -2350,7 +2350,7 @@ fn religion_skill_rows(
                 td class="party-skill-icon-cell" {}
                 th scope="row" class="party-skill-name religion-subskill-name" {
                     span class="religion-tradition-icon" {
-                        (game_icon(religion.label(), religion_game_icon_name(Some(id))))
+                        (religion_icon(religion.label(), Some(id), false))
                     }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
@@ -4335,7 +4335,7 @@ mod tests {
         assert!(rendered.contains("data-religion-primary=\"judaism\""));
         assert!(rendered.contains("Expand Judaism Religion skill"));
         assert!(rendered.contains("title=\"Judaism\""));
-        assert!(rendered.contains("/static/icons/game/fontawesome-torah.svg"));
+        assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
         assert!(rendered.contains("Auto-train"));
         assert_eq!(rendered.matches("data-religion-detail").count(), 7);
         assert!(rendered.contains("religion_judaism_minutes"));

@@ -725,6 +725,10 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/wingfoot.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-axe.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-club.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/ATTRIBUTION.md` — Project documentation.
+- `crates/strategic-web/static/icons/religion/fontawesome-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/fontawesome-star-and-crescent.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/fontawesome-star-of-david.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.

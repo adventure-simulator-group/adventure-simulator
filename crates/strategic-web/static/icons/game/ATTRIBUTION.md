@@ -44,10 +44,3 @@ wood-club.
 
 The files were converted from Iconify JSON bodies into standalone SVGs without
 altering the artwork. CSS masks supply colour at runtime.
-
-## Font Awesome exception
-
-`fontawesome-torah.svg` is from Font Awesome Free 7.3.1 by Fonticons, Inc.
-It is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-and retains its upstream attribution comment. Source:
-<https://fontawesome.com/icons/torah>.
