@@ -2210,6 +2210,12 @@ button.party-portrait-action {
 /* Unified floating chat stream. */
 .settlement-chat {
   --chat-height: var(--chat-panel-height);
+  --chat-local-color: var(--text-primary);
+  --chat-party-color: color-mix(in srgb, var(--info) 40%, var(--text-primary));
+  --chat-settlement-color: color-mix(in srgb, var(--gold-color) 35%, var(--text-primary));
+  --chat-dm-color: color-mix(in srgb, var(--icon-instinct, #7b3f91) 35%, var(--text-primary));
+  --chat-guild-color: color-mix(in srgb, var(--success) 40%, var(--text-primary));
+  --chat-info-color: var(--text-secondary);
   position: absolute;
   z-index: 5;
   right: var(--chat-inline-gap);
@@ -2316,7 +2322,11 @@ body.chat-resizing {
 }
 
 .chat-channel-filter input:checked::after { opacity: 1; transform: scale(1); }
-.chat-channel-filter input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.chat-channel-filter input:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+  box-shadow: inset 0 0 0 1px #0004, 0 0 0 2px var(--panel-bg);
+}
 .chat-channel-filter input:not(:checked) { opacity: 0.45; }
 
 .chat-channel-filter-local { --channel-color: #fff; }
@@ -2341,12 +2351,12 @@ body.chat-resizing {
   margin-bottom: 0.35rem;
 }
 
-.settlement-chat-messages [data-chat-channel="local"] { color: #fff; }
-.settlement-chat-messages [data-chat-channel="party"] { color: #6fb5ff; }
-.settlement-chat-messages [data-chat-channel="settlement"] { color: #f2d26b; }
-.settlement-chat-messages [data-chat-channel="dm"] { color: #c995ff; }
-.settlement-chat-messages [data-chat-channel="guild"] { color: #73d58a; }
-.settlement-chat-messages [data-chat-channel="info"] { color: #9ca3ad; }
+.settlement-chat-messages [data-chat-channel="local"] { color: var(--chat-local-color); }
+.settlement-chat-messages [data-chat-channel="party"] { color: var(--chat-party-color); }
+.settlement-chat-messages [data-chat-channel="settlement"] { color: var(--chat-settlement-color); }
+.settlement-chat-messages [data-chat-channel="dm"] { color: var(--chat-dm-color); }
+.settlement-chat-messages [data-chat-channel="guild"] { color: var(--chat-guild-color); }
+.settlement-chat-messages [data-chat-channel="info"] { color: var(--chat-info-color); }
 
 .chat-system-message {
   font-style: italic;
@@ -2360,7 +2370,7 @@ body.chat-resizing {
 }
 
 .chat-timestamp {
-  color: #a0a7b2;
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
 }
 

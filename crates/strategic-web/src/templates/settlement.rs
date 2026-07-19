@@ -3641,7 +3641,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_palette_meets_text_contrast_on_the_lightest_composite() {
+    fn chat_palette_meets_contrast_across_every_supported_theme() {
         fn linear_channel(channel: u8) -> f64 {
             let channel = f64::from(channel) / 255.0;
             if channel <= 0.04045 {
@@ -3666,21 +3666,113 @@ mod tests {
             (lighter + 0.05) / (darker + 0.05)
         }
 
-        // The 88% default umber surface over white is the lightest possible panel
-        // composite and therefore the lowest-contrast case for this palette.
-        let lightest_chat_surface = [60, 49, 44];
-        for (channel, color) in [
-            ("Local", [0xff, 0xff, 0xff]),
-            ("Party", [0x6f, 0xb5, 0xff]),
-            ("Settlement", [0xf2, 0xd2, 0x6b]),
-            ("DM", [0xc9, 0x95, 0xff]),
-            ("Guild", [0x73, 0xd5, 0x8a]),
-            ("Info", [0x9c, 0xa3, 0xad]),
-        ] {
-            assert!(
-                contrast(color, lightest_chat_surface) >= 4.5,
-                "{channel} does not meet WCAG AA text contrast"
+        fn mix(accent: [u8; 3], text: [u8; 3], accent_percent: u16) -> [u8; 3] {
+            std::array::from_fn(|index| {
+                let mixed = u16::from(accent[index]) * accent_percent
+                    + u16::from(text[index]) * (100 - accent_percent);
+                ((mixed + 50) / 100) as u8
+            })
+        }
+
+        // Dark themes use the lightest possible 88% panel composite (over
+        // white); light themes use the darkest possible composite (over
+        // black). This brackets the image content beneath the translucent chat.
+        let themes = [
+            (
+                "Dark Arcanum",
+                [46, 49, 67],
+                [200, 202, 208],
+                [154, 158, 176],
+                [96, 165, 250],
+                [251, 191, 36],
+                [215, 169, 239],
+                [52, 211, 153],
+            ),
+            (
+                "Fraktur Nocturne",
+                [60, 49, 44],
+                [241, 227, 207],
+                [205, 185, 157],
+                [125, 159, 197],
+                [213, 166, 76],
+                [213, 167, 237],
+                [120, 173, 114],
+            ),
+            (
+                "Fraktur Texturina",
+                [216, 209, 190],
+                [42, 31, 20],
+                [74, 60, 44],
+                [58, 106, 138],
+                [184, 134, 11],
+                [116, 66, 141],
+                [74, 124, 63],
+            ),
+            (
+                "Imperial Crimson",
+                [217, 213, 204],
+                [26, 26, 26],
+                [61, 61, 61],
+                [26, 74, 138],
+                [196, 136, 11],
+                [113, 63, 140],
+                [45, 106, 48],
+            ),
+            (
+                "Northern Frost",
+                [211, 215, 220],
+                [28, 40, 51],
+                [52, 73, 94],
+                [46, 109, 164],
+                [212, 160, 23],
+                [115, 66, 147],
+                [39, 174, 96],
+            ),
+            (
+                "Renaissance Gold",
+                [216, 209, 190],
+                [42, 31, 20],
+                [74, 60, 44],
+                [58, 106, 138],
+                [184, 134, 11],
+                [123, 63, 145],
+                [74, 124, 63],
+            ),
+            (
+                "Verdant Chronicle",
+                [218, 214, 202],
+                [26, 60, 26],
+                [45, 90, 45],
+                [74, 122, 106],
+                [184, 115, 51],
+                [116, 66, 141],
+                [58, 122, 58],
+            ),
+        ];
+        for (theme, surface, primary, secondary, info, gold, dm, success) in themes {
+            let channels = [
+                ("Local", primary),
+                ("Party", mix(info, primary, 40)),
+                ("Settlement", mix(gold, primary, 35)),
+                ("DM", mix(dm, primary, 35)),
+                ("Guild", mix(success, primary, 40)),
+                ("Info", secondary),
+            ];
+            let distinct = channels
+                .iter()
+                .map(|(_, color)| color)
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(
+                distinct.len(),
+                channels.len(),
+                "{theme} channels must remain visually distinct"
             );
+            for (channel, color) in channels {
+                assert!(
+                    contrast(color, surface) >= 4.5,
+                    "{theme} {channel} does not meet WCAG AA text contrast"
+                );
+            }
         }
     }
 
@@ -3700,6 +3792,19 @@ mod tests {
         assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
         assert!(css.contains(".chat-channel-filter input::after"));
         assert!(css.contains("border-radius: 0.05rem;"));
+        assert!(css.contains("outline: 2px solid var(--text-primary);"));
+        assert!(css.contains("0 0 0 2px var(--panel-bg)"));
+        assert!(css.contains(
+            "--chat-party-color: color-mix(in srgb, var(--info) 40%, var(--text-primary));"
+        ));
+        assert!(css.contains("--chat-settlement-color: color-mix(in srgb, var(--gold-color) 35%, var(--text-primary));"));
+        assert!(css.contains("--chat-dm-color: color-mix(in srgb, var(--icon-instinct, #7b3f91) 35%, var(--text-primary));"));
+        assert!(css.contains(
+            "--chat-guild-color: color-mix(in srgb, var(--success) 40%, var(--text-primary));"
+        ));
+        for variable in ["local", "party", "settlement", "dm", "guild", "info"] {
+            assert!(css.contains(&format!("var(--chat-{variable}-color)")));
+        }
         assert!(!css.contains(".chat-channel-badge"));
         assert!(css.contains("@media (max-width: 768px)"));
         assert!(css.contains("flex-wrap: nowrap;"));

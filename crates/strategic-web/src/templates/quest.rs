@@ -151,8 +151,8 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
     };
     let mut messages = Vec::with_capacity(report.log.len() + 1);
     messages.push(format!(
-        "{} Victor: {}; {} rounds; seed {}.",
-        report.summary, report.victor, report.rounds, report.seed
+        "{} Victor: {}; seed {}.",
+        report.summary, report.victor, report.seed
     ));
     messages.extend(report.log.iter().cloned());
     messages
@@ -278,7 +278,7 @@ mod tests {
             seed: 42,
             victor: "players".into(),
             rounds: 3,
-            summary: "The party defeated the bandits.".into(),
+            summary: "3 rounds: 2 players against 3 enemies; players prevailed.".into(),
             log: vec!["Alice struck a bandit.".into(), "The bandit fell.".into()],
         };
 
@@ -289,7 +289,8 @@ mod tests {
 
         let markup = settlement_chat_area_with_info("Bandit camp", None, &messages).into_string();
         assert_eq!(markup.matches("data-chat-channel=\"info\"").count(), 4);
-        assert!(markup.contains("The party defeated the bandits."));
+        assert!(markup.contains("3 rounds: 2 players against 3 enemies; players prevailed."));
+        assert!(!markup.contains("3 rounds; seed"));
         assert!(markup.contains("Alice struck a bandit."));
         assert!(markup.contains("The bandit fell."));
         assert!(!markup.contains("autoresolve-report"));
