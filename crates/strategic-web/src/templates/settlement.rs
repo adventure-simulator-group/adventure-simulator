@@ -2218,7 +2218,9 @@ fn skills_table(
                 thead { tr class="schedule-context-heading" {
                         th scope="colgroup" colspan=(if schedule.is_some() { "5" } else { "2" }) class="schedule-table-title" { (title) }
                     @if schedule.is_some() {
-                        th scope="col" aria-label="Automatic training" {}
+                        th scope="col" aria-label="Automatic training" title="Automatic training" {
+                            (schedule_auto_header_icon())
+                        }
                         th scope="col" title="Daily plan used while resting or waiting in a settlement" {
                             (schedule_header_icon("duration", "Daily allocation"))
                         }
@@ -2247,7 +2249,9 @@ fn skills_table(
                             th scope="col" title="Virtue" { (schedule_header_icon("scales", "Virtue")) }
                             th scope="col" title="Morale" { (schedule_header_icon("sun", "Morale")) }
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
-                            th scope="col" aria-label="Automatic training" {}
+                            th scope="col" aria-label="Automatic training" title="Automatic training" {
+                                (schedule_auto_header_icon())
+                            }
                             th scope="col" title="Daily allocation" { (schedule_header_icon("duration", "Daily allocation")) }
                             th scope="col" aria-label="Religion details" {}
                         }
@@ -2399,6 +2403,10 @@ fn religion_expand_button(primary: OfficialReligion) -> Markup {
 
 fn schedule_header_icon(icon: &str, label: &str) -> Markup {
     html! { span class="schedule-header-icon" { (game_icon(label, icon)) } }
+}
+
+fn schedule_auto_header_icon() -> Markup {
+    html! { span class="schedule-header-icon" aria-hidden="true" { "⚙" } }
 }
 
 fn party_skill_row(
@@ -4339,7 +4347,7 @@ mod tests {
         .into_string();
 
         assert!(rendered.contains(
-            "scope=\"colgroup\" colspan=\"6\" class=\"schedule-table-title\">Your skills"
+            "scope=\"colgroup\" colspan=\"5\" class=\"schedule-table-title\">Your skills"
         ));
         assert_eq!(rendered.matches("<colgroup>").count(), 2);
         assert!(rendered.contains(
@@ -4416,6 +4424,12 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
+        assert_eq!(rail.matches(">⚙</span>").count(), 2);
+        assert_eq!(
+            rail.matches("aria-label=\"Automatic training\" title=\"Automatic training\"")
+                .count(),
+            2
+        );
     }
 
     #[test]
