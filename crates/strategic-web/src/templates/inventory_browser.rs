@@ -33,38 +33,41 @@ pub struct InventoryBrowser<'a> {
     /// Stable URL-state namespace. Left and right panels must never share it.
     pub namespace: &'a str,
     pub show_equipped: bool,
-    pub condition_header: Option<Markup>,
+    pub show_condition: bool,
     pub optional_columns: InventoryColumnSet,
     pub rows: Markup,
 }
 
 impl InventoryBrowser<'_> {
     pub fn render(self) -> Markup {
-        let show_condition = self.condition_header.is_some();
-        let table_class = if show_condition {
+        let optional_columns = self.optional_columns.names();
+        let table_class = if self.show_condition {
             "trade-inventory-table smith-player-inventory-table"
         } else {
             "trade-inventory-table"
         };
         html! {
             div class="inventory-browser" data-inventory-browser=(self.namespace)
-                data-optional-columns=(self.optional_columns.names()) {
+                data-optional-columns=(optional_columns) {
                 div class="inventory-browser-toolbar" {
                     label class="inventory-browser-search" {
                         span class="sr-only" { "Search items by name" }
                         input type="search" data-inventory-search placeholder="Search items" autocomplete="off"
                             aria-label="Search items by name";
                     }
-                    details class="inventory-column-picker" {
-                        summary data-inventory-columns aria-label="Choose visible columns" title="Choose visible columns" {
-                            span aria-hidden="true" { "⚙" }
-                        }
-                        fieldset {
-                            legend { "Columns" }
-                            div data-inventory-column-options {}
+                    @if !optional_columns.is_empty() {
+                        details class="inventory-column-picker" {
+                            summary data-inventory-columns aria-label="Choose visible columns" title="Choose visible columns" {
+                                span aria-hidden="true" { "⚙" }
+                            }
+                            fieldset {
+                                legend { "Columns" }
+                                div data-inventory-column-options {}
+                            }
                         }
                     }
                 }
+                div class="inventory-browser-table-scroll" tabindex="0" aria-label="Scrollable inventory table" {
                 table class=(table_class) {
                     colgroup {
                         col class="inventory-column-type";
@@ -72,7 +75,7 @@ impl InventoryBrowser<'_> {
                         col class="inventory-column-count";
                         col class="inventory-column-target";
                         @if self.show_equipped { col class="inventory-column-equipped"; }
-                        @if show_condition { col class="inventory-column-durability"; }
+                        @if self.show_condition { col class="inventory-column-durability"; }
                         col class="inventory-column-weight";
                         col class="inventory-column-gold";
                     }
@@ -84,19 +87,19 @@ impl InventoryBrowser<'_> {
                         @if self.show_equipped {
                             (sortable_icon_header("equipped", "inventory-column-equipped", "Equipped", game_icon("Equipped", "check-mark")))
                         }
-                        @if let Some(condition_header) = self.condition_header {
+                        @if self.show_condition {
                             th scope="col" class="inventory-column-durability" {
                                 button type="button" data-inventory-sort="durability" aria-label="Sort by durability" {
-                                    span class="sr-only" { "Durability" }
+                                    (game_icon("Durability", "hammer-nails"))
                                     span class="inventory-sort-indicator" aria-hidden="true" {}
                                 }
-                                (condition_header)
                             }
                         }
                         (sortable_icon_header("weight", "inventory-column-weight", "Weight", game_icon("Weight", "weight")))
                         (sortable_icon_header("value", "inventory-column-gold", "Currency", game_icon("Currency", "coins")))
                     } }
                     tbody { (self.rows) }
+                }
                 }
             }
         }
@@ -120,7 +123,7 @@ mod tests {
         let rendered = InventoryBrowser {
             namespace: "trade-left",
             show_equipped: false,
-            condition_header: None,
+            show_condition: false,
             optional_columns: InventoryColumnSet::Weapons,
             rows: html! {},
         }
@@ -130,20 +133,23 @@ mod tests {
         assert!(rendered.contains("data-inventory-sort=\"quantity\""));
         assert!(rendered.contains("data-inventory-sort=\"target\""));
         assert!(rendered.contains("accuracy,reach,penetration,damage,block"));
+        assert!(rendered.contains("inventory-browser-table-scroll"));
+        assert!(rendered.contains("aria-label=\"Scrollable inventory table\""));
     }
 
     #[test]
-    fn condition_header_controls_are_siblings_of_the_sort_button() {
+    fn condition_header_is_a_dedicated_sort_control() {
         let rendered = InventoryBrowser {
             namespace: "smith",
             show_equipped: true,
-            condition_header: Some(html! { form class="repair-all" { button { "Repair" } } }),
+            show_condition: true,
             optional_columns: InventoryColumnSet::Weapons,
             rows: html! {},
         }
         .render()
         .into_string();
-        assert!(rendered.contains("</button><form class=\"repair-all\">"));
-        assert!(!rendered.contains("<button type=\"button\" data-inventory-sort=\"durability\" aria-label=\"Sort by durability\"><span class=\"sr-only\">Durability</span><span class=\"inventory-sort-indicator\" aria-hidden=\"true\"></span><form"));
+        assert!(rendered.contains("data-inventory-sort=\"durability\""));
+        assert!(rendered.contains("hammer-nails.svg"));
+        assert!(!rendered.contains("repair-all"));
     }
 }

@@ -9,6 +9,21 @@
     flexibility: ["Flexibility", "flexibility"],
     "range-of-motion": ["Range of motion", "rangeOfMotion"],
   };
+  const DETAIL_ICONS = {
+    Slot: "knapsack",
+    Balance: "scales",
+    Mode: "crossed-swords",
+    Precision: "bullseye",
+    "Reach m": "spear-hook",
+    Penetration: "piercing-sword",
+    "Damage types": "saber-slash",
+    Block: "shield",
+    Coverage: "armor-vest",
+    "Resistance J": "bordered-shield",
+    "Padding J": "layered-armor",
+    Flexibility: "dodge",
+    "Range of motion": "acrobatic",
+  };
   const VALID_SORTS = new Set(["type", "name", "quantity", "target", "equipped", "durability", "weight", "value", ...Object.keys(OPTIONAL_COLUMNS)]);
 
   const prefix = (namespace) => `inv.${namespace}.`;
@@ -181,12 +196,20 @@
         const list = document.createElement("dl");
         entries.forEach(([name, value]) => {
           const group = document.createElement("div");
+          group.className = "inventory-detail-stat";
+          const icon = document.createElement("span");
+          icon.className = "inventory-detail-icon";
+          icon.setAttribute("aria-hidden", "true");
+          icon.style.setProperty("--inventory-detail-icon", `url('/static/icons/game/${DETAIL_ICONS[name] || "help"}.svg')`);
           const term = document.createElement("dt"); term.textContent = name;
-          const description = document.createElement("dd"); description.textContent = value;
-          group.append(term, description); list.append(group);
+          const description = document.createElement("dd"); description.textContent = value; description.title = value;
+          group.append(icon, term, description); list.append(group);
         });
         cell.append(list);
-      } else cell.textContent = "No additional details.";
+      } else {
+        cell.className = "inventory-detail-empty";
+        cell.textContent = "No additional details.";
+      }
       detail.append(cell); row._inventoryDetail = detail; row.after(detail);
     }
     row._inventoryDetail.hidden = row.hidden;
@@ -221,7 +244,8 @@
       input.addEventListener("change", () => { state.columns = [...options.querySelectorAll("input:checked")].map((entry) => entry.value); updateHistory(browser, state); apply(browser, state); });
       options.append(label);
       const th = document.createElement("th"); th.scope = "col"; th.dataset.inventoryColumn = column; th.innerHTML = `<button type="button" data-inventory-sort="${column}" aria-label="Sort by ${OPTIONAL_COLUMNS[column][0]}">${OPTIONAL_COLUMNS[column][0]} <span class="inventory-sort-indicator" aria-hidden="true"></span></button>`;
-      browser.querySelector("thead tr").append(th);
+      const headerRow = browser.querySelector("thead tr");
+      headerRow.insertBefore(th, headerRow.querySelector(".inventory-actions-header"));
     });
     search.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
     search.addEventListener("blur", () => { browser._searchEditing = false; });

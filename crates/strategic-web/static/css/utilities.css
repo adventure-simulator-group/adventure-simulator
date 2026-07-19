@@ -89,16 +89,22 @@
 .inventory-transfer-glyph i { display:block; width:.48rem; height:.48rem; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); margin-left:-.16rem; }
 .inventory-transfer-glyph i:first-child { margin-left:0; }
 .trade-transfer-left .inventory-transfer-glyph { transform:rotate(180deg); }
-.trade-inventory-table thead tr { position:relative; }
-.inventory-footer-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:1.35rem; gap:2px; width:1.35rem; padding:0; transform:translateY(-50%); }
-.left-sidebar .inventory-footer-actions { right:-1.65rem; }
-.right-sidebar .inventory-footer-actions { left:-1.65rem; }
-.smith-wares-scroll .inventory-footer-actions {
-  right:5.35rem;
-  padding-left:.25rem;
-  background:linear-gradient(90deg, transparent, var(--panel-bg) .25rem);
+.inventory-actions-header {
+  position:sticky;
+  z-index:35;
+  right:0;
+  box-sizing:border-box;
+  width:1.85rem;
+  min-width:1.85rem;
+  padding:0 .2rem !important;
+  background:var(--panel-bg);
+  box-shadow:-.3rem 0 .35rem color-mix(in srgb, var(--panel-bg) 75%, transparent);
 }
+.inventory-actions-header:has(.inventory-footer-actions-grouped) { width:3.35rem; min-width:3.35rem; }
+.inventory-footer-actions { position:static; display:flex; align-items:center; justify-content:flex-end; gap:2px; width:max-content; margin-left:auto; padding:0; transform:none; }
 .inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
+.inventory-footer-repair { display:block; width:1.35rem; height:1.35rem; }
+.inventory-footer-repair .repair-all-button { width:1.35rem; height:1.35rem; opacity:.8; }
 .right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
 
 .party-portrait-overlay > .party-aggregate-checks {

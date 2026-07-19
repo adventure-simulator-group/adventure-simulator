@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (803)
+## Files (799)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -578,8 +578,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
@@ -587,8 +585,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/components.css` — Browser UI styling.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
-- `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
-- `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.

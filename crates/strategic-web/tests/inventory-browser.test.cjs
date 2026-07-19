@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   parsePanelState,
   serializePanelState,
@@ -37,6 +39,13 @@ test("advertised sort types retain text damage and numeric target or durability 
 
 test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof refresh, "function");
+});
+
+test("bulk controls mount inside a semantic header cell", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /createElement\("th"\)/);
+  assert.match(source, /cell\.append\(actions\)/);
+  assert.doesNotMatch(source, /headerRow\.append\(actions\)/);
 });
 
 test("serialization preserves unrelated params and round trips bookmarks", () => {

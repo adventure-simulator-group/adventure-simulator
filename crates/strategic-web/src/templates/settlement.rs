@@ -1026,7 +1026,7 @@ pub fn party_discard_page(
             (sidebar_section("Discard", html! {
                 p class="text-muted small-copy" data-discard-empty { "Stage carried items here before discarding them." }
                 div data-discard-table hidden {
-                    (trade_inventory_table("discard-left", InventoryColumnSet::All, false, None, html! {}))
+                    (trade_inventory_table("discard-left", InventoryColumnSet::All, false, false, html! {}))
                 }
             }))
         }
@@ -1342,7 +1342,7 @@ fn party_trade_inventory_rail(
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
-                    (trade_inventory_table(if direction == "left" { "party-transfer-right" } else { "party-transfer-left" }, InventoryColumnSet::All, true, None, html! {
+                    (trade_inventory_table(if direction == "left" { "party-transfer-right" } else { "party-transfer-left" }, InventoryColumnSet::All, true, false, html! {
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1380,7 +1380,7 @@ fn discard_inventory_rail(
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
-                    (trade_inventory_table("discard-right", InventoryColumnSet::All, true, None, html! {
+                    (trade_inventory_table("discard-right", InventoryColumnSet::All, true, false, html! {
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1444,12 +1444,18 @@ pub fn live_merchant_shop_page(
     let player_footer = if matches!(shop, MerchantShop::Herbalist) {
         html! {}
     } else {
-        inventory_footer_controls("sell", "Sell surplus", "Sell everything")
+        inventory_footer_controls_with_leading(
+            matches!(shop, MerchantShop::Weapons | MerchantShop::Armor)
+                .then(|| repair_all_control(settlement, service_id)),
+            "sell",
+            "Sell surplus",
+            "Sell everything",
+        )
     };
     let content = html! {
         aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
-            (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, None, html! {
+            (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, html! {
                 @for item in items.iter().filter(|item| shop.shows_inventory(item.kind)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
@@ -1483,7 +1489,7 @@ pub fn live_merchant_shop_page(
             div data-inventory-pane="player" {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
+                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor), html! {
                     @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -1519,7 +1525,7 @@ pub fn live_merchant_shop_page(
             @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, None, html! {
+                (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, html! {
                     @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -1586,7 +1592,7 @@ pub fn party_pool_page(
                         strong { (stake) " gold" }
                     }
                     p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
-                    (trade_inventory_table("party-pool-left", InventoryColumnSet::All, false, None, html! {
+                    (trade_inventory_table("party-pool-left", InventoryColumnSet::All, false, false, html! {
                         @for item in pooled {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
@@ -1616,7 +1622,7 @@ pub fn party_pool_page(
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (encumbrance_inventory_rail(html! {
                     p class="small-copy text-muted" { "Add items at their objective gold value." }
-                    (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, None, html! {
+                    (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, false, html! {
                         @for item in inventory {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
@@ -1797,13 +1803,13 @@ fn trade_inventory_table(
     namespace: &str,
     optional_columns: InventoryColumnSet,
     show_equipped: bool,
-    condition_header: Option<Markup>,
+    show_condition: bool,
     rows: Markup,
 ) -> Markup {
     InventoryBrowser {
         namespace,
         show_equipped,
-        condition_header,
+        show_condition,
         optional_columns,
         rows,
     }
@@ -1916,10 +1922,9 @@ fn completed_repair_condition_bar(
     condition_bar(Some(&repaired), None)
 }
 
-fn repair_all_header(settlement: &Settlement, service_id: &str) -> Markup {
+fn repair_all_control(settlement: &Settlement, service_id: &str) -> Markup {
     html! {
-        span class="sr-only" { "Durability" }
-        form class="repair-all-form" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
+        form class="repair-all-form inventory-footer-repair" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
             button type="submit" class="repair-all-button" title="Entrust all eligible items for repair" aria-label="Repair all eligible items" {
                 span class="repair-action-icon" aria-hidden="true" {}
             }
@@ -2047,7 +2052,18 @@ pub(crate) fn inventory_footer_controls(
     target_label: &str,
     all_label: &str,
 ) -> Markup {
-    html! { div class="inventory-footer-actions" {
+    inventory_footer_controls_with_leading(None, action, target_label, all_label)
+}
+
+fn inventory_footer_controls_with_leading(
+    leading: Option<Markup>,
+    action: &str,
+    target_label: &str,
+    all_label: &str,
+) -> Markup {
+    let grouped = leading.is_some();
+    html! { div class=(if grouped { "inventory-footer-actions inventory-footer-actions-grouped" } else { "inventory-footer-actions" }) {
+        @if let Some(leading) = leading { (leading) }
         button type="button" class="trade-transfer inventory-footer-transfer" data-dynamic-transfer data-default-transfer-mode="target" data-inventory-bulk=(action) data-transfer-mode="target" data-label-target=(target_label) data-label-all=(all_label) aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
     } }
 }
@@ -3985,21 +4001,31 @@ mod tests {
 
     #[test]
     fn smith_player_inventory_uses_the_compact_seven_column_table() {
-        let rendered = trade_inventory_table(
-            "test",
-            InventoryColumnSet::Weapons,
-            true,
-            Some(repair_all_header(&settlement(), "weapons")),
-            html! {},
-        )
-        .into_string();
+        let rendered =
+            trade_inventory_table("test", InventoryColumnSet::Weapons, true, true, html! {})
+                .into_string();
         assert!(rendered.contains("smith-player-inventory-table"));
         assert!(rendered.contains("inventory-column-type"));
         assert!(rendered.contains("aria-label=\"Item type\""));
         assert!(rendered.contains("inventory-column-durability"));
-        assert!(rendered.contains("Repair all eligible items"));
-        assert!(rendered.contains("class=\"sr-only\">Durability</span>"));
+        assert!(rendered.contains("hammer-nails.svg"));
+        assert!(!rendered.contains("Repair all eligible items"));
         assert!(!rendered.contains("durability-header-label"));
+    }
+
+    #[test]
+    fn repair_all_precedes_the_sell_bulk_control() {
+        let rendered = inventory_footer_controls_with_leading(
+            Some(repair_all_control(&settlement(), "weapons")),
+            "sell",
+            "Sell surplus",
+            "Sell everything",
+        )
+        .into_string();
+        let repair = rendered.find("inventory-footer-repair").unwrap();
+        let sell = rendered.find("data-inventory-bulk=\"sell\"").unwrap();
+        assert!(rendered.contains("inventory-footer-actions-grouped"));
+        assert!(repair < sell);
     }
 
     #[test]
@@ -4190,7 +4216,7 @@ mod tests {
     #[test]
     fn merchant_stock_table_keeps_quantity_weight_and_gold_columns() {
         let rendered =
-            trade_inventory_table("test", InventoryColumnSet::Basic, false, None, html! {})
+            trade_inventory_table("test", InventoryColumnSet::Basic, false, false, html! {})
                 .into_string();
         assert!(rendered.contains("<colgroup>"));
         assert!(rendered.contains("inventory-column-count"));
@@ -4208,7 +4234,7 @@ mod tests {
             "test",
             InventoryColumnSet::Basic,
             false,
-            None,
+            false,
             html! {
                 tr class="trade-inventory-row" {
                     td class="inventory-item-type" { (item_type_icon("arming_sword")) }
@@ -4771,7 +4797,14 @@ mod tests {
         assert!(css.contains("right: -1.65rem;"));
         assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
         assert!(utilities.contains(".smith-wares-scroll .inventory-row-actions"));
-        assert!(utilities.contains(".smith-wares-scroll .inventory-footer-actions"));
+        assert!(!utilities.contains(".smith-wares-scroll .inventory-footer-actions"));
+        assert!(
+            utilities.contains(".inventory-actions-header:has(.inventory-footer-actions-grouped)")
+        );
+        assert!(utilities.contains("position:sticky;"));
+        assert!(css.contains(".inventory-browser-table-scroll"));
+        assert!(css.contains("overflow-x:auto;"));
+        assert!(utilities.contains(".inventory-footer-repair .repair-all-button"));
         assert!(utilities.contains("grid-template-columns:repeat(2,1.35rem)"));
         assert!(utilities.contains(
             ".right-sidebar .inventory-row-actions.smith-player-actions { left:-3.15rem; }"

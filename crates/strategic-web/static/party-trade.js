@@ -10,9 +10,17 @@ function changeTradeDraftCount(row, change) {
 function mountInventoryBulkControls(root = document) {
   if (!root?.querySelectorAll) root = document;
   root.querySelectorAll(".inventory-footer-actions").forEach((actions) => {
+    if (actions.closest(".inventory-actions-header")) return;
     const section = actions.closest(".sidebar-section");
     const headerRow = section?.querySelector(".trade-inventory-table thead tr");
-    if (headerRow) headerRow.append(actions);
+    if (headerRow) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.className = "inventory-actions-header";
+      cell.setAttribute("aria-label", "Inventory actions");
+      cell.append(actions);
+      headerRow.append(cell);
+    }
   });
   applyDynamicTransferModifiers();
 }

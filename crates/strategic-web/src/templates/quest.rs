@@ -181,7 +181,7 @@ pub fn quest_location_page(
                         None,
                     ))
                 } @else {
-                    (InventoryBrowser { namespace: "quest-loot-left", show_equipped: false, condition_header: None, optional_columns: InventoryColumnSet::All, rows: html! {
+                    (InventoryBrowser { namespace: "quest-loot-left", show_equipped: false, show_condition: false, optional_columns: InventoryColumnSet::All, rows: html! {
                             @for entry in loot {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
@@ -223,7 +223,7 @@ pub fn quest_location_page(
                 @if pooled.is_empty() {
                     (empty_state("The party chest is empty.", None, None))
                 } @else {
-                    (InventoryBrowser { namespace: "quest-party-right", show_equipped: false, condition_header: None, optional_columns: InventoryColumnSet::All, rows: html! {
+                    (InventoryBrowser { namespace: "quest-party-right", show_equipped: false, show_condition: false, optional_columns: InventoryColumnSet::All, rows: html! {
                             @for entry in pooled {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
