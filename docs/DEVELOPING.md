@@ -189,8 +189,8 @@ old server, take an operator backup only if the old data may still be useful,
 and move its data directory aside or configure a new empty data directory.
 Then install/select SpacetimeDB 2.6.1 and use an explicitly isolated profile,
 or perform a separately reviewed operator migration. `web-isolated` starts a
-profile-owned server, reset-publishes, reseeds the normal world plus the
-injured `Wounded Demo` UI fixture, and launches the browser stack; it
+profile-owned server, reset-publishes, reseeds the normal world plus the sick
+`Sick Demo` and injured `Wounded Demo` UI fixtures, and launches the browser stack; it
 permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
@@ -202,8 +202,9 @@ flags manually against a public or player-bearing database unless data loss is
 explicitly approved and a verified recovery copy exists.
 
 `seed_world` is itself idempotent: it inserts only missing demo rows. The local
-workflow now propagates every reducer failure instead of treating arbitrary
-errors as evidence that seeding already happened.
+seed workflow then resets `Sick Demo` to peak influenza so symptoms, diagnosis,
+and treatment can be tested immediately. It propagates every reducer failure
+instead of treating arbitrary errors as evidence that seeding already happened.
 
 Spawner metadata contains the resolved repository, profile, server/database,
 bind/port configuration, hashes of both tactical binaries, actual executable,

@@ -473,6 +473,57 @@ pub fn record_committed_cut(
     Ok(())
 }
 
+/// Create or reset the visibly ill character used by the default development
+/// seed. The fixture starts at influenza's peak so its symptoms and penalties
+/// are immediately available for UI and treatment testing.
+#[reducer]
+pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
+    const SICK_CHARACTER_ID: u64 = 9_999_999_999_999_998;
+    const DEMO_DISEASE_AGE: u64 = 3 * 1_440;
+
+    if ctx.db.character().id().find(SICK_CHARACTER_ID).is_none() {
+        crate::character::insert_new_character(
+            ctx,
+            "Sick Demo".to_string(),
+            SICK_CHARACTER_ID,
+            false,
+        )?;
+    }
+
+    let mut character_time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(SICK_CHARACTER_ID)
+        .ok_or_else(|| "Sick demo character is missing time data".to_string())?;
+    character_time.minutes = character_time.minutes.max(DEMO_DISEASE_AGE);
+    let contracted_at = character_time.minutes - DEMO_DISEASE_AGE;
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+
+    let existing: Vec<_> = ctx
+        .db
+        .infection_episode()
+        .character_id()
+        .filter(SICK_CHARACTER_ID)
+        .map(|row| row.id)
+        .collect();
+    for id in existing {
+        ctx.db.infection_episode().id().delete(id);
+    }
+    ctx.db.infection_episode().insert(InfectionEpisodeRow {
+        id: 0,
+        character_id: SICK_CHARACTER_ID,
+        disease_id: "influenza".into(),
+        contracted_at,
+        treated_at: None,
+    });
+    crate::capability::refresh_character_capability(ctx, SICK_CHARACTER_ID)?;
+    Ok(())
+}
+
 #[reducer]
 pub fn treat_disease(
     ctx: &ReducerContext,

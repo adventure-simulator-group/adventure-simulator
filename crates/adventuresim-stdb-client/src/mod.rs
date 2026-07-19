@@ -297,6 +297,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
+pub mod seed_sick_character_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
 pub mod self_regard_type;
@@ -672,6 +673,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
+pub use seed_sick_character_reducer::seed_sick_character;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
 pub use self_regard_type::SelfRegard;
@@ -1082,6 +1084,7 @@ pub enum Reducer {
     SeedPartyCompanions {
         leader_id: u64,
     },
+    SeedSickCharacter,
     SeedSimulationEquipmentDamage {
         character_id: u64,
         inventory_item_id: u64,
@@ -1271,6 +1274,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
+            Reducer::SeedSickCharacter => "seed_sick_character",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
@@ -1866,7 +1870,9 @@ Reducer::SeedPartyCompanions{
 }             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
                 leader_id: leader_id.clone(),
 }),
-            Reducer::SeedSimulationEquipmentDamage{
+            Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
+                }),
+Reducer::SeedSimulationEquipmentDamage{
                 character_id,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {
