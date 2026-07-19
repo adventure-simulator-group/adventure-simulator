@@ -4850,6 +4850,10 @@ mod tests {
         assert!(css.contains("66%, 74%"));
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
+        assert!(css.contains("--inventory-merchant-action-overhang"));
+        assert!(css.contains("+ 8px)"));
+        assert!(css.contains("padding-right: var(--inventory-merchant-action-overhang);"));
+        assert!(css.contains("scrollbar-gutter: stable;"));
         assert!(css.contains("overflow-x: clip;"));
         assert!(css.contains("col.inventory-column-item { width: auto; }"));
         assert!(css.contains(".smith-player-inventory-table"));

@@ -645,9 +645,13 @@
   flex-direction: column;
 }
 .smith-wares-scroll {
+  --inventory-merchant-action-overhang: calc(1.35rem + var(--building-frame-corner-size, 0rem) + .3rem + 8px);
   min-height: 0;
+  margin-right: calc(-1 * var(--inventory-merchant-action-overhang));
+  padding-right: var(--inventory-merchant-action-overhang);
   overflow-x: clip;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .smith-wares-scroll .trade-inventory-table {
   width: max-content;
