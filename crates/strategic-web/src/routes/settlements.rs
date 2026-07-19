@@ -83,8 +83,8 @@ use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
 use super::travel::{
-    QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast,
-    connected_destinations, next_settlement_toward, populate_camp_forecasts,
+    QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
+    active_quest_tooltip, connected_destinations, next_settlement_toward, populate_camp_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -591,10 +591,7 @@ async fn settlement_map(
                 id: quest.id.clone(),
                 name: quest.title.clone(),
                 description: quest.description.clone(),
-                summary: Some(format!(
-                    "Active quest · {} {}",
-                    quest.enemy_count, quest.enemy_type
-                )),
+                summary: Some(active_quest_summary(quest)),
                 travel_action: format!("/quests/{}/travel", quest.id),
                 distance_m,
                 journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
@@ -1325,7 +1322,7 @@ async fn service_quest_offers(
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
                     title: quest.title.clone(),
-                    description: quest.description.clone(),
+                    description: active_quest_tooltip(quest),
                     service_id: issuer.service_id.clone(),
                     npc_name,
                     greeting: greeting.to_string(),

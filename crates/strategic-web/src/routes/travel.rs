@@ -11,6 +11,14 @@ use crate::spacetimedb::{
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 
+pub(crate) fn active_quest_summary(quest: &Quest) -> String {
+    format!("Active quest · {} {}", quest.enemy_count, quest.enemy_type)
+}
+
+pub(crate) fn active_quest_tooltip(quest: &Quest) -> String {
+    format!("{}\n{}", quest.description, active_quest_summary(quest))
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct TravelForm {}
 
@@ -453,6 +461,19 @@ mod tests {
     fn walking_time_rounds_up_to_a_minute() {
         assert_eq!(journey_minutes(1), 1);
         assert_eq!(journey_minutes(5_000), 60);
+    }
+
+    #[test]
+    fn active_quest_tooltip_includes_encounter_summary() {
+        let mut quest = quest("crypt", "riverdale", QuestStatus::Accepted);
+        quest.description = "A necromancer has raised the dead.".into();
+        quest.enemy_count = 11;
+        quest.enemy_type = "skeletons".into();
+
+        assert_eq!(
+            active_quest_tooltip(&quest),
+            "A necromancer has raised the dead.\nActive quest · 11 skeletons"
+        );
     }
 
     #[test]

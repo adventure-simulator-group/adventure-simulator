@@ -73,15 +73,14 @@
       const pin = document.createElement("span");
       pin.className = "travel-plan-pin";
       pin.append(gameIcon(node.icon));
-      const label = document.createElement("span");
-      label.className = "travel-plan-label";
-      label.textContent = node.label;
-      element.append(pin, label);
-      if (node.description) element.title = node.description;
+      element.append(pin);
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", node.label);
+      element.title = node.description || node.label;
       const progress = node.minute / totalMinutes;
       const horizontal = 5 + progress * 90;
       element.style.left = `${horizontal}%`;
-      element.style.top = "8%";
+      element.style.top = "0";
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
     }));
@@ -105,7 +104,7 @@
     requestAnimationFrame(() => {
       const currentNode = currentPlan.nodes[currentPlan.partyIndex] || currentPlan.nodes[0];
       party.style.left = `${currentNode.offsetLeft + currentNode.offsetWidth / 2 - party.offsetWidth / 2}px`;
-      party.style.top = `${currentNode.offsetTop + currentNode.offsetHeight / 2 - party.offsetHeight / 2}px`;
+      party.style.removeProperty("top");
     });
     return currentPlan;
   };
@@ -186,11 +185,10 @@
     const to = currentPlan.nodes[currentPlan.partyIndex + 1];
     const start = from.offsetLeft + from.offsetWidth / 2 - currentPlan.party.offsetWidth / 2;
     const end = to.offsetLeft + to.offsetWidth / 2 - currentPlan.party.offsetWidth / 2;
-    const startTop = from.offsetTop + from.offsetHeight / 2 - currentPlan.party.offsetHeight / 2;
-    const endTop = to.offsetTop + to.offsetHeight / 2 - currentPlan.party.offsetHeight / 2;
+    const trackTop = currentPlan.party.offsetTop;
     currentPlan.party.animate([
-      { left: `${start}px`, top: `${startTop}px` },
-      { left: `${end}px`, top: `${endTop}px` },
+      { left: `${start}px`, top: `${trackTop}px` },
+      { left: `${end}px`, top: `${trackTop}px` },
     ], {
       duration: 650,
       easing: "ease-in-out",

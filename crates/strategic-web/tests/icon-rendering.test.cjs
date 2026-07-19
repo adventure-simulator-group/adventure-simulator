@@ -27,7 +27,7 @@ test("party notifications use safe local icons for decisions and leadership", ()
   assert.match(source, /setAttribute\("aria-label", label\)/);
 });
 
-test("travel planner renders horizontal journey provisions and exact staged market quantities", () => {
+test("travel planner renders journey provisions and exact staged market quantities", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
   assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
@@ -38,8 +38,7 @@ test("travel planner renders horizontal journey provisions and exact staged mark
   assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
   assert.match(planner, /const horizontal = 5 \+ progress \* 90/);
-  assert.match(planner, /startTop/);
-  assert.match(planner, /endTop/);
+  assert.match(planner, /const trackTop = currentPlan\.party\.offsetTop/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(journeyDays \+ target - foodDays\)/);
   assert.match(planner, /params\.set\("provision_rations"/);
   assert.match(planner, /params\.set\("provision_waterskins"/);
@@ -64,8 +63,13 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /"days surplus"/);
   assert.match(css, /target-sign="negative"/);
   assert.match(css, /grid-template-columns: max-content minmax\(0, 1fr\)/);
+  assert.match(css, /rotate\(-90deg\)/);
+  assert.match(css, /\.travel-party-pin[^}]+rotate\(135deg\)/);
   assert.doesNotMatch(css, /travel-resource-path\.target[^}]*stroke-dasharray/);
   assert.match(template, /@if selected\.is_some\(\) \{\s+p class="text-muted small-copy" data-provisioning-status/);
+  assert.doesNotMatch(planner, /travel-plan-label/);
+  assert.match(planner, /element\.setAttribute\("aria-label", node\.label\)/);
+  assert.match(template, /"travel-planner-vertical no-destination"/);
 });
 
 test("merchant provisioning initializes only once the Party tab DOM exists", () => {

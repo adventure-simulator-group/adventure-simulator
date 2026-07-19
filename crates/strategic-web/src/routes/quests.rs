@@ -15,8 +15,8 @@ use super::{
     participates_in_party_readiness,
     settlements::{get_active_party_members, living_party_members},
     travel::{
-        QuestMapMarkers, TravelDestination, TravelForm, populate_camp_forecasts,
-        settlement_destination,
+        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip,
+        populate_camp_forecasts, settlement_destination,
     },
 };
 use crate::session::Session;
@@ -97,7 +97,7 @@ async fn active_quest_marker(
             .unwrap_or_default()
             .into_iter()
             .next()
-            .map(|quest| quest.description)
+            .map(|quest| active_quest_tooltip(&quest))
     } else {
         None
     };

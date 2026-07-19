@@ -481,7 +481,6 @@ pub fn settlement_map_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (visual_stage("map", &settlement.name, "TODO: settlement map"))
-            (travel_planner_bar(selected, active_party.map_or(50, |party| party.camp_fatigue_percent)))
             (settlement_chat_area(&settlement.name, active_character))
         }
         (map_destination_detail(
@@ -556,11 +555,12 @@ fn map_destination_list_with_context(
                             }
                         }
                         @for destination in destinations {
+                            @let destination_tooltip = quest_destination_tooltip(destination);
                             a href=(format!("{}?destination={}", base_path, destination.id))
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item travel-destination-row active" } else { "list-item travel-destination-row" })
-                                title=[destination.quest_in_progress.then_some(destination.description.as_str())]
+                                title=[destination_tooltip.as_deref()]
                                 data-travel-name=(&destination.name)
-                                data-travel-description=[destination.quest_in_progress.then_some(destination.description.as_str())]
+                                data-travel-description=[destination_tooltip.as_deref()]
                                 data-travel-minutes=(destination.journey_minutes)
                                 data-travel-round-trip=(destination.quest_in_progress)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
@@ -577,7 +577,7 @@ fn map_destination_list_with_context(
                                 }
                                 strong { (&destination.name) }
                                 @if destination.quest_in_progress {
-                                    span class="destination-quest-badge" title=(&destination.description)
+                                    span class="destination-quest-badge" title=(destination_tooltip.as_deref().unwrap_or("Active quest destination"))
                                         aria-label="Active quest destination" { "!" }
                                 } @else if destination.active_quest_route {
                                     span class="destination-quest-badge" title="Next settlement toward active quest"
@@ -629,6 +629,9 @@ pub(crate) fn map_destination_detail(
         aside class="right-sidebar" {
             @if party.is_some() && can_configure_travel {
             (sidebar_section("Travel configuration", html! {
+                div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
+                    (travel_planner_bar(selected, camp_fatigue_percent))
+                }
                 form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
                     label for="camp-fatigue-percent" title="The party camps when its first member reaches this fatigue level." { "Fatigue before camping" }
                     div class="travel-fatigue-control" {
@@ -673,7 +676,9 @@ pub(crate) fn map_destination_detail(
                         p { (&destination.description) }
                     }
                     p class="text-muted small-copy" {
-                        @if let Some(summary) = &destination.summary { (summary) " · " }
+                        @if !destination.quest_in_progress {
+                            @if let Some(summary) = &destination.summary { (summary) " · " }
+                        }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                     }
@@ -695,9 +700,8 @@ pub(crate) fn travel_planner_bar(
         .map(|destination| destination.name.as_str())
         .unwrap_or("");
     let selected_description = selected
-        .filter(|destination| destination.quest_in_progress)
-        .map(|destination| destination.description.as_str())
-        .unwrap_or("");
+        .and_then(quest_destination_tooltip)
+        .unwrap_or_default();
     let selected_minutes = selected.map_or(0, |destination| destination.journey_minutes);
     let selected_camp_stops = selected.map_or_else(String::new, |destination| {
         format_camp_stops(&destination.camp_stop_minutes)
@@ -707,7 +711,7 @@ pub(crate) fn travel_planner_bar(
         selected.and_then(|destination| destination.provision_forecast.as_ref());
     travel_planner_bar_for(
         selected_name,
-        selected_description,
+        &selected_description,
         selected_minutes,
         &selected_camp_stops,
         &selected_camp_forecasts,
@@ -715,6 +719,15 @@ pub(crate) fn travel_planner_bar(
         None,
         provision_forecast,
     )
+}
+
+fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
+    destination.quest_in_progress.then(|| {
+        destination.summary.as_ref().map_or_else(
+            || destination.description.clone(),
+            |summary| format!("{}\n{summary}", destination.description),
+        )
+    })
 }
 
 pub(crate) fn travel_planner_bar_for(
@@ -766,14 +779,14 @@ pub(crate) fn travel_planner_bar_for(
                 div class="travel-planner-route" data-travel-planner-route {}
             }
             div class="travel-resource-meters" data-travel-resource-meters {
-                div class="travel-resource-row food" {
+                div class="travel-resource-row food" aria-label="Food provisions" {
                     span class="travel-resource-icon" { (game_icon("Food", "meal")) }
                     svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
                         path class="travel-resource-path target" data-resource-target pathLength="100" {}
                         path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                     }
                 }
-                div class="travel-resource-row water" {
+                div class="travel-resource-row water" aria-label="Water provisions" {
                     span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
                     svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
                         path class="travel-resource-path target" data-resource-target pathLength="100" {}
@@ -5149,7 +5162,7 @@ mod tests {
 
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("aria-label=\"Active quest destination\""));
-        assert!(markup.contains("title=\"A camp beside the road.\""));
+        assert!(markup.contains("title=\"A camp beside the road.\nActive quest\""));
         assert!(!markup.contains("destination-turn-in-badge"));
     }
 
@@ -5257,6 +5270,7 @@ mod tests {
 
         assert!(markup.contains("Begin journey"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));
+        assert!(!markup.contains("Active quest"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
     }

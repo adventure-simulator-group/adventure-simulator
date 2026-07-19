@@ -207,29 +207,28 @@
 }
 .travel-planner-route {
   display: block;
-  min-height: 4.8rem;
+  min-height: 6.4rem;
   position: relative;
 }
 
 .travel-planner-route::before {
   position: absolute;
   right: 2rem;
-  top: 1.88rem;
+  top: 2.98rem;
   left: 2rem;
   height: 2px;
   background: var(--border-accent);
   content: "";
 }
-.travel-plan-node { position: absolute; z-index: 1; display: grid; justify-items: center; gap: 0.18rem; min-width: 3rem; transform: translateX(-50%); }
+.travel-plan-node { position: absolute; z-index: 1; display: grid; justify-items: center; min-width: 3rem; transform: translateX(-50%); }
 .travel-plan-pin { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; border: 2px solid var(--accent); border-radius: 50% 50% 50% 0; background: var(--panel-bg); transform: rotate(-45deg); }
 .travel-plan-pin > span { transform: rotate(45deg); font-size: 1.1rem; }
-.travel-plan-label { max-width: 6rem; overflow: hidden; color: var(--text-secondary); font-size: var(--font-size-xs); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.travel-party-pin { position: absolute; z-index: 2; top: 1rem; left: 1.2rem; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border: 2px solid var(--success); border-radius: 50% 50% 0 50%; background: var(--panel-bg); transform: rotate(45deg); }
-.travel-party-pin > span { transform: rotate(-45deg); }
-.travel-resource-meters { display: grid; gap: .3rem; margin-top: .35rem; }
-.travel-resource-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: .3rem; font-size: var(--font-size-xs); }
-.travel-resource-icon { display: grid; width: 1.25rem; place-items: center; }
-.travel-resource-track { width: 100%; height: 2.2rem; overflow: visible; }
+.travel-party-pin { position: absolute; z-index: 2; top: 3.23rem; left: 1.2rem; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border: 2px solid var(--success); border-radius: 50% 50% 50% 0; background: var(--panel-bg); transform: rotate(135deg); }
+.travel-party-pin > span { transform: rotate(-135deg); }
+.travel-resource-meters { display: grid; gap: 0; margin-top: .05rem; }
+.travel-resource-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: .2rem; font-size: var(--font-size-xs); }
+.travel-resource-icon { display: grid; width: 1.15rem; place-items: center; }
+.travel-resource-track { width: 100%; height: 1.2rem; overflow: visible; }
 .travel-resource-path { fill: none; stroke-linecap: round; stroke-width: 4; vector-effect: non-scaling-stroke; }
 .travel-resource-path.target { stroke-width: 8; }
 .travel-resource-row.food .travel-resource-path.actual { stroke: #e9a45d; }
@@ -237,6 +236,31 @@
 .travel-resource-row.food .travel-resource-path.target { stroke: color-mix(in srgb, #e9a45d 32%, transparent); }
 .travel-resource-row.water .travel-resource-path.target { stroke: color-mix(in srgb, #579fd7 32%, transparent); }
 .travel-resource-row[data-target-sign="negative"] .travel-resource-path.target { stroke-linecap: butt; }
+.travel-planner-vertical {
+  --travel-planner-length: 36rem;
+  position: relative;
+  height: var(--travel-planner-length);
+  margin: .15rem 0 .7rem;
+}
+.travel-planner-vertical.no-destination { height: 0; margin: 0; }
+.travel-planner-vertical .travel-planner {
+  position: absolute;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  left: .5rem;
+  width: var(--travel-planner-length);
+  padding: .2rem .45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: translateY(var(--travel-planner-length)) rotate(-90deg);
+  transform-origin: top left;
+}
+.travel-planner-vertical .travel-plan-pin > span { transform: rotate(135deg); }
+.travel-planner-vertical .travel-party-pin > span { transform: rotate(-45deg); }
+.travel-planner-vertical .travel-resource-icon { transform: rotate(90deg); }
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
 .travel-provisioning-unit { white-space: nowrap; }
