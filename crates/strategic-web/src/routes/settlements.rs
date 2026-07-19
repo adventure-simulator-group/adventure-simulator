@@ -790,8 +790,6 @@ mod map_quest_tests {
 #[derive(Deserialize)]
 struct TravelConfigurationForm {
     walking_hours: f32,
-    camp_duration: String,
-    fixed_camp_hours: Option<f32>,
 }
 
 async fn update_travel_configuration(
@@ -803,15 +801,16 @@ async fn update_travel_configuration(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
+    let walking_minutes = (form.walking_hours.clamp(1.0, 16.0) * 60.0).round() as u16;
     match state
         .db
         .call(
             "set_party_travel_itinerary",
             &[
                 json!(character_id),
-                json!((form.walking_hours.clamp(1.0, 16.0) * 60.0).round() as u16),
-                json!(form.camp_duration != "fixed"),
-                json!((form.fixed_camp_hours.unwrap_or(0.0).max(0.0) * 60.0).round() as u16),
+                json!(walking_minutes),
+                json!(false),
+                json!((24 * 60_u16).saturating_sub(walking_minutes)),
             ],
         )
         .await

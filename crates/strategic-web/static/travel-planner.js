@@ -158,9 +158,8 @@
     const targetInput = document.querySelector("[data-target-surplus]");
     let currentPlan;
 
-    const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "" }) => {
+    const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
       if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
-      const roundTrip = movementTotal > oneWay;
       const turnaround = turnaroundElapsed(segments, oneWay, elapsedTotal);
       const camps = segments.filter((segment) => segment.kind !== "w");
       const nodes = [
@@ -177,10 +176,10 @@
         element.setAttribute("role", "separator");
         element.setAttribute("aria-label", node.title);
         if (node.kind === "camp") {
+          element.style.height = `${(TRACK_END - TRACK_START) * node.duration / elapsedTotal}%`;
           const tent = document.createElement("span"); tent.className = "travel-camp-tent"; tent.setAttribute("aria-hidden", "true");
           const brace = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           brace.setAttribute("class", "travel-camp-brace"); brace.setAttribute("viewBox", "0 0 12 100"); brace.setAttribute("preserveAspectRatio", "none"); brace.setAttribute("aria-hidden", "true");
-          brace.style.height = `${Math.max(.4, node.duration / elapsedTotal * 100)}%`;
           const bracePath = document.createElementNS(brace.namespaceURI, "path");
           bracePath.setAttribute("d", "M 1 0 C 9 0 9 20 6 32 C 5 39 8 47 11 50 C 8 53 5 61 6 68 C 9 80 9 100 1 100");
           brace.append(bracePath);
@@ -209,6 +208,9 @@
       departure: Number(planner.dataset.departureMinute) || 0,
       segments: selectedSegments,
       description: planner.dataset.selectedDescription,
+      roundTrip: Number(planner.dataset.journeyTotalMinutes) > 0
+        ? Number(planner.dataset.journeyTotalMinutes) > (Number(planner.dataset.journeyTurnaroundMinutes) || selectedOneWay)
+        : planner.dataset.selectedRoundTrip === "true",
     });
 
     const refreshProvisioning = () => {
@@ -254,16 +256,11 @@
 
     const configuration = document.querySelector("form[data-travel-configuration]");
     if (configuration) {
-      const mode = configuration.querySelector("[data-camp-duration]");
-      const fixed = configuration.querySelector("[data-fixed-camp-control]");
-      const syncMode = () => { if (fixed) fixed.hidden = mode?.value !== "fixed"; };
       const save = async () => {
         const response = await fetch(configuration.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(configuration)) });
         if (response.ok) window.location.reload();
       };
-      mode?.addEventListener("change", () => { syncMode(); save(); });
       configuration.querySelectorAll("input").forEach((input) => input.addEventListener("change", save));
-      syncMode();
     }
 
     document.querySelectorAll("form[data-travel-submit]").forEach((form) => form.addEventListener("submit", async (event) => {

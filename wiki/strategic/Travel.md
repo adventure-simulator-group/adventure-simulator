@@ -65,10 +65,12 @@ trips from it to the five nearest settlements use straight-line distance, requir
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
 shared Map tab. The leader configures integer-minute walking time as hours per
-day (eight by default), centered on solar noon. Camps default to the shortest
-shared interval that clears every living member's fatigue, or the leader may
-choose a shorter or longer fixed interval. The reducer and preview use the same
-itinerary function, including partial first and final walking days.
+day (eight by default), centered on solar noon. This is the daily cycle's only
+configuration: every minute outside the walking window is camp/downtime, so a
+full day's camp interval is 24 hours minus the configured walking hours. A
+member who cannot clear their fatigue in that interval carries it into the next
+day. The reducer and preview use the same itinerary function, including partial
+first and final walking days.
 
 The runner-track preview contains exactly four compact vertical rails: Food,
 Water, Fatigue, and Day/night. Camp brackets span elapsed rest time while their

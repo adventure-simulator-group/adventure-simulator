@@ -641,14 +641,8 @@ pub(crate) fn map_destination_detail(
                         input id="walking-hours" type="number" name="walking_hours" min="1" max="16" step="0.25" value=(walking_hours) data-walking-hours {}
                         span { "hours" }
                     }
-                    label for="camp-duration" { "Camp duration" }
-                    select id="camp-duration" name="camp_duration" data-camp-duration {
-                        option value="auto" selected[party.is_none_or(|item| matches!(item.camp_duration_mode, crate::spacetimedb::CampDurationMode::Auto))] { "Until everyone is rested" }
-                        option value="fixed" selected[party.is_some_and(|item| matches!(item.camp_duration_mode, crate::spacetimedb::CampDurationMode::Fixed))] { "Leader override" }
-                    }
-                    div class="travel-fatigue-control" data-fixed-camp-control {
-                        input id="fixed-camp-hours" type="number" name="fixed_camp_hours" min="0" max="168" step="0.25" value=(party.map_or(0.0, |item| f32::from(item.fixed_camp_minutes) / 60.0)) {}
-                        span { "hours" }
+                    p class="travel-cycle-summary" {
+                        (format!("{} hours camp/downtime per full day", 24.0 - walking_hours))
                     }
                 }
                 @if provisioning_available {
@@ -729,6 +723,7 @@ pub(crate) fn travel_planner_bar(
     travel_planner_bar_for(
         selected_name,
         &selected_description,
+        selected.is_some_and(|destination| destination.quest_in_progress),
         selected_minutes,
         &selected_camp_stops,
         &selected_camp_forecasts,
@@ -759,6 +754,7 @@ fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> 
 pub(crate) fn travel_planner_bar_for(
     destination_name: &str,
     destination_description: &str,
+    selected_round_trip: bool,
     journey_minutes: u64,
     camp_stop_minutes: &str,
     camp_forecasts: &str,
@@ -803,6 +799,7 @@ pub(crate) fn travel_planner_bar_for(
             data-camp-fatigue-percent=(camp_fatigue_percent)
             data-selected-name=(destination_name)
             data-selected-description=(destination_description)
+            data-selected-round-trip=(selected_round_trip)
             data-selected-minutes=(journey_minutes)
             data-selected-camp-stops=(camp_stop_minutes)
             data-selected-camp-forecasts=(camp_forecasts)
@@ -1084,7 +1081,7 @@ pub fn camp_page(
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
+                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }

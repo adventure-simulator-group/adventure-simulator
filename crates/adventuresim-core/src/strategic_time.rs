@@ -133,7 +133,7 @@ pub fn forecast_itinerary(
     start_minute: u64,
     movement_minutes: u64,
     walking_minutes_per_day: u16,
-    camp_policy: CampDurationPolicy,
+    _camp_policy: CampDurationPolicy,
     members: &[ItineraryMember],
 ) -> Option<ItineraryForecast> {
     daylight_walking_window(walking_minutes_per_day)?;
@@ -145,11 +145,6 @@ pub fn forecast_itinerary(
     let mut movement = 0_u64;
     let mut absolute = start_minute;
     let mut truncated = false;
-    // A leader-selected camp policy applies once after departure/current
-    // fatigue and once after each walking window. If that duration overshoots
-    // the next window, the following segment is only the daylight wait; this
-    // prevents a long fixed camp from repeatedly skipping every walk window.
-    let mut policy_due = true;
     while movement < movement_minutes {
         if segments.len() >= MAX_ITINERARY_SEGMENTS {
             truncated = true;
@@ -157,13 +152,12 @@ pub fn forecast_itinerary(
         }
         let walk_start = next_walking_start(absolute, walking_minutes_per_day)?;
         if walk_start > absolute {
-            let wait = walk_start - absolute;
+            // Every minute outside the daily walking window is camp/downtime.
+            // A complete post-walk interval is therefore exactly
+            // 24 hours minus the configured walking time; the first interval
+            // may be shorter when a journey begins partway through the day.
+            let duration = walk_start - absolute;
             let required = common_fatigue_clear_minutes(&members);
-            let duration = match (policy_due, camp_policy) {
-                (true, CampDurationPolicy::Auto) => wait.max(required),
-                (true, CampDurationPolicy::FixedMinutes(value)) => wait.max(u64::from(value)),
-                (false, _) => wait,
-            };
             let (average_start, _) = fatigue_summary(&members);
             for member in &mut members {
                 member.calories_used =
@@ -182,7 +176,6 @@ pub fn forecast_itinerary(
                 required_rest_minutes: required,
             });
             absolute = absolute.saturating_add(duration);
-            policy_due = false;
             continue;
         }
         let (_, window_end) = daylight_walking_window(walking_minutes_per_day)?;
@@ -214,7 +207,6 @@ pub fn forecast_itinerary(
             required_rest_minutes: 0,
         });
         absolute = absolute.saturating_add(duration);
-        policy_due = true;
     }
     Some(ItineraryForecast {
         segments,
@@ -502,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn long_fixed_camp_cannot_skip_every_future_walking_window() {
+    fn non_walking_time_is_implied_by_the_daily_walking_window() {
         let forecast = forecast_itinerary(
             8 * 60,
             10 * 60,
@@ -512,6 +504,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(forecast.total_movement_minutes, 10 * 60);
+        let camp = forecast
+            .segments
+            .iter()
+            .find(|segment| segment.kind == ItinerarySegmentKind::Camp)
+            .unwrap();
+        assert_eq!(camp.elapsed_minutes, 16 * 60);
         assert!(!forecast.truncated);
     }
 

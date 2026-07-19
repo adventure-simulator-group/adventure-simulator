@@ -65,7 +65,11 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.match(source, /peak >= 1/);
   assert.doesNotMatch(template, /class="travel-resource-summary"/);
   assert.match(template, /name="walking_hours" min="1" max="16"/);
-  assert.match(template, /name="fixed_camp_hours" min="0" max="168"/);
+  assert.doesNotMatch(template, /name="fixed_camp_hours"/);
+  assert.match(template, /hours camp\/downtime per full day/);
+  assert.match(source, /TRACK_END - TRACK_START\) \* node\.duration \/ elapsedTotal/);
+  assert.match(template, /data-selected-round-trip/);
+  assert.match(source, /planner\.dataset\.selectedRoundTrip === "true"/);
   assert.match(source, /strategic-live-regions-refreshed/);
   assert.match(source, /dataset\.travelPlannerReady === "true"/);
   assert.match(source, /if \(!name \|\| elapsedTotal <= 0\) \{ planner\.hidden = true/);

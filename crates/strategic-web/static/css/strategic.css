@@ -222,7 +222,7 @@
 .travel-progress-track { position: absolute; z-index: 2; top: 1.55rem; bottom: .5rem; left: var(--travel-rails-left); width: calc(var(--travel-rail-width) * var(--travel-rail-count)); height: calc(100% - 2.05rem); overflow: visible; pointer-events: none; opacity: .72; }
 .travel-progress-path { fill: none; stroke: #fff; stroke-linecap: butt; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .travel-fatigue-track,
-.travel-daylight-track { position: relative; width: var(--travel-rail-width); height: 100%; overflow: visible; background: var(--panel-bg); }
+.travel-daylight-track { position: relative; top: 3%; width: var(--travel-rail-width); height: 94%; overflow: visible; background: var(--panel-bg); }
 .travel-fatigue-segment { position: absolute; right: 0; left: 0; min-height: 1px; }
 .travel-fatigue-segment.camp { opacity: .8; }
 .travel-resource-row.fatigue.warning .travel-resource-icon { color: var(--danger); }
@@ -232,6 +232,8 @@
 .moon-lit { fill: #f2e8bd; }
 .travel-camp-tent { position: absolute; right: calc(100% + .2rem); top: -.6rem; width: 1rem; height: 1rem; background: currentColor; -webkit-mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; }
 .travel-camp-brace { position: absolute; top: 0; left: -.35rem; width: .6rem; min-height: 3px; overflow: visible; color: var(--text-primary); }
+.travel-plan-camp { transform: none; }
+.travel-plan-camp .travel-camp-brace { height: 100%; }
 .travel-camp-brace path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .travel-plan-camp.reached { border-color: var(--success); }
 .travel-planner-vertical {
@@ -278,6 +280,7 @@
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
 .travel-provisioning-unit { white-space: nowrap; }
+.travel-cycle-summary { margin: -.15rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
 
 .trade-transfer:not(:disabled) { cursor: pointer; }
 

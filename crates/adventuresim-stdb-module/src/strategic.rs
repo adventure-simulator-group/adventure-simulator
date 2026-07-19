@@ -5896,9 +5896,9 @@ pub fn set_party_travel_itinerary(
     if daylight_walking_window(walking_minutes_per_day).is_none() {
         return Err("Daily walking time must be between 1 and 16 hours".into());
     }
-    if !automatic_camp_duration && fixed_camp_minutes > 7 * 24 * 60 {
-        return Err("A fixed camp interval may not exceed seven days".into());
-    }
+    // Retain the reducer's wire shape for existing clients while the daily
+    // walking window becomes the sole authoritative configuration.
+    let _legacy_camp_override = (automatic_camp_duration, fixed_camp_minutes);
     let character = ctx
         .db
         .character()
@@ -5916,16 +5916,10 @@ pub fn set_party_travel_itinerary(
         return Err("Only the party leader can configure travel".into());
     }
     party.walking_minutes_per_day = walking_minutes_per_day;
-    party.camp_duration_mode = if automatic_camp_duration {
-        CampDurationMode::Auto
-    } else {
-        CampDurationMode::Fixed
-    };
-    party.fixed_camp_minutes = if automatic_camp_duration {
-        0
-    } else {
-        fixed_camp_minutes
-    };
+    // The daily cycle has one degree of freedom: all time outside the
+    // walking window is camp/downtime.
+    party.camp_duration_mode = CampDurationMode::Fixed;
+    party.fixed_camp_minutes = (24 * 60_u16).saturating_sub(walking_minutes_per_day);
     let camped = party.camp_destination_id.is_some();
     ctx.db.party().id().update(party);
     if camped {
