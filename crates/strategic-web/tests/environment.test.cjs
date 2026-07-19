@@ -65,6 +65,16 @@ test("building tabs have roofs without making the desktop header scroll", () => 
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
 });
 
+test("settlement side panels use tint-derived beams and corner blocks", () => {
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\)/);
+  assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-surface\)/);
+  assert.match(layoutCss, /--building-frame-corner: color-mix/);
+  assert.match(layoutCss, /--building-panel-recess: color-mix/);
+  assert.match(layoutCss, /border: 0\.55rem solid transparent/);
+  assert.match(layoutCss, /left top \/ 1\.35rem 1\.35rem no-repeat border-box/);
+  assert.match(layoutCss, /right bottom \/ 1\.35rem 1\.35rem no-repeat border-box/);
+});
+
 test("building state is re-applied when live regions replace party links", () => {
   assert.match(buildingSource, /new MutationObserver/);
   assert.match(buildingSource, /mutation\.addedNodes/);
