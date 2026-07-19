@@ -2546,10 +2546,13 @@ button.party-portrait-action {
 .party-skill-icon-column { width: 1.55rem; }
 .party-skill-name-column { width: 5.75rem; }
 .party-skill-time-column { width: 3.65rem; }
+.religion-expand-column { width: 1rem; }
 .skill-schedule .party-skill-icon-column { width: 1.15rem; }
 .skill-schedule .party-skill-name-column { width: 3.6rem; }
 .skill-schedule .schedule-effect-column { width: 1.55rem; }
+.skill-schedule .religion-auto-column { width: 1.5rem; }
 .skill-schedule .party-skill-time-column { width: 2.55rem; }
+.skill-schedule .religion-expand-column { width: 1.5rem; }
 
 .party-skills-table td,
 .party-skills-table tbody th {
@@ -2572,9 +2575,9 @@ button.party-portrait-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 0.8rem;
-  width: 0.8rem;
-  height: 1.2rem;
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  min-height: 1.5rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2611,9 +2614,21 @@ button.party-portrait-action {
     padding-left: 0.15rem;
 }
 
-.religion-auto-toggle-cell { text-align: center; }
-.religion-auto-toggle-label { display: inline-flex; align-items: center; cursor: pointer; }
+.religion-auto-toggle-cell { padding-inline: 0.15rem !important; text-align: center; }
+.religion-auto-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  cursor: pointer;
+}
 .religion-auto-toggle-label input { width: 0.9rem; height: 0.9rem; margin: 0; }
+
+.religion-expand-cell {
+  padding-left: 0.15rem !important;
+  text-align: center;
+}
 
 .religion-primary-allocation-content {
   display: flex;
@@ -2622,17 +2637,15 @@ button.party-portrait-action {
   gap: 0.55rem;
 }
 
-.religion-meter-with-expand {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.55rem;
-}
-
 [data-religion-auto-control],
 [data-religion-primary-manual-control] {
     position: relative;
     display: inline-block;
+}
+
+.skill-schedule [data-religion-auto-control],
+.skill-schedule [data-religion-primary-manual-control] {
+    padding-right: 0.85rem;
 }
 
 [data-religion-auto-control][hidden],
@@ -3191,6 +3204,9 @@ body.chat-resizing {
   font-variant-numeric: tabular-nums;
 }
 
+/* Keep the time steppers inside their column now that disclosure has its own column. */
+.skill-schedule .party-skill-allocation { padding-right: 0.85rem !important; }
+
 /* Keep hover active while moving from the value into its floating arrows. */
 .party-skill-allocation::after {
   position: absolute;
@@ -3233,6 +3249,7 @@ body.chat-resizing {
 .schedule-step-decrease::before { border-right: 0.4rem solid var(--text-primary); }
 .schedule-step-increase { right: -0.8rem; }
 .schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
+.skill-schedule .schedule-step-increase { right: 0.15rem; }
 .party-skill-allocation:hover .schedule-step,
 .schedule-step:focus-visible { opacity: 1; }
 .schedule-time-input {
