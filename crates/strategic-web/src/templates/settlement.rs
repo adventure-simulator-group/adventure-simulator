@@ -1665,18 +1665,22 @@ fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     );
     html! {
         div class="encumbrance" {
-            span class="encumbrance-weight" aria-hidden="true" { (weight_text) }
-            div class="encumbrance-meter"
-                role="meter"
-                aria-label="Encumbrance"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow=(format!("{penalty_percent:.1}"))
-                aria-valuetext=(accessible_text) {
-                span class="encumbrance-marker"
-                    style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
+            div class="encumbrance-values" aria-hidden="true" {
+                span class="encumbrance-weight" { (weight_text) }
+                span class="encumbrance-penalty" { (penalty_text) }
             }
-            span class="encumbrance-penalty" aria-hidden="true" { (penalty_text) }
+            div class="encumbrance-visual" {
+                div class="encumbrance-meter"
+                    role="meter"
+                    aria-label="Encumbrance"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow=(format!("{penalty_percent:.1}"))
+                    aria-valuetext=(accessible_text) {
+                    span class="encumbrance-marker"
+                        style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
+                }
+            }
         }
     }
 }
@@ -3639,8 +3643,15 @@ mod tests {
         assert!(!markup.contains(">Weight"));
         assert!(!markup.contains(">Penalty"));
         assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
-        assert!(markup.contains("class=\"encumbrance-weight\" aria-hidden=\"true\""));
-        assert!(markup.contains("class=\"encumbrance-penalty\" aria-hidden=\"true\""));
+        assert!(markup.contains("class=\"encumbrance-values\" aria-hidden=\"true\""));
+        assert!(markup.contains(
+            "<span class=\"encumbrance-weight\">85.4 / 150.0 kg</span><span class=\"encumbrance-penalty\">-56.9%</span>"
+        ));
+        assert!(
+            markup.contains(
+                "</div><div class=\"encumbrance-visual\"><div class=\"encumbrance-meter\""
+            )
+        );
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("aria-valuenow=\"56.9\""));
         assert!(markup.contains("--encumbrance-position: 56.9067%"));
@@ -3680,11 +3691,12 @@ mod tests {
         assert!(css.contains("overflow-y: auto"));
         assert!(css.contains("padding-left: 3.25rem"));
         assert!(css.contains("padding-right: 1.75rem"));
-        assert!(css.contains("grid-template-columns: auto minmax(2.5rem, 1fr) auto"));
         assert!(css.contains("container-type: inline-size"));
-        assert!(css.contains("@container (max-width: 18rem)"));
-        assert!(css.contains("@container (max-width: 11rem)"));
-        assert!(css.contains("grid-template-columns: auto minmax(0.75rem, 1fr) auto"));
+        assert!(css.contains("flex: 0 0 50%"));
+        assert!(css.contains("width: 50%"));
+        assert!(css.contains("font-size: clamp(0.55rem, 4cqi, 0.78rem)"));
+        assert!(css.contains(".encumbrance-meter"));
+        assert!(css.contains("width: 100%"));
     }
 
     #[test]

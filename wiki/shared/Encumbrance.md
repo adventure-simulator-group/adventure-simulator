@@ -19,10 +19,11 @@ inventory rows and count exactly once. Injury-adjusted capacity uses the
 average of left and right leg strength after multiplying each leg by its
 current health.
 
-Inventory rails show one compact row with the exact burden and capacity to one
-decimal place on the left, a green-to-yellow-to-red meter in the middle, and
-the exact penalty to one decimal percent on the right. The marker follows the
-same linear penalty. Merchant Player tabs use the personal summary; merchant
+Inventory rails split the summary into equal-width halves. The left half shows
+the exact burden and capacity to one decimal place with the exact penalty to
+one decimal percent directly below it. The right half is a stable-width
+green-to-yellow-to-red meter whose marker follows the same linear penalty.
+Merchant Player tabs use the personal summary; merchant
 Party tabs use the living-party aggregate. The party chest also shows this
 aggregate: all living party members' burdens and capacities are summed, with
 the shared chest burden added once. Dead members contribute neither burden nor

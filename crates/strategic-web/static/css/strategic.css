@@ -383,44 +383,48 @@
 }
 
 .encumbrance {
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
-  grid-template-columns: auto minmax(2.5rem, 1fr) auto;
   align-items: center;
-  gap: 0.5rem;
   margin-top: 0.45rem;
   padding: 0.55rem var(--padding) 0.65rem;
   border-top: 1px solid var(--border-color);
   background: var(--sidebar-bg);
-  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
+}
+
+.encumbrance-values,
+.encumbrance-visual {
+  box-sizing: border-box;
+  flex: 0 0 50%;
+  width: 50%;
+  min-width: 0;
+}
+
+.encumbrance-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-right: 0.35rem;
+  font-size: clamp(0.55rem, 4cqi, 0.78rem);
+  line-height: 1.25;
+}
+
+.encumbrance-visual {
+  display: flex;
+  align-items: center;
+  padding-left: 0.35rem;
 }
 
 .encumbrance-weight,
 .encumbrance-penalty {
+  max-width: 100%;
   white-space: nowrap;
-}
-
-@container (max-width: 18rem) {
-  .encumbrance {
-    grid-template-columns: auto minmax(1.25rem, 1fr) auto;
-    gap: 0.25rem;
-    padding-inline: 0.35rem;
-    font-size: 0.68rem;
-  }
-}
-
-@container (max-width: 11rem) {
-  .encumbrance {
-    grid-template-columns: auto minmax(0.75rem, 1fr) auto;
-    gap: 0.12rem;
-    padding-inline: 0.2rem;
-    font-size: 0.58rem;
-  }
 }
 
 .encumbrance-meter {
   position: relative;
+  width: 100%;
   height: 0.75rem;
   border: 1px solid var(--text-primary);
   border-radius: 999px;
