@@ -87,13 +87,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                link rel="stylesheet" href="/static/css/base.css?v=environment-7";
+                link rel="stylesheet" href="/static/css/base.css?v=environment-8";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=environment-7";
+                link rel="stylesheet" href="/static/css/layout.css?v=environment-8";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=environment-7";
-                link rel="stylesheet" href="/static/css/utilities.css?v=environment-7";
+                link rel="stylesheet" href="/static/css/strategic.css?v=environment-8";
+                link rel="stylesheet" href="/static/css/utilities.css?v=environment-8";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}

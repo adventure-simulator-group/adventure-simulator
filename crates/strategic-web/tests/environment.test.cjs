@@ -71,8 +71,11 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
   assert.match(layoutCss, /--building-panel-recess: color-mix/);
   assert.match(layoutCss, /border: 0\.55rem solid transparent/);
-  assert.match(layoutCss, /left top \/ 1\.35rem 1\.35rem no-repeat border-box/);
-  assert.match(layoutCss, /right bottom \/ 1\.35rem 1\.35rem no-repeat border-box/);
+  assert.match(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
+  assert.match(layoutCss, /z-index: 30/);
+  assert.match(layoutCss, /left top \/ 1\.35rem 1\.35rem no-repeat/);
+  assert.match(layoutCss, /right bottom \/ 1\.35rem 1\.35rem no-repeat/);
+  assert.match(layoutCss, /pointer-events: none/);
 });
 
 test("building state is re-applied when live regions replace party links", () => {
