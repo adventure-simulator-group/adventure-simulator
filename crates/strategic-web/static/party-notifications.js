@@ -1,6 +1,14 @@
 (() => {
   const baseTitle = document.title.replace(/^\(\d+\)\s*/, "");
 
+  const gameIcon = (name) => {
+    const icon = document.createElement("span");
+    icon.className = "game-icon";
+    icon.style.setProperty("--game-icon", `url('/static/icons/game/${name}.svg')`);
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  };
+
   async function refreshPartyNotifications() {
     try {
       const response = await window.strategicBackgroundFetch("party-notifications", "/party-notifications", {
@@ -33,14 +41,14 @@
         const summary = document.createElement("span");
         summary.textContent = request.summary;
         item.append(summary);
-        for (const [verb, label, glyph] of [["approve", "Approve", "✓"], ["deny", "Deny", "×"]]) {
+        for (const [verb, label, icon] of [["approve", "Approve", "check-mark"], ["deny", "Deny", "cross-mark"]]) {
           const form = document.createElement("form");
           form.method = "post";
           form.action = `/party-action-requests/${request.id}/${verb}`;
           const button = document.createElement("button");
           button.title = label;
           button.setAttribute("aria-label", label);
-          button.textContent = glyph;
+          button.append(gameIcon(icon));
           form.append(button);
           item.append(form);
         }
@@ -60,7 +68,7 @@
             indicator.title = `Your leadership vote is assigned to ${portrait.title}`;
             indicator.setAttribute("role", "img");
             indicator.setAttribute("aria-label", indicator.title);
-            indicator.innerHTML = '<span aria-hidden="true">♛</span>';
+            indicator.append(gameIcon("crown"));
             portrait.prepend(indicator);
             return;
           }
@@ -69,8 +77,10 @@
           form.action = `/party-leader-votes/${portrait.dataset.characterId}`;
           form.className = `party-succession-vote${selected ? " selected" : ""}${currentLeader ? " current-leader" : ""}`;
           form.dataset.partySuccessionVote = "true";
-          form.innerHTML = `<button aria-pressed="${selected}"><span aria-hidden="true">♛</span></button>`;
-          const voteButton = form.querySelector("button");
+          const voteButton = document.createElement("button");
+          voteButton.setAttribute("aria-pressed", String(selected));
+          voteButton.append(gameIcon("crown"));
+          form.append(voteButton);
           voteButton.title = voteLabel;
           voteButton.setAttribute("aria-label", voteLabel);
           form.addEventListener("submit", async (event) => {

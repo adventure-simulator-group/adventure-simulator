@@ -5,6 +5,7 @@ use crate::spacetimedb::{
     PartyJoinRequest, PartyRecruitmentRole, RecruitmentRequirements, SavedRecruitmentRole,
 };
 use crate::templates::settlement::{character_stats_panel, character_visual_preview};
+use crate::templates::stat_game_icon_name;
 
 #[derive(Clone, Copy, Default)]
 pub struct PartyCheckSummary {
@@ -459,7 +460,7 @@ fn aggregate_check_control(
         div class=(if deficient { "party-aggregate-check deficient" } else { "party-aggregate-check" })
             data-party-check=(field) data-party-check-current=(current) {
             span class=(format!("stat-icon stat-icon-{icon}"))
-                style=(format!("--stat-icon: url('/static/icons/stats/skills/{icon}.png')"))
+                style=(format!("--stat-icon: url('/static/icons/game/{}.svg')", stat_game_icon_name(icon)))
                 role="img" aria-label=(label) {}
             (party_check_target_form(
                 party, field, label, current, contribution, target, current_width,

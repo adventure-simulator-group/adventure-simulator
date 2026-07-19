@@ -30,3 +30,13 @@ character rather than per individual container; carried water adds one kilogram
 per litre to that character's encumbrance. Party-pool provisions are not
 automatically consumed because party inventory stake accounting does not yet
 define how communal consumables should be charged.
+# Inventory icons
+
+Inventory tables include a narrow **Type** column before the item name. Its
+header is the compact letter `T` with the accessible label “Item type”. Every
+seeded item uses a specific, monochrome Game Icons illustration selected by its
+stable item ID (for example, swords, maces, polearms, shields, and armour pieces
+remain visually distinct). Unknown or modded IDs use a visible question-mark
+fallback; they never generate an unvalidated or broken asset URL. Icons expose
+tooltips/accessibility labels and inherit the active theme colour through CSS
+masks.

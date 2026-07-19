@@ -31,11 +31,10 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    TravelEdge,
+    ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem, PartyJourney, PartyMember,
+    PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
+    ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
@@ -1208,20 +1207,20 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
     let Ok(kind) = kind.parse::<LocationKind>() else {
         return LocationLookup::NotFound;
     };
-    let name = match kind {
+    let details = match kind {
         LocationKind::Settlement => state
             .db
             .query_one::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|settlement| settlement.name)),
+            .map(|row| row.map(|settlement| (settlement.name, Some(settlement.religion_id)))),
         LocationKind::Quest => state
             .db
             .query_one::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|quest| quest.title)),
+            .map(|row| row.map(|quest| (quest.title, None))),
     };
-    let name = match name {
-        Ok(Some(name)) => name,
+    let (name, religion_id) = match details {
+        Ok(Some(details)) => details,
         Ok(None) => return LocationLookup::NotFound,
         Err(error) => {
             tracing::error!(%error, "failed to resolve location");
@@ -1232,6 +1231,7 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
         kind,
         id: id.to_string(),
         name,
+        religion_id,
     })
 }
 

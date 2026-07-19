@@ -337,9 +337,7 @@
   font-weight: 700;
 }
 
-.gold-icon::before {
-  content: "\00a0\2726";
-}
+.gold-amount .game-icon { margin-left: 0.18em; }
 
 .xp-amount {
   color: var(--xp-color);
