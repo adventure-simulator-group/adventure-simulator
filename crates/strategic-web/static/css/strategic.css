@@ -230,6 +230,11 @@
   background: transparent;
   box-shadow: none;
 }
+.camp-journey-sidebar { display: flex; flex-direction: column; overflow-y: hidden; }
+.camp-journey-section { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; margin-bottom: 0; }
+.camp-journey-section .travel-planner-vertical { flex: 1 1 auto; height: auto; min-height: 0; margin: .15rem 0 .45rem; }
+.camp-journey-section .travel-track { min-height: 0; }
+.camp-journey-section form { flex: 0 0 auto; }
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
 .travel-provisioning-unit { white-space: nowrap; }

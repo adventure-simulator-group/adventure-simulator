@@ -876,20 +876,19 @@ pub fn camp_page(
             (visual_stage("camp", "Camp", "The party is resting beside the road."))
             (settlement_chat_area("Camp", active_character))
         }
-        aside class="right-sidebar" {
-            (sidebar_section("Journey", html! {
+        aside class="right-sidebar camp-journey-sidebar" {
+            div class="sidebar-section camp-journey-section" {
+                h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast))
                 }
-                p class="text-muted small-copy" { "Break camp to travel the next planned leg." }
                 form action="/camp/continue" method="post" data-travel-submit {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
                 }
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
-            }))
+            }
             section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
                 div class="rest-service-heading" { strong { "Rest at camp" } }
-                p class="rest-service-copy" { "The whole party rests. Camping is free and does not replenish provisions." }
                 form action="/camp/rest" method="post" {
                     (rest_duration_control("camp-rest", rest_hours, "hours", "Rest the party"))
                     button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit

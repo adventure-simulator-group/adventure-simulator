@@ -36,7 +36,7 @@ test("travel planner renders journey provisions and exact staged market quantiti
   assert.match(planner, /VERTICAL_PATH_END - VERTICAL_PATH_START/);
   assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
-  assert.match(planner, /const vertical = 95 - progress \* 90/);
+  assert.match(planner, /const vertical = 5 \+ progress \* 90/);
   assert.match(planner, /journeyTurnaroundMinutes/);
   assert.match(planner, /setPathRange\(planner\.querySelector\("\[data-travel-progress\]"\), 0, progressPercent\)/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(remainingDays \+ target - foodDays\)/);
@@ -71,6 +71,8 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /data-travel-progress/);
   assert.match(template, /data-journey-turnaround-minutes/);
   assert.match(template, /"travel-planner-vertical no-destination"/);
+  assert.doesNotMatch(template, /Break camp to travel the next planned leg|The whole party rests/);
+  assert.match(css, /\.camp-journey-section[^}]+flex: 1 1 auto/);
 });
 
 test("merchant provisioning initializes only once the Party tab DOM exists", () => {

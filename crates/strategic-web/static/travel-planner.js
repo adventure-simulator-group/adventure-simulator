@@ -6,8 +6,8 @@
   const targetInput = document.querySelector("[data-target-surplus]");
   let currentPlan = null;
   const MAX_U32 = 4294967295;
-  const VERTICAL_PATH_START = 97;
-  const VERTICAL_PATH_END = 3;
+  const VERTICAL_PATH_START = 3;
+  const VERTICAL_PATH_END = 97;
 
   const parseStops = (value) => (value || "")
     .split(",")
@@ -71,7 +71,7 @@
       element.setAttribute("aria-label", node.label);
       element.title = node.description || node.label;
       const progress = node.minute / totalMinutes;
-      const vertical = 95 - progress * 90;
+      const vertical = 5 + progress * 90;
       element.style.top = `${vertical}%`;
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;

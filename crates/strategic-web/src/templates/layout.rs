@@ -92,7 +92,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-rails-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-rails-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
                 // Datastar
@@ -114,7 +114,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
-                    script src="/static/travel-planner.js?v=travel-rails-1" defer {}
+                    script src="/static/travel-planner.js?v=travel-rails-2" defer {}
                     script src="/static/rest-duration.js?v=wake-time-1" defer {}
                 }
             }
