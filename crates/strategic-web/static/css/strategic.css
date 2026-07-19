@@ -338,10 +338,45 @@
   background: var(--panel-bg);
 }
 
+.sidebar-section:has(> .encumbrance-inventory-rail) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.encumbrance-inventory-rail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.encumbrance-inventory-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* Keep center-facing row actions inside the scoped scroll viewport. */
+.left-sidebar .encumbrance-inventory-scroll {
+  margin-right: -1.75rem;
+  padding-right: 1.75rem;
+}
+
+.right-sidebar .encumbrance-inventory-scroll {
+  margin-left: -1.75rem;
+  padding-left: 1.75rem;
+}
+
 .encumbrance {
-  margin-top: 0.8rem;
-  padding-top: 0.65rem;
+  flex: 0 0 auto;
+  margin-top: 0.6rem;
+  padding: 0.55rem var(--padding) var(--padding);
   border-top: 1px solid var(--border-color);
+  background: var(--sidebar-bg);
 }
 
 .encumbrance-copy {
