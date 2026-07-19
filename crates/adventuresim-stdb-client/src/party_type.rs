@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::camp_duration_mode_type::CampDurationMode;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Party {
@@ -15,6 +17,9 @@ pub struct Party {
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
+    pub walking_minutes_per_day: u16,
+    pub camp_duration_mode: CampDurationMode,
+    pub fixed_camp_minutes: u16,
     pub camp_destination_id: Option<String>,
     pub camp_destination_kind: Option<String>,
     pub camp_remaining_minutes: u64,
@@ -41,6 +46,9 @@ pub struct PartyCols {
     pub active_quest_id: __sdk::__query_builder::Col<Party, Option<String>>,
     pub is_solo: __sdk::__query_builder::Col<Party, bool>,
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
+    pub walking_minutes_per_day: __sdk::__query_builder::Col<Party, u16>,
+    pub camp_duration_mode: __sdk::__query_builder::Col<Party, CampDurationMode>,
+    pub fixed_camp_minutes: __sdk::__query_builder::Col<Party, u16>,
     pub camp_destination_id: __sdk::__query_builder::Col<Party, Option<String>>,
     pub camp_destination_kind: __sdk::__query_builder::Col<Party, Option<String>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
@@ -72,6 +80,12 @@ impl __sdk::__query_builder::HasCols for Party {
                 table_name,
                 "camp_fatigue_percent",
             ),
+            walking_minutes_per_day: __sdk::__query_builder::Col::new(
+                table_name,
+                "walking_minutes_per_day",
+            ),
+            camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
+            fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
             camp_destination_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "camp_destination_id",

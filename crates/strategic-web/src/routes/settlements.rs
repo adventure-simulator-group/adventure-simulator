@@ -84,7 +84,8 @@ use super::inventory_forms::{
 };
 use super::travel::{
     QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
-    active_quest_tooltip, connected_destinations, next_settlement_toward, populate_camp_forecasts,
+    active_quest_tooltip, connected_destinations, next_settlement_toward,
+    populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -95,7 +96,8 @@ use crate::spacetimedb::{
     CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
     ItemCondition, ItemDefinition, ItemKind, ItemSlot, MedicalExaminationRow, Party,
-    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole,
+    PartyStake, Quest,
     QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
     ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
     TravelEdge,
@@ -599,6 +601,12 @@ async fn settlement_map(
                 journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
                 camp_stop_minutes: Vec::new(),
                 camp_forecasts: Vec::new(),
+                departure_minute: 0,
+                itinerary_total_elapsed_minutes: crate::routes::quests::offroad_journey_minutes(
+                    distance_m,
+                )
+                .saturating_mul(2),
+                itinerary_segments: Vec::new(),
                 quest_in_progress: true,
                 active_quest_route: false,
                 turn_in_ready: false,
@@ -658,17 +666,29 @@ async fn settlement_map(
                 .query("SELECT * FROM character_stats")
                 .await
                 .unwrap_or_default();
+            let times: Vec<CharacterTime> = state
+                .db
+                .query("SELECT * FROM character_time")
+                .await
+                .unwrap_or_default();
+            let schedules: Vec<CharacterTrainingSchedule> = state
+                .db
+                .query("SELECT * FROM character_training_schedule")
+                .await
+                .unwrap_or_default();
             let member_ids: Vec<_> = living_party_members
                 .iter()
                 .map(|member| member.id)
                 .collect();
-            populate_camp_forecasts(
+            populate_itinerary_forecasts(
                 &mut destinations,
                 &member_ids,
                 &attributes,
                 &limbs,
                 &stats,
-                party.camp_fatigue_percent,
+                &times,
+                &schedules,
+                party,
             );
         }
     }
@@ -769,7 +789,9 @@ mod map_quest_tests {
 
 #[derive(Deserialize)]
 struct TravelConfigurationForm {
-    fatigue_percent: u8,
+    walking_hours: f32,
+    camp_duration: String,
+    fixed_camp_hours: Option<f32>,
 }
 
 async fn update_travel_configuration(
@@ -784,10 +806,12 @@ async fn update_travel_configuration(
     match state
         .db
         .call(
-            "set_party_camp_fatigue_percent",
+            "set_party_travel_itinerary",
             &[
                 json!(character_id),
-                json!(form.fatigue_percent.clamp(10, 100)),
+                json!((form.walking_hours.clamp(1.0, 16.0) * 60.0).round() as u16),
+                json!(form.camp_duration != "fixed"),
+                json!((form.fixed_camp_hours.unwrap_or(0.0).max(0.0) * 60.0).round() as u16),
             ],
         )
         .await
@@ -875,26 +899,35 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
     let party_members = get_active_party_members(&state, Some(&character)).await;
+    let itinerary = state
+        .db
+        .query_one::<PartyJourneyItinerary>(&format!(
+            "SELECT * FROM party_journey_itinerary WHERE party_id = '{}'",
+            party.id
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
         .await
         .unwrap_or_default();
-    let default_rest_minutes = party_members
+    let fatigue_rest_minutes = party_members
         .iter()
         .filter_map(|member| stats.iter().find(|stat| stat.character_id == member.id))
         .map(|stat| ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY) * 1_440.0).ceil() as u64)
         .max()
         .unwrap_or(0);
+    let default_rest_minutes = itinerary
+        .as_ref()
+        .and_then(|typed| typed.forecast_camp_intervals.first())
+        .map_or(fatigue_rest_minutes, |camp| camp.elapsed_minutes);
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
-            let estimated_total = if row.destination_kind == "quest" {
-                row.total_minutes.saturating_mul(2)
-            } else {
-                row.total_minutes
-            };
-            estimated_total.saturating_sub(row.completed_minutes)
+            row.total_elapsed_minutes
+                .saturating_sub(row.completed_elapsed_minutes)
         });
     let provision_forecast = travel_provision_forecast_for_minutes(
         &state,
@@ -911,6 +944,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         camp_page(
             &party,
             journey.as_ref(),
+            itinerary.as_ref(),
             &destination_name,
             Some(&character),
             &party_members,
@@ -1061,7 +1095,7 @@ pub(crate) async fn travel_provision_forecast(
         state,
         party,
         travelers,
-        destination.forecast_minutes(),
+        destination.itinerary_total_elapsed_minutes,
         departing_settlement,
     )
     .await

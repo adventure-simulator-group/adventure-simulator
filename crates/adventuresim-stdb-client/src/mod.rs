@@ -35,6 +35,7 @@ pub mod battle_result_type;
 pub mod begin_world_data_import_reducer;
 pub mod built_settlement_cover_type;
 pub mod calibrate_weapon_precision_reducer;
+pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
@@ -191,6 +192,7 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
+pub mod journey_camp_interval_type;
 pub mod kill_simulation_character_reducer;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
@@ -233,6 +235,8 @@ pub mod party_item_condition_table;
 pub mod party_item_condition_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
+pub mod party_journey_itinerary_table;
+pub mod party_journey_itinerary_type;
 pub mod party_journey_table;
 pub mod party_journey_type;
 pub mod party_leader_vote_table;
@@ -325,6 +329,7 @@ pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
+pub mod set_party_travel_itinerary_reducer;
 pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
@@ -433,6 +438,7 @@ pub use battle_result_type::BattleResult;
 pub use begin_world_data_import_reducer::begin_world_data_import;
 pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
+pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
@@ -589,6 +595,7 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
+pub use journey_camp_interval_type::JourneyCampInterval;
 pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
@@ -631,6 +638,8 @@ pub use party_item_condition_table::*;
 pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
+pub use party_journey_itinerary_table::*;
+pub use party_journey_itinerary_type::PartyJourneyItinerary;
 pub use party_journey_table::*;
 pub use party_journey_type::PartyJourney;
 pub use party_leader_vote_table::*;
@@ -723,6 +732,7 @@ pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
+pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
 pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
@@ -1193,6 +1203,12 @@ pub enum Reducer {
         character_id: u64,
         fatigue_percent: u8,
     },
+    SetPartyTravelItinerary {
+        character_id: u64,
+        walking_minutes_per_day: u16,
+        automatic_camp_duration: bool,
+        fixed_camp_minutes: u16,
+    },
     StoreBattleLoot {
         character_id: u64,
         quest_id: String,
@@ -1371,6 +1387,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
+            Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
@@ -2077,6 +2094,17 @@ Reducer::SendLocalChatMessage{
                 character_id: character_id.clone(),
                 fatigue_percent: fatigue_percent.clone(),
 }),
+            Reducer::SetPartyTravelItinerary{
+                character_id,
+                walking_minutes_per_day,
+                automatic_camp_duration,
+                fixed_camp_minutes,
+}             => __sats::bsatn::to_vec(&set_party_travel_itinerary_reducer::SetPartyTravelItineraryArgs {
+                character_id: character_id.clone(),
+                walking_minutes_per_day: walking_minutes_per_day.clone(),
+                automatic_camp_duration: automatic_camp_duration.clone(),
+                fixed_camp_minutes: fixed_camp_minutes.clone(),
+}),
             Reducer::StoreBattleLoot{
                 character_id,
                 quest_id,
@@ -2259,6 +2287,7 @@ pub struct DbUpdate {
     party_item_condition: __sdk::TableUpdate<PartyItemCondition>,
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
+    party_journey_itinerary: __sdk::TableUpdate<PartyJourneyItinerary>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
     party_member: __sdk::TableUpdate<PartyMember>,
     party_recruitment_role: __sdk::TableUpdate<PartyRecruitmentRole>,
@@ -2412,6 +2441,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(party_journey_table::parse_table_update(table_update)?),
+                "party_journey_itinerary" => db_update.party_journey_itinerary.append(
+                    party_journey_itinerary_table::parse_table_update(table_update)?,
+                ),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(party_leader_vote_table::parse_table_update(table_update)?),
@@ -2663,6 +2695,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_journey = cache
             .apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey)
             .with_updates_by_pk(|row| &row.party_id);
+        diff.party_journey_itinerary = cache
+            .apply_diff_to_table::<PartyJourneyItinerary>(
+                "party_journey_itinerary",
+                &self.party_journey_itinerary,
+            )
+            .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
             .apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote)
             .with_updates_by_pk(|row| &row.id);
@@ -2898,6 +2936,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey_itinerary" => db_update
+                    .party_journey_itinerary
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3100,6 +3141,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey_itinerary" => db_update
+                    .party_journey_itinerary
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3224,6 +3268,7 @@ pub struct AppliedDiff<'r> {
     party_item_condition: __sdk::TableAppliedDiff<'r, PartyItemCondition>,
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
+    party_journey_itinerary: __sdk::TableAppliedDiff<'r, PartyJourneyItinerary>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
     party_recruitment_role: __sdk::TableAppliedDiff<'r, PartyRecruitmentRole>,
@@ -3446,6 +3491,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyJourney>(
             "party_journey",
             &self.party_journey,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyJourneyItinerary>(
+            "party_journey_itinerary",
+            &self.party_journey_itinerary,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyLeaderVote>(
@@ -4239,6 +4289,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_item_condition_table::register_table(client_cache);
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
+        party_journey_itinerary_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_recruitment_role_table::register_table(client_cache);
@@ -4304,6 +4355,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_item_condition",
         "party_join_request",
         "party_journey",
+        "party_journey_itinerary",
         "party_leader_vote",
         "party_member",
         "party_recruitment_role",

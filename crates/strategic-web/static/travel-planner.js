@@ -1,325 +1,249 @@
 (() => {
-  const initializeTravelPlanner = () => {
-  const planner = document.querySelector("[data-travel-planner]");
-  if (!planner || planner.dataset.travelPlannerReady === "true") return;
-  planner.dataset.travelPlannerReady = "true";
-
-  const route = planner.querySelector("[data-travel-planner-route]");
-  const targetInput = document.querySelector("[data-target-surplus]");
-  let currentPlan = null;
+  const DAY = 1440;
+  const LUNAR_CYCLE = 42524;
   const MAX_U32 = 4294967295;
-  const VERTICAL_PATH_START = 3;
-  const VERTICAL_PATH_END = 97;
-
-  const parseStops = (value) => (value || "")
-    .split(",")
-    .map(Number)
-    .filter((minute) => Number.isFinite(minute) && minute > 0);
-
-  const parseForecasts = (value) => new Map((value || "")
-    .split("|")
-    .filter(Boolean)
-    .map((entry) => {
-      const [fatiguePercent, stops = ""] = entry.split(":", 2);
-      return [fatiguePercent, parseStops(stops)];
-    }));
-
-  const uniqueSortedStops = (stops, totalMinutes) => [...new Set(stops)]
-    .filter((minute) => minute > 0 && minute < totalMinutes)
-    .sort((left, right) => left - right);
-
-  const showPlan = ({
-    destinationName,
-    totalMinutes,
-    distance = "",
-    campStops = [],
-    completedMinutes = 0,
-    originName = "Start",
-    reachedStops = [],
-    turnaroundMinutes = 0,
-    destinationDescription = "",
-  }) => {
-    if (!destinationName || !totalMinutes) return;
-    planner.dataset.activeName = destinationName;
-    planner.dataset.activeDescription = destinationDescription;
-    planner.dataset.activeMinutes = String(totalMinutes);
-    planner.dataset.activeDistance = distance;
-    planner.dataset.activeCampStops = campStops.join(",");
-
-    const reached = new Set(reachedStops);
-    const roundTrip = turnaroundMinutes > 0 && totalMinutes > turnaroundMinutes;
-    const nodes = [
-      { label: originName, displayLabel: "Start", kind: "start", minute: 0 },
-      ...uniqueSortedStops(campStops, totalMinutes).map((minute, index) => ({
-        label: `Camp ${index + 1}`,
-        kind: "camp",
-        minute,
-        reached: reached.has(minute),
-      })),
-      { label: destinationName, displayLabel: roundTrip ? "Quest" : "End", kind: "destination", minute: roundTrip ? turnaroundMinutes : totalMinutes, description: destinationDescription },
-      ...(roundTrip ? [{ label: originName, displayLabel: "End", kind: "return", minute: totalMinutes }] : []),
-    ];
-    planner.classList.toggle("round-trip", roundTrip);
-    route.replaceChildren(...nodes.sort((a, b) => a.minute - b.minute).map((node, index) => {
-      const element = document.createElement("div");
-      element.className = `travel-plan-node travel-plan-${node.kind}${node.reached ? " reached" : ""}`;
-      if (node.displayLabel) {
-        const label = document.createElement("span");
-        label.className = "travel-plan-endpoint-label";
-        label.textContent = node.displayLabel;
-        element.append(label);
-      }
-      element.setAttribute("role", "separator");
-      element.setAttribute("aria-label", node.label);
-      element.title = node.description || node.label;
-      const progress = node.minute / totalMinutes;
-      const vertical = VERTICAL_PATH_START + (VERTICAL_PATH_END - VERTICAL_PATH_START) * progress;
-      element.style.top = `${vertical}%`;
-      if (index < nodes.length - 1) element.dataset.connects = "true";
-      return element;
-    }));
-    planner.hidden = false;
-
-    currentPlan = {
-      nodes: [...route.querySelectorAll(".travel-plan-node")],
-      campStops,
-      originName,
-      totalMinutes,
-      completedMinutes,
-    };
-    return currentPlan;
+  const TRACK_START = 3;
+  const TRACK_END = 97;
+  const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+  const parseStops = (value) => (value || "").split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  const parseSegments = (value) => (value || "").split("|").filter(Boolean).map((entry) => {
+    const [kind, start, duration, movementStart, movementDuration, fatigueStart, fatigueEnd, fatigueMax, requiredRest] = entry.split(",");
+    return { kind, start: Number(start), duration: Number(duration), movementStart: Number(movementStart), movementDuration: Number(movementDuration), fatigueStart: Number(fatigueStart), fatigueEnd: Number(fatigueEnd), fatigueMax: Number(fatigueMax), requiredRest: Number(requiredRest) };
+  }).filter((segment) => [segment.start, segment.duration].every(Number.isFinite));
+  const position = (minute, total) => TRACK_START + (TRACK_END - TRACK_START) * clamp(total > 0 ? minute / total : 0);
+  const setPathRange = (path, start, end, total) => {
+    if (!path) return;
+    path.setAttribute("d", `M 16 ${position(start, total)} V ${position(end, total)}`);
   };
 
-  const previewFor = (name, description, minutes, distance, stops, forecasts = "", roundTrip = false) => {
-    planner.dataset.activeCampForecasts = forecasts;
-    planner.dataset.activeRoundTrip = String(roundTrip);
-    return showPlan({
-      destinationName: name,
-      destinationDescription: description,
-      totalMinutes: roundTrip ? minutes * 2 : minutes,
-      turnaroundMinutes: roundTrip ? minutes : 0,
-      distance,
-      campStops: parseStops(stops),
-    });
+  const fatigueColor = (fraction) => {
+    const value = clamp(fraction, 0, 1.5);
+    if (value <= .5) return `color-mix(in srgb, #58b66b ${Math.round((1 - value * 2) * 100)}%, #e0c54f)`;
+    return `color-mix(in srgb, #e0c54f ${Math.round((1 - (value - .5) * 2) * 100)}%, #d65757)`;
   };
 
-  document.querySelectorAll(".travel-destination-row").forEach((row) => {
-    const show = () => {
-      const payload = row.querySelector("[data-provision-payload]");
-      if (payload) {
-        Object.assign(planner.dataset, {
-          provisionPlanningMinutes: payload.dataset.planningMinutes,
-          provisionLivingMembers: payload.dataset.livingMembers,
-          provisionFoodDays: payload.dataset.foodDays,
-          provisionWaterDays: payload.dataset.waterDays,
-          provisionRationKcal: payload.dataset.rationKcal,
-          provisionWaterskinMl: payload.dataset.waterskinMl,
-        });
-      }
-      previewFor(
-        row.dataset.travelName,
-        row.dataset.travelDescription || "",
-        Number(row.dataset.travelMinutes),
-        row.dataset.travelDistance,
-        row.dataset.travelCampStops,
-        row.dataset.travelCampForecasts,
-        row.dataset.travelRoundTrip === "true",
-      );
-      targetInput?.dispatchEvent(new Event("input"));
-    };
-    row.addEventListener("pointerenter", show);
-    row.addEventListener("focus", show);
-    row.addEventListener("click", show);
-  });
-
-  const showPersistedJourney = () => {
-    const totalMinutes = Number(planner.dataset.journeyTotalMinutes);
-    if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return false;
-    const reachedStops = parseStops(planner.dataset.journeyCampStops);
-    const forecastStops = parseStops(planner.dataset.journeyForecastStops);
-    showPlan({
-      destinationName: planner.dataset.journeyDestinationName,
-      totalMinutes,
-      completedMinutes: Number(planner.dataset.journeyCompletedMinutes) || 0,
-      originName: planner.dataset.journeyOriginName || "Start",
-      campStops: uniqueSortedStops([...reachedStops, ...forecastStops], totalMinutes),
-      reachedStops,
-      turnaroundMinutes: Number(planner.dataset.journeyTurnaroundMinutes) || 0,
-    });
-    return true;
+  const moonName = (phase) => {
+    if (phase < .0625 || phase >= .9375) return "new moon";
+    if (phase < .1875) return "waxing crescent";
+    if (phase < .3125) return "first quarter";
+    if (phase < .4375) return "waxing gibbous";
+    if (phase < .5625) return "full moon";
+    if (phase < .6875) return "waning gibbous";
+    if (phase < .8125) return "last quarter";
+    return "waning crescent";
   };
 
-  if (!showPersistedJourney()) {
-    previewFor(
-      planner.dataset.selectedName,
-      planner.dataset.selectedDescription,
-      Number(planner.dataset.selectedMinutes),
-      "",
-      planner.dataset.selectedCampStops,
-      planner.dataset.selectedCampForecasts,
-      Number(planner.dataset.provisionPlanningMinutes) > Number(planner.dataset.selectedMinutes),
-    );
-  }
-
-  const animateNextLeg = () => {
-    return 0;
+  const moonSvg = (absoluteMinute) => {
+    const phase = ((absoluteMinute % LUNAR_CYCLE) + LUNAR_CYCLE) % LUNAR_CYCLE / LUNAR_CYCLE;
+    const illumination = (1 - Math.cos(Math.PI * 2 * phase)) / 2;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `${moonName(phase)}, ${Math.round(illumination * 100)}% illuminated`);
+    const title = document.createElementNS(svg.namespaceURI, "title");
+    title.textContent = svg.getAttribute("aria-label");
+    const dark = document.createElementNS(svg.namespaceURI, "circle");
+    dark.setAttribute("cx", "10"); dark.setAttribute("cy", "10"); dark.setAttribute("r", "8"); dark.setAttribute("class", "moon-dark");
+    const lit = document.createElementNS(svg.namespaceURI, "circle");
+    lit.setAttribute("cx", "10"); lit.setAttribute("cy", "10"); lit.setAttribute("r", "8"); lit.setAttribute("class", "moon-lit"); lit.setAttribute("opacity", String(illumination));
+    svg.append(title, dark, lit);
+    return svg;
   };
 
-  document.querySelectorAll("form[data-travel-submit]").forEach((form) => form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (form.dataset.submitting) return;
-    form.dataset.submitting = "true";
-    const status = form.parentElement?.querySelector("[data-travel-action-status]");
-    const showStatus = (message) => {
-      if (!status) return;
-      status.textContent = message;
-      status.hidden = false;
-    };
-    if (status) {
-      status.hidden = true;
-      status.textContent = "";
+  const renderTimeRail = (planner, departure, total) => {
+    const track = planner.querySelector("[data-daylight-track]");
+    if (!track || total <= 0) return;
+    const stops = [];
+    const samples = Math.max(2, Math.min(256, Math.ceil(total / 60)));
+    for (let index = 0; index <= samples; index += 1) {
+      const elapsed = total * index / samples;
+      const hour = ((departure + elapsed) % DAY) / 60;
+      const daylight = hour >= 6 && hour < 18;
+      const progress = daylight ? (hour - 6) / 12 : ((hour + 6) % 24) / 12;
+      const color = daylight
+        ? `color-mix(in srgb, #f5cc68 ${Math.round((1 - Math.abs(progress - .5) * 2) * 75 + 25)}%, #77a8ca)`
+        : `color-mix(in srgb, #13233f ${Math.round((1 - Math.abs(progress - .5) * 2) * 70 + 30)}%, #465b78)`;
+      stops.push(`${color} ${(index / samples * 100).toFixed(2)}%`);
     }
-    const delay = animateNextLeg();
-    const data = new URLSearchParams(new FormData(form));
-    const submitter = event.submitter;
-    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-    window.setTimeout(async () => {
-      try {
-        const response = await fetch(form.action, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: data,
-        });
-        const responseText = await response.text();
-        if (!response.ok) throw new Error(responseText || "Unable to begin this journey.");
-        if (response.status === 202) {
-          form.dataset.submitting = "";
-          showStatus("Travel request sent to the party leader.");
-          return;
+    track.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
+    track.replaceChildren();
+    const firstMidnight = Math.ceil(departure / DAY) * DAY;
+    for (let midnight = firstMidnight; midnight <= departure + total; midnight += DAY) {
+      const tick = document.createElement("span");
+      tick.className = "travel-midnight-tick";
+      tick.style.top = `${(midnight - departure) / total * 100}%`;
+      tick.append(moonSvg(midnight));
+      track.append(tick);
+    }
+  };
+
+  const renderFatigue = (planner, segments, total) => {
+    const track = planner.querySelector("[data-fatigue-track]");
+    const summary = planner.querySelector("[data-fatigue-summary]");
+    if (!track) return;
+    track.replaceChildren();
+    let minimum = Infinity, maximum = 0, peak = 0;
+    const ordered = [...segments].sort((left, right) => left.start - right.start);
+    const continuous = [];
+    let cursor = 0;
+    let fatigue = ordered[0]?.fatigueStart || 0;
+    for (const segment of ordered) {
+      if (segment.start > cursor) continuous.push({ kind: "w", start: cursor, duration: segment.start - cursor, fatigueStart: fatigue, fatigueEnd: segment.fatigueStart, fatigueMax: Math.max(fatigue, segment.fatigueStart) });
+      continuous.push(segment);
+      cursor = Math.max(cursor, segment.start + segment.duration);
+      fatigue = segment.fatigueEnd;
+    }
+    if (cursor < total) continuous.push({ kind: "w", start: cursor, duration: total - cursor, fatigueStart: fatigue, fatigueEnd: fatigue, fatigueMax: fatigue });
+    for (const segment of continuous) {
+      minimum = Math.min(minimum, segment.fatigueStart, segment.fatigueEnd);
+      maximum = Math.max(maximum, segment.fatigueStart, segment.fatigueEnd);
+      peak = Math.max(peak, segment.fatigueMax, segment.fatigueStart, segment.fatigueEnd);
+      const part = document.createElement("span");
+      part.className = `travel-fatigue-segment ${segment.kind === "c" ? "camp" : "walking"}`;
+      part.style.top = `${segment.start / total * 100}%`;
+      part.style.height = `${segment.duration / total * 100}%`;
+      part.style.background = `linear-gradient(to bottom, ${fatigueColor(segment.fatigueStart)}, ${fatigueColor(segment.fatigueEnd)})`;
+      track.append(part);
+    }
+    if (summary && Number.isFinite(minimum)) {
+      summary.textContent = `${Math.round(minimum * 100)}–${Math.round(maximum * 100)}% · max ${Math.round(peak * 100)}%`;
+      summary.title = `Average party fatigue ranges from ${Math.round(minimum * 100)}% to ${Math.round(maximum * 100)}%; highest member reaches ${Math.round(peak * 100)}%.`;
+      summary.classList.toggle("warning", peak >= 1);
+    }
+  };
+
+  const initializeTravelPlanner = () => {
+    const planner = document.querySelector("[data-travel-planner]");
+    if (!planner || planner.dataset.travelPlannerReady === "true") return;
+    planner.dataset.travelPlannerReady = "true";
+    const route = planner.querySelector("[data-travel-planner-route]");
+    const targetInput = document.querySelector("[data-target-surplus]");
+    let currentPlan;
+
+    const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "" }) => {
+      if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
+      const roundTrip = movementTotal > oneWay;
+      let turnaroundElapsed = elapsedTotal;
+      for (const segment of segments) {
+        if (segment.movementStart + segment.movementDuration >= oneWay) {
+          turnaroundElapsed = segment.start + Math.max(0, oneWay - segment.movementStart);
+          break;
         }
-        const fallbackDestination = new URL(form.action, window.location.href).pathname === "/camp/continue"
-          ? "/"
-          : "/camp";
-        window.setTimeout(() => window.location.assign(fallbackDestination), 1800);
-      } catch (error) {
-        form.dataset.submitting = "";
-        showStatus(error.message || "Unable to begin this journey.");
       }
-    }, delay);
-  }));
-
-  const travelConfiguration = document.querySelector("form[data-travel-configuration]");
-  if (travelConfiguration) {
-    const slider = travelConfiguration.querySelector("input[type=range]");
-    const value = travelConfiguration.querySelector("[data-camp-fatigue-value]");
-    let lastSavedValue = slider.value;
-    const refreshPreview = () => {
-      planner.dataset.campFatiguePercent = slider.value;
-      value.textContent = `${slider.value}%`;
-      const forecasts = parseForecasts(planner.dataset.activeCampForecasts || planner.dataset.selectedCampForecasts);
-      previewFor(
-        planner.dataset.activeName || planner.dataset.selectedName,
-        planner.dataset.activeDescription || planner.dataset.selectedDescription,
-        Number(planner.dataset.activeMinutes || planner.dataset.selectedMinutes),
-        planner.dataset.activeDistance,
-        (forecasts.get(slider.value) || parseStops(planner.dataset.activeCampStops)).join(","),
-        planner.dataset.activeCampForecasts,
-        planner.dataset.activeRoundTrip === "true",
-      );
+      const camps = segments.filter((segment) => segment.kind === "c");
+      const nodes = [
+        { kind: "start", label: "Start", title: origin, minute: 0 },
+        ...camps.map((camp, index) => ({ kind: "camp", label: `Camp ${index + 1}`, title: `Camp ${index + 1}: ${Math.ceil(camp.duration / 60)}h; ${Math.round(camp.fatigueEnd * 100)}% average fatigue after rest`, minute: camp.start, duration: camp.duration, completed: camp.start + camp.duration <= completedElapsed })),
+        { kind: "destination", label: roundTrip ? "Quest" : "End", title: description || name, minute: roundTrip ? turnaroundElapsed : elapsedTotal },
+        ...(roundTrip ? [{ kind: "return", label: "End", title: origin, minute: elapsedTotal }] : []),
+      ].sort((a, b) => a.minute - b.minute);
+      route.replaceChildren(...nodes.map((node) => {
+        const element = document.createElement("div");
+        element.className = `travel-plan-node travel-plan-${node.kind}${node.completed ? " reached" : ""}`;
+        element.style.top = `${position(node.minute, elapsedTotal)}%`;
+        element.title = node.title;
+        element.setAttribute("role", "separator");
+        element.setAttribute("aria-label", node.title);
+        if (node.kind === "camp") {
+          const tent = document.createElement("span"); tent.className = "travel-camp-tent"; tent.textContent = "⛺";
+          const bracket = document.createElement("span"); bracket.className = "travel-camp-bracket"; bracket.textContent = "}"; bracket.style.height = `${node.duration / elapsedTotal * 100 * (route.clientHeight || 1)}px`;
+          element.append(tent, bracket);
+        } else {
+          const label = document.createElement("span"); label.className = "travel-plan-endpoint-label"; label.textContent = node.label; element.append(label);
+        }
+        return element;
+      }));
+      planner.hidden = false;
+      setPathRange(planner.querySelector("[data-travel-progress]"), 0, completedElapsed, elapsedTotal);
+      renderFatigue(planner, segments, elapsedTotal);
+      renderTimeRail(planner, departure, elapsedTotal);
+      currentPlan = { elapsedTotal, completedElapsed };
     };
-    const save = async () => {
-      if (slider.value === lastSavedValue) return;
-      try {
-        const response = await fetch(travelConfiguration.action, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams(new FormData(travelConfiguration)),
-        });
-        if (!response.ok) throw new Error("save failed");
-        lastSavedValue = slider.value;
-      } catch (_) {
-        // The next slider change retries the save.
-      }
-    };
-    slider.addEventListener("input", refreshPreview);
-    slider.addEventListener("pointerup", save);
-    slider.addEventListener("change", save);
-  }
 
-  const setPathRange = (path, startPercent, endPercent) => {
-    const clamp = (value) => Math.max(0, Math.min(100, value)) / 100;
-    const start = VERTICAL_PATH_START + (VERTICAL_PATH_END - VERTICAL_PATH_START) * clamp(startPercent);
-    const end = VERTICAL_PATH_START + (VERTICAL_PATH_END - VERTICAL_PATH_START) * clamp(endPercent);
-    path.setAttribute("d", `M 16 ${start} V ${end}`);
-    path.style.removeProperty("stroke-dasharray");
-  };
-  const refreshProvisioning = () => {
-    const journeyMinutes = Number(planner.dataset.provisionPlanningMinutes);
-    const members = Number(planner.dataset.provisionLivingMembers);
-    const foodDays = Number(planner.dataset.provisionFoodDays);
-    const waterDays = Number(planner.dataset.provisionWaterDays);
-    const totalMinutes = currentPlan?.totalMinutes || journeyMinutes;
-    const completedMinutes = currentPlan?.completedMinutes || 0;
-    const progressPercent = totalMinutes > 0 ? completedMinutes / totalMinutes * 100 : 0;
-    setPathRange(planner.querySelector("[data-travel-progress]"), 0, progressPercent);
-    if (![journeyMinutes, members, foodDays, waterDays, totalMinutes].every(Number.isFinite) || journeyMinutes <= 0 || totalMinutes <= 0 || members <= 0) {
-      planner.querySelector("[data-travel-resource-meters]")?.setAttribute("hidden", "");
-      return;
-    }
-    planner.querySelector("[data-travel-resource-meters]")?.removeAttribute("hidden");
-    const journeyDays = totalMinutes / 1440;
-    const target = Math.max(-365, Math.min(365, Number(targetInput?.value || 0)));
-    [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
-      const row = planner.querySelector(`.travel-resource-row.${kind}`);
-      const availableEnd = progressPercent + available / journeyDays * 100;
-      const remainingDays = Math.max(0, (totalMinutes - completedMinutes) / 1440);
-      const targetEnd = progressPercent + (remainingDays + target) / journeyDays * 100;
-      setPathRange(row.querySelector("[data-resource-fill]"), progressPercent, availableEnd);
-      const targetPath = row.querySelector("[data-resource-target]");
-      if (targetInput) setPathRange(targetPath, progressPercent, targetEnd);
-      else targetPath.removeAttribute("d");
-      const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
-      row.dataset.targetSign = sign;
+    const selectedSegments = parseSegments(planner.dataset.itinerarySegments);
+    const selectedOneWay = Number(planner.dataset.selectedMinutes);
+    showPlan({
+      name: planner.dataset.journeyDestinationName || planner.dataset.selectedName,
+      origin: planner.dataset.journeyOriginName || "Start",
+      oneWay: Number(planner.dataset.journeyTurnaroundMinutes) || selectedOneWay,
+      movementTotal: Number(planner.dataset.journeyTotalMinutes) || (Number(planner.dataset.provisionPlanningMinutes) > selectedOneWay ? selectedOneWay * 2 : selectedOneWay),
+      elapsedTotal: Number(planner.dataset.totalElapsedMinutes) || Number(planner.dataset.provisionPlanningMinutes),
+      completedElapsed: Number(planner.dataset.completedElapsedMinutes) || 0,
+      departure: Number(planner.dataset.departureMinute) || 0,
+      segments: selectedSegments,
+      description: planner.dataset.selectedDescription,
     });
-    const rationKcal = Number(planner.dataset.provisionRationKcal);
-    const skinMl = Number(planner.dataset.provisionWaterskinMl);
-    const remainingDays = Math.max(0, (totalMinutes - completedMinutes) / 1440);
-    const rations = rationKcal > 0 ? Math.ceil(Math.max(0, (remainingDays + target - foodDays) * members * 6000) / rationKcal) : 0;
-    const skins = skinMl > 0 ? Math.ceil(Math.max(0, (remainingDays + target - waterDays) * members * 4000) / skinMl) : 0;
-    const buy = document.querySelector("[data-provision-buy]");
-    if (buy) {
-      const params = new URLSearchParams({ inventory_scope: "party" });
-      const stageable = rations <= MAX_U32 && skins <= MAX_U32;
-      if (stageable && rations) params.set("provision_rations", String(rations));
-      if (stageable && skins) params.set("provision_waterskins", String(skins));
-      buy.href = stageable && (rations || skins) ? `${buy.dataset.marketPath}?${params}` : buy.dataset.marketPath;
-      buy.dataset.empty = String(!(rations || skins));
-      buy.dataset.unstageable = String(!stageable);
-    }
-  };
-  targetInput?.addEventListener("input", refreshProvisioning);
-  document.querySelector("[data-provision-buy]")?.addEventListener("click", (event) => {
-    if (event.currentTarget.dataset.unstageable === "true") {
-      event.preventDefault();
-      document.querySelector("[data-provisioning-status]").textContent = "This target exceeds the maximum quantity that can be staged in one transaction.";
-      return;
-    }
-    if (event.currentTarget.dataset.empty !== "true") return;
-    event.preventDefault();
-    document.querySelector("[data-provisioning-status]").textContent = "The party already meets this target; nothing was staged.";
-  });
-  refreshProvisioning();
 
-  document.querySelectorAll("[data-rest-duration]").forEach((control) => {
-    control.querySelectorAll("input[type=radio]").forEach((radio) => radio.addEventListener("change", () => {
+    const refreshProvisioning = () => {
+      const total = currentPlan?.elapsedTotal || Number(planner.dataset.provisionPlanningMinutes);
+      const completed = currentPlan?.completedElapsed || 0;
+      const members = Number(planner.dataset.provisionLivingMembers);
+      const foodDays = Number(planner.dataset.provisionFoodDays);
+      const waterDays = Number(planner.dataset.provisionWaterDays);
+      if (![total, members, foodDays, waterDays].every(Number.isFinite) || total <= 0 || members <= 0) return;
+      const target = clamp(Number(targetInput?.value || 0), -365, 365);
+      const totalDays = total / DAY;
+      const completedDays = completed / DAY;
+      [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
+        const row = planner.querySelector(`.travel-resource-row.${kind}`);
+        setPathRange(row?.querySelector("[data-resource-fill]"), completed, Math.min(total, completed + available * DAY), total);
+        setPathRange(row?.querySelector("[data-resource-target]"), completed, Math.min(total, completed + Math.max(0, totalDays - completedDays + target) * DAY), total);
+        const surplus = available - (totalDays - completedDays);
+        const label = row?.querySelector("[data-surplus-summary]");
+        if (label) label.textContent = surplus >= 0 ? `${Number(surplus.toFixed(1))} day${Math.abs(surplus - 1) < .05 ? "" : "s"} surplus` : `${Number(Math.abs(surplus).toFixed(1))} days short`;
+      });
+      const rationKcal = Number(planner.dataset.provisionRationKcal);
+      const skinMl = Number(planner.dataset.provisionWaterskinMl);
+      const remainingDays = Math.max(0, totalDays - completedDays);
+      const rations = rationKcal > 0 ? Math.ceil(Math.max(0, (remainingDays + target - foodDays) * members * 6000) / rationKcal) : 0;
+      const skins = skinMl > 0 ? Math.ceil(Math.max(0, (remainingDays + target - waterDays) * members * 4000) / skinMl) : 0;
+      const buy = document.querySelector("[data-provision-buy]");
+      if (buy) {
+        const params = new URLSearchParams({ inventory_scope: "party" });
+        const stageable = rations <= MAX_U32 && skins <= MAX_U32;
+        if (stageable && rations) params.set("provision_rations", String(rations));
+        if (stageable && skins) params.set("provision_waterskins", String(skins));
+        buy.href = stageable && (rations || skins) ? `${buy.dataset.marketPath}?${params}` : buy.dataset.marketPath;
+        buy.dataset.empty = String(!(rations || skins));
+        buy.dataset.unstageable = String(!stageable);
+      }
+    };
+    targetInput?.addEventListener("input", refreshProvisioning);
+    document.querySelector("[data-provision-buy]")?.addEventListener("click", (event) => {
+      const status = document.querySelector("[data-provisioning-status]");
+      if (event.currentTarget.dataset.unstageable === "true") { event.preventDefault(); if (status) status.textContent = "This target exceeds the maximum transaction quantity."; }
+      else if (event.currentTarget.dataset.empty === "true") { event.preventDefault(); if (status) status.textContent = "The party already meets this target; nothing was staged."; }
+    });
+    refreshProvisioning();
+
+    const configuration = document.querySelector("form[data-travel-configuration]");
+    if (configuration) {
+      const mode = configuration.querySelector("[data-camp-duration]");
+      const fixed = configuration.querySelector("[data-fixed-camp-control]");
+      const syncMode = () => { if (fixed) fixed.hidden = mode?.value !== "fixed"; };
+      const save = async () => {
+        const response = await fetch(configuration.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(configuration)) });
+        if (response.ok) window.location.reload();
+      };
+      mode?.addEventListener("change", () => { syncMode(); save(); });
+      configuration.querySelectorAll("input").forEach((input) => input.addEventListener("change", save));
+      syncMode();
+    }
+
+    document.querySelectorAll("form[data-travel-submit]").forEach((form) => form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (form.dataset.submitting) return;
+      form.dataset.submitting = "true";
+      const response = await fetch(form.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(form)) });
+      if (response.ok) window.location.assign(response.status === 202 ? window.location.href : (new URL(form.action).pathname === "/camp/continue" ? "/" : "/camp"));
+      else { form.dataset.submitting = ""; const status = form.parentElement?.querySelector("[data-travel-action-status]"); if (status) { status.hidden = false; status.textContent = await response.text(); } }
+    }));
+    document.querySelectorAll("[data-rest-duration]").forEach((control) => control.querySelectorAll("input[type=radio]").forEach((radio) => radio.addEventListener("change", () => {
       control.querySelectorAll(".rest-duration-unit").forEach((label) => label.classList.toggle("active", label.contains(radio) && radio.checked));
       control.querySelector("[data-rest-unit-label]").textContent = radio.value;
-    }));
-  });
+    })));
   };
 
   initializeTravelPlanner();
-  document.addEventListener("strategic-live-regions-refreshed", (event) => {
-    if (event.detail?.regions?.includes("right-sidebar")) initializeTravelPlanner();
-  });
+  document.addEventListener("strategic-live-regions-refreshed", (event) => { if (event.detail?.regions?.includes("right-sidebar")) initializeTravelPlanner(); });
 })();

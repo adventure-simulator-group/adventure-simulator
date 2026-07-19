@@ -14,7 +14,7 @@ use adventuresim_core::{
         LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT, LEISURE_MORALE_SCALE_FATIGUE,
         LeisureOutcome, settlement_leisure_outcome,
     },
-    strategic_time::MINUTES_PER_DAY,
+    strategic_time::{ItinerarySegment, ItinerarySegmentKind, MINUTES_PER_DAY},
 };
 use adventuresim_world_schema::OfficialReligion;
 use maud::{Markup, html};
@@ -32,8 +32,8 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, Quest, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    PartyInventoryItem, PartyJourney, PartyJourneyItinerary, Quest, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -619,6 +619,7 @@ pub(crate) fn map_destination_detail(
     map_path: &str,
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
+    let walking_hours = party.map_or(8.0, |party| f32::from(party.walking_minutes_per_day) / 60.0);
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -635,10 +636,19 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
-                    label for="camp-fatigue-percent" title="The party camps when its first member reaches this fatigue level." { "Fatigue before camping" }
+                    label for="walking-hours" title="Walking is centered on solar noon; shorter first and final days are forecast automatically." { "Walking hours per day" }
                     div class="travel-fatigue-control" {
-                        input id="camp-fatigue-percent" type="range" name="fatigue_percent" min="10" max="100" step="5" value=(camp_fatigue_percent) aria-describedby="camp-fatigue-value" {}
-                        output id="camp-fatigue-value" data-camp-fatigue-value { (format!("{camp_fatigue_percent}%")) }
+                        input id="walking-hours" type="number" name="walking_hours" min="1" max="16" step="0.25" value=(walking_hours) data-walking-hours {}
+                        span { "hours" }
+                    }
+                    label for="camp-duration" { "Camp duration" }
+                    select id="camp-duration" name="camp_duration" data-camp-duration {
+                        option value="auto" selected[party.is_none_or(|item| matches!(item.camp_duration_mode, crate::spacetimedb::CampDurationMode::Auto))] { "Until everyone is rested" }
+                        option value="fixed" selected[party.is_some_and(|item| matches!(item.camp_duration_mode, crate::spacetimedb::CampDurationMode::Fixed))] { "Leader override" }
+                    }
+                    div class="travel-fatigue-control" data-fixed-camp-control {
+                        input id="fixed-camp-hours" type="number" name="fixed_camp_hours" min="0" max="168" step="0.25" value=(party.map_or(0.0, |item| f32::from(item.fixed_camp_minutes) / 60.0)) {}
+                        span { "hours" }
                     }
                 }
                 @if provisioning_available {
@@ -725,6 +735,15 @@ pub(crate) fn travel_planner_bar(
         camp_fatigue_percent,
         None,
         provision_forecast,
+        selected
+            .map(|destination| destination.departure_minute)
+            .unwrap_or(0),
+        selected
+            .map(|destination| destination.itinerary_total_elapsed_minutes)
+            .unwrap_or(selected_minutes),
+        &selected.map_or_else(String::new, |destination| {
+            format_itinerary_segments(&destination.itinerary_segments)
+        }),
     )
 }
 
@@ -746,6 +765,9 @@ pub(crate) fn travel_planner_bar_for(
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
     provision_forecast: Option<&TravelProvisionForecast>,
+    preview_departure_minute: u64,
+    preview_elapsed_minutes: u64,
+    preview_segments: &str,
 ) -> Markup {
     let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
     let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
@@ -789,6 +811,10 @@ pub(crate) fn travel_planner_bar_for(
             data-journey-total-minutes=(journey_total_minutes)
             data-journey-turnaround-minutes=(journey_turnaround_minutes)
             data-journey-completed-minutes=(journey_completed_minutes)
+            data-departure-minute=(journey.map_or(preview_departure_minute, |item| item.departure_minute))
+            data-total-elapsed-minutes=(journey.map_or(preview_elapsed_minutes, |item| item.total_elapsed_minutes))
+            data-completed-elapsed-minutes=(journey.map_or(0, |item| item.completed_elapsed_minutes))
+            data-itinerary-segments=(preview_segments)
             data-journey-camp-stops=(journey_camp_stops)
             data-journey-forecast-stops=(journey_forecast_stops)
             data-provision-planning-minutes=[provision_forecast.map(|row| row.planning_minutes)]
@@ -806,18 +832,29 @@ pub(crate) fn travel_planner_bar_for(
                 div class="travel-planner-route" data-travel-planner-route {}
                 div class="travel-resource-meters" data-travel-resource-meters {
                     div class="travel-resource-row food" aria-label="Food provisions" {
-                        span class="travel-resource-icon" { (game_icon("Food", "meal")) }
+                        span class="travel-resource-icon" { "Food" }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
+                        span class="travel-resource-summary" data-surplus-summary="food" {}
                     }
                     div class="travel-resource-row water" aria-label="Water provisions" {
-                        span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
+                        span class="travel-resource-icon" { "Water" }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
+                        span class="travel-resource-summary" data-surplus-summary="water" {}
+                    }
+                    div class="travel-resource-row fatigue" aria-label="Party fatigue" {
+                        span class="travel-resource-icon" { "Fatigue" }
+                        div class="travel-fatigue-track" data-fatigue-track {}
+                        span class="travel-resource-summary" data-fatigue-summary {}
+                    }
+                    div class="travel-resource-row daylight" aria-label="Day and night" {
+                        span class="travel-resource-icon" { "Day/night" }
+                        div class="travel-daylight-track" data-daylight-track {}
                     }
                 }
                 svg class="travel-progress-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
@@ -851,6 +888,52 @@ fn format_camp_forecasts(destination: &TravelDestination) -> String {
         .join("|")
 }
 
+fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String {
+    segments
+        .iter()
+        .map(|segment| {
+            format!(
+                "{},{},{},{},{},{:.4},{:.4},{:.4},{}",
+                if matches!(segment.kind, ItinerarySegmentKind::Walking) {
+                    "w"
+                } else {
+                    "c"
+                },
+                segment.elapsed_start,
+                segment.elapsed_minutes,
+                segment.movement_start,
+                segment.movement_minutes,
+                segment.average_fatigue_start,
+                segment.average_fatigue_end,
+                segment.maximum_fatigue_end,
+                segment.required_rest_minutes,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn format_persisted_itinerary(itinerary: &PartyJourneyItinerary) -> String {
+    itinerary
+        .actual_camp_intervals
+        .iter()
+        .chain(&itinerary.forecast_camp_intervals)
+        .map(|camp| {
+            format!(
+                "c,{},{},{},0,{:.4},{:.4},{:.4},{}",
+                camp.elapsed_start_minute,
+                camp.elapsed_minutes,
+                camp.movement_minute,
+                camp.average_fatigue_start,
+                camp.average_fatigue_end,
+                camp.maximum_fatigue_end,
+                camp.elapsed_minutes,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 pub(crate) struct CampTravelDestination {
     pub id: String,
     pub name: String,
@@ -862,6 +945,7 @@ pub(crate) struct CampTravelDestination {
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
+    itinerary: Option<&PartyJourneyItinerary>,
     destination_name: &str,
     active_character: Option<&Character>,
     party_members: &[Character],
@@ -906,7 +990,7 @@ pub fn camp_page(
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast))
+                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &itinerary.map_or_else(String::new, format_persisted_itinerary)))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
@@ -5203,6 +5287,9 @@ mod tests {
             journey_minutes: 48,
             camp_stop_minutes: Vec::new(),
             camp_forecasts: Vec::new(),
+            departure_minute: 0,
+            itinerary_total_elapsed_minutes: 96,
+            itinerary_segments: Vec::new(),
             quest_in_progress: true,
             active_quest_route: false,
             turn_in_ready: false,

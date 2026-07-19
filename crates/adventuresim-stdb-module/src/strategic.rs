@@ -28,7 +28,7 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
     tactical::tactical_server_request,
-    time::advance_character_time,
+    time::{advance_character_time, character_time, character_training_schedule},
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -1455,6 +1455,15 @@ pub struct Party {
     /// The fatigue level at which the first tiring party member makes camp.
     #[default(50u8)]
     pub camp_fatigue_percent: u8,
+    /// Leader-selected daily walking budget. The itinerary centers it on noon.
+    #[default(480u16)]
+    pub walking_minutes_per_day: u16,
+    /// Automatic camps clear every living member's carried fatigue. A fixed
+    /// duration preserves the leader's deliberate shorter or longer override.
+    #[default(CampDurationMode::Auto)]
+    pub camp_duration_mode: CampDurationMode,
+    #[default(0u16)]
+    pub fixed_camp_minutes: u16,
     /// A non-empty destination means the party is currently camped en route.
     #[default(None::<String>)]
     pub camp_destination_id: Option<String>,
@@ -1473,6 +1482,23 @@ pub struct Party {
     pub charisma_target: f32,
     #[default(0.0)]
     pub religion_target: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, SpacetimeType)]
+pub enum CampDurationMode {
+    #[default]
+    Auto,
+    Fixed,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, SpacetimeType)]
+pub struct JourneyCampInterval {
+    pub movement_minute: u64,
+    pub elapsed_start_minute: u64,
+    pub elapsed_minutes: u64,
+    pub average_fatigue_start: f32,
+    pub average_fatigue_end: f32,
+    pub maximum_fatigue_end: f32,
 }
 
 /// The durable strategic record behind the travel tracker. Party location
@@ -1497,6 +1523,31 @@ pub struct PartyJourney {
     pub forecast_camp_stop_minutes: Vec<u64>,
     /// A journey keeps the leader's chosen threshold from departure.
     pub fatigue_percent: u8,
+    /// Additive v2 itinerary coordinates. Legacy minute fields above remain
+    /// route-movement coordinates for compatibility.
+    #[default(0u64)]
+    pub departure_minute: u64,
+    #[default(0u64)]
+    pub total_elapsed_minutes: u64,
+    #[default(0u64)]
+    pub completed_elapsed_minutes: u64,
+    #[default(480u16)]
+    pub walking_minutes_per_day: u16,
+    #[default(CampDurationMode::Auto)]
+    pub camp_duration_mode: CampDurationMode,
+    #[default(0u16)]
+    pub fixed_camp_minutes: u16,
+}
+
+/// Typed elapsed-time camp coordinates for the journey tracker. Keeping these
+/// in an additive table avoids changing the movement-coordinate legacy rows.
+#[derive(Clone, Debug)]
+#[table(accessor = party_journey_itinerary, public)]
+pub struct PartyJourneyItinerary {
+    #[primary_key]
+    pub party_id: String,
+    pub actual_camp_intervals: Vec<JourneyCampInterval>,
+    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
 }
 
 #[derive(Clone, Debug)]
@@ -2172,6 +2223,9 @@ pub(crate) fn create_solo_party_for_character(
             active_quest_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
+            walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
+            camp_duration_mode: CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
             camp_destination_id: None,
             camp_destination_kind: None,
             camp_remaining_minutes: 0,
@@ -4844,11 +4898,80 @@ fn finish_strategic_incident(
     Ok(())
 }
 
-fn party_travel_fatigue_inputs(
+/// Return the next leg's length. The least-rested member sets the party's
+/// pace: once that member reaches the configured raw fatigue percentage, the
+/// party makes camp. A one-minute minimum lets an already-tired party begin a
+/// journey and immediately establish camp rather than becoming stranded.
+fn party_travel_leg_minutes(
     ctx: &ReducerContext,
     party_id: &str,
-    fully_rested: bool,
-) -> Result<Vec<TravelFatigueInputs>, String> {
+    _fatigue_percent: u8,
+) -> Result<u64, String> {
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    if daylight_walking_window(party.walking_minutes_per_day).is_none() {
+        return Err("Party walking hours are invalid".into());
+    }
+    Ok(u64::from(party.walking_minutes_per_day))
+}
+
+fn party_next_walking_minutes(
+    ctx: &ReducerContext,
+    party_id: &str,
+    remaining_movement: u64,
+) -> Result<u64, String> {
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    let now = living_party_member_ids(ctx, party_id)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_time().character_id().find(id))
+        .map(|time| time.minutes)
+        .max()
+        .unwrap_or(0);
+    let itinerary = forecast_itinerary(
+        now,
+        remaining_movement,
+        party.walking_minutes_per_day,
+        party_camp_policy(&party),
+        &party_itinerary_members(ctx, party_id)?,
+    )
+    .ok_or("Unable to forecast the next travel leg")?;
+    Ok(itinerary.segments.first().map_or(0, |segment| {
+        if matches!(segment.kind, ItinerarySegmentKind::Walking) {
+            segment.movement_minutes
+        } else {
+            0
+        }
+    }))
+}
+
+fn full_rest_party_travel_leg_minutes(
+    ctx: &ReducerContext,
+    party_id: &str,
+    fatigue_percent: u8,
+) -> Result<u64, String> {
+    party_travel_leg_minutes(ctx, party_id, fatigue_percent)
+}
+
+fn party_camp_policy(party: &Party) -> CampDurationPolicy {
+    match party.camp_duration_mode {
+        CampDurationMode::Auto => CampDurationPolicy::Auto,
+        CampDurationMode::Fixed => CampDurationPolicy::FixedMinutes(party.fixed_camp_minutes),
+    }
+}
+
+fn party_itinerary_members(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<Vec<ItineraryMember>, String> {
     let mut members = Vec::new();
     for member_id in living_party_member_ids(ctx, party_id) {
         let attributes = ctx
@@ -4869,43 +4992,40 @@ fn party_travel_fatigue_inputs(
             .character_id()
             .find(member_id)
             .ok_or("Party member stats not found")?;
-        members.push(TravelFatigueInputs {
+        let schedule = ctx
+            .db
+            .character_training_schedule()
+            .character_id()
+            .find(member_id)
+            .ok_or("Party member schedule not found")?;
+        let allowed = crate::time::allowed_camp_schedule(&schedule.downtime);
+        members.push(ItineraryMember {
             fatigue_capacity: attributes
                 .attr_by_parts(SimpleAttribute::Endurance, &limbs)
                 .max(0.01)
                 * 1_000.0,
-            calories_used: if fully_rested {
-                0.0
-            } else {
-                stats.calories_used
-            },
+            calories_used: stats.calories_used.max(0.0),
+            camp_schedule: crate::time::core_schedule(&allowed),
         });
     }
     Ok(members)
 }
 
-/// Return the next leg's length. The least-rested member sets the party's
-/// pace: once that member reaches the configured raw fatigue percentage, the
-/// party makes camp. A one-minute minimum lets an already-tired party begin a
-/// journey and immediately establish camp rather than becoming stranded.
-fn party_travel_leg_minutes(
-    ctx: &ReducerContext,
-    party_id: &str,
-    fatigue_percent: u8,
-) -> Result<u64, String> {
-    let members = party_travel_fatigue_inputs(ctx, party_id, false)?;
-    adventuresim_core::strategic_time::party_travel_leg_minutes(&members, fatigue_percent)
-        .ok_or_else(|| "Party has no members".into())
-}
-
-fn full_rest_party_travel_leg_minutes(
-    ctx: &ReducerContext,
-    party_id: &str,
-    fatigue_percent: u8,
-) -> Result<u64, String> {
-    let members = party_travel_fatigue_inputs(ctx, party_id, true)?;
-    adventuresim_core::strategic_time::party_travel_leg_minutes(&members, fatigue_percent)
-        .ok_or_else(|| "Party has no members".into())
+fn itinerary_camps(forecast: &ItineraryForecast) -> Vec<JourneyCampInterval> {
+    forecast
+        .segments
+        .iter()
+        .filter(|segment| segment.kind == ItinerarySegmentKind::Camp)
+        .take(MAX_ITINERARY_SEGMENTS)
+        .map(|segment| JourneyCampInterval {
+            movement_minute: segment.movement_start,
+            elapsed_start_minute: segment.elapsed_start,
+            elapsed_minutes: segment.elapsed_minutes,
+            average_fatigue_start: segment.average_fatigue_start,
+            average_fatigue_end: segment.average_fatigue_end,
+            maximum_fatigue_end: segment.maximum_fatigue_end,
+        })
+        .collect()
 }
 
 fn forecast_camp_stop_minutes(
@@ -4943,13 +5063,42 @@ fn start_party_journey(
     destination_id: &str,
     destination_name: &str,
     total_minutes: u64,
+    departure_minute: u64,
 ) -> Result<(), String> {
     if ctx.db.party_journey().party_id().find(&party.id).is_some() {
         ctx.db.party_journey().party_id().delete(&party.id);
     }
+    if ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party.id)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_itinerary()
+            .party_id()
+            .delete(&party.id);
+    }
     let fatigue_percent = party.camp_fatigue_percent;
     let forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, total_minutes, 0, fatigue_percent)?;
+    let planned_movement = if destination_kind == "quest" {
+        total_minutes.saturating_mul(2)
+    } else {
+        total_minutes
+    };
+    let itinerary = forecast_itinerary(
+        departure_minute,
+        planned_movement,
+        party.walking_minutes_per_day,
+        party_camp_policy(party),
+        &party_itinerary_members(ctx, &party.id)?,
+    )
+    .ok_or("Unable to forecast the party itinerary")?;
+    if itinerary.truncated {
+        return Err("Journey requires too many itinerary checkpoints".into());
+    }
     ctx.db.party_journey().insert(PartyJourney {
         party_id: party.id.clone(),
         origin_kind: origin_kind.into(),
@@ -4963,7 +5112,20 @@ fn start_party_journey(
         camp_stop_minutes: Vec::new(),
         forecast_camp_stop_minutes,
         fatigue_percent,
+        departure_minute,
+        total_elapsed_minutes: itinerary.total_elapsed_minutes,
+        completed_elapsed_minutes: 0,
+        walking_minutes_per_day: party.walking_minutes_per_day,
+        camp_duration_mode: party.camp_duration_mode,
+        fixed_camp_minutes: party.fixed_camp_minutes,
     });
+    ctx.db
+        .party_journey_itinerary()
+        .insert(PartyJourneyItinerary {
+            party_id: party.id.clone(),
+            actual_camp_intervals: Vec::new(),
+            forecast_camp_intervals: itinerary_camps(&itinerary),
+        });
     Ok(())
 }
 
@@ -4984,6 +5146,9 @@ fn record_party_journey_camp(
         .completed_minutes
         .saturating_add(leg_minutes)
         .min(journey.total_minutes);
+    journey.completed_elapsed_minutes = journey
+        .completed_elapsed_minutes
+        .saturating_add(leg_minutes);
     if journey.camp_stop_minutes.last() != Some(&journey.completed_minutes) {
         journey.camp_stop_minutes.push(journey.completed_minutes);
     }
@@ -5010,6 +5175,137 @@ pub(crate) fn refresh_party_journey_forecast(
         journey.completed_minutes,
         journey.fatigue_percent,
     )?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    let start = journey
+        .departure_minute
+        .saturating_add(journey.completed_elapsed_minutes);
+    let planned_movement = if journey.destination_kind == "quest" {
+        journey.total_minutes.saturating_mul(2)
+    } else {
+        journey.total_minutes
+    };
+    let remaining = planned_movement.saturating_sub(journey.completed_minutes);
+    let itinerary = forecast_itinerary(
+        start,
+        remaining,
+        party.walking_minutes_per_day,
+        party_camp_policy(&party),
+        &party_itinerary_members(ctx, party_id)?,
+    )
+    .ok_or("Unable to forecast the remaining itinerary")?;
+    if itinerary.truncated {
+        return Err("Journey requires too many itinerary checkpoints".into());
+    }
+    journey.walking_minutes_per_day = party.walking_minutes_per_day;
+    journey.camp_duration_mode = party.camp_duration_mode;
+    journey.fixed_camp_minutes = party.fixed_camp_minutes;
+    journey.total_elapsed_minutes = journey
+        .completed_elapsed_minutes
+        .saturating_add(itinerary.total_elapsed_minutes);
+    let forecast_camp_intervals = itinerary_camps(&itinerary)
+        .into_iter()
+        .map(|mut interval| {
+            interval.movement_minute = interval
+                .movement_minute
+                .saturating_add(journey.completed_minutes);
+            interval.elapsed_start_minute = interval
+                .elapsed_start_minute
+                .saturating_add(journey.completed_elapsed_minutes);
+            interval
+        })
+        .collect();
+    let mut typed = ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_id.to_string())
+        .unwrap_or(PartyJourneyItinerary {
+            party_id: party_id.to_string(),
+            actual_camp_intervals: Vec::new(),
+            forecast_camp_intervals: Vec::new(),
+        });
+    typed.forecast_camp_intervals = forecast_camp_intervals;
+    if ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_id.to_string())
+        .is_some()
+    {
+        ctx.db.party_journey_itinerary().party_id().update(typed);
+    } else {
+        ctx.db.party_journey_itinerary().insert(typed);
+    }
+    ctx.db.party_journey().party_id().update(journey);
+    Ok(())
+}
+
+pub(crate) fn record_party_camp_rest(
+    ctx: &ReducerContext,
+    party_id: &str,
+    elapsed: u64,
+    average_start: f32,
+    average_end: f32,
+    maximum_end: f32,
+) -> Result<(), String> {
+    let Some(mut journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    let start = journey.completed_elapsed_minutes;
+    journey.completed_elapsed_minutes = journey.completed_elapsed_minutes.saturating_add(elapsed);
+    let mut typed = ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_id.to_string())
+        .unwrap_or(PartyJourneyItinerary {
+            party_id: party_id.to_string(),
+            actual_camp_intervals: Vec::new(),
+            forecast_camp_intervals: Vec::new(),
+        });
+    let typed_exists = ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_id.to_string())
+        .is_some();
+    if let Some(last) = typed.actual_camp_intervals.last_mut()
+        && last.movement_minute == journey.completed_minutes
+        && last
+            .elapsed_start_minute
+            .saturating_add(last.elapsed_minutes)
+            == start
+    {
+        last.elapsed_minutes = last.elapsed_minutes.saturating_add(elapsed);
+        last.average_fatigue_end = average_end;
+        last.maximum_fatigue_end = maximum_end;
+    } else if typed.actual_camp_intervals.len() < MAX_ITINERARY_SEGMENTS {
+        typed.actual_camp_intervals.push(JourneyCampInterval {
+            movement_minute: journey.completed_minutes,
+            elapsed_start_minute: start,
+            elapsed_minutes: elapsed,
+            average_fatigue_start: average_start,
+            average_fatigue_end: average_end,
+            maximum_fatigue_end: maximum_end,
+        });
+    } else {
+        return Err("Journey has too many camp checkpoints".into());
+    }
+    if typed_exists {
+        ctx.db.party_journey_itinerary().party_id().update(typed);
+    } else {
+        ctx.db.party_journey_itinerary().insert(typed);
+    }
     ctx.db.party_journey().party_id().update(journey);
     Ok(())
 }
@@ -5018,6 +5314,18 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     let party_id = party_id.to_string();
     if ctx.db.party_journey().party_id().find(&party_id).is_some() {
         ctx.db.party_journey().party_id().delete(&party_id);
+    }
+    if ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_itinerary()
+            .party_id()
+            .delete(&party_id);
     }
 }
 
@@ -5060,7 +5368,19 @@ fn redirect_camped_party_to_settlement(
     journey.destination_name = destination.name.clone();
     journey.total_minutes = travel_minutes;
     journey.completed_minutes = 0;
+    journey.departure_minute = living_party_member_ids(ctx, &party.id)
+        .into_iter()
+        .filter_map(|member_id| ctx.db.character_time().character_id().find(member_id))
+        .map(|time| time.minutes)
+        .max()
+        .unwrap_or(journey.departure_minute);
+    journey.completed_elapsed_minutes = 0;
     journey.camp_stop_minutes.clear();
+    if let Some(mut typed) = ctx.db.party_journey_itinerary().party_id().find(&party.id) {
+        typed.actual_camp_intervals.clear();
+        typed.forecast_camp_intervals.clear();
+        ctx.db.party_journey_itinerary().party_id().update(typed);
+    }
     journey.forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, travel_minutes, 0, journey.fatigue_percent)?;
     ctx.db.party_journey().party_id().update(journey);
@@ -5071,6 +5391,7 @@ fn redirect_camped_party_to_settlement(
     party.camp_destination_id = Some(destination.id.clone());
     party.camp_remaining_minutes = travel_minutes;
     ctx.db.party().id().update(party.clone());
+    refresh_party_journey_forecast(ctx, &party.id)?;
     Ok(())
 }
 
@@ -5110,6 +5431,8 @@ pub fn travel_to_quest(
     }
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
+    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    let traveler_ids = living_party_member_ids(ctx, &party_id);
 
     let travel_minutes = quest_journey_minutes(quest.distance_m);
     let origin = ctx
@@ -5128,16 +5451,14 @@ pub fn travel_to_quest(
         &quest.id,
         &quest.title,
         travel_minutes,
+        departure_minute,
     )?;
     crate::condition::prepare_party_waterskins(ctx, &party_id, true)?;
     for member_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, member_id, true)?;
     }
-    let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
-        ctx,
-        &party.id,
-        party.camp_fatigue_percent,
-    )?);
+    let leg_minutes =
+        travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     if leg_minutes < travel_minutes {
         for member_id in traveler_ids.iter().copied() {
             if !advance_character_time(ctx, member_id, leg_minutes)? {
@@ -5284,6 +5605,16 @@ pub fn travel_to_settlement(
     } else {
         vec![character_id]
     };
+    let departure_minute = if party.is_some() {
+        crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    } else {
+        crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    };
+    let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
+        living_party_member_ids(ctx, &party.id)
+    } else {
+        vec![character_id]
+    };
     if let Some(party) = party.as_ref() {
         start_party_journey(
             ctx,
@@ -5295,6 +5626,7 @@ pub fn travel_to_settlement(
             &destination.id,
             &destination.name,
             travel_minutes,
+            departure_minute,
         )?;
     }
     let departing_settlement = character.current_settlement_id.is_some();
@@ -5305,11 +5637,8 @@ pub fn travel_to_settlement(
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
     }
     if let Some(ref mut party) = party {
-        let leg_minutes = travel_minutes.min(party_travel_leg_minutes(
-            ctx,
-            &party.id,
-            party.camp_fatigue_percent,
-        )?);
+        let leg_minutes =
+            travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
         if leg_minutes < travel_minutes {
             for traveler_id in traveler_ids {
                 if !advance_character_time(ctx, traveler_id, leg_minutes)? {
@@ -5413,6 +5742,56 @@ pub fn set_party_camp_fatigue_percent(
     Ok(())
 }
 
+#[reducer]
+pub fn set_party_travel_itinerary(
+    ctx: &ReducerContext,
+    character_id: u64,
+    walking_minutes_per_day: u16,
+    automatic_camp_duration: bool,
+    fixed_camp_minutes: u16,
+) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
+    if daylight_walking_window(walking_minutes_per_day).is_none() {
+        return Err("Daily walking time must be between 1 and 16 hours".into());
+    }
+    if !automatic_camp_duration && fixed_camp_minutes > 7 * 24 * 60 {
+        return Err("A fixed camp interval may not exceed seven days".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character is not in a party")?;
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can configure travel".into());
+    }
+    party.walking_minutes_per_day = walking_minutes_per_day;
+    party.camp_duration_mode = if automatic_camp_duration {
+        CampDurationMode::Auto
+    } else {
+        CampDurationMode::Fixed
+    };
+    party.fixed_camp_minutes = if automatic_camp_duration {
+        0
+    } else {
+        fixed_camp_minutes
+    };
+    let camped = party.camp_destination_id.is_some();
+    ctx.db.party().id().update(party);
+    if camped {
+        refresh_party_journey_forecast(ctx, &party_id)?;
+    }
+    Ok(())
+}
+
 /// Advance a single planned leg from a camp. A journey remains a strategic
 /// state, rather than a tactical simulation: the UI animates this instantaneous
 /// transition between pins.
@@ -5443,13 +5822,13 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .camp_destination_kind
         .clone()
         .ok_or("Camp destination is missing")?;
-    let leg_minutes = party.camp_remaining_minutes.min(party_travel_leg_minutes(
+    let leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
         &party.id,
-        party.camp_fatigue_percent,
+        party.camp_remaining_minutes,
     )?);
     if leg_minutes == 0 {
-        return Err("Camp journey has no remaining travel time".into());
+        return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     for member_id in traveler_ids.iter().copied() {

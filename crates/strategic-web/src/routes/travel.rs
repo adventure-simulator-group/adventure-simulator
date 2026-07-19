@@ -2,11 +2,16 @@
 
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
-use adventuresim_core::prelude::{TravelFatigueInputs, party_travel_leg_minutes};
+use adventuresim_core::{
+    strategic_schedule::DailySchedule,
+    strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
+};
 use serde::Deserialize;
 
 use crate::spacetimedb::{
-    CharacterAttributes, CharacterLimbs, CharacterStats, Quest, QuestStatus, Settlement, TravelEdge,
+    CampDurationMode, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
+    CharacterTrainingSchedule, Party, Quest, QuestStatus, ScheduleAllocation, Settlement,
+    TravelEdge,
 };
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
@@ -56,6 +61,9 @@ pub struct TravelDestination {
     /// Cumulative minutes for server-derived camp forecasts.
     pub camp_stop_minutes: Vec<u64>,
     pub camp_forecasts: Vec<TravelCampForecast>,
+    pub departure_minute: u64,
+    pub itinerary_total_elapsed_minutes: u64,
+    pub itinerary_segments: Vec<ItinerarySegment>,
     pub quest_in_progress: bool,
     /// This settlement is the next leg on the shortest road route to the
     /// posting settlement of the party's active quest.
@@ -141,6 +149,9 @@ pub(crate) fn settlement_destination(
         journey_minutes,
         camp_stop_minutes: Vec::new(),
         camp_forecasts: Vec::new(),
+        departure_minute: 0,
+        itinerary_total_elapsed_minutes: journey_minutes,
+        itinerary_segments: Vec::new(),
         quest_in_progress: false,
         active_quest_route: false,
         turn_in_ready: false,
@@ -152,77 +163,87 @@ pub(crate) fn settlement_destination(
 /// Calculate a camp forecast from the same pure fatigue function used by the
 /// strategic reducer. The first leg uses current fatigue; later legs assume
 /// the leader takes the recommended full-fatigue camp rest.
-pub(crate) fn forecast_camp_stop_minutes(
-    party_members: &[u64],
-    attributes: &[CharacterAttributes],
-    limbs: &[CharacterLimbs],
-    stats: &[CharacterStats],
-    journey_minutes: u64,
-    fatigue_percent: u8,
-) -> Option<Vec<u64>> {
-    let fatigue_inputs: Vec<_> = party_members
-        .iter()
-        .map(|character_id| {
-            let attributes = attributes
-                .iter()
-                .find(|row| row.character_id == *character_id)?;
-            let limbs = limbs.iter().find(|row| row.character_id == *character_id)?;
-            let stats = stats.iter().find(|row| row.character_id == *character_id)?;
-            Some(TravelFatigueInputs {
-                fatigue_capacity: (attributes.endurance * limbs.chest_health).max(0.01) * 1_000.0,
-                calories_used: stats.calories_used,
-            })
-        })
-        .collect::<Option<_>>()?;
-    let mut stops = Vec::new();
-    let mut elapsed = 0;
-    let mut current_inputs = fatigue_inputs;
-    while elapsed < journey_minutes {
-        let leg = party_travel_leg_minutes(&current_inputs, fatigue_percent)?;
-        elapsed = elapsed.saturating_add(leg).min(journey_minutes);
-        if elapsed < journey_minutes {
-            stops.push(elapsed);
-            for member in &mut current_inputs {
-                member.calories_used = 0.0;
-            }
-        }
+fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
+    DailySchedule {
+        melee: allocation.melee_minutes,
+        dodge: allocation.dodge_minutes,
+        block: allocation.block_minutes,
+        ranged: allocation.ranged_minutes,
+        will: allocation.will_minutes,
+        charisma: allocation.charisma_minutes,
+        medicine: allocation.medicine_minutes,
+        faith: allocation.faith_minutes,
+        stealth: allocation.stealth_minutes,
+        balance: allocation.balance_minutes,
+        surgeon: allocation.surgeon_minutes,
+        smithing: allocation.smithing_minutes,
+        labor: 0,
+        prayer: allocation.prayer_minutes,
+        thievery: 0,
+        raiding: 0,
     }
-    Some(stops)
 }
 
-pub(crate) fn populate_camp_forecasts(
+pub(crate) fn populate_itinerary_forecasts(
     destinations: &mut [TravelDestination],
     party_members: &[u64],
     attributes: &[CharacterAttributes],
     limbs: &[CharacterLimbs],
     stats: &[CharacterStats],
-    selected_fatigue_percent: u8,
+    times: &[CharacterTime],
+    schedules: &[CharacterTrainingSchedule],
+    party: &Party,
 ) {
-    for destination in destinations {
-        let forecast_minutes = destination.forecast_minutes();
-        destination.camp_forecasts = (10..=100)
-            .step_by(5)
-            .filter_map(|fatigue_percent| {
-                forecast_camp_stop_minutes(
-                    party_members,
-                    attributes,
-                    limbs,
-                    stats,
-                    forecast_minutes,
-                    fatigue_percent,
-                )
-                .map(|camp_stop_minutes| TravelCampForecast {
-                    fatigue_percent,
-                    camp_stop_minutes,
-                })
+    let members: Option<Vec<_>> = party_members
+        .iter()
+        .map(|id| {
+            let attributes = attributes.iter().find(|row| row.character_id == *id)?;
+            let limbs = limbs.iter().find(|row| row.character_id == *id)?;
+            let stats = stats.iter().find(|row| row.character_id == *id)?;
+            let schedule = schedules.iter().find(|row| row.character_id == *id)?;
+            Some(ItineraryMember {
+                fatigue_capacity: (attributes.endurance * limbs.chest_health).max(0.01) * 1_000.0,
+                calories_used: stats.calories_used,
+                camp_schedule: camp_schedule(&schedule.downtime),
             })
-            .collect();
-        destination.camp_stop_minutes = destination
-            .camp_forecasts
-            .iter()
-            .find(|forecast| forecast.fatigue_percent == selected_fatigue_percent)
-            .map(|forecast| forecast.camp_stop_minutes.clone())
-            .unwrap_or_default();
+        })
+        .collect();
+    let Some(members) = members else {
+        return;
+    };
+    let departure = party_members
+        .iter()
+        .filter_map(|id| times.iter().find(|row| row.character_id == *id))
+        .map(|row| row.minutes)
+        .max()
+        .unwrap_or(0);
+    let policy = match party.camp_duration_mode {
+        CampDurationMode::Auto => CampDurationPolicy::Auto,
+        CampDurationMode::Fixed => CampDurationPolicy::FixedMinutes(party.fixed_camp_minutes),
+    };
+    for destination in destinations {
+        if let Some(forecast) = forecast_itinerary(
+            departure,
+            destination.forecast_minutes(),
+            party.walking_minutes_per_day,
+            policy,
+            &members,
+        ) {
+            destination.departure_minute = departure;
+            destination.itinerary_total_elapsed_minutes = forecast.total_elapsed_minutes;
+            destination.camp_stop_minutes = forecast
+                .segments
+                .iter()
+                .filter(|segment| {
+                    matches!(
+                        segment.kind,
+                        adventuresim_core::strategic_time::ItinerarySegmentKind::Camp
+                    )
+                })
+                .map(|segment| segment.movement_start)
+                .collect();
+            destination.itinerary_segments = forecast.segments;
+        }
     }
 }
 

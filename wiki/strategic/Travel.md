@@ -64,16 +64,20 @@ stores an off-road point near its posting settlement. The trip to that point and
 trips from it to the five nearest settlements use straight-line distance, require
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
-shared Map tab: destinations are selected in the left rail while the right rail
-sets the fatigue threshold at which the first tiring member makes camp.
-Selecting a destination previews the route in the travel-configuration rail.
-Food and water form adjacent vertical rails, a white rail replaces them behind
-the party as travel progresses, and horizontal markers identify the start,
-forecast camps, quest turnaround, and end. The preview is calculated from the
-same least-rested-member fatigue and Endurance rule that advances travel, so it
-does not use a browser-only daily-march approximation. A journey longer than a
-leg stops at a persisted camp; the leader may rest the whole party for free and
-continue in instantaneous legs. The strategic layer persists the journey's
+shared Map tab. The leader configures integer-minute walking time as hours per
+day (eight by default), centered on solar noon. Camps default to the shortest
+shared interval that clears every living member's fatigue, or the leader may
+choose a shorter or longer fixed interval. The reducer and preview use the same
+itinerary function, including partial first and final walking days.
+
+The runner-track preview contains exactly four compact vertical rails: Food,
+Water, Fatigue, and Day/night. Camp brackets span elapsed rest time while their
+markers retain movement coordinates, and white progress advances through both
+walking and rest. The fatigue rail shows party average, range, highest member,
+and a warning at 100%. The Day/night rail follows absolute party time; midnight
+ticks protrude right and show accessible lunar phases from the canonical
+42,524-minute cycle, beginning with a new moon on Day 1. A journey longer than
+a walking window stops at a persisted camp. The strategic layer persists the journey's
 original endpoints, total duration, actual camp checkpoints, and the remaining
 forecast. SSE updates therefore keep every party member's tracker consistent
 across camp rests and page navigations. A shorter-than-recommended camp rest
@@ -97,13 +101,13 @@ dialogue itself never presents a separate travel action.
 
 ### Camping and hourly rest
 
-The party leader chooses the fatigue percentage at which the first tiring party
-member should make camp. The map control is a slider and saves when released;
-the route preview updates immediately. Camp rest advances every member by the
-selected duration and removes their recoverable travel fatigue without
-settlement food, water, or a gold cost. The recommended camp duration is the
-longest time any party member needs to remove fatigue; it does not extend the
-rest to finish healing injuries.
+Camp rest advances every living member by one common interval and consumes
+provisions without settlement refill. Shared rations and water are used before
+personal supplies. Each member rests until their own fatigue reaches zero; the
+remaining interval applies safe saved downtime proportionally. Labor,
+Thievery, and Raiding, including their rewards and incidents, are suppressed,
+while healing and field repair retain their priority. Disease boundaries clip
+the party to one common safe interval. Manual rest remains available.
 
 At an inn or church, resting remains personal rather than party-wide. The rest
 control can switch between **Hours** and **Days**; its recommendation heals the

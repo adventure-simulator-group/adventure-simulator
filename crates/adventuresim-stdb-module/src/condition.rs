@@ -334,7 +334,7 @@ pub fn replenish_needs_at_settlement(
     Ok(())
 }
 
-fn apply_travel_needs(
+pub fn apply_elapsed_needs(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed_minutes: u64,
@@ -1418,7 +1418,7 @@ pub fn apply_travel_condition(
     elapsed_minutes: u64,
     prayer_minutes: u16,
 ) -> Result<(), String> {
-    apply_travel_needs(ctx, character_id, elapsed_minutes)?;
+    apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
     let mut stats = ctx
         .db
         .character_stats()
@@ -1625,6 +1625,7 @@ pub fn apply_camp_rest_condition(
     elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
+    apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
     let days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut condition = ctx
         .db

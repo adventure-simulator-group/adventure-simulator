@@ -16,15 +16,16 @@ use super::{
     settlements::{get_active_party_members, living_party_members},
     travel::{
         QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip,
-        populate_camp_forecasts, settlement_destination,
+        populate_itinerary_forecasts, settlement_destination,
     },
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BattleLootItem, BattleResult, Character, CharacterAttributes,
-    CharacterLimbs, CharacterStats, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Quest, QuestStatus, Settlement,
+    CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
+    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest,
+    QuestStatus, Settlement,
 };
 use crate::templates::quest::{
     quest_location_base_page, quest_location_map_page, quest_location_page,
@@ -513,17 +514,29 @@ async fn render_quest_location(
             .query("SELECT * FROM character_stats")
             .await
             .unwrap_or_default();
+        let times: Vec<CharacterTime> = state
+            .db
+            .query("SELECT * FROM character_time")
+            .await
+            .unwrap_or_default();
+        let schedules: Vec<CharacterTrainingSchedule> = state
+            .db
+            .query("SELECT * FROM character_training_schedule")
+            .await
+            .unwrap_or_default();
         let member_ids: Vec<_> = living_party_members
             .iter()
             .map(|member| member.id)
             .collect();
-        populate_camp_forecasts(
+        populate_itinerary_forecasts(
             &mut nearby,
             &member_ids,
             &attributes,
             &limbs,
             &stats,
-            party.camp_fatigue_percent,
+            &times,
+            &schedules,
+            party,
         );
         for destination in &mut nearby {
             destination.provision_forecast = super::settlements::travel_provision_forecast(
