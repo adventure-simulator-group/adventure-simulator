@@ -69,14 +69,16 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\)/);
   assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-surface\)/);
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
+  assert.match(layoutCss, /--building-frame-corner-size: 1\.35rem/);
   assert.match(layoutCss, /--building-panel-recess: color-mix/);
+  assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
   assert.match(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
   assert.match(layoutCss, /z-index: 30/);
-  assert.match(layoutCss, /left top \/ 1\.35rem 1\.35rem no-repeat/);
-  assert.match(layoutCss, /right bottom \/ 1\.35rem 1\.35rem no-repeat/);
+  assert.match(layoutCss, /left top \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
+  assert.match(layoutCss, /right bottom \/ var\(--building-frame-corner-size\) var\(--building-frame-corner-size\) no-repeat/);
   assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat/);
-  assert.ok(layoutCss.indexOf("right bottom / 1.35rem") < layoutCss.indexOf("center top / 100% 0.55rem"));
+  assert.ok(layoutCss.indexOf("right bottom / var(--building-frame-corner-size)") < layoutCss.indexOf("center top / 100% 0.55rem"));
   assert.match(layoutCss, /pointer-events: none/);
 });
 
