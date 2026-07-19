@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 21;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 6;
+pub const WORLD_SCHEMA_VERSION: u32 = 23;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 7;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -36,23 +36,232 @@ pub enum OfficialReligion {
     Lutheran,
     Reformed,
     Anglican,
-    ProtestantUnspecified,
     EasternOrthodox,
     Islamic,
+    Judaism,
 }
 
 impl OfficialReligion {
+    pub const ALL: [Self; 7] = [
+        Self::RomanCatholic,
+        Self::Lutheran,
+        Self::Reformed,
+        Self::Anglican,
+        Self::EasternOrthodox,
+        Self::Islamic,
+        Self::Judaism,
+    ];
+
     /// Stable identifier used by the current single-church gameplay systems.
-    pub const fn faith_id(self) -> &'static str {
+    pub const fn religion_id(self) -> &'static str {
         match self {
             Self::RomanCatholic => "roman_catholic",
             Self::Lutheran => "lutheran",
             Self::Reformed => "reformed",
             Self::Anglican => "anglican",
-            Self::ProtestantUnspecified => "protestant",
             Self::EasternOrthodox => "eastern_orthodox",
             Self::Islamic => "islamic",
+            Self::Judaism => "judaism",
         }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::RomanCatholic => "Roman Catholicism",
+            Self::Lutheran => "Lutheranism",
+            Self::Reformed => "Reformed Christianity",
+            Self::Anglican => "Anglicanism",
+            Self::EasternOrthodox => "Eastern Orthodoxy",
+            Self::Islamic => "Islam",
+            Self::Judaism => "Judaism",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|religion| religion.religion_id() == id)
+    }
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::RomanCatholic => 0,
+            Self::Lutheran => 1,
+            Self::Reformed => 2,
+            Self::Anglican => 3,
+            Self::EasternOrthodox => 4,
+            Self::Islamic => 5,
+            Self::Judaism => 6,
+        }
+    }
+
+    pub const fn correlation(self, other: Self) -> f32 {
+        const C: [[f32; 7]; 7] = [
+            [1.0, 0.80, 0.75, 0.80, 0.65, 0.10, 0.10],
+            [0.80, 1.0, 0.90, 0.85, 0.50, 0.10, 0.10],
+            [0.75, 0.90, 1.0, 0.85, 0.45, 0.10, 0.10],
+            [0.80, 0.85, 0.85, 1.0, 0.55, 0.10, 0.10],
+            [0.65, 0.50, 0.45, 0.55, 1.0, 0.15, 0.10],
+            [0.10, 0.10, 0.10, 0.10, 0.15, 1.0, 0.35],
+            [0.10, 0.10, 0.10, 0.10, 0.10, 0.35, 1.0],
+        ];
+        C[self.index()][other.index()]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct ReligionHours {
+    pub roman_catholic: f32,
+    pub lutheran: f32,
+    pub reformed: f32,
+    pub anglican: f32,
+    pub eastern_orthodox: f32,
+    pub islamic: f32,
+    pub judaism: f32,
+}
+
+impl ReligionHours {
+    pub fn direct_values(self) -> impl Iterator<Item = (OfficialReligion, f32)> {
+        OfficialReligion::ALL
+            .into_iter()
+            .map(move |religion| (religion, self.direct(religion)))
+    }
+
+    pub fn direct_fields_valid(self, maximum: f32) -> bool {
+        maximum.is_finite()
+            && maximum >= 0.0
+            && self
+                .direct_values()
+                .all(|(_, hours)| hours.is_finite() && (0.0..=maximum).contains(&hours))
+    }
+
+    pub fn direct(self, religion: OfficialReligion) -> f32 {
+        match religion {
+            OfficialReligion::RomanCatholic => self.roman_catholic,
+            OfficialReligion::Lutheran => self.lutheran,
+            OfficialReligion::Reformed => self.reformed,
+            OfficialReligion::Anglican => self.anglican,
+            OfficialReligion::EasternOrthodox => self.eastern_orthodox,
+            OfficialReligion::Islamic => self.islamic,
+            OfficialReligion::Judaism => self.judaism,
+        }
+    }
+
+    pub fn direct_mut(&mut self, religion: OfficialReligion) -> &mut f32 {
+        match religion {
+            OfficialReligion::RomanCatholic => &mut self.roman_catholic,
+            OfficialReligion::Lutheran => &mut self.lutheran,
+            OfficialReligion::Reformed => &mut self.reformed,
+            OfficialReligion::Anglican => &mut self.anglican,
+            OfficialReligion::EasternOrthodox => &mut self.eastern_orthodox,
+            OfficialReligion::Islamic => &mut self.islamic,
+            OfficialReligion::Judaism => &mut self.judaism,
+        }
+    }
+
+    pub fn effective(self, religion: OfficialReligion) -> f32 {
+        OfficialReligion::ALL
+            .into_iter()
+            .map(|studied| {
+                let direct = self.direct(studied);
+                (if direct.is_finite() {
+                    direct.max(0.0)
+                } else {
+                    0.0
+                }) * religion.correlation(studied)
+            })
+            .sum()
+    }
+
+    pub fn total_direct(self) -> f32 {
+        OfficialReligion::ALL
+            .into_iter()
+            .map(|r| {
+                let hours = self.direct(r);
+                if hours.is_finite() {
+                    hours.max(0.0)
+                } else {
+                    0.0
+                }
+            })
+            .sum()
+    }
+
+    pub fn maximum_effective(self) -> f32 {
+        OfficialReligion::ALL
+            .into_iter()
+            .map(|r| self.effective(r))
+            .fold(0.0, f32::max)
+    }
+
+    pub fn add_direct(&mut self, religion: OfficialReligion, hours: f32) {
+        if hours.is_finite() && hours > 0.0 {
+            let direct = self.direct_mut(religion);
+            if !direct.is_finite() || *direct < 0.0 {
+                *direct = 0.0;
+            }
+            *direct += hours;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct ReligionMinutes {
+    pub roman_catholic: u16,
+    pub lutheran: u16,
+    pub reformed: u16,
+    pub anglican: u16,
+    pub eastern_orthodox: u16,
+    pub islamic: u16,
+    pub judaism: u16,
+}
+
+impl ReligionMinutes {
+    pub const fn get(self, religion: OfficialReligion) -> u16 {
+        match religion {
+            OfficialReligion::RomanCatholic => self.roman_catholic,
+            OfficialReligion::Lutheran => self.lutheran,
+            OfficialReligion::Reformed => self.reformed,
+            OfficialReligion::Anglican => self.anglican,
+            OfficialReligion::EasternOrthodox => self.eastern_orthodox,
+            OfficialReligion::Islamic => self.islamic,
+            OfficialReligion::Judaism => self.judaism,
+        }
+    }
+
+    pub fn total(self) -> u64 {
+        OfficialReligion::ALL
+            .into_iter()
+            .map(|r| u64::from(self.get(r)))
+            .sum()
+    }
+
+    pub fn split_evenly(total: u16, targets: &[OfficialReligion]) -> Self {
+        let mut result = Self::default();
+        let mut targets = targets.to_vec();
+        targets.sort_by_key(|religion| religion.index());
+        targets.dedup();
+        if targets.is_empty() {
+            return result;
+        }
+        let count = targets.len() as u16;
+        let base = total / count;
+        let remainder = total % count;
+        for (index, religion) in targets.into_iter().enumerate() {
+            let value = base + u16::from(index < usize::from(remainder));
+            match religion {
+                OfficialReligion::RomanCatholic => result.roman_catholic = value,
+                OfficialReligion::Lutheran => result.lutheran = value,
+                OfficialReligion::Reformed => result.reformed = value,
+                OfficialReligion::Anglican => result.anglican = value,
+                OfficialReligion::EasternOrthodox => result.eastern_orthodox = value,
+                OfficialReligion::Islamic => result.islamic = value,
+                OfficialReligion::Judaism => result.judaism = value,
+            }
+        }
+        result
     }
 }
 
@@ -152,6 +361,29 @@ impl SettlementReligiousStatus {
             }
             Self::LocallyDetermined { church } => church,
         }
+    }
+
+    /// Religions legally represented by this settlement, in stable enum order.
+    pub fn represented_religions(self) -> Vec<OfficialReligion> {
+        let mut religions = match self {
+            Self::Established { religion } => vec![religion],
+            Self::LocallyDetermined { church } => vec![church],
+            Self::Parity { arrangement } | Self::MultiConfessional { arrangement } => {
+                match arrangement {
+                    WesternChristianArrangement::CatholicLutheran { .. } => {
+                        vec![OfficialReligion::RomanCatholic, OfficialReligion::Lutheran]
+                    }
+                    WesternChristianArrangement::CatholicReformed { .. } => {
+                        vec![OfficialReligion::RomanCatholic, OfficialReligion::Reformed]
+                    }
+                    WesternChristianArrangement::LutheranReformed { .. } => {
+                        vec![OfficialReligion::Lutheran, OfficialReligion::Reformed]
+                    }
+                }
+            }
+        };
+        religions.sort_by_key(|religion| religion.index());
+        religions
     }
 }
 
@@ -3682,10 +3914,74 @@ mod tests {
         HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
         LandUseProfile, LanguageCode, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
         NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
-        PotentialVegetationClass, PotentialVegetationPosterior, SettlementReligiousStatus,
-        SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
-        TreeSpeciesId,
+        PotentialVegetationClass, PotentialVegetationPosterior, ReligionHours, ReligionMinutes,
+        SettlementReligiousStatus, SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints,
+        SummerHydroclimate, TreeSpeciesId,
     };
+
+    #[test]
+    fn religion_correlations_are_identity_symmetric_and_non_recursive() {
+        for left in OfficialReligion::ALL {
+            assert_eq!(left.correlation(left), 1.0);
+            for right in OfficialReligion::ALL {
+                assert_eq!(left.correlation(right), right.correlation(left));
+            }
+        }
+        assert_eq!(
+            OfficialReligion::RomanCatholic.correlation(OfficialReligion::Lutheran),
+            0.80
+        );
+        assert_eq!(
+            OfficialReligion::Islamic.correlation(OfficialReligion::Judaism),
+            0.35
+        );
+        let hours = ReligionHours {
+            roman_catholic: 1.0,
+            ..Default::default()
+        };
+        assert_eq!(hours.effective(OfficialReligion::Lutheran), 0.8);
+        // The derived Lutheran knowledge does not feed back into Catholicism.
+        assert_eq!(hours.effective(OfficialReligion::RomanCatholic), 1.0);
+        assert_eq!(hours.total_direct(), 1.0);
+    }
+
+    #[test]
+    fn religion_minutes_split_evenly_with_stable_remainders() {
+        let split = ReligionMinutes::split_evenly(
+            61,
+            &[OfficialReligion::Reformed, OfficialReligion::RomanCatholic],
+        );
+        assert_eq!(split.roman_catholic, 31);
+        assert_eq!(split.reformed, 30);
+        assert_eq!(split.total(), 61);
+        assert_eq!(ReligionMinutes::split_evenly(60, &[]).total(), 0);
+    }
+
+    #[test]
+    fn religion_direct_field_validation_rejects_each_invalid_shape() {
+        let valid = ReligionHours {
+            judaism: 12.0,
+            ..Default::default()
+        };
+        assert!(valid.direct_fields_valid(100.0));
+        for invalid in [-1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 100.1] {
+            let hours = ReligionHours {
+                judaism: invalid,
+                ..valid
+            };
+            assert!(!hours.direct_fields_valid(100.0), "accepted {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn adding_direct_hours_repairs_poisoned_canonical_field() {
+        let mut hours = ReligionHours {
+            islamic: f32::NAN,
+            ..Default::default()
+        };
+        hours.add_direct(OfficialReligion::Islamic, 0.5);
+        assert_eq!(hours.islamic, 0.5);
+    }
 
     #[test]
     fn industry_profiles_are_nonempty_bounded_unique_and_canonical() {
@@ -3752,14 +4048,14 @@ mod tests {
     }
 
     #[test]
-    fn religious_status_derives_the_single_church_faith() {
+    fn religious_status_derives_the_single_church_religion() {
         let status = SettlementReligiousStatus::MultiConfessional {
             arrangement: super::WesternChristianArrangement::CatholicLutheran {
                 church: super::CatholicLutheranChurch::Lutheran,
             },
         };
         assert_eq!(status.church(), OfficialReligion::Lutheran);
-        assert_eq!(status.church().faith_id(), "lutheran");
+        assert_eq!(status.church().religion_id(), "lutheran");
     }
 
     #[test]

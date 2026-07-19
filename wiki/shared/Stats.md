@@ -246,17 +246,14 @@ A solo character retains their exact individual check. The result never exceeds 
 4. Can treat most organ damage and rare diseases
 5. Can treat all organ damage and all diseases
 
-### Faith (trained, 5000 hours)
-This is a special skill with an associated religion, and a character can profess only one religion at a time. Faith represents knowledge, practice, and conviction. Same-faith party members use the generic ranked party-check formula to form a religious cohort, capped at 5 and floored at 1 for a lone believer. That cohort supplies a positive [morale](Morale.md) source. Other faith cohorts create foreign pressure; aggregate party Charisma is subtracted from that pressure before the remainder becomes religious discord. Faithless characters receive no cohort benefit and exert no religious pressure.
+### Religion (trained, 5000 hours per tradition)
+Religion represents knowledge, not conviction. It includes Roman Catholicism, Lutheranism, Reformed Christianity, Anglicanism, Eastern Orthodoxy, Islam, and Judaism. Canonical state records only hours directly studied in each tradition. Effective hours for a tradition are derived once by multiplying those direct hours by the symmetric correlation matrix; derived hours are never stored or recursively correlated. In the skill rail, the collapsed row is the tradition Auto-train would currently select: the character's professed religion, or otherwise the settlement's church. Expanding it shows only the other traditions in which the character has directly studied more than zero hours, as blue-purple icons rather than repeating the selected one. Each meter's hover text reports effective and directly studied hours. With Auto-train enabled, only the collapsed automatic budget is editable and manual allocations are muted; disabling it enables direct per-tradition allocation, with the selected tradition remaining available in the collapsed row.
 
-> Halbe: After the MVP we may want to move this into a separate system from skills called "Personality" which is more immutable and balanced via tradeoffs. "Religion" could stay as a skill, representing one's knowledge of a given religion, and is a requirement for the charisma-multiplier morale bonus from faith. Faith might also be renamed to "Conviction" and come with more downsides to balance out its huge upside, like one's unwillingness to compromise could make it difficult to deal with "morally flexible" characters. 
+The diagonal is 1.0. The upper-triangle correlations in stable order (Roman Catholic, Lutheran, Reformed, Anglican, Eastern Orthodox, Islam, Judaism) are: RC to the remaining traditions `0.80, 0.75, 0.80, 0.65, 0.10, 0.10`; Lutheran `0.90, 0.85, 0.50, 0.10, 0.10`; Reformed `0.85, 0.45, 0.10, 0.10`; Anglican `0.55, 0.10, 0.10`; Eastern Orthodox `0.15, 0.10`; and Islam to Judaism `0.35`.
 
-0. Agnostic, atheist, or only only identifies with the faith to participate in holidays and not be ostracized.
-1. Actually does pray and ostensibly believe, but doesn't think about it often in day-to-day life
-2. Regularly attends church and will feel guilty for skipping, but still often view most of their life through a secular lens
-3. Prays daily and means it, but not eager to become a martyr. Doubts only when faith is tested by serious adversity.
-4. Willing to live an ascetic life. Will almost certainly not blaspheme or convert even when tortured
-5. Will eagerly martyr for a righteous opportunity
+A party's check for a particular religion includes every living member's effective knowledge of that tradition, regardless of what they personally profess. This permits a knowledgeable nonbeliever or member of another religion to lead prayers and sermons. The generic recruitment summary uses the character's maximum effective Religion check as a UI-only measure of coverage; authoritative morale and prayer always select the relevant tradition.
+
+Conviction lives on the personality axis instead: Zealous contributes 5.0 pressure, Neutral 2.5, and Irreverent 0.0. A profession and conviction are separate; an Irreverent character may still officially profess a religion.
 
 ## Physical
 ### Melee (intuitive, 8000 hours)

@@ -94,7 +94,12 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(
             [call.args[0][-1] for call in run_checked.call_args_list],
-            ["seed_world", "seed_sick_character", "seed_damaged_character"],
+            [
+                "seed_world",
+                "seed_sick_character",
+                "seed_damaged_character",
+                "seed_religion_scholar_character",
+            ],
         )
 
     @mock.patch.object(dev_stack, "run_checked")

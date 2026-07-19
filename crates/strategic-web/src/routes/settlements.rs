@@ -8,6 +8,7 @@ use adventuresim_core::{
         STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
     },
 };
+use adventuresim_world_schema::OfficialReligion;
 use axum::{
     Form, Json, Router,
     extract::{Path, Query, State},
@@ -1620,6 +1621,12 @@ async fn party_personal(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
+    let prayer_religion_check = match religion.as_deref() {
+        Some(religion_id) => {
+            party_religion_knowledge_check(&state, &party_members, religion_id).await
+        }
+        None => 0.0,
+    };
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
@@ -1647,6 +1654,7 @@ async fn party_personal(
             condition.as_ref(),
             &morale_sources,
             religion.as_deref(),
+            prayer_religion_check,
             schedule.first(),
             activity_preview,
             religious_demand.as_ref(),
@@ -1657,6 +1665,71 @@ async fn party_personal(
         )
         .into_string(),
     )
+}
+
+async fn party_religion_knowledge_check(
+    state: &AppState,
+    party_members: &[Character],
+    religion_id: &str,
+) -> f32 {
+    let Some(religion) = OfficialReligion::from_id(religion_id) else {
+        return 0.0;
+    };
+    let mut checks = Vec::with_capacity(party_members.len());
+    for member in living_party_members(party_members) {
+        let skills = query_single::<CharacterSkills>(state, "character_skills", member.id).await;
+        let attributes =
+            query_single::<CharacterAttributes>(state, "character_attributes", member.id).await;
+        let limbs = query_single::<CharacterLimbs>(state, "character_limbs", member.id).await;
+        let stats = query_single::<CharacterStats>(state, "character_stats", member.id).await;
+        if let (Some(skills), Some(attributes), Some(limbs), Some(stats)) =
+            (skills, attributes, limbs, stats)
+        {
+            checks.push(adventuresim_core::capability::religion_knowledge_check(
+                skills.religion_hours.effective(religion),
+                attributes.instinct,
+                attributes.intelligence,
+                stats.focus,
+                limbs.head_health,
+            ));
+        }
+    }
+    adventuresim_core::capability::aggregate_party_check(checks).clamp(0.0, 5.0)
+}
+
+fn living_party_members(party_members: &[Character]) -> impl Iterator<Item = &Character> {
+    party_members.iter().filter(|member| member.alive)
+}
+
+#[cfg(test)]
+mod party_religion_knowledge_tests {
+    use super::living_party_members;
+    use crate::spacetimedb::Character;
+
+    fn party_member(id: u64, alive: bool) -> Character {
+        Character {
+            id,
+            name: format!("Member {id}"),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive,
+            temporary: false,
+        }
+    }
+
+    #[test]
+    fn prayer_preview_knowledge_excludes_dead_party_members() {
+        let members = [party_member(1, true), party_member(2, false)];
+        let ids = living_party_members(&members)
+            .map(|member| member.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![1]);
+    }
 }
 
 #[derive(Deserialize)]
@@ -1694,7 +1767,24 @@ struct TrainingScheduleForm {
     will_minutes: u16,
     charisma_minutes: u16,
     medicine_minutes: u16,
-    faith_minutes: u16,
+    #[serde(default)]
+    religion_minutes: u16,
+    #[serde(default)]
+    religion_auto_train: bool,
+    #[serde(default)]
+    religion_roman_catholic_minutes: u16,
+    #[serde(default)]
+    religion_lutheran_minutes: u16,
+    #[serde(default)]
+    religion_reformed_minutes: u16,
+    #[serde(default)]
+    religion_anglican_minutes: u16,
+    #[serde(default)]
+    religion_eastern_orthodox_minutes: u16,
+    #[serde(default)]
+    religion_islamic_minutes: u16,
+    #[serde(default)]
+    religion_judaism_minutes: u16,
     stealth_minutes: u16,
     balance_minutes: u16,
     surgeon_minutes: u16,
@@ -1703,6 +1793,44 @@ struct TrainingScheduleForm {
     prayer_minutes: u16,
     thievery_minutes: u16,
     raiding_minutes: u16,
+}
+
+#[cfg(test)]
+mod training_schedule_form_tests {
+    use super::TrainingScheduleForm;
+    use serde_json::json;
+
+    #[test]
+    fn omitted_checkbox_and_inactive_religion_inputs_deserialize_as_false_and_zero() {
+        let form: TrainingScheduleForm = serde_json::from_value(json!({
+            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
+            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
+            "medicine_minutes": 0, "stealth_minutes": 0, "balance_minutes": 0,
+            "surgeon_minutes": 0, "smithing_minutes": 0, "labor_minutes": 0,
+            "prayer_minutes": 0, "thievery_minutes": 0, "raiding_minutes": 0
+        }))
+        .unwrap();
+        assert!(!form.religion_auto_train);
+        assert_eq!(form.religion_minutes, 0);
+        assert_eq!(form.religion_judaism_minutes, 0);
+    }
+
+    #[test]
+    fn submitted_schedule_retains_both_religion_allocation_branches() {
+        let form: TrainingScheduleForm = serde_json::from_value(json!({
+            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
+            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
+            "medicine_minutes": 0, "religion_minutes": 120,
+            "religion_auto_train": false, "religion_judaism_minutes": 45,
+            "stealth_minutes": 0, "balance_minutes": 0, "surgeon_minutes": 0,
+            "smithing_minutes": 0, "labor_minutes": 0, "prayer_minutes": 0,
+            "thievery_minutes": 0, "raiding_minutes": 0
+        }))
+        .unwrap();
+        assert!(!form.religion_auto_train);
+        assert_eq!(form.religion_minutes, 120);
+        assert_eq!(form.religion_judaism_minutes, 45);
+    }
 }
 
 async fn update_training_schedule(
@@ -1727,7 +1855,17 @@ async fn update_training_schedule(
                         will_minutes: form.will_minutes,
                         charisma_minutes: form.charisma_minutes,
                         medicine_minutes: form.medicine_minutes,
-                        faith_minutes: form.faith_minutes,
+                        religion_minutes: form.religion_minutes,
+                        religion_auto_train: form.religion_auto_train,
+                        religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
+                            roman_catholic: form.religion_roman_catholic_minutes,
+                            lutheran: form.religion_lutheran_minutes,
+                            reformed: form.religion_reformed_minutes,
+                            anglican: form.religion_anglican_minutes,
+                            eastern_orthodox: form.religion_eastern_orthodox_minutes,
+                            islamic: form.religion_islamic_minutes,
+                            judaism: form.religion_judaism_minutes,
+                        },
                         stealth_minutes: form.stealth_minutes,
                         balance_minutes: form.balance_minutes,
                         surgeon_minutes: form.surgeon_minutes,
@@ -3009,7 +3147,11 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Will", before.will_hours, after.will_hours),
         ("Charisma", before.charisma_hours, after.charisma_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
-        ("Faith", before.faith_hours, after.faith_hours),
+        (
+            "Religion",
+            before.religion_hours.total_direct(),
+            after.religion_hours.total_direct(),
+        ),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
         ("Surgeon", before.surgeon_hours, after.surgeon_hours),

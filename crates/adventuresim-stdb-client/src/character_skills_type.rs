@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::religion_hours_type::ReligionHours;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterSkills {
@@ -15,7 +17,7 @@ pub struct CharacterSkills {
     pub will_hours: f32,
     pub charisma_hours: f32,
     pub medicine_hours: f32,
-    pub faith_hours: f32,
+    pub religion_hours: ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
@@ -38,7 +40,7 @@ pub struct CharacterSkillsCols {
     pub will_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub charisma_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub medicine_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
-    pub faith_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub religion_hours: __sdk::__query_builder::Col<CharacterSkills, ReligionHours>,
     pub stealth_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub balance_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub surgeon_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
@@ -57,7 +59,7 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             will_hours: __sdk::__query_builder::Col::new(table_name, "will_hours"),
             charisma_hours: __sdk::__query_builder::Col::new(table_name, "charisma_hours"),
             medicine_hours: __sdk::__query_builder::Col::new(table_name, "medicine_hours"),
-            faith_hours: __sdk::__query_builder::Col::new(table_name, "faith_hours"),
+            religion_hours: __sdk::__query_builder::Col::new(table_name, "religion_hours"),
             stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
             balance_hours: __sdk::__query_builder::Col::new(table_name, "balance_hours"),
             surgeon_hours: __sdk::__query_builder::Col::new(table_name, "surgeon_hours"),

@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::character_skills_type::CharacterSkills;
+use super::religion_hours_type::ReligionHours;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_skills`.

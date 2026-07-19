@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (802)
+## Files (812)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -321,6 +321,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/refresh_capabilities_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/refresh_strategic_condition_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reject_party_join_request_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/religion_hours_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/religion_minutes_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/religious_demand_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/religious_demand_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/remove_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -368,6 +370,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/seed_bot_join_requests_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_damaged_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_party_companions_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/seed_religion_scholar_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_sick_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_simulation_disease_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/seed_simulation_equipment_damage_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -722,6 +725,15 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/wingfoot.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-axe.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/wood-club.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/ATTRIBUTION.md` — Project documentation.
+- `crates/strategic-web/static/icons/religion/canterbury-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/catholic-crucifix.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/fontawesome-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/fontawesome-star-and-crescent.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/fontawesome-star-of-david.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/huguenot-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/luther-rose.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/orthodox-cross.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.

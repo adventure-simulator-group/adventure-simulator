@@ -1,6 +1,7 @@
 //! Pure settlement schedule progression shared by the authoritative module and tools.
 
 use crate::{activity::*, strategic_time::training_hours_increment};
+use adventuresim_world_schema::{OfficialReligion, ReligionHours, ReligionMinutes};
 
 /// Stable order used by reports and schedule arrays.
 pub const SKILL_COUNT: usize = 12;
@@ -27,7 +28,7 @@ pub struct SkillHours {
     pub will: f32,
     pub charisma: f32,
     pub medicine: f32,
-    pub faith: f32,
+    pub religion: ReligionHours,
     pub stealth: f32,
     pub balance: f32,
     pub surgeon: f32,
@@ -44,7 +45,7 @@ impl SkillHours {
             self.will,
             self.charisma,
             self.medicine,
-            self.faith,
+            self.religion.total_direct(),
             self.stealth,
             self.balance,
             self.surgeon,
@@ -54,6 +55,10 @@ impl SkillHours {
 
     pub fn is_finite(self) -> bool {
         self.values().into_iter().all(f32::is_finite)
+            && self
+                .religion
+                .direct_values()
+                .all(|(_, hours)| hours.is_finite())
     }
 }
 
@@ -67,7 +72,11 @@ pub struct DailySchedule {
     pub will: u16,
     pub charisma: u16,
     pub medicine: u16,
-    pub faith: u16,
+    /// Aggregate automatic Religion budget. Ignored when `religion_auto_train` is false.
+    pub religion: u16,
+    pub religion_auto_train: bool,
+    /// Explicit per-tradition budgets used when auto-training is disabled.
+    pub religions: ReligionMinutes,
     pub stealth: u16,
     pub balance: u16,
     pub surgeon: u16,
@@ -80,27 +89,32 @@ pub struct DailySchedule {
 
 impl DailySchedule {
     pub fn allocated_minutes(self) -> u64 {
-        [
-            self.melee,
-            self.dodge,
-            self.block,
-            self.ranged,
-            self.will,
-            self.charisma,
-            self.medicine,
-            self.faith,
-            self.stealth,
-            self.balance,
-            self.surgeon,
-            self.smithing,
-            self.labor,
-            self.prayer,
-            self.thievery,
-            self.raiding,
-        ]
-        .into_iter()
-        .map(u64::from)
-        .sum()
+        let religion = if self.religion_auto_train {
+            u64::from(self.religion)
+        } else {
+            self.religions.total()
+        };
+        religion
+            + [
+                self.melee,
+                self.dodge,
+                self.block,
+                self.ranged,
+                self.will,
+                self.charisma,
+                self.medicine,
+                self.stealth,
+                self.balance,
+                self.surgeon,
+                self.smithing,
+                self.labor,
+                self.prayer,
+                self.thievery,
+                self.raiding,
+            ]
+            .into_iter()
+            .map(u64::from)
+            .sum::<u64>()
     }
 }
 
@@ -185,12 +199,10 @@ pub fn apply_schedule_training(
     skills.will += increment(schedule.will);
     skills.charisma += increment(schedule.charisma);
     skills.medicine += increment(schedule.medicine);
-    skills.faith += increment(schedule.faith);
     skills.stealth += increment(schedule.stealth);
     skills.balance += increment(schedule.balance);
     skills.surgeon += increment(schedule.surgeon);
     skills.smithing += increment(schedule.smithing);
-    skills.faith += increment(schedule.prayer) * ACTIVITY_TRAINING_RATE;
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
     let raiding = increment(schedule.raiding) * ACTIVITY_TRAINING_RATE;
@@ -204,6 +216,29 @@ pub fn apply_schedule_training(
     }
     if profile.raiding_dodge {
         skills.dodge += raiding * 0.5;
+    }
+}
+
+/// Apply direct Religion study after the caller has resolved automatic targets.
+/// Correlated knowledge is deliberately never written back into canonical hours.
+pub fn apply_religion_training(
+    religion_hours: &mut ReligionHours,
+    allocations: ReligionMinutes,
+    elapsed_minutes: u64,
+    prayer_religion: Option<OfficialReligion>,
+    prayer_minutes: u16,
+) {
+    for religion in OfficialReligion::ALL {
+        religion_hours.add_direct(
+            religion,
+            training_hours_increment(elapsed_minutes, allocations.get(religion)),
+        );
+    }
+    if let Some(religion) = prayer_religion {
+        religion_hours.add_direct(
+            religion,
+            training_hours_increment(elapsed_minutes, prayer_minutes) * ACTIVITY_TRAINING_RATE,
+        );
     }
 }
 
@@ -297,6 +332,36 @@ mod tests {
         for (a, b) in chunked.values().into_iter().zip(daily.values()) {
             assert!((a - b).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn religion_training_writes_only_direct_hours_and_prayer_requires_a_profession() {
+        let mut hours = ReligionHours::default();
+        let allocation = ReligionMinutes {
+            roman_catholic: 60,
+            ..Default::default()
+        };
+        apply_religion_training(
+            &mut hours,
+            allocation,
+            MINUTES_PER_DAY,
+            Some(OfficialReligion::Lutheran),
+            60,
+        );
+        assert_eq!(hours.roman_catholic, 1.0);
+        assert_eq!(hours.lutheran, 0.25);
+        assert_eq!(hours.total_direct(), 1.25);
+        assert!(hours.effective(OfficialReligion::Lutheran) > hours.lutheran);
+
+        let mut meditation = ReligionHours::default();
+        apply_religion_training(
+            &mut meditation,
+            ReligionMinutes::default(),
+            MINUTES_PER_DAY,
+            None,
+            60,
+        );
+        assert_eq!(meditation.total_direct(), 0.0);
     }
 
     #[test]

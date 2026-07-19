@@ -11,7 +11,7 @@ pub(super) struct UpdatePartyCheckTargetsArgs {
     pub medicine: f32,
     pub surgery: f32,
     pub charisma: f32,
-    pub faith: f32,
+    pub religion: f32,
 }
 
 impl From<UpdatePartyCheckTargetsArgs> for super::Reducer {
@@ -21,7 +21,7 @@ impl From<UpdatePartyCheckTargetsArgs> for super::Reducer {
             medicine: args.medicine,
             surgery: args.surgery,
             charisma: args.charisma,
-            faith: args.faith,
+            religion: args.religion,
         }
     }
 }
@@ -47,14 +47,14 @@ pub trait update_party_check_targets {
         medicine: f32,
         surgery: f32,
         charisma: f32,
-        faith: f32,
+        religion: f32,
     ) -> __sdk::Result<()> {
         self.update_party_check_targets_then(
             leader_id,
             medicine,
             surgery,
             charisma,
-            faith,
+            religion,
             |_, _| {},
         )
     }
@@ -71,7 +71,7 @@ pub trait update_party_check_targets {
         medicine: f32,
         surgery: f32,
         charisma: f32,
-        faith: f32,
+        religion: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -88,7 +88,7 @@ impl update_party_check_targets for super::RemoteReducers {
         medicine: f32,
         surgery: f32,
         charisma: f32,
-        faith: f32,
+        religion: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -102,7 +102,7 @@ impl update_party_check_targets for super::RemoteReducers {
                 medicine,
                 surgery,
                 charisma,
-                faith,
+                religion,
             },
             callback,
         )

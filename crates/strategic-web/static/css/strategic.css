@@ -376,9 +376,12 @@
 
 /* Keep center-facing row actions inside the scoped scroll viewport. */
 .left-sidebar .encumbrance-inventory-scroll {
+  direction: rtl;
   margin-right: -1.75rem;
   padding-right: 1.75rem;
 }
+
+.left-sidebar .encumbrance-inventory-scroll > * { direction: ltr; }
 
 .right-sidebar .encumbrance-inventory-scroll {
   margin-left: -3.25rem;
@@ -2614,26 +2617,112 @@ button.party-portrait-action {
   font-size: var(--font-size-sm);
 }
 
-.party-skill-icon-column { width: 1.55rem; }
-.party-skill-name-column { width: 5.75rem; }
+.party-skill-name-column { width: 2.35rem; }
 .party-skill-time-column { width: 3.65rem; }
-.skill-schedule .party-skill-icon-column { width: 1.15rem; }
-.skill-schedule .party-skill-name-column { width: 3.6rem; }
-.skill-schedule .schedule-effect-column { width: 1.55rem; }
-.skill-schedule .party-skill-time-column { width: 2.55rem; }
+.religion-expand-column { width: 1.2rem; }
+.skill-schedule .party-skill-name-column { width: 2rem; }
+.skill-schedule .schedule-effect-column { width: 1.3rem; }
+.skill-schedule .religion-auto-column { width: 1.45rem; }
+.skill-schedule .party-skill-time-column { width: 2.25rem; }
+.skill-schedule .religion-expand-column { width: 1.35rem; }
 
-.party-skills-table td {
+.party-skills-table td,
+.party-skills-table tbody th {
   padding: 0.42rem 0;
   vertical-align: middle;
   border-bottom: 1px solid var(--border-light);
 }
 
-.party-skill-icon-cell { padding-right: 0.4rem !important; }
+.party-skill-icon-cell { padding-inline: 0 !important; text-align: center; }
 
 .party-skill-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.religion-expand-button {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 1.2rem;
+  width: 1.2rem;
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.religion-expand-button:focus-visible,
+.religion-auto-toggle-label input:focus-visible {
+    outline: 2px solid var(--accent, #d0ad63);
+    outline-offset: 2px;
+}
+
+.religion-expand-chevron {
+  display: inline-block;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+
+.religion-expand-button[aria-expanded="true"] .religion-expand-chevron {
+  transform: rotate(90deg);
+}
+
+.religion-tradition-icon {
+    display: inline-flex;
+    color: var(--icon-mental);
+    font-size: 1.05rem;
+    vertical-align: middle;
+}
+
+.religion-subskill-name {
+    padding-left: 0.15rem;
+}
+
+.religion-auto-toggle-cell { padding-inline: 0.15rem !important; text-align: center; }
+.religion-auto-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  min-height: 1.5rem;
+  cursor: pointer;
+}
+.religion-auto-toggle-label input { width: 0.9rem; height: 0.9rem; margin: 0; }
+
+.religion-expand-cell {
+  padding-left: 0.15rem !important;
+  text-align: center;
+}
+
+.religion-primary-allocation-content {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+[data-religion-auto-control],
+[data-religion-primary-manual-control] {
+    position: relative;
+    display: inline-block;
+}
+
+[data-religion-auto-control][hidden],
+[data-religion-primary-manual-control][hidden] {
+    display: none;
+}
+
+.religion-allocation-inactive {
+    color: var(--text-muted);
+    opacity: 0.45;
 }
 
 .party-skill-meter .skill-rank-bar { width: 100%; overflow: visible; }
@@ -3182,66 +3271,95 @@ body.chat-resizing {
   font-variant-numeric: tabular-nums;
 }
 
-/* Keep hover active while moving from the value into its floating arrows. */
-.party-skill-allocation::after {
-  position: absolute;
-  z-index: 2;
-  top: -0.35rem;
-  right: -1rem;
-  bottom: -0.35rem;
-  left: -0.25rem;
-  content: "";
-}
-
 .party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; cursor: text; }
 
-.schedule-step {
-  position: absolute;
+.schedule-time-editor {
+  position: fixed;
+  z-index: 80;
   top: 50%;
-  z-index: 4;
-  width: 0.45rem;
-  height: 0.55rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  opacity: 0;
-  cursor: pointer;
-  transform: translateY(-50%);
-  transition: opacity 100ms ease;
-}
-
-.schedule-step::before {
-  position: absolute;
-  inset: 0;
-  width: 0;
-  height: 0;
-  content: "";
-  border-top: 0.275rem solid transparent;
-  border-bottom: 0.275rem solid transparent;
-}
-
-.schedule-step-decrease { right: 4.8ch; }
-.schedule-step-decrease::before { border-right: 0.4rem solid var(--text-primary); }
-.schedule-step-increase { right: -0.8rem; }
-.schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
-.party-skill-allocation:hover .schedule-step,
-.schedule-step:focus-visible { opacity: 1; }
-.schedule-time-input {
-  position: absolute;
-  z-index: 5;
-  top: 50%;
-  right: 0;
-  box-sizing: border-box;
-  width: 4.1rem;
-  max-width: none;
-  padding: 0.08rem 0.18rem;
+  right: auto;
+  left: 50%;
+  display: grid;
+  grid-template-columns: 1.5rem 3.7rem 1.5rem;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.14rem;
   border: 1px solid var(--accent);
-  color: inherit;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
+  box-shadow: 0 0.2rem 0.6rem rgb(0 0 0 / 55%);
+  transform: translate(-50%, -50%);
+}
+
+.schedule-time-input-stack {
+  display: grid;
+  grid-template-rows: 0.7rem 1.5rem 0.7rem;
+  overflow: hidden;
+  border: 1px solid #b8ad98;
+  border-radius: 0.12rem;
+  background: #f3eee2;
+}
+
+.schedule-time-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 1.5rem;
+  max-width: none;
+  padding: 0.08rem 0.2rem;
+  border: 0;
+  border-block: 1px solid #c9beaa;
+  border-radius: 0;
+  color: #17130f;
+  background: #fffaf0;
   font: inherit;
   text-align: center;
-  transform: translateY(-50%);
 }
+
+.schedule-time-input::selection {
+  background: #d8bd70;
+  color: #17130f;
+}
+
+.schedule-time-input[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
+}
+
+.schedule-time-editor-step {
+  width: 100%;
+  height: 0.7rem;
+  padding: 0;
+  border: 0;
+  color: #17130f;
+  background: #e7dfcf;
+  font-size: 0.5rem;
+  line-height: 0.7rem;
+  cursor: pointer;
+}
+
+.schedule-time-editor-step:hover,
+.schedule-time-editor-step:focus-visible { background: #d7cbb7; }
+
+.schedule-time-editor-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 0.15rem;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.schedule-time-confirm { background: #2f7d3d; }
+.schedule-time-cancel { background: #9c3434; }
+.schedule-time-confirm:hover,
+.schedule-time-confirm:focus-visible { background: #3d9a4d; }
+.schedule-time-cancel:hover,
+.schedule-time-cancel:focus-visible { background: #bd4242; }
 
 .skill-schedule { display: grid; gap: 0.55rem; }
 .schedule-save-status {
@@ -3303,7 +3421,6 @@ body.chat-resizing {
 }
 
 .schedule-special-row .party-skill-name { font-weight: 700; }
-.schedule-special-row .party-skill-icon-cell { padding-right: 0.4rem !important; }
 .schedule-special-icon { --stat-icon-color: var(--accent); }
 .schedule-effect {
   padding-inline: 0.1rem !important;

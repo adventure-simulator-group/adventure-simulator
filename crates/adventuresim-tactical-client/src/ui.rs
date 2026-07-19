@@ -201,9 +201,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(SkillSpan(Skill::Medicine), TextSpan::default())]
                             ),
                             (
-                                Name::new("faith"),
-                                Text::new("Faith hours:\n"),
-                                children![(SkillSpan(Skill::Faith), TextSpan::default())]
+                                Name::new("religion"),
+                                Text::new("Religion hours:\n"),
+                                children![(SkillSpan(Skill::Religion), TextSpan::default())]
                             ),
                             (
                                 Name::new("stealth"),
@@ -364,7 +364,7 @@ fn update_skills_ui(
             Skill::Will => format!("{:.2}", skills.will_hours),
             Skill::Charisma => format!("{:.2}", skills.charisma_hours),
             Skill::Medicine => format!("{:.2}", skills.medicine_hours),
-            Skill::Faith => format!("{:.2}", skills.faith_hours),
+            Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::Surgeon => format!("{:.2}", skills.surgeon_hours),

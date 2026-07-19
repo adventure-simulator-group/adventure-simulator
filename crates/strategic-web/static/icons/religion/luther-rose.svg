@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <!-- Project-native small-size rendering of the Luther rose's heart and cross. -->
+  <path fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="5" d="M32 57C12 45 11 28 21 24c6-3 11 2 11 2s5-5 11-2c10 4 9 21-11 33Z"/>
+  <path d="M28 6h8v13h12v8H36v22h-8V27H16v-8h12V6Z"/>
+</svg>

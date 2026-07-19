@@ -5,7 +5,7 @@ You aren't exactly spawning a character into the world; ostensibly, you are obta
 
 ## Personality
 
-Characters have an immutable sparse personality drawn from seven discrete axes. Only non-neutral tags are displayed. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Charisma, or Faith.
+Characters have an immutable sparse personality drawn from seven discrete axes. Only non-neutral tags are displayed. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Charisma, or Religion knowledge.
 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 

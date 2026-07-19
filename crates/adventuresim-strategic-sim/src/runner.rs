@@ -9,6 +9,7 @@ use adventuresim_core::{
     strategic_schedule::*,
     strategic_time::MINUTES_PER_DAY,
 };
+use adventuresim_world_schema::OfficialReligion;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -96,6 +97,13 @@ impl StrategicBackend for NativeSettlementBackend {
             state.profile.schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+        );
+        apply_religion_training(
+            &mut state.skills.religion,
+            state.profile.schedule.religions,
+            MINUTES_PER_DAY,
+            None,
+            state.profile.schedule.prayer,
         );
         let checks = Checks {
             attrs: &state.profile.attributes,
@@ -279,6 +287,12 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
         if profile.schedule.raiding > 0 {
             return Err(SimulationError::InvalidConfig(format!(
                 "agent {} assigns raiding minutes, but native raiding execution is unsupported until equipped capabilities are authoritative",
+                profile.agent_id
+            )));
+        }
+        if profile.schedule.religion_auto_train || profile.schedule.religion > 0 {
+            return Err(SimulationError::InvalidConfig(format!(
+                "agent {} uses automatic Religion training; simulator profiles require explicit per-tradition allocations",
                 profile.agent_id
             )));
         }
@@ -482,7 +496,9 @@ fn quantize_skills(skills: &mut SkillHours) {
     skills.will = q32(skills.will);
     skills.charisma = q32(skills.charisma);
     skills.medicine = q32(skills.medicine);
-    skills.faith = q32(skills.faith);
+    for religion in OfficialReligion::ALL {
+        *skills.religion.direct_mut(religion) = q32(skills.religion.direct(religion));
+    }
     skills.stealth = q32(skills.stealth);
     skills.balance = q32(skills.balance);
     skills.surgeon = q32(skills.surgeon);
@@ -703,6 +719,16 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
             p.agent_id
         ));
     }
+    if !p
+        .initial_skills
+        .religion
+        .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+    {
+        return Err(format!(
+            "agent {} Religion hours contain a nonfinite or out-of-range direct field",
+            p.agent_id
+        ));
+    }
     if !total_skill_hours(p.initial_skills).is_finite() {
         return Err(format!("agent {} has a nonfinite skill total", p.agent_id));
     }
@@ -744,7 +770,7 @@ impl PlayerSkills for SimSkills {
             Skill::Will => self.0.will,
             Skill::Charisma => self.0.charisma,
             Skill::Medicine => self.0.medicine,
-            Skill::Faith => self.0.faith,
+            Skill::Religion => self.0.religion.maximum_effective(),
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
             Skill::Surgeon => self.0.surgeon,

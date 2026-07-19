@@ -47,3 +47,13 @@ wood-club.
 The files in `crates/strategic-web/static/icons/game/` were converted from
 Iconify JSON bodies into standalone SVGs without altering the artwork. CSS
 masks supply colour at runtime.
+
+## Font Awesome Free
+
+The Religion skill icons `fontawesome-cross.svg`,
+`fontawesome-star-and-crescent.svg`, and `fontawesome-star-of-david.svg` are
+from Font Awesome Free 7.3.1 by Fonticons, Inc. They are licensed under
+[Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+- Sources: <https://fontawesome.com/icons/cross>, <https://fontawesome.com/icons/star-and-crescent>, and <https://fontawesome.com/icons/star-of-david>
+- License: <https://fontawesome.com/license/free>

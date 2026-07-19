@@ -60,7 +60,7 @@ pub(crate) enum PartyAction {
         medicine: f32,
         surgery: f32,
         charisma: f32,
-        faith: f32,
+        religion: f32,
     },
     SetInventoryQuantityTarget {
         item_id: String,
@@ -227,7 +227,7 @@ impl PartyAction {
                 medicine,
                 surgery,
                 charisma,
-                faith,
+                religion,
             } => (
                 "update_party_check_targets",
                 vec![
@@ -235,7 +235,7 @@ impl PartyAction {
                     json!(medicine),
                     json!(surgery),
                     json!(charisma),
-                    json!(faith),
+                    json!(religion),
                 ],
             ),
             Self::SetInventoryQuantityTarget { item_id, quantity } => (

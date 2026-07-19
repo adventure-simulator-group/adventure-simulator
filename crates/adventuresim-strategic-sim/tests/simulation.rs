@@ -177,6 +177,41 @@ fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
 }
 
 #[test]
+fn individual_religion_fields_must_be_finite_and_bounded() {
+    for invalid in [-1.0, f32::NAN, f32::INFINITY, MAX_INITIAL_SKILL_HOURS + 1.0] {
+        let mut profile = generate_profile(1, 0);
+        profile.initial_skills.religion.judaism = invalid;
+        assert!(
+            run_profiles(config(1, 1, 1), vec![profile]).is_err(),
+            "accepted {invalid:?}"
+        );
+    }
+}
+
+#[test]
+fn simulator_requires_manual_religion_and_faithless_prayer_adds_no_study() {
+    let mut automatic = generate_profile(4, 0);
+    automatic.schedule.religion_auto_train = true;
+    automatic.schedule.religion = 60;
+    assert!(run_profiles(config(4, 1, 1), vec![automatic]).is_err());
+
+    let mut manual = generate_profile(4, 0);
+    manual.schedule = adventuresim_core::strategic_schedule::DailySchedule {
+        religions: adventuresim_world_schema::ReligionMinutes {
+            judaism: 60,
+            ..Default::default()
+        },
+        prayer: 60,
+        ..Default::default()
+    };
+    let before = manual.initial_skills.religion;
+    let report = run_profiles(config(4, 1, 1), vec![manual]).unwrap();
+    let after = report.metrics[0].skill_hours.religion;
+    assert_eq!(after.judaism - before.judaism, 1.0);
+    assert_eq!(after.roman_catholic, before.roman_catholic);
+}
+
+#[test]
 fn bounded_skill_state_remains_finite_for_maximum_duration() {
     let mut profile = generate_profile(88, 0);
     profile.initial_skills = adventuresim_core::strategic_schedule::SkillHours {
@@ -187,7 +222,10 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         will: MAX_INITIAL_SKILL_HOURS,
         charisma: MAX_INITIAL_SKILL_HOURS,
         medicine: MAX_INITIAL_SKILL_HOURS,
-        faith: MAX_INITIAL_SKILL_HOURS,
+        religion: adventuresim_world_schema::ReligionHours {
+            roman_catholic: MAX_INITIAL_SKILL_HOURS,
+            ..Default::default()
+        },
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
         surgeon: MAX_INITIAL_SKILL_HOURS,

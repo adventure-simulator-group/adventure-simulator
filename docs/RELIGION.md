@@ -36,8 +36,8 @@ Canonical data distinguishes:
 - religion determined at the municipal level.
 
 The supported denominations are Roman Catholic, Lutheran (the IEG Wittenberg
-Reformation category), Reformed, Anglican, unspecified Protestant, Eastern
-Orthodox, and Islamic. Pair arrangements carry a pair-specific church enum, so
+Reformation category), Reformed, Anglican, Eastern Orthodox, and Islamic. Pair
+arrangements carry a pair-specific church enum, so
 the settlement's current single church cannot name a denomination outside the
 legal arrangement. The existing church/priest gameplay identifier is derived
 from that typed denomination during database import rather than supplied as a
@@ -48,13 +48,15 @@ fallback samples. `--religion-regions` can point to another intermediate using
 the same checked CSV boundary.
 
 The checked intermediate was audited against all 6,041 Viabundus settlements
-active in 1544: 4,590 matched one of the 14 prioritized regions and 1,451 used
-the Roman Catholic fallback. The matched set includes 155 settlements in the
-Upper Rhine multi-confessional approximation, confirming that its specific
-priority takes precedence over the broader Hessian region.
+active in 1544. Its 13 explicit regions omit places for which the historical
+source identifies only generic Protestantism, allowing denomination inference
+to resolve those settlements without creating a catch-all canonical religion.
+Remaining unmatched settlements use the Roman Catholic fallback. The Upper
+Rhine multi-confessional approximation retains its specific priority over the
+broader Hessian region.
 
-`just verify-religion` validates the committed file's fixed 1,069-byte size,
-SHA-256, exact column order, ascending unique priorities, coordinate bounds,
-statuses, and 14-row revision. `plan-religion` reports that identity.
+`just verify-religion` validates the committed file's fixed size, SHA-256,
+exact column order, ascending unique priorities, coordinate bounds, statuses,
+and 13-row revision. `plan-religion` reports that identity.
 `init-religion` always refuses so the rights-reserved GIF/PDF source images are
 never downloaded or mirrored.

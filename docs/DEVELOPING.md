@@ -190,7 +190,8 @@ and move its data directory aside or configure a new empty data directory.
 Then install/select SpacetimeDB 2.6.1 and use an explicitly isolated profile,
 or perform a separately reviewed operator migration. `web-isolated` starts a
 profile-owned server, reset-publishes, reseeds the normal world plus the sick
-`Sick Demo` and injured `Wounded Demo` UI fixtures, and launches the browser stack; it
+`Sick Demo`, injured `Wounded Demo`, and all-traditions `Religion Scholar Demo`
+UI fixtures, and launches the browser stack; it
 permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.

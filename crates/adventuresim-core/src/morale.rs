@@ -9,7 +9,7 @@ pub const MINIMUM_WILL_CHECK: f32 = 0.25;
 pub const MORALE_BONUS_CURVE_SCALE: f32 = 10.0;
 /// Maximum ally morale restored per point of the speaker's Charisma check.
 pub const MORALE_BONUS_PER_CHARISMA: f32 = 0.05;
-/// Raw mixed-faith discord created by each point of foreign faith pressure
+/// Raw interreligious discord created by each point of foreign conviction pressure
 /// which the party's social leadership cannot absorb.
 pub const RELIGIOUS_DISCORD_SEVERITY: f32 = 3.0;
 /// Pressure above this baseline begins to register as visible fervor.
@@ -96,20 +96,20 @@ pub fn morale_bonus_fraction(surplus_morale: f32, charisma_check: f32) -> f32 {
 /// Raw negative morale from mixed-faith tension. Party Charisma is subtracted
 /// from foreign faith pressure so sufficiently capable leadership removes the
 /// penalty entirely instead of merely reducing it proportionally.
-pub fn religious_discord(foreign_faith_pressure: f32, party_charisma: f32) -> f32 {
+pub fn religious_discord(foreign_conviction_pressure: f32, party_charisma: f32) -> f32 {
     RELIGIOUS_DISCORD_SEVERITY
-        * (foreign_faith_pressure.max(0.0) - party_charisma.max(0.0)).max(0.0)
+        * (foreign_conviction_pressure.max(0.0) - party_charisma.max(0.0)).max(0.0)
 }
 
 /// Bounded religious pressure used by the strategic Fervor meter.
 pub fn fervor_fraction(
-    individual_faith: f32,
-    same_faith_cohort: f32,
+    individual_conviction: f32,
+    same_religion_conviction: f32,
     surplus_morale: f32,
     party_charisma: f32,
 ) -> f32 {
-    let pressure = (individual_faith.max(0.0)
-        + same_faith_cohort.max(0.0)
+    let pressure = (individual_conviction.max(0.0)
+        + same_religion_conviction.max(0.0)
         + surplus_morale.max(0.0) / MORALE_BONUS_CURVE_SCALE
         - party_charisma.max(0.0)
         - FERVOR_PRESSURE_BASELINE)

@@ -3,7 +3,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
 
 use crate::{
-    ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item,
+    ItemSlot, Settlement, add_inventory_item,
+    condition::character_condition,
+    enter_mission, inventory_item,
     item::item,
     repair::item_condition,
     strategic::{party, settlement},
@@ -206,7 +208,7 @@ pub struct CharacterSkills {
     pub will_hours: f32,
     pub charisma_hours: f32,
     pub medicine_hours: f32,
-    pub faith_hours: f32,
+    pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
@@ -391,6 +393,64 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 
+/// Seed a character with direct training in every religion for local UI development.
+#[reducer]
+pub fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<(), String> {
+    const RELIGION_SCHOLAR_CHARACTER_ID: u64 = 9_999_999_999_999_988;
+
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(RELIGION_SCHOLAR_CHARACTER_ID)
+        .is_none()
+    {
+        insert_new_character(
+            ctx,
+            "Religion Scholar Demo".to_string(),
+            RELIGION_SCHOLAR_CHARACTER_ID,
+            false,
+        )?;
+    }
+
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(RELIGION_SCHOLAR_CHARACTER_ID)
+        .ok_or_else(|| "Religion scholar demo is missing skill data".to_string())?;
+    skills.religion_hours = adventuresim_world_schema::ReligionHours {
+        roman_catholic: 100.0,
+        lutheran: 200.0,
+        reformed: 300.0,
+        anglican: 400.0,
+        eastern_orthodox: 500.0,
+        islamic: 600.0,
+        judaism: 700.0,
+    };
+    ctx.db.character_skills().character_id().update(skills);
+
+    let mut condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(RELIGION_SCHOLAR_CHARACTER_ID)
+        .ok_or_else(|| "Religion scholar demo is missing condition data".to_string())?;
+    condition.religion_id = Some(
+        adventuresim_world_schema::OfficialReligion::RomanCatholic
+            .religion_id()
+            .to_string(),
+    );
+    ctx.db
+        .character_condition()
+        .character_id()
+        .update(condition);
+
+    crate::capability::refresh_character_capability(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
+    crate::condition::refresh_character_strategic_condition(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
+    Ok(())
+}
+
 fn set_demo_item_damage(
     ctx: &ReducerContext,
     inventory_item_id: u64,
@@ -494,7 +554,10 @@ fn insert_character_with_origin(
         will_hours: 1000.0,
         charisma_hours: 1000.0,
         medicine_hours: 1000.0,
-        faith_hours: 1000.0,
+        religion_hours: adventuresim_world_schema::ReligionHours {
+            roman_catholic: 1000.0,
+            ..Default::default()
+        },
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
         surgeon_hours: 1000.0,

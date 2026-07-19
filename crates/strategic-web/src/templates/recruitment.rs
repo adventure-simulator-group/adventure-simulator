@@ -12,7 +12,7 @@ pub struct PartyCheckSummary {
     pub medicine: f32,
     pub surgery: f32,
     pub charisma: f32,
-    pub faith: f32,
+    pub religion: f32,
 }
 
 pub struct RecruitmentApplicant {
@@ -430,7 +430,7 @@ pub fn aggregate_check_bars(
                 ("Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, contribution.map_or(0.0, |value| value.medicine)),
                 ("Surgery", "surgeon", "surgery", checks.surgery, party.surgery_target, contribution.map_or(0.0, |value| value.surgery)),
                 ("Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, contribution.map_or(0.0, |value| value.charisma)),
-                ("Faith", "faith", "faith", checks.faith, party.faith_target, contribution.map_or(0.0, |value| value.faith)),
+                ("Religion", "religion", "religion", checks.religion, party.religion_target, contribution.map_or(0.0, |value| value.religion)),
             ] {
                 @if contribution.is_none() || added.abs() > 0.005 {
                     (aggregate_check_control(party, label, icon, field, current, target, added, can_manage))
@@ -490,7 +490,7 @@ fn party_check_target_form(
             input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 5.0));
             input type="hidden" name="surgery" value=(party.surgery_target.round().clamp(0.0, 5.0));
             input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 5.0));
-            input type="hidden" name="faith" value=(party.faith_target.round().clamp(0.0, 5.0));
+            input type="hidden" name="religion" value=(party.religion_target.round().clamp(0.0, 5.0));
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)

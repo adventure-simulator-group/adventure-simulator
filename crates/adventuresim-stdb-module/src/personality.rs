@@ -84,6 +84,17 @@ impl CharacterPersonality {
     }
 }
 
+impl Conviction {
+    /// Ardor is a personality property, independent of religious knowledge.
+    pub const fn strength(self) -> f32 {
+        match self {
+            Self::Zealous => 5.0,
+            Self::Neutral => 2.5,
+            Self::Irreverent => 0.0,
+        }
+    }
+}
+
 /// Generate a sparse profile with exactly two through four distinct axes.
 pub fn random_personality(
     character_id: u64,
@@ -327,6 +338,13 @@ mod tests {
     #[test]
     fn neutral_profile_has_no_visible_axes() {
         assert_eq!(CharacterPersonality::neutral(1).non_neutral_count(), 0);
+    }
+
+    #[test]
+    fn conviction_strength_is_independent_from_religious_knowledge() {
+        assert_eq!(Conviction::Zealous.strength(), 5.0);
+        assert_eq!(Conviction::Neutral.strength(), 2.5);
+        assert_eq!(Conviction::Irreverent.strength(), 0.0);
     }
 
     #[test]

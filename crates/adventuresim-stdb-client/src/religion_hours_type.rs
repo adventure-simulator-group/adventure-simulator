@@ -6,23 +6,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum OfficialReligion {
-    RomanCatholic,
-
-    Lutheran,
-
-    Reformed,
-
-    Anglican,
-
-    EasternOrthodox,
-
-    Islamic,
-
-    Judaism,
+pub struct ReligionHours {
+    pub roman_catholic: f32,
+    pub lutheran: f32,
+    pub reformed: f32,
+    pub anglican: f32,
+    pub eastern_orthodox: f32,
+    pub islamic: f32,
+    pub judaism: f32,
 }
 
-impl __sdk::InModule for OfficialReligion {
+impl __sdk::InModule for ReligionHours {
     type Module = super::RemoteModule;
 }

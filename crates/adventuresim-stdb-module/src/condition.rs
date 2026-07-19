@@ -499,10 +499,11 @@ fn rank_morale_sources(raw_sources: &mut [ProjectedMoraleSource], will: f32) {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct PartyFaithContext {
+struct PartyReligionContext {
     own_cohort: f32,
     foreign_pressure: f32,
     party_charisma: f32,
+    knowledge: f32,
 }
 
 fn religion_label(religion_id: &str) -> String {
@@ -550,11 +551,26 @@ fn condition_projection_member_ids(
     }
 }
 
-fn party_faith_context(
+fn religion_knowledge_check(
+    ctx: &ReducerContext,
+    character_id: u64,
+    religion: adventuresim_world_schema::OfficialReligion,
+) -> Result<f32, String> {
+    let (attributes, limbs, stats, skills) = load_character_parts(ctx, character_id)?;
+    Ok(adventuresim_core::capability::religion_knowledge_check(
+        skills.religion_hours.effective(religion),
+        attributes.instinct,
+        attributes.intelligence,
+        stats.focus,
+        limbs.head_health,
+    ))
+}
+
+fn party_religion_context(
     ctx: &ReducerContext,
     character_id: u64,
     party_members: &[u64],
-) -> Result<Option<(String, PartyFaithContext)>, String> {
+) -> Result<Option<(String, PartyReligionContext)>, String> {
     let mut cohorts: BTreeMap<String, Vec<f32>> = BTreeMap::new();
     let mut charismas = Vec::with_capacity(party_members.len());
     for member_id in party_members.iter().copied() {
@@ -567,11 +583,11 @@ fn party_faith_context(
             .find(member_id)
             .and_then(|condition| condition.religion_id)
         {
-            cohorts.entry(religion_id).or_default().push(mental_check(
-                ctx,
-                member_id,
-                Skill::Faith,
-            )?);
+            cohorts.entry(religion_id).or_default().push(
+                crate::personality::personality_or_neutral(ctx, member_id)
+                    .conviction
+                    .strength(),
+            );
         }
     }
     let own_religion = ctx
@@ -583,25 +599,38 @@ fn party_faith_context(
     let Some(own_religion) = own_religion else {
         return Ok(None);
     };
-    let cohort_checks: BTreeMap<_, _> = cohorts
-        .into_iter()
-        .map(|(religion, checks)| (religion, aggregate_party_check(checks).clamp(1.0, 5.0)))
-        .collect();
-    let own_cohort = cohort_checks.get(&own_religion).copied().unwrap_or(1.0);
-    let foreign_pressure = aggregate_party_check(
-        cohort_checks
-            .iter()
-            .filter_map(|(religion, check)| (religion != &own_religion).then_some(*check)),
-    )
-    .clamp(0.0, 5.0);
+    let religion = adventuresim_world_schema::OfficialReligion::from_id(&own_religion)
+        .ok_or_else(|| "Character has an unknown religion".to_string())?;
+    let (own_cohort, foreign_pressure) = religion_cohort_pressure(cohorts, &own_religion);
+    let knowledge_checks = party_members
+        .iter()
+        .copied()
+        .map(|member_id| religion_knowledge_check(ctx, member_id, religion))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Some((
         own_religion,
-        PartyFaithContext {
+        PartyReligionContext {
             own_cohort,
             foreign_pressure,
             party_charisma: aggregate_party_charisma(charismas),
+            knowledge: aggregate_party_check(knowledge_checks).clamp(0.0, 5.0),
         },
     )))
+}
+
+fn religion_cohort_pressure(cohorts: BTreeMap<String, Vec<f32>>, own_religion: &str) -> (f32, f32) {
+    let cohort_checks: BTreeMap<_, _> = cohorts
+        .into_iter()
+        .map(|(religion, checks)| (religion, aggregate_party_check(checks).clamp(0.0, 5.0)))
+        .collect();
+    let own_cohort = cohort_checks.get(own_religion).copied().unwrap_or(0.0);
+    let foreign_pressure = aggregate_party_check(
+        cohort_checks
+            .iter()
+            .filter_map(|(religion, check)| (religion != own_religion).then_some(*check)),
+    )
+    .clamp(0.0, 5.0);
+    (own_cohort, foreign_pressure)
 }
 
 fn base_morale(
@@ -655,18 +684,21 @@ fn base_morale(
     }
 
     let party_members = party_character_ids(ctx, character_id)?;
-    if let Some((religion_id, faith)) = party_faith_context(ctx, character_id, &party_members)? {
-        add_source(
-            format!("faith-{religion_id}"),
-            "faith".into(),
-            format!(
-                "Conviction among the {} faithful",
-                religion_label(&religion_id)
-            ),
-            faith.own_cohort,
-            crate::personality::MoraleStimulus::Religious,
-        );
-        let discord = religious_discord(faith.foreign_pressure, faith.party_charisma);
+    if let Some((religion_id, religion)) =
+        party_religion_context(ctx, character_id, &party_members)?
+    {
+        if personality.conviction == crate::personality::Conviction::Zealous
+            && religion.knowledge > 0.0
+        {
+            add_source(
+                format!("religion-{religion_id}"),
+                "religion".into(),
+                format!("Religious leadership for {}", religion_label(&religion_id)),
+                religion.knowledge,
+                crate::personality::MoraleStimulus::Religious,
+            );
+        }
+        let discord = religious_discord(religion.foreign_pressure, religion.party_charisma);
         if discord > 0.0 {
             add_source(
                 "religious-discord".into(),
@@ -687,17 +719,17 @@ fn base_morale(
                 "daily-prayer".into(),
                 "prayer".into(),
                 "Daily prayer".into(),
-                prayer_morale(prayer_minutes),
+                led_prayer_morale(prayer_minutes, religion.knowledge),
                 crate::personality::MoraleStimulus::Religious,
             );
         }
         let prayer_fervor = fervor_fraction(
-            mental_check(ctx, character_id, Skill::Faith)?,
-            faith.own_cohort,
+            personality.conviction.strength(),
+            religion.own_cohort,
             0.0,
-            faith.party_charisma,
+            religion.party_charisma,
         );
-        let neglect = religious_neglect_morale(prayer_fervor, faith.party_charisma)
+        let neglect = religious_neglect_morale(prayer_fervor, religion.party_charisma)
             * (1.0 - prayer_observance(prayer_fervor, prayer_minutes));
         if neglect > 0.0 {
             add_source(
@@ -706,6 +738,23 @@ fn base_morale(
                 "Insufficient daily prayer".into(),
                 -neglect,
                 crate::personality::MoraleStimulus::Religious,
+            );
+        }
+    } else {
+        let meditation_minutes = ctx
+            .db
+            .character_training_schedule()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |schedule| schedule.downtime.prayer_minutes);
+        if meditation_minutes > 0 {
+            // Meditation is independent of religious knowledge and Conviction.
+            add_source(
+                "daily-meditation".into(),
+                "meditation".into(),
+                "Daily meditation".into(),
+                meditation_morale(meditation_minutes),
+                crate::personality::MoraleStimulus::Other,
             );
         }
     }
@@ -838,16 +887,19 @@ fn evaluate_strategic_condition(
     let will = mental_check(ctx, character_id, Skill::Will)?;
     let (listener_base_morale, mut sources) = base_morale(ctx, character_id)?;
     let party_members = party_character_ids(ctx, character_id)?;
-    let fervor = if let Some((_, faith)) = party_faith_context(ctx, character_id, &party_members)? {
-        fervor_fraction(
-            mental_check(ctx, character_id, Skill::Faith)?,
-            faith.own_cohort,
-            listener_base_morale.max(0.0),
-            faith.party_charisma,
-        )
-    } else {
-        0.0
-    };
+    let fervor =
+        if let Some((_, religion)) = party_religion_context(ctx, character_id, &party_members)? {
+            fervor_fraction(
+                crate::personality::personality_or_neutral(ctx, character_id)
+                    .conviction
+                    .strength(),
+                religion.own_cohort,
+                listener_base_morale.max(0.0),
+                religion.party_charisma,
+            )
+        } else {
+            0.0
+        };
 
     if listener_base_morale < 0.0 {
         let deficit = -listener_base_morale;
@@ -1671,8 +1723,25 @@ mod tests {
     use super::{
         CharacterNeeds, ProjectedMoraleSource, accumulated_leisure_morale,
         condition_projection_member_ids, food_reserve_days, holy_day_demand_has_expired,
-        leisure_morale_effect, rank_morale_sources, water_reserve_days,
+        leisure_morale_effect, rank_morale_sources, religion_cohort_pressure, water_reserve_days,
     };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn irreverent_only_cohorts_create_no_religious_pressure() {
+        let cohorts = BTreeMap::from([
+            ("roman_catholic".to_string(), vec![0.0]),
+            ("lutheran".to_string(), vec![0.0]),
+        ]);
+        assert_eq!(
+            religion_cohort_pressure(cohorts, "roman_catholic"),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            religion_cohort_pressure(BTreeMap::new(), "judaism"),
+            (0.0, 0.0)
+        );
+    }
 
     #[test]
     fn corpse_projection_contains_the_requested_character_without_living_party_support() {

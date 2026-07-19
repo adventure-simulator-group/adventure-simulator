@@ -96,6 +96,7 @@ dependencies = [
 name = "adventuresim-core"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-world-schema",
  "ambassador",
  "blanket",
  "enum-assoc",
@@ -128,6 +129,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-core",
  "adventuresim-stdb-client",
+ "adventuresim-world-schema",
  "blake3",
  "clap",
  "serde",

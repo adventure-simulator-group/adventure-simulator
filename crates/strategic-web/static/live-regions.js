@@ -21,6 +21,7 @@
     return hasStagedInventoryChanges()
       || Boolean(window.strategicRestDuration?.isDirty?.(document))
       || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection]"))
+      || Boolean(document.querySelector('.schedule-time-editor'))
       || Boolean(editing);
   };
 

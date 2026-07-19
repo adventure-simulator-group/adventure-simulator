@@ -111,7 +111,7 @@ impl RecruitmentRoleForm {
             medicine: 0,
             surgery: 0,
             charisma: 0,
-            faith: 0,
+            religion: 0,
         }
     }
 
@@ -126,7 +126,7 @@ struct PartyCheckTargetsForm {
     medicine: f32,
     surgery: f32,
     charisma: f32,
-    faith: f32,
+    religion: f32,
 }
 
 async fn update_party_check_targets(
@@ -142,7 +142,7 @@ async fn update_party_check_targets(
                 medicine: form.medicine,
                 surgery: form.surgery,
                 charisma: form.charisma,
-                faith: form.faith,
+                religion: form.religion,
             },
         )
         .await;
@@ -467,9 +467,9 @@ async fn recruitment_panel_fragment(
         .iter()
         .map(|value| value.charisma)
         .collect();
-    let faith: Vec<f32> = member_capabilities
+    let religion: Vec<f32> = member_capabilities
         .iter()
-        .map(|value| value.faith)
+        .map(|value| value.religion)
         .collect();
     let checks = PartyCheckSummary {
         medicine: adventuresim_core::capability::aggregate_bounded_party_check(
@@ -479,7 +479,7 @@ async fn recruitment_panel_fragment(
             surgery.iter().copied(),
         ),
         charisma: adventuresim_core::capability::aggregate_party_charisma(charisma.iter().copied()),
-        faith: adventuresim_core::capability::aggregate_party_check(faith.iter().copied()),
+        religion: adventuresim_core::capability::aggregate_party_check(religion.iter().copied()),
     };
     let mut panels = Vec::new();
     for role in roles {
@@ -559,9 +559,9 @@ async fn recruitment_panel_fragment(
                                 &charisma,
                                 candidate.charisma,
                             ),
-                        faith: adventuresim_core::capability::aggregate_party_contribution(
-                            &faith,
-                            candidate.faith,
+                        religion: adventuresim_core::capability::aggregate_party_contribution(
+                            &religion,
+                            candidate.religion,
                         ),
                     }
                 });
