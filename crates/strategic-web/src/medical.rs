@@ -9,6 +9,7 @@ pub struct MedicalPresentation {
     pub unavailable: bool,
     pub obvious_cut: f32,
     pub symptoms: Vec<&'static str>,
+    pub medications: Vec<&'static str>,
     pub findings: Vec<String>,
     pub examination_id: Option<u64>,
     pub examined_at: Option<u64>,
@@ -79,9 +80,23 @@ pub fn sanitize(
         .into_iter()
         .map(Symptom::period_label)
         .collect();
+    let mut medications = episodes
+        .iter()
+        .filter(|episode| episode.treated_at.is_some_and(|at| at <= target_minute))
+        .filter(|episode| {
+            !matches!(
+                disease::evaluate(**episode, target_minute, target_immunity).stage,
+                disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
+            )
+        })
+        .map(|episode| disease::definition(episode.disease_id).period_name)
+        .collect::<Vec<_>>();
+    medications.sort_unstable();
+    medications.dedup();
     let Some(examination) = examination else {
         return MedicalPresentation {
             symptoms,
+            medications,
             concealed_other,
             ..MedicalPresentation::default()
         };
@@ -150,6 +165,7 @@ pub fn sanitize(
         unavailable: false,
         obvious_cut: 0.0,
         symptoms,
+        medications,
         findings: examination.findings.clone(),
         examination_id: Some(examination.id),
         examined_at: Some(examination.examined_at),
@@ -228,5 +244,16 @@ mod tests {
         let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 2.0);
         assert!(p.diagnoses.is_empty());
         assert_eq!(p.possible_diagnoses, ["Catarrhal fever", "Consumption"]);
+    }
+    #[test]
+    fn active_treatment_is_public_without_revealing_other_diagnoses() {
+        let mut treated = row();
+        treated.treated_at = Some(3 * 1_440);
+        let p = sanitize(&[treated.clone()], None, 4 * 1_440, 3.0, 0.0);
+        assert_eq!(p.medications, ["Catarrhal fever"]);
+        assert!(p.diagnoses.is_empty());
+
+        let resolved = sanitize(&[treated], None, 20 * 1_440, 3.0, 0.0);
+        assert!(resolved.medications.is_empty());
     }
 }

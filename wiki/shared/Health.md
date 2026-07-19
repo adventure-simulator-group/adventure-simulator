@@ -20,6 +20,10 @@ the patient spends the same interval. Examination knowledge belongs to that
 doctor and appears in a centered one-shot result. The doctor must treat a
 confirmed condition immediately or dismiss the result; either choice discards
 it, so examinations never become medical history on the character sheet.
+An active treated episode adds a public line beneath the symptoms stating that
+the patient is taking medication for its period-facing disease name. The line
+disappears when the episode resolves; it is treatment status, not medical
+history.
 
 An examination within one point of a disease's stage-dependent difficulty
 produces a weighted differential of compatible period ailments. Meeting the

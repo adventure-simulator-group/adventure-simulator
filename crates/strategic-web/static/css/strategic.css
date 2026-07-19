@@ -1636,6 +1636,12 @@
   box-shadow: var(--shadow-lg);
 }
 
+.medical-treatment-status {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .medical-examination-heading {
   display: flex;
   align-items: flex-start;

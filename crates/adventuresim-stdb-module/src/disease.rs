@@ -673,7 +673,8 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
             character_id: id,
             disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
             contracted_at: FIXTURE_NOW - age,
-            treated_at: None,
+            // Patient H demonstrates the public active-medication status.
+            treated_at: (id == 9_999_999_999_999_990).then_some(FIXTURE_NOW - DAY),
         });
         crate::capability::refresh_character_capability(ctx, id)?;
     }

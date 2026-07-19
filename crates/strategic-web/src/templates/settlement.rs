@@ -2512,6 +2512,9 @@ fn medical_rail(
     html! {
         (sidebar_section("Symptoms", html! {
             @if medical.unavailable {p class="text-muted small-copy" {"Medical examination unavailable."}} @else if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
+            @for medication in &medical.medications {
+                p class="medical-treatment-status" { "Taking medication for " (medication) "." }
+            }
         }))
         @if medical.obvious_cut > 0.0 {
             (sidebar_section("Visible injuries", html! {
@@ -4228,6 +4231,19 @@ mod tests {
         for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
             assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
         }
+    }
+
+    #[test]
+    fn active_medication_is_listed_beneath_symptoms() {
+        let presentation = crate::medical::MedicalPresentation {
+            symptoms: vec!["coughing"],
+            medications: vec!["Consumption"],
+            ..Default::default()
+        };
+        let markup = medical_rail(&presentation, "/location", 1, 2, false).into_string();
+        let symptoms_at = markup.find("coughing").unwrap();
+        let medication_at = markup.find("Taking medication for Consumption.").unwrap();
+        assert!(medication_at > symptoms_at);
     }
 
     #[test]
