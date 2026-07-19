@@ -4,6 +4,9 @@ const {
   parsePanelState,
   serializePanelState,
   compareValues,
+  normalizeSortValue,
+  rowValue,
+  refresh,
 } = require("../static/inventory-browser.js");
 
 test("panel state is independently namespaced", () => {
@@ -12,6 +15,28 @@ test("panel state is independently namespaced", () => {
     query: "sword", sort: "weight", direction: "desc", columns: ["reach", "damage"],
   });
   assert.equal(parsePanelState(search, "right", []).query, "mail");
+});
+
+test("advertised sort types retain text damage and numeric target or durability values", () => {
+  assert.equal(normalizeSortValue("Slash, Pierce", "text"), "Slash, Pierce");
+  assert.equal(normalizeSortValue("12", "number"), 12);
+  assert.equal(normalizeSortValue("0.76", "number"), 0.76);
+  assert.equal(normalizeSortValue("—", "number"), "");
+  const label = { dataset: { itemName: "Sword", statDamage: "Slash, Pierce" }, textContent: "Sword" };
+  const durabilityBar = { dataset: { sortValue: "0.76" } };
+  const durabilityCell = { dataset: {}, textContent: "Damaged", querySelector: () => durabilityBar };
+  const row = { querySelector: (selector) => ({
+    "[data-item-name]": label,
+    ".inventory-target": { textContent: "12" },
+    ".inventory-durability": durabilityCell,
+  })[selector] || null };
+  assert.equal(rowValue(row, "damage"), "Slash, Pierce");
+  assert.equal(rowValue(row, "target"), 12);
+  assert.equal(rowValue(row, "durability"), 0.76);
+});
+
+test("destination refresh is exposed for generated row insertion", () => {
+  assert.equal(typeof refresh, "function");
 });
 
 test("serialization preserves unrelated params and round trips bookmarks", () => {

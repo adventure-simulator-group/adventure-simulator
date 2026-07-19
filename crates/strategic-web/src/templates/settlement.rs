@@ -1459,7 +1459,7 @@ pub fn live_merchant_shop_page(
                     );
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { @if let Some(recipe) = medication_recipe { (recipe.name) } @else { (item_name_with_quality(&item.id, Some(item))) } @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(medication_recipe.map_or(item.id.as_str(), |recipe| recipe.name), Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -1727,6 +1727,13 @@ pub(super) fn item_name_with_quality(
     item_id: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
+    item_name_with_display(item_id, definition)
+}
+
+fn item_name_with_display(
+    display_name: &str,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+) -> Markup {
     let quality = definition
         .filter(|item| {
             matches!(
@@ -1758,7 +1765,7 @@ pub(super) fn item_name_with_quality(
     });
     html! {
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
-            data-item-name=(item_id)
+            data-item-name=(display_name)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
@@ -1773,7 +1780,7 @@ pub(super) fn item_name_with_quality(
             data-detail-slot=[definition.map(|item| format!("{:?}", item.slot))]
             data-detail-balance=[definition.map(|item| weight_display(item.balance))]
             data-detail-mode=[definition.map(|item| match (item.melee, item.ranged, item.precise) { (true, true, true) => "Melee, ranged, precise", (true, true, false) => "Melee and ranged", (true, false, true) => "Melee, precise", (false, true, true) => "Ranged, precise", (true, false, false) => "Melee", (false, true, false) => "Ranged", (false, false, true) => "Precise", _ => "—" }.to_string())] {
-            (item_id)
+            (display_name)
         }
     }
 }
@@ -1878,7 +1885,7 @@ fn condition_bar(
         "Damaged beyond this smith's skill".to_string()
     };
     html! {
-        span class="condition-bar" title=(&label) aria-label=(&label) {
+        span class="condition-bar" data-sort-value=(weight_display(green)) title=(&label) aria-label=(&label) {
             span class="condition-green" style=(format!("width:{}%", green * 100.0)) {}
             @for (index, amount) in bins.iter().enumerate() {
                 @let repairable = repair_skill.is_some_and(|skill| index < skill.min(5) as usize);
@@ -3655,6 +3662,15 @@ mod tests {
         assert!(MerchantShop::Herbalist.stocks(ItemKind::Ingredient));
         assert!(MerchantShop::Herbalist.stocks(ItemKind::Medication));
         assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "black_death_tonic".into(),
+            kind: ItemKind::Medication,
+            ..Default::default()
+        };
+        let rendered = item_name_with_display("Black Death tonic", Some(&definition)).into_string();
+        assert!(rendered.contains("data-item-name=\"Black Death tonic\""));
+        assert!(rendered.contains("data-item-kind=\"medication\""));
+        assert!(rendered.contains(">Black Death tonic</span>"));
     }
 
     #[test]

@@ -85,7 +85,13 @@ impl InventoryBrowser<'_> {
                             (sortable_icon_header("equipped", "inventory-column-equipped", "Equipped", game_icon("Equipped", "check-mark")))
                         }
                         @if let Some(condition_header) = self.condition_header {
-                            th scope="col" class="inventory-column-durability" { button type="button" data-inventory-sort="durability" aria-label="Sort by durability" { (condition_header) span class="inventory-sort-indicator" aria-hidden="true" {} } }
+                            th scope="col" class="inventory-column-durability" {
+                                button type="button" data-inventory-sort="durability" aria-label="Sort by durability" {
+                                    span class="sr-only" { "Durability" }
+                                    span class="inventory-sort-indicator" aria-hidden="true" {}
+                                }
+                                (condition_header)
+                            }
                         }
                         (sortable_icon_header("weight", "inventory-column-weight", "Weight", game_icon("Weight", "weight")))
                         (sortable_icon_header("value", "inventory-column-gold", "Currency", game_icon("Currency", "coins")))
@@ -124,5 +130,20 @@ mod tests {
         assert!(rendered.contains("data-inventory-sort=\"quantity\""));
         assert!(rendered.contains("data-inventory-sort=\"target\""));
         assert!(rendered.contains("accuracy,reach,penetration,damage,block"));
+    }
+
+    #[test]
+    fn condition_header_controls_are_siblings_of_the_sort_button() {
+        let rendered = InventoryBrowser {
+            namespace: "smith",
+            show_equipped: true,
+            condition_header: Some(html! { form class="repair-all" { button { "Repair" } } }),
+            optional_columns: InventoryColumnSet::Weapons,
+            rows: html! {},
+        }
+        .render()
+        .into_string();
+        assert!(rendered.contains("</button><form class=\"repair-all\">"));
+        assert!(!rendered.contains("<button type=\"button\" data-inventory-sort=\"durability\" aria-label=\"Sort by durability\"><span class=\"sr-only\">Durability</span><span class=\"inventory-sort-indicator\" aria-hidden=\"true\"></span><form"));
     }
 }

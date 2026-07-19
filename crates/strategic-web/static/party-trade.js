@@ -1,4 +1,5 @@
 const strategicTradeUi = window.strategicTradeUi ||= { state: {} };
+const refreshInventoryPanel = (element) => { if (element) window.strategicInventoryBrowser?.refresh?.(element); };
 
 function changeTradeDraftCount(row, change) {
   const count = row.querySelector(".inventory-count");
@@ -136,6 +137,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   name.append(cancel);
   applyDynamicTransferModifiers();
   playerSidebar.querySelector(".trade-inventory-table tbody").append(row);
+  refreshInventoryPanel(playerSidebar);
   return row;
 }
 
@@ -181,6 +183,7 @@ function resetTradeDraft(form) {
   form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
   form.hidden = true;
   form.querySelector("[type='submit']").disabled = true;
+  window.strategicInventoryBrowser?.refresh?.(document);
 }
 
 function updateDiscardForm() {
@@ -235,7 +238,7 @@ function ensureDiscardRow(sourceRow, inventoryId) {
   delete count.dataset.tradeDraftChange;
   document.querySelector("[data-discard-table] tbody").append(row);
   applyDynamicTransferModifiers();
-  window.strategicInventoryBrowser?.mountAll?.();
+  refreshInventoryPanel(row);
   return row;
 }
 
@@ -357,6 +360,8 @@ document.addEventListener("click", (event) => {
       draft.set(id, quantity - amount);
       stagedRow.querySelector(".inventory-count").textContent = String(quantity - amount);
     }
+    refreshInventoryPanel(sourceRow || document.querySelector("[data-discard-table]"));
+    refreshInventoryPanel(document.querySelector("[data-discard-table]"));
     updateDiscardForm();
     return;
   }
@@ -372,7 +377,10 @@ document.addEventListener("click", (event) => {
     const amount = mode === "one" ? 1 : available - quantity;
     draft.set(id, quantity + amount);
     setTradeDraftCount(sourceRow, -(quantity + amount));
-    ensureDiscardRow(sourceRow, id).querySelector(".inventory-count").textContent = String(quantity + amount);
+    const stagedRow = ensureDiscardRow(sourceRow, id);
+    stagedRow.querySelector(".inventory-count").textContent = String(quantity + amount);
+    refreshInventoryPanel(sourceRow);
+    refreshInventoryPanel(stagedRow);
     updateDiscardForm();
     return;
   }
@@ -390,8 +398,11 @@ document.addEventListener("click", (event) => {
     if (!amount) return;
     if (amount >= quantity) buys.delete(itemId); else buys.set(itemId, quantity - amount);
     changeTradeDraftCount(playerRow, -amount);
-    changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), amount);
+    const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
+    changeTradeDraftCount(stockRow, amount);
     if (playerRow.dataset.generatedMerchantRow === "true" && Number(playerRow.querySelector(".inventory-count").dataset.tradeDraftChange || 0) === 0) playerRow.remove();
+    refreshInventoryPanel(stockRow);
+    refreshInventoryPanel(document.querySelector('[data-inventory-pane]:not([hidden])'));
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
@@ -405,7 +416,9 @@ document.addEventListener("click", (event) => {
     if (pendingPurchase > 0) {
       if (pendingPurchase === 1) buys.delete(itemId); else buys.set(itemId, pendingPurchase - 1);
       changeTradeDraftCount(sourceRow, -1);
-      changeTradeDraftCount(merchantRow(itemId, document.querySelector(".left-sidebar")), 1);
+      const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
+      changeTradeDraftCount(stockRow, 1);
+      refreshInventoryPanel(sourceRow); refreshInventoryPanel(stockRow);
       updateMerchantGoldDraft();
       updateMerchantOfferForm();
       return;
@@ -422,6 +435,7 @@ document.addEventListener("click", (event) => {
     changeTradeDraftCount(sourceRow, -amount);
     const stockRow = merchantRow(itemId, document.querySelector(".left-sidebar"));
     if (stockRow) changeTradeDraftCount(stockRow, amount);
+    refreshInventoryPanel(sourceRow); refreshInventoryPanel(stockRow);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
@@ -443,7 +457,10 @@ document.addEventListener("click", (event) => {
     (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(item, Number(merchantButton.dataset.merchantBuyPrice));
     const sourceRow = merchantButton.closest("tr");
     changeTradeDraftCount(sourceRow, -amount);
-    changeTradeDraftCount(ensureMerchantPlayerRow(item, sourceRow), amount);
+    const playerRow = ensureMerchantPlayerRow(item, sourceRow);
+    changeTradeDraftCount(playerRow, amount);
+    refreshInventoryPanel(playerRow);
+    refreshInventoryPanel(sourceRow);
     updateMerchantGoldDraft();
     updateMerchantOfferForm();
     return;
@@ -474,6 +491,8 @@ document.addEventListener("click", (event) => {
     targetSidebar.querySelector(".trade-inventory-table tbody").append(targetRow);
   }
   setTradeDraftCount(targetRow, entry.quantity);
+  refreshInventoryPanel(targetRow);
+  refreshInventoryPanel(button.closest("tr"));
   const form = document.querySelector("#party-offer");
   form.querySelectorAll("input").forEach((input) => input.remove());
   const fields = { from_character_ids: [], to_character_ids: [], inventory_item_ids: [], quantities: [] };

@@ -54,14 +54,24 @@
     const number = Number(trimmed.replace(/[^0-9+.-]/g, ""));
     return Number.isFinite(number) ? number : trimmed;
   };
+  function normalizeSortValue(value, type = "number") {
+    if (type === "text") return String(value || "").trim();
+    return textNumber(value);
+  }
   function rowValue(row, key) {
     const label = row.querySelector?.("[data-item-name]");
     if (key === "name") return label?.dataset.itemName || label?.textContent.trim() || "";
     if (key === "type") return label?.dataset.itemKind || "";
-    if (OPTIONAL_COLUMNS[key]) return textNumber(label?.dataset[`stat${OPTIONAL_COLUMNS[key][1][0].toUpperCase()}${OPTIONAL_COLUMNS[key][1].slice(1)}`]);
+    if (OPTIONAL_COLUMNS[key]) {
+      const value = label?.dataset[`stat${OPTIONAL_COLUMNS[key][1][0].toUpperCase()}${OPTIONAL_COLUMNS[key][1].slice(1)}`];
+      return normalizeSortValue(value, key === "damage" ? "text" : "number");
+    }
     const selectors = { quantity: ".inventory-count", target: ".inventory-target-value", equipped: ".inventory-equipped input", durability: ".inventory-durability", weight: ".inventory-weight", value: ".inventory-gold" };
     if (key === "equipped") return row.querySelector(selectors[key])?.checked ? 1 : 0;
-    return textNumber(row.querySelector(selectors[key])?.textContent);
+    const cell = row.querySelector(selectors[key]);
+    if (key === "target") return normalizeSortValue(cell?.textContent || row.querySelector(".inventory-target")?.textContent);
+    if (key === "durability") return normalizeSortValue(cell?.querySelector("[data-sort-value]")?.dataset.sortValue || cell?.dataset.sortValue || cell?.textContent);
+    return normalizeSortValue(cell?.dataset.sortValue || cell?.textContent);
   }
 
   function ensureQuantityTargetSplit(row) {
@@ -80,6 +90,32 @@
       target.textContent = targetValue == null ? "—" : targetValue;
     }
     count.after(target);
+  }
+
+  function normalizeDestinationRow(row, browser) {
+    ensureQuantityTargetSplit(row);
+    const target = row.querySelector(":scope > .inventory-target");
+    let cursor = target;
+    const wantsEquipped = Boolean(browser.querySelector("thead .inventory-column-equipped"));
+    let equipped = row.querySelector(":scope > .inventory-equipped");
+    if (!wantsEquipped && equipped) { equipped.remove(); equipped = null; }
+    if (wantsEquipped && !equipped) {
+      equipped = document.createElement("td"); equipped.className = "inventory-equipped";
+      equipped.innerHTML = '<input type="checkbox" disabled aria-label="Generated item is not equipped">';
+      cursor.after(equipped);
+    }
+    if (equipped && (row.dataset.generatedOfferRow === "true" || row.dataset.generatedMerchantRow === "true")) {
+      const toggle = equipped.querySelector("input");
+      if (toggle) { toggle.disabled = true; delete toggle.dataset.equipmentToggle; toggle.setAttribute("aria-label", "Equipment can be changed after applying the transfer"); }
+    }
+    if (equipped) cursor = equipped;
+    const wantsDurability = Boolean(browser.querySelector("thead .inventory-column-durability"));
+    let durability = row.querySelector(":scope > .inventory-durability");
+    if (!wantsDurability && durability) { durability.remove(); durability = null; }
+    if (wantsDurability && !durability) {
+      durability = document.createElement("td"); durability.className = "inventory-durability"; durability.textContent = "—";
+      cursor.after(durability);
+    }
   }
 
   function optionalCell(row, column) {
@@ -108,15 +144,15 @@
     const body = browser.querySelector("tbody");
     if (!body) return;
     const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row)")];
-    rows.forEach(ensureQuantityTargetSplit);
+    rows.forEach((row) => normalizeDestinationRow(row, browser));
     rows.forEach((row) => {
       row.tabIndex = 0;
       if (!row.hasAttribute("aria-expanded")) row.setAttribute("aria-expanded", "false");
       const name = String(rowValue(row, "name")).toLocaleLowerCase();
       row.hidden = !name.includes(state.query.toLocaleLowerCase());
       Object.keys(OPTIONAL_COLUMNS).forEach((column) => optionalCell(row, column).hidden = !state.columns.includes(column));
-      const details = row.nextElementSibling?.classList.contains("inventory-detail-row") ? row.nextElementSibling : null;
-      if (details) details.hidden = row.hidden || row.getAttribute("aria-expanded") !== "true";
+      if (row._inventoryDetail) { row._inventoryDetail.remove(); row._inventoryDetail = null; }
+      if (row.getAttribute("aria-expanded") === "true") createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
     rows.map((row, index) => ({ row, index })).sort((a, b) => compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index).forEach(({ row }) => {
@@ -127,13 +163,12 @@
     browser.querySelectorAll("[data-inventory-sort]").forEach((button) => {
       const active = button.dataset.inventorySort === state.sort;
       button.closest("th").setAttribute("aria-sort", active ? (state.direction === "asc" ? "ascending" : "descending") : "none");
-      button.querySelector(".inventory-sort-indicator").textContent = active ? (state.direction === "asc" ? "▲" : "▼") : "";
+      const indicator = button.querySelector(".inventory-sort-indicator");
+      if (indicator) indicator.textContent = active ? (state.direction === "asc" ? "▲" : "▼") : "";
     });
   }
 
-  function toggleExpanded(row, browser) {
-    const open = row.getAttribute("aria-expanded") === "true";
-    row.setAttribute("aria-expanded", String(!open));
+  function createDetail(row, browser) {
     if (!row._inventoryDetail) {
       const detail = document.createElement("tr");
       detail.className = "inventory-detail-row";
@@ -154,7 +189,14 @@
       } else cell.textContent = "No additional details.";
       detail.append(cell); row._inventoryDetail = detail; row.after(detail);
     }
-    row._inventoryDetail.hidden = open;
+    row._inventoryDetail.hidden = row.hidden;
+  }
+
+  function toggleExpanded(row, browser) {
+    const open = row.getAttribute("aria-expanded") === "true";
+    row.setAttribute("aria-expanded", String(!open));
+    if (!open) createDetail(row, browser);
+    else if (row._inventoryDetail) row._inventoryDetail.hidden = true;
   }
 
   function mount(browser) {
@@ -198,7 +240,15 @@
   }
 
   function mountAll(root = document) { root.querySelectorAll?.("[data-inventory-browser]").forEach(mount); }
-  const api = { parsePanelState, serializePanelState, compareValues, rowValue, mountAll };
+  function refresh(scope = document) {
+    const browsers = scope.matches?.("[data-inventory-browser]") ? [scope] : [...(scope.querySelectorAll?.("[data-inventory-browser]") || [])];
+    const closest = scope.closest?.("[data-inventory-browser]"); if (closest && !browsers.includes(closest)) browsers.push(closest);
+    browsers.forEach((browser) => {
+      if (!browser.dataset.inventoryMounted) mount(browser);
+      else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)));
+    });
+  }
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, mountAll, refresh };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) { global.addEventListener("DOMContentLoaded", () => mountAll()); global.addEventListener("popstate", () => mountAll()); }

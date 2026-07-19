@@ -186,7 +186,7 @@ pub fn quest_location_page(
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
-                                @let target = targets.iter().find(|target| target.item_id == entry.item_id).map_or(0, |target| target.quantity);
+                                @let target = inventory_target(targets, &entry.item_id);
                                 tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
                                     td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) span class="inventory-row-actions" {
@@ -227,7 +227,8 @@ pub fn quest_location_page(
                             @for entry in pooled {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
-                                tr class="trade-inventory-row" {
+                                @let target = inventory_target(targets, &entry.item_id);
+                                tr class="trade-inventory-row" data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
                                     td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) }
                                     td class="inventory-count" { (entry.quantity) }
@@ -248,6 +249,13 @@ pub fn quest_location_page(
         content,
         logged_in_as,
     )
+}
+
+fn inventory_target(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
+    targets
+        .iter()
+        .find(|target| target.item_id == item_id)
+        .map_or(0, |target| target.quantity)
 }
 
 fn loot_stage_form(quest_id: &str) -> Markup {
@@ -289,5 +297,18 @@ mod tests {
         assert!(markup.contains("The bandit fell."));
         assert!(!markup.contains("autoresolve-report"));
         assert!(!markup.contains("chat-channel-badge"));
+    }
+
+    #[test]
+    fn quest_party_rows_use_the_matching_inventory_target() {
+        let targets = [InventoryQuantityTarget {
+            id: "7:true:sword".into(),
+            owner_character_id: 7,
+            party_scope: true,
+            item_id: "sword".into(),
+            quantity: 4,
+        }];
+        assert_eq!(inventory_target(&targets, "sword"), 4);
+        assert_eq!(inventory_target(&targets, "shield"), 0);
     }
 }
