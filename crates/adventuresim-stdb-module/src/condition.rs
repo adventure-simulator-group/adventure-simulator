@@ -516,10 +516,28 @@ fn party_character_ids(ctx: &ReducerContext, character_id: u64) -> Result<Vec<u6
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    Ok(character.party_id.as_ref().map_or_else(
-        || vec![character_id],
-        |party_id| crate::strategic::living_party_member_ids(ctx, party_id),
+    Ok(condition_projection_member_ids(
+        character_id,
+        character.alive,
+        character
+            .party_id
+            .as_ref()
+            .map(|party_id| crate::strategic::living_party_member_ids(ctx, party_id)),
     ))
+}
+
+fn condition_projection_member_ids(
+    character_id: u64,
+    alive: bool,
+    living_party_members: Option<Vec<u64>>,
+) -> Vec<u64> {
+    if !alive {
+        // A corpse still has a durable condition projection, but must not be
+        // reintroduced into living party morale/capability aggregation.
+        vec![character_id]
+    } else {
+        living_party_members.unwrap_or_else(|| vec![character_id])
+    }
 }
 
 fn party_faith_context(
@@ -1643,9 +1661,21 @@ pub fn set_character_religion(
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectedMoraleSource, accumulated_leisure_morale, holy_day_demand_has_expired,
-        leisure_morale_effect, rank_morale_sources,
+        ProjectedMoraleSource, accumulated_leisure_morale, condition_projection_member_ids,
+        holy_day_demand_has_expired, leisure_morale_effect, rank_morale_sources,
     };
+
+    #[test]
+    fn corpse_projection_contains_the_requested_character_without_living_party_support() {
+        assert_eq!(
+            condition_projection_member_ids(7, false, Some(vec![8, 9])),
+            vec![7]
+        );
+        assert_eq!(
+            condition_projection_member_ids(7, true, Some(vec![7, 8])),
+            vec![7, 8]
+        );
+    }
     use adventuresim_core::strategic_schedule::{
         DailySchedule, LEISURE_MORALE_LIMIT, settlement_leisure_outcome,
     };

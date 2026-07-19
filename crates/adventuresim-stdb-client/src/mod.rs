@@ -52,6 +52,8 @@ pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
+pub mod character_illness_status_table;
+pub mod character_illness_status_type;
 pub mod character_limbs_table;
 pub mod character_limbs_type;
 pub mod character_morale_source_table;
@@ -312,6 +314,7 @@ pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_sick_character_reducer;
+pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
 pub mod self_regard_type;
@@ -443,6 +446,8 @@ pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
+pub use character_illness_status_table::*;
+pub use character_illness_status_type::CharacterIllnessStatus;
 pub use character_limbs_table::*;
 pub use character_limbs_type::CharacterLimbs;
 pub use character_morale_source_table::*;
@@ -703,6 +708,7 @@ pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
 pub use seed_sick_character_reducer::seed_sick_character;
+pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
 pub use self_regard_type::SelfRegard;
@@ -853,6 +859,7 @@ pub enum Reducer {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
     },
     ContinueCampTravel {
         character_id: u64,
@@ -1148,6 +1155,10 @@ pub enum Reducer {
         leader_id: u64,
     },
     SeedSickCharacter,
+    SeedSimulationDisease {
+        nonce: String,
+        character_id: u64,
+    },
     SeedSimulationEquipmentDamage {
         character_id: u64,
         inventory_item_id: u64,
@@ -1345,6 +1356,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedSickCharacter => "seed_sick_character",
+            Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
@@ -1468,6 +1480,7 @@ Reducer::CancelMissionRequest{
                 attributes,
                 skills,
                 downtime,
+                personality,
 }             => __sats::bsatn::to_vec(&configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
@@ -1476,6 +1489,7 @@ Reducer::CancelMissionRequest{
                 attributes: attributes.clone(),
                 skills: skills.clone(),
                 downtime: downtime.clone(),
+                personality: personality.clone(),
 }),
             Reducer::ContinueCampTravel{
                 character_id,
@@ -2001,7 +2015,14 @@ Reducer::SeedPartyCompanions{
 }),
             Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
                 }),
-Reducer::SeedSimulationEquipmentDamage{
+Reducer::SeedSimulationDisease{
+                nonce,
+                character_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
+                nonce: nonce.clone(),
+                character_id: character_id.clone(),
+}),
+            Reducer::SeedSimulationEquipmentDamage{
                 character_id,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {
@@ -2206,6 +2227,7 @@ pub struct DbUpdate {
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
+    character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
     character_needs: __sdk::TableUpdate<CharacterNeeds>,
@@ -2306,6 +2328,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
+                "character_illness_status" => db_update.character_illness_status.append(
+                    character_illness_status_table::parse_table_update(table_update)?,
+                ),
                 "character_limbs" => db_update
                     .character_limbs
                     .append(character_limbs_table::parse_table_update(table_update)?),
@@ -2520,6 +2545,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_equip = cache
             .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_illness_status = cache
+            .apply_diff_to_table::<CharacterIllnessStatus>(
+                "character_illness_status",
+                &self.character_illness_status,
+            )
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_limbs = cache
             .apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs)
@@ -2783,6 +2814,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_illness_status" => db_update
+                    .character_illness_status
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_limbs" => db_update
                     .character_limbs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2982,6 +3016,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_illness_status" => db_update
+                    .character_illness_status
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_limbs" => db_update
                     .character_limbs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3155,6 +3192,7 @@ pub struct AppliedDiff<'r> {
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
+    character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
     character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
@@ -3280,6 +3318,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterIllnessStatus>(
+            "character_illness_status",
+            &self.character_illness_status,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
@@ -4164,6 +4207,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
+        character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
         character_needs_table::register_table(client_cache);
@@ -4228,6 +4272,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_condition",
         "character_death",
         "character_equip",
+        "character_illness_status",
         "character_limbs",
         "character_morale_source",
         "character_needs",

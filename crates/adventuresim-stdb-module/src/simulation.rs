@@ -3,10 +3,12 @@
 use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 
 use crate::character::character;
+use crate::personality::character_personality;
+use crate::time::character_time;
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
-    ScheduleAllocation, character_attributes, character_skills, character_training_schedule, party,
-    settlement,
+    ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
+    infection_episode, party, settlement,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -129,6 +131,7 @@ pub fn configure_simulation_character(
     attributes: CharacterAttributes,
     skills: CharacterSkills,
     downtime: ScheduleAllocation,
+    personality: crate::personality::CharacterPersonality,
 ) -> Result<(), String> {
     let run = owned_run(ctx, &nonce)?;
     let mut character = ctx
@@ -147,7 +150,10 @@ pub fn configure_simulation_character(
     {
         return Err("Only a fresh ordinary solo character may be configured once".into());
     }
-    if attributes.character_id != character_id || skills.character_id != character_id {
+    if attributes.character_id != character_id
+        || skills.character_id != character_id
+        || personality.character_id != character_id
+    {
         return Err("Simulation profile character IDs must match".into());
     }
     let attributes_valid = [
@@ -231,7 +237,73 @@ pub fn configure_simulation_character(
         run_id: run.id,
         agent_id,
     });
-    crate::personality::assign_random_personality(ctx, character_id);
+    ctx.db
+        .character_personality()
+        .character_id()
+        .update(personality);
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    Ok(())
+}
+
+/// Deterministic illness fixture for the claimed disposable simulator. It
+/// supplies only an infection seed; diagnosis and treatment remain ordinary
+/// player-facing actions and the simulator never subscribes to this private row.
+#[reducer]
+pub fn seed_simulation_disease(
+    ctx: &ReducerContext,
+    nonce: String,
+    character_id: u64,
+) -> Result<(), String> {
+    let run = owned_run(ctx, &nonce)?;
+    let sim = ctx
+        .db
+        .simulation_character()
+        .character_id()
+        .find(character_id)
+        .ok_or("Only configured simulation characters may use this fixture")?;
+    if sim.run_id != run.id {
+        return Err("Simulation character belongs to another run".into());
+    }
+    crate::require_living_character(ctx, character_id)?;
+    if ctx
+        .db
+        .infection_episode()
+        .character_id()
+        .filter(character_id)
+        .next()
+        .is_some()
+    {
+        return Err("Simulation disease fixture may only be seeded once".into());
+    }
+    ctx.db
+        .infection_episode()
+        .insert(crate::disease::InfectionEpisodeRow {
+            id: 0,
+            character_id,
+            disease_id: "influenza".into(),
+            contracted_at: 0,
+            treated_at: None,
+        });
+    let requested =
+        adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)
+            .incubation_minutes
+            .saturating_add(60);
+    // Advance through the same disease interval hooks as ordinary gameplay so
+    // the simulator observes symptom onset instead of receiving hidden fixture
+    // knowledge from the private infection row.
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, requested)?;
+    let mut time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Simulation character time not found")?;
+    time.minutes = time.minutes.saturating_add(elapsed);
+    ctx.db.character_time().character_id().update(time);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    crate::require_living_character(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())

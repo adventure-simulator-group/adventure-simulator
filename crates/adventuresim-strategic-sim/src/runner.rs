@@ -609,6 +609,30 @@ fn invariant(message: impl Into<String>, recent: &VecDeque<DecisionEvent>) -> Si
 }
 
 fn validate_profile(p: &AgentProfile) -> Result<(), String> {
+    if !(2..=4).contains(&p.personality.non_neutral_count()) {
+        return Err(format!(
+            "agent {} personality must have 2..=4 active axes",
+            p.agent_id
+        ));
+    }
+    if p.build.activity_only != (p.personality.drive == crate::Drive::Content) {
+        return Err(format!(
+            "agent {} activity-only build disagrees with personality",
+            p.agent_id
+        ));
+    }
+    if p.build.role == crate::BuildRole::FrontLine {
+        let arm_strength = (p.attributes.left_arm_strength + p.attributes.right_arm_strength) * 0.5;
+        if p.personality.nerve != crate::Nerve::Brave
+            || p.attributes.endurance < 3.0
+            || arm_strength < 3.0
+        {
+            return Err(format!(
+                "agent {} has a non-viable front-line build",
+                p.agent_id
+            ));
+        }
+    }
     let finite = [
         p.activity_vs_quest_propensity,
         p.risk_tolerance,

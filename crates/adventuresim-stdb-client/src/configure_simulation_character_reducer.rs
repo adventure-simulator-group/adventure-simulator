@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::character_attributes_type::CharacterAttributes;
+use super::character_personality_type::CharacterPersonality;
 use super::character_skills_type::CharacterSkills;
 use super::schedule_allocation_type::ScheduleAllocation;
 
@@ -18,6 +19,7 @@ pub(super) struct ConfigureSimulationCharacterArgs {
     pub attributes: CharacterAttributes,
     pub skills: CharacterSkills,
     pub downtime: ScheduleAllocation,
+    pub personality: CharacterPersonality,
 }
 
 impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
@@ -30,6 +32,7 @@ impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
             attributes: args.attributes,
             skills: args.skills,
             downtime: args.downtime,
+            personality: args.personality,
         }
     }
 }
@@ -58,6 +61,7 @@ pub trait configure_simulation_character {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
     ) -> __sdk::Result<()> {
         self.configure_simulation_character_then(
             nonce,
@@ -67,6 +71,7 @@ pub trait configure_simulation_character {
             attributes,
             skills,
             downtime,
+            personality,
             |_, _| {},
         )
     }
@@ -86,6 +91,7 @@ pub trait configure_simulation_character {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -105,6 +111,7 @@ impl configure_simulation_character for super::RemoteReducers {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -121,6 +128,7 @@ impl configure_simulation_character for super::RemoteReducers {
                 attributes,
                 skills,
                 downtime,
+                personality,
             },
             callback,
         )

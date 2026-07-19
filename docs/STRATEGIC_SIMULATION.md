@@ -41,11 +41,18 @@ sinks; the runner therefore does not assert naive currency conservation.
 
 ## Profiles and results
 
-Profiles retain their seed and all inputs needed for inspection: correlated,
-bounded attributes; initial skills; training and activity allocations;
+Profiles retain their seed and all inputs needed for inspection: a deterministic sparse personality
+(two through four non-neutral axes); correlated, bounded attributes; an explicit personality-by-attribute
+build role; initial skills; training and activity allocations;
 activity-versus-quest, risk, and recovery preferences; equipment style and
 utility weights; and provisioning, reserve, and spending preferences. Some
-fields are recorded for later slices and do not yet affect settlement choices.
+fields are recorded for later slices and do not yet affect settlement choices. Build derivation keeps
+skills, training, activity, quest risk/recovery, and equipment style coherent. Content leaders are
+activity-only; ambition increases quest propensity. Bravery selects heavy front-line melee only when
+endurance and both-arm strength make it viable, while fearful agents prefer ranged/light roles when
+their perception supports one. Followers still defer to the current leader's quest/activity decision;
+individual follower policy is applied to training, recovery, treatment, and equipment, which is a known
+party-decision limitation.
 
 Reports include a bounded decision trace, bounded periodic snapshots, terminal
 reason, wealth, final and gained skill hours, activity and leisure time,
@@ -93,6 +100,19 @@ Their replacement utility is discounted by current condition, so maintenance com
 with buying a replacement. Reports include submissions, retrievals, repair wait time, worst final
 condition, and outstanding orders; deterministic simulation setup seeds damage through a reducer
 guarded to registered simulation characters.
+
+Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
+fixture seeds one deterministic influenza episode behind the same claimed-run capability boundary as
+other simulator-only setup. Policy observes public condition and the narrow public symptomatic/critical
+signal rather than private infection identity or vitals, uses the ordinary herbalist examination and
+filters the trusted one-shot result by its simulator-owned patient ID, then either
+crafts a matching course when skill and already-owned ingredients justify it or buys the prepared
+course. It verifies the authoritative equipped-medication row, dismisses the examination, and rests in
+bounded one-day steps until ready. While treatment is active it authoritatively replaces the saved
+personality schedule with pure rest, then restores that profile schedule after recovery so labor or
+thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
+diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
+recoveries, suppression, and terminal deaths.
 
 Safety is intentionally strict. URLs are parsed structurally and must be an
 exact credential-free HTTP loopback origin with no path, query, or fragment.
