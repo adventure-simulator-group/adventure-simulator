@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (800)
+## Files (796)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -586,7 +586,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
-- `crates/strategic-web/static/current-quest.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
 - `crates/strategic-web/static/icons/game/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/icons/game/acrobatic.svg` — Vector UI or texture asset.
@@ -738,8 +737,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
-- `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.

@@ -108,7 +108,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=map-markers-2" defer {}
+                    script src="/static/service-quests.js?v=map-markers-3" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
@@ -206,7 +206,10 @@ fn settlement_top_bar(
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('/static/icons/game/{}.svg')", religion_game_icon_name(religion_id)))]
                             aria-hidden="true" {}
-                        @if path != "map" {
+                        @if path == "map" {
+                            span class="service-notification-badge service-map-quest-badge"
+                                data-map-quest-badge title="Active quest" aria-hidden="true" hidden { "!" }
+                        } @else {
                             span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
                         }
                     }
@@ -446,6 +449,7 @@ mod tests {
         assert!(!markup.contains("data-current-quest"));
         assert!(!markup.contains("current-quest.js"));
         assert!(!markup.contains("data-settlement-turn-in-badge"));
+        assert!(markup.contains("data-map-quest-badge"));
     }
 
     #[test]

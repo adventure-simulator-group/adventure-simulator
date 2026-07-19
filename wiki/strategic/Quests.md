@@ -24,7 +24,7 @@ Rewards are proportional to difficulty, which is better thought of as a measurem
 ## Interface
 Quest destinations use the shared strategic location shell but expose no settlement services. The location name returns to a terse base description; Map lists the nearest off-road settlement destinations and reveals travel details only after selection; Loot contains unclaimed battle loot and the shared party inventory. Party portraits and character inspection use location-relative routes, so they work at both settlements and quest destinations.
 
-Location headers do not contain a quest tracker. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. Quest locations do not display a separate resolution badge over the center view.
+Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. Quest locations do not display a separate resolution badge over the center view.
 
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations

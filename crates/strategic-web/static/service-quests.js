@@ -3,6 +3,12 @@
   if (!services) return;
 
   const settlementId = services.dataset.settlementId;
+  const mapTab = services.querySelector('[data-service-id="map"]');
+  const mapQuestBadge = services.querySelector("[data-map-quest-badge]");
+  const setMapQuestActive = (active) => {
+    if (mapQuestBadge) mapQuestBadge.hidden = !active;
+    if (mapTab) mapTab.setAttribute("aria-label", active ? "Map, active quest" : "Map");
+  };
   const chat = document.querySelector("[data-service-quest-settlement][data-service-quest-id]");
   const dialogueActions = new Map();
   let nextDialogueActionId = 0;
@@ -150,6 +156,7 @@
         return;
       }
       line("npc", quest.npc_name, quest.acceptance);
+      setMapQuestActive(true);
       const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
       const badge = tab?.querySelector("[data-service-quest-badge]");
       if (badge) badge.hidden = true;
@@ -173,6 +180,7 @@
       chat,
       `${result.reward} gold has been added to your party inventory.`,
     );
+    setMapQuestActive(false);
     const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
     const badge = tab?.querySelector("[data-service-quest-badge]");
     if (badge) badge.hidden = true;
@@ -365,6 +373,14 @@
   };
 
   let conversationSignature = "";
+  const refreshMapQuestMarker = () => window.strategicBackgroundFetch(
+    "active-quest-marker",
+    "/api/active-quest-marker",
+    { headers: { Accept: "application/json" } },
+  )
+    .then((response) => (response.ok ? response.json() : { active: false }))
+    .then((marker) => setMapQuestActive(marker.active === true))
+    .catch((error) => window.reportStrategicError(error, "active quest marker"));
   const refreshServiceQuests = () => window.strategicBackgroundFetch("service-quests", `/api/settlements/${encodeURIComponent(settlementId)}/service-quests`, {
     headers: { Accept: "application/json" },
   })
@@ -438,5 +454,7 @@
     })
     .catch((error) => window.reportStrategicError(error, "service quests"));
   window.queueStrategicInitialLoad(refreshServiceQuests);
+  window.queueStrategicInitialLoad(refreshMapQuestMarker);
   document.addEventListener("strategic-live-update", refreshServiceQuests);
+  document.addEventListener("strategic-live-update", refreshMapQuestMarker);
 })();

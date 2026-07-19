@@ -20,6 +20,7 @@ use super::{
     },
 };
 use crate::session::Session;
+use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BattleLootItem, BattleResult, Character, CharacterAttributes,
     CharacterLimbs, CharacterStats, InventoryQuantityTarget, ItemDefinition, Party,
@@ -31,6 +32,7 @@ use crate::templates::quest::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/active-quest-marker", get(active_quest_marker))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
@@ -40,6 +42,44 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/quest/{id}/loot", get(quest_location_loot))
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
+}
+
+#[derive(Serialize)]
+struct ActiveQuestMarker {
+    active: bool,
+}
+
+async fn active_quest_marker(
+    State(state): State<AppState>,
+    session: Session,
+) -> Json<ActiveQuestMarker> {
+    let Some(character_id) = session.character_id_u64() else {
+        return Json(ActiveQuestMarker { active: false });
+    };
+    let character = state
+        .db
+        .query::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let Some(party_id) = character.and_then(|character| character.party_id) else {
+        return Json(ActiveQuestMarker { active: false });
+    };
+    let active = state
+        .db
+        .query::<Party>(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .is_some_and(|party| party.active_quest_id.is_some());
+    Json(ActiveQuestMarker { active })
 }
 
 #[derive(Serialize)]
@@ -74,7 +114,7 @@ async fn accept_quest_api(
             quest_id: id,
             title,
             message: if matches!(outcome, PartyActionOutcome::Executed) {
-                "Quest added to your tracker."
+                "Quest accepted."
             } else {
                 "Requested that the party accept this quest."
             }
