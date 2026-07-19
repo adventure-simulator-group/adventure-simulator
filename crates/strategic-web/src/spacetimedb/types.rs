@@ -829,6 +829,8 @@ pub struct CharacterStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleAllocation {
+    pub combat_minutes: u16,
+    pub combat_auto_train: bool,
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,

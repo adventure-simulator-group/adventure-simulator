@@ -106,6 +106,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "medicine" => "medical-pack",
         "faith" => "holy-symbol",
         "melee" => "crossed-swords",
+        "combat" => "crossed-swords",
         "ranged" => "bullseye",
         "dodge" => "acrobatic",
         "block" => "shield",

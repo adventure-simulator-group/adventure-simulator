@@ -329,6 +329,8 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
     ScheduleAllocation {
+        combat_minutes: s.combat,
+        combat_auto_train: s.combat_auto_train,
         melee_minutes: s.melee,
         dodge_minutes: s.dodge,
         block_minutes: s.block,
@@ -360,6 +362,8 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
 
 fn medical_rest_schedule() -> ScheduleAllocation {
     ScheduleAllocation {
+        combat_minutes: 0,
+        combat_auto_train: true,
         melee_minutes: 0,
         dodge_minutes: 0,
         block_minutes: 0,

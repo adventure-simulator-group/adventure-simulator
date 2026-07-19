@@ -6,10 +6,25 @@ const {
   createLatestSaveQueue,
   parseClock,
   religionAllocationTotal,
+  metaInputActive,
   religionInputActive,
   signedEffect,
   stepClockValue,
 } = require("../static/training-schedule.js");
+
+test("religion and combat independently select exactly one allocation branch", () => {
+  const root = {
+    querySelector(selector) {
+      if (selector.includes("religion")) return { checked: false };
+      if (selector.includes("combat")) return { checked: true };
+      return null;
+    },
+  };
+  assert.equal(metaInputActive({ dataset: { religionAutoBudget: "" } }, root), false);
+  assert.equal(metaInputActive({ dataset: { religionManualBudget: "" } }, root), true);
+  assert.equal(metaInputActive({ dataset: { combatAutoBudget: "" } }, root), true);
+  assert.equal(metaInputActive({ dataset: { combatManualBudget: "" } }, root), false);
+});
 
 test("Religion allocation counts either the auto budget or manual traditions exactly once", () => {
   const allocation = {

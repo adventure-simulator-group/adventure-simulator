@@ -9,6 +9,8 @@ use super::religion_minutes_type::ReligionMinutes;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ScheduleAllocation {
+    pub combat_minutes: u16,
+    pub combat_auto_train: bool,
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,

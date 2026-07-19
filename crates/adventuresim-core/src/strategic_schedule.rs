@@ -65,6 +65,10 @@ impl SkillHours {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DailySchedule {
+    /// Aggregate automatic Combat budget. Ignored when `combat_auto_train` is false.
+    pub combat: u16,
+    pub combat_auto_train: bool,
+    /// Explicit combat budgets used when automatic distribution is disabled.
     pub melee: u16,
     pub dodge: u16,
     pub block: u16,
@@ -89,17 +93,22 @@ pub struct DailySchedule {
 
 impl DailySchedule {
     pub fn allocated_minutes(self) -> u64 {
+        let combat = if self.combat_auto_train {
+            u64::from(self.combat)
+        } else {
+            [self.melee, self.dodge, self.block, self.ranged]
+                .into_iter()
+                .map(u64::from)
+                .sum()
+        };
         let religion = if self.religion_auto_train {
             u64::from(self.religion)
         } else {
             self.religions.total()
         };
-        religion
+        combat
+            + religion
             + [
-                self.melee,
-                self.dodge,
-                self.block,
-                self.ranged,
                 self.will,
                 self.charisma,
                 self.medicine,
@@ -174,13 +183,76 @@ pub fn settlement_leisure_outcome(
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActivityTrainingProfile {
-    pub raiding_melee: bool,
-    pub raiding_ranged: bool,
-    pub raiding_block: bool,
-    pub raiding_dodge: bool,
+    pub combat: CombatTrainingProfile,
+}
+
+/// Relative training demand for the four skills represented by Combat.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatTrainingProfile {
+    pub melee: f32,
+    pub dodge: f32,
+    pub block: f32,
+    pub ranged: f32,
+}
+
+impl Default for CombatTrainingProfile {
+    fn default() -> Self {
+        Self {
+            melee: 0.0,
+            dodge: 1.0,
+            block: 0.0,
+            ranged: 0.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EquippedCombatItem {
+    pub melee: bool,
+    pub ranged: bool,
+    pub shield: bool,
+    pub balance: f32,
+}
+
+impl CombatTrainingProfile {
+    pub fn from_equipped_hands(hands: impl IntoIterator<Item = EquippedCombatItem>) -> Self {
+        let mut result = Self::default();
+        let mut best_melee_balance: Option<f32> = None;
+        for item in hands {
+            result.melee = result.melee.max(if item.melee { 1.0 } else { 0.0 });
+            result.ranged = result.ranged.max(if item.ranged { 1.0 } else { 0.0 });
+            if item.shield {
+                result.block = 1.0;
+            }
+            if item.melee {
+                let balance = if item.balance.is_finite() {
+                    item.balance.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                best_melee_balance =
+                    Some(best_melee_balance.map_or(balance, |old| old.min(balance)));
+            }
+        }
+        if result.block < 1.0 {
+            result.block = best_melee_balance.map_or(0.0, |balance| 1.0 - balance);
+        }
+        result
+    }
+
+    pub fn weights(self) -> [f32; 4] {
+        [self.melee, self.dodge, self.block, self.ranged].map(|weight| {
+            if weight.is_finite() {
+                weight.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        })
+    }
 }
 
 /// Apply one elapsed interval. Calling this once for N days or N times for one day
@@ -192,10 +264,6 @@ pub fn apply_schedule_training(
     profile: ActivityTrainingProfile,
 ) {
     let increment = |minutes| training_hours_increment(elapsed_minutes, minutes);
-    skills.melee += increment(schedule.melee);
-    skills.dodge += increment(schedule.dodge);
-    skills.block += increment(schedule.block);
-    skills.ranged += increment(schedule.ranged);
     skills.will += increment(schedule.will);
     skills.charisma += increment(schedule.charisma);
     skills.medicine += increment(schedule.medicine);
@@ -205,17 +273,108 @@ pub fn apply_schedule_training(
     skills.smithing += increment(schedule.smithing);
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
-    let raiding = increment(schedule.raiding) * ACTIVITY_TRAINING_RATE;
-    if profile.raiding_ranged {
-        skills.ranged += raiding;
-    } else if profile.raiding_melee {
-        skills.melee += raiding;
-    }
-    if profile.raiding_block {
-        skills.block += raiding * 0.5;
-    }
-    if profile.raiding_dodge {
-        skills.dodge += raiding * 0.5;
+    let days = elapsed_minutes as f32 / crate::strategic_time::MINUTES_PER_DAY as f32;
+    let manual = if schedule.combat_auto_train {
+        [0.0; 4]
+    } else {
+        [
+            schedule.melee,
+            schedule.dodge,
+            schedule.block,
+            schedule.ranged,
+        ]
+        .map(|minutes| f32::from(minutes) / 60.0)
+    };
+    let adaptive_per_day = (if schedule.combat_auto_train {
+        f32::from(schedule.combat) / 60.0
+    } else {
+        0.0
+    }) + f32::from(schedule.raiding) / 60.0 * ACTIVITY_TRAINING_RATE;
+    let mut combat = [skills.melee, skills.dodge, skills.block, skills.ranged];
+    apply_adaptive_combat_training(&mut combat, profile.combat, manual, adaptive_per_day, days);
+    [skills.melee, skills.dodge, skills.block, skills.ranged] = combat;
+}
+
+/// Advance fixed combat study and adaptive Combat/Raiding training. Adaptive
+/// training always goes to the lowest normalized (`hours / relevance weight`)
+/// frontier. Crossings are solved exactly, so chunking an interval does not
+/// change the result beyond floating-point rounding.
+pub fn apply_adaptive_combat_training(
+    hours: &mut [f32; 4],
+    profile: CombatTrainingProfile,
+    base_hours_per_day: [f32; 4],
+    adaptive_hours_per_day: f32,
+    days: f32,
+) {
+    let weights = profile.weights();
+    let base = base_hours_per_day.map(|rate| if rate.is_finite() { rate.max(0.0) } else { 0.0 });
+    let adaptive = if adaptive_hours_per_day.is_finite() {
+        adaptive_hours_per_day.max(0.0)
+    } else {
+        0.0
+    };
+    let mut remaining = if days.is_finite() { days.max(0.0) } else { 0.0 };
+    const EPS: f32 = 1.0e-6;
+    while remaining > EPS {
+        let normalized = std::array::from_fn::<_, 4, _>(|i| {
+            if weights[i] > EPS {
+                hours[i] / weights[i]
+            } else {
+                f32::INFINITY
+            }
+        });
+        let low = normalized.into_iter().fold(f32::INFINITY, f32::min);
+        if !low.is_finite() || adaptive <= EPS {
+            for i in 0..4 {
+                *hours.get_mut(i).unwrap() += base[i] * remaining;
+            }
+            break;
+        }
+        let tied: Vec<usize> = (0..4)
+            .filter(|&i| weights[i] > EPS && normalized[i] <= low + EPS)
+            .collect();
+        let mut receiving = tied.clone();
+        loop {
+            let weight_sum: f32 = receiving.iter().map(|&i| weights[i]).sum();
+            let base_sum: f32 = receiving.iter().map(|&i| base[i]).sum();
+            let frontier_rate = (adaptive + base_sum) / weight_sum.max(EPS);
+            let before = receiving.len();
+            receiving.retain(|&i| base[i] / weights[i] < frontier_rate + EPS);
+            if receiving.len() == before || receiving.is_empty() {
+                break;
+            }
+        }
+        if receiving.is_empty() {
+            // Only possible at numerical limits; deterministically select the
+            // first lowest skill and preserve conservation.
+            receiving.push(tied[0]);
+        }
+        let weight_sum: f32 = receiving.iter().map(|&i| weights[i]).sum();
+        let base_sum: f32 = receiving.iter().map(|&i| base[i]).sum();
+        let frontier_rate = (adaptive + base_sum) / weight_sum.max(EPS);
+        let mut step = remaining;
+        for i in 0..4 {
+            if receiving.contains(&i) || weights[i] <= EPS {
+                continue;
+            }
+            let own_rate = base[i] / weights[i];
+            if frontier_rate > own_rate + EPS {
+                let gap = (normalized[i] - low).max(0.0);
+                if gap > EPS {
+                    step = step.min(gap / (frontier_rate - own_rate));
+                }
+            }
+        }
+        if step <= EPS {
+            step = remaining.min(EPS);
+        }
+        for i in 0..4 {
+            hours[i] += base[i] * step;
+            if receiving.contains(&i) {
+                hours[i] += (weights[i] * frontier_rate - base[i]).max(0.0) * step;
+            }
+        }
+        remaining -= step;
     }
 }
 
@@ -304,6 +463,106 @@ pub fn settlement_activity_outcome(
 mod tests {
     use super::*;
     use crate::strategic_time::MINUTES_PER_DAY;
+
+    fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {
+        EquippedCombatItem {
+            melee,
+            ranged,
+            shield,
+            balance,
+        }
+    }
+
+    #[test]
+    fn combat_relevance_uses_both_hands_and_sanitizes_balance() {
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([]),
+            CombatTrainingProfile::default()
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([item(false, true, false, 0.1)]).weights(),
+            [0.0, 1.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([
+                item(false, true, false, 0.1),
+                item(true, false, false, 0.3)
+            ])
+            .weights(),
+            [1.0, 1.0, 0.7, 1.0]
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([
+                item(true, false, false, 0.7),
+                item(true, false, false, 0.2)
+            ])
+            .block,
+            0.8
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([
+                item(true, false, false, 0.2),
+                item(false, false, true, 0.0)
+            ])
+            .block,
+            1.0
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([item(true, false, false, f32::NAN)]).block,
+            0.0
+        );
+    }
+
+    #[test]
+    fn adaptive_combat_catches_up_then_respects_weights_and_conserves_hours() {
+        let profile = CombatTrainingProfile {
+            melee: 1.0,
+            dodge: 1.0,
+            block: 0.5,
+            ranged: 1.0,
+        };
+        let mut hours = [10.0, 10.0, 5.0, 0.0];
+        apply_adaptive_combat_training(&mut hours, profile, [0.0; 4], 30.0, 1.0);
+        assert!((hours.into_iter().sum::<f32>() - 55.0).abs() < 0.001);
+        let normalized = [hours[0], hours[1], hours[2] / 0.5, hours[3]];
+        assert!(
+            normalized
+                .into_iter()
+                .all(|value| (value - normalized[0]).abs() < 0.001)
+        );
+    }
+
+    #[test]
+    fn manual_combat_plus_raiding_is_bulk_chunk_equivalent() {
+        let schedule = DailySchedule {
+            combat_auto_train: false,
+            melee: 120,
+            ranged: 60,
+            raiding: 240,
+            ..Default::default()
+        };
+        let profile = ActivityTrainingProfile {
+            combat: CombatTrainingProfile {
+                melee: 1.0,
+                dodge: 1.0,
+                block: 0.6,
+                ranged: 1.0,
+            },
+        };
+        let mut bulk = SkillHours {
+            melee: 8.0,
+            ranged: 2.0,
+            ..Default::default()
+        };
+        let mut chunked = bulk;
+        apply_schedule_training(&mut bulk, schedule, 30 * MINUTES_PER_DAY, profile);
+        for _ in 0..30 {
+            apply_schedule_training(&mut chunked, schedule, MINUTES_PER_DAY, profile);
+        }
+        for (left, right) in bulk.values().into_iter().zip(chunked.values()) {
+            assert!((left - right).abs() < 0.002, "{left} != {right}");
+        }
+    }
 
     #[test]
     fn chunked_and_daily_progression_agree() {

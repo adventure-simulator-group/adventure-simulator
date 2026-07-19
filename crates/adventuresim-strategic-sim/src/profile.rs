@@ -329,6 +329,7 @@ fn generated_schedule(
     let activity_minutes = 240 + (rng.next_u64() % 49) as u16 * 10;
     let training_minutes = 120 + (rng.next_u64() % 37) as u16 * 10;
     let mut s = DailySchedule::default();
+    s.combat_auto_train = false;
     match preferred {
         ActivityPreference::Labor => s.labor = activity_minutes,
         ActivityPreference::Prayer => s.prayer = activity_minutes,

@@ -7,6 +7,7 @@ use adventuresim_core::{
         STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
         STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
     },
+    strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
 };
 use adventuresim_world_schema::OfficialReligion;
 use axum::{
@@ -95,10 +96,11 @@ use crate::spacetimedb::{
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemSlot, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
-    RecruitmentRequirements, ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, MedicalExaminationRow, Party,
+    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, alchemy_page,
@@ -1589,6 +1591,7 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = get_character_capability(&state, active_character.id)
         .await
         .is_some_and(|capability| {
@@ -1656,6 +1659,7 @@ async fn party_personal(
             religion.as_deref(),
             prayer_religion_check,
             schedule.first(),
+            combat_profile,
             activity_preview,
             religious_demand.as_ref(),
             notoriety,
@@ -1760,6 +1764,10 @@ async fn resolve_religious_demand(
 
 #[derive(Deserialize)]
 struct TrainingScheduleForm {
+    #[serde(default)]
+    combat_minutes: u16,
+    #[serde(default)]
+    combat_auto_train: bool,
     melee_minutes: u16,
     dodge_minutes: u16,
     block_minutes: u16,
@@ -1811,6 +1819,8 @@ mod training_schedule_form_tests {
         }))
         .unwrap();
         assert!(!form.religion_auto_train);
+        assert!(!form.combat_auto_train);
+        assert_eq!(form.combat_minutes, 0);
         assert_eq!(form.religion_minutes, 0);
         assert_eq!(form.religion_judaism_minutes, 0);
     }
@@ -1820,7 +1830,8 @@ mod training_schedule_form_tests {
         let form: TrainingScheduleForm = serde_json::from_value(json!({
             "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
             "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
-            "medicine_minutes": 0, "religion_minutes": 120,
+            "medicine_minutes": 0, "combat_minutes": 90, "combat_auto_train": true,
+            "religion_minutes": 120,
             "religion_auto_train": false, "religion_judaism_minutes": 45,
             "stealth_minutes": 0, "balance_minutes": 0, "surgeon_minutes": 0,
             "smithing_minutes": 0, "labor_minutes": 0, "prayer_minutes": 0,
@@ -1828,6 +1839,8 @@ mod training_schedule_form_tests {
         }))
         .unwrap();
         assert!(!form.religion_auto_train);
+        assert!(form.combat_auto_train);
+        assert_eq!(form.combat_minutes, 90);
         assert_eq!(form.religion_minutes, 120);
         assert_eq!(form.religion_judaism_minutes, 45);
     }
@@ -1848,6 +1861,8 @@ async fn update_training_schedule(
                 &[
                     json!(character_id),
                     json!(ScheduleAllocation {
+                        combat_minutes: form.combat_minutes,
+                        combat_auto_train: form.combat_auto_train,
                         melee_minutes: form.melee_minutes,
                         dodge_minutes: form.dodge_minutes,
                         block_minutes: form.block_minutes,
@@ -2443,6 +2458,7 @@ async fn party_stats(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = get_character_capability(&state, active_character.id)
         .await
         .is_some_and(|capability| {
@@ -2469,6 +2485,7 @@ async fn party_stats(
             selected_attributes.first(),
             selected_skills.first(),
             selected_limbs.first(),
+            combat_profile,
             condition.as_ref(),
             &morale_sources,
             religion.as_deref(),
@@ -4023,6 +4040,46 @@ async fn get_character_capability(
         .unwrap_or_default()
         .into_iter()
         .next()
+}
+
+async fn get_combat_training_profile(state: &AppState, character_id: u64) -> CombatTrainingProfile {
+    let Some(equip) = query_single::<CharacterEquip>(state, "character_equip", character_id).await
+    else {
+        return CombatTrainingProfile::default();
+    };
+    let mut hands = Vec::new();
+    for inventory_id in [equip.left_hand_item_id, equip.right_hand_item_id]
+        .into_iter()
+        .flatten()
+    {
+        let inventory = state
+            .db
+            .query_one::<InventoryItem>(&format!(
+                "SELECT * FROM inventory_item WHERE id = {inventory_id}"
+            ))
+            .await
+            .ok()
+            .flatten();
+        let Some(inventory) = inventory else { continue };
+        let definition = state
+            .db
+            .query_one::<ItemDefinition>(&format!(
+                "SELECT * FROM item WHERE id = {}",
+                sql_string_literal(&inventory.item_id)
+            ))
+            .await
+            .ok()
+            .flatten();
+        if let Some(item) = definition {
+            hands.push(EquippedCombatItem {
+                melee: item.kind == ItemKind::Weapon && item.melee,
+                ranged: item.kind == ItemKind::Weapon && item.ranged,
+                shield: item.kind == ItemKind::Shield,
+                balance: item.balance,
+            });
+        }
+    }
+    CombatTrainingProfile::from_equipped_hands(hands)
 }
 
 pub(crate) async fn get_active_party_members(
