@@ -7,7 +7,8 @@
   const targetInput = document.querySelector("[data-target-surplus]");
   let currentPlan = null;
   const MAX_U32 = 4294967295;
-  const HORIZONTAL_PATH = "M 3 16 H 97";
+  const HORIZONTAL_PATH_START = 3;
+  const HORIZONTAL_PATH_END = 97;
 
   const gameIcon = (name) => {
     const icon = document.createElement("span");
@@ -282,8 +283,10 @@
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "");
   };
   const setPathProgress = (path, percent) => {
-    path.setAttribute("d", HORIZONTAL_PATH);
-    path.style.strokeDasharray = `${Math.max(0, Math.min(100, percent))} 100`;
+    const progress = Math.max(0, Math.min(100, percent)) / 100;
+    const end = HORIZONTAL_PATH_START + (HORIZONTAL_PATH_END - HORIZONTAL_PATH_START) * progress;
+    path.setAttribute("d", `M ${HORIZONTAL_PATH_START} 16 H ${end}`);
+    path.style.removeProperty("stroke-dasharray");
   };
   const targetDescription = (target, roundTrip) => {
     if (target < 0) return `Target: ${formatDays(target)} day${Math.abs(target) === 1 ? "" : "s"} short`;

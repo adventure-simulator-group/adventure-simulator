@@ -32,7 +32,10 @@ test("travel planner renders horizontal journey provisions and exact staged mark
   const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
   assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
   assert.match(planner, /node\.minute \/ totalMinutes/);
-  assert.match(planner, /HORIZONTAL_PATH/);
+  assert.match(planner, /HORIZONTAL_PATH_START/);
+  assert.match(planner, /HORIZONTAL_PATH_END/);
+  assert.match(planner, /HORIZONTAL_PATH_END - HORIZONTAL_PATH_START/);
+  assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
   assert.match(planner, /const horizontal = 5 \+ progress \* 90/);
   assert.match(planner, /startTop/);
