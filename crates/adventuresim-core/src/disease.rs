@@ -354,6 +354,15 @@ pub fn medication_recipe(disease_id: DiseaseId) -> &'static MedicationRecipe {
     &MEDICATION_RECIPES[disease_id as usize]
 }
 
+/// The complete information an NPC herbalist may disclose after a confirmed
+/// examination. Callers should not enrich this pair with raw episode facts.
+pub fn herbalist_diagnosis(disease_id: DiseaseId) -> (&'static str, &'static str) {
+    (
+        definition(disease_id).period_name,
+        medication_recipe(disease_id).name,
+    )
+}
+
 pub fn medication_recipe_for_item(item_id: &str) -> Option<&'static MedicationRecipe> {
     MEDICATION_RECIPES
         .iter()
@@ -1225,6 +1234,18 @@ mod tests {
         );
         assert!(can_prepare_medication(4.98, plague));
         assert!(!can_prepare_medication(4.49, plague));
+    }
+    #[test]
+    fn herbalist_diagnosis_maps_only_canonical_names() {
+        assert_eq!(
+            herbalist_diagnosis(DiseaseId::Influenza),
+            ("Catarrhal fever", "Catarrhal fever cordial")
+        );
+        for definition in STARTER_DISEASES {
+            let (disease_name, medication_name) = herbalist_diagnosis(definition.id);
+            assert_eq!(disease_name, definition.period_name);
+            assert_eq!(medication_name, medication_recipe(definition.id).name);
+        }
     }
     #[test]
     fn incidental_findings_are_stable_and_non_distinctive() {

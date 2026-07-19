@@ -811,23 +811,23 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         ..Item::default()
     });
     define_item(ctx, "bandage", 0.05);
-    for (id, weight, value) in [
-        ("honey", 0.25, 2),
-        ("sage", 0.05, 2),
-        ("dried_mint", 0.05, 2),
-        ("charcoal", 0.15, 1),
-        ("willow_bark", 0.10, 2),
-        ("vinegar", 0.30, 2),
-        ("poppy", 0.05, 4),
-        ("comfrey", 0.08, 2),
-        ("garlic", 0.10, 1),
-        ("oatmeal", 0.25, 1),
-        ("rosewater", 0.20, 3),
+    for (id, weight) in [
+        ("honey", 0.25),
+        ("sage", 0.05),
+        ("dried_mint", 0.05),
+        ("charcoal", 0.15),
+        ("willow_bark", 0.10),
+        ("vinegar", 0.30),
+        ("poppy", 0.05),
+        ("comfrey", 0.08),
+        ("garlic", 0.10),
+        ("oatmeal", 0.25),
+        ("rosewater", 0.20),
     ] {
         ctx.db.item().insert(Item {
             id: id.into(),
             weight,
-            base_value: Some(value),
+            base_value: adventuresim_core::strategic_economy::medicinal_ingredient_value(id),
             kind: ItemKind::Ingredient,
             ..Item::default()
         });

@@ -245,7 +245,10 @@ impl MerchantShop {
             ),
             Self::Armor => kind == crate::spacetimedb::ItemKind::Armor,
             Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
-            Self::Herbalist => kind == crate::spacetimedb::ItemKind::Ingredient,
+            Self::Herbalist => matches!(
+                kind,
+                crate::spacetimedb::ItemKind::Ingredient | crate::spacetimedb::ItemKind::Medication
+            ),
         }
     }
 }
@@ -1383,28 +1386,37 @@ pub fn live_merchant_shop_page(
         })
         .unwrap_or(0);
     let content = html! {
-        aside class="left-sidebar smith-wares-column" { (sidebar_section("Merchant stock", html! {
+        aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table(false, None, html! {
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
-                    @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
+                    @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
+                    @let buy_price = medication_recipe.map_or_else(
+                        || adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+                        adventuresim_core::strategic_economy::herbalist_medication_price,
+                    );
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_quality(&item.id, Some(item))) (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { @if let Some(recipe) = medication_recipe { (recipe.name) } @else { (item_name_with_quality(&item.id, Some(item))) } (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
+            @if matches!(shop, MerchantShop::Herbalist) {
+                p class="small-copy text-muted" { "Prepared courses are sold into your personal inventory as separate, equippable items. Party-inventory purchasing is unavailable here." }
+            }
             }
         }))
         @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
-                button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
+                @if !matches!(shop, MerchantShop::Herbalist) {
+                    button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
+                }
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
@@ -1422,7 +1434,7 @@ pub fn live_merchant_shop_page(
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                        td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if can_sell || service_matches { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
+                        td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
                         td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
@@ -1438,10 +1450,12 @@ pub fn live_merchant_shop_page(
                         }
                     }
                 }))
-                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+                @if !matches!(shop, MerchantShop::Herbalist) {
+                    (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+                }
             }
             }
-            div data-inventory-pane="party" hidden {
+            @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
                 (trade_inventory_table(false, None, html! {
                     @for item in pooled {
@@ -1469,6 +1483,7 @@ pub fn live_merchant_shop_page(
                     }
                 }))
                 (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+            }
             }
             }
         }
@@ -3146,6 +3161,9 @@ fn chat_area(
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
             data-service-quest-id=[service_context.map(|context| context.1)]
+            data-herbalist-exam-fee=[service_context
+                .filter(|context| context.1 == "herbalist")
+                .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
             data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
             data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())] {
             div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
@@ -3416,6 +3434,14 @@ mod tests {
         CharacterCondition, LocationKind, MerchantShop, repair_custody_panel,
         repair_submit_control, rest_default_minutes,
     };
+    use crate::spacetimedb::ItemKind;
+
+    #[test]
+    fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
+        assert!(MerchantShop::Herbalist.stocks(ItemKind::Ingredient));
+        assert!(MerchantShop::Herbalist.stocks(ItemKind::Medication));
+        assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
+    }
 
     #[test]
     fn location_kind_rejects_unknown_path_segments() {

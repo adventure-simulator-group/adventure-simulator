@@ -7,7 +7,7 @@
   const dialogueActions = new Map();
   let nextDialogueActionId = 0;
 
-  const line = (kind, speaker, content) => {
+  const line = (kind, speaker, content, { persist = true } = {}) => {
     if (!chat) return null;
     const messages = chat.querySelector(".settlement-chat-messages");
     if (!messages) return null;
@@ -31,7 +31,7 @@
     messages.append(row);
     messages.scrollTop = messages.scrollHeight;
     const subject = chat.dataset.localChatSubject;
-    if (subject) {
+    if (persist && subject) {
       const form = new URLSearchParams({ body: body || "", speaker: speaker || "" });
       const suffix = kind === "player" ? "" : "/npc";
       window.strategicFetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
@@ -40,6 +40,14 @@
         body: form,
       }).catch((error) => window.reportStrategicError(error, "record quest dialogue"));
     }
+    return row;
+  };
+
+  // Medical examination dialogue is patient-only, one-shot presentation. It
+  // must remain visible in this browser without entering shared chat history.
+  const privateLine = (kind, speaker, content) => {
+    const row = line(kind, speaker, content, { persist: false });
+    if (row) row.dataset.privateDialogue = "true";
     return row;
   };
 
@@ -234,6 +242,62 @@
     line("npc", quest.npc_name, greeting);
   };
 
+  const locateHerbalistMedication = (medicationName) => {
+    const row = document.querySelector(
+      `[data-herbalist-medication-name="${CSS.escape(medicationName)}"]`,
+    );
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.querySelector("[data-merchant-buy]")?.focus();
+  };
+
+  const requestHerbalistExamination = async () => {
+    privateLine("player", "You", "I have been feeling ill.");
+    const response = await window.strategicFetch(
+      `/api/settlements/${encodeURIComponent(settlementId)}/herbalist/examination`,
+      { method: "POST", headers: { Accept: "application/json" } },
+    );
+    const result = await response.json();
+    if (!Array.isArray(result.diagnoses) || result.diagnoses.length === 0) {
+      privateLine("npc", "Herbalist", result.message || "I cannot name your illness with confidence.");
+      return;
+    }
+    result.diagnoses.forEach((diagnosis) => {
+      const recommendation = document.createDocumentFragment();
+      recommendation.append(document.createTextNode(`You have ${diagnosis.disease_name}. I recommend `));
+      recommendation.append(link(diagnosis.medication_name, () => {
+        locateHerbalistMedication(diagnosis.medication_name);
+      }));
+      recommendation.append(document.createTextNode("."));
+      privateLine("npc", "Herbalist", recommendation);
+    });
+  };
+
+  const beginHerbalistConversation = (quest) => {
+    const messages = chat.querySelector(".settlement-chat-messages");
+    messages?.querySelector(".chat-npc-message")?.remove();
+    const greeting = document.createDocumentFragment();
+    greeting.append(document.createTextNode("Greetings, traveler, what brings you to my humble shop? "));
+    greeting.append(link("Feeling ill", requestHerbalistExamination));
+    const examFee = Number(chat.dataset.herbalistExamFee);
+    greeting.append(document.createTextNode(
+      `? Or are you looking to purchase some ingredients? An examination costs ${examFee} gold.`,
+    ));
+    if (quest?.state === "available" || quest?.state === "recruiting") {
+      greeting.append(document.createTextNode(" I could also use your help concerning "));
+      const openQuest = quest.state === "recruiting" ? openRecruitmentOffer : openQuestOffer;
+      greeting.append(link(quest.problem, () => openQuest(quest)));
+      greeting.append(document.createTextNode("."));
+    } else if (quest?.state === "ready") {
+      greeting.append(document.createTextNode(" And have you "));
+      greeting.append(link("finished the work we discussed", () => turnInQuest(quest)));
+      greeting.append(document.createTextNode("?"));
+    } else if (quest) {
+      greeting.append(document.createTextNode(" I still await word of the work we discussed."));
+    }
+    line("npc", quest?.npc_name || "Herbalist", greeting);
+  };
+
   const faithDetails = {
     western_church: {
       topic: "your place within Holy Church",
@@ -384,7 +448,8 @@
       if (nextConversationSignature === conversationSignature) return;
       conversationSignature = nextConversationSignature;
       const showConversation = () => {
-        if (chat.dataset.serviceQuestId === "religion") beginReligionConversation(quest, religion);
+        if (chat.dataset.serviceQuestId === "herbalist") beginHerbalistConversation(quest);
+        else if (chat.dataset.serviceQuestId === "religion") beginReligionConversation(quest, religion);
         else if (quest?.state === "available") beginConversation(quest);
         else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
         else if (quest) beginReturnConversation(quest);

@@ -729,6 +729,17 @@ pub struct MedicalExaminationRow {
     pub confirmed_stages: Vec<String>,
 }
 
+/// Queried only by strategic-web long enough to deliver the authenticated
+/// patient's name-only NPC result, then dismissed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HerbalistExaminationRow {
+    pub id: u64,
+    pub patient_id: u64,
+    pub settlement_id: String,
+    pub disease_names: Vec<String>,
+    pub medication_names: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {
     pub character_id: u64,

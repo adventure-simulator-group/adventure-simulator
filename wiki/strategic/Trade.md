@@ -22,6 +22,15 @@ quantity changes on both sides; inventory changes only persist after choosing
 Trades are bound to the settlement where the character is currently located;
 visiting another settlement's URL does not allow remote trading.
 
+Herbalists use a narrower authoritative purchase path. They offer unlimited
+ingredients plus all eight pre-prepared medication courses, but prepared
+medication remains rejected by the generic merchant reducer. Each course costs
+more than the normal merchant cost of its recipe ingredients, using shared
+pricing helpers on both the server and storefront. Mixed and multiple purchases
+are allowed; every medication course enters personal inventory as its own
+quantity-one row. The herbalist page deliberately omits party-inventory buying
+and explains that restriction so courses cannot become unusable shared stacks.
+
 Weaponsmith and Armourer storefronts also accept individual equipment instances for repair through
 separate actions that never enter the sale draft. A smith repairs only condition bins at or below
 their independently seeded skill (minimum 3), but may accept an item with additional harder damage

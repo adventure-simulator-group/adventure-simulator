@@ -151,9 +151,9 @@ fn page_shell(
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=chat-info-1" defer {}
+                    script src="/static/service-quests.js?v=herbalist-care-2" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
-                    script src="/static/local-chat.js?v=chat-info-1" defer {}
+                    script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-2" defer {}
                     script src="/static/travel-planner.js?v=journey-state-1" defer {}
                 }
