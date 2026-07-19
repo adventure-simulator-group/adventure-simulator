@@ -3630,7 +3630,7 @@ fn rest_service_menu(
                         strong id="rest-summary-title" { "Rest summary" }
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
-                    p { @if summary.minutes >= 1_440 { (summary.minutes / 1_440) " day" @if summary.minutes / 1_440 != 1 { "s" } " passed." } @else { (summary.minutes / 60) " hour" @if summary.minutes / 60 != 1 { "s" } " passed." } }
+                    p { (format_rest_duration(summary.minutes)) " passed." }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
@@ -3678,9 +3678,29 @@ fn settlement_rest_duration_control(value: u64, unit: &str) -> Markup {
                 span class="rest-days-unit" data-rest-unit-label { (unit) }
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
-            input type="hidden" name="requested_minutes" data-rest-exact-minutes;
+            input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
         }
     }
+}
+
+fn format_rest_duration(minutes: u64) -> String {
+    let days = minutes / 1_440;
+    let hours = minutes % 1_440 / 60;
+    let minutes = minutes % 60;
+    let mut parts = Vec::new();
+    if days > 0 {
+        parts.push(format!("{days} day{}", if days == 1 { "" } else { "s" }));
+    }
+    if hours > 0 {
+        parts.push(format!("{hours} hour{}", if hours == 1 { "" } else { "s" }));
+    }
+    if minutes > 0 || parts.is_empty() {
+        parts.push(format!(
+            "{minutes} minute{}",
+            if minutes == 1 { "" } else { "s" }
+        ));
+    }
+    parts.join(" ")
 }
 
 fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
@@ -3736,8 +3756,9 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, live_merchant_shop_page, need_balance_meter, repair_custody_panel,
-        repair_submit_control, rest_default_minutes, settlement_rest_duration_control,
+        encumbrance_meter, format_rest_duration, live_merchant_shop_page, need_balance_meter,
+        repair_custody_panel, repair_submit_control, rest_default_minutes,
+        settlement_rest_duration_control,
     };
     use crate::spacetimedb::ItemKind;
     use adventuresim_core::equipment::EncumbranceSummary;
@@ -3922,6 +3943,14 @@ mod tests {
             )
         );
         assert!(markup.contains("value=\"3\" min=\"1\" max=\"365\""));
+        assert!(markup.contains("name=\"requested_minutes\" disabled"));
+    }
+
+    #[test]
+    fn rest_summary_duration_keeps_subday_hours_and_minutes() {
+        assert_eq!(format_rest_duration(1_441), "1 day 1 minute");
+        assert_eq!(format_rest_duration(1_920), "1 day 8 hours");
+        assert_eq!(format_rest_duration(2_879), "1 day 23 hours 59 minutes");
     }
 
     #[test]

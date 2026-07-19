@@ -33,9 +33,13 @@
   };
   if (typeof document === "undefined") return;
 
+  const mounted = new WeakSet();
+  const dirty = new WeakSet();
+  const states = new WeakMap();
+
   const mount = (control) => {
-    if (control.dataset.wakeTimeMounted) return;
-    control.dataset.wakeTimeMounted = "true";
+    if (mounted.has(control)) return;
+    mounted.add(control);
     const form = control.closest("form");
     const duration = control.querySelector("[data-rest-duration-input]");
     const exact = control.querySelector("[data-rest-exact-minutes]");
@@ -47,8 +51,8 @@
     let characterMinutes = Number.isFinite(Number(window.strategicCharacterMinutes))
       ? Number(window.strategicCharacterMinutes)
       : null;
-    let hoursMinutes = null;
-    let daysValue = Math.max(1, Math.round(Number(duration.value) || 1));
+    const initiallyHours = radios.find((radio) => radio.checked)?.value === "hours";
+    let daysValue = initiallyHours ? 1 : Math.max(1, Math.round(Number(duration.value) || 1));
 
     const selectedUnit = () => radios.find((radio) => radio.checked)?.value || "hours";
     const setTarget = (minute) => {
@@ -59,7 +63,7 @@
       slider.setAttribute("aria-valuetext", clock);
     };
     const setHoursMinutes = (minutes) => {
-      hoursMinutes = Math.max(DAY_MINUTES, Math.round(minutes));
+      const hoursMinutes = Math.max(DAY_MINUTES, Math.round(minutes));
       duration.value = formatHours(hoursMinutes);
       exact.value = String(hoursMinutes);
       submit.disabled = false;
@@ -69,6 +73,7 @@
       radios.forEach((radio) => radio.closest("label").classList.toggle("active", radio.checked));
       panel.setAttribute("aria-disabled", String(!hours));
       slider.disabled = !hours;
+      exact.disabled = !hours;
       duration.min = hours ? "24" : "1";
       duration.max = hours ? "8760" : "365";
       duration.step = hours ? "0.01" : "1";
@@ -90,10 +95,12 @@
 
     setTarget(480);
     slider.addEventListener("input", () => {
+      dirty.add(control);
       setTarget(slider.value);
       if (characterMinutes !== null) setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
     });
     duration.addEventListener("input", () => {
+      dirty.add(control);
       const value = Number(duration.value);
       if (selectedUnit() === "days") {
         daysValue = Math.round(value);
@@ -114,17 +121,36 @@
       if (selectedUnit() === "days" && Number(duration.value) < 1) duration.value = "1";
       duration.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    radios.forEach((radio) => radio.addEventListener("change", applyUnit));
+    radios.forEach((radio) => radio.addEventListener("change", () => {
+      dirty.add(control);
+      applyUnit();
+    }));
     control.querySelectorAll("[data-rest-step]").forEach((button) => button.addEventListener("click", () => {
+      dirty.add(control);
       duration.value = String(Number(duration.value || duration.min) + Number(button.dataset.restStep));
       duration.dispatchEvent(new Event("change", { bubbles: true }));
     }));
-    document.addEventListener("strategic-time-ready", (event) => {
-      characterMinutes = Number(event.detail.characterMinutes);
-      if (selectedUnit() === "hours") setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
+    states.set(control, {
+      syncTime(minutes) {
+        characterMinutes = Number(minutes);
+        if (selectedUnit() === "hours") setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
+      },
     });
     applyUnit();
   };
 
-  document.querySelectorAll("[data-wake-time]").forEach(mount);
+  const mountAll = (root = document) => root.querySelectorAll?.("[data-wake-time]").forEach(mount);
+  const isDirty = (root = document) => [...root.querySelectorAll?.("[data-wake-time]") || []]
+    .some((control) => dirty.has(control));
+  const syncTime = (root, minutes) => {
+    root.querySelectorAll?.("[data-wake-time]").forEach((control) => states.get(control)?.syncTime(minutes));
+  };
+
+  window.strategicRestDuration = { isDirty, mountAll };
+  mountAll();
+  document.addEventListener("strategic-time-ready", (event) => {
+    mountAll();
+    syncTime(document, event.detail.characterMinutes);
+  });
+  document.addEventListener("strategic-live-regions-refreshed", () => mountAll());
 })();

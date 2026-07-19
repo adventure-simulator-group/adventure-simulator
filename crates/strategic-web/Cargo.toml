@@ -26,3 +26,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_urlencoded = "0.7"

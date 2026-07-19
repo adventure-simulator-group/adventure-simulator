@@ -2748,20 +2748,37 @@ async fn inn(
 struct RestForm {
     duration: f64,
     unit: String,
+    #[serde(default, deserialize_with = "deserialize_optional_u64")]
     requested_minutes: Option<u64>,
+}
+
+fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.parse().map_err(serde::de::Error::custom))
+        .transpose()
 }
 
 const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
 
 fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
     let minutes = match form.unit.as_str() {
-        "hours" => form.requested_minutes.unwrap_or_else(|| {
-            if form.duration.is_finite() && form.duration >= 0.0 {
-                (form.duration * 60.0).round() as u64
-            } else {
-                0
+        "hours" => {
+            if !form.duration.is_finite() || form.duration < 0.0 {
+                return Err("Rest hours must be a valid number");
             }
-        }),
+            let duration_minutes = (form.duration * 60.0).round() as u64;
+            if let Some(requested_minutes) = form.requested_minutes
+                && requested_minutes != duration_minutes
+            {
+                return Err("Rest duration does not match the selected wake time");
+            }
+            form.requested_minutes.unwrap_or(duration_minutes)
+        }
         "days" => {
             if !form.duration.is_finite() || form.duration.fract() != 0.0 {
                 return Err("Rest days must be a whole number");
@@ -3921,6 +3938,19 @@ mod rest_form_tests {
         );
         assert!(settlement_rest_minutes(&form(0.0, "days", None)).is_err());
         assert!(settlement_rest_minutes(&form(1.5, "days", None)).is_err());
+    }
+
+    #[test]
+    fn days_form_omits_disabled_exact_minutes_and_hours_reject_contradictions() {
+        let parsed: RestForm =
+            serde_urlencoded::from_str("duration=2&unit=days").expect("days form parses");
+        assert_eq!(parsed.requested_minutes, None);
+        assert_eq!(settlement_rest_minutes(&parsed), Ok(2_880));
+        let blank: RestForm = serde_urlencoded::from_str("duration=2&unit=days&requested_minutes=")
+            .expect("blank disabled-field fallback parses");
+        assert_eq!(blank.requested_minutes, None);
+        assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
+        assert!(settlement_rest_minutes(&form(24.0, "hours", Some(1_441))).is_err());
     }
 }
 
