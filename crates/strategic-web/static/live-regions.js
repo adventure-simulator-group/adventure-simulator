@@ -19,6 +19,7 @@
       : null;
     const editing = active?.matches?.("input, textarea, select, [contenteditable='true'], [role='slider']");
     return hasStagedInventoryChanges()
+      || Boolean(window.strategicRestDuration?.isDirty?.(document))
       || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection]"))
       || Boolean(document.querySelector('.schedule-time-editor'))
       || Boolean(editing);
@@ -77,6 +78,7 @@
     // Match the post-mount table structure before comparing it with the live DOM.
     window.strategicTradeUi?.mountInventoryBulkControls?.(nextDocument);
     window.strategicInventoryBrowser?.mountAll?.(nextDocument);
+    window.strategicRestDuration?.mountAll?.(nextDocument);
     const inventoryTab = selectedInventoryTab();
     const leftSidebarScroll = scrollOffsets(".left-sidebar");
     const rightSidebarScroll = scrollOffsets(".right-sidebar");

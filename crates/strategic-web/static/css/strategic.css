@@ -1087,6 +1087,77 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 .rest-duration-unit input { position: absolute; opacity: 0; pointer-events: none; }
 .rest-duration-unit.active { background: var(--building-interactive-hover); color: var(--text-primary); }
 
+.rest-wake-time {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.15rem 0.1rem 0.25rem;
+  transition: opacity 120ms ease;
+}
+
+.rest-wake-time[aria-disabled="true"] { opacity: 0.38; }
+
+.rest-wake-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.rest-wake-heading output {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rest-wake-time input[type="range"] {
+  width: 100%;
+  height: 1.3rem;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.rest-wake-time input[type="range"]:disabled { cursor: not-allowed; }
+
+.rest-wake-time input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.55rem;
+  border: 1px solid rgb(255 255 255 / 38%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #02040c 0%, #080c1d 18%, #ed7a3f 27%, #4ba6e6 38%, #59b9f4 54%, #4a9fdd 68%, #e87339 77%, #090b16 86%, #02040c 100%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 45%);
+}
+
+.rest-wake-time input[type="range"]::-moz-range-track {
+  height: 0.55rem;
+  border: 1px solid rgb(255 255 255 / 38%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #02040c 0%, #080c1d 18%, #ed7a3f 27%, #4ba6e6 38%, #59b9f4 54%, #4a9fdd 68%, #e87339 77%, #090b16 86%, #02040c 100%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 45%);
+}
+
+.rest-wake-time input[type="range"]::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.28rem;
+  appearance: none;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #273343;
+  box-shadow: 0 0 0 1px #111, 0 1px 4px rgb(0 0 0 / 70%);
+}
+
+.rest-wake-time input[type="range"]::-moz-range-thumb {
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #273343;
+  box-shadow: 0 0 0 1px #111, 0 1px 4px rgb(0 0 0 / 70%);
+}
+
+.rest-wake-time input[type="range"]:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 3px; }
+
 .inventory-trade-row {
   overflow: visible;
 }

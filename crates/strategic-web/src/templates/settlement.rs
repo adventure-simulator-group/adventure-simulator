@@ -3795,8 +3795,8 @@ fn rest_service_menu(
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
                 @let unit = if minutes >= 1_440 { "days" } else { "hours" };
-                @let value = if unit == "days" { minutes.div_ceil(1_440) } else { minutes.div_ceil(60) };
-                (rest_duration_control("settlement-rest", value, unit, "Rest duration"))
+                @let value = if unit == "days" { minutes.div_ceil(1_440).max(1) } else { 24 };
+                (settlement_rest_duration_control(value, unit))
                 /*
                 div class="rest-days-control" {
                     button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
@@ -3811,7 +3811,7 @@ fn rest_service_menu(
                         onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                 }
                 */
-                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[value == 0] { "Rest" }
+                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] { "Rest" }
         }
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
@@ -3820,7 +3820,7 @@ fn rest_service_menu(
                         strong id="rest-summary-title" { "Rest summary" }
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
-                    p { @if summary.minutes >= 1_440 { (summary.minutes / 1_440) " day" @if summary.minutes / 1_440 != 1 { "s" } " passed." } @else { (summary.minutes / 60) " hour" @if summary.minutes / 60 != 1 { "s" } " passed." } }
+                    p { (format_rest_duration(summary.minutes)) " passed." }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
@@ -3837,6 +3837,63 @@ fn rest_service_menu(
         }
         }
     }
+}
+
+fn settlement_rest_duration_control(value: u64, unit: &str) -> Markup {
+    let hours_active = unit == "hours";
+    html! {
+        div class="rest-duration-control settlement-rest-duration" data-rest-duration data-wake-time {
+            div class="rest-duration-units" role="radiogroup" aria-label="Rest duration" {
+                label class=(if hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
+                    input type="radio" name="unit" value="hours" checked[hours_active] {}
+                    "Hours"
+                }
+                label class=(if !hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
+                    input type="radio" name="unit" value="days" checked[!hours_active] {}
+                    "Days"
+                }
+            }
+            div class="rest-wake-time" data-wake-time-panel aria-disabled=(!hours_active) {
+                div class="rest-wake-heading" {
+                    label for="settlement-wake-time" { "Wake time" }
+                    output for="settlement-wake-time" data-wake-time-output { "08:00" }
+                }
+                input id="settlement-wake-time" type="range" min="0" max="1380" step="60" value="480"
+                    aria-label="Wake time" aria-valuetext="08:00" disabled[!hours_active] data-wake-time-slider;
+            }
+            div class="rest-days-control" {
+                button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest duration" data-rest-step="-1" { "−" }
+                input type=(if hours_active { "text" } else { "number" }) name="duration"
+                    value=(if hours_active { format!("{value:02}:00") } else { value.to_string() })
+                    inputmode=(if hours_active { "text" } else { "numeric" })
+                    pattern="[0-9]+:[0-5][0-9]" min="1" max="365" step="1"
+                    aria-label="Rest duration" data-rest-duration-input;
+                span class="rest-days-unit" data-rest-unit-label { (unit) }
+                button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
+            }
+            input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
+        }
+    }
+}
+
+fn format_rest_duration(minutes: u64) -> String {
+    let days = minutes / 1_440;
+    let hours = minutes % 1_440 / 60;
+    let minutes = minutes % 60;
+    let mut parts = Vec::new();
+    if days > 0 {
+        parts.push(format!("{days} day{}", if days == 1 { "" } else { "s" }));
+    }
+    if hours > 0 {
+        parts.push(format!("{hours} hour{}", if hours == 1 { "" } else { "s" }));
+    }
+    if minutes > 0 || parts.is_empty() {
+        parts.push(format!(
+            "{minutes} minute{}",
+            if minutes == 1 { "" } else { "s" }
+        ));
+    }
+    parts.join(" ")
 }
 
 fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
@@ -3892,8 +3949,9 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, live_merchant_shop_page, need_balance_meter, repair_custody_panel,
-        repair_submit_control, rest_default_minutes,
+        encumbrance_meter, format_rest_duration, live_merchant_shop_page, need_balance_meter,
+        repair_custody_panel, repair_submit_control, rest_default_minutes,
+        settlement_rest_duration_control,
     };
     use crate::spacetimedb::ItemKind;
     use adventuresim_core::equipment::EncumbranceSummary;
@@ -4054,6 +4112,43 @@ mod tests {
             rest_default_minutes(None, None, Some(&condition), 0, 0),
             Some(2_880)
         );
+    }
+
+    #[test]
+    fn settlement_wake_control_is_accessible_and_defaults_to_eight() {
+        let markup = settlement_rest_duration_control(24, "hours").into_string();
+        assert!(markup.contains("data-wake-time"));
+        assert!(markup.contains("type=\"range\""));
+        assert!(markup.contains("step=\"60\""));
+        assert!(markup.contains("value=\"480\""));
+        assert!(markup.contains("type=\"text\""));
+        assert!(markup.contains("value=\"24:00\""));
+        assert!(markup.contains("pattern=\"[0-9]+:[0-5][0-9]\""));
+        assert!(markup.contains("aria-label=\"Wake time\""));
+        assert!(markup.contains("aria-valuetext=\"08:00\""));
+        assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn days_recommendation_keeps_slider_disabled_and_minimum_one() {
+        let markup = settlement_rest_duration_control(3, "days").into_string();
+        assert!(markup.contains("value=\"days\" checked"));
+        assert!(markup.contains("aria-disabled=\"true\""));
+        assert!(
+            markup.contains(
+                "value=\"480\" aria-label=\"Wake time\" aria-valuetext=\"08:00\" disabled"
+            )
+        );
+        assert!(markup.contains("type=\"number\" name=\"duration\" value=\"3\""));
+        assert!(markup.contains("min=\"1\" max=\"365\" step=\"1\""));
+        assert!(markup.contains("name=\"requested_minutes\" disabled"));
+    }
+
+    #[test]
+    fn rest_summary_duration_keeps_subday_hours_and_minutes() {
+        assert_eq!(format_rest_duration(1_441), "1 day 1 minute");
+        assert_eq!(format_rest_duration(1_920), "1 day 8 hours");
+        assert_eq!(format_rest_duration(2_879), "1 day 23 hours 59 minutes");
     }
 
     #[test]
