@@ -70,11 +70,13 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-surface\)/);
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
   assert.match(layoutCss, /--building-panel-recess: color-mix/);
-  assert.match(layoutCss, /border: 0\.55rem solid transparent/);
+  assert.match(layoutCss, /border: 0/);
   assert.match(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
   assert.match(layoutCss, /z-index: 30/);
   assert.match(layoutCss, /left top \/ 1\.35rem 1\.35rem no-repeat/);
   assert.match(layoutCss, /right bottom \/ 1\.35rem 1\.35rem no-repeat/);
+  assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat/);
+  assert.ok(layoutCss.indexOf("right bottom / 1.35rem") < layoutCss.indexOf("center top / 100% 0.55rem"));
   assert.match(layoutCss, /pointer-events: none/);
 });
 
