@@ -17,6 +17,7 @@ class WorldDataBundleTests(unittest.TestCase):
             (payload / name).write_text("id,name\n1,Test\n", encoding="utf-8")
         (payload / ".viabundus-source.json").write_text("{}", encoding="utf-8")
         (payload / "settlement-ids-1544.json").write_bytes(bundle.canonical_json({"schema": 1, "year": 1544, "settlement_ids": ["test"]}))
+        (payload / ".interrupted-download.part").write_bytes(b"not a source input")
         archive = root / "bundle.zip"
         bundle.build(archive, [(source, payload)], include_checked_in=True, partial=True)
         bundle.write_release_descriptor(archive, root / "bundle.release.json")
@@ -34,6 +35,7 @@ class WorldDataBundleTests(unittest.TestCase):
             archive = self.make_bundle(root)
             checked = bundle.inspect(archive)
             self.assertEqual([item["source"] for item in checked[1]], ["ieg-religion-1544-curated", "viabundus-v2"])
+            self.assertNotIn("payload/viabundus-v2/.interrupted-download.part", checked[2])
             checked[0].close()
             repository = root / "repository"
             (repository / "target").mkdir(parents=True)

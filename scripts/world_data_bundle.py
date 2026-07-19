@@ -70,6 +70,9 @@ NOTICE_TEMPLATES = {
 PROHIBITED = (
     "luh", "land_use_harmonization", "ieg-map", "ieg_image", "owda.nc", "owda-grid", "owda-annual",
 )
+# Downloaders may leave hidden, randomly suffixed transfer fragments beside a
+# completed source.  They are not source inputs and must never enter a release.
+TRANSIENT_INPUT_SUFFIXES = (".part",)
 
 
 def fail(message: str) -> None:
@@ -402,6 +405,8 @@ def build(output: Path, components: list[tuple[str, Path]], include_checked_in: 
         version, form, destination = POLICY[source]
         files = []
         for relative, path in regular_files(root):
+            if relative.startswith(".") and relative.endswith(TRANSIENT_INPUT_SUFFIXES):
+                continue
             # Viabundus publishes several supplementary CSVs. The importer
             # deliberately consumes only its audited five-file subset; retain
             # the official sidecar but do not accidentally redistribute

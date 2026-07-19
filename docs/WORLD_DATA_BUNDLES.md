@@ -39,6 +39,10 @@ duplicates, extra members, unsafe paths, encrypted or symlink ZIP members,
 unbounded compression, and hash/size mismatches. It intentionally permits ZIP64
 when Python supports it.
 
+Hidden local transfer fragments ending in `.part` are not source inputs and are
+excluded from a build. A completed payload remains independently enumerated and
+hashed in the archive manifest.
+
 The default `build` command refuses an incomplete collection: it requires every
 active compiler input, the IEG checked-in marker, reviewed layouts, and its
 canonical per-component file inventory. `--partial` exists only for explicitly labelled test or
