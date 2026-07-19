@@ -92,7 +92,7 @@
   isolation: isolate;
   color: var(--text-primary);
   background:
-    radial-gradient(circle at var(--sky-glow-x, 50%) var(--sky-glow-y, 115%), var(--sky-glow, #555) 0, transparent 42%),
+    radial-gradient(ellipse 32% 125% at var(--sky-glow-x, 50%) var(--sky-glow-y, 115%), var(--sky-glow, #555) 0, transparent 64%),
     radial-gradient(circle at 18% 24%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
     radial-gradient(circle at 71% 17%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
     radial-gradient(circle at 43% 38%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
@@ -133,8 +133,10 @@
   min-width: 0;
   align-items: center;
   gap: 0.45rem;
-  padding-left: 1rem;
-  border-left: 1px solid var(--border-color);
+  padding: 0.38rem 0.55rem;
+  border: 1px solid rgb(255 255 255 / 16%);
+  background: rgb(5 8 13 / 72%);
+  box-shadow: 0 1px 3px #0008;
 }
 
 .current-quest-summary[hidden] { display: none; }
@@ -213,7 +215,11 @@
 }
 
 .settlement-time {
-  color: var(--text-muted);
+  padding: 0.18rem 0.42rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 8 13 / 76%);
+  box-shadow: 0 1px 3px #0008;
+  color: var(--text-primary);
   font-size: var(--font-size-xs);
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -223,7 +229,9 @@
 }
 
 .settlement-services {
-  gap: 0.15rem;
+  align-self: stretch;
+  align-items: flex-end;
+  gap: 0.48rem;
   min-width: 0;
   overflow-x: auto;
 }
@@ -297,6 +305,10 @@
 }
 
 .player-name {
+  padding: 0.28rem 0.48rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 8 13 / 72%);
+  box-shadow: 0 1px 3px #0008;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -360,7 +372,7 @@
 
 /* Left Sidebar */
 .left-sidebar {
-  background: color-mix(in srgb, var(--active-building-tint, var(--sidebar-bg)) var(--building-light, 78%), black);
+  background: var(--building-surface);
   border-right: 1px solid var(--border-color);
   padding: var(--padding);
 }
@@ -402,7 +414,7 @@
 
 /* Right Sidebar */
 .right-sidebar {
-  background: color-mix(in srgb, var(--active-building-tint, var(--sidebar-bg)) var(--building-light, 78%), black);
+  background: var(--building-surface);
   border-left: 1px solid var(--border-color);
   padding: var(--padding);
 }

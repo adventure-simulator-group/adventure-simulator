@@ -1,7 +1,7 @@
 //! Base layout template - Three-column strategic design.
 
 use crate::spacetimedb::SettlementCategory;
-use maud::{DOCTYPE, Markup, html};
+use maud::{html, Markup, DOCTYPE};
 
 use super::religion_game_icon_name;
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,13 +87,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                link rel="stylesheet" href="/static/css/base.css?v=environment-1";
+                link rel="stylesheet" href="/static/css/base.css?v=environment-3";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=game-icons-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=environment-3";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=alchemy-medication-1";
-                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=environment-3";
+                link rel="stylesheet" href="/static/css/utilities.css?v=environment-3";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -225,7 +225,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=client-clock-2" {}
+        script src="/static/strategic-time.js?v=environment-2" {}
         script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
@@ -291,15 +291,26 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
         });
+    let service_slot = match service {
+        "map" => 0,
+        "merchants" => 1,
+        "weapons" => 2,
+        "armor" => 3,
+        "clothing" => 4,
+        "inn" => 5,
+        "religion" => 6,
+        _ => (hash % 7) as usize,
+    };
+    let settlement_shift = ((hash >> 24) % 9) as u64;
     let hue = if material == "stone" {
-        205 + hash % 21
+        [205, 224, 252, 282, 164, 36, 214][service_slot] + settlement_shift
     } else {
-        24 + hash % 18
+        [8, 20, 31, 43, 56, 72, 350][service_slot] + settlement_shift
     };
     let saturation = if material == "stone" {
-        7 + (hash >> 8) % 9
+        12 + (hash >> 8) % 13
     } else {
-        28 + (hash >> 8) % 17
+        30 + (hash >> 8) % 25
     };
     let lightness = 19 + (hash >> 16) % 8;
     format!("hsl({hue} {saturation}% {lightness}%)")
@@ -356,9 +367,26 @@ mod tests {
             building_tint("lubeck", "inn", "wood"),
             building_tint("lubeck", "weapons", "wood")
         );
+        let wood_tints = [
+            "map",
+            "merchants",
+            "weapons",
+            "armor",
+            "clothing",
+            "inn",
+            "religion",
+        ]
+        .map(|service| building_tint("lubeck", service, "wood"));
+        assert_eq!(
+            wood_tints
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            wood_tints.len()
+        );
         let hue = |tint: String| tint[4..].split(' ').next().unwrap().parse::<u64>().unwrap();
-        assert!((24..=41).contains(&hue(building_tint("lubeck", "inn", "wood"))));
-        assert!((205..=225).contains(&hue(building_tint("lubeck", "inn", "stone"))));
+        assert!((8..=80).contains(&hue(building_tint("lubeck", "inn", "wood"))));
+        assert!((36..=290).contains(&hue(building_tint("lubeck", "inn", "stone"))));
     }
 
     #[test]

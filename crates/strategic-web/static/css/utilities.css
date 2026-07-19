@@ -61,7 +61,7 @@
 .mb-2 { margin-bottom: 0.75rem; }
 .inventory-owner-tabs { display:flex; height:2.46rem; box-sizing:border-box; align-items:stretch; gap:.25rem; padding:0 .75rem; border-bottom:1px solid var(--border-light); }
 .inventory-owner-tab { flex:1; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--color-text-muted); padding:.45rem; cursor:pointer; }
-.inventory-owner-tab.active { color:var(--color-text); border-bottom-color:var(--color-accent); }
+.inventory-owner-tab.active { color:var(--text-primary); border-bottom-color:var(--accent-light); background:var(--building-interactive); }
 .inventory-owner-panel [data-inventory-pane] .sidebar-header { display:none; }
 .left-sidebar:has(.trade-inventory-table) .sidebar-section,
 .right-sidebar:has(.trade-inventory-table) .sidebar-section { position:relative; }

@@ -78,7 +78,7 @@
   padding: 0.5rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
-  background: var(--panel-bg);
+  background: var(--building-interactive);
 }
 
 .trade-inventory-list .inventory-trade-row {
@@ -603,7 +603,40 @@
 .trade-inventory-row {
   position: relative;
   border-bottom: 1px solid var(--border-light);
-  background: var(--panel-bg);
+  background: var(--building-interactive);
+}
+
+.trade-row:hover,
+.inventory-trade-row:hover,
+.trade-inventory-row:hover,
+.trade-row:focus-within,
+.inventory-trade-row:focus-within,
+.trade-inventory-row:focus-within {
+  background: var(--building-interactive-hover);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger),
+.settlement-top-bar .btn:not(.btn-danger) {
+  border-color: color-mix(in srgb, var(--active-building-tint) 72%, white);
+  background: var(--building-interactive);
+  color: var(--text-primary);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger):hover,
+.settlement-top-bar .btn:not(.btn-danger):hover {
+  border-color: color-mix(in srgb, var(--active-building-tint) 58%, white);
+  background: var(--building-interactive-hover);
+  color: var(--text-primary);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger):disabled {
+  background: color-mix(in srgb, var(--building-interactive) 78%, black);
+  color: var(--text-muted);
+}
+
+body:has(.settlement-top-bar) .main-grid .list-item:hover,
+body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
+  background: var(--building-interactive-hover);
 }
 
 .trade-inventory-row:last-child {
@@ -820,7 +853,7 @@
 .rest-duration-unit { flex: 1; padding: 0.38rem; color: var(--text-muted); cursor: pointer; font-size: var(--font-size-xs); text-align: center; }
 .rest-duration-unit + .rest-duration-unit { border-left: 1px solid var(--border-light); }
 .rest-duration-unit input { position: absolute; opacity: 0; pointer-events: none; }
-.rest-duration-unit.active { background: color-mix(in srgb, var(--accent) 22%, var(--panel-bg)); color: var(--text-primary); }
+.rest-duration-unit.active { background: var(--building-interactive-hover); color: var(--text-primary); }
 
 .inventory-trade-row {
   overflow: visible;

@@ -18,6 +18,9 @@
   --padding-sm:.5rem; --padding:1rem; --padding-lg:1.5rem; --radius:3px; --radius-lg:6px;
   --shadow-sm:0 1px 3px rgb(0 0 0 / 45%); --shadow-md:0 3px 8px rgb(0 0 0 / 55%);
   --shadow-lg:0 8px 24px rgb(0 0 0 / 65%); --transition-fast:150ms ease; --transition:250ms ease;
+  --building-surface:color-mix(in srgb, var(--active-building-tint, var(--sidebar-bg)) var(--building-light, 78%), black);
+  --building-interactive:color-mix(in srgb, var(--building-surface) 72%, black);
+  --building-interactive-hover:color-mix(in srgb, var(--building-surface) 86%, white 14%);
 }
 
 body { background:var(--bg-primary); color:var(--text-primary); }
