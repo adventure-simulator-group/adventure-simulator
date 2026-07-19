@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (796)
+## Files (803)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -571,11 +571,14 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/spacetimedb/types.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
@@ -584,6 +587,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/components.css` — Browser UI styling.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
+- `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
+- `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
@@ -725,6 +730,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-leg.png` — Binary game or UI asset.
+- `crates/strategic-web/static/inventory-browser.js` — Repository support file.
 - `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
@@ -739,6 +745,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/inventory-browser.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.

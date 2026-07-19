@@ -1,6 +1,7 @@
 //! Maud HTML templates
 
 mod components;
+mod inventory_browser;
 mod layout;
 
 pub mod character;

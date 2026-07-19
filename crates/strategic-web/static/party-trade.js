@@ -116,7 +116,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   const equipped = document.createElement("td");
   equipped.className = "inventory-equipped";
   equipped.innerHTML = '<input type="checkbox" disabled>';
-  count.after(equipped);
+  (row.querySelector(".inventory-target") || count).after(equipped);
   row.querySelector(".inventory-gold").textContent = sourceRow.dataset.merchantSellPrice;
   row.dataset.generatedMerchantRow = "true";
   const name = row.querySelector(".inventory-item-name");
@@ -233,8 +233,9 @@ function ensureDiscardRow(sourceRow, inventoryId) {
   count.textContent = "0";
   delete count.dataset.base;
   delete count.dataset.tradeDraftChange;
-  document.querySelector("[data-discard-list]").append(row);
+  document.querySelector("[data-discard-table] tbody").append(row);
   applyDynamicTransferModifiers();
+  window.strategicInventoryBrowser?.mountAll?.();
   return row;
 }
 

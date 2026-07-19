@@ -18,6 +18,7 @@ use adventuresim_core::{
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
+use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
     decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
     population_description, quest_location_layout_with_session, settlement_layout_with_session,
@@ -249,6 +250,10 @@ impl MerchantShop {
             ),
         }
     }
+
+    fn shows_inventory(self, kind: crate::spacetimedb::ItemKind) -> bool {
+        kind == crate::spacetimedb::ItemKind::Currency || self.stocks(kind)
+    }
 }
 
 pub fn alchemy_page(
@@ -302,7 +307,9 @@ pub fn alchemy_page(
                     href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope=party", settlement.id, selected.item_id)) { "Party" }
             }
             (sidebar_section("Required ingredients", html! {
-                (trade_inventory_table(false, None, html! {
+                table class="trade-inventory-table" {
+                    (trade_inventory_table_header(false, None))
+                    tbody {
                     @for ingredient in selected.ingredients {
                         @let definition = items.iter().find(|item| item.id == ingredient.item_id);
                         @let quantity = if party_scope {
@@ -319,7 +326,8 @@ pub fn alchemy_page(
                             td class="inventory-gold" { (format!("need {}", ingredient.quantity)) }
                         }
                     }
-                }))
+                    }
+                }
                 p class="small-copy text-muted" { "Targets can be raised here for future purchasing. Crafting consumes the listed quantities from the selected inventory." }
             }))
         }
@@ -1017,9 +1025,8 @@ pub fn party_discard_page(
         aside class="left-sidebar" {
             (sidebar_section("Discard", html! {
                 p class="text-muted small-copy" data-discard-empty { "Stage carried items here before discarding them." }
-                table class="trade-inventory-table" data-discard-table hidden {
-                    (trade_inventory_table_header(false, None))
-                    tbody data-discard-list {}
+                div data-discard-table hidden {
+                    (trade_inventory_table("discard-left", InventoryColumnSet::All, false, None, html! {}))
                 }
             }))
         }
@@ -1335,7 +1342,7 @@ fn party_trade_inventory_rail(
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
-                    (trade_inventory_table(true, None, html! {
+                    (trade_inventory_table(if direction == "left" { "party-transfer-right" } else { "party-transfer-left" }, InventoryColumnSet::All, true, None, html! {
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1373,7 +1380,7 @@ fn discard_inventory_rail(
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
-                    (trade_inventory_table(true, None, html! {
+                    (trade_inventory_table("discard-right", InventoryColumnSet::All, true, None, html! {
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1442,8 +1449,9 @@ pub fn live_merchant_shop_page(
     let content = html! {
         aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
-            (trade_inventory_table(false, None, html! {
-                @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
+            (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, None, html! {
+                @for item in items.iter().filter(|item| shop.shows_inventory(item.kind)) {
+                    @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
                     @let buy_price = medication_recipe.map_or_else(
                         || adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
@@ -1451,7 +1459,7 @@ pub fn live_merchant_shop_page(
                     );
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { @if let Some(recipe) = medication_recipe { (recipe.name) } @else { (item_name_with_quality(&item.id, Some(item))) } (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { @if let Some(recipe) = medication_recipe { (recipe.name) } @else { (item_name_with_quality(&item.id, Some(item))) } @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -1475,8 +1483,8 @@ pub fn live_merchant_shop_page(
             div data-inventory-pane="player" {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table(true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
-                    @for item in inventory {
+                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
@@ -1492,7 +1500,7 @@ pub fn live_merchant_shop_page(
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
                         td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
-                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
+                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -1511,8 +1519,8 @@ pub fn live_merchant_shop_page(
             @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table(false, None, html! {
-                    @for item in pooled {
+                (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, None, html! {
+                    @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
@@ -1525,7 +1533,7 @@ pub fn live_merchant_shop_page(
                             td class="inventory-gold" { (sell_price) }
                         }
                     }
-                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id)) {
+                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -1578,7 +1586,7 @@ pub fn party_pool_page(
                         strong { (stake) " gold" }
                     }
                     p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
-                    (trade_inventory_table(false, None, html! {
+                    (trade_inventory_table("party-pool-left", InventoryColumnSet::All, false, None, html! {
                         @for item in pooled {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
@@ -1608,7 +1616,7 @@ pub fn party_pool_page(
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (encumbrance_inventory_rail(html! {
                     p class="small-copy text-muted" { "Add items at their objective gold value." }
-                    (trade_inventory_table(true, None, html! {
+                    (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, None, html! {
                         @for item in inventory {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
@@ -1737,8 +1745,34 @@ pub(super) fn item_name_with_quality(
         5 => "Quality 5 — royal or heroic commission",
         _ => unreachable!(),
     });
+    let damage_types = definition.map(|item| {
+        [
+            item.blunt.then_some("Blunt"),
+            item.slash.then_some("Slash"),
+            item.pierce.then_some("Pierce"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ")
+    });
     html! {
-        span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label] {
+        span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
+            data-item-name=(item_id)
+            data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
+            data-stat-reach=[definition.map(|item| weight_display(item.reach))]
+            data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
+            data-stat-damage=[damage_types]
+            data-stat-block=[definition.map(|item| weight_display(item.block))]
+            data-stat-coverage=[definition.map(|item| weight_display(item.coverage))]
+            data-stat-resistance=[definition.map(|item| weight_display(item.resistance))]
+            data-stat-padding=[definition.map(|item| weight_display(item.padding))]
+            data-stat-flexibility=[definition.map(|item| weight_display(item.flexibility))]
+            data-stat-range-of-motion=[definition.map(|item| weight_display(item.range_of_motion))]
+            data-detail-slot=[definition.map(|item| format!("{:?}", item.slot))]
+            data-detail-balance=[definition.map(|item| weight_display(item.balance))]
+            data-detail-mode=[definition.map(|item| match (item.melee, item.ranged, item.precise) { (true, true, true) => "Melee, ranged, precise", (true, true, false) => "Melee and ranged", (true, false, true) => "Melee, precise", (false, true, true) => "Ranged, precise", (true, false, false) => "Melee", (false, true, false) => "Ranged", (false, false, true) => "Precise", _ => "—" }.to_string())] {
             (item_id)
         }
     }
@@ -1753,26 +1787,20 @@ fn weight_display(weight: f32) -> String {
 }
 
 fn trade_inventory_table(
+    namespace: &str,
+    optional_columns: InventoryColumnSet,
     show_equipped: bool,
     condition_header: Option<Markup>,
     rows: Markup,
 ) -> Markup {
-    let show_condition = condition_header.is_some();
-    html! {
-        table class=(if show_condition { "trade-inventory-table smith-player-inventory-table" } else { "trade-inventory-table" }) {
-            colgroup {
-                col class="inventory-column-type";
-                col class="inventory-column-item";
-                col class="inventory-column-count";
-                @if show_equipped { col class="inventory-column-equipped"; }
-                @if show_condition { col class="inventory-column-durability"; }
-                col class="inventory-column-weight";
-                col class="inventory-column-gold";
-            }
-            (trade_inventory_table_header(show_equipped, condition_header))
-            tbody { (rows) }
-        }
+    InventoryBrowser {
+        namespace,
+        show_equipped,
+        condition_header,
+        optional_columns,
+        rows,
     }
+    .render()
 }
 
 fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
@@ -1784,8 +1812,7 @@ fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 
 fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
     html! {
-        span class="inventory-target-control" data-target-control data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
-            span class="inventory-target-prefix" { (quantity) "/" }
+        span class="inventory-target-control" data-target-control data-quantity=(quantity) data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
             span class="inventory-target-denominator" {
                 button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
                 span class="inventory-target-value" data-target-value { (target) }
@@ -2018,6 +2045,12 @@ pub(crate) fn inventory_footer_controls(
     } }
 }
 
+fn currency_header(label: &str) -> Markup {
+    game_icon(label, "coins")
+}
+
+// Kept for one-sided placeholder/service tables that are intentionally not
+// inventory browsers.
 fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Markup>) -> Markup {
     html! { thead { tr {
         (item_type_header())
@@ -2028,10 +2061,6 @@ fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Ma
         th scope="col" class="inventory-column-weight" title="Weight" { (game_icon("Weight", "weight")) }
         th scope="col" class="inventory-column-gold" title="Currency" { (currency_header("Currency")) }
     } } }
-}
-
-fn currency_header(label: &str) -> Markup {
-    game_icon(label, "coins")
 }
 
 fn party_skills_rail(
@@ -3914,6 +3943,7 @@ mod tests {
             durability_failure_share: 0.0,
             edge_sensitivity: 0.0,
             handling_sensitivity: 0.0,
+            ..Default::default()
         };
 
         let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
@@ -3940,6 +3970,8 @@ mod tests {
     #[test]
     fn smith_player_inventory_uses_the_compact_seven_column_table() {
         let rendered = trade_inventory_table(
+            "test",
+            InventoryColumnSet::Weapons,
             true,
             Some(repair_all_header(&settlement(), "weapons")),
             html! {},
@@ -4129,6 +4161,7 @@ mod tests {
             durability_failure_share: 0.0,
             edge_sensitivity: 0.0,
             handling_sensitivity: 0.0,
+            ..Default::default()
         };
         let enabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
         assert!(enabled.contains("data-equipment-toggle"));
@@ -4140,7 +4173,9 @@ mod tests {
 
     #[test]
     fn merchant_stock_table_keeps_quantity_weight_and_gold_columns() {
-        let rendered = trade_inventory_table(false, None, html! {}).into_string();
+        let rendered =
+            trade_inventory_table("test", InventoryColumnSet::Basic, false, None, html! {})
+                .into_string();
         assert!(rendered.contains("<colgroup>"));
         assert!(rendered.contains("inventory-column-count"));
         assert!(rendered.contains("inventory-column-type"));
@@ -4154,6 +4189,8 @@ mod tests {
     #[test]
     fn inventory_type_header_and_row_share_the_first_column() {
         let rendered = trade_inventory_table(
+            "test",
+            InventoryColumnSet::Basic,
             false,
             None,
             html! {
@@ -4217,6 +4254,7 @@ mod tests {
                 durability_failure_share: 0.0,
                 edge_sensitivity: 0.0,
                 handling_sensitivity: 0.0,
+                ..Default::default()
             },
             crate::spacetimedb::ItemDefinition {
                 id: "cuirass".into(),
@@ -4233,6 +4271,7 @@ mod tests {
                 durability_failure_share: 0.0,
                 edge_sensitivity: 0.0,
                 handling_sensitivity: 0.0,
+                ..Default::default()
             },
         ];
         let weapons = repair_custody_panel(

@@ -104,6 +104,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/live-regions.js?v=schedule-pending-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
+                    script src="/static/inventory-browser.js?v=inventory-browser-1" defer {}
                     script src="/static/party-trade.js?v=inventory-dynamic-transfer-2" {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
