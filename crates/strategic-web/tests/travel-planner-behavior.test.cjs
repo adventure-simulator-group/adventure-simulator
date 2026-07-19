@@ -11,7 +11,7 @@ const plannerHelpers = () => {
   let source = fs.readFileSync(plannerPath, "utf8");
   source = source.replace(
     "  initializeTravelPlanner();",
-    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, provisionQuantities };",
+    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, provisionQuantities, fatigueColor };",
   );
   const context = { document: { addEventListener() {} } };
   vm.runInNewContext(source, context);
@@ -36,6 +36,12 @@ test("provision target math supports positive and negative surplus", () => {
     { ...helpers.provisionQuantities({ remainingDays: 2, target: -1, foodDays: 1, waterDays: 2, members: 2, rationKcal: 3000, skinMl: 4000 }) },
     { rations: 0, skins: 0 },
   );
+});
+
+test("fatigue colors remain valid and saturate at red above capacity", () => {
+  const helpers = plannerHelpers();
+  assert.equal(helpers.fatigueColor(1.0312), helpers.fatigueColor(1));
+  assert.doesNotMatch(helpers.fatigueColor(1.5), /-\d+%/);
 });
 
 test("moon geometry distinguishes canonical phases and mirrors waxing from waning", () => {

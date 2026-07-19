@@ -31,7 +31,10 @@
   });
 
   const fatigueColor = (fraction) => {
-    const value = clamp(fraction, 0, 1.5);
+    // Fatigue may legitimately exceed capacity. Keep the authoritative value
+    // for warnings, but saturate the display at red so color-mix percentages
+    // never become negative and invalidate the whole segment background.
+    const value = clamp(fraction, 0, 1);
     if (value <= .5) return `color-mix(in srgb, #58b66b ${Math.round((1 - value * 2) * 100)}%, #e0c54f)`;
     return `color-mix(in srgb, #e0c54f ${Math.round((1 - (value - .5) * 2) * 100)}%, #d65757)`;
   };
