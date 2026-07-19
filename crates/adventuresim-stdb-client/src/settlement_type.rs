@@ -11,6 +11,7 @@ use super::historical_vegetation_type::HistoricalVegetation;
 use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_category_type::SettlementCategory;
 use super::settlement_hydrology_type::SettlementHydrology;
 use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::soil_profile_type::SoilProfile;
@@ -26,6 +27,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub population_estimate: u32,
+    pub category: SettlementCategory,
     pub elevation: ElevationMeters,
     pub land_use: LandUseProfile,
     pub forest_cover: ForestCover,
@@ -58,6 +60,7 @@ pub struct SettlementCols {
     pub coord_y: __sdk::__query_builder::Col<Settlement, f64>,
     pub population_level: __sdk::__query_builder::Col<Settlement, i32>,
     pub population_estimate: __sdk::__query_builder::Col<Settlement, u32>,
+    pub category: __sdk::__query_builder::Col<Settlement, SettlementCategory>,
     pub elevation: __sdk::__query_builder::Col<Settlement, ElevationMeters>,
     pub land_use: __sdk::__query_builder::Col<Settlement, LandUseProfile>,
     pub forest_cover: __sdk::__query_builder::Col<Settlement, ForestCover>,
@@ -89,6 +92,7 @@ impl __sdk::__query_builder::HasCols for Settlement {
                 table_name,
                 "population_estimate",
             ),
+            category: __sdk::__query_builder::Col::new(table_name, "category"),
             elevation: __sdk::__query_builder::Col::new(table_name, "elevation"),
             land_use: __sdk::__query_builder::Col::new(table_name, "land_use"),
             forest_cover: __sdk::__query_builder::Col::new(table_name, "forest_cover"),

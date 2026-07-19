@@ -22,7 +22,7 @@ SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
 - **SSR (Server-Side Rendering)**: All HTML is rendered on the server using Maud templates
 - **HATEOAS**: Hypermedia-driven navigation with Datastar for partial page updates
 - **SpacetimeDB Integration**: Uses the HTTP API to query and call reducers
-- **Parchment Theme**: Medieval illuminated manuscript-inspired design
+- **Environmental shell**: dark neutral entry screens and location-aware strategic lighting
 
 ## Running Locally
 
@@ -159,7 +159,7 @@ Server returns HTML fragments that get merged into the page.
 ## Frontend type boundaries
 
 Route inputs are parsed into closed Rust types before strategic logic runs.
-Themes, character-session IDs, location kinds, quest and mission states, queued
+Character-session IDs, location kinds, quest and mission states, queued
 party actions, and inventory transfer entries do not remain arbitrary strings.
 Queued party actions serialize a tagged `PartyAction` enum; approval reconstructs
 the reducer call from that variant instead of replaying an arbitrary reducer name

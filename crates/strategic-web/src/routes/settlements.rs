@@ -16,13 +16,69 @@ use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+const BUILDINGS: &[&str] = &[
+    "map",
+    "merchants",
+    "weapons",
+    "armor",
+    "clothing",
+    "inn",
+    "religion",
+];
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct BuildingQuery {
+    building: Option<String>,
+}
+
+impl BuildingQuery {
+    fn valid(&self) -> Option<&str> {
+        self.building
+            .as_deref()
+            .filter(|value| BUILDINGS.contains(value))
+    }
+
+    fn append_to(&self, path: String) -> String {
+        self.valid().map_or_else(
+            || path.clone(),
+            |building| format!("{path}?building={building}"),
+        )
+    }
+}
+
+#[cfg(test)]
+mod building_query_tests {
+    use super::BuildingQuery;
+
+    #[test]
+    fn building_query_is_closed_and_preserved_on_redirects() {
+        let valid = BuildingQuery {
+            building: Some("inn".into()),
+        };
+        assert_eq!(valid.valid(), Some("inn"));
+        assert_eq!(
+            valid.append_to("/locations/settlement/x/party/1".into()),
+            "/locations/settlement/x/party/1?building=inn"
+        );
+        let invalid = BuildingQuery {
+            building: Some("../religion".into()),
+        };
+        assert_eq!(invalid.valid(), None);
+        assert_eq!(
+            invalid.append_to("/locations/settlement/x/party/1".into()),
+            "/locations/settlement/x/party/1"
+        );
+    }
+}
+
 use super::AppState;
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
 use super::travel::{
-    TravelDestination, TravelForm, TravelProvisionForecast, TravelerProvisionForecast,
-    connected_destinations, next_settlement_toward, populate_camp_forecasts,
+    QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast,
+    TravelerProvisionForecast, connected_destinations, next_settlement_toward,
+    populate_camp_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -254,7 +310,6 @@ async fn alchemy(
             &personal_targets,
             &party_targets,
             party_scope,
-            session.theme(),
         )
         .into_string(),
     )
@@ -458,7 +513,6 @@ async fn show_settlement_location(
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )
@@ -489,6 +543,11 @@ async fn settlement_map(
         .await
         .unwrap_or_default();
     let mut destinations = connected_destinations(settlement, &settlements, &edges);
+    let quests: Vec<Quest> = state
+        .db
+        .query("SELECT * FROM quest")
+        .await
+        .unwrap_or_default();
     let active_character = get_active_character(&state, session.character_id_u64()).await;
     let active_party = if let Some(party_id) = active_character
         .as_ref()
@@ -504,27 +563,21 @@ async fn settlement_map(
     } else {
         None
     };
-    let active_quest = if let Some(quest_id) = active_party
-        .as_ref()
-        .and_then(|party| party.active_quest_id.as_ref())
-    {
-        state
-            .db
-            .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-    } else {
-        None
-    };
-    let can_travel = active_character.as_ref().is_some_and(|(character, _)| {
-        character.current_settlement_id.as_deref() == Some(&settlement.id) && active_party.is_some()
+    let markers = QuestMapMarkers::new(
+        &quests,
+        active_party
+            .as_ref()
+            .and_then(|party| party.active_quest_id.as_deref()),
+    );
+    for destination in &mut destinations {
+        markers.decorate_settlement(destination);
+    }
+    let active_quest = markers.active_quest();
+    let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
+        character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    if let Some(quest) = active_quest
-        .as_ref()
-        .filter(|quest| quest.status == QuestStatus::Accepted)
-    {
+    let can_travel = is_current_settlement && active_party.is_some();
+    if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Accepted) {
         if can_travel && settlement.id == quest.settlement_id {
             let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
             destinations.push(TravelDestination {
@@ -543,6 +596,7 @@ async fn settlement_map(
                 quest_in_progress: true,
                 active_quest_route: false,
                 turn_in_ready: false,
+                open_quest_available: false,
             });
         } else if can_travel {
             if let Some(next_settlement_id) =
@@ -557,12 +611,21 @@ async fn settlement_map(
             }
         }
     }
-    if let Some(quest) = active_quest
-        .as_ref()
-        .filter(|quest| quest.status == QuestStatus::Completed)
-    {
+    if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Completed) {
         for destination in &mut destinations {
             destination.turn_in_ready = destination.id == quest.settlement_id;
+        }
+        if can_travel && settlement.id != quest.settlement_id {
+            if let Some(next_settlement_id) =
+                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
+            {
+                if let Some(destination) = destinations
+                    .iter_mut()
+                    .find(|destination| destination.id == next_settlement_id)
+                {
+                    destination.active_quest_route = true;
+                }
+            }
         }
     }
     let party_members = get_active_party_members(
@@ -624,13 +687,70 @@ async fn settlement_map(
             &party_members,
             can_travel,
             provision_forecast.as_ref(),
+            is_current_settlement,
+            markers.has_open_quest_at(&settlement.id),
+            markers.completed_quest_turn_in_at(&settlement.id),
+            active_quest.filter(|quest| {
+                can_abandon_active_quest(
+                    quest,
+                    active_character
+                        .as_ref()
+                        .and_then(|(character, _)| character.current_quest_location_id.as_deref()),
+                )
+            }),
             active_character
                 .as_ref()
                 .map(|(character, _)| character.name.as_str()),
-            session.theme(),
         )
         .into_string(),
     )
+}
+
+fn can_abandon_active_quest(quest: &Quest, current_quest_location_id: Option<&str>) -> bool {
+    quest.status == QuestStatus::Accepted && current_quest_location_id.is_none()
+}
+
+#[cfg(test)]
+mod map_quest_tests {
+    use super::*;
+
+    fn quest(status: QuestStatus) -> Quest {
+        Quest {
+            id: "active".into(),
+            title: "Active quest".into(),
+            description: String::new(),
+            difficulty: 1,
+            gold_reward: 1,
+            xp_reward: 1,
+            settlement_id: "issuer".into(),
+            status,
+            accepted_by: Some("party".into()),
+            enemy_type: String::new(),
+            enemy_count: 1,
+            location_description: String::new(),
+            location_scene_key: String::new(),
+            location_coord_x: 0.0,
+            location_coord_y: 0.0,
+            coordinates_are_geographic: false,
+            distance_m: 1_000,
+        }
+    }
+
+    #[test]
+    fn accepted_active_quest_can_only_be_abandoned_before_reaching_its_location() {
+        assert!(can_abandon_active_quest(
+            &quest(QuestStatus::Accepted),
+            None
+        ));
+        assert!(!can_abandon_active_quest(
+            &quest(QuestStatus::Accepted),
+            Some("active")
+        ));
+        assert!(!can_abandon_active_quest(
+            &quest(QuestStatus::Completed),
+            None
+        ));
+    }
 }
 
 #[derive(Deserialize)]
@@ -761,7 +881,6 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &party_members,
             default_rest_minutes,
             Some(&character.name),
-            session.theme(),
         )
         .into_string(),
     )
@@ -1350,20 +1469,28 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
     let Ok(kind) = kind.parse::<LocationKind>() else {
         return LocationLookup::NotFound;
     };
-    let details = match kind {
+    let location = match kind {
         LocationKind::Settlement => state
             .db
             .query_one::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|settlement| (settlement.name, Some(settlement.religion_id)))),
+            .map(|row| {
+                row.map(|settlement| {
+                    (
+                        settlement.name,
+                        Some(settlement.category),
+                        Some(settlement.religion_id),
+                    )
+                })
+            }),
         LocationKind::Quest => state
             .db
             .query_one::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
             .await
-            .map(|row| row.map(|quest| (quest.title, None))),
+            .map(|row| row.map(|quest| (quest.title, None, None))),
     };
-    let (name, religion_id) = match details {
-        Ok(Some(details)) => details,
+    let (name, category, religion_id) = match location {
+        Ok(Some(location)) => location,
         Ok(None) => return LocationLookup::NotFound,
         Err(error) => {
             tracing::error!(%error, "failed to resolve location");
@@ -1375,6 +1502,8 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
         id: id.to_string(),
         name,
         religion_id,
+        category,
+        active_building: None,
     })
 }
 
@@ -1392,6 +1521,7 @@ fn character_is_at_location(character: &Character, location: &LocationView) -> b
 async fn party_personal(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
     if let Some(character_id) = session.character_id_u64() {
@@ -1403,13 +1533,14 @@ async fn party_personal(
             tracing::error!("Failed to liquidate party inventory: {error:?}");
         }
     }
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -1517,7 +1648,6 @@ async fn party_personal(
             personality.as_ref(),
             &medical,
             can_examine,
-            session.theme(),
         )
         .into_string(),
     )
@@ -1531,6 +1661,7 @@ struct ReligiousDemandForm {
 async fn resolve_religious_demand(
     State(state): State<AppState>,
     Path((kind, id, character_id, demand_id)): Path<(String, String, u64, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<ReligiousDemandForm>,
 ) -> Redirect {
@@ -1545,7 +1676,7 @@ async fn resolve_religious_demand(
     {
         tracing::warn!(%error, character_id, demand_id, "failed to resolve religious demand");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 #[derive(Deserialize)]
@@ -1571,6 +1702,7 @@ struct TrainingScheduleForm {
 async fn update_training_schedule(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<TrainingScheduleForm>,
 ) -> Redirect {
@@ -1604,21 +1736,23 @@ async fn update_training_schedule(
             )
             .await;
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 async fn party_member(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
 
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -1698,7 +1832,6 @@ async fn party_member(
                 &items,
                 &party_members,
                 active_equip.first(),
-                session.theme(),
             )
             .into_string(),
         );
@@ -1717,7 +1850,6 @@ async fn party_member(
             active_equip.first(),
             &selected_targets,
             &active_targets,
-            session.theme(),
         )
         .into_string(),
     )
@@ -1726,15 +1858,17 @@ async fn party_member(
 async fn party_pool_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -1793,7 +1927,6 @@ async fn party_pool_inventory(
             equip.first(),
             &personal_targets,
             &party_targets,
-            session.theme(),
         )
         .into_string(),
     )
@@ -1952,6 +2085,7 @@ async fn set_equipment(
 async fn deposit_party_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -1966,12 +2100,13 @@ async fn deposit_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 async fn withdraw_party_inventory(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -1986,7 +2121,7 @@ async fn withdraw_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
@@ -2005,6 +2140,7 @@ fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
 async fn liquidate_party_assets(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyPoolTransferForm>,
 ) -> Redirect {
@@ -2025,12 +2161,13 @@ async fn liquidate_party_assets(
             )
             .await;
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party-inventory"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
 }
 
 async fn remove_party_member(
     State(state): State<AppState>,
     Path((kind, id, member_character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
     if let Some(actor_character_id) = session.character_id_u64() {
@@ -2055,21 +2192,23 @@ async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")))
 }
 
 async fn party_stats(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -2176,7 +2315,6 @@ async fn party_stats(
             personality.as_ref(),
             &medical,
             can_examine,
-            session.theme(),
         )
         .into_string(),
     )
@@ -2339,6 +2477,7 @@ struct PartyTransferForm {
 async fn discard_inventory_items(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<DiscardInventoryForm>,
 ) -> Redirect {
@@ -2360,14 +2499,15 @@ async fn discard_inventory_items(
             }
         }
     }
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    ))
+    )))
 }
 
 async fn finalize_party_offer(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
@@ -2405,14 +2545,15 @@ async fn finalize_party_offer(
             }
         }
     }
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    ))
+    )))
 }
 
 async fn transfer_party_item(
     State(state): State<AppState>,
     Path((kind, id, recipient_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<PartyTransferForm>,
 ) -> Redirect {
@@ -2422,7 +2563,7 @@ async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&format!("/locations/{kind}/{id}"));
+        return Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")));
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -2449,9 +2590,9 @@ async fn transfer_party_item(
     } else {
         form.from_character_id
     };
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
-    ))
+    )))
 }
 
 async fn merchants(
@@ -2573,7 +2714,6 @@ async fn inn(
             field_repair_minutes,
             smith_wait_minutes,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )
@@ -2682,7 +2822,6 @@ async fn rest(
             &items,
             &party_members,
             logged_in_as.as_deref(),
-            session.theme(),
             at_inn,
             &summary,
         )
@@ -3129,6 +3268,7 @@ async fn set_religion(
 async fn renounce_religion(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
     if session.character_id_u64() == Some(character_id) {
@@ -3140,7 +3280,7 @@ async fn renounce_religion(
             tracing::warn!(%error, character_id, "failed to renounce character religion");
         }
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{character_id}"))
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
 type ServiceRenderer = fn(
@@ -3155,7 +3295,6 @@ type ServiceRenderer = fn(
     u64,
     u64,
     Option<&str>,
-    &str,
 ) -> maud::Markup;
 
 async fn merchant_shop(
@@ -3186,7 +3325,6 @@ async fn merchant_shop(
                 &[],
                 &party_members,
                 logged_in_as.as_deref(),
-                session.theme(),
             )
             .into_string(),
         );
@@ -3230,7 +3368,6 @@ async fn merchant_shop(
             &personal_targets,
             &party_targets,
             &pooled,
-            session.theme(),
             shop,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
@@ -3375,7 +3512,6 @@ async fn render_service_page(
             equipment_recovery.0,
             equipment_recovery.1,
             logged_in_as.as_deref(),
-            session.theme(),
         )
         .into_string(),
     )

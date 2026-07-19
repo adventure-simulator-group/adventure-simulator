@@ -9,6 +9,7 @@ use super::historical_vegetation_type::HistoricalVegetation;
 use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_category_type::SettlementCategory;
 use super::settlement_hydrology_type::SettlementHydrology;
 use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::settlement_type::Settlement;

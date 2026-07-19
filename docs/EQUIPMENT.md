@@ -65,7 +65,7 @@ masterwork item without restoring it completely. Damage can never occupy a tier 
 quality: only quality-5 equipment can acquire violet tier-5 damage.
 
 Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
-color, adjusted toward the active theme's text color for readability. Quality 3 is ordinary
+color, adjusted toward the fixed light interface text color for readability. Quality 3 is ordinary
 munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is
 work for royalty or an esteemed hero. Munition grade is the neutral durability baseline. Quality
 1--5 multiplies physical durability by 0.65, 0.80, 1.00, 1.25, and 1.60 respectively: the multiplier

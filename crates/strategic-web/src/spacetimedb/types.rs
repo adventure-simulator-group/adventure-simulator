@@ -108,6 +108,16 @@ pub struct CharacterPersonality {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SettlementCategory {
+    Unknown,
+    Hamlet,
+    Village,
+    Town,
+    City,
+    Capital,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settlement {
     pub id: String,
     pub name: String,
@@ -115,6 +125,7 @@ pub struct Settlement {
     pub coord_y: f64,
     pub population_level: i32,
     pub population_estimate: u32,
+    pub category: SettlementCategory,
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,

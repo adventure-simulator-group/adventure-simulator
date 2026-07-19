@@ -88,7 +88,16 @@
 
 /* Settlement pages keep settlement identity and services visible at the top. */
 .settlement-top-bar {
+  height: var(--settlement-header-height);
   gap: 1rem;
+  isolation: isolate;
+  color: var(--text-primary);
+  background:
+    radial-gradient(ellipse 32% 125% at var(--sky-glow-x, 50%) var(--sky-glow-y, 115%), var(--sky-glow, #555) 0, transparent 64%),
+    radial-gradient(circle at 18% 24%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 71% 17%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 43% 38%, rgb(255 255 255 / var(--star-opacity, 0)) 0 1px, transparent 1.5px),
+    linear-gradient(100deg, var(--sky-low, #151d2b), var(--sky-high, #080b12));
 }
 
 .entry-top-bar {
@@ -112,85 +121,27 @@
 }
 
 .settlement-identity {
+  position: relative;
   display: flex;
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.5rem;
-}
-
-.current-quest-summary {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.45rem;
-  padding-left: 1rem;
-  border-left: 1px solid var(--border-color);
-}
-
-.current-quest-summary[hidden] { display: none; }
-
-.current-quest-status {
-  display: inline-grid;
-  width: 1.15rem;
-  height: 1.15rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid #db5960;
-  border-radius: 999px;
-  background: #b4232c;
-  color: #fff;
-  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
-  font: 800 0.72rem/1 sans-serif;
-}
-
-.current-quest-status.resolved {
-  border-color: #f2c66f;
-  background: #d39a32;
-  color: #211506;
-  box-shadow: 0 0 0.5rem rgb(211 154 50 / 75%);
-}
-
-.current-quest-name {
-  display: block;
-  max-width: 11rem;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-family: var(--font-display), serif;
-  font-size: var(--font-size-sm);
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.current-quest-name:hover {
-  color: var(--accent-dark);
-}
-
-.current-quest-abandon {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  left: 2.6rem;
-  z-index: 110;
-  visibility: hidden;
-  opacity: 0;
-  transform: translateY(-0.2rem);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-}
-
-.current-quest-summary:hover .current-quest-abandon,
-.current-quest-summary:focus-within .current-quest-abandon {
-  visibility: visible;
-  opacity: 1;
-  transform: translateY(0);
+  gap: 0;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--active-building-tint) 65%, white);
+  background: var(--building-surface);
+  box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009, 0 1px 3px #0008;
 }
 
 .settlement-name {
   font-family: var(--font-display), serif;
   font-size: var(--font-size-lg);
   font-weight: 700;
-  color: var(--accent-dark);
+  color: var(--text-primary);
+  padding: 0.28rem 0.7rem;
+  border: 0;
+  background: transparent;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #fff2;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
@@ -200,8 +151,14 @@
 }
 
 .settlement-time {
-  color: var(--text-muted);
+  align-self: stretch;
+  padding: 0.14rem 0.7rem 0.18rem;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 8 13 / 38%);
+  color: var(--text-primary);
   font-size: var(--font-size-xs);
+  line-height: 1;
   letter-spacing: 0.03em;
   white-space: nowrap;
   max-width: 100%;
@@ -210,18 +167,44 @@
 }
 
 .settlement-services {
-  gap: 0.15rem;
+  align-self: stretch;
+  align-items: flex-end;
+  gap: 0.48rem;
   min-width: 0;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 .settlement-services .nav-tab {
   position: relative;
   justify-content: center;
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.75rem;
+  height: 4.25rem;
   padding: 0;
   font-size: var(--font-size-base);
+  border: 1px solid color-mix(in srgb, var(--building-tint) 72%, white);
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
+  color: var(--text-primary);
+}
+
+.settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab::before {
+  position: absolute;
+  right: -1px;
+  bottom: calc(100% - 1px);
+  left: -1px;
+  height: 1.2rem;
+  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  content: "";
+  pointer-events: none;
+}
+
+.settlement-services .nav-tab:hover { filter: brightness(1.12); }
+.settlement-services .nav-tab.active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
+  border-color: color-mix(in srgb, var(--building-tint) 72%, white);
+  border-bottom: 3px solid var(--accent-light);
 }
 
 .service-notification-badge {
@@ -246,9 +229,9 @@
 
 .service-tab-icon {
   display: block;
-  width: 1.25rem;
-  height: 1.25rem;
-  background-color: var(--accent);
+  width: 1.75rem;
+  height: 1.75rem;
+  background-color: var(--text-primary);
   -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
   mask: var(--service-tab-icon) center / contain no-repeat;
   transition: background-color var(--transition-fast);
@@ -264,14 +247,18 @@
 .service-tab-icon-map { --service-tab-icon: url("/static/icons/game/treasure-map.svg"); }
 .service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
 
-.settlement-services .nav-tab:hover .service-tab-icon { background-color: var(--accent-hover); }
-.settlement-services .nav-tab.active .service-tab-icon { background-color: var(--accent-dark); }
+.settlement-services .nav-tab:hover .service-tab-icon,
+.settlement-services .nav-tab.active .service-tab-icon { background-color: var(--text-primary); }
 
 .service-tab-icon-provisions {
   --service-tab-icon: url("/static/icons/game/bread.svg");
 }
 
 .player-name {
+  padding: 0.28rem 0.48rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 8 13 / 72%);
+  box-shadow: 0 1px 3px #0008;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -287,6 +274,47 @@
   color: var(--text-muted);
 }
 
+.character-switcher {
+  position: relative;
+}
+
+.character-switcher-toggle {
+  display: block;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 50%;
+  cursor: pointer;
+  list-style: none;
+  box-shadow: 0 1px 3px #0008;
+}
+
+.character-switcher-toggle::-webkit-details-marker { display: none; }
+
+.character-switcher-toggle:hover,
+.character-switcher-toggle:focus-visible,
+.character-switcher[open] .character-switcher-toggle {
+  border-color: var(--accent-light);
+  filter: brightness(1.1);
+}
+
+.character-switcher-portrait {
+  width: 3.35rem;
+  height: 3.35rem;
+}
+
+.character-switcher-menu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  min-width: 9.5rem;
+  padding: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--active-building-tint) 65%, white);
+  background: rgb(5 8 13 / 92%);
+  box-shadow: var(--shadow-md);
+}
+
+.character-switcher-menu .btn { width: 100%; }
+
 /* ============================================
    MAIN GRID (Three Columns)
    ============================================ */
@@ -296,6 +324,10 @@
   grid-template-rows: minmax(0, 1fr);
   height: calc(100vh - var(--header-height));
   overflow: hidden;
+}
+
+body:has(.settlement-top-bar) .main-grid {
+  height: calc(100vh - var(--settlement-header-height));
 }
 
 .left-sidebar,
@@ -335,7 +367,7 @@
 
 /* Left Sidebar */
 .left-sidebar {
-  background: var(--sidebar-bg);
+  background: var(--building-surface);
   border-right: 1px solid var(--border-color);
   padding: var(--padding);
 }
@@ -377,71 +409,41 @@
 
 /* Right Sidebar */
 .right-sidebar {
-  background: var(--sidebar-bg);
+  background: var(--building-surface);
   border-left: 1px solid var(--border-color);
   padding: var(--padding);
 }
 
-/* ============================================
-   THEME SWITCHER
-   ============================================ */
-.theme-switcher {
+/* Settlement rails resemble recessed wooden or stone wall panels. */
+body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, .right-sidebar) {
+  --building-frame: color-mix(in srgb, var(--building-surface) 88%, white);
+  --building-frame-corner: color-mix(in srgb, var(--building-frame) 82%, white);
+  --building-frame-corner-size: 1.35rem;
+  --building-panel-recess: color-mix(in srgb, var(--building-surface) 78%, black);
+  border: 0;
   position: relative;
+  padding-block: var(--building-frame-corner-size);
+  padding-inline: var(--building-frame-corner-size);
+  background: var(--building-panel-recess);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 42%), inset 0 0 1.25rem rgb(0 0 0 / 22%);
 }
 
-.theme-switcher > summary {
-  list-style: none;
-}
-
-.theme-switcher > summary::-webkit-details-marker {
-  display: none;
-}
-
-.theme-menu {
+body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, .right-sidebar)::after {
   position: absolute;
-  z-index: 20;
-  top: calc(100% + 0.45rem);
-  right: 0;
-  display: none;
-  grid-template-columns: repeat(3, 16px);
-  gap: 0.4rem;
-  padding: 0.45rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  background: var(--panel-bg);
-  box-shadow: var(--shadow-md);
+  z-index: 30;
+  inset: 0;
+  background:
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) left top / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat,
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) right top / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat,
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) left bottom / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat,
+    linear-gradient(var(--building-frame-corner), var(--building-frame-corner)) right bottom / var(--building-frame-corner-size) var(--building-frame-corner-size) no-repeat,
+    linear-gradient(var(--building-frame), var(--building-frame)) center top / 100% 0.55rem no-repeat,
+    linear-gradient(var(--building-frame), var(--building-frame)) center bottom / 100% 0.55rem no-repeat,
+    linear-gradient(var(--building-frame), var(--building-frame)) left center / 0.55rem 100% no-repeat,
+    linear-gradient(var(--building-frame), var(--building-frame)) right center / 0.55rem 100% no-repeat;
+  content: "";
+  pointer-events: none;
 }
-
-.theme-switcher[open] .theme-menu {
-  display: grid;
-}
-
-.theme-dot {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border-color);
-  border-radius: 50%;
-  transition: transform var(--transition-fast), border-color var(--transition-fast);
-  cursor: pointer;
-}
-
-.theme-dot:hover {
-  transform: scale(1.2);
-  border-color: var(--accent);
-}
-
-.theme-dot.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-light);
-}
-
-.theme-dot[data-theme="fraktur-texturina"] { background: #bd8a2c; }
-.theme-dot[data-theme="fraktur-nocturne"] { background: #3a2114; }
-.theme-dot[data-theme="dark-arcanum"] { background: #7c3aed; }
-.theme-dot[data-theme="northern-frost"] { background: #3a7bd5; }
-.theme-dot[data-theme="verdant-chronicle"] { background: #4a8c3f; }
-.theme-dot[data-theme="imperial-crimson"] { background: #8b0000; }
 
 /* ============================================
    RESPONSIVE
@@ -462,16 +464,24 @@
     display: none;
   }
   .settlement-services .nav-tab {
-    width: 2.05rem;
-    height: 2.05rem;
+    width: 2.35rem;
     padding: 0;
   }
 }
 
 @media (max-width: 768px) {
+  body:has(.settlement-top-bar) .app {
+    height: 100vh;
+    min-height: 0;
+  }
   .main-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
+  }
+  body:has(.settlement-top-bar) .main-grid {
+    height: auto;
+    min-height: 0;
+    flex: 1;
   }
   .left-sidebar {
     border-right: none;
@@ -513,15 +523,16 @@
     width: auto;
   }
 
-  .current-quest-name {
-    max-width: 8rem;
-  }
   .settlement-services {
     order: 3;
     width: 100%;
+    padding-top: 1.2rem;
     overflow-x: auto;
+    overflow-y: hidden;
     justify-content: flex-start;
+    scrollbar-width: none;
   }
+  .settlement-services::-webkit-scrollbar { display: none; }
   .entry-message {
     display: none;
   }

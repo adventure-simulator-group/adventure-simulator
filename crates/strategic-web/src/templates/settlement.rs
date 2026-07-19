@@ -28,8 +28,8 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementDescriptionKind,
+    PartyInventoryItem, PartyJourney, Quest, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementCategory, SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -38,6 +38,8 @@ pub struct LocationView {
     pub id: String,
     pub name: String,
     pub religion_id: Option<String>,
+    pub category: Option<SettlementCategory>,
+    pub active_building: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -158,23 +160,19 @@ impl LocationView {
         format!("/locations/{}/{}", self.kind, self.id)
     }
 
-    fn render_layout(
-        &self,
-        title: &str,
-        content: Markup,
-        logged_in_as: Option<&str>,
-        theme: &str,
-    ) -> Markup {
+    fn render_layout(&self, title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
         if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
                 title,
                 &self.name,
                 &self.id,
-                "",
+                self.category
+                    .as_ref()
+                    .unwrap_or(&SettlementCategory::Unknown),
+                self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
                 content,
                 logged_in_as,
-                theme,
             )
         } else {
             quest_location_layout_with_session(
@@ -184,7 +182,6 @@ impl LocationView {
                 "",
                 content,
                 logged_in_as,
-                theme,
             )
         }
     }
@@ -265,7 +262,6 @@ pub fn alchemy_page(
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     party_scope: bool,
-    theme: &str,
 ) -> Markup {
     let recipes: Vec<_> = adventuresim_core::disease::MEDICATION_RECIPES
         .iter()
@@ -331,11 +327,11 @@ pub fn alchemy_page(
         "Alchemy",
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         "alchemy",
         Some(&settlement.religion_id),
         content,
         Some(&character.name),
-        theme,
     )
 }
 
@@ -348,7 +344,6 @@ pub fn settlement_overview_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let alias_labels = settlement_alias_labels(settlement, aliases);
     let historical_description = preferred_settlement_description(descriptions);
@@ -388,11 +383,11 @@ pub fn settlement_overview_page(
         &settlement.name,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         "",
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -449,13 +444,29 @@ pub fn settlement_map_page(
     party_members: &[Character],
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
+    is_current_settlement: bool,
+    current_open_quest_available: bool,
+    current_turn_in_ready: bool,
+    abandonable_quest: Option<&Quest>,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
     let content = html! {
-        (map_destination_list(destinations, selected_id, &base_path))
+        (map_destination_list_with_context(
+            destinations,
+            selected_id,
+            &base_path,
+            is_current_settlement.then_some(MapCurrentLocation {
+                name: &settlement.name,
+                open_quest_available: current_open_quest_available,
+                turn_in_ready: current_turn_in_ready,
+            }),
+            abandonable_quest.map(|quest| MapAbandonableQuest {
+                id: &quest.id,
+                title: &quest.title,
+            }),
+        ))
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (visual_stage("map", &settlement.name, "TODO: settlement map"))
@@ -476,12 +487,25 @@ pub fn settlement_map_page(
         &format!("{} map", settlement.name),
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         "map",
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
+}
+
+#[derive(Clone, Copy)]
+struct MapCurrentLocation<'a> {
+    name: &'a str,
+    open_quest_available: bool,
+    turn_in_ready: bool,
+}
+
+#[derive(Clone, Copy)]
+struct MapAbandonableQuest<'a> {
+    id: &'a str,
+    title: &'a str,
 }
 
 pub(crate) fn map_destination_list(
@@ -489,13 +513,37 @@ pub(crate) fn map_destination_list(
     selected_id: Option<&str>,
     base_path: &str,
 ) -> Markup {
+    map_destination_list_with_context(destinations, selected_id, base_path, None, None)
+}
+
+fn map_destination_list_with_context(
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    base_path: &str,
+    current_location: Option<MapCurrentLocation<'_>>,
+    abandonable_quest: Option<MapAbandonableQuest<'_>>,
+) -> Markup {
     html! {
         aside class="left-sidebar" {
             (sidebar_section("Destinations", html! {
-                @if destinations.is_empty() {
+                @if destinations.is_empty() && current_location.is_none() {
                     (empty_state("No destinations are available from this location.", None, None))
                 } @else {
                     nav class="location-destination-list" aria-label="Travel destinations" {
+                        @if let Some(current) = current_location {
+                            div class="list-item travel-destination-row current-location-row"
+                                aria-current="location" {
+                                strong { (current.name) }
+                                span class="text-muted small-copy current-location-label" { "Current" }
+                                @if current.turn_in_ready {
+                                    span class="destination-quest-badge" title="Active quest ready to turn in here"
+                                        aria-label="Active quest ready to turn in here" { "!" }
+                                } @else if current.open_quest_available {
+                                    span class="destination-open-quest-badge" title="Open quest available here"
+                                        aria-label="Open quest available here" { "!" }
+                                }
+                            }
+                        }
                         @for destination in destinations {
                             a href=(format!("{}?destination={}", base_path, destination.id))
                                 class=(if selected_id == Some(destination.id.as_str()) { "list-item travel-destination-row active" } else { "list-item travel-destination-row" })
@@ -512,11 +560,22 @@ pub(crate) fn map_destination_list(
                                     span class="destination-quest-badge" title="Next settlement toward active quest"
                                         aria-label="Next settlement toward active quest" { "!" }
                                 } @else if destination.turn_in_ready {
-                                    span class="destination-turn-in-badge" title="Quest ready to turn in here"
-                                        aria-label="Quest ready to turn in here" { "!" }
+                                    span class="destination-quest-badge" title="Active quest ready to turn in here"
+                                        aria-label="Active quest ready to turn in here" { "!" }
+                                } @else if destination.open_quest_available {
+                                    span class="destination-open-quest-badge" title="Open quest available here"
+                                        aria-label="Open quest available here" { "!" }
                                 }
                                 span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
                             }
+                        }
+                    }
+                }
+                @if let Some(quest) = abandonable_quest {
+                    div class="map-active-quest-actions" {
+                        p class="small-copy" { "Active quest: " strong { (quest.title) } }
+                        form method="post" action=(format!("/quests/{}/abandon", quest.id)) {
+                            button type="submit" class="btn btn-danger btn-small" { "Abandon active quest" }
                         }
                     }
                 }
@@ -674,7 +733,6 @@ pub fn camp_page(
     party_members: &[Character],
     default_rest_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     let rest_hours = default_rest_minutes.div_ceil(60);
     let content = html! {
@@ -710,15 +768,7 @@ pub fn camp_page(
             }
         }
     };
-    quest_location_layout_with_session(
-        "Camp",
-        "Camp",
-        &party.id,
-        "camp",
-        content,
-        logged_in_as,
-        theme,
-    )
+    quest_location_layout_with_session("Camp", "Camp", &party.id, "camp", content, logged_in_as)
 }
 
 fn rest_duration_control(_id_prefix: &str, value: u64, unit: &str, label: &str) -> Markup {
@@ -827,7 +877,6 @@ pub fn merchants_page(
     inventory: &[InventoryItem],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -840,7 +889,6 @@ pub fn merchants_page(
         &[],
         party_members,
         logged_in_as,
-        theme,
         None,
         None,
     )
@@ -859,7 +907,6 @@ pub fn inn_page(
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -872,7 +919,6 @@ pub fn inn_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         rest_default_minutes(
             limbs,
             stats,
@@ -897,7 +943,6 @@ pub fn religion_page(
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
     service_page(
         settlement,
@@ -910,7 +955,6 @@ pub fn religion_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         rest_default_minutes(
             limbs,
             stats,
@@ -935,7 +979,6 @@ pub fn party_inventory_page(
     active_equip: Option<&CharacterEquip>,
     selected_targets: &[InventoryQuantityTarget],
     active_targets: &[InventoryQuantityTarget],
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -954,7 +997,7 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
         }
     };
-    location.render_layout("Party", content, Some(&active_character.name), theme)
+    location.render_layout("Party", content, Some(&active_character.name))
 }
 
 /// The active character's inventory with a staged discard list.
@@ -965,7 +1008,6 @@ pub fn party_discard_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -992,7 +1034,7 @@ pub fn party_discard_page(
             (discard_inventory_rail(active_character, inventory, items, equip))
         }
     };
-    location.render_layout("Inventory", content, Some(&active_character.name), theme)
+    location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
 /// Active character's combined strategic view.
@@ -1014,7 +1056,6 @@ pub fn party_personal_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1044,7 +1085,7 @@ pub fn party_personal_page(
             (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
         }
     };
-    location.render_layout("Party", content, Some(&active_character.name), theme)
+    location.render_layout("Party", content, Some(&active_character.name))
 }
 
 fn religious_demand_rail(
@@ -1092,7 +1133,6 @@ pub fn party_stats_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
-    theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
@@ -1154,7 +1194,7 @@ pub fn party_stats_page(
             }
         }
     };
-    location.render_layout("Party stats", content, Some(&active_character.name), theme)
+    location.render_layout("Party stats", content, Some(&active_character.name))
 }
 
 fn service_page(
@@ -1168,7 +1208,6 @@ fn service_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
 ) -> Markup {
@@ -1267,11 +1306,11 @@ fn service_page(
         title,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         service_id,
         Some(&settlement.religion_id),
         content,
         logged_in_as,
-        theme,
     )
 }
 
@@ -1367,7 +1406,6 @@ pub fn live_merchant_shop_page(
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     pooled: &[PartyInventoryItem],
-    theme: &str,
     shop: MerchantShop,
     conditions: &[crate::spacetimedb::ItemCondition],
     smith: Option<&crate::spacetimedb::SettlementSmith>,
@@ -1492,11 +1530,11 @@ pub fn live_merchant_shop_page(
         title,
         &settlement.name,
         &settlement.id,
+        &settlement.category,
         service_id,
         Some(&settlement.religion_id),
         content,
         Some(&character.name),
-        theme,
     )
 }
 
@@ -1512,7 +1550,6 @@ pub fn party_pool_page(
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
-    theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1577,7 +1614,7 @@ pub fn party_pool_page(
         }
         form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
     };
-    location.render_layout("Party inventory", content, Some(&character.name), theme)
+    location.render_layout("Party inventory", content, Some(&character.name))
 }
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
@@ -3380,7 +3417,6 @@ pub fn rest_result_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    theme: &str,
     at_inn: bool,
     summary: &RestSummary,
 ) -> Markup {
@@ -3395,7 +3431,6 @@ pub fn rest_result_page(
         items,
         party_members,
         logged_in_as,
-        theme,
         None,
         Some(summary),
     )
@@ -3598,6 +3633,7 @@ mod tests {
             coord_y: 53.0,
             population_level: 4,
             population_estimate: 12_000,
+            category: crate::spacetimedb::SettlementCategory::City,
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,
@@ -4128,16 +4164,9 @@ mod tests {
             body: "Burg & Markt <alt>".into(),
         }];
 
-        let markup = settlement_overview_page(
-            &settlement(),
-            &aliases,
-            &descriptions,
-            None,
-            &[],
-            None,
-            "system",
-        )
-        .into_string();
+        let markup =
+            settlement_overview_page(&settlement(), &aliases, &descriptions, None, &[], None)
+                .into_string();
 
         assert!(markup.contains("Also known as"));
         assert!(markup.contains("Lubeke"));
@@ -4161,6 +4190,7 @@ mod tests {
             quest_in_progress: true,
             active_quest_route: false,
             turn_in_ready: false,
+            open_quest_available: false,
         }
     }
 
@@ -4174,6 +4204,101 @@ mod tests {
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("Active quest destination"));
         assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn available_quest_destination_has_gold_status_badge() {
+        let mut destination = quest_destination();
+        destination.quest_in_progress = false;
+        destination.open_quest_available = true;
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("destination-open-quest-badge"));
+        assert!(markup.contains("Open quest available here"));
+        assert!(!markup.contains("destination-quest-badge"));
+    }
+
+    #[test]
+    fn completed_active_quest_destination_remains_red() {
+        let mut destination = quest_destination();
+        destination.quest_in_progress = false;
+        destination.turn_in_ready = true;
+        destination.open_quest_available = true;
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("destination-quest-badge"));
+        assert!(markup.contains("Active quest ready to turn in here"));
+        assert!(!markup.contains("destination-open-quest-badge"));
+        assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn current_settlement_with_open_quest_has_non_traveling_gold_marker() {
+        let markup = map_destination_list_with_context(
+            &[],
+            None,
+            "/locations/settlement/market/map",
+            Some(MapCurrentLocation {
+                name: "Market",
+                open_quest_available: true,
+                turn_in_ready: false,
+            }),
+            None,
+        )
+        .into_string();
+
+        assert!(markup.contains("current-location-row"));
+        assert!(markup.contains("aria-current=\"location\""));
+        assert!(markup.contains("destination-open-quest-badge"));
+        assert!(!markup.contains("href="));
+    }
+
+    #[test]
+    fn completed_active_quest_at_current_issuer_is_red_even_when_open_quest_exists() {
+        let markup = map_destination_list_with_context(
+            &[],
+            None,
+            "/locations/settlement/issuer/map",
+            Some(MapCurrentLocation {
+                name: "Issuer",
+                open_quest_available: true,
+                turn_in_ready: true,
+            }),
+            None,
+        )
+        .into_string();
+
+        assert!(markup.contains("destination-quest-badge"));
+        assert!(markup.contains("Active quest ready to turn in here"));
+        assert!(!markup.contains("destination-open-quest-badge"));
+    }
+
+    #[test]
+    fn map_exposes_abandon_action_for_an_eligible_active_quest() {
+        let markup = map_destination_list_with_context(
+            &[],
+            None,
+            "/locations/settlement/issuer/map",
+            Some(MapCurrentLocation {
+                name: "Issuer",
+                open_quest_available: false,
+                turn_in_ready: false,
+            }),
+            Some(MapAbandonableQuest {
+                id: "active",
+                title: "Drive off the bandits",
+            }),
+        )
+        .into_string();
+
+        assert!(markup.contains("Active quest: "));
+        assert!(markup.contains("Drive off the bandits"));
+        assert!(markup.contains("action=\"/quests/active/abandon\""));
+        assert!(markup.contains("Abandon active quest"));
     }
 
     #[test]
@@ -4244,7 +4369,7 @@ mod tests {
         // Dark themes use the lightest possible 88% panel composite (over
         // white); light themes use the darkest possible composite (over
         // black). This brackets the image content beneath the translucent chat.
-        let themes = [
+        let legacy_palettes = [
             (
                 "Dark Arcanum",
                 [46, 49, 67],
@@ -4316,7 +4441,7 @@ mod tests {
                 [58, 122, 58],
             ),
         ];
-        for (theme, surface, primary, secondary, info, gold, dm, success) in themes {
+        for (palette, surface, primary, secondary, info, gold, dm, success) in legacy_palettes {
             let channels = [
                 ("Local", primary),
                 ("Party", mix(info, primary, 40)),
@@ -4332,12 +4457,12 @@ mod tests {
             assert_eq!(
                 distinct.len(),
                 channels.len(),
-                "{theme} channels must remain visually distinct"
+                "{palette} channels must remain visually distinct"
             );
             for (channel, color) in channels {
                 assert!(
                     contrast(color, surface) >= 4.5,
-                    "{theme} {channel} does not meet WCAG AA text contrast"
+                    "{palette} {channel} does not meet WCAG AA text contrast"
                 );
             }
         }
@@ -4353,12 +4478,11 @@ mod tests {
             .expect("chat needs a background fallback");
         let enhanced = css
             .find("background: color-mix(in srgb, var(--panel-bg) 88%, transparent);")
-            .expect("chat should derive its translucent surface from the theme");
+            .expect("chat should derive its translucent surface from the fixed palette");
 
         assert!(fallback < enhanced);
         assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
-        assert!(css.contains(".chat-channel-filter input::after"));
-        assert!(css.contains("border-radius: 0.05rem;"));
+        assert!(!css.contains(".chat-channel-filter input::after"));
         assert!(css.contains("outline: 2px solid var(--text-primary);"));
         assert!(css.contains("0 0 0 2px var(--panel-bg)"));
         assert!(css.contains(

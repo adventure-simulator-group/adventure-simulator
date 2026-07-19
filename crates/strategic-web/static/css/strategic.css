@@ -78,7 +78,7 @@
   padding: 0.5rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
-  background: var(--panel-bg);
+  background: var(--building-interactive);
 }
 
 .trade-inventory-list .inventory-trade-row {
@@ -603,7 +603,40 @@
 .trade-inventory-row {
   position: relative;
   border-bottom: 1px solid var(--border-light);
-  background: var(--panel-bg);
+  background: var(--building-interactive);
+}
+
+.trade-row:hover,
+.inventory-trade-row:hover,
+.trade-inventory-row:hover,
+.trade-row:focus-within,
+.inventory-trade-row:focus-within,
+.trade-inventory-row:focus-within {
+  background: var(--building-interactive-hover);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger),
+.settlement-top-bar .btn:not(.btn-danger) {
+  border-color: color-mix(in srgb, var(--active-building-tint) 72%, white);
+  background: var(--building-interactive);
+  color: var(--text-primary);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger):hover,
+.settlement-top-bar .btn:not(.btn-danger):hover {
+  border-color: color-mix(in srgb, var(--active-building-tint) 58%, white);
+  background: var(--building-interactive-hover);
+  color: var(--text-primary);
+}
+
+body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger):disabled {
+  background: color-mix(in srgb, var(--building-interactive) 78%, black);
+  color: var(--text-muted);
+}
+
+body:has(.settlement-top-bar) .main-grid .list-item:hover,
+body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
+  background: var(--building-interactive-hover);
 }
 
 .trade-inventory-row:last-child {
@@ -820,7 +853,7 @@
 .rest-duration-unit { flex: 1; padding: 0.38rem; color: var(--text-muted); cursor: pointer; font-size: var(--font-size-xs); text-align: center; }
 .rest-duration-unit + .rest-duration-unit { border-left: 1px solid var(--border-light); }
 .rest-duration-unit input { position: absolute; opacity: 0; pointer-events: none; }
-.rest-duration-unit.active { background: color-mix(in srgb, var(--accent) 22%, var(--panel-bg)); color: var(--text-primary); }
+.rest-duration-unit.active { background: var(--building-interactive-hover); color: var(--text-primary); }
 
 .inventory-trade-row {
   overflow: visible;
@@ -1261,16 +1294,20 @@
   box-shadow: 0 0 0.45rem rgb(79 119 184 / 70%);
 }
 
-.service-notification-badge.service-turn-in-badge,
-.settlement-turn-in-badge,
-.destination-turn-in-badge {
-  background: #d39a32;
-  color: #211506;
-  box-shadow: 0 0 0.5rem rgb(211 154 50 / 75%);
+.service-notification-badge.service-available-quest-badge,
+.destination-open-quest-badge {
+  background: #87580f;
+  color: #fff4d6;
+  box-shadow: 0 0 0.5rem rgb(135 88 15 / 75%);
 }
 
-.settlement-turn-in-badge,
-.destination-turn-in-badge,
+.service-notification-badge.service-turn-in-badge {
+  background: #b4232c;
+  color: #fff;
+  box-shadow: 0 0 0.45rem rgb(180 35 44 / 65%);
+}
+
+.destination-open-quest-badge,
 .destination-quest-badge {
   display: inline-grid;
   width: 1.15rem;
@@ -1282,9 +1319,30 @@
   font: 800 0.72rem/1 sans-serif;
 }
 
-.settlement-turn-in-badge[hidden] { display: none; }
+.current-location-row {
+  cursor: default;
+}
 
-.destination-turn-in-badge,
+.current-location-label {
+  margin-left: auto;
+}
+
+.current-location-row .destination-open-quest-badge,
+.current-location-row .destination-quest-badge {
+  margin-left: 0.45rem;
+}
+
+.map-active-quest-actions {
+  margin-top: 0.8rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+
+.map-active-quest-actions p {
+  margin: 0 0 0.55rem;
+}
+
+.destination-open-quest-badge,
 .destination-quest-badge { margin-left: auto; }
 
 .destination-quest-badge {
@@ -2614,19 +2672,6 @@ body.chat-resizing {
   cursor: pointer;
 }
 
-.chat-channel-filter input::after {
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 0.05rem;
-  background: #fff;
-  box-shadow: 0 0 0 1px #0008;
-  content: "";
-  opacity: 0;
-  transform: scale(0.45);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-}
-
-.chat-channel-filter input:checked::after { opacity: 1; transform: scale(1); }
 .chat-channel-filter input:focus-visible {
   outline: 2px solid var(--text-primary);
   outline-offset: 3px;

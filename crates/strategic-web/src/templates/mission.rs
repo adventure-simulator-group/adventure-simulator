@@ -6,11 +6,7 @@ use super::{mission_layout, panel, sidebar_section, status_badge};
 use crate::spacetimedb::{MissionStatus, TacticalServer};
 
 /// Mission status page updated by the shared strategic SSE stream.
-pub fn mission_status_page(
-    server: &TacticalServer,
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
+pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) -> Markup {
     let status = server.status;
 
     let content = html! {
@@ -81,7 +77,7 @@ pub fn mission_status_page(
         }
     };
 
-    mission_layout("Mission Status", content, logged_in_as, theme)
+    mission_layout("Mission Status", content, logged_in_as)
 }
 
 fn pending_state(mission_id: &str) -> Markup {

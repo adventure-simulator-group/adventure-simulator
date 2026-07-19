@@ -1,18 +1,9 @@
-//! Base layout template - Three-column design with theme support
+//! Base layout template - Three-column strategic design.
 
+use crate::spacetimedb::SettlementCategory;
 use maud::{DOCTYPE, Markup, html};
 
 use super::religion_game_icon_name;
-
-const THEMES: &[(&str, &str)] = &[
-    ("fraktur-texturina", "Fraktura"),
-    ("fraktur-nocturne", "Dark Fraktura"),
-    ("dark-arcanum", "Dark Arcanum"),
-    ("northern-frost", "Northern Frost"),
-    ("verdant-chronicle", "Verdant Chronicle"),
-    ("imperial-crimson", "Imperial Crimson"),
-];
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ScriptProfile {
     Entry,
@@ -20,35 +11,14 @@ enum ScriptProfile {
     Strategic,
 }
 
-fn validated_theme(theme: &str) -> &str {
-    if THEMES.iter().any(|(id, _)| *id == theme) {
-        theme
-    } else {
-        "fraktur-nocturne"
-    }
-}
-
 /// Minimal shell for selecting or creating a character. It intentionally omits
 /// strategic navigation: an adventurer must be selected before play begins.
-pub fn entry_layout(title: &str, content: Markup, theme: &str) -> Markup {
-    let theme = validated_theme(theme);
-    page_shell(
-        title,
-        entry_top_bar(theme),
-        content,
-        theme,
-        ScriptProfile::Entry,
-    )
+pub fn entry_layout(title: &str, content: Markup) -> Markup {
+    page_shell(title, entry_top_bar(), content, ScriptProfile::Entry)
 }
 
 /// Transitional shell shown while a tactical server is being allocated.
-pub fn mission_layout(
-    title: &str,
-    content: Markup,
-    logged_in_as: Option<&str>,
-    theme: &str,
-) -> Markup {
-    let theme = validated_theme(theme);
+pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
     let header = html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
@@ -57,11 +27,10 @@ pub fn mission_layout(
                 @if let Some(name) = logged_in_as {
                     span class="player-name" { strong { (name) } }
                 }
-                (theme_switcher(theme))
             }
         }
     };
-    page_shell(title, header, content, theme, ScriptProfile::Live)
+    page_shell(title, header, content, ScriptProfile::Live)
 }
 
 /// Settlement-specific layout. Settlement services replace the global navigation
@@ -70,25 +39,23 @@ pub fn settlement_layout_with_session(
     title: &str,
     settlement_name: &str,
     settlement_id: &str,
+    category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
     content: Markup,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
-    let theme = validated_theme(theme);
     page_shell(
         title,
         settlement_top_bar(
             settlement_name,
             settlement_id,
+            category,
             active_service,
             religion_id,
             logged_in_as,
-            theme,
         ),
         content,
-        theme,
         ScriptProfile::Strategic,
     )
 }
@@ -102,25 +69,16 @@ pub fn quest_location_layout_with_session(
     active_tab: &str,
     content: Markup,
     logged_in_as: Option<&str>,
-    theme: &str,
 ) -> Markup {
-    let theme = validated_theme(theme);
     page_shell(
         title,
-        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as, theme),
+        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as),
         content,
-        theme,
         ScriptProfile::Strategic,
     )
 }
 
-fn page_shell(
-    title: &str,
-    header: Markup,
-    content: Markup,
-    theme: &str,
-    scripts: ScriptProfile,
-) -> Markup {
+fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfile) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -129,14 +87,13 @@ fn page_shell(
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                // Theme CSS (loaded first so variables are available)
-                link rel="stylesheet" href=(format!("/static/css/themes/{}.css", theme));
+                link rel="stylesheet" href="/static/css/base.css?v=environment-12";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=game-icons-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=environment-12";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=alchemy-medication-1";
-                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=environment-13";
+                link rel="stylesheet" href="/static/css/utilities.css?v=environment-12";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -151,10 +108,11 @@ fn page_shell(
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=herbalist-care-2" defer {}
+                    script src="/static/service-quests.js?v=map-markers-3" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
+                    script src="/static/building-state.js?v=environment-2" defer {}
                     script src="/static/travel-planner.js?v=journey-state-1" defer {}
                 }
             }
@@ -176,14 +134,14 @@ fn page_shell(
     }
 }
 
-fn entry_top_bar(current_theme: &str) -> Markup {
+fn entry_top_bar() -> Markup {
     html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" {
                 h1 class="logo" { "Adventure Simulator" }
             }
             div class="entry-message" { "Choose an adventurer to begin" }
-            div class="top-bar-right" { (theme_switcher(current_theme)) }
+            div class="top-bar-right" {}
         }
     }
 }
@@ -191,10 +149,10 @@ fn entry_top_bar(current_theme: &str) -> Markup {
 fn settlement_top_bar(
     settlement_name: &str,
     settlement_id: &str,
+    category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
     logged_in_as: Option<&str>,
-    current_theme: &str,
 ) -> Markup {
     let services = [
         ("map", "Map", "map"),
@@ -208,19 +166,20 @@ fn settlement_top_bar(
     ];
 
     html! {
-        header class="top-bar settlement-top-bar" {
+        @let material = if matches!(category, SettlementCategory::City | SettlementCategory::Capital) { "stone" } else { "wood" };
+        @let active_material = if active_service == "religion" { "stone" } else { material };
+        @let active_tint = building_tint(settlement_id, active_service, active_material);
+        style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
+        header class=(format!("top-bar settlement-top-bar material-{material}")) data-environment="settlement" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
-                span class="settlement-turn-in-badge" data-settlement-turn-in-badge hidden
-                    title="A quest is ready to turn in here" aria-label="Quest ready to turn in" { "!" }
                 span class="settlement-time" data-player-time title="Loading official time…" {
                     "1st of First Seed · 08:00"
                 }
                 }
-                (current_quest_summary())
             }
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
@@ -233,17 +192,24 @@ fn settlement_top_bar(
                     } else {
                         format!("/settlements/{}/{}", settlement_id, path)
                     };
+                    @let service_material = if path == "religion" { "stone" } else { material };
+                    @let tint = building_tint(settlement_id, path, service_material);
                     a href=(href)
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                        style=(format!("--building-tint:{tint}"))
                         data-service-id=(path)
                         aria-label=(label)
                         title=(label)
+                        aria-current=(if active_service == path { "page" } else { "false" })
                     {
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('/static/icons/game/{}.svg')", religion_game_icon_name(religion_id)))]
                             aria-hidden="true" {}
-                        @if path != "map" {
+                        @if path == "map" {
+                            span class="service-notification-badge service-map-quest-badge"
+                                data-map-quest-badge title="Active quest" aria-hidden="true" hidden { "!" }
+                        } @else {
                             span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
                         }
                     }
@@ -252,16 +218,11 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    span class="player-name" { "Party: " strong { (name) } }
-                    (switch_character_button())
-                } @else {
-                    span class="player-name player-name-none" { "No active party" }
+                    (character_switcher(name))
                 }
-                (theme_switcher(current_theme))
             }
         }
-        script src="/static/strategic-time.js?v=client-clock-2" {}
-        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
+        script src="/static/strategic-time.js?v=environment-2" {}
     }
 }
 
@@ -270,84 +231,95 @@ fn quest_location_top_bar(
     location_id: &str,
     active_tab: &str,
     logged_in_as: Option<&str>,
-    current_theme: &str,
 ) -> Markup {
+    let map_tint = "hsl(126 30% 22%)";
+    let loot_tint = "hsl(105 27% 19%)";
+    let active_tint = if active_tab == "loot" {
+        loot_tint
+    } else {
+        map_tint
+    };
     html! {
-        header class="top-bar settlement-top-bar quest-location-top-bar" {
+        style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
+        header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                     a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
-                (current_quest_summary())
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 a href=(format!("/locations/quest/{}/map", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
+                    style=(format!("--building-tint:{map_tint}"))
+                    aria-current=(if active_tab == "map" { "page" } else { "false" })
                     aria-label="Map" title="Map" {
                     span class="service-tab-icon service-tab-icon-map" aria-hidden="true" {}
                 }
                 a href=(format!("/locations/quest/{}/loot", location_id))
                     class=(if active_tab == "loot" { "nav-tab active" } else { "nav-tab" })
+                    style=(format!("--building-tint:{loot_tint}"))
+                    aria-current=(if active_tab == "loot" { "page" } else { "false" })
                     aria-label="Loot" title="Loot" {
                     span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
                 }
             }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    span class="player-name" { "Party: " strong { (name) } }
-                    (switch_character_button())
-                } @else {
-                    span class="player-name player-name-none" { "No active party" }
+                    (character_switcher(name))
                 }
-                (theme_switcher(current_theme))
             }
         }
         script src="/static/strategic-time.js?v=client-clock-2" {}
-        script src="/static/current-quest.js?v=current-quest-status-2" defer {}
     }
 }
 
-fn current_quest_summary() -> Markup {
+fn building_tint(settlement: &str, service: &str, material: &str) -> String {
+    let hash = settlement
+        .bytes()
+        .chain([b':'])
+        .chain(service.bytes())
+        .fold(0xcbf29ce484222325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        });
+    let service_slot = match service {
+        "map" => 0,
+        "merchants" => 1,
+        "weapons" => 2,
+        "armor" => 3,
+        "clothing" => 4,
+        "inn" => 5,
+        "religion" => 6,
+        _ => (hash % 7) as usize,
+    };
+    let settlement_shift = ((hash >> 24) % 9) as u64;
+    let hue = if material == "stone" {
+        [205, 224, 252, 282, 164, 36, 214][service_slot] + settlement_shift
+    } else {
+        [8, 20, 31, 43, 56, 72, 350][service_slot] + settlement_shift
+    };
+    let saturation = if material == "stone" {
+        12 + (hash >> 8) % 13
+    } else {
+        30 + (hash >> 8) % 25
+    };
+    let lightness = 19 + (hash >> 16) % 8;
+    format!("hsl({hue} {saturation}% {lightness}%)")
+}
+
+fn character_switcher(name: &str) -> Markup {
+    let initial = name.chars().next().unwrap_or('?');
     html! {
-        div class="current-quest-summary" data-current-quest hidden {
-            span class="current-quest-status" data-current-quest-status
-                title="Quest in progress" aria-label="Quest in progress" { "!" }
-            span class="current-quest-name" data-current-quest-name {}
-            form class="current-quest-abandon" data-current-quest-abandon method="post" action="/quests" {
-                button type="submit" class="btn btn-danger btn-small" { "Abandon quest" }
+        details class="character-switcher" {
+            summary class="character-switcher-toggle"
+                aria-label=(format!("Character menu for {name}")) title=(name) {
+                span class="party-portrait-initial character-switcher-portrait" aria-hidden="true" {
+                    span class="party-portrait-face" { (initial) }
+                }
             }
-        }
-    }
-}
-
-fn switch_character_button() -> Markup {
-    html! {
-        form action="/characters/switch" method="post" {
-            button type="submit" class="btn btn-secondary btn-small" { "Switch character" }
-        }
-    }
-}
-
-fn theme_switcher(current_theme: &str) -> Markup {
-    html! {
-        details class="theme-switcher" {
-            summary
-                class=(format!("theme-dot active theme-current theme-{}", current_theme))
-                data-theme=(current_theme)
-                title="Choose theme"
-                aria-label="Choose theme"
-            {
-                span class="sr-only" { "Choose theme" }
-            }
-            div class="theme-menu" {
-                @for (id, label) in THEMES {
-                a href=(format!("/theme/{}", id))
-                    class=(if *id == current_theme { "theme-dot active" } else { "theme-dot" })
-                    data-theme=(id)
-                    title=(label)
-                    aria-label=(label)
-                {}
+            div class="character-switcher-menu" {
+                form action="/characters/switch" method="post" {
+                    button type="submit" class="btn btn-small" { "Character select" }
                 }
             }
         }
@@ -363,5 +335,132 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
             }
             (content)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        building_tint, quest_location_top_bar, settlement_layout_with_session, settlement_top_bar,
+    };
+    use crate::spacetimedb::SettlementCategory;
+    use maud::html;
+
+    #[test]
+    fn building_tints_are_stable_distinct_and_material_bounded() {
+        assert_eq!(
+            building_tint("lubeck", "inn", "wood"),
+            building_tint("lubeck", "inn", "wood")
+        );
+        assert_ne!(
+            building_tint("lubeck", "inn", "wood"),
+            building_tint("lubeck", "weapons", "wood")
+        );
+        let wood_tints = [
+            "map",
+            "merchants",
+            "weapons",
+            "armor",
+            "clothing",
+            "inn",
+            "religion",
+        ]
+        .map(|service| building_tint("lubeck", service, "wood"));
+        assert_eq!(
+            wood_tints
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            wood_tints.len()
+        );
+        let hue = |tint: String| tint[4..].split(' ').next().unwrap().parse::<u64>().unwrap();
+        assert!((8..=80).contains(&hue(building_tint("lubeck", "inn", "wood"))));
+        assert!((36..=290).contains(&hue(building_tint("lubeck", "inn", "stone"))));
+    }
+
+    #[test]
+    fn active_building_is_semantic_but_only_underlined_by_css() {
+        let markup = settlement_layout_with_session(
+            "Inn",
+            "Lubeck",
+            "lubeck",
+            &SettlementCategory::City,
+            "inn",
+            None,
+            html! {},
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("aria-current=\"page\""));
+        assert!(markup.contains("material-stone"));
+        let css = include_str!("../../static/css/layout.css");
+        assert!(css.contains("border-bottom: 3px solid var(--accent-light)"));
+    }
+
+    #[test]
+    fn strategic_clock_is_snapshot_only_and_building_state_is_url_backed() {
+        let time = include_str!("../../static/strategic-time.js");
+        let building = include_str!("../../static/building-state.js");
+        assert!(!time.contains("setInterval"));
+        assert!(time.contains("applyLighting(characterMinutes)"));
+        assert!(building.contains("searchParams.get(\"building\")"));
+        assert!(building.contains("searchParams.set(\"building\", building)"));
+        assert!(building.contains("pathname.includes(\"/party\")"));
+        assert!(building.contains("partyInspection && services.has(requested)"));
+        assert!(building.contains("!services.has(requested) || !partyInspection"));
+    }
+
+    #[test]
+    fn wilderness_and_church_roots_match_the_active_tab_material() {
+        let wilderness = quest_location_top_bar("Ruins", "q", "loot", None).into_string();
+        assert!(wilderness.contains(":root{--active-building-tint:hsl(105 27% 19%);}"));
+        let church = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "religion",
+            None,
+            None,
+        )
+        .into_string();
+        assert!(church.contains(&format!(
+            ":root{{--active-building-tint:{};}}",
+            building_tint("s", "religion", "stone")
+        )));
+    }
+
+    #[test]
+    fn strategic_header_uses_portrait_menu_without_quest_or_party_labels() {
+        let markup = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "map",
+            None,
+            Some("Ada"),
+        )
+        .into_string();
+        assert!(markup.contains("class=\"character-switcher\""));
+        assert!(markup.contains("Character menu for Ada"));
+        assert!(markup.contains("character-switcher-portrait"));
+        assert!(markup.contains("Character select"));
+        assert!(markup.contains("action=\"/characters/switch\""));
+        assert!(!markup.contains("Party: "));
+        assert!(!markup.contains("data-current-quest"));
+        assert!(!markup.contains("current-quest.js"));
+        assert!(!markup.contains("data-settlement-turn-in-badge"));
+        assert!(markup.contains("data-map-quest-badge"));
+    }
+
+    #[test]
+    fn custom_theme_feature_is_absent() {
+        let session = include_str!("../session.rs");
+        let routes = include_str!("../routes/mod.rs");
+        let layout = include_str!("layout.rs");
+        assert!(!session.contains("THEME_COOKIE"));
+        assert!(!session.contains("enum Theme"));
+        assert!(!routes.contains("/theme/{name}"));
+        assert!(!layout.contains("details class=\"theme-switcher\""));
+        assert!(layout.contains("/static/css/base.css"));
     }
 }

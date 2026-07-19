@@ -14,9 +14,13 @@ use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
     settlements::get_active_party_members,
-    travel::{TravelDestination, TravelForm, populate_camp_forecasts, settlement_destination},
+    travel::{
+        QuestMapMarkers, TravelDestination, TravelForm, populate_camp_forecasts,
+        settlement_destination,
+    },
 };
 use crate::session::Session;
+use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BattleLootItem, BattleResult, Character, CharacterAttributes,
     CharacterLimbs, CharacterStats, InventoryQuantityTarget, ItemDefinition, Party,
@@ -28,7 +32,7 @@ use crate::templates::quest::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/current-quest", get(current_quest))
+        .route("/api/active-quest-marker", get(active_quest_marker))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
@@ -41,19 +45,16 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(Serialize)]
-struct CurrentQuestSummary {
-    id: String,
-    title: String,
-    can_abandon: bool,
-    resolved: bool,
+struct ActiveQuestMarker {
+    active: bool,
 }
 
-async fn current_quest(
+async fn active_quest_marker(
     State(state): State<AppState>,
     session: Session,
-) -> Json<Option<CurrentQuestSummary>> {
+) -> Json<ActiveQuestMarker> {
     let Some(character_id) = session.character_id_u64() else {
-        return Json(None);
+        return Json(ActiveQuestMarker { active: false });
     };
     let character = state
         .db
@@ -64,42 +65,21 @@ async fn current_quest(
         .unwrap_or_default()
         .into_iter()
         .next();
-    let Some(character) = character else {
-        return Json(None);
+    let Some(party_id) = character.and_then(|character| character.party_id) else {
+        return Json(ActiveQuestMarker { active: false });
     };
-    let Some(party_id) = character.party_id.as_ref() else {
-        return Json(None);
-    };
-    let party = state
+    let active = state
         .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next();
-    let Some(party) = party else {
-        return Json(None);
-    };
-    let Some(active_quest_id) = party.active_quest_id.as_ref() else {
-        return Json(None);
-    };
-    let quest = state
-        .db
-        .query::<Quest>(&format!(
-            "SELECT * FROM quest WHERE id = '{}'",
-            active_quest_id
+        .query::<Party>(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default()
         .into_iter()
-        .next();
-    Json(quest.map(|quest| CurrentQuestSummary {
-        id: quest.id,
-        title: quest.title,
-        can_abandon: quest.status == QuestStatus::Accepted
-            && character.current_quest_location_id.is_none(),
-        resolved: quest.status == QuestStatus::Completed,
-    }))
+        .next()
+        .is_some_and(|party| party.active_quest_id.is_some());
+    Json(ActiveQuestMarker { active })
 }
 
 #[derive(Serialize)]
@@ -134,7 +114,7 @@ async fn accept_quest_api(
             quest_id: id,
             title,
             message: if matches!(outcome, PartyActionOutcome::Executed) {
-                "Quest added to your tracker."
+                "Quest accepted."
             } else {
                 "Requested that the party accept this quest."
             }
@@ -351,12 +331,12 @@ async fn render_quest_location(
     session: Session,
     tab: QuestLocationTab,
 ) -> Html<String> {
-    let quests: Vec<Quest> = state
+    let matching_quests: Vec<Quest> = state
         .db
         .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
         .await
         .unwrap_or_default();
-    let Some(quest) = quests.first() else {
+    let Some(quest) = matching_quests.first() else {
         return Html("<h1>Quest location not found</h1>".to_string());
     };
     let character = match session.character_id_u64() {
@@ -394,6 +374,17 @@ async fn render_quest_location(
         .query("SELECT * FROM settlement")
         .await
         .unwrap_or_default();
+    let quests: Vec<Quest> = state
+        .db
+        .query("SELECT * FROM quest")
+        .await
+        .unwrap_or_default();
+    let markers = QuestMapMarkers::new(
+        &quests,
+        party
+            .as_ref()
+            .and_then(|party| party.active_quest_id.as_deref()),
+    );
     let mut nearby: Vec<TravelDestination> = settlements
         .into_iter()
         .map(|settlement| {
@@ -401,10 +392,8 @@ async fn render_quest_location(
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
-    if quest.status == QuestStatus::Completed {
-        for destination in &mut nearby {
-            destination.turn_in_ready = destination.id == quest.settlement_id;
-        }
+    for destination in &mut nearby {
+        markers.decorate_settlement(destination);
     }
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
@@ -526,7 +515,6 @@ async fn render_quest_location(
             resolved,
             autoresolve_report.as_ref(),
             logged_in_as,
-            session.theme(),
         ),
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
@@ -539,7 +527,6 @@ async fn render_quest_location(
             resolved,
             autoresolve_report.as_ref(),
             logged_in_as,
-            session.theme(),
         ),
         QuestLocationTab::Loot => quest_location_page(
             quest,
@@ -554,7 +541,6 @@ async fn render_quest_location(
             &items,
             &targets,
             logged_in_as,
-            session.theme(),
         ),
     };
     Html(page.into_string())
