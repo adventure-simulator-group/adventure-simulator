@@ -338,6 +338,43 @@
   background: var(--panel-bg);
 }
 
+.encumbrance {
+  margin-top: 0.8rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.encumbrance-copy {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.encumbrance-meter {
+  position: relative;
+  height: 0.75rem;
+  border: 1px solid var(--text-primary);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%);
+}
+
+.encumbrance-marker {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  left: clamp(0%, var(--encumbrance-position), 100%);
+  width: 0.2rem;
+  border: 1px solid #000;
+  border-radius: 0.15rem;
+  background: #fff;
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000;
+  transform: translateX(-50%);
+}
+
 .condition-bar {
   display: inline-flex;
   width: 5rem;

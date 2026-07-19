@@ -3,9 +3,66 @@ use crate::{
     prelude::{LimbAttribute, PlayerAttributes},
 };
 
-const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH: f32 = 5.0;
-const WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS: f32 = 30.0;
+pub const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH: f32 = 5.0;
+pub const WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS: f32 = 30.0;
 const ARMOR_PENALTY_EXPONENT: i32 = 3;
+
+/// The carried burden and injury-adjusted carrying capacity used by the
+/// shared linear encumbrance rule.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EncumbranceSummary {
+    pub burden_kg: f32,
+    pub capacity_kg: f32,
+}
+
+impl EncumbranceSummary {
+    pub fn new(burden_kg: f32, capacity_kg: f32) -> Self {
+        Self {
+            burden_kg: finite_nonnegative(burden_kg),
+            capacity_kg: finite_nonnegative(capacity_kg),
+        }
+    }
+
+    pub fn remaining_multiplier(self) -> f32 {
+        encumbrance_remaining_multiplier(self.burden_kg, self.capacity_kg)
+    }
+
+    pub fn penalty_fraction(self) -> f32 {
+        1.0 - self.remaining_multiplier()
+    }
+
+    pub fn combined(self, other: Self) -> Self {
+        Self::new(
+            self.burden_kg + other.burden_kg,
+            self.capacity_kg + other.capacity_kg,
+        )
+    }
+}
+
+fn finite_nonnegative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+pub fn encumbrance_capacity_kg(average_injury_adjusted_leg_strength: f32) -> f32 {
+    finite_nonnegative(average_injury_adjusted_leg_strength)
+        * LOWER_MUSCLE_MASS_PER_LEG_STRENGTH
+        * WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS
+}
+
+/// Returns the multiplier left after encumbrance. A character with no usable
+/// capacity is fully penalized, including when the reported burden is zero.
+pub fn encumbrance_remaining_multiplier(burden_kg: f32, capacity_kg: f32) -> f32 {
+    let burden_kg = finite_nonnegative(burden_kg);
+    let capacity_kg = finite_nonnegative(capacity_kg);
+    if capacity_kg <= f32::EPSILON {
+        return 0.0;
+    }
+    (1.0 - burden_kg / capacity_kg).clamp(0.0, 1.0)
+}
 
 #[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
 #[ambassador::delegatable_trait]
@@ -72,10 +129,39 @@ pub trait PlayerEquipment {
             body,
             LimbWeights::both_legs(),
         );
-        let lower_muscle_mass = average_leg_strength * LOWER_MUSCLE_MASS_PER_LEG_STRENGTH;
-        let weight_capacity = WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS * lower_muscle_mass;
+        let weight_capacity = encumbrance_capacity_kg(average_leg_strength);
+        encumbrance_remaining_multiplier(
+            body.body_weight() + self.inventory_weight(),
+            weight_capacity,
+        )
+    }
+}
 
-        let penalty = 1.0 - ((body.body_weight() + self.inventory_weight()) / weight_capacity);
-        penalty.clamp(0.0, 1.0)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linear_encumbrance_covers_key_points_and_overload() {
+        assert_eq!(encumbrance_remaining_multiplier(0.0, 100.0), 1.0);
+        assert_eq!(encumbrance_remaining_multiplier(50.0, 100.0), 0.5);
+        assert_eq!(encumbrance_remaining_multiplier(100.0, 100.0), 0.0);
+        assert_eq!(encumbrance_remaining_multiplier(125.0, 100.0), 0.0);
+        assert_eq!(encumbrance_remaining_multiplier(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn injury_adjusted_strength_maps_to_capacity() {
+        assert_eq!(encumbrance_capacity_kg(0.0), 0.0);
+        assert_eq!(encumbrance_capacity_kg(0.75), 112.5);
+        assert_eq!(encumbrance_capacity_kg(3.0), 450.0);
+    }
+
+    #[test]
+    fn summaries_combine_burdens_and_capacities_before_penalty() {
+        let party =
+            EncumbranceSummary::new(60.0, 100.0).combined(EncumbranceSummary::new(30.0, 200.0));
+        assert_eq!(party, EncumbranceSummary::new(90.0, 300.0));
+        assert!((party.penalty_fraction() - 0.3).abs() < f32::EPSILON);
     }
 }

@@ -1,7 +1,6 @@
 ```rs
 const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH = 5
 const WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS = 30
-# todo: should this be linear or nonlinear?
 fn encumbrance_term(character):
 	average_leg_strength = (character.legs.left.strength + character.legs.right.strength) / 2
 	lower_muscle_mass = average_leg_strength * LOWER_MUSCLE_MASS_PER_LEG_STRENGTH
@@ -9,4 +8,24 @@ fn encumbrance_term(character):
 	return 1 - ((player.calculate_body_weight() + player.inventory.calculate_weight()) / weight_capacity)
 ```
 
-The inventory term includes every carried item, including equipped items. The recruitment Athletics tag combines climbing and swimming performance and uses this same shared encumbrance penalty, so a packed inventory lowers the recommendation.
+Encumbrance is linear. The term above is the remaining multiplier, clamped
+between 0 and 1; the displayed penalty is `1 - encumbrance_term`. A character
+at half capacity therefore has a 50% penalty, and reaching or exceeding
+capacity gives the maximum 100% penalty.
+
+The burden includes body weight, carried water at 1 kg per litre, and every
+carried inventory row multiplied by its quantity. Equipped items are already
+inventory rows and count exactly once. Injury-adjusted capacity uses the
+average of left and right leg strength after multiplying each leg by its
+current health.
+
+Inventory rails show the exact burden and capacity to one decimal place, the
+exact penalty to one decimal percent, and a green-to-yellow-to-red meter whose
+marker follows the same linear penalty. The party chest shows an aggregate:
+all living party members' burdens and capacities are summed, with the shared
+chest burden added once. Dead members contribute neither burden nor capacity,
+but the shared chest remains part of the aggregate.
+
+The recruitment Athletics tag combines climbing and swimming performance and
+uses this same shared encumbrance penalty, so a packed inventory lowers the
+recommendation.

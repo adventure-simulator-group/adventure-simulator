@@ -6,6 +6,7 @@
 
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    equipment::EncumbranceSummary,
     prelude::Skill,
     strategic_schedule::{
         BASELINE_FATIGUE_PER_DAY, DailySchedule, FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
@@ -979,10 +980,12 @@ pub fn party_inventory_page(
     active_equip: Option<&CharacterEquip>,
     selected_targets: &[InventoryQuantityTarget],
     active_targets: &[InventoryQuantityTarget],
+    selected_encumbrance: EncumbranceSummary,
+    active_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets))
+            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets, selected_encumbrance))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
@@ -994,7 +997,7 @@ pub fn party_inventory_page(
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets))
+            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets, active_encumbrance))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -1008,6 +1011,7 @@ pub fn party_discard_page(
     items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1031,7 +1035,7 @@ pub fn party_discard_page(
             }
         }
         aside class="right-sidebar" {
-            (discard_inventory_rail(active_character, inventory, items, equip))
+            (discard_inventory_rail(active_character, inventory, items, equip, encumbrance))
         }
     };
     location.render_layout("Inventory", content, Some(&active_character.name))
@@ -1322,6 +1326,7 @@ fn party_trade_inventory_rail(
     direction: &str,
     equip: Option<&CharacterEquip>,
     recipient_targets: &[InventoryQuantityTarget],
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
@@ -1349,6 +1354,7 @@ fn party_trade_inventory_rail(
                 }))
                 (inventory_footer_controls(if direction == "left" { "party-left" } else { "party-right" }, "Transfer to targets", "Transfer everything"))
             }
+            (encumbrance_meter(encumbrance))
         }))
     }
 }
@@ -1358,6 +1364,7 @@ fn discard_inventory_rail(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     equip: Option<&CharacterEquip>,
+    encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
@@ -1392,6 +1399,7 @@ fn discard_inventory_rail(
                     }
                 }))
             }
+            (encumbrance_meter(encumbrance))
         }))
     }
 }
@@ -1550,6 +1558,8 @@ pub fn party_pool_page(
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
+    party_encumbrance: EncumbranceSummary,
+    personal_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1578,6 +1588,7 @@ pub fn party_pool_page(
                     }
                 }))
                 (inventory_footer_controls("withdraw", "Withdraw to personal targets", "Withdraw everything"))
+                (encumbrance_meter(party_encumbrance))
             }))
         }
         main class="center-content settlement-main" {
@@ -1610,6 +1621,7 @@ pub fn party_pool_page(
                     }
                 }))
                 (inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"))
+                (encumbrance_meter(personal_encumbrance))
             }))
         }
         form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
@@ -1619,6 +1631,34 @@ pub fn party_pool_page(
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
+    let penalty_percent = summary.penalty_fraction() * 100.0;
+    let weight_text = format!(
+        "Weight {:.1} / {:.1} kg",
+        summary.burden_kg, summary.capacity_kg
+    );
+    let penalty_text = format!("Penalty -{penalty_percent:.1}%");
+    let accessible_text = format!("{weight_text}; {penalty_text}");
+    html! {
+        div class="encumbrance" {
+            div class="encumbrance-copy" {
+                span { (weight_text) }
+                span { (penalty_text) }
+            }
+            div class="encumbrance-meter"
+                role="meter"
+                aria-label="Encumbrance"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow=(format!("{penalty_percent:.1}"))
+                aria-valuetext=(accessible_text) {
+                span class="encumbrance-marker"
+                    style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
+            }
+        }
+    }
 }
 
 fn equipment_checkbox(
@@ -3550,10 +3590,12 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterCondition, LocationKind, MerchantShop, need_balance_meter, repair_custody_panel,
+        CharacterCondition, LocationKind, MerchantShop, encumbrance_meter, need_balance_meter,
+        repair_custody_panel,
         repair_submit_control, rest_default_minutes,
     };
     use crate::spacetimedb::ItemKind;
+    use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
@@ -3566,6 +3608,32 @@ mod tests {
     fn location_kind_rejects_unknown_path_segments() {
         assert_eq!("quest".parse(), Ok(LocationKind::Quest));
         assert!("merchant".parse::<LocationKind>().is_err());
+    }
+
+    #[test]
+    fn encumbrance_meter_formats_exact_text_and_accessible_linear_position() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(85.36, 150.0)).into_string();
+        assert!(markup.contains("Weight 85.4 / 150.0 kg"));
+        assert!(markup.contains("Penalty -56.9%"));
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("aria-valuenow=\"56.9\""));
+        assert!(markup.contains("--encumbrance-position: 56.9067%"));
+    }
+
+    #[test]
+    fn overloaded_meter_keeps_burden_but_clamps_penalty_and_marker() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(185.4, 150.0)).into_string();
+        assert!(markup.contains("Weight 185.4 / 150.0 kg"));
+        assert!(markup.contains("Penalty -100.0%"));
+        assert!(markup.contains("--encumbrance-position: 100.0000%"));
+    }
+
+    #[test]
+    fn encumbrance_css_uses_a_linear_midpoint_gradient_and_contrast_marker() {
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains("linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%)"));
+        assert!(css.contains(".encumbrance-marker"));
+        assert!(css.contains("background: #fff"));
     }
 
     #[test]

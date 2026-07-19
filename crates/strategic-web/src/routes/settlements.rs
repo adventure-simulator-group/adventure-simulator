@@ -1,9 +1,12 @@
 //! Settlement route handlers
 
-use adventuresim_core::prelude::{
-    ProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
-    STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
-    STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
+use adventuresim_core::{
+    equipment::{EncumbranceSummary, encumbrance_capacity_kg},
+    prelude::{
+        ProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
+        STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
+        STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
+    },
 };
 use axum::{
     Form, Json, Router,
@@ -1822,6 +1825,16 @@ async fn party_member(
         .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
+    let encumbrance_rows =
+        EncumbranceRows::query(&state, &[selected.id, active_character.id]).await;
+    let selected_encumbrance =
+        personal_encumbrance(selected.id, &selected_inventory, &items, &encumbrance_rows);
+    let active_encumbrance = personal_encumbrance(
+        active_character.id,
+        &active_inventory,
+        &items,
+        &encumbrance_rows,
+    );
 
     if character_id == active_character.id {
         return Html(
@@ -1832,6 +1845,7 @@ async fn party_member(
                 &items,
                 &party_members,
                 active_equip.first(),
+                active_encumbrance,
             )
             .into_string(),
         );
@@ -1850,6 +1864,8 @@ async fn party_member(
             active_equip.first(),
             &selected_targets,
             &active_targets,
+            selected_encumbrance,
+            active_encumbrance,
         )
         .into_string(),
     )
@@ -1910,6 +1926,37 @@ async fn party_pool_inventory(
         .await
         .unwrap_or_default();
     let members = get_active_party_members(&state, Some(&character)).await;
+    let member_ids: Vec<u64> = members.iter().map(|member| member.id).collect();
+    let member_inventories = async {
+        let state_ref = &state;
+        let lookups = member_ids.iter().copied().map(|member_id| async move {
+            state_ref
+                .db
+                .query::<InventoryItem>(&format!(
+                    "SELECT * FROM inventory_item WHERE character_id = {member_id}"
+                ))
+                .await
+                .unwrap_or_default()
+        });
+        join_all(lookups)
+            .await
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+    };
+    let (all_inventories, encumbrance_rows) = tokio::join!(
+        member_inventories,
+        EncumbranceRows::query(&state, &member_ids),
+    );
+    let personal_encumbrance =
+        personal_encumbrance(character.id, &inventory, &items, &encumbrance_rows);
+    let party_encumbrance = party_encumbrance(
+        &members,
+        &all_inventories,
+        &pooled,
+        &items,
+        &encumbrance_rows,
+    );
     let stake = stakes
         .iter()
         .find(|stake| stake.character_id == character.id)
@@ -1927,6 +1974,8 @@ async fn party_pool_inventory(
             equip.first(),
             &personal_targets,
             &party_targets,
+            party_encumbrance,
+            personal_encumbrance,
         )
         .into_string(),
     )
@@ -3564,6 +3613,106 @@ async fn equipment_rest_recommendation(
     (field_minutes, smith_wait)
 }
 
+#[derive(Default)]
+struct EncumbranceRows {
+    attributes: Vec<CharacterAttributes>,
+    limbs: Vec<CharacterLimbs>,
+    conditions: Vec<CharacterCondition>,
+    needs: Vec<CharacterNeeds>,
+}
+
+impl EncumbranceRows {
+    async fn query(state: &AppState, character_ids: &[u64]) -> Self {
+        let unique_ids: std::collections::BTreeSet<u64> = character_ids.iter().copied().collect();
+        let lookups = unique_ids.into_iter().map(|character_id| async move {
+            tokio::join!(
+                query_single::<CharacterAttributes>(state, "character_attributes", character_id,),
+                query_single::<CharacterLimbs>(state, "character_limbs", character_id),
+                query_single::<CharacterCondition>(state, "character_condition", character_id),
+                query_single::<CharacterNeeds>(state, "character_needs", character_id),
+            )
+        });
+        let mut rows = Self::default();
+        for (attributes, limbs, condition, needs) in join_all(lookups).await {
+            rows.attributes.extend(attributes);
+            rows.limbs.extend(limbs);
+            rows.conditions.extend(condition);
+            rows.needs.extend(needs);
+        }
+        rows
+    }
+}
+
+fn item_stack_weight_kg(item_id: &str, quantity: u32, items: &[ItemDefinition]) -> f32 {
+    items
+        .iter()
+        .find(|definition| definition.id == item_id)
+        .map_or(0.0, |definition| {
+            definition.weight.max(0.0) * quantity as f32
+        })
+}
+
+fn personal_encumbrance(
+    character_id: u64,
+    inventory: &[InventoryItem],
+    items: &[ItemDefinition],
+    rows: &EncumbranceRows,
+) -> EncumbranceSummary {
+    let body_weight = rows
+        .conditions
+        .iter()
+        .find(|row| row.character_id == character_id)
+        .map_or(0.0, |row| row.body_weight_kg.max(0.0));
+    let water_weight = rows
+        .needs
+        .iter()
+        .find(|row| row.character_id == character_id)
+        .map_or(0.0, |row| row.carried_water_ml.max(0.0) / 1_000.0);
+    let inventory_weight = inventory
+        .iter()
+        .filter(|row| row.character_id == character_id)
+        .map(|row| item_stack_weight_kg(&row.item_id, row.qty, items))
+        .sum::<f32>();
+    let capacity = rows
+        .attributes
+        .iter()
+        .find(|row| row.character_id == character_id)
+        .zip(
+            rows.limbs
+                .iter()
+                .find(|row| row.character_id == character_id),
+        )
+        .map_or(0.0, |(attributes, limbs)| {
+            encumbrance_capacity_kg(
+                (attributes.left_leg_strength * limbs.left_leg_health.clamp(0.0, 1.0)
+                    + attributes.right_leg_strength * limbs.right_leg_health.clamp(0.0, 1.0))
+                    / 2.0,
+            )
+        });
+
+    EncumbranceSummary::new(body_weight + water_weight + inventory_weight, capacity)
+}
+
+fn party_encumbrance(
+    members: &[Character],
+    inventories: &[InventoryItem],
+    pooled: &[PartyInventoryItem],
+    items: &[ItemDefinition],
+    rows: &EncumbranceRows,
+) -> EncumbranceSummary {
+    let member_summary = members.iter().filter(|member| member.alive).fold(
+        EncumbranceSummary::default(),
+        |summary, member| {
+            summary.combined(personal_encumbrance(member.id, inventories, items, rows))
+        },
+    );
+    let pooled_weight = pooled
+        .iter()
+        .map(|row| item_stack_weight_kg(&row.item_id, row.quantity, items))
+        .sum::<f32>();
+    member_summary.combined(EncumbranceSummary::new(pooled_weight, 0.0))
+}
+
 async fn get_active_character(
     state: &AppState,
     character_id: Option<u64>,
@@ -3677,5 +3826,160 @@ mod herbalist_tests {
             medication_names: vec!["Catarrhal fever cordial".into()],
         };
         assert_eq!(herbalist_diagnosis_dtos(&row).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod encumbrance_tests {
+    use super::{EncumbranceRows, party_encumbrance, personal_encumbrance};
+    use crate::spacetimedb::{
+        Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
+        InventoryItem, ItemDefinition, PartyInventoryItem,
+    };
+    use serde_json::json;
+
+    fn item(id: &str, weight: f32) -> ItemDefinition {
+        serde_json::from_value(json!({
+            "id": id,
+            "weight": weight,
+            "kind": "Weapon"
+        }))
+        .unwrap()
+    }
+
+    fn character(id: u64, alive: bool) -> Character {
+        Character {
+            id,
+            name: format!("Character {id}"),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive,
+            temporary: false,
+        }
+    }
+
+    fn rows() -> EncumbranceRows {
+        EncumbranceRows {
+            attributes: vec![CharacterAttributes {
+                character_id: 1,
+                endurance: 0.0,
+                immunity: 0.0,
+                gut: 0.0,
+                precision: 0.0,
+                intelligence: 0.0,
+                instinct: 0.0,
+                eyesight: 0.0,
+                hearing: 0.0,
+                left_arm_strength: 0.0,
+                right_arm_strength: 0.0,
+                left_leg_strength: 4.0,
+                right_leg_strength: 2.0,
+                left_arm_agility: 0.0,
+                right_arm_agility: 0.0,
+                left_leg_agility: 0.0,
+                right_leg_agility: 0.0,
+            }],
+            limbs: vec![CharacterLimbs {
+                character_id: 1,
+                left_arm_health: 1.0,
+                right_arm_health: 1.0,
+                left_leg_health: 0.5,
+                right_leg_health: 1.0,
+                head_health: 1.0,
+                chest_health: 1.0,
+                stomach_health: 1.0,
+            }],
+            conditions: vec![
+                CharacterCondition {
+                    character_id: 1,
+                    body_weight_kg: 70.0,
+                    current_blood_ml: 5_000.0,
+                    maximum_blood_ml: 5_000.0,
+                    religion_id: None,
+                },
+                CharacterCondition {
+                    character_id: 2,
+                    body_weight_kg: 90.0,
+                    current_blood_ml: 5_000.0,
+                    maximum_blood_ml: 5_000.0,
+                    religion_id: None,
+                },
+            ],
+            needs: vec![CharacterNeeds {
+                character_id: 1,
+                food_balance_kcal: 0.0,
+                water_balance_ml: 0.0,
+                carried_water_ml: 2_500.0,
+            }],
+        }
+    }
+
+    #[test]
+    fn personal_summary_counts_body_water_quantity_and_injury_adjusted_capacity() {
+        let inventory = vec![InventoryItem {
+            id: 10,
+            character_id: 1,
+            item_id: "sword".into(),
+            qty: 3,
+        }];
+        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &rows());
+        assert_eq!(summary.burden_kg, 84.5);
+        assert_eq!(summary.capacity_kg, 300.0);
+    }
+
+    #[test]
+    fn party_summary_excludes_dead_members_and_adds_shared_pool_once() {
+        let inventories = vec![
+            InventoryItem {
+                id: 10,
+                character_id: 1,
+                item_id: "sword".into(),
+                qty: 3,
+            },
+            InventoryItem {
+                id: 11,
+                character_id: 2,
+                item_id: "sword".into(),
+                qty: 20,
+            },
+        ];
+        let pooled = vec![PartyInventoryItem {
+            id: 20,
+            party_id: "party".into(),
+            item_id: "sword".into(),
+            quantity: 2,
+        }];
+        let summary = party_encumbrance(
+            &[character(1, true), character(2, false)],
+            &inventories,
+            &pooled,
+            &[item("sword", 4.0)],
+            &rows(),
+        );
+        assert_eq!(summary.burden_kg, 92.5);
+        assert_eq!(summary.capacity_kg, 300.0);
+    }
+
+    #[test]
+    fn missing_rows_and_item_definitions_fail_closed_without_nan() {
+        let summary = personal_encumbrance(
+            99,
+            &[InventoryItem {
+                id: 30,
+                character_id: 99,
+                item_id: "unknown".into(),
+                qty: 4,
+            }],
+            &[],
+            &EncumbranceRows::default(),
+        );
+        assert_eq!(summary.burden_kg, 0.0);
+        assert_eq!(summary.capacity_kg, 0.0);
+        assert_eq!(summary.penalty_fraction(), 1.0);
     }
 }
