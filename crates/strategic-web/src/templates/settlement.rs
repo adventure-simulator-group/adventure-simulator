@@ -490,6 +490,7 @@ pub fn settlement_map_page(
             provision_forecast,
             active_party,
             active_party.is_some_and(|party| party.leader_id == active_character.map_or(0, |character| character.id)),
+            None,
             &base_path,
         ))
     };
@@ -614,6 +615,7 @@ pub(crate) fn map_destination_detail(
     provision_forecast: Option<&TravelProvisionForecast>,
     party: Option<&Party>,
     can_configure_travel: bool,
+    standalone_planner: Option<Markup>,
     map_path: &str,
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
@@ -663,6 +665,11 @@ pub(crate) fn map_destination_detail(
                     }
                 }
             }))
+            }
+            @if let Some(planner) = standalone_planner {
+                (sidebar_section("Journey", html! {
+                    div class="travel-planner-vertical" { (planner) }
+                }))
             }
             @if let Some(destination) = selected {
                 (sidebar_section(&destination.name, html! {
@@ -742,13 +749,32 @@ pub(crate) fn travel_planner_bar_for(
 ) -> Markup {
     let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
     let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
-    let journey_total_minutes = journey.map_or(0, |item| item.total_minutes);
+    let journey_turnaround_minutes = journey
+        .filter(|item| item.destination_kind == "quest")
+        .map_or(0, |item| item.total_minutes);
+    let journey_total_minutes = journey.map_or(0, |item| {
+        if item.destination_kind == "quest" {
+            item.total_minutes.saturating_mul(2)
+        } else {
+            item.total_minutes
+        }
+    });
     let journey_completed_minutes = journey.map_or(0, |item| item.completed_minutes);
     let journey_camp_stops = journey.map_or_else(String::new, |item| {
         format_camp_stops(&item.camp_stop_minutes)
     });
     let journey_forecast_stops = journey.map_or_else(String::new, |item| {
-        format_camp_stops(&item.forecast_camp_stop_minutes)
+        let mut stops = item.forecast_camp_stop_minutes.clone();
+        if item.destination_kind == "quest" {
+            stops.extend(
+                item.camp_stop_minutes
+                    .iter()
+                    .chain(item.forecast_camp_stop_minutes.iter())
+                    .rev()
+                    .map(|minute| item.total_minutes.saturating_mul(2).saturating_sub(*minute)),
+            );
+        }
+        format_camp_stops(&stops)
     });
     html! {
         section class="travel-planner" data-travel-planner
@@ -761,6 +787,7 @@ pub(crate) fn travel_planner_bar_for(
             data-journey-origin-name=(journey_origin_name)
             data-journey-destination-name=(journey_destination_name)
             data-journey-total-minutes=(journey_total_minutes)
+            data-journey-turnaround-minutes=(journey_turnaround_minutes)
             data-journey-completed-minutes=(journey_completed_minutes)
             data-journey-camp-stops=(journey_camp_stops)
             data-journey-forecast-stops=(journey_forecast_stops)
@@ -775,23 +802,26 @@ pub(crate) fn travel_planner_bar_for(
             data-provision-ration-kcal=[provision_forecast.map(|row| row.ration_kcal)]
             data-provision-waterskin-ml=[provision_forecast.map(|row| row.waterskin_capacity_ml)]
             aria-live="polite" hidden {
-            div class="travel-route-row" {
+            div class="travel-track" {
                 div class="travel-planner-route" data-travel-planner-route {}
-            }
-            div class="travel-resource-meters" data-travel-resource-meters {
-                div class="travel-resource-row food" aria-label="Food provisions" {
-                    span class="travel-resource-icon" { (game_icon("Food", "meal")) }
-                    svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
-                        path class="travel-resource-path target" data-resource-target pathLength="100" {}
-                        path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
+                div class="travel-resource-meters" data-travel-resource-meters {
+                    div class="travel-resource-row food" aria-label="Food provisions" {
+                        span class="travel-resource-icon" { (game_icon("Food", "meal")) }
+                        svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
+                            path class="travel-resource-path target" data-resource-target pathLength="100" {}
+                            path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
+                        }
+                    }
+                    div class="travel-resource-row water" aria-label="Water provisions" {
+                        span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
+                        svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
+                            path class="travel-resource-path target" data-resource-target pathLength="100" {}
+                            path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
+                        }
                     }
                 }
-                div class="travel-resource-row water" aria-label="Water provisions" {
-                    span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
-                    svg class="travel-resource-track" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" {
-                        path class="travel-resource-path target" data-resource-target pathLength="100" {}
-                        path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
-                    }
+                svg class="travel-progress-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
+                    path class="travel-progress-path" data-travel-progress pathLength="100" {}
                 }
             }
         }
@@ -828,6 +858,7 @@ pub fn camp_page(
     destination_name: &str,
     active_character: Option<&Character>,
     party_members: &[Character],
+    provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -843,11 +874,13 @@ pub fn camp_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             (visual_stage("camp", "Camp", "The party is resting beside the road."))
-            (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, None))
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar" {
             (sidebar_section("Journey", html! {
+                div class="travel-planner-vertical" {
+                    (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast))
+                }
                 p class="text-muted small-copy" { "Break camp to travel the next planned leg." }
                 form action="/camp/continue" method="post" data-travel-submit {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
@@ -5264,9 +5297,17 @@ mod tests {
     #[test]
     fn quest_location_travel_has_one_plain_action_without_settlement_buying() {
         let destination = quest_destination();
-        let markup =
-            map_destination_detail(Some(&destination), true, false, None, None, false, "/map")
-                .into_string();
+        let markup = map_destination_detail(
+            Some(&destination),
+            true,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/map",
+        )
+        .into_string();
 
         assert!(markup.contains("Begin journey"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));

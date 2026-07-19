@@ -189,53 +189,30 @@
 }
 
 .travel-planner {
-  position: absolute;
-  z-index: 8;
-  right: max(1rem, 8%);
-  bottom: calc(var(--chat-panel-height, 12rem) + 1rem);
-  left: max(1rem, 8%);
-  padding: 0.7rem 1rem 0.45rem;
-  border: 1px solid var(--border-accent);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
-  box-shadow: var(--shadow-lg);
-}
-
-.travel-route-row {
-  display: block;
-  font-size: var(--font-size-xs);
-}
-.travel-planner-route {
-  display: block;
-  min-height: 6.4rem;
   position: relative;
+  width: 100%;
+  height: 100%;
 }
-
-.travel-planner-route::before {
-  position: absolute;
-  right: 2rem;
-  top: 2.98rem;
-  left: 2rem;
-  height: 2px;
-  background: var(--border-accent);
-  content: "";
-}
-.travel-plan-node { position: absolute; z-index: 1; display: grid; justify-items: center; min-width: 3rem; transform: translateX(-50%); }
-.travel-plan-pin { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; border: 2px solid var(--accent); border-radius: 50% 50% 50% 0; background: var(--panel-bg); transform: rotate(-45deg); }
-.travel-plan-pin > span { transform: rotate(45deg); font-size: 1.1rem; }
-.travel-party-pin { position: absolute; z-index: 2; top: 3.23rem; left: 1.2rem; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border: 2px solid var(--success); border-radius: 50% 50% 50% 0; background: var(--panel-bg); transform: rotate(135deg); }
-.travel-party-pin > span { transform: rotate(-135deg); }
-.travel-resource-meters { display: grid; gap: 0; margin-top: .05rem; }
-.travel-resource-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: .2rem; font-size: var(--font-size-xs); }
-.travel-resource-icon { display: grid; width: 1.15rem; place-items: center; }
-.travel-resource-track { width: 100%; height: 1.2rem; overflow: visible; }
-.travel-resource-path { fill: none; stroke-linecap: round; stroke-width: 4; vector-effect: non-scaling-stroke; }
-.travel-resource-path.target { stroke-width: 8; }
+.travel-track { position: relative; width: 100%; height: 100%; min-height: 18rem; }
+.travel-planner-route { position: absolute; z-index: 4; top: 1.55rem; right: 0; bottom: .5rem; left: 0; }
+.travel-plan-node { position: absolute; left: 4.25rem; width: 2.5rem; height: 0; border-top: 2px solid var(--text-primary); transform: translateY(-50%); pointer-events: auto; }
+.travel-plan-node.travel-plan-start,
+.travel-plan-node.travel-plan-destination,
+.travel-plan-node.travel-plan-return { left: .4rem; width: 6.35rem; }
+.travel-plan-endpoint-label { position: absolute; bottom: .25rem; left: 0; color: var(--text-primary); font-size: var(--font-size-xs); font-weight: 700; white-space: nowrap; }
+.travel-resource-meters { position: absolute; z-index: 1; top: 0; bottom: .5rem; left: 4.25rem; display: flex; gap: 0; }
+.travel-resource-row { display: grid; grid-template-rows: 1.35rem minmax(0, 1fr); width: 1.25rem; min-width: 1.25rem; gap: .2rem; }
+.travel-resource-icon { display: grid; width: 1.25rem; height: 1.25rem; place-items: center; }
+.travel-resource-track { width: 1.25rem; height: 100%; overflow: visible; }
+.travel-resource-path { fill: none; stroke-linecap: butt; stroke-width: 20; vector-effect: non-scaling-stroke; }
+.travel-resource-path.target { stroke-width: 20; }
 .travel-resource-row.food .travel-resource-path.actual { stroke: #e9a45d; }
 .travel-resource-row.water .travel-resource-path.actual { stroke: #579fd7; }
 .travel-resource-row.food .travel-resource-path.target { stroke: color-mix(in srgb, #e9a45d 32%, transparent); }
 .travel-resource-row.water .travel-resource-path.target { stroke: color-mix(in srgb, #579fd7 32%, transparent); }
 .travel-resource-row[data-target-sign="negative"] .travel-resource-path.target { stroke-linecap: butt; }
+.travel-progress-track { position: absolute; z-index: 2; top: 1.55rem; bottom: .5rem; left: 4.25rem; width: 2.5rem; height: calc(100% - 2.05rem); overflow: visible; }
+.travel-progress-path { fill: none; stroke: #fff; stroke-linecap: butt; stroke-width: 40; vector-effect: non-scaling-stroke; }
 .travel-planner-vertical {
   --travel-planner-length: 36rem;
   position: relative;
@@ -244,23 +221,15 @@
 }
 .travel-planner-vertical.no-destination { height: 0; margin: 0; }
 .travel-planner-vertical .travel-planner {
-  position: absolute;
-  top: 0;
-  right: auto;
-  bottom: auto;
-  left: .5rem;
-  width: var(--travel-planner-length);
-  padding: .2rem .45rem;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  transform: translateY(var(--travel-planner-length)) rotate(-90deg);
-  transform-origin: top left;
 }
-.travel-planner-vertical .travel-plan-pin > span { transform: rotate(135deg); }
-.travel-planner-vertical .travel-party-pin > span { transform: rotate(-45deg); }
-.travel-planner-vertical .travel-resource-icon { transform: rotate(90deg); }
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
 .travel-provisioning-unit { white-space: nowrap; }

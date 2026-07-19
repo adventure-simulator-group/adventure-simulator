@@ -5,14 +5,13 @@ const test = require("node:test");
 
 const staticRoot = path.join(__dirname, "..");
 
-test("travel planner constructs local accessible Game Icons without semantic emoji", () => {
+test("travel planner uses accessible icon-free route markers", () => {
   const source = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
-  for (const icon of ["house", "camping-tent", "castle", "person"]) {
-    assert.ok(source.includes(`gameIcon("${icon}")`) || source.includes(`icon: "${icon}"`));
-    assert.ok(fs.existsSync(path.join(staticRoot, "static", "icons", "game", `${icon}.svg`)));
-  }
+  assert.doesNotMatch(source, /gameIcon|camping-tent|travel-party-pin/);
   assert.doesNotMatch(source, /\u{1f3e0}|\u{26fa}|\u{1f3f0}|\u{1f9d1}/u);
-  assert.match(source, /aria-label", "Traveling party"/);
+  assert.match(source, /displayLabel: "Start"/);
+  assert.match(source, /displayLabel: roundTrip \? "Quest" : "End"/);
+  assert.match(source, /element\.setAttribute\("aria-label", node\.label\)/);
   assert.doesNotMatch(source, /element\.innerHTML/);
 });
 
@@ -32,14 +31,15 @@ test("travel planner renders journey provisions and exact staged market quantiti
   const trade = fs.readFileSync(path.join(staticRoot, "static", "party-trade.js"), "utf8");
   assert.match(planner, /roundTrip \? minutes \* 2 : minutes/);
   assert.match(planner, /node\.minute \/ totalMinutes/);
-  assert.match(planner, /HORIZONTAL_PATH_START/);
-  assert.match(planner, /HORIZONTAL_PATH_END/);
-  assert.match(planner, /HORIZONTAL_PATH_END - HORIZONTAL_PATH_START/);
+  assert.match(planner, /VERTICAL_PATH_START/);
+  assert.match(planner, /VERTICAL_PATH_END/);
+  assert.match(planner, /VERTICAL_PATH_END - VERTICAL_PATH_START/);
   assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
-  assert.match(planner, /const horizontal = 5 \+ progress \* 90/);
-  assert.match(planner, /const trackTop = currentPlan\.party\.offsetTop/);
-  assert.match(planner, /Math\.ceil\(Math\.max\(0, \(journeyDays \+ target - foodDays\)/);
+  assert.match(planner, /const vertical = 95 - progress \* 90/);
+  assert.match(planner, /journeyTurnaroundMinutes/);
+  assert.match(planner, /setPathRange\(planner\.querySelector\("\[data-travel-progress\]"\), 0, progressPercent\)/);
+  assert.match(planner, /Math\.ceil\(Math\.max\(0, \(remainingDays \+ target - foodDays\)/);
   assert.match(planner, /params\.set\("provision_rations"/);
   assert.match(planner, /params\.set\("provision_waterskins"/);
   assert.match(trade, /data-inventory-tab="party"/);
@@ -62,13 +62,14 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /game_icon\("Water", "water-drop"\)/);
   assert.match(template, /"days surplus"/);
   assert.match(css, /target-sign="negative"/);
-  assert.match(css, /grid-template-columns: max-content minmax\(0, 1fr\)/);
-  assert.match(css, /rotate\(-90deg\)/);
-  assert.match(css, /\.travel-party-pin[^}]+rotate\(135deg\)/);
+  assert.match(css, /\.travel-resource-meters[^}]+display: flex; gap: 0/);
+  assert.match(css, /\.travel-progress-path[^}]+stroke: #fff/);
+  assert.doesNotMatch(css, /travel-party-pin|rotate\(-90deg\)/);
   assert.doesNotMatch(css, /travel-resource-path\.target[^}]*stroke-dasharray/);
   assert.match(template, /@if selected\.is_some\(\) \{\s+p class="text-muted small-copy" data-provisioning-status/);
   assert.doesNotMatch(planner, /travel-plan-label/);
-  assert.match(planner, /element\.setAttribute\("aria-label", node\.label\)/);
+  assert.match(template, /data-travel-progress/);
+  assert.match(template, /data-journey-turnaround-minutes/);
   assert.match(template, /"travel-planner-vertical no-destination"/);
 });
 

@@ -77,7 +77,7 @@ pub fn quest_location_map_page(
             can_fight,
             resolved,
             autoresolve_report,
-            Some(travel_planner_bar(selected, 50)),
+            None,
         ))
         (map_destination_detail(
             selected,
@@ -86,6 +86,7 @@ pub fn quest_location_map_page(
             None,
             None,
             false,
+            Some(travel_planner_bar(selected, 50)),
             &format!("/locations/quest/{}/map", quest.id),
         ))
     };

@@ -884,6 +884,26 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .map(|stat| ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY) * 1_440.0).ceil() as u64)
         .max()
         .unwrap_or(0);
+    let remaining_journey_minutes = journey
+        .as_ref()
+        .map_or(party.camp_remaining_minutes, |row| {
+            let estimated_total = if row.destination_kind == "quest" {
+                row.total_minutes.saturating_mul(2)
+            } else {
+                row.total_minutes
+            };
+            estimated_total.saturating_sub(row.completed_minutes)
+        });
+    let provision_forecast = travel_provision_forecast_for_minutes(
+        &state,
+        Some(&party),
+        &party_members,
+        remaining_journey_minutes,
+        false,
+    )
+    .await
+    .ok()
+    .flatten();
     Html(
         camp_page(
             &party,
@@ -891,6 +911,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &destination_name,
             Some(&character),
             &party_members,
+            provision_forecast.as_ref(),
             default_rest_minutes,
             Some(&character.name),
         )
@@ -959,6 +980,23 @@ pub(crate) async fn travel_provision_forecast(
     destination: &TravelDestination,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
+    travel_provision_forecast_for_minutes(
+        state,
+        party,
+        travelers,
+        destination.forecast_minutes(),
+        departing_settlement,
+    )
+    .await
+}
+
+async fn travel_provision_forecast_for_minutes(
+    state: &AppState,
+    party: Option<&Party>,
+    travelers: &[Character],
+    planning_minutes: u64,
+    departing_settlement: bool,
+) -> Result<Option<TravelProvisionForecast>, String> {
     let travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
     let items: Vec<ItemDefinition> = state
         .db
@@ -974,7 +1012,6 @@ pub(crate) async fn travel_provision_forecast(
     let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
         return Ok(None);
     };
-    let planning_minutes = destination.forecast_minutes();
     let mut food_reserve_kcal = 0.0;
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
