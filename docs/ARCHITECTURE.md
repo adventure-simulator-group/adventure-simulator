@@ -186,6 +186,13 @@ identity, character and disease associations, `contracted_at`, and optional
 pure deterministic derivations in `adventuresim-core`; resolved and repeated
 episodes remain as history. Definitions use a numbered ruleset.
 
+Alchemy recipes are static ruleset data. Their ingredients remain ordinary
+personal or shared inventory rows. Crafting produces a transferable medication
+item; equipping consumes that item into an `equipped_medication` row and sets the
+matching episode's `treated_at` timestamp. This public row exposes only the
+course being taken, not undiagnosed infection history, and is removed on
+unequip or deterministic recovery cleanup.
+
 Every time advance inspects its whole interval. A terminal respiratory,
 circulatory, homeostatic, or neurologic failure clips travel, rest, training,
 and lazy catch-up at the exact boundary before using the shared idempotent death

@@ -29,6 +29,8 @@ pub enum ItemKind {
     Shield,
     Clothing,
     Currency,
+    Ingredient,
+    Medication,
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
@@ -809,6 +811,36 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         ..Item::default()
     });
     define_item(ctx, "bandage", 0.05);
+    for (id, weight, value) in [
+        ("honey", 0.25, 2),
+        ("sage", 0.05, 2),
+        ("dried_mint", 0.05, 2),
+        ("charcoal", 0.15, 1),
+        ("willow_bark", 0.10, 2),
+        ("vinegar", 0.30, 2),
+        ("poppy", 0.05, 4),
+        ("comfrey", 0.08, 2),
+        ("garlic", 0.10, 1),
+        ("oatmeal", 0.25, 1),
+        ("rosewater", 0.20, 3),
+    ] {
+        ctx.db.item().insert(Item {
+            id: id.into(),
+            weight,
+            base_value: Some(value),
+            kind: ItemKind::Ingredient,
+            ..Item::default()
+        });
+    }
+    for recipe in adventuresim_core::disease::MEDICATION_RECIPES {
+        ctx.db.item().insert(Item {
+            id: recipe.item_id.into(),
+            weight: 0.25,
+            base_value: Some(1),
+            kind: ItemKind::Medication,
+            ..Item::default()
+        });
+    }
     ctx.db.item().insert(Item {
         id: "travel_ration".into(),
         weight: 1.0,
@@ -926,6 +958,8 @@ pub fn backfill_item_values(ctx: &ReducerContext) {
             ItemKind::Armor | ItemKind::Clothing => 25.0,
             ItemKind::Shield => 8.0,
             ItemKind::Currency => 1.0,
+            ItemKind::Ingredient => 10.0,
+            ItemKind::Medication => 1.0,
         };
         item.base_value = Some((item.weight * multiplier).ceil() as u32);
         ctx.db.item().id().update(item);
@@ -1046,27 +1080,27 @@ pub fn add_inventory_item(
         return None;
     }
 
-    let durable = ctx
+    let kind = ctx
         .db
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|definition| {
-            matches!(
-                definition.kind,
-                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
-            )
-        });
-    let count = if durable { quantity } else { 1 };
+        .map(|definition| definition.kind);
+    let durable = kind
+        .is_some_and(|kind| matches!(kind, ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield));
+    let individual = durable || kind == Some(ItemKind::Medication);
+    let count = if individual { quantity } else { 1 };
     let mut first = None;
     for _ in 0..count {
         let item = ctx.db.inventory_item().insert(InventoryItem {
             id: 0,
             character_id,
             item_id: item_id.to_string(),
-            quantity: if durable { 1 } else { quantity },
+            quantity: if individual { 1 } else { quantity },
         });
-        crate::repair::initialize_item_condition(ctx, &item);
+        if durable {
+            crate::repair::initialize_item_condition(ctx, &item);
+        }
         first.get_or_insert(item.id);
     }
     first

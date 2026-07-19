@@ -176,6 +176,198 @@ pub struct DiseaseDefinition {
     pub wound_borne: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecipeIngredient {
+    pub item_id: &'static str,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MedicationRecipe {
+    pub disease_id: DiseaseId,
+    pub item_id: &'static str,
+    pub name: &'static str,
+    /// Medicine rank required to prepare this treatment. This is deliberately
+    /// independent from the disease's diagnostic difficulty.
+    pub medicine_dc: u8,
+    pub preparation_minutes: u64,
+    pub ingredients: &'static [RecipeIngredient],
+}
+
+const CATARRHAL_CORDIAL: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "honey",
+        quantity: 1,
+    },
+    RecipeIngredient {
+        item_id: "sage",
+        quantity: 2,
+    },
+];
+const FLUX_ELECTUARY: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "dried_mint",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "charcoal",
+        quantity: 1,
+    },
+];
+const SPOTTED_DRAUGHT: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "willow_bark",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "vinegar",
+        quantity: 1,
+    },
+];
+const LOCKJAW_POULTICE: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "poppy",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "comfrey",
+        quantity: 1,
+    },
+];
+const ERYSIPELAS_SALVE: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "honey",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "garlic",
+        quantity: 1,
+    },
+];
+const SMALLPOX_LOTION: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "oatmeal",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "rosewater",
+        quantity: 1,
+    },
+];
+const PLAGUE_THERIAC: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "garlic",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "vinegar",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "poppy",
+        quantity: 1,
+    },
+];
+const CONSUMPTION_BALM: &[RecipeIngredient] = &[
+    RecipeIngredient {
+        item_id: "honey",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "comfrey",
+        quantity: 2,
+    },
+    RecipeIngredient {
+        item_id: "sage",
+        quantity: 1,
+    },
+];
+
+pub const MEDICATION_RECIPES: [MedicationRecipe; 8] = [
+    MedicationRecipe {
+        disease_id: DiseaseId::Influenza,
+        item_id: "catarrhal_fever_cordial",
+        name: "Catarrhal fever cordial",
+        medicine_dc: 2,
+        preparation_minutes: 30,
+        ingredients: CATARRHAL_CORDIAL,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Dysentery,
+        item_id: "bloody_flux_electuary",
+        name: "Bloody flux electuary",
+        medicine_dc: 3,
+        preparation_minutes: 45,
+        ingredients: FLUX_ELECTUARY,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Typhus,
+        item_id: "spotted_fever_draught",
+        name: "Spotted fever draught",
+        medicine_dc: 5,
+        preparation_minutes: 90,
+        ingredients: SPOTTED_DRAUGHT,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Tetanus,
+        item_id: "lockjaw_poultice",
+        name: "Lockjaw poultice",
+        medicine_dc: 5,
+        preparation_minutes: 120,
+        ingredients: LOCKJAW_POULTICE,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Erysipelas,
+        item_id: "erysipelas_salve",
+        name: "Erysipelas salve",
+        medicine_dc: 5,
+        preparation_minutes: 75,
+        ingredients: ERYSIPELAS_SALVE,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Smallpox,
+        item_id: "smallpox_lotion",
+        name: "Smallpox lotion",
+        medicine_dc: 5,
+        preparation_minutes: 120,
+        ingredients: SMALLPOX_LOTION,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Plague,
+        item_id: "plague_theriac",
+        name: "Plague theriac",
+        medicine_dc: 5,
+        preparation_minutes: 150,
+        ingredients: PLAGUE_THERIAC,
+    },
+    MedicationRecipe {
+        disease_id: DiseaseId::Consumption,
+        item_id: "consumption_balm",
+        name: "Consumption balm",
+        medicine_dc: 5,
+        preparation_minutes: 120,
+        ingredients: CONSUMPTION_BALM,
+    },
+];
+
+pub fn medication_recipe(disease_id: DiseaseId) -> &'static MedicationRecipe {
+    &MEDICATION_RECIPES[disease_id as usize]
+}
+
+pub fn medication_recipe_for_item(item_id: &str) -> Option<&'static MedicationRecipe> {
+    MEDICATION_RECIPES
+        .iter()
+        .find(|recipe| recipe.item_id == item_id)
+}
+
+pub fn treatment_skill_level(medicine_check: f32) -> u8 {
+    medicine_check.clamp(0.0, 5.0).round() as u8
+}
+
+pub fn can_prepare_medication(medicine_check: f32, recipe: &MedicationRecipe) -> bool {
+    treatment_skill_level(medicine_check) >= recipe.medicine_dc
+}
+
 const DAY: u64 = 1_440;
 const RESP: VitalImpairment = VitalImpairment {
     sanguine: 0.0,
@@ -439,30 +631,6 @@ const fn d(
 
 pub fn definition(id: DiseaseId) -> &'static DiseaseDefinition {
     &STARTER_DISEASES[id as usize]
-}
-
-/// Coin cost of acquiring and preparing one course of treatment.
-pub const fn treatment_gold(id: DiseaseId) -> u32 {
-    match id {
-        DiseaseId::Influenza => 2,
-        DiseaseId::Dysentery => 4,
-        DiseaseId::Typhus => 8,
-        DiseaseId::Tetanus => 10,
-        DiseaseId::Erysipelas => 6,
-        DiseaseId::Smallpox => 8,
-        DiseaseId::Plague => 12,
-        DiseaseId::Consumption => 6,
-    }
-}
-
-/// Hands-on minutes required to acquire, prepare, and administer treatment.
-pub const fn treatment_minutes(id: DiseaseId) -> u64 {
-    match id {
-        DiseaseId::Influenza => 30,
-        DiseaseId::Dysentery | DiseaseId::Erysipelas => 60,
-        DiseaseId::Typhus | DiseaseId::Smallpox | DiseaseId::Consumption => 90,
-        DiseaseId::Tetanus | DiseaseId::Plague => 120,
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1045,11 +1213,18 @@ mod tests {
         );
     }
     #[test]
-    fn treatment_quotes_are_nonzero_and_disease_specific() {
-        assert_eq!(treatment_gold(DiseaseId::Influenza), 2);
-        assert_eq!(treatment_minutes(DiseaseId::Influenza), 30);
-        assert!(treatment_gold(DiseaseId::Plague) > treatment_gold(DiseaseId::Influenza));
-        assert!(treatment_minutes(DiseaseId::Plague) > treatment_minutes(DiseaseId::Influenza));
+    fn treatment_recipes_are_independent_from_diagnosis_difficulty() {
+        let influenza = medication_recipe(DiseaseId::Influenza);
+        let plague = medication_recipe(DiseaseId::Plague);
+        assert_eq!(influenza.medicine_dc, 2);
+        assert_eq!(plague.medicine_dc, 5);
+        assert!(!influenza.ingredients.is_empty());
+        assert_ne!(
+            influenza.medicine_dc as f32,
+            definition(DiseaseId::Influenza).innate_detection_dc + 1.0
+        );
+        assert!(can_prepare_medication(4.98, plague));
+        assert!(!can_prepare_medication(4.49, plague));
     }
     #[test]
     fn incidental_findings_are_stable_and_non_distinctive() {

@@ -286,7 +286,11 @@ fn spawn_connected_player(
         ));
 
         match item.item.kind {
-            ItemKind::Simple | ItemKind::Clothing | ItemKind::Currency => {}
+            ItemKind::Simple
+            | ItemKind::Clothing
+            | ItemKind::Currency
+            | ItemKind::Ingredient
+            | ItemKind::Medication => {}
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
                     accuracy: item.item.accuracy,

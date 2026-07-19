@@ -492,6 +492,15 @@ pub struct CharacterEquip {
     pub stomach_armor_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct EquippedMedication {
+    pub inventory_item_id: u64,
+    pub character_id: u64,
+    pub disease_id: String,
+    pub equipped_at: u64,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ItemDefinition {
@@ -629,6 +638,10 @@ pub enum ItemKind {
     Clothing,
     #[serde(alias = "Currency", alias = "currency")]
     Currency,
+    #[serde(alias = "Ingredient", alias = "ingredient")]
+    Ingredient,
+    #[serde(alias = "Medication", alias = "medication")]
+    Medication,
 }
 
 /// Attribute values for a character. These mirror the public strategic tables

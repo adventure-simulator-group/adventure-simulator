@@ -43,7 +43,11 @@ Clicking any filled character portrait selects that character. The left rail sho
 A living active character with Medicine 2 or better also sees a medical action
 icon in the contextual controls beneath each living party portrait. It begins
 the 15-minute examination directly; the character details rail does not repeat
-the action.
+the action. The same character sees an alchemy action beneath their own portrait.
+Alchemy lists all recipes at or below their Medicine rank regardless of current
+diagnoses, and its ingredient rail switches between personal and party inventory
+while retaining the normal quantity-target controls. Herbalists sell the recipe
+ingredients; foraging is intentionally deferred.
 
 Every settlement currently has one church with a fixed faith. Its priest offers conversion only to that faith through the dialogue system; changing the settlement's stored religion changes the priest's topic, profession, and the faith-specific church icon in the settlement navigation. Multiple churches in one large city are deferred until the settlement service model supports distinct church instances.
 

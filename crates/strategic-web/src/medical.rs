@@ -2,14 +2,14 @@
 
 use adventuresim_core::disease::{self, DiseaseId, InfectionEpisode, Symptom};
 
-use crate::spacetimedb::{InfectionEpisodeRow, MedicalExaminationRow};
+use crate::spacetimedb::{EquippedMedication, InfectionEpisodeRow, MedicalExaminationRow};
 
 #[derive(Clone, Debug, Default)]
 pub struct MedicalPresentation {
     pub unavailable: bool,
     pub obvious_cut: f32,
     pub symptoms: Vec<&'static str>,
-    pub medications: Vec<&'static str>,
+    pub medications: Vec<MedicationPresentation>,
     pub findings: Vec<String>,
     pub examination_id: Option<u64>,
     pub examined_at: Option<u64>,
@@ -29,13 +29,14 @@ pub struct HumourVitals {
 }
 #[derive(Clone, Debug)]
 pub struct DiagnosisPresentation {
-    pub infection_id: u64,
     pub period_name: &'static str,
     pub contagion: &'static str,
     pub stage: String,
-    pub treatable: bool,
-    pub treatment_gold: u32,
-    pub treatment_minutes: u64,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MedicationPresentation {
+    pub equipment_id: u64,
+    pub disease_name: &'static str,
 }
 
 fn parse(value: &str) -> Option<DiseaseId> {
@@ -53,6 +54,7 @@ fn parse(value: &str) -> Option<DiseaseId> {
 }
 pub fn sanitize(
     rows: &[InfectionEpisodeRow],
+    equipped_medications: &[EquippedMedication],
     examination: Option<&MedicalExaminationRow>,
     target_minute: u64,
     target_immunity: f32,
@@ -80,19 +82,17 @@ pub fn sanitize(
         .into_iter()
         .map(Symptom::period_label)
         .collect();
-    let mut medications = episodes
+    let mut medications = equipped_medications
         .iter()
-        .filter(|episode| episode.treated_at.is_some_and(|at| at <= target_minute))
-        .filter(|episode| {
-            !matches!(
-                disease::evaluate(**episode, target_minute, target_immunity).stage,
-                disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
-            )
+        .filter_map(|medication| {
+            let disease_id = parse(&medication.disease_id)?;
+            Some(MedicationPresentation {
+                equipment_id: medication.inventory_item_id,
+                disease_name: disease::definition(disease_id).period_name,
+            })
         })
-        .map(|episode| disease::definition(episode.disease_id).period_name)
         .collect::<Vec<_>>();
-    medications.sort_unstable();
-    medications.dedup();
+    medications.sort_by_key(|medication| medication.equipment_id);
     let Some(examination) = examination else {
         return MedicalPresentation {
             symptoms,
@@ -102,7 +102,7 @@ pub fn sanitize(
         };
     };
     let mut diagnoses = Vec::new();
-    for ((infection_id, disease_id), stage) in examination
+    for ((_infection_id, disease_id), stage) in examination
         .confirmed_infection_ids
         .iter()
         .zip(&examination.confirmed_disease_ids)
@@ -111,36 +111,9 @@ pub fn sanitize(
         if let Some(id) = parse(disease_id) {
             let d = disease::definition(id);
             diagnoses.push(DiagnosisPresentation {
-                infection_id: *infection_id,
                 period_name: d.period_name,
                 contagion: d.contagion,
                 stage: stage.clone(),
-                treatment_gold: disease::treatment_gold(id),
-                treatment_minutes: disease::treatment_minutes(id),
-                treatable: rows
-                    .iter()
-                    .find(|row| row.id == *infection_id)
-                    .is_some_and(|row| {
-                        let Some(disease_id) = parse(&row.disease_id) else {
-                            return false;
-                        };
-                        let state = disease::evaluate(
-                            InfectionEpisode {
-                                id: row.id,
-                                character_id: row.character_id,
-                                disease_id,
-                                contracted_at: row.contracted_at,
-                                treated_at: row.treated_at,
-                            },
-                            target_minute,
-                            target_immunity,
-                        );
-                        row.treated_at.is_none()
-                            && !matches!(
-                                state.stage,
-                                disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
-                            )
-                    }),
             });
         }
     }
@@ -208,7 +181,7 @@ mod tests {
     }
     #[test]
     fn unexamined_patient_has_signs_but_no_vitals_or_identifiers() {
-        let p = sanitize(&[row()], None, 4 * 1_440, 0.0, 0.0);
+        let p = sanitize(&[row()], &[], None, 4 * 1_440, 0.0, 0.0);
         assert!(!p.symptoms.is_empty());
         assert!(p.regional_humours.is_none());
         assert!(p.concealed_other.iter().any(|value| *value > 0.0));
@@ -217,20 +190,18 @@ mod tests {
     #[test]
     fn completed_examination_reveals_its_snapshot() {
         let exam = examination();
-        let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 2.0);
+        let p = sanitize(&[row()], &[], Some(&exam), 4 * 1_440, 3.0, 2.0);
         assert!(p.regional_humours.is_some());
         assert!(p.regional_humours.unwrap()[4].phlegmatic > 0.0);
         assert_eq!(p.diagnoses.len(), 1);
         assert_eq!(p.diagnoses[0].period_name, "Catarrhal fever");
-        assert_eq!(p.diagnoses[0].treatment_gold, 2);
-        assert_eq!(p.diagnoses[0].treatment_minutes, 30);
         assert_eq!(p.examined_at, Some(4 * 1_440));
     }
     #[test]
     fn low_medicine_examination_keeps_vitals_hidden() {
         let mut exam = examination();
         exam.reveals_vitals = false;
-        let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 1.99);
+        let p = sanitize(&[row()], &[], Some(&exam), 4 * 1_440, 3.0, 1.99);
         assert!(p.regional_humours.is_none());
         assert_eq!(p.examined_at, Some(4 * 1_440));
     }
@@ -241,7 +212,7 @@ mod tests {
         exam.confirmed_disease_ids.clear();
         exam.confirmed_stages.clear();
         exam.possible_disease_ids = vec!["influenza".into(), "consumption".into()];
-        let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 2.0);
+        let p = sanitize(&[row()], &[], Some(&exam), 4 * 1_440, 3.0, 2.0);
         assert!(p.diagnoses.is_empty());
         assert_eq!(p.possible_diagnoses, ["Catarrhal fever", "Consumption"]);
     }
@@ -249,11 +220,14 @@ mod tests {
     fn active_treatment_is_public_without_revealing_other_diagnoses() {
         let mut treated = row();
         treated.treated_at = Some(3 * 1_440);
-        let p = sanitize(&[treated.clone()], None, 4 * 1_440, 3.0, 0.0);
-        assert_eq!(p.medications, ["Catarrhal fever"]);
+        let equipped = EquippedMedication {
+            inventory_item_id: 77,
+            character_id: 4,
+            disease_id: "influenza".into(),
+            equipped_at: 3 * 1_440,
+        };
+        let p = sanitize(&[treated.clone()], &[equipped], None, 4 * 1_440, 3.0, 0.0);
+        assert_eq!(p.medications[0].disease_name, "Catarrhal fever");
         assert!(p.diagnoses.is_empty());
-
-        let resolved = sanitize(&[treated], None, 20 * 1_440, 3.0, 0.0);
-        assert!(resolved.medications.is_empty());
     }
 }

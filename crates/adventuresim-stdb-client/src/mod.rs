@@ -85,6 +85,7 @@ pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod continue_camp_travel_reducer;
 pub mod conviction_type;
+pub mod craft_medication_reducer;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
@@ -130,6 +131,9 @@ pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
+pub mod equip_medication_reducer;
+pub mod equipped_medication_table;
+pub mod equipped_medication_type;
 pub mod examine_patient_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
@@ -362,11 +366,11 @@ pub mod travel_edge_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
-pub mod treat_disease_reducer;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod turn_in_quest_reducer;
 pub mod unconsolidated_deposit_type;
+pub mod unequip_medication_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_recruitment_role_reducer;
@@ -465,6 +469,7 @@ pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use conviction_type::Conviction;
+pub use craft_medication_reducer::craft_medication;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
@@ -510,6 +515,9 @@ pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_reducer::equip_item;
+pub use equip_medication_reducer::equip_medication;
+pub use equipped_medication_table::*;
+pub use equipped_medication_type::EquippedMedication;
 pub use examine_patient_reducer::examine_patient;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
@@ -742,11 +750,11 @@ pub use travel_edge_type::TravelEdge;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_reducer::travel_to_quest;
 pub use travel_to_settlement_reducer::travel_to_settlement;
-pub use treat_disease_reducer::treat_disease;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use turn_in_quest_reducer::turn_in_quest;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
+pub use unequip_medication_reducer::unequip_medication;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
 pub use update_recruitment_role_reducer::update_recruitment_role;
@@ -833,6 +841,11 @@ pub enum Reducer {
     },
     ContinueCampTravel {
         character_id: u64,
+    },
+    CraftMedication {
+        character_id: u64,
+        disease_id: String,
+        party_scope: bool,
     },
     CreateCharacter {
         id: u64,
@@ -954,6 +967,10 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
         destination: ItemSlot,
+    },
+    EquipMedication {
+        character_id: u64,
+        inventory_item_id: u64,
     },
     ExaminePatient {
         doctor_id: u64,
@@ -1162,14 +1179,13 @@ pub enum Reducer {
         settlement_id: String,
         provision: bool,
     },
-    TreatDisease {
-        doctor_id: u64,
-        target_id: u64,
-        infection_id: u64,
-    },
     TurnInQuest {
         character_id: u64,
         quest_id: String,
+    },
+    UnequipMedication {
+        character_id: u64,
+        inventory_item_id: u64,
     },
     UpdateCharacter {
         id: u64,
@@ -1234,6 +1250,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CompleteQuest { .. } => "complete_quest",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
+            Reducer::CraftMedication { .. } => "craft_medication",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
@@ -1258,6 +1275,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
+            Reducer::EquipMedication { .. } => "equip_medication",
             Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
@@ -1307,8 +1325,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
-            Reducer::TreatDisease { .. } => "treat_disease",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
+            Reducer::UnequipMedication { .. } => "unequip_medication",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
@@ -1428,6 +1446,15 @@ Reducer::CancelMissionRequest{
                 character_id,
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::CraftMedication{
+                character_id,
+                disease_id,
+                party_scope,
+}             => __sats::bsatn::to_vec(&craft_medication_reducer::CraftMedicationArgs {
+                character_id: character_id.clone(),
+                disease_id: disease_id.clone(),
+                party_scope: party_scope.clone(),
 }),
             Reducer::CreateCharacter{
                 id,
@@ -1646,6 +1673,13 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 destination: destination.clone(),
+}),
+            Reducer::EquipMedication{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&equip_medication_reducer::EquipMedicationArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::ExaminePatient{
                 doctor_id,
@@ -2015,21 +2049,19 @@ Reducer::SendLocalChatMessage{
                 settlement_id: settlement_id.clone(),
                 provision: provision.clone(),
 }),
-            Reducer::TreatDisease{
-                doctor_id,
-                target_id,
-                infection_id,
-}             => __sats::bsatn::to_vec(&treat_disease_reducer::TreatDiseaseArgs {
-                doctor_id: doctor_id.clone(),
-                target_id: target_id.clone(),
-                infection_id: infection_id.clone(),
-}),
             Reducer::TurnInQuest{
                 character_id,
                 quest_id,
 }             => __sats::bsatn::to_vec(&turn_in_quest_reducer::TurnInQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
+}),
+            Reducer::UnequipMedication{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&unequip_medication_reducer::UnequipMedicationArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::UpdateCharacter{
                 id,
@@ -2124,6 +2156,7 @@ pub struct DbUpdate {
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    equipped_medication: __sdk::TableUpdate<EquippedMedication>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
@@ -2240,6 +2273,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
+                    .append(equipped_medication_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -2464,6 +2500,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_training_schedule,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.equipped_medication = cache
+            .apply_diff_to_table::<EquippedMedication>(
+                "equipped_medication",
+                &self.equipped_medication,
+            )
+            .with_updates_by_pk(|row| &row.inventory_item_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -2701,6 +2743,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2894,6 +2939,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3041,6 +3089,7 @@ pub struct AppliedDiff<'r> {
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -3204,6 +3253,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<EquippedMedication>(
+            "equipped_medication",
+            &self.equipped_medication,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
@@ -4038,6 +4092,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        equipped_medication_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -4100,6 +4155,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_time",
         "character_training_schedule",
         "connected_players",
+        "equipped_medication",
         "inventory_item",
         "inventory_quantity_target",
         "item",

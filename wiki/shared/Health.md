@@ -17,17 +17,17 @@ deduplicated outward symptoms. A completed examination can additionally find
 deterministic incidental complaints that obscure the underlying cause. Vitals and diagnoses appear only after a
 specific character spends 15 personal minutes examining a co-located patient;
 the patient spends the same interval. Examination knowledge belongs to that
-doctor and appears in a centered one-shot result. The doctor must treat a
-confirmed condition immediately or dismiss the result; either choice discards
-it, so examinations never become medical history on the character sheet.
-An active treated episode adds a public line beneath the symptoms stating that
+doctor and appears in a centered one-shot result. Closing it discards the
+result, so examinations never become medical history on the character sheet
+and do not administer treatment.
+An equipped medication course adds a public line beneath the symptoms stating that
 the patient is taking medication for its period-facing disease name. The line
 disappears when the episode resolves; it is treatment status, not medical
 history.
 
 An examination within one point of a disease's stage-dependent difficulty
 produces a weighted differential of compatible period ailments. Meeting the
-difficulty confirms the disease and unlocks treatment. Repeating an unchanged
+difficulty confirms the disease. Repeating an unchanged
 examination does not reroll the deterministic findings or check. Party-aggregate
 Medicine does not grant medical knowledge.
 
@@ -43,12 +43,20 @@ per region from the infection episode rather than persisted as disease state.
 Episodes retain only identity/associations, contraction minute, and optional
 treatment minute. Severity and incidental findings are deterministically seeded
 from those associations. Pending examination results are transient action state,
-not additional disease state, and are deleted after treatment or dismissal.
-Treatment has a disease-specific ingredient cost and preparation time, both
-quoted on the treatment action. The patient pays the gold and both physician
-and patient spend the preparation interval. Successful treatment adds one
-timestamp and continuously accelerates the remaining course while mitigating
-symptoms; it never instantly cures disease. Immunity resists acquisition and attenuates severity; resolved episodes can
+not additional disease state, and are deleted on dismissal. A Medicine 2
+character has an alchemy panel listing every preparation at or below their own
+Medicine rank; recipe access is intentionally independent of diagnosis and each
+recipe has its own treatment DC. Preparation consumes its explicit ingredients
+from either personal or shared inventory and advances only the apothecary's
+personal time. Herbalists sell ingredients, while future foraging will provide
+another source.
+
+Medication is a normal transferable inventory item until the patient equips it.
+Medication uses an unbounded equipment list rather than body slots. Equipping
+consumes the course, records the episode's treatment timestamp, and continuously
+accelerates the remaining course while mitigating symptoms; it never instantly
+cures disease. Unequipping discards the course, and medication records are also
+removed automatically when their matching disease resolves. Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
 with Surgery reducing residual risk; blunt damage does not.
 

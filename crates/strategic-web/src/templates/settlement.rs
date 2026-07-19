@@ -198,6 +198,7 @@ pub enum MerchantShop {
     Weapons,
     Armor,
     Clothing,
+    Herbalist,
 }
 
 pub struct RestSummary {
@@ -216,6 +217,7 @@ impl MerchantShop {
             Self::Weapons => "weapons",
             Self::Armor => "armor",
             Self::Clothing => "clothing",
+            Self::Herbalist => "herbalist",
         }
     }
 
@@ -225,20 +227,113 @@ impl MerchantShop {
             Self::Weapons => "Weaponsmith",
             Self::Armor => "Armourer",
             Self::Clothing => "Tailor",
+            Self::Herbalist => "Herbalist",
         }
     }
 
     fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
         match self {
-            Self::General => kind != crate::spacetimedb::ItemKind::Currency,
+            Self::General => !matches!(
+                kind,
+                crate::spacetimedb::ItemKind::Currency
+                    | crate::spacetimedb::ItemKind::Ingredient
+                    | crate::spacetimedb::ItemKind::Medication
+            ),
             Self::Weapons => matches!(
                 kind,
                 crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield
             ),
             Self::Armor => kind == crate::spacetimedb::ItemKind::Armor,
             Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
+            Self::Herbalist => kind == crate::spacetimedb::ItemKind::Ingredient,
         }
     }
+}
+
+pub fn alchemy_page(
+    settlement: &Settlement,
+    character: &Character,
+    party_members: &[Character],
+    medicine: f32,
+    selected: &adventuresim_core::disease::MedicationRecipe,
+    inventory: &[InventoryItem],
+    pooled: &[PartyInventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
+    personal_targets: &[InventoryQuantityTarget],
+    party_targets: &[InventoryQuantityTarget],
+    party_scope: bool,
+    theme: &str,
+) -> Markup {
+    let recipes: Vec<_> = adventuresim_core::disease::MEDICATION_RECIPES
+        .iter()
+        .filter(|recipe| adventuresim_core::disease::can_prepare_medication(medicine, recipe))
+        .collect();
+    let content = html! {
+        aside class="left-sidebar alchemy-recipes" {
+            (sidebar_section("Preparations", html! {
+                nav class="alchemy-recipe-list" aria-label="Known medication recipes" {
+                    @for recipe in recipes {
+                        a class=[(recipe.item_id == selected.item_id).then_some("active")]
+                            href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope={}", settlement.id, recipe.item_id, if party_scope { "party" } else { "personal" })) {
+                            strong { (recipe.name) }
+                            span { "Medicine " (recipe.medicine_dc) " · " (recipe.preparation_minutes) " minutes" }
+                        }
+                    }
+                }
+            }))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), Some(character.id), true))
+            (visual_stage("npc", "Alchemy", "Medication preparation"))
+            (settlement_chat_area_with_info("Alchemy", Some(character), &[format!("Selected recipe: {}", selected.name)]))
+            form method="post" action=(format!("/locations/settlement/{}/alchemy/craft", settlement.id)) class="alchemy-craft-form" {
+                input type="hidden" name="disease_id" value=(format!("{:?}", selected.disease_id).to_ascii_lowercase());
+                input type="hidden" name="party_scope" value=(party_scope);
+                button type="submit" class="btn btn-primary" {
+                    "Prepare " (selected.name) " · " (selected.preparation_minutes) " minutes"
+                }
+            }
+        }
+        aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
+            nav class="inventory-owner-tabs" aria-label="Ingredient inventory" {
+                a class=(if !party_scope { "inventory-owner-tab active" } else { "inventory-owner-tab" })
+                    href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope=personal", settlement.id, selected.item_id)) { "Player" }
+                a class=(if party_scope { "inventory-owner-tab active" } else { "inventory-owner-tab" })
+                    href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope=party", settlement.id, selected.item_id)) { "Party" }
+            }
+            (sidebar_section("Required ingredients", html! {
+                (trade_inventory_table(false, None, html! {
+                    @for ingredient in selected.ingredients {
+                        @let definition = items.iter().find(|item| item.id == ingredient.item_id);
+                        @let quantity = if party_scope {
+                            pooled.iter().filter(|item| item.item_id == ingredient.item_id).map(|item| item.quantity).sum()
+                        } else {
+                            inventory.iter().filter(|item| item.item_id == ingredient.item_id).map(|item| item.qty).sum()
+                        };
+                        @let target = target_quantity(if party_scope { party_targets } else { personal_targets }, ingredient.item_id);
+                        tr class="trade-inventory-row trade-row-player" data-inventory-quantity=(quantity) data-target=(target) {
+                            td class="inventory-item-type" { (item_type_icon(ingredient.item_id)) }
+                            td class="inventory-item-name" { (item_name_with_quality(ingredient.item_id, definition)) }
+                            td class="inventory-count" { (quantity_target_control(quantity, target, ingredient.item_id, party_scope)) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (format!("need {}", ingredient.quantity)) }
+                        }
+                    }
+                }))
+                p class="small-copy text-muted" { "Targets can be raised here for future purchasing. Crafting consumes the listed quantities from the selected inventory." }
+            }))
+        }
+    };
+    settlement_layout_with_session(
+        "Alchemy",
+        &settlement.name,
+        &settlement.id,
+        "alchemy",
+        Some(&settlement.religion_id),
+        content,
+        Some(&character.name),
+        theme,
+    )
 }
 
 /// Settlement information and the next destinations on the imported road and
@@ -935,7 +1030,7 @@ pub fn party_personal_page(
             ))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, active_character.id, limbs))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs))
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
@@ -1014,7 +1109,7 @@ pub fn party_stats_page(
             ))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, selected.id, selected_limbs))
+            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs))
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
@@ -1479,7 +1574,10 @@ fn equipment_checkbox(
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     equipped: bool,
 ) -> Markup {
-    let equippable = definition.is_some_and(|definition| definition.slot != ItemSlot::None);
+    let equippable = definition.is_some_and(|definition| {
+        definition.slot != ItemSlot::None
+            || definition.kind == crate::spacetimedb::ItemKind::Medication
+    });
     let label = if equipped {
         format!("Unequip {}", inventory.item_id)
     } else {
@@ -2504,16 +2602,23 @@ fn strategic_condition_rail(
 
 fn medical_rail(
     medical: &MedicalPresentation,
-    _location_path: &str,
-    _doctor_id: u64,
-    _target_id: u64,
+    location_path: &str,
+    doctor_id: u64,
+    target_id: u64,
     _allow_treatment: bool,
 ) -> Markup {
     html! {
         (sidebar_section("Symptoms", html! {
             @if medical.unavailable {p class="text-muted small-copy" {"Medical examination unavailable."}} @else if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
             @for medication in &medical.medications {
-                p class="medical-treatment-status" { "Taking medication for " (medication) "." }
+                p class="medical-treatment-status" {
+                    "Taking medication for " (medication.disease_name) "."
+                    @if doctor_id == target_id {
+                        form method="post" action=(format!("{location_path}/party/{target_id}/medication/{}/unequip", medication.equipment_id)) {
+                            button type="submit" class="medical-medication-remove" aria-label=(format!("Stop medication for {}", medication.disease_name)) title="Stop taking this medication; the course will be discarded" { "×" }
+                        }
+                    }
+                }
             }
         }))
         @if medical.obvious_cut > 0.0 {
@@ -2535,7 +2640,6 @@ fn medical_rail(
 fn medical_examination_popup(
     medical: &MedicalPresentation,
     location_path: &str,
-    doctor_id: u64,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
 ) -> Markup {
@@ -2593,14 +2697,6 @@ fn medical_examination_popup(
                                 strong { (diagnosis.period_name) }
                                 span class="condition-stage" { " — " (diagnosis.stage) }
                                 p class="small-copy" { (diagnosis.contagion) }
-                                @if diagnosis.treatable {
-                                    form method="post" action=(format!("{location_path}/party/{target_id}/disease/{}/treat", diagnosis.infection_id)) {
-                                        input type="hidden" name="doctor_id" value=(doctor_id);
-                                        button type="submit" class="btn btn-primary" {
-                                            "Treat — " (diagnosis.treatment_gold) " gold · " (diagnosis.treatment_minutes) " minutes"
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -2952,6 +3048,16 @@ pub(crate) fn party_portrait_overlay(
                         }
                         @if member.alive && active_character.is_some_and(|character| character.alive) {
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
+                            @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
+                                a href=(format!("{location_path}/alchemy"))
+                                    class="party-portrait-action party-alchemy-action"
+                                    title="Prepare medication"
+                                    aria-label="Prepare medication" {
+                                    span class="party-action-icon"
+                                        style="--party-action-icon: url('/static/icons/game/medical-pack.svg')"
+                                        role="img" aria-label="Alchemy" {}
+                                }
+                            }
                             @if can_examine {
                                 form method="post" action=(format!("{}/party/{}/examine", location_path, member.id)) {
                                     button type="submit" class="party-portrait-action party-medical-examine"
@@ -4237,7 +4343,10 @@ mod tests {
     fn active_medication_is_listed_beneath_symptoms() {
         let presentation = crate::medical::MedicalPresentation {
             symptoms: vec!["coughing"],
-            medications: vec!["Consumption"],
+            medications: vec![crate::medical::MedicationPresentation {
+                equipment_id: 11,
+                disease_name: "Consumption",
+            }],
             ..Default::default()
         };
         let markup = medical_rail(&presentation, "/location", 1, 2, false).into_string();
@@ -4295,7 +4404,7 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let popup = medical_examination_popup(&presentation, "/location", 1, 2, None).into_string();
+        let popup = medical_examination_popup(&presentation, "/location", 2, None).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));

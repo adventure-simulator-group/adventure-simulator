@@ -2791,3 +2791,50 @@ body.chat-resizing {
 .schedule-effect-negative { color: var(--danger); }
 .schedule-effect-neutral { color: var(--text-muted); }
 [data-schedule-value="leisure_minutes"] [data-schedule-display] { color: var(--leisure-color, var(--text-primary)); }
+.alchemy-recipe-list {
+    display: grid;
+    gap: .45rem;
+}
+
+.alchemy-recipe-list a {
+    display: grid;
+    gap: .15rem;
+    padding: .55rem .65rem;
+    border: 1px solid var(--border-color);
+    color: inherit;
+    text-decoration: none;
+}
+
+.alchemy-recipe-list a.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.alchemy-recipe-list span {
+    color: var(--text-muted);
+    font-size: .75rem;
+}
+
+.alchemy-craft-form {
+    display: flex;
+    justify-content: center;
+    padding: .75rem;
+}
+
+.medical-treatment-status {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.medical-treatment-status form {
+    display: inline;
+}
+
+.medical-medication-remove {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 1rem;
+}

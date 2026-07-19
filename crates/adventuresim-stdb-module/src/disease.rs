@@ -9,6 +9,8 @@ use crate::character::character as _;
 use crate::{
     character_attributes, character_capability, character_condition, character_skills,
     character_time,
+    item::inventory_item,
+    strategic::{party, party_inventory_item},
 };
 
 /// The complete per-character disease state. This table is deliberately
@@ -94,6 +96,21 @@ pub struct MedicalExamination {
     pub confirmed_infection_ids: Vec<u64>,
     pub confirmed_disease_ids: Vec<String>,
     pub confirmed_stages: Vec<String>,
+}
+
+/// Medication courses currently being taken. This is deliberately a separate,
+/// unbounded equipment list rather than one of the character's physical slots.
+#[derive(Clone, Debug)]
+#[table(
+    accessor = equipped_medication, public,
+    index(accessor = medication_character_id, btree(columns = [character_id])),
+)]
+pub struct EquippedMedication {
+    #[primary_key]
+    pub inventory_item_id: u64,
+    pub character_id: u64,
+    pub disease_id: String,
+    pub equipped_at: u64,
 }
 
 /// Narrow raw facts for the trusted SSR presentation boundary. The database
@@ -446,6 +463,7 @@ pub fn finish_disease_interval(
     character_id: u64,
     cause: Option<TerminalFailure>,
 ) -> Result<(), String> {
+    reconcile_medications(ctx, character_id)?;
     let Some(cause) = cause else { return Ok(()) };
     crate::transition_character_to_dead(
         ctx,
@@ -467,6 +485,306 @@ pub fn finish_disease_interval(
             .into(),
         ),
     )?;
+    Ok(())
+}
+
+fn disease_key(id: DiseaseId) -> &'static str {
+    match id {
+        DiseaseId::Influenza => "influenza",
+        DiseaseId::Dysentery => "dysentery",
+        DiseaseId::Typhus => "typhus",
+        DiseaseId::Tetanus => "tetanus",
+        DiseaseId::Erysipelas => "erysipelas",
+        DiseaseId::Smallpox => "smallpox",
+        DiseaseId::Plague => "plague",
+        DiseaseId::Consumption => "consumption",
+    }
+}
+
+fn reconcile_medications(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |attributes| attributes.immunity);
+    let active: Vec<String> = character_episodes(ctx, character_id)?
+        .into_iter()
+        .filter(|episode| {
+            !matches!(
+                disease::evaluate(*episode, now, immunity).stage,
+                disease::DiseaseStage::Resolved
+            )
+        })
+        .map(|episode| disease_key(episode.disease_id).to_owned())
+        .collect();
+    for medication in ctx
+        .db
+        .equipped_medication()
+        .medication_character_id()
+        .filter(character_id)
+        .collect::<Vec<_>>()
+    {
+        if !active.contains(&medication.disease_id) {
+            ctx.db
+                .equipped_medication()
+                .inventory_item_id()
+                .delete(medication.inventory_item_id);
+            ctx.db
+                .inventory_item()
+                .id()
+                .delete(medication.inventory_item_id);
+        }
+    }
+    Ok(())
+}
+
+pub fn medication_is_equipped(ctx: &ReducerContext, inventory_item_id: u64) -> bool {
+    ctx.db
+        .equipped_medication()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .is_some()
+}
+
+#[reducer]
+pub fn equip_medication(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+) -> Result<(), String> {
+    crate::require_living_character(ctx, character_id)?;
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or("Medication is not in this inventory")?;
+    if inventory.character_id != character_id || inventory.quantity != 1 {
+        return Err("Medication must be an individual course in the patient's inventory".into());
+    }
+    let recipe = disease::medication_recipe_for_item(&inventory.item_id)
+        .ok_or("This item is not medication")?;
+    if medication_is_equipped(ctx, inventory_item_id) {
+        return Ok(());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |attributes| attributes.immunity);
+    let disease_id = disease_key(recipe.disease_id);
+    let mut matched = false;
+    for mut infection in ctx
+        .db
+        .infection_episode()
+        .character_id()
+        .filter(character_id)
+        .filter(|infection| infection.disease_id == disease_id)
+        .collect::<Vec<_>>()
+    {
+        let state = disease::evaluate(episode(&infection)?, now, immunity);
+        if !matches!(state.stage, disease::DiseaseStage::Resolved) {
+            matched = true;
+            if infection.treated_at.is_none() {
+                infection.treated_at = Some(now);
+                ctx.db.infection_episode().id().update(infection);
+            }
+        }
+    }
+    if !matched {
+        ctx.db.inventory_item().id().delete(inventory_item_id);
+        return Ok(());
+    }
+    ctx.db.equipped_medication().insert(EquippedMedication {
+        inventory_item_id,
+        character_id,
+        disease_id: disease_id.into(),
+        equipped_at: now,
+    });
+    ctx.db.inventory_item().id().delete(inventory_item_id);
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(())
+}
+
+#[reducer]
+pub fn unequip_medication(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+) -> Result<(), String> {
+    crate::require_living_character(ctx, character_id)?;
+    let medication = ctx
+        .db
+        .equipped_medication()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .ok_or("Medication is not equipped")?;
+    if medication.character_id != character_id {
+        return Err("Medication belongs to another character".into());
+    }
+    ctx.db
+        .equipped_medication()
+        .inventory_item_id()
+        .delete(inventory_item_id);
+    Ok(())
+}
+
+fn consume_personal_ingredient(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    mut quantity: u32,
+) -> Result<(), String> {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, item_id))
+        .collect();
+    if stacks.iter().map(|stack| stack.quantity).sum::<u32>() < quantity {
+        return Err(format!("Not enough {item_id}"));
+    }
+    for mut stack in stacks {
+        let taken = quantity.min(stack.quantity);
+        stack.quantity -= taken;
+        quantity -= taken;
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+        if quantity == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn consume_party_ingredient(
+    ctx: &ReducerContext,
+    party_id: &str,
+    item_id: &str,
+    mut quantity: u32,
+) -> Result<(), String> {
+    let stacks: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|stack| stack.item_id == item_id)
+        .collect();
+    if stacks.iter().map(|stack| stack.quantity).sum::<u32>() < quantity {
+        return Err(format!("Not enough {item_id}"));
+    }
+    for mut stack in stacks {
+        let taken = quantity.min(stack.quantity);
+        stack.quantity -= taken;
+        quantity -= taken;
+        if stack.quantity == 0 {
+            ctx.db.party_inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.party_inventory_item().id().update(stack);
+        }
+        if quantity == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn craft_medication(
+    ctx: &ReducerContext,
+    character_id: u64,
+    disease_id: String,
+    party_scope: bool,
+) -> Result<(), String> {
+    let character = crate::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Medication can only be prepared in a settlement".into());
+    }
+    let disease_id = parse_id(&disease_id)?;
+    let recipe = disease::medication_recipe(disease_id);
+    let medicine = ctx
+        .db
+        .character_capability()
+        .character_id()
+        .find(character_id)
+        .ok_or("Medicine capability not found")?
+        .medicine;
+    if !disease::can_prepare_medication(medicine, recipe) {
+        return Err(format!("Medicine {} is required", recipe.medicine_dc));
+    }
+    let party_id = party_scope
+        .then(|| character.party_id.clone().ok_or("Character has no party"))
+        .transpose()?;
+    if let Some(party_id) = party_id.as_deref() {
+        let party = ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id.to_owned())
+            .ok_or("Party not found")?;
+        if party.leader_id != character_id {
+            return Err("Only the party leader can consume shared ingredients".into());
+        }
+    }
+    for ingredient in recipe.ingredients {
+        let available = if let Some(party_id) = party_id.as_deref() {
+            ctx.db
+                .party_inventory_item()
+                .party_id()
+                .filter(party_id)
+                .filter(|stack| stack.item_id == ingredient.item_id)
+                .map(|stack| stack.quantity)
+                .sum::<u32>()
+        } else {
+            ctx.db
+                .inventory_item()
+                .character_and_item_id()
+                .filter((character_id, ingredient.item_id))
+                .map(|stack| stack.quantity)
+                .sum::<u32>()
+        };
+        if available < ingredient.quantity {
+            return Err(format!("Not enough {}", ingredient.item_id));
+        }
+    }
+    if !crate::time::advance_character_time(ctx, character_id, recipe.preparation_minutes)? {
+        return Ok(());
+    }
+    for ingredient in recipe.ingredients {
+        if let Some(party_id) = party_id.as_deref() {
+            consume_party_ingredient(ctx, party_id, ingredient.item_id, ingredient.quantity)?;
+        } else {
+            consume_personal_ingredient(
+                ctx,
+                character_id,
+                ingredient.item_id,
+                ingredient.quantity,
+            )?;
+        }
+    }
+    if let Some(party_id) = party_id.as_deref() {
+        crate::strategic::add_to_party_inventory(ctx, party_id, recipe.item_id, 1);
+    } else {
+        crate::add_inventory_item(ctx, character_id, recipe.item_id, 1);
+    }
     Ok(())
 }
 
@@ -616,6 +934,18 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     {
         ctx.db.medical_examination().id().delete(examination.id);
     }
+    for medication in ctx
+        .db
+        .equipped_medication()
+        .iter()
+        .filter(|medication| fixture_ids.contains(&medication.character_id))
+        .collect::<Vec<_>>()
+    {
+        ctx.db
+            .equipped_medication()
+            .inventory_item_id()
+            .delete(medication.inventory_item_id);
+    }
 
     for (id, _, _, _) in PATIENTS.iter().skip(1) {
         crate::strategic::attach_seeded_party_member(ctx, SICK_CHARACTER_ID, *id, "Patient")?;
@@ -645,6 +975,18 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         .character_skills()
         .character_id()
         .update(physician_skills);
+    let mut physician_attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(PHYSICIAN_ID)
+        .ok_or_else(|| "Physician Demo is missing attributes".to_string())?;
+    physician_attributes.intelligence = 5.0;
+    physician_attributes.instinct = 5.0;
+    ctx.db
+        .character_attributes()
+        .character_id()
+        .update(physician_attributes);
 
     let mut ambiguous_physician_skills = ctx
         .db
@@ -673,11 +1015,24 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
             character_id: id,
             disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
             contracted_at: FIXTURE_NOW - age,
-            // Patient H demonstrates the public active-medication status.
-            treated_at: (id == 9_999_999_999_999_990).then_some(FIXTURE_NOW - DAY),
+            treated_at: None,
         });
         crate::capability::refresh_character_capability(ctx, id)?;
     }
+    for recipe in disease::MEDICATION_RECIPES {
+        for ingredient in recipe.ingredients {
+            crate::add_inventory_item(ctx, PHYSICIAN_ID, ingredient.item_id, ingredient.quantity);
+        }
+    }
+    let patient_h = 9_999_999_999_999_990;
+    let medication_id = crate::add_inventory_item(
+        ctx,
+        patient_h,
+        disease::medication_recipe(DiseaseId::Consumption).item_id,
+        1,
+    )
+    .ok_or("Could not seed Patient H medication")?;
+    equip_medication(ctx, patient_h, medication_id)?;
     crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
     crate::capability::refresh_character_capability(ctx, AMBIGUOUS_PHYSICIAN_ID)?;
     Ok(())
@@ -852,98 +1207,5 @@ pub fn dismiss_medical_examination(
         return Err("This examination result belongs to another doctor or patient".into());
     }
     ctx.db.medical_examination().id().delete(examination_id);
-    Ok(())
-}
-
-#[reducer]
-pub fn treat_disease(
-    ctx: &ReducerContext,
-    doctor_id: u64,
-    target_id: u64,
-    infection_id: u64,
-) -> Result<(), String> {
-    // Character selection/ownership is enforced by strategic-web's session
-    // POST boundary, matching the rest of the strategic reducer surface.
-    let doctor = crate::require_living_character(ctx, doctor_id)?;
-    let target = crate::require_living_character(ctx, target_id)?;
-    let same_place = doctor.current_settlement_id.is_some()
-        && doctor.current_settlement_id == target.current_settlement_id
-        || doctor.current_quest_location_id.is_some()
-            && doctor.current_quest_location_id == target.current_quest_location_id;
-    if !same_place {
-        return Err("Doctor and patient must be together".into());
-    }
-    if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
-        return Err("A doctor may treat only themselves or a member of their party".into());
-    }
-    let starting_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(target_id)
-        .ok_or("Patient time not found")?
-        .minutes;
-    let starting_immunity = ctx
-        .db
-        .character_attributes()
-        .character_id()
-        .find(target_id)
-        .ok_or("Patient attributes not found")?
-        .immunity;
-    let mut row = ctx
-        .db
-        .infection_episode()
-        .id()
-        .find(infection_id)
-        .ok_or("Infection not found")?;
-    if row.character_id != target_id {
-        return Err("Infection does not belong to this patient".into());
-    }
-    if row.treated_at.is_some() {
-        return Err("This illness has already been treated".into());
-    }
-    let examination = ctx
-        .db
-        .medical_examination()
-        .doctor_id()
-        .filter(doctor_id)
-        .filter(|exam| exam.target_id == target_id)
-        .max_by_key(|exam| exam.id)
-        .ok_or("Examine the patient before administering treatment")?;
-    if !examination.confirmed_infection_ids.contains(&infection_id) {
-        return Err("This doctor has not confirmed that diagnosis".into());
-    }
-    let disease_id = parse_id(&row.disease_id)?;
-    let state = disease::evaluate(episode(&row)?, starting_minute, starting_immunity);
-    if matches!(
-        state.stage,
-        disease::DiseaseStage::Resolved | disease::DiseaseStage::Incubating
-    ) {
-        return Err("This illness cannot currently be treated".into());
-    }
-    let treatment_gold = disease::treatment_gold(disease_id);
-    let treatment_minutes = disease::treatment_minutes(disease_id);
-    crate::strategic::consume_personal_gold(ctx, target_id, u64::from(treatment_gold))?;
-    if !advance_medical_participants(ctx, doctor_id, target_id, treatment_minutes)? {
-        return Ok(());
-    }
-    let administered_at = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(target_id)
-        .ok_or("Patient time not found after treatment preparation")?
-        .minutes;
-    row.treated_at = Some(administered_at);
-    ctx.db.infection_episode().id().update(row);
-    notice(
-        ctx,
-        target_id,
-        infection_id,
-        administered_at,
-        "treatment",
-        "Treatment was administered.",
-    );
-    ctx.db.medical_examination().id().delete(examination.id);
     Ok(())
 }

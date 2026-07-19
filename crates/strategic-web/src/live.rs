@@ -34,6 +34,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
+    equipped_medication_table::EquippedMedicationTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess,
@@ -152,6 +153,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.equipped_medication());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_needs());

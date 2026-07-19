@@ -3087,7 +3087,12 @@ fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
         })
 }
 
-fn add_to_party_inventory(ctx: &ReducerContext, party_id: &str, item_id: &str, quantity: u32) {
+pub(crate) fn add_to_party_inventory(
+    ctx: &ReducerContext,
+    party_id: &str,
+    item_id: &str,
+    quantity: u32,
+) {
     if quantity == 0 {
         return;
     }
@@ -3802,7 +3807,11 @@ pub fn finalize_merchant_trade(
         let Some(item) = ctx.db.item().id().find(item_id) else {
             return Err("Merchant item not found".into());
         };
-        if item.kind == crate::ItemKind::Currency || *quantity == 0 {
+        if matches!(
+            item.kind,
+            crate::ItemKind::Currency | crate::ItemKind::Medication
+        ) || *quantity == 0
+        {
             return Err("Invalid merchant purchase".into());
         }
         cost = cost.saturating_add(
@@ -3838,7 +3847,13 @@ pub fn finalize_merchant_trade(
         let Some(item) = ctx.db.item().id().find(&item_id) else {
             return Err("Item definition not found".into());
         };
-        if available < *quantity || *quantity == 0 || item.kind == crate::ItemKind::Currency {
+        if available < *quantity
+            || *quantity == 0
+            || matches!(
+                item.kind,
+                crate::ItemKind::Currency | crate::ItemKind::Medication
+            )
+        {
             return Err("Invalid merchant sale".into());
         }
         if !party_scope

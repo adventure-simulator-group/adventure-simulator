@@ -6,57 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct TreatDiseaseArgs {
-    pub doctor_id: u64,
-    pub target_id: u64,
-    pub infection_id: u64,
+pub(super) struct EquipMedicationArgs {
+    pub character_id: u64,
+    pub inventory_item_id: u64,
 }
 
-impl From<TreatDiseaseArgs> for super::Reducer {
-    fn from(args: TreatDiseaseArgs) -> Self {
-        Self::TreatDisease {
-            doctor_id: args.doctor_id,
-            target_id: args.target_id,
-            infection_id: args.infection_id,
+impl From<EquipMedicationArgs> for super::Reducer {
+    fn from(args: EquipMedicationArgs) -> Self {
+        Self::EquipMedication {
+            character_id: args.character_id,
+            inventory_item_id: args.inventory_item_id,
         }
     }
 }
 
-impl __sdk::InModule for TreatDiseaseArgs {
+impl __sdk::InModule for EquipMedicationArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `treat_disease`.
+/// Extension trait for access to the reducer `equip_medication`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait treat_disease {
-    /// Request that the remote module invoke the reducer `treat_disease` to run as soon as possible.
+pub trait equip_medication {
+    /// Request that the remote module invoke the reducer `equip_medication` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`treat_disease:treat_disease_then`] to run a callback after the reducer completes.
-    fn treat_disease(
-        &self,
-        doctor_id: u64,
-        target_id: u64,
-        infection_id: u64,
-    ) -> __sdk::Result<()> {
-        self.treat_disease_then(doctor_id, target_id, infection_id, |_, _| {})
+    /// /// Use [`equip_medication:equip_medication_then`] to run a callback after the reducer completes.
+    fn equip_medication(&self, character_id: u64, inventory_item_id: u64) -> __sdk::Result<()> {
+        self.equip_medication_then(character_id, inventory_item_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `treat_disease` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `equip_medication` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn treat_disease_then(
+    fn equip_medication_then(
         &self,
-        doctor_id: u64,
-        target_id: u64,
-        infection_id: u64,
+        character_id: u64,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,12 +58,11 @@ pub trait treat_disease {
     ) -> __sdk::Result<()>;
 }
 
-impl treat_disease for super::RemoteReducers {
-    fn treat_disease_then(
+impl equip_medication for super::RemoteReducers {
+    fn equip_medication_then(
         &self,
-        doctor_id: u64,
-        target_id: u64,
-        infection_id: u64,
+        character_id: u64,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -80,10 +71,9 @@ impl treat_disease for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            TreatDiseaseArgs {
-                doctor_id,
-                target_id,
-                infection_id,
+            EquipMedicationArgs {
+                character_id,
+                inventory_item_id,
             },
             callback,
         )
