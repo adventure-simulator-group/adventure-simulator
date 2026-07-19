@@ -46,12 +46,13 @@ test("travel planner renders return-track provisions and exact staged market qua
   assert.match(trade, /quantity <= 4294967295/);
 });
 
-test("provision targets distinguish negative, zero, and positive return goals", () => {
+test("provision targets distinguish negative, zero, and positive endpoint goals", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
   assert.match(planner, /target < 0 \? "negative" : target > 0 \? "positive" : "zero"/);
-  assert.match(planner, /Target: exact return/);
-  assert.match(planner, /after return/);
+  assert.match(planner, /roundTrip \? "return" : "arrival"/);
+  assert.match(planner, /Target: exact \$\{endpoint\}/);
+  assert.match(planner, /after \$\{endpoint\}/);
   assert.match(planner, /\} short`/);
   for (const sign of ["negative", "zero", "positive"]) {
     assert.match(css, new RegExp(`target-sign="${sign}"`));

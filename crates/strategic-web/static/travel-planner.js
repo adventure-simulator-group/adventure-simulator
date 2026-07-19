@@ -289,10 +289,11 @@
     path.setAttribute("d", roundTrip ? RETURN_PATH : OUTBOUND_PATH);
     path.style.strokeDasharray = `${Math.max(0, Math.min(100, percent))} 100`;
   };
-  const targetDescription = (target) => {
+  const targetDescription = (target, roundTrip) => {
     if (target < 0) return `Target: ${formatDays(target)} day${Math.abs(target) === 1 ? "" : "s"} short`;
-    if (target > 0) return `Target: +${formatDays(target)} day${target === 1 ? "" : "s"} after return`;
-    return "Target: exact return";
+    const endpoint = roundTrip ? "return" : "arrival";
+    if (target > 0) return `Target: +${formatDays(target)} day${target === 1 ? "" : "s"} after ${endpoint}`;
+    return `Target: exact ${endpoint}`;
   };
   const refreshProvisioning = () => {
     const journeyMinutes = Number(planner.dataset.provisionPlanningMinutes);
@@ -313,7 +314,7 @@
       setPathProgress(row.querySelector("[data-resource-target]"), (journeyDays + target) / journeyDays * 100, roundTrip);
       const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
       row.dataset.targetSign = sign;
-      row.querySelector("[data-resource-target-label]").textContent = targetDescription(target);
+      row.querySelector("[data-resource-target-label]").textContent = targetDescription(target, roundTrip);
       const surplus = available - journeyDays;
       const amount = formatDays(surplus);
       row.querySelector("[data-resource-label]").textContent = `${amount} day${amount === "1" ? "" : "s"} ${surplus >= 0 ? "surplus" : "shortfall"}`;
