@@ -2545,10 +2545,34 @@ fn strategic_condition_rail(
     }
     .round();
     let meter_style = format!("--morale-fear: {fear_fill}%; --morale-bonus: {bonus_fill}%");
+    let incapacitation_segments = [
+        ("Pain", "broken-heart", "pain", condition.pain),
+        (
+            "Blood loss",
+            "bleeding-wound",
+            "blood",
+            condition.blood_loss,
+        ),
+        ("Fear", "terror", "fear", condition.fear),
+        ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
+        ("Hunger", "meal", "hunger", condition.hunger),
+        ("Thirst", "water-drop", "thirst", condition.thirst),
+    ];
+    let incapacitation_sources = [
+        ("Pain", "broken-heart", "pain", condition.pain),
+        (
+            "Blood loss",
+            "bleeding-wound",
+            "blood",
+            condition.blood_loss,
+        ),
+        ("Fear", "terror", "fear", condition.fear),
+        ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
+    ];
     html! {
         (sidebar_section("Condition", html! {
-            div class="morale-meter" tabindex="0" style=(meter_style) aria-label=(format!(
-                "Morale {:.1}; fear {}; personal share of party morale restoration {:.1}%",
+            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
+                "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
                 condition.morale_bonus * 100.0,
@@ -2565,7 +2589,7 @@ fn strategic_condition_rail(
                 div class="morale-meter-labels" {
                     span { "100% fear" }
                     span { "Neutral" }
-                    span { (format!("{:.1}% ally lift", condition.morale_bonus * 100.0)) }
+                    span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
                 }
                 div class="morale-source-popup" role="tooltip" {
                     strong { "Morale sources" }
@@ -2598,20 +2622,80 @@ fn strategic_condition_rail(
                     "Faith, a strong same-faith cohort, and surplus morale raise Fervor. Party Charisma restrains it. Higher Fervor makes conviction demands and settlement incidents more likely."
                 }
             }
-            dl class="character-bio strategic-condition-summary" {
-                div { dt { "Status" } dd { (condition.status.to_uppercase()) } }
-                div { dt class="metric-label" { (decorative_game_icon("coma")) span { "Incapacitation" } } dd { (percent(condition.incapacitation)) } }
-                div { dt class="metric-label" { (decorative_game_icon("broken-heart")) span { "Pain" } } dd { (percent(condition.pain)) } }
-                div { dt class="metric-label" { (decorative_game_icon("bleeding-wound")) span { "Blood loss" } } dd { (percent(condition.blood_loss)) } }
-                div { dt class="metric-label" { (decorative_game_icon("terror")) span { "Fear" } } dd { (percent(condition.fear)) } }
-                div { dt class="metric-label" { (decorative_game_icon("night-sleep")) span { "Fatigue" } } dd { (percent(condition.fatigue)) } }
-                div { dt class="metric-label" { (decorative_game_icon("meal")) span { "Hunger" } } dd { (percent(condition.hunger)) } }
-                div { dt class="metric-label" { (decorative_game_icon("water-drop")) span { "Thirst" } } dd { (percent(condition.thirst)) } }
-                div { dt class="metric-label" { (decorative_game_icon("bread")) span { "Food" } } dd { (format!("{:.1} travel days", condition.food_days.max(0.0))) } }
-                div { dt class="metric-label" { (decorative_game_icon("waterskin")) span { "Water" } } dd { (format!("{:.1} travel days / {:.1} L capacity", condition.water_days.max(0.0), condition.water_capacity_ml as f32 / 1_000.0)) } }
-                div { dt class="metric-label" { (decorative_game_icon("check-mark")) span { "Check effectiveness" } } dd { (percent(condition.check_multiplier)) } }
+            div class="incapacitation-overview" tabindex="0" title=(format!("{} incapacitation", percent(condition.incapacitation))) {
+                div class="incapacitation-heading" {
+                    strong class="metric-label" { (decorative_game_icon("coma")) span { "Incapacitation" } }
+                    span class="incapacitation-status" { (&condition.status) }
+                }
+                div class="incapacitation-total-track" role="meter"
+                    aria-label=(format!("Incapacitation {}; {}", percent(condition.incapacitation), condition.status))
+                    aria-valuemin="0" aria-valuemax="100"
+                    aria-valuenow=(condition.incapacitation.clamp(0.0, 1.0) * 100.0) {
+                    @for (_, _, color, value) in incapacitation_segments {
+                        span class=(format!("incapacitation-segment incapacitation-{color}"))
+                            style=(format!("--incap-amount: {:.1}%", value.max(0.0) * 100.0)) {}
+                    }
+                }
+            }
+            div class="incapacitation-sources" aria-label="Sources of incapacitation" {
+                @for (label, icon, color, value) in incapacitation_sources {
+                    div class=(format!("incapacitation-source incapacitation-{color}"))
+                        title=(format!("{label}: {} incapacitation", percent(value))) {
+                        strong class="metric-label" { (decorative_game_icon(icon)) span { (label) } }
+                        div class="incapacitation-source-track" role="meter"
+                            aria-label=(format!("{label}: {} incapacitation", percent(value)))
+                            aria-valuemin="0" aria-valuemax="100"
+                            aria-valuenow=(value.clamp(0.0, 1.0) * 100.0) {
+                            span style=(format!("--incap-amount: {:.1}%", value.clamp(0.0, 1.0) * 100.0)) {}
+                        }
+                    }
+                }
+            }
+            div class="need-balance-meters" aria-label="Food and water reserves" {
+                (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
+                (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
         }))
+    }
+}
+
+fn need_balance_meter(
+    label: &str,
+    icon: &str,
+    deficit_label: &str,
+    reserve_label: &str,
+    color: &str,
+    reserve_days: f32,
+    incapacitation: f32,
+) -> Markup {
+    let reserve_days = reserve_days.max(0.0);
+    let reserve_fill = (reserve_days * 100.0).clamp(0.0, 100.0);
+    let deficit_fill = (incapacitation.max(0.0) * 100.0).clamp(0.0, 100.0);
+    let signed_value = if deficit_fill > 0.0 {
+        -deficit_fill
+    } else {
+        reserve_fill
+    };
+    let description = format!(
+        "{label}: {reserve_days:.1} travel days reserve; {deficit_label} {deficit_fill:.0}% incapacitation"
+    );
+    html! {
+        div class=(format!("need-balance incapacitation-{color}"))
+            style=(format!("--need-reserve: {reserve_fill:.1}%; --need-deficit: {deficit_fill:.1}%"))
+            title=(&description) {
+            strong class="metric-label" { (decorative_game_icon(icon)) span { (label) } }
+            div class="need-balance-track" role="meter" aria-label=(description)
+                aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{signed_value:.0}")) {
+                span class="need-balance-half need-balance-deficit" { span {} }
+                span class="need-balance-half need-balance-reserve" { span {} }
+                i aria-hidden="true" {}
+            }
+            div class="need-balance-labels" aria-hidden="true" {
+                span { (deficit_label) }
+                span { "0" }
+                span { (reserve_label) }
+            }
+        }
     }
 }
 
@@ -3431,7 +3515,7 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterCondition, LocationKind, MerchantShop, repair_custody_panel,
+        CharacterCondition, LocationKind, MerchantShop, need_balance_meter, repair_custody_panel,
         repair_submit_control, rest_default_minutes,
     };
     use crate::spacetimedb::ItemKind;
@@ -3463,6 +3547,33 @@ mod tests {
             rest_default_minutes(None, None, Some(&condition), 0, 0),
             Some(2_880)
         );
+    }
+
+    #[test]
+    fn need_meter_places_reserve_right_and_incapacitation_left() {
+        let reserve =
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.5, 0.0).into_string();
+        assert!(reserve.contains("--need-reserve: 50.0%; --need-deficit: 0.0%"));
+        assert!(reserve.contains("aria-valuenow=\"50\""));
+        assert!(reserve.contains(">Full</span>"));
+
+        let hydration = need_balance_meter(
+            "Water",
+            "water-drop",
+            "Thirst",
+            "Hydrated",
+            "thirst",
+            1.0,
+            0.0,
+        )
+        .into_string();
+        assert!(hydration.contains(">Hydrated</span>"));
+
+        let deficit =
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.0, 1.0 / 9.0)
+                .into_string();
+        assert!(deficit.contains("--need-reserve: 0.0%; --need-deficit: 11.1%"));
+        assert!(deficit.contains("aria-valuenow=\"-11\""));
     }
 
     #[test]

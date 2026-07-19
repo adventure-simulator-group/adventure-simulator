@@ -1764,6 +1764,15 @@ button.party-portrait-action {
   outline: none;
 }
 
+:root {
+  --incap-pain: #d973a2;
+  --incap-blood: #c84747;
+  --incap-fear: #4f83cc;
+  --incap-fatigue: #202020;
+  --incap-hunger: #b57a35;
+  --incap-thirst: #3f9fa8;
+}
+
 .morale-meter-heading,
 .morale-meter-labels {
   display: grid;
@@ -1789,10 +1798,12 @@ button.party-portrait-action {
 .morale-meter-fear {
   background: linear-gradient(
     to left,
-    var(--danger) 0 var(--morale-fear),
+    var(--incap-fear) 0 var(--morale-fear),
     transparent var(--morale-fear) 100%
   );
 }
+
+.morale-meter.is-fearful .morale-meter-heading .game-icon { color: var(--incap-fear); }
 
 .morale-meter-bonus {
   background: linear-gradient(
@@ -1902,6 +1913,175 @@ button.party-portrait-action {
   opacity: 1;
   transform: translateY(0);
 }
+
+.incapacitation-overview {
+  padding-top: 0.45rem;
+  outline: none;
+}
+
+.incapacitation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.incapacitation-heading .game-icon {
+  background: conic-gradient(
+    var(--incap-pain),
+    var(--incap-blood),
+    var(--incap-fear),
+    var(--incap-fatigue),
+    var(--incap-hunger),
+    var(--incap-thirst),
+    var(--incap-pain)
+  );
+}
+
+.incapacitation-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.incapacitation-total-track,
+.incapacitation-source-track {
+  position: relative;
+  display: flex;
+  height: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+}
+
+.incapacitation-segment {
+  flex: 0 0 var(--incap-amount);
+  height: 100%;
+  background: var(--incap-color);
+}
+
+.incapacitation-sources {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.7rem;
+  margin-top: 0.65rem;
+}
+
+.incapacitation-source {
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.incapacitation-source .metric-label {
+  margin-bottom: 0.2rem;
+  font-size: var(--font-size-xs);
+}
+
+.incapacitation-source .game-icon { color: var(--incap-color); }
+.incapacitation-fatigue .game-icon {
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--text-primary) 70%, transparent));
+}
+
+.incapacitation-source-track { height: 0.48rem; }
+.incapacitation-source-track::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
+  content: "";
+}
+.incapacitation-source-track span {
+  display: block;
+  width: var(--incap-amount);
+  height: 100%;
+  background: var(--incap-color);
+}
+
+.incapacitation-pain { --incap-color: var(--incap-pain); }
+.incapacitation-blood { --incap-color: var(--incap-blood); }
+.incapacitation-fear { --incap-color: var(--incap-fear); }
+.incapacitation-fatigue { --incap-color: var(--incap-fatigue); }
+.incapacitation-hunger { --incap-color: var(--incap-hunger); }
+.incapacitation-thirst { --incap-color: var(--incap-thirst); }
+
+.need-balance-meters {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+}
+
+.need-balance {
+  color: var(--text-secondary);
+}
+
+.need-balance > .metric-label {
+  margin-bottom: 0.25rem;
+  font-size: var(--font-size-xs);
+}
+
+.need-balance .game-icon { color: var(--incap-color); }
+
+.need-balance-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 0.55rem;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+}
+
+.need-balance-half {
+  position: relative;
+  overflow: hidden;
+}
+
+.need-balance-half > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.need-balance-deficit > span {
+  right: 0;
+  width: var(--need-deficit);
+  background: var(--incap-color);
+}
+
+.need-balance-reserve > span {
+  left: 0;
+  width: var(--need-reserve);
+  background: var(--success);
+}
+
+.need-balance-track > i {
+  position: absolute;
+  z-index: 1;
+  top: -0.15rem;
+  bottom: -0.15rem;
+  left: 50%;
+  width: 2px;
+  background: var(--text-primary);
+  transform: translateX(-1px);
+}
+
+.need-balance-labels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.need-balance-labels span:nth-child(2) { text-align: center; }
+.need-balance-labels span:last-child { text-align: right; }
 
 .religious-demand h3 { margin: 0 0 0.45rem; font-family: var(--font-heading); }
 .religious-demand p { margin: 0 0 0.55rem; }

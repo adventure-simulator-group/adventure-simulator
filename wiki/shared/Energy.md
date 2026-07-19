@@ -35,3 +35,9 @@ days beyond the food reserve. Unsupported thirst reaches it after one marching
 day beyond the hydration reserve. Both curves are quadratic, begin only below
 zero reserve, and combine with pain, blood loss, fear, and fatigue. They do not
 currently kill a character.
+
+The character panel presents each signed physiological balance as a centered
+meter. Positive reserve fills right, normalized to the ordinary one-day
+reserve. Once the balance crosses zero, hunger or thirst fills left according
+to its quadratic incapacitation contribution. Carried rations and water are not
+included; they affect the meter only when automatically consumed.
