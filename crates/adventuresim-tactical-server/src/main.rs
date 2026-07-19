@@ -192,7 +192,23 @@ fn spawn_connected_player(
         will_hours: player.skills.will_hours,
         charisma_hours: player.skills.charisma_hours,
         medicine_hours: player.skills.medicine_hours,
-        faith_hours: player.skills.faith_hours,
+        religion_hours: {
+            let religion = &player.skills.religion_hours;
+            [
+                religion.roman_catholic,
+                religion.lutheran,
+                religion.reformed,
+                religion.anglican,
+                religion.protestant,
+                religion.eastern_orthodox,
+                religion.islamic,
+                religion.judaism,
+            ]
+            .into_iter()
+            .filter(|hours| hours.is_finite())
+            .map(|hours| hours.max(0.0))
+            .sum()
+        },
         stealth_hours: player.skills.stealth_hours,
         balance_hours: player.skills.balance_hours,
         surgeon_hours: player.skills.surgeon_hours,

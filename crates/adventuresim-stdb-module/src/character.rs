@@ -206,7 +206,7 @@ pub struct CharacterSkills {
     pub will_hours: f32,
     pub charisma_hours: f32,
     pub medicine_hours: f32,
-    pub faith_hours: f32,
+    pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
@@ -494,7 +494,10 @@ fn insert_character_with_origin(
         will_hours: 1000.0,
         charisma_hours: 1000.0,
         medicine_hours: 1000.0,
-        faith_hours: 1000.0,
+        religion_hours: adventuresim_world_schema::ReligionHours {
+            roman_catholic: 1000.0,
+            ..Default::default()
+        },
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
         surgeon_hours: 1000.0,

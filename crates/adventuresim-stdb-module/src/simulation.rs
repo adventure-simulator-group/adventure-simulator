@@ -14,6 +14,11 @@ use crate::{
 /// Ordinary module builds deliberately contain no simulation capability. The
 /// disposable launcher supplies this only to the one module build it owns.
 const COMPILED_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_SIM_BOOTSTRAP_TOKEN");
+const MAX_INITIAL_SKILL_HOURS: f32 = 1_000_000.0;
+
+fn simulation_religion_hours_valid(hours: adventuresim_world_schema::ReligionHours) -> bool {
+    hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+}
 
 #[derive(Clone, Debug)]
 #[table(accessor = simulation_run, public)]
@@ -184,13 +189,13 @@ pub fn configure_simulation_character(
         skills.will_hours,
         skills.charisma_hours,
         skills.medicine_hours,
-        skills.faith_hours,
         skills.stealth_hours,
         skills.balance_hours,
         skills.surgeon_hours,
     ]
     .into_iter()
-    .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value));
+    .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))
+        && simulation_religion_hours_valid(skills.religion_hours);
     if !attributes_valid || !skills_valid || downtime.allocated_minutes() > 1_440 {
         return Err("Simulation profile is outside bounded gameplay ranges".into());
     }
@@ -316,5 +321,22 @@ pub(crate) fn same_simulation_scope(ctx: &ReducerContext, left: u64, right: u64)
         (None, None) => true,
         (Some(left), Some(right)) => left.run_id == right.run_id,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::simulation_religion_hours_valid;
+    use adventuresim_world_schema::ReligionHours;
+
+    #[test]
+    fn simulation_rejects_invalid_individual_religion_fields() {
+        assert!(simulation_religion_hours_valid(ReligionHours::default()));
+        for invalid in [-1.0, f32::NAN, f32::INFINITY] {
+            assert!(!simulation_religion_hours_valid(ReligionHours {
+                lutheran: invalid,
+                ..Default::default()
+            }));
+        }
     }
 }

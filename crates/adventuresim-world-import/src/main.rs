@@ -503,6 +503,7 @@ fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
             }
             adventuresim_world_schema::OfficialReligion::EasternOrthodox => "EasternOrthodox",
             adventuresim_world_schema::OfficialReligion::Islamic => "Islamic",
+            adventuresim_world_schema::OfficialReligion::Judaism => "Judaism",
         })
     };
     let arrangement = |value| match value {

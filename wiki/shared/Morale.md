@@ -26,7 +26,7 @@ Personality is stored as seven immutable, mutually-exclusive axes. Neutral axes 
 
 Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
 
-Applied tags are appended to the source label so the breakdown remains auditable. Personality changes what an event means; Will still governs coping with ranked negative morale, Charisma still governs the party restoration budget, and Faith still governs religious knowledge and cohort strength.
+Applied tags are appended to the source label so the breakdown remains auditable. Personality changes what an event means; Will still governs coping with ranked negative morale, Charisma still governs the party restoration budget, Religion governs tradition-specific knowledge, and Conviction governs personal and cohort ardor.
 
 # Lifting allies
 
@@ -63,7 +63,7 @@ The strategic condition and morale-source tables are refreshable projections. Du
 
 A character makes or changes their religious profession by speaking with a priest at a church. Each settlement currently has one church and one fixed faith; its priest can convert a character only to that faith. Religion is a dialogue topic even when the priest also has a quest to discuss, rather than a service-menu choice. A priest cannot make a character faithless. Characters renounce their current faith from the Religion entry on their own biography instead. Large cities may eventually support multiple churches, but that is outside the current settlement model.
 
-Each professed character receives a conviction source from their same-faith party cohort. The generic ranked party check combines the Faith checks in that cohort, with a minimum cohort check of 1 so a lone believer still draws strength from personal conviction. The cohort check is capped at 5. Faithless characters receive no conviction source and do not form a cohort that pressures believers.
+Only a professed Zealous character receives the positive religious-leadership morale source. Its magnitude comes from the party's aggregate effective Religion check for that character's own tradition, and any living member may contribute regardless of profession. Same-profession social pressure instead comes from personality Conviction: Zealous contributes 5.0, Neutral 2.5, and Irreverent 0.0. A character with no professed religion receives neither this source nor religious pressure.
 
 For each believer, the other religious cohorts are combined into foreign faith pressure. Mixed-faith tension is deliberately subtractive: party Charisma is subtracted from that pressure, and only the uncovered remainder becomes raw negative morale. This means capable social leadership can remove discord entirely rather than merely dividing it down:
 
@@ -76,17 +76,17 @@ The resulting `Religious discord` source then receives the same negative-source 
 
 # Fervor
 
-Fervor is a bounded strategic pressure meter, not another morale source. It shows how close religious conviction is to becoming inflexible behavior. Individual Faith, the character's same-faith cohort check, and surplus morale raise pressure; aggregate party Charisma is subtracted as restraint. Faithless characters always have zero Fervor.
+Fervor is a bounded strategic pressure meter, not another morale source. It shows how close religious conviction is to becoming inflexible behavior. Individual personality Conviction, the character's same-profession Conviction cohort, and surplus morale raise pressure; aggregate party Charisma is subtracted as restraint. Characters with no professed religion always have zero Fervor.
 
 ```rs
-let pressure = (individual_faith + cohort_check + positive_morale / 10.0
+let pressure = (individual_conviction + cohort_conviction + positive_morale / 10.0
     - party_charisma - 2.5).max(0.0);
 let fervor = 1.0 - (-pressure / 5.0).exp();
 ```
 
 The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy.
 
-Daily prayer is an activity in the settlement-downtime schedule rather than a dialogue-style demand. Prayer adds a positive morale source with diminishing returns and trains Faith at 25% of the explicit study rate. Fervor creates a continuous desired prayer allocation of up to two hours per day. Meeting that allocation removes the prayer-neglect penalty; partial observance reduces it proportionally. Scheduled prayer is not attempted while traveling.
+Daily prayer is an activity in the settlement-downtime schedule rather than a dialogue-style demand. Its existing saturating morale is multiplied by the party's tradition-specific Religion check divided by five, then receives the normal religious personality reaction. It trains direct hours in the professed tradition at 25% of explicit study speed. Fervor creates a continuous desired prayer allocation of up to two hours per day. A character without a profession instead meditates: this gives 25% of the saturating morale independently of Religion checks and personality religious scaling, and creates no Religion study, Fervor, or neglect. Scheduled prayer and meditation are not attempted while traveling.
 
 Sunday remains an explicit demand rather than a random Fervor event. Day 7 and every seventh calendar day thereafter is Sunday. A professing character with nonzero Fervor who is at a settlement receives the choice once that Sunday:
 

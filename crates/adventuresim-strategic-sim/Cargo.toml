@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 adventuresim-core.workspace = true
 adventuresim-stdb-client.workspace = true
+adventuresim-world-schema.workspace = true
 blake3.workspace = true
 clap.workspace = true
 serde = { workspace = true, features = ["std"] }

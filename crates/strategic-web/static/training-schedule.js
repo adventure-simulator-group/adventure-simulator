@@ -150,7 +150,8 @@
       gold: hours * Number(row.dataset.goldRate || 0),
       virtue: hours * Number(row.dataset.virtueRate || 0),
       morale: row.dataset.prayerMorale === 'true'
-        ? Number(row.dataset.prayerMoraleLimit) * (1 - Math.exp(-minutes / Number(row.dataset.prayerMoraleScale)))
+        ? Number(row.dataset.prayerMoraleMultiplier || 1) * Number(row.dataset.prayerMoraleLimit)
+          * (1 - Math.exp(-minutes / Number(row.dataset.prayerMoraleScale)))
         : hours * Number(row.dataset.moraleRate || 0),
       fatigue: hours * Number(row.dataset.fatigueRate || 0),
     };
@@ -218,6 +219,7 @@
     const inputs = [...root.querySelectorAll('[data-schedule-input]')];
     inputs.forEach((input) => { input.value = Math.round(Number(input.value) / STEP) * STEP; });
     const state = { inputs: Object.fromEntries(inputs.map((input) => [input.name, input])) };
+    syncReligionControls(root, root.querySelector('[data-religion-auto-toggle]')?.checked ?? true);
     state.saveQueue = createLatestSaveQueue(
       (snapshot) => window.strategicFetch(root.action, {
         method: 'POST',
@@ -243,18 +245,54 @@
     return state;
   }
 
-  function values(state) {
-    return Object.fromEntries(Object.entries(state.inputs).map(([name, input]) => [name, Number(input.value)]));
+  function religionInputActive(input, autoTrain) {
+    if ('religionAutoBudget' in input.dataset) return autoTrain;
+    if ('religionManualBudget' in input.dataset) return !autoTrain;
+    return true;
+  }
+
+  function values(root, state, activeOnly = true) {
+    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
+    return Object.fromEntries(Object.entries(state.inputs)
+      .filter(([, input]) => !activeOnly || religionInputActive(input, autoTrain))
+      .map(([name, input]) => [name, Number(input.value)]));
+  }
+
+  function syncReligionControls(root, autoTrain) {
+    root.querySelectorAll('[data-religion-auto-budget]').forEach((input) => {
+      input.closest('[data-schedule-value]')?.querySelectorAll('button, [role="button"]')
+        .forEach((control) => { control.toggleAttribute('disabled', !autoTrain); control.setAttribute('aria-disabled', String(!autoTrain)); });
+    });
+    root.querySelectorAll('[data-religion-manual-budget]').forEach((input) => {
+      input.closest('[data-schedule-value]')?.querySelectorAll('button, [role="button"]')
+        .forEach((control) => { control.toggleAttribute('disabled', autoTrain); control.setAttribute('aria-disabled', String(autoTrain)); });
+    });
+  }
+
+  function religionAllocationTotal(allocation, autoTrain) {
+    if (autoTrain) return Number(allocation.religion_minutes || 0);
+    return Object.entries(allocation)
+      .filter(([name]) => name.startsWith('religion_') && name.endsWith('_minutes') && name !== 'religion_minutes')
+      .reduce((sum, [, minutes]) => sum + Number(minutes), 0);
   }
 
   function render(root, state) {
-    const allocation = values(state);
-    Object.entries(allocation).forEach(([name, minutes]) => {
+    const allValues = values(root, state, false);
+    const allocation = values(root, state);
+    Object.entries(allValues).forEach(([name, minutes]) => {
       root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => {
         output.textContent = format(minutes);
         output.setAttribute('aria-label', `Daily allocation ${formatClock(minutes)}; click to edit`);
       });
     });
+    const auto = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
+    if (!auto) {
+      const religionTotal = religionAllocationTotal(allValues, false);
+      root.querySelectorAll('[data-schedule-value="religion_minutes"] [data-schedule-display]').forEach((output) => {
+        output.textContent = format(religionTotal);
+        output.setAttribute('aria-label', `Total Religion allocation ${formatClock(religionTotal)}`);
+      });
+    }
     const leisure = Math.max(0, DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0));
     root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => {
       output.textContent = format(leisure);
@@ -269,7 +307,9 @@
   }
 
   function setValue(root, state, target, wanted) {
-    const allocation = values(state);
+    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
+    if (!state.inputs[target] || !religionInputActive(state.inputs[target], autoTrain)) return;
+    const allocation = values(root, state);
     const names = Object.keys(allocation);
     const current = allocation[target];
     const next = Math.max(0, Math.min(DAY, Math.round(wanted / STEP) * STEP));
@@ -310,7 +350,8 @@
 
   function beginEditing(root, state, display) {
     const name = nameFor(display);
-    if (!name || !state.inputs[name] || display.dataset.editing) return;
+    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
+    if (!name || !state.inputs[name] || !religionInputActive(state.inputs[name], autoTrain) || display.dataset.editing) return;
     display.dataset.editing = 'true';
     const input = document.createElement('input');
     input.className = 'schedule-time-input';
@@ -346,6 +387,8 @@
     calculateLeisurePreview,
     createLatestSaveQueue,
     parseClock,
+    religionInputActive,
+    religionAllocationTotal,
     signedEffect,
   };
   if (typeof document === 'undefined') return;
@@ -370,6 +413,14 @@
     save(root, 180);
   }, { passive: false });
   document.addEventListener('click', (event) => {
+    const expand = event.target.closest?.('[data-religion-expand]');
+    if (expand) {
+      const root = expand.closest('[data-skill-schedule]') || expand.closest('table');
+      const expanded = expand.getAttribute('aria-expanded') !== 'true';
+      expand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.religion-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const retry = event.target.closest?.('[data-schedule-retry]');
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');
@@ -388,6 +439,14 @@
     const display = event.target.closest?.('[data-schedule-display][role="button"]');
     const root = display?.closest('[data-skill-schedule]');
     if (root) beginEditing(root, stateFor(root), display);
+  });
+  document.addEventListener('change', (event) => {
+    const toggle = event.target.closest?.('[data-religion-auto-toggle]');
+    if (!toggle) return;
+    const root = toggle.closest('[data-skill-schedule]');
+    syncReligionControls(root, toggle.checked);
+    render(root, stateFor(root));
+    save(root);
   });
   document.addEventListener('keydown', (event) => {
     const display = event.target.closest?.('[data-schedule-display][role="button"]');

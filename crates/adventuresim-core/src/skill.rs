@@ -26,9 +26,9 @@ pub enum Skill {
     /// Mental. Trained. Party health recovery bonus. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Medicine,
-    /// Mental. Trained. Faith multiplies same-religion morale. (5000h)
+    /// Mental. Trained. Knowledge of a specific religious tradition. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
-    Faith,
+    Religion,
     /// Physical. Intuitive. Attack damage, agility for dodges, precision for hits. (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
     Melee,

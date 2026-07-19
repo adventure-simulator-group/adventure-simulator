@@ -31,6 +31,14 @@ pub fn prayer_morale(prayer_minutes: u16) -> f32 {
     PRAYER_MORALE_LIMIT * (1.0 - (-f32::from(prayer_minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
 }
 
+pub fn led_prayer_morale(prayer_minutes: u16, religion_check: f32) -> f32 {
+    prayer_morale(prayer_minutes) * religion_check.clamp(0.0, 5.0) / 5.0
+}
+
+pub fn meditation_morale(minutes: u16) -> f32 {
+    prayer_morale(minutes) * 0.25
+}
+
 pub fn prayer_observance(fervor: f32, prayer_minutes: u16) -> f32 {
     let required = MAX_DAILY_PRAYER_OBLIGATION_MINUTES * fervor.clamp(0.0, 1.0);
     if required <= 0.0 {
@@ -90,6 +98,9 @@ mod tests {
         assert!(prayer_morale(120) < PRAYER_MORALE_LIMIT);
         assert_eq!(prayer_observance(0.5, 30), 0.5);
         assert_eq!(prayer_observance(0.5, 60), 1.0);
+        assert_eq!(led_prayer_morale(60, 0.0), 0.0);
+        assert_eq!(led_prayer_morale(60, 5.0), prayer_morale(60));
+        assert_eq!(meditation_morale(60), prayer_morale(60) * 0.25);
     }
 
     #[test]

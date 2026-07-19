@@ -2565,6 +2565,41 @@ button.party-portrait-action {
   white-space: nowrap;
 }
 
+.religion-expand-button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    padding: 0;
+    cursor: pointer;
+}
+
+.religion-expand-button:focus-visible,
+.religion-auto-cell input:focus-visible {
+    outline: 2px solid var(--accent, #d0ad63);
+    outline-offset: 2px;
+}
+
+.religion-aggregate-hours,
+.religion-hours-copy {
+    color: var(--text-muted, #a9a39a);
+    font-size: 0.75rem;
+}
+
+.religion-hours-copy {
+    display: block;
+    margin-top: 0.2rem;
+}
+
+.religion-subskill-name {
+    padding-left: 0.7rem;
+}
+
+.religion-auto-cell {
+    padding: 0.35rem 0.5rem 0.55rem 2rem;
+}
+
 .party-skill-meter .skill-rank-bar { width: 100%; overflow: visible; }
 
 .attribute-rank-bar {

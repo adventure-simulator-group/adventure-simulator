@@ -143,7 +143,7 @@ pub fn stat_icon_path(category: &str, icon: &str) -> String {
     }
 }
 
-/// Faith-specific church icon. These choices distinguish the supported
+/// Religion-specific church icon. These choices distinguish the supported
 /// confessions at a glance while retaining fallbacks for legacy seed IDs.
 pub fn religion_game_icon_name(religion_id: Option<&str>) -> &'static str {
     match religion_id {
@@ -154,6 +154,7 @@ pub fn religion_game_icon_name(religion_id: Option<&str>) -> &'static str {
         Some("protestant") => "split-cross",
         Some("eastern_orthodox") => "byzantin-temple",
         Some("islamic") => "samara-mosque",
+        Some("judaism") => "holy-symbol",
         Some("old_faith") => "holy-symbol",
         _ => "church",
     }

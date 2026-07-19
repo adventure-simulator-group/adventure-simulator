@@ -23,7 +23,7 @@ pub struct RecruitmentRequirements {
     pub medicine: u8,
     pub surgery: u8,
     pub charisma: u8,
-    pub faith: u8,
+    pub religion: u8,
 }
 
 impl __sdk::InModule for RecruitmentRequirements {

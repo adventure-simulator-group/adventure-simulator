@@ -266,6 +266,8 @@ pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
 pub mod reject_party_join_request_reducer;
+pub mod religion_hours_type;
+pub mod religion_minutes_type;
 pub mod religious_demand_table;
 pub mod religious_demand_type;
 pub mod remove_party_member_reducer;
@@ -661,6 +663,8 @@ pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
 pub use reject_party_join_request_reducer::reject_party_join_request;
+pub use religion_hours_type::ReligionHours;
+pub use religion_minutes_type::ReligionMinutes;
 pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
 pub use remove_party_member_reducer::remove_party_member;
@@ -1238,7 +1242,7 @@ pub enum Reducer {
         medicine: f32,
         surgery: f32,
         charisma: f32,
-        faith: f32,
+        religion: f32,
     },
     UpdateRecruitmentRole {
         leader_id: u64,
@@ -2158,13 +2162,13 @@ Reducer::SendLocalChatMessage{
                 medicine,
                 surgery,
                 charisma,
-                faith,
+                religion,
 }             => __sats::bsatn::to_vec(&update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
                 leader_id: leader_id.clone(),
                 medicine: medicine.clone(),
                 surgery: surgery.clone(),
                 charisma: charisma.clone(),
-                faith: faith.clone(),
+                religion: religion.clone(),
 }),
             Reducer::UpdateRecruitmentRole{
                 leader_id,

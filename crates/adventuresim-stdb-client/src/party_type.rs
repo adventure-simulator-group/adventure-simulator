@@ -21,7 +21,7 @@ pub struct Party {
     pub medicine_target: f32,
     pub surgery_target: f32,
     pub charisma_target: f32,
-    pub faith_target: f32,
+    pub religion_target: f32,
 }
 
 impl __sdk::InModule for Party {
@@ -46,7 +46,7 @@ pub struct PartyCols {
     pub medicine_target: __sdk::__query_builder::Col<Party, f32>,
     pub surgery_target: __sdk::__query_builder::Col<Party, f32>,
     pub charisma_target: __sdk::__query_builder::Col<Party, f32>,
-    pub faith_target: __sdk::__query_builder::Col<Party, f32>,
+    pub religion_target: __sdk::__query_builder::Col<Party, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for Party {
@@ -85,7 +85,7 @@ impl __sdk::__query_builder::HasCols for Party {
             medicine_target: __sdk::__query_builder::Col::new(table_name, "medicine_target"),
             surgery_target: __sdk::__query_builder::Col::new(table_name, "surgery_target"),
             charisma_target: __sdk::__query_builder::Col::new(table_name, "charisma_target"),
-            faith_target: __sdk::__query_builder::Col::new(table_name, "faith_target"),
+            religion_target: __sdk::__query_builder::Col::new(table_name, "religion_target"),
         }
     }
 }

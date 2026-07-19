@@ -31,7 +31,7 @@ pub struct CharacterCapability {
     pub medicine: f32,
     pub surgery: f32,
     pub charisma: f32,
-    pub faith: f32,
+    pub religion: f32,
     #[default(0.0)]
     pub weapon_precision: f32,
 }
@@ -57,7 +57,7 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             medicine: value.medicine,
             surgery: value.surgery,
             charisma: value.charisma,
-            faith: value.faith,
+            religion: value.religion,
             weapon_precision: value.weapon_precision,
         }
     }
@@ -216,7 +216,9 @@ impl PlayerSkills for CharacterSkills {
             Skill::Will => self.will_hours,
             Skill::Charisma => self.charisma_hours,
             Skill::Medicine => self.medicine_hours,
-            Skill::Faith => self.faith_hours,
+            // Generic recruitment/tactical summaries use the character's best-covered
+            // tradition. Authoritative religious morale always selects a tradition.
+            Skill::Religion => self.religion_hours.maximum_effective(),
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::Surgeon => self.surgeon_hours,
@@ -618,7 +620,7 @@ pub(crate) fn load_combatant(
             will_hours: skills.will_hours,
             charisma_hours: skills.charisma_hours,
             medicine_hours: skills.medicine_hours,
-            faith_hours: skills.faith_hours,
+            religion_hours: skills.religion_hours.total_direct(),
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
             surgeon_hours: skills.surgeon_hours,

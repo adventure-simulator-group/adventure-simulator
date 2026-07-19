@@ -1,5 +1,6 @@
 use crate::rng::{StableRng, sub_seed};
 use adventuresim_core::strategic_schedule::{DailySchedule, SkillHours};
+use adventuresim_world_schema::{ReligionHours, ReligionMinutes};
 use serde::{Deserialize, Serialize};
 
 const PROFILE_DOMAIN: u64 = 0x5052_4f46_494c_4501;
@@ -242,7 +243,10 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         will: initial(&mut rng),
         charisma: initial(&mut rng),
         medicine: initial(&mut rng),
-        faith: initial(&mut rng),
+        religion: ReligionHours {
+            roman_catholic: initial(&mut rng),
+            ..Default::default()
+        },
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
         surgeon: initial(&mut rng),
@@ -263,7 +267,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             initial_skills.medicine = specialty;
             initial_skills.surgeon = specialty * 0.7;
         }
-        BuildRole::Devout => initial_skills.faith = specialty,
+        BuildRole::Devout => initial_skills.religion.roman_catholic = specialty,
         BuildRole::Civilian => {}
     }
     let quest_propensity = if build.activity_only {
@@ -336,7 +340,13 @@ fn generated_schedule(
         BuildRole::Skirmisher => s.dodge = training_minutes,
         BuildRole::Ranged => s.ranged = training_minutes,
         BuildRole::Healer => s.medicine = training_minutes,
-        BuildRole::Devout => s.faith = training_minutes,
+        BuildRole::Devout => {
+            s.religion_auto_train = false;
+            s.religions = ReligionMinutes {
+                roman_catholic: training_minutes,
+                ..Default::default()
+            };
+        }
         BuildRole::Civilian => s.will = training_minutes,
     }
     s
@@ -430,7 +440,10 @@ pub fn derive_build(p: &Personality, a: &Attributes) -> AgentBuild {
             "compassion and intelligence support medicine",
         )
     } else if p.conviction == Conviction::Zealous {
-        (BuildRole::Devout, "zeal supports faith and prayer")
+        (
+            BuildRole::Devout,
+            "zeal supports religious study and prayer",
+        )
     } else if ranged_viable {
         (BuildRole::Ranged, "perception supports ranged combat")
     } else {

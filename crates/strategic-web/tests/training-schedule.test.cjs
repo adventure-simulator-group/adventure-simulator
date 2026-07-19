@@ -5,8 +5,48 @@ const {
   calculateLeisurePreview,
   createLatestSaveQueue,
   parseClock,
+  religionAllocationTotal,
+  religionInputActive,
   signedEffect,
 } = require("../static/training-schedule.js");
+
+test("Religion allocation counts either the auto budget or manual traditions exactly once", () => {
+  const allocation = {
+    religion_minutes: 120,
+    religion_roman_catholic_minutes: 45,
+    religion_lutheran_minutes: 30,
+    religion_judaism_minutes: 15,
+  };
+  assert.equal(religionAllocationTotal(allocation, true), 120);
+  assert.equal(religionAllocationTotal(allocation, false), 90);
+});
+
+test("Religion mode toggles preserve inactive branch values across remounts", () => {
+  const values = {
+    religion_minutes: 120,
+    religion_judaism_minutes: 45,
+    religion_lutheran_minutes: 30,
+  };
+  const inputs = {
+    religion_minutes: { dataset: { religionAutoBudget: "" } },
+    religion_judaism_minutes: { dataset: { religionManualBudget: "" } },
+    religion_lutheran_minutes: { dataset: { religionManualBudget: "" } },
+  };
+  const active = (autoTrain) => Object.fromEntries(Object.entries(values)
+    .filter(([name]) => religionInputActive(inputs[name], autoTrain)));
+  assert.deepEqual(active(true), { religion_minutes: 120 });
+  assert.deepEqual(active(false), {
+    religion_judaism_minutes: 45,
+    religion_lutheran_minutes: 30,
+  });
+  assert.deepEqual(values, {
+    religion_minutes: 120,
+    religion_judaism_minutes: 45,
+    religion_lutheran_minutes: 30,
+  });
+  assert.equal(religionAllocationTotal(values, true), 120);
+  assert.equal(religionAllocationTotal(values, false), 75);
+});
 
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 const leisurePreview = (overrides = {}) => calculateLeisurePreview({

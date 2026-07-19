@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::religion_minutes_type::ReligionMinutes;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ScheduleAllocation {
@@ -14,7 +16,9 @@ pub struct ScheduleAllocation {
     pub will_minutes: u16,
     pub charisma_minutes: u16,
     pub medicine_minutes: u16,
-    pub faith_minutes: u16,
+    pub religion_minutes: u16,
+    pub religion_auto_train: bool,
+    pub religion_minutes_by_tradition: ReligionMinutes,
     pub stealth_minutes: u16,
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,

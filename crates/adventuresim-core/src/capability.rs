@@ -31,6 +31,28 @@ pub fn aggregate_party_check(values: impl IntoIterator<Item = f32>) -> f32 {
         .sum()
 }
 
+/// The authoritative trained-mental Religion check for one tradition.
+/// Religion has no equipment or fatigue term, so the public strategic fields
+/// are sufficient to reproduce the same check for a schedule preview.
+pub fn religion_knowledge_check(
+    effective_hours: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let health = if head_health.is_finite() {
+        head_health.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let attribute_check = health * (instinct + intelligence * focus);
+    Skill::Religion
+        .training_rank(effective_hours)
+        .min(attribute_check)
+        .max(0.0)
+}
+
 pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
     let before = aggregate_party_check(current.iter().copied());
     let after = aggregate_party_check(current.iter().copied().chain([candidate]));
@@ -121,7 +143,7 @@ pub struct CharacterCapabilities {
     pub medicine: f32,
     pub surgery: f32,
     pub charisma: f32,
-    pub faith: f32,
+    pub religion: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -139,7 +161,7 @@ pub struct RoleRequirements {
     pub medicine: u8,
     pub surgery: u8,
     pub charisma: u8,
-    pub faith: u8,
+    pub religion: u8,
 }
 
 impl CharacterCapabilities {
@@ -157,7 +179,7 @@ impl CharacterCapabilities {
             && rating(self.medicine) >= requirements.medicine
             && rating(self.surgery) >= requirements.surgery
             && rating(self.charisma) >= requirements.charisma
-            && rating(self.faith) >= requirements.faith
+            && rating(self.religion) >= requirements.religion
     }
 }
 
@@ -286,9 +308,9 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        faith: skills
+        religion: skills
             .skill_check_by_parts(
-                Skill::Faith,
+                Skill::Religion,
                 attributes,
                 body,
                 essentials,
@@ -448,6 +470,14 @@ mod tests {
         let current = [2.0, 4.0, 3.0];
         assert!((aggregate_party_check(current) - (4.0 + 1.5 + 2.0 / 3.0)).abs() < 0.001);
         assert!((aggregate_party_contribution(&current, 5.0) - 7.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn religion_knowledge_check_is_bounded_by_training_and_healthy_focus() {
+        assert_eq!(religion_knowledge_check(0.0, 5.0, 5.0, 1.0, 1.0), 0.0);
+        let trained = Skill::Religion.training_rank(2_500.0);
+        assert!((religion_knowledge_check(2_500.0, 5.0, 5.0, 1.0, 1.0) - trained).abs() < 0.001);
+        assert!((religion_knowledge_check(100_000.0, 1.0, 1.0, 0.5, 0.5) - 0.75).abs() < 0.001);
     }
 
     #[test]

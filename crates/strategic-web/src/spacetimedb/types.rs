@@ -225,7 +225,7 @@ pub struct Party {
     pub medicine_target: f32,
     pub surgery_target: f32,
     pub charisma_target: f32,
-    pub faith_target: f32,
+    pub religion_target: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,7 +359,7 @@ pub struct RecruitmentRequirements {
     pub medicine: u8,
     pub surgery: u8,
     pub charisma: u8,
-    pub faith: u8,
+    pub religion: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -423,7 +423,7 @@ pub struct CharacterCapability {
     pub medicine: f32,
     pub surgery: f32,
     pub charisma: f32,
-    pub faith: f32,
+    pub religion: f32,
     pub weapon_precision: f32,
 }
 
@@ -459,7 +459,7 @@ impl CharacterCapability {
             (self.medicine, "Medicine"),
             (self.surgery, "Surgery"),
             (self.charisma, "Charisma"),
-            (self.faith, "Faith"),
+            (self.religion, "Religion"),
         ] {
             if adventuresim_core::capability::rating(value)
                 >= adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT
@@ -757,7 +757,7 @@ pub struct CharacterSkills {
     pub will_hours: f32,
     pub charisma_hours: f32,
     pub medicine_hours: f32,
-    pub faith_hours: f32,
+    pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
@@ -836,7 +836,9 @@ pub struct ScheduleAllocation {
     pub will_minutes: u16,
     pub charisma_minutes: u16,
     pub medicine_minutes: u16,
-    pub faith_minutes: u16,
+    pub religion_minutes: u16,
+    pub religion_auto_train: bool,
+    pub religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes,
     pub stealth_minutes: u16,
     pub balance_minutes: u16,
     pub surgeon_minutes: u16,

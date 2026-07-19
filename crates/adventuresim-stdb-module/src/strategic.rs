@@ -954,7 +954,7 @@ pub fn import_settlements(
             soil,
             geology,
             scene_key: settlement.scene_key,
-            religion_id: settlement.religious_status.church().faith_id().into(),
+            religion_id: settlement.religious_status.church().religion_id().into(),
             religious_status: settlement.religious_status,
             drought,
             hydrology: settlement.hydrology,
@@ -1465,7 +1465,7 @@ pub struct Party {
     #[default(0.0)]
     pub charisma_target: f32,
     #[default(0.0)]
-    pub faith_target: f32,
+    pub religion_target: f32,
 }
 
 /// The durable strategic record behind the travel tracker. Party location
@@ -1691,7 +1691,7 @@ pub struct RecruitmentRequirements {
     pub medicine: u8,
     pub surgery: u8,
     pub charisma: u8,
-    pub faith: u8,
+    pub religion: u8,
 }
 
 impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequirements {
@@ -1715,7 +1715,7 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
             medicine: value.medicine,
             surgery: value.surgery,
             charisma: value.charisma,
-            faith: value.faith,
+            religion: value.religion,
         }
     }
 }
@@ -2171,7 +2171,7 @@ pub(crate) fn create_solo_party_for_character(
             medicine_target: 0.0,
             surgery_target: 0.0,
             charisma_target: 0.0,
-            faith_target: 0.0,
+            religion_target: 0.0,
         });
         ctx.db.party_member().insert(PartyMember {
             id: 0,
@@ -2315,7 +2315,7 @@ pub fn create_recruitment_role(
         requirements.medicine,
         requirements.surgery,
         requirements.charisma,
-        requirements.faith,
+        requirements.religion,
     ]
     .iter()
     .any(|v| *v > 5)
@@ -2573,10 +2573,10 @@ pub fn update_party_check_targets(
     medicine: f32,
     surgery: f32,
     charisma: f32,
-    faith: f32,
+    religion: f32,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, leader_id)?;
-    if [medicine, surgery, charisma, faith]
+    if [medicine, surgery, charisma, religion]
         .into_iter()
         .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
     {
@@ -2601,7 +2601,7 @@ pub fn update_party_check_targets(
     party.medicine_target = medicine;
     party.surgery_target = surgery;
     party.charisma_target = charisma;
-    party.faith_target = faith;
+    party.religion_target = religion;
     ctx.db.party().id().update(party);
     Ok(())
 }
@@ -2642,7 +2642,7 @@ fn role_requirements(
     requirements.medicine = 0;
     requirements.surgery = 0;
     requirements.charisma = 0;
-    requirements.faith = 0;
+    requirements.religion = 0;
     requirements
 }
 
@@ -3031,7 +3031,10 @@ pub fn seed_bot_join_requests(
         skills.medicine_hours = 1_000_000.0;
         skills.surgeon_hours = 1_000_000.0;
         skills.charisma_hours = 1_000_000.0;
-        skills.faith_hours = 1_000_000.0;
+        skills.religion_hours = adventuresim_world_schema::ReligionHours {
+            roman_catholic: 1_000_000.0,
+            ..Default::default()
+        };
         crate::character::add_and_equip_item(ctx, id, "halberd", crate::ItemSlot::RightHolding)?;
         if role.requirements.full_armor {
             for (item, slot) in [
@@ -5793,7 +5796,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     ),
                 ]).unwrap(),
                 scene_key: scene.into(),
-                religion_id: religious_status.church().faith_id().into(),
+                religion_id: religious_status.church().religion_id().into(),
                 source_node_id: None,
                 sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
@@ -5913,17 +5916,17 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         if party.medicine_target == 0.0
             && party.surgery_target == 0.0
             && party.charisma_target == 0.0
-            && party.faith_target == 0.0
+            && party.religion_target == 0.0
         {
             party.medicine_target = 4.0;
             party.surgery_target = 4.0;
             party.charisma_target = 5.0;
-            party.faith_target = 4.0;
+            party.religion_target = 4.0;
         }
         party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
         party.surgery_target = party.surgery_target.round().clamp(0.0, 5.0);
         party.charisma_target = party.charisma_target.round().clamp(0.0, 5.0);
-        party.faith_target = party.faith_target.round().clamp(0.0, 5.0);
+        party.religion_target = party.religion_target.round().clamp(0.0, 5.0);
         ctx.db.party().id().update(party);
     }
     let existing = ctx
@@ -5970,7 +5973,7 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.surgery_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.charisma_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
-        party.faith_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party().id().update(party);
 
         let mut requirements = RecruitmentRequirements::default();
