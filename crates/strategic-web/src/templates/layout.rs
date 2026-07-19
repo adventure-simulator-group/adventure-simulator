@@ -387,7 +387,9 @@ mod tests {
         assert!(time.contains("applyLighting(characterMinutes)"));
         assert!(building.contains("searchParams.get(\"building\")"));
         assert!(building.contains("searchParams.set(\"building\", building)"));
-        assert!(building.contains("services.has(serverActive) ? serverActive"));
+        assert!(building.contains("pathname.includes(\"/party\")"));
+        assert!(building.contains("partyInspection && services.has(requested)"));
+        assert!(building.contains("!services.has(requested) || !partyInspection"));
     }
 
     #[test]
