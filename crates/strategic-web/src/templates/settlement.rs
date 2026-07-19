@@ -4820,6 +4820,9 @@ mod tests {
         assert!(
             utilities.contains(".right-sidebar .inventory-actions-cell > .inventory-row-actions")
         );
+        assert!(utilities.contains("background:var(--inventory-row-background"));
+        assert!(utilities.contains("left:100%; padding-left:var(--inventory-action-bridge);"));
+        assert!(utilities.contains("right:100%; padding-right:var(--inventory-action-bridge);"));
         assert!(css.contains(".inventory-browser-table-frame"));
         assert!(css.contains("width:max-content;"));
         assert!(utilities.contains(".inventory-footer-repair .repair-all-button"));

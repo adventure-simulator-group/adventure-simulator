@@ -174,8 +174,10 @@
     if (!aside || !grid) return;
     const styles = global.getComputedStyle(aside);
     const frameWidth = (Number.parseFloat(styles.paddingLeft) || 0) + (Number.parseFloat(styles.paddingRight) || 0);
-    const tableWidth = browser.querySelector(".trade-inventory-table")?.scrollWidth || 0;
-    const contentWidth = Math.ceil(Math.max(browser.scrollWidth, tableWidth));
+    const table = browser.querySelector(".trade-inventory-table");
+    const tableWidth = table?.getBoundingClientRect?.().width || table?.clientWidth || 0;
+    const browserWidth = browser.getBoundingClientRect?.().width || browser.clientWidth || 0;
+    const contentWidth = Math.ceil(Math.max(browserWidth, tableWidth));
     const side = aside.classList.contains("left-sidebar") ? "left" : "right";
     grid.style.setProperty(`--inventory-${side}-width`, `${contentWidth + frameWidth}px`);
   }

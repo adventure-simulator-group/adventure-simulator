@@ -230,7 +230,10 @@
 
 .trade-transfer:not(:disabled) { cursor: pointer; }
 
-.party-trade-changed { background: color-mix(in srgb, var(--accent) 12%, var(--panel-bg)); }
+.trade-inventory-row.party-trade-changed {
+  --inventory-row-background: color-mix(in srgb, var(--accent) 12%, var(--panel-bg));
+  background: var(--inventory-row-background);
+}
 .trade-delta { margin-left: .25rem; font-weight: 700; }
 .trade-delta.negative { color: var(--danger); }
 .trade-delta.positive { color: var(--success); }
@@ -550,7 +553,7 @@
 .inventory-detail-row dt { overflow:hidden; color:var(--text-muted); font-size:.64rem; letter-spacing:.035em; line-height:1.05; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
 .inventory-detail-row dd { min-width:0; margin:0; overflow:hidden; color:var(--text-primary); font-size:.88rem; font-variant-numeric:tabular-nums; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
 .inventory-detail-empty { color:var(--text-muted); font-size:var(--font-size-xs); font-style:italic; }
-.trade-inventory-row[aria-expanded="true"] { background:color-mix(in srgb, var(--accent) 14%, var(--panel-bg)); box-shadow:inset 2px 0 color-mix(in srgb, var(--accent) 72%, transparent); }
+.trade-inventory-row[aria-expanded="true"] { --inventory-row-background:color-mix(in srgb, var(--accent) 14%, var(--panel-bg)); background:var(--inventory-row-background); box-shadow:inset 2px 0 color-mix(in srgb, var(--accent) 72%, transparent); }
 @container (max-width:14rem) {
   .inventory-detail-row dl { grid-template-columns:1fr; }
 }
@@ -831,9 +834,10 @@
 }
 
 .trade-inventory-row {
+  --inventory-row-background: var(--building-interactive);
   position: relative;
   border-bottom: 1px solid var(--border-light);
-  background: var(--building-interactive);
+  background: var(--inventory-row-background);
 }
 
 .trade-row:hover,
@@ -842,7 +846,8 @@
 .trade-row:focus-within,
 .inventory-trade-row:focus-within,
 .trade-inventory-row:focus-within {
-  background: var(--building-interactive-hover);
+  --inventory-row-background: var(--building-interactive-hover);
+  background: var(--inventory-row-background);
 }
 
 body:has(.settlement-top-bar) .main-grid .btn:not(.btn-danger),

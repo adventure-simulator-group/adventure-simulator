@@ -43,6 +43,13 @@ test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof syncPanelWidth, "function");
 });
 
+test("rail measurement excludes projected action overflow", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /table\?\.getBoundingClientRect\?\.\(\)\.width/);
+  assert.match(source, /browser\.getBoundingClientRect\?\.\(\)\.width/);
+  assert.doesNotMatch(source, /Math\.max\(browser\.scrollWidth, tableWidth\)/);
+});
+
 test("bulk controls mount inside a semantic header cell", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
   assert.match(source, /querySelector\("\[data-inventory-browser\] \.inventory-actions-header"\)/);
