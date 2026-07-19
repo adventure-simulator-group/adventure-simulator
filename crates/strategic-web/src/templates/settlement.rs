@@ -2234,7 +2234,7 @@ fn skills_table(
                             (schedule_header_icon("duration", "Daily allocation"))
                         }
                     }
-                    th scope="col" aria-label="Religion details" {}
+                    th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
                     (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
@@ -2257,7 +2257,7 @@ fn skills_table(
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
                             th scope="col" {}
                             th scope="col" title="Daily allocation" { (schedule_header_icon("duration", "Daily allocation")) }
-                            th scope="col" aria-label="Religion details" {}
+                            th scope="col" aria-label="Skill details" {}
                         }
                         (schedule_special_row(
                             if professes_religion { "Prayer" } else { "Meditate" },
@@ -2272,7 +2272,7 @@ fn skills_table(
                         ))
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
                         (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
@@ -2480,7 +2480,7 @@ fn combat_skill_rows(
                 td class="party-skill-allocation combat-primary-allocation" data-schedule-value="combat_minutes" {
                     input type="hidden" name="combat_minutes" value=(auto_minutes)
                         data-schedule-input data-combat-auto-budget;
-                    span data-schedule-display tabindex=[auto.then_some("0")] role=[auto.then_some("button")] {
+                    span data-schedule-display data-combat-auto-display tabindex="0" role="button" {
                         (format_schedule_hours(if auto { auto_minutes } else { manual_total }))
                     }
                 }
@@ -2513,7 +2513,7 @@ fn combat_skill_rows(
                     td class="party-skill-allocation" data-schedule-value=(format!("{icon}_minutes")) {
                         input type="hidden" name=(format!("{icon}_minutes")) value=(minutes)
                             data-schedule-input data-combat-manual-budget;
-                        span data-schedule-display tabindex=[(!auto).then_some("0")] role=[(!auto).then_some("button")] { (format_schedule_hours(minutes)) }
+                        span data-schedule-display data-combat-manual-display tabindex="0" role="button" { (format_schedule_hours(minutes)) }
                     }
                 }
                 td class="religion-expand-cell" {}
@@ -4602,8 +4602,18 @@ mod tests {
         assert!(rendered.contains("name=\"combat_minutes\" value=\"90\""));
         assert!(rendered.contains("data-combat-auto-toggle"));
         assert!(rendered.contains("data-combat-expand"));
+        assert!(rendered.contains("data-combat-auto-display tabindex=\"0\" role=\"button\""));
+        assert_eq!(
+            rendered
+                .matches("data-combat-manual-display tabindex=\"0\" role=\"button\"")
+                .count(),
+            4
+        );
         assert_eq!(rendered.matches("data-combat-detail").count(), 4);
         assert!(rendered.contains("Relevant skills: Dodge"));
+        assert!(!rendered.contains("aria-label=\"Religion details\""));
+        assert!(rendered.contains("aria-label=\"Skill details\""));
+        assert!(rendered.contains("equipment-derived Combat training distribution at 25% speed"));
         assert_eq!(rendered.matches("data-religion-detail").count(), 1);
         assert!(!rendered.contains("title=\"Lutheranism\""));
         assert!(rendered.contains("religion_judaism_minutes"));

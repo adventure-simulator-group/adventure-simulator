@@ -285,18 +285,22 @@
     root.querySelectorAll('[data-religion-primary-manual-control]').forEach((control) => { control.hidden = autoTrain; });
   }
 
+  function setAllocationInteractive(allocation, active) {
+    allocation?.classList.toggle('religion-allocation-inactive', !active);
+    allocation?.querySelectorAll('[data-schedule-display]').forEach((control) => {
+      control.setAttribute('aria-disabled', String(!active));
+      control.setAttribute('tabindex', active ? '0' : '-1');
+    });
+  }
+
   function syncCombatControls(root, autoTrain) {
     root.querySelectorAll('[data-combat-auto-budget]').forEach((input) => {
       const allocation = input.closest('[data-schedule-value]');
-      allocation?.classList.toggle('religion-allocation-inactive', !autoTrain);
+      setAllocationInteractive(allocation, autoTrain);
     });
     root.querySelectorAll('[data-combat-manual-budget]').forEach((input) => {
       const allocation = input.closest('[data-schedule-value]');
-      allocation?.classList.toggle('religion-allocation-inactive', autoTrain);
-      allocation?.querySelectorAll('button, [role="button"]').forEach((control) => {
-        control.toggleAttribute('disabled', autoTrain);
-        control.setAttribute('aria-disabled', String(autoTrain));
-      });
+      setAllocationInteractive(allocation, !autoTrain);
     });
   }
 
@@ -504,6 +508,7 @@
     calculateLeisurePreview,
     createLatestSaveQueue,
     metaInputActive,
+    setAllocationInteractive,
     parseClock,
     religionInputActive: (input, autoTrain) => {
       if ('religionAutoBudget' in input.dataset) return autoTrain;

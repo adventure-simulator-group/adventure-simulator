@@ -228,7 +228,7 @@ impl CombatTrainingProfile {
             if item.shield {
                 result.block = 1.0;
             }
-            if item.melee {
+            if item.melee && !item.ranged {
                 let balance = if item.balance.is_finite() {
                     item.balance.clamp(0.0, 1.0)
                 } else {
@@ -482,6 +482,10 @@ mod tests {
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(false, true, false, 0.1)]).weights(),
             [0.0, 1.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            CombatTrainingProfile::from_equipped_hands([item(true, true, false, 0.0)]).weights(),
+            [1.0, 1.0, 0.0, 1.0]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
