@@ -2643,11 +2643,6 @@ button.party-portrait-action {
     display: inline-block;
 }
 
-.skill-schedule [data-religion-auto-control],
-.skill-schedule [data-religion-primary-manual-control] {
-    padding-right: 0.85rem;
-}
-
 [data-religion-auto-control][hidden],
 [data-religion-primary-manual-control][hidden] {
     display: none;
@@ -3204,70 +3199,89 @@ body.chat-resizing {
   font-variant-numeric: tabular-nums;
 }
 
-/* Keep the time steppers inside their column now that disclosure has its own column. */
-.skill-schedule .party-skill-allocation { padding-right: 0.85rem !important; }
-
-/* Keep hover active while moving from the value into its floating arrows. */
-.party-skill-allocation::after {
-  position: absolute;
-  z-index: 2;
-  top: -0.35rem;
-  right: -1rem;
-  bottom: -0.35rem;
-  left: -0.25rem;
-  content: "";
-}
-
 .party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; cursor: text; }
 
-.schedule-step {
+.schedule-time-editor {
   position: absolute;
+  z-index: 10;
   top: 50%;
-  z-index: 4;
-  width: 0.45rem;
-  height: 0.55rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  opacity: 0;
-  cursor: pointer;
-  transform: translateY(-50%);
-  transition: opacity 100ms ease;
-}
-
-.schedule-step::before {
-  position: absolute;
-  inset: 0;
-  width: 0;
-  height: 0;
-  content: "";
-  border-top: 0.275rem solid transparent;
-  border-bottom: 0.275rem solid transparent;
-}
-
-.schedule-step-decrease { right: 4.8ch; }
-.schedule-step-decrease::before { border-right: 0.4rem solid var(--text-primary); }
-.schedule-step-increase { right: -0.8rem; }
-.schedule-step-increase::before { border-left: 0.4rem solid var(--text-primary); }
-.skill-schedule .schedule-step-increase { right: 0.15rem; }
-.party-skill-allocation:hover .schedule-step,
-.schedule-step:focus-visible { opacity: 1; }
-.schedule-time-input {
-  position: absolute;
-  z-index: 5;
-  top: 50%;
-  right: 0;
-  box-sizing: border-box;
-  width: 4.1rem;
-  max-width: none;
-  padding: 0.08rem 0.18rem;
+  right: -1.45rem;
+  display: grid;
+  grid-template-columns: 1.5rem 3.7rem 1.5rem;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.14rem;
   border: 1px solid var(--accent);
-  color: inherit;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
+  box-shadow: 0 0.2rem 0.6rem rgb(0 0 0 / 55%);
+  transform: translateY(-50%);
+}
+
+.schedule-time-input-stack {
+  display: grid;
+  grid-template-rows: 0.7rem 1.5rem 0.7rem;
+  overflow: hidden;
+  border: 1px solid #b8ad98;
+  border-radius: 0.12rem;
+  background: #f3eee2;
+}
+
+.schedule-time-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 1.5rem;
+  max-width: none;
+  padding: 0.08rem 0.2rem;
+  border: 0;
+  border-block: 1px solid #c9beaa;
+  border-radius: 0;
+  color: #17130f;
+  background: #fffaf0;
   font: inherit;
   text-align: center;
-  transform: translateY(-50%);
 }
+
+.schedule-time-input[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
+}
+
+.schedule-time-editor-step {
+  width: 100%;
+  height: 0.7rem;
+  padding: 0;
+  border: 0;
+  color: #17130f;
+  background: #e7dfcf;
+  font-size: 0.5rem;
+  line-height: 0.7rem;
+  cursor: pointer;
+}
+
+.schedule-time-editor-step:hover,
+.schedule-time-editor-step:focus-visible { background: #d7cbb7; }
+
+.schedule-time-editor-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 0.15rem;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.schedule-time-confirm { background: #2f7d3d; }
+.schedule-time-cancel { background: #9c3434; }
+.schedule-time-confirm:hover,
+.schedule-time-confirm:focus-visible { background: #3d9a4d; }
+.schedule-time-cancel:hover,
+.schedule-time-cancel:focus-visible { background: #bd4242; }
 
 .skill-schedule { display: grid; gap: 0.55rem; }
 .schedule-save-status {

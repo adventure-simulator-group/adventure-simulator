@@ -36,6 +36,12 @@
     return hours * 60 + minutes;
   }
 
+  function stepClockValue(value, delta, fallback = 0) {
+    const parsed = parseClock(value);
+    const base = parsed === null ? Number(fallback) : parsed;
+    return formatClock(Math.max(0, Math.min(DAY, base + Number(delta))));
+  }
+
   function createLatestSaveQueue(send, { onState = () => {}, onDrained = () => {} } = {}) {
     let queued = null;
     let ready = false;
@@ -357,34 +363,98 @@
   function beginEditing(root, state, display) {
     const name = nameFor(display);
     const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
-    if (!name || !state.inputs[name] || !religionInputActive(state.inputs[name], autoTrain) || display.dataset.editing) return;
+    if (!name || !state.inputs[name] || !religionInputActive(state.inputs[name], autoTrain)
+      || display.dataset.editing || root.querySelector('.schedule-time-editor')) return;
     display.dataset.editing = 'true';
+    const originalMinutes = Number(state.inputs[name].value);
+    const editor = document.createElement('span');
+    editor.className = 'schedule-time-editor';
+    editor.setAttribute('role', 'group');
+    editor.setAttribute('aria-label', 'Edit daily allocation');
+
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'schedule-time-editor-action schedule-time-confirm';
+    confirm.setAttribute('aria-label', 'Save daily allocation');
+    confirm.title = 'Save';
+    confirm.textContent = '✓';
+
+    const inputStack = document.createElement('span');
+    inputStack.className = 'schedule-time-input-stack';
+    const increase = document.createElement('button');
+    increase.type = 'button';
+    increase.className = 'schedule-time-editor-step schedule-time-editor-increase';
+    increase.setAttribute('aria-label', 'Increase daily allocation by 15 minutes');
+    increase.textContent = '▲';
     const input = document.createElement('input');
     input.className = 'schedule-time-input';
     input.type = 'text';
     input.inputMode = 'numeric';
     input.placeholder = 'hh:mm';
     input.setAttribute('aria-label', 'Daily allocation in hours and minutes');
-    input.value = formatClock(state.inputs[name].value);
+    input.value = formatClock(originalMinutes);
+    const decrease = document.createElement('button');
+    decrease.type = 'button';
+    decrease.className = 'schedule-time-editor-step schedule-time-editor-decrease';
+    decrease.setAttribute('aria-label', 'Decrease daily allocation by 15 minutes');
+    decrease.textContent = '▼';
+    inputStack.append(increase, input, decrease);
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'schedule-time-editor-action schedule-time-cancel';
+    cancel.setAttribute('aria-label', 'Cancel daily allocation edit');
+    cancel.title = 'Cancel';
+    cancel.textContent = '×';
+    editor.append(confirm, inputStack, cancel);
+
     let finished = false;
     const finish = (commit) => {
       if (finished) return;
-      finished = true;
       const parsed = parseClock(input.value);
-      if (commit && parsed !== null) {
+      if (commit && parsed === null) {
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+        return;
+      }
+      finished = true;
+      if (commit) {
         setValue(root, state, name, parsed);
         save(root);
       }
       delete display.dataset.editing;
-      input.replaceWith(display);
+      editor.replaceWith(display);
       render(root, state);
+      display.focus();
+    };
+    const adjust = (delta) => {
+      input.value = stepClockValue(input.value, delta, originalMinutes);
+      input.removeAttribute('aria-invalid');
     };
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') finish(true);
-      if (event.key === 'Escape') finish(false);
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(true);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        finish(false);
+      } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        adjust(event.key === 'ArrowUp' ? STEP : -STEP);
+      }
     });
-    input.addEventListener('blur', () => finish(true), { once: true });
-    display.replaceWith(input);
+    input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+    input.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      adjust(event.deltaY < 0 ? STEP : -STEP);
+    }, { passive: false });
+    increase.addEventListener('click', () => adjust(STEP));
+    decrease.addEventListener('click', () => adjust(-STEP));
+    confirm.addEventListener('click', () => finish(true));
+    cancel.addEventListener('click', () => finish(false));
+    editor.addEventListener('click', (event) => event.stopPropagation());
+
+    display.replaceWith(editor);
     input.focus();
     input.select();
   }
@@ -396,6 +466,7 @@
     religionInputActive,
     religionAllocationTotal,
     signedEffect,
+    stepClockValue,
   };
   if (typeof document === 'undefined') return;
 
@@ -407,17 +478,6 @@
   document.addEventListener('strategic-live-regions-refreshed', (event) => {
     if (!event.detail?.regions || event.detail.regions.includes('left-sidebar')) mountSchedules();
   });
-  document.addEventListener('wheel', (event) => {
-    const cell = event.target.closest?.('.party-skill-allocation');
-    const root = cell?.closest('[data-skill-schedule]');
-    if (!root) return;
-    const state = stateFor(root);
-    const name = nameFor(cell);
-    if (!name || !state.inputs[name]) return;
-    event.preventDefault();
-    setValue(root, state, name, Number(state.inputs[name].value) + (event.deltaY < 0 ? STEP : -STEP));
-    save(root, 180);
-  }, { passive: false });
   document.addEventListener('click', (event) => {
     const expand = event.target.closest?.('[data-religion-expand]');
     if (expand) {
@@ -431,15 +491,6 @@
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');
       stateFor(root).saveQueue.retry();
-      return;
-    }
-    const step = event.target.closest?.('[data-schedule-step]');
-    if (step) {
-      const root = step.closest('[data-skill-schedule]');
-      const state = stateFor(root);
-      const name = nameFor(step);
-      setValue(root, state, name, Number(state.inputs[name].value) + Number(step.dataset.scheduleStep));
-      save(root);
       return;
     }
     const display = event.target.closest?.('[data-schedule-display][role="button"]');

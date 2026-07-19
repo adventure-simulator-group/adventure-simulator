@@ -2164,14 +2164,14 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=religion-primary-2" {}
+                    script src="/static/training-schedule.js?v=explicit-time-editor-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
                     ))
-                    script src="/static/training-schedule.js?v=religion-primary-2" {}
+                    script src="/static/training-schedule.js?v=explicit-time-editor-1" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -2338,16 +2338,12 @@ fn religion_skill_rows(
                     span data-religion-auto-control data-schedule-value="religion_minutes" hidden[!auto] {
                       input type="hidden" name="religion_minutes" value=(auto_minutes)
                           data-schedule-input data-religion-auto-budget;
-                      (schedule_step_button("Decrease Religion allocation", -15))
                       span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(auto_minutes)) }
-                      (schedule_step_button("Increase Religion allocation", 15))
                     }
                     span data-religion-primary-manual-control data-schedule-value=(format!("religion_{primary_id}_minutes")) hidden[auto] {
                       input type="hidden" name=(format!("religion_{primary_id}_minutes")) value=(primary_minutes)
                           data-schedule-input data-religion-manual-budget;
-                      (schedule_step_button("Decrease tradition allocation", -15))
                       span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(primary_minutes)) }
-                      (schedule_step_button("Increase tradition allocation", 15))
                     }
                   }
                 }
@@ -2383,9 +2379,7 @@ fn religion_skill_rows(
                     td class="party-skill-allocation" data-schedule-value=(format!("religion_{id}_minutes")) {
                         input type="hidden" name=(format!("religion_{id}_minutes")) value=(minutes)
                             data-schedule-input data-religion-manual-budget;
-                        (schedule_step_button("Decrease tradition allocation", -15))
                         span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(minutes)) }
-                        (schedule_step_button("Increase tradition allocation", 15))
                     }
                 }
                 td class="religion-expand-cell" {}
@@ -2633,23 +2627,14 @@ fn schedule_special_row(
     }
 }
 
-fn schedule_step_button(label: &str, delta: i16) -> Markup {
-    html! {
-        button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
-            data-schedule-step=(delta) aria-label=(label) {}
-    }
-}
-
 fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
     html! {
         td class="party-skill-allocation" data-schedule-value=(name) {
             @if editable {
                 input type="hidden" name=(name) value=(minutes) data-schedule-input;
-                (schedule_step_button("Decrease daily allocation", -15))
                 span data-schedule-display tabindex="0" role="button" title="Click to enter a time such as 8, 8:30, or 830" {
                     (format_schedule_hours(minutes))
                 }
-                (schedule_step_button("Increase daily allocation", 15))
             } @else {
                 span data-schedule-display { "0h" }
             }
@@ -4303,6 +4288,7 @@ mod tests {
         assert!(allocation.contains("data-schedule-input"));
         assert!(allocation.contains("data-schedule-display"));
         assert!(allocation.contains("Click to enter a time such as 8, 8:30, or 830"));
+        assert!(!allocation.contains("data-schedule-step"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
     }
@@ -5203,6 +5189,10 @@ mod tests {
         let css = include_str!("../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("input.type = 'text'"));
+        assert!(schedule.contains("confirm.addEventListener('click', () => finish(true))"));
+        assert!(schedule.contains("cancel.addEventListener('click', () => finish(false))"));
+        assert!(schedule.contains("input.addEventListener('wheel'"));
+        assert!(!schedule.contains("document.addEventListener('wheel'"));
         assert!(schedule.contains("/^\\d{3,4}$/"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
         assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
@@ -5230,6 +5220,9 @@ mod tests {
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
         assert!(css.contains(".schedule-time-input {"));
         assert!(css.contains("position: absolute;"));
+        assert!(css.contains(".schedule-time-editor-action {"));
+        assert!(css.contains(".schedule-time-confirm { background: #2f7d3d; }"));
+        assert!(css.contains(".schedule-time-cancel { background: #9c3434; }"));
         assert!(css.contains(".schedule-save-status"));
     }
 

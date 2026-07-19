@@ -8,6 +8,7 @@ const {
   religionAllocationTotal,
   religionInputActive,
   signedEffect,
+  stepClockValue,
 } = require("../static/training-schedule.js");
 
 test("Religion allocation counts either the auto budget or manual traditions exactly once", () => {
@@ -81,6 +82,14 @@ test("schedule time parser retains day bounds and minute validation", () => {
   for (const invalid of ["", "25", "24:15", "2415", "8:60", "860", "12345", "noon"]) {
     assert.equal(parseClock(invalid), null, invalid);
   }
+});
+
+test("opened time editor steps drafts by quarter-hours within day bounds", () => {
+  assert.equal(stepClockValue("08:00", 15), "08:15");
+  assert.equal(stepClockValue("08:00", -15), "07:45");
+  assert.equal(stepClockValue("24:00", 15), "24:00");
+  assert.equal(stepClockValue("00:00", -15), "00:00");
+  assert.equal(stepClockValue("invalid", 15, 120), "02:15");
 });
 
 test("Leisure preview preserves fatigue through six hours and then offsets activity", () => {
