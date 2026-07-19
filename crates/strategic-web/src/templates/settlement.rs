@@ -20,7 +20,7 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 use super::{
     decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
     population_description, quest_location_layout_with_session, settlement_layout_with_session,
-    sidebar_section, stat_game_icon_name,
+    sidebar_section, stat_icon_path,
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
@@ -36,6 +36,7 @@ pub struct LocationView {
     pub kind: LocationKind,
     pub id: String,
     pub name: String,
+    pub religion_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -169,6 +170,7 @@ impl LocationView {
                 &self.name,
                 &self.id,
                 "",
+                self.religion_id.as_deref(),
                 content,
                 logged_in_as,
                 theme,
@@ -288,6 +290,7 @@ pub fn settlement_overview_page(
         &settlement.name,
         &settlement.id,
         "",
+        Some(&settlement.religion_id),
         content,
         logged_in_as,
         theme,
@@ -375,6 +378,7 @@ pub fn settlement_map_page(
         &settlement.name,
         &settlement.id,
         "map",
+        Some(&settlement.religion_id),
         content,
         logged_in_as,
         theme,
@@ -1145,6 +1149,7 @@ fn service_page(
         &settlement.name,
         &settlement.id,
         service_id,
+        Some(&settlement.religion_id),
         content,
         logged_in_as,
         theme,
@@ -1357,6 +1362,7 @@ pub fn live_merchant_shop_page(
         &settlement.name,
         &settlement.id,
         service_id,
+        Some(&settlement.religion_id),
         content,
         Some(&character.name),
         theme,
@@ -1895,7 +1901,7 @@ fn skills_table(
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
                         (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
-                        (schedule_special_row("Leisure", "campfire", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
+                        (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
             }
         }
@@ -2226,7 +2232,7 @@ fn character_bio_rail(
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt class="metric-label" { (decorative_game_icon("calendar")) span { "Age" } } dd { (character.age_years) " years" } }
-                div { dt class="metric-label" { (decorative_game_icon("scales")) span { "Virtue" } } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
+                div { dt class="metric-label" { (decorative_game_icon("spiked-halo")) span { "Virtue" } } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
                 @if let Some(personality) = personality {
                     @let tags = personality_tags(personality);
                     @if !tags.is_empty() {
@@ -2586,8 +2592,7 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
 }
 
 fn stat_icon(label: &str, category: &str, icon: &str, decorative: bool) -> Markup {
-    let _ = category;
-    let path = format!("/static/icons/game/{}.svg", stat_game_icon_name(icon));
+    let path = stat_icon_path(category, icon);
     html! {
         span
             class=(format!("stat-icon stat-icon-{icon}"))

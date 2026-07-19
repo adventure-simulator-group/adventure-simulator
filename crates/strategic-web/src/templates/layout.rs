@@ -2,6 +2,8 @@
 
 use maud::{DOCTYPE, Markup, html};
 
+use super::religion_game_icon_name;
+
 const THEMES: &[(&str, &str)] = &[
     ("fraktur-texturina", "Fraktura"),
     ("fraktur-nocturne", "Dark Fraktura"),
@@ -69,6 +71,7 @@ pub fn settlement_layout_with_session(
     settlement_name: &str,
     settlement_id: &str,
     active_service: &str,
+    religion_id: Option<&str>,
     content: Markup,
     logged_in_as: Option<&str>,
     theme: &str,
@@ -80,6 +83,7 @@ pub fn settlement_layout_with_session(
             settlement_name,
             settlement_id,
             active_service,
+            religion_id,
             logged_in_as,
             theme,
         ),
@@ -187,6 +191,7 @@ fn settlement_top_bar(
     settlement_name: &str,
     settlement_id: &str,
     active_service: &str,
+    religion_id: Option<&str>,
     logged_in_as: Option<&str>,
     current_theme: &str,
 ) -> Markup {
@@ -232,7 +237,10 @@ fn settlement_top_bar(
                         aria-label=(label)
                         title=(label)
                     {
-                        span class=(format!("service-tab-icon service-tab-icon-{}", icon)) aria-hidden="true" {}
+                        span
+                            class=(format!("service-tab-icon service-tab-icon-{}", icon))
+                            style=[(path == "religion").then(|| format!("--service-tab-icon: url('/static/icons/game/{}.svg')", religion_game_icon_name(religion_id)))]
+                            aria-hidden="true" {}
                         @if path != "map" {
                             span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
                         }

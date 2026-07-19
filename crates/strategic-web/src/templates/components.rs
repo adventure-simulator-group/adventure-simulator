@@ -107,7 +107,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "faith" => "holy-symbol",
         "melee" => "crossed-swords",
         "ranged" => "bullseye",
-        "dodge" => "dodge",
+        "dodge" => "acrobatic",
         "block" => "shield",
         "stealth" => "hood",
         "balance" => "tightrope",
@@ -125,6 +125,37 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "agility-arm" => "juggler",
         "agility-leg" => "wingfoot",
         _ => "help",
+    }
+}
+
+/// Resolve the source used by a stat mask. The original limb and immunity
+/// artwork remains clearer at the compact sizes used by the attribute rail.
+pub fn stat_icon_path(category: &str, icon: &str) -> String {
+    if category == "attributes"
+        && matches!(
+            icon,
+            "strength-arm" | "strength-leg" | "agility-arm" | "agility-leg" | "immunity"
+        )
+    {
+        format!("/static/icons/stats/attributes/{icon}.png")
+    } else {
+        format!("{GAME_ICON_ROOT}/{}.svg", stat_game_icon_name(icon))
+    }
+}
+
+/// Faith-specific church icon. These choices distinguish the supported
+/// confessions at a glance while retaining fallbacks for legacy seed IDs.
+pub fn religion_game_icon_name(religion_id: Option<&str>) -> &'static str {
+    match religion_id {
+        Some("roman_catholic") | Some("western_church") => "holy-symbol",
+        Some("lutheran") => "rose",
+        Some("reformed") => "open-book",
+        Some("anglican") => "gothic-cross",
+        Some("protestant") => "split-cross",
+        Some("eastern_orthodox") => "byzantin-temple",
+        Some("islamic") => "samara-mosque",
+        Some("old_faith") => "holy-symbol",
+        _ => "church",
     }
 }
 
@@ -178,21 +209,43 @@ mod icon_tests {
     use super::*;
 
     #[test]
-    fn limb_stats_use_four_distinct_icons() {
-        let icons = [
-            stat_game_icon_name("strength-arm"),
-            stat_game_icon_name("strength-leg"),
-            stat_game_icon_name("agility-arm"),
-            stat_game_icon_name("agility-leg"),
+    fn limb_and_immunity_stats_use_the_original_artwork() {
+        let paths = [
+            stat_icon_path("attributes", "strength-arm"),
+            stat_icon_path("attributes", "strength-leg"),
+            stat_icon_path("attributes", "agility-arm"),
+            stat_icon_path("attributes", "agility-leg"),
+            stat_icon_path("attributes", "immunity"),
         ];
 
-        assert_eq!(icons, ["arm", "leg", "juggler", "wingfoot"]);
-        for (index, icon) in icons.iter().enumerate() {
-            assert!(
-                !icons[..index].contains(icon),
-                "duplicate limb icon: {icon}"
-            );
+        for (path, icon) in paths.iter().zip([
+            "strength-arm",
+            "strength-leg",
+            "agility-arm",
+            "agility-leg",
+            "immunity",
+        ]) {
+            assert_eq!(path, &format!("/static/icons/stats/attributes/{icon}.png"));
         }
+    }
+
+    #[test]
+    fn requested_game_icon_replacements_and_faith_icons_are_exact() {
+        assert_eq!(stat_game_icon_name("dodge"), "acrobatic");
+        assert_eq!(
+            religion_game_icon_name(Some("roman_catholic")),
+            "holy-symbol"
+        );
+        assert_eq!(religion_game_icon_name(Some("lutheran")), "rose");
+        assert_eq!(religion_game_icon_name(Some("reformed")), "open-book");
+        assert_eq!(religion_game_icon_name(Some("anglican")), "gothic-cross");
+        assert_eq!(religion_game_icon_name(Some("protestant")), "split-cross");
+        assert_eq!(
+            religion_game_icon_name(Some("eastern_orthodox")),
+            "byzantin-temple"
+        );
+        assert_eq!(religion_game_icon_name(Some("islamic")), "samara-mosque");
+        assert_eq!(religion_game_icon_name(None), "church");
     }
 
     #[test]

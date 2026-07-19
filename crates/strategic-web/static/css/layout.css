@@ -254,7 +254,7 @@
   transition: background-color var(--transition-fast);
 }
 
-.service-tab-icon-market { --service-tab-icon: url("/static/icons/game/shop.svg"); }
+.service-tab-icon-market { --service-tab-icon: url("/static/icons/game/scales.svg"); }
 .service-tab-icon-weapons { --service-tab-icon: url("/static/icons/game/sword-brandish.svg"); }
 .service-tab-icon-armor { --service-tab-icon: url("/static/icons/game/breastplate.svg"); }
 .service-tab-icon-clothing { --service-tab-icon: url("/static/icons/game/clothes.svg"); }
