@@ -230,7 +230,7 @@
 .travel-midnight-tick svg { position: absolute; top: -.55rem; right: -1.05rem; width: 1rem; height: 1rem; }
 .moon-dark { fill: #172037; stroke: #d8e2f0; stroke-width: 1; }
 .moon-lit { fill: #f2e8bd; }
-.travel-camp-tent { position: absolute; right: calc(100% + .2rem); top: -.6rem; width: 1rem; height: 1rem; background: currentColor; -webkit-mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; }
+.travel-camp-tent { position: absolute; right: calc(100% + .45rem); top: 50%; width: 1rem; height: 1rem; background: currentColor; transform: translateY(-50%); -webkit-mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; mask: url('/static/icons/game/camping-tent.svg') center / contain no-repeat; }
 .travel-camp-brace { position: absolute; top: 0; left: -.35rem; width: .6rem; min-height: 3px; overflow: visible; color: var(--text-primary); }
 .travel-plan-camp { transform: none; }
 .travel-plan-camp .travel-camp-brace { height: 100%; }

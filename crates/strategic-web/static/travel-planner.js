@@ -181,7 +181,9 @@
           const brace = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           brace.setAttribute("class", "travel-camp-brace"); brace.setAttribute("viewBox", "0 0 12 100"); brace.setAttribute("preserveAspectRatio", "none"); brace.setAttribute("aria-hidden", "true");
           const bracePath = document.createElementNS(brace.namespaceURI, "path");
-          bracePath.setAttribute("d", "M 1 0 C 9 0 9 20 6 32 C 5 39 8 47 11 50 C 8 53 5 61 6 68 C 9 80 9 100 1 100");
+          // Open the brace toward the rails. Its two right-hand tips mark the
+          // exact camp bounds; the outside cusp is the tent's anchor.
+          bracePath.setAttribute("d", "M 11 0 C 3 0 3 20 6 32 C 7 39 4 47 1 50 C 4 53 7 61 6 68 C 3 80 3 100 11 100");
           brace.append(bracePath);
           element.append(tent, brace);
         } else {
