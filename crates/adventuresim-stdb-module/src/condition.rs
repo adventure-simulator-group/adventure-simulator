@@ -1548,11 +1548,24 @@ pub fn apply_blood_loss(
     condition.current_blood_ml = (condition.current_blood_ml
         - condition.maximum_blood_ml * fraction_of_maximum.max(0.0))
     .max(0.0);
+    let circulatory_failure = condition.maximum_blood_ml > 0.0
+        && condition.current_blood_ml / condition.maximum_blood_ml <= 0.10;
     ctx.db
         .character_condition()
         .character_id()
         .update(condition);
-    refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+    if circulatory_failure {
+        crate::transition_character_to_dead(
+            ctx,
+            character_id,
+            crate::DeathCause::CirculatoryFailure,
+            crate::DeathSource::Strategic,
+            Some("critical-blood-loss".into()),
+        )?;
+        Ok(())
+    } else {
+        refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+    }
 }
 
 pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {

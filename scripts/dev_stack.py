@@ -130,7 +130,7 @@ def publish(server: str, database: str) -> int:
 
 
 def seed(server: str, database: str, include_damaged_demo: bool = False) -> int:
-    reducers = ["seed_world"]
+    reducers = ["seed_world", "seed_sick_character"]
     if include_damaged_demo:
         reducers.append("seed_damaged_character")
     for reducer in reducers:

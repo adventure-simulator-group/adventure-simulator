@@ -73,6 +73,7 @@ pub fn evaluate_character(
         .character_id()
         .find(character_id)
         .ok_or("Character attributes not found")?;
+    let attributes = crate::disease::effective_attributes(ctx, character_id, attributes)?;
     let skills = ctx
         .db
         .character_skills()
@@ -536,6 +537,7 @@ pub(crate) fn load_combatant(
         .character_id()
         .find(character_id)
         .ok_or("Character attributes not found")?;
+    let attributes = crate::disease::effective_attributes(ctx, character_id, attributes)?;
     let skills = ctx
         .db
         .character_skills()

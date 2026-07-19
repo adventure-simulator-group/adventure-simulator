@@ -5,6 +5,7 @@
 
 mod config;
 mod live;
+mod medical;
 mod routes;
 mod session;
 mod spacetimedb;

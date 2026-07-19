@@ -177,6 +177,47 @@ Finalized loot is strategic state. The tactical server derives drops from the te
 
 ## SpacetimeDB Module
 
+### Disease facts and derived physiology
+
+Disease belongs to the strategic layer and is evaluated against each patient's
+exact personal character minute. An infection episode persists only its stable
+identity, character and disease associations, `contracted_at`, and optional
+`treated_at`. Phase, severity, symptoms, diagnosis, impairment, and recovery are
+pure deterministic derivations in `adventuresim-core`; resolved and repeated
+episodes remain as history. Definitions use a numbered ruleset.
+
+Alchemy recipes are static ruleset data. Their ingredients remain ordinary
+personal or shared inventory rows. Crafting produces a transferable medication
+item; equipping consumes that item into an `equipped_medication` row and sets the
+matching episode's `treated_at` timestamp. This public row exposes only the
+course being taken, not undiagnosed infection history, and is removed on
+unequip or deterministic recovery cleanup.
+
+Every time advance inspects its whole interval. A terminal respiratory,
+circulatory, homeostatic, or neurologic failure clips travel, rest, training,
+and lazy catch-up at the exact boundary before using the shared idempotent death
+transition. Zero Endurance, Gut, Intelligence, or Instinct is impairment, not a
+direct death rule.
+
+Outbreaks are public world facts. Infection episodes and committed-cut
+provenance are private strategic facts. Tactical code may commit final cut
+damage but never tactical positions, HP, enemies, or tick state. Strategic-web
+is the medical presentation boundary and gives templates only a viewer-sanitized
+model; raw medical rows are never browser payloads.
+
+  The `backend_infection_episodes`, `backend_committed_cuts`, and
+`backend_medical_examinations` views are narrow SSR integration surfaces, not
+browser APIs or subscriptions. Deployments keep
+the strategic SpacetimeDB endpoint on the server network; strategic-web applies
+the active character's Medicine gate before emitting HTML.
+
+The strategic web process is the trusted presentation and action boundary.
+Medical queries fail closed and visibly; medical action routes derive the acting
+character from the web session before invoking reducers. Public browser
+subscriptions never contain infection episodes, pending examination results, or
+disease notices.
+Public subscriptions never contain infection episodes or disease notices.
+
 ### Strategic tables
 
 | Table | Description |

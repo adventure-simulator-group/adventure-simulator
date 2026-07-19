@@ -34,6 +34,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
+    equipped_medication_table::EquippedMedicationTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess,
@@ -53,6 +54,7 @@ use adventuresim_stdb_client::{
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
     settlement_alias_table::SettlementAliasTableAccess,
     settlement_description_table::SettlementDescriptionTableAccess,
+    settlement_outbreak_table::SettlementOutbreakTableAccess,
     settlement_smith_table::SettlementSmithTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
@@ -151,6 +153,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.equipped_medication());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_needs());
@@ -170,6 +173,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.battle_participant());
         invalidate_on_changes!(state.0._connection.db.tactical_server_request());
         invalidate_on_changes!(state.0._connection.db.tactical_server());
+        invalidate_on_changes!(state.0._connection.db.settlement_outbreak());
 
         state
             .0
@@ -227,6 +231,7 @@ impl LiveState {
             .add_query(|query| query.from.settlement_alias())
             .add_query(|query| query.from.settlement_description())
             .add_query(|query| query.from.settlement_smith())
+            .add_query(|query| query.from.settlement_outbreak())
             .add_query(|query| query.from.strategic_incident())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())

@@ -219,7 +219,17 @@ Party Charisma is led by the strongest individual check. Additional members rece
 5. Professional bard
 
 ### Medicine (trained, 10000 hours)
-The MVP is not going to have a herbalism system or diseases. The party's bounded aggregate Medicine check sets [health recovery speed](Health.md): natural recovery is 1% per day, plus 1% per day for each point of Medicine.
+Medicine governs what a particular character can discern about illness. Below
+an effective individual check of 2 no examination action appears, even for
+oneself. Everyone can perceive where the body feels impaired, but the lay
+health bars collapse non-cut and non-blunt causes into green. At 2, a physician
+can spend 15 minutes examining a co-located patient; the resulting one-shot
+view splits that green impairment per body region into the four humours. Each disease has a stage-dependent
+diagnosis difficulty (never below 2); meeting it reveals a period-facing
+diagnosis and permits a quoted gold-and-time treatment. Cuts and blunt trauma
+remain distinct without Medicine; all other sources, including burns, use the
+green lay category. Party Medicine still assists wound recovery, but party aggregation
+never grants medical visibility or diagnosis.
 
 Medicine and Surgery use the same bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
 

@@ -19,6 +19,10 @@ pub enum ItemKind {
     Clothing,
 
     Currency,
+
+    Ingredient,
+
+    Medication,
 }
 
 impl __sdk::InModule for ItemKind {

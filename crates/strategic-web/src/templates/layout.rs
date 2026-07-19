@@ -135,12 +135,13 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=game-icons-2";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=game-icons-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=alchemy-medication-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-1" {}
+                script src="/static/medical-examination.js?v=one-shot-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=schedule-pending-2" defer {}
@@ -201,6 +202,7 @@ fn settlement_top_bar(
         ("weapons", "Weapons", "weapons"),
         ("armor", "Armour", "armor"),
         ("clothing", "Clothing", "clothing"),
+        ("herbalist", "Herbalist", "medical-pack"),
         ("inn", "Inn", "inn"),
         ("religion", "Church", "church"),
     ];

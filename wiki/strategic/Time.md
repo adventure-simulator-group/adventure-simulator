@@ -2,6 +2,12 @@ Time between players is kept *somewhat* in-sync. The idea is that generally, tim
 
 ## Current implementation
 
+Disease is evaluated in the patient's personal character time. Travel, camp
+rest, settlement rest, and lazy catch-up check every disease boundary crossed
+by the interval. If terminal physiological failure occurs, the clock and all
+work stop at that exact minute. This prevents a long skip from jumping over a
+fatal peak into apparent recovery.
+
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks, then advances that display locally at the same 84/73-second ratio. It does not poll or receive SSE clock ticks. Authoritative reducers derive the current official minute from the epoch when gameplay needs it, so browser drift affects only presentation.

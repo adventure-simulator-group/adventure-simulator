@@ -17,6 +17,9 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_committed_cuts_table;
+pub mod backend_infection_episodes_table;
+pub mod backend_medical_examinations_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
@@ -71,6 +74,7 @@ pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod claim_simulation_run_reducer;
+pub mod committed_cut_type;
 pub mod complete_quest_reducer;
 pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
@@ -81,6 +85,7 @@ pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod continue_camp_travel_reducer;
 pub mod conviction_type;
+pub mod craft_medication_reducer;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
@@ -110,6 +115,8 @@ pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
+pub mod disease_notice_type;
+pub mod dismiss_medical_examination_reducer;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
@@ -124,6 +131,10 @@ pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
+pub mod equip_medication_reducer;
+pub mod equipped_medication_table;
+pub mod equipped_medication_type;
+pub mod examine_patient_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
 pub mod fallback_historical_vegetation_type;
@@ -156,6 +167,7 @@ pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
 pub mod industry_evidence_type;
+pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
 pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
@@ -186,6 +198,7 @@ pub mod located_route_landform_type;
 pub mod lutheran_reformed_church_type;
 pub mod mapped_surface_geology_type;
 pub mod marine_water_access_type;
+pub mod medical_examination_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
@@ -292,6 +305,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
+pub mod seed_sick_character_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
 pub mod self_regard_type;
@@ -308,6 +322,8 @@ pub mod settlement_description_table;
 pub mod settlement_description_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
+pub mod settlement_outbreak_table;
+pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
 pub mod settlement_smith_table;
 pub mod settlement_smith_type;
@@ -354,6 +370,7 @@ pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod turn_in_quest_reducer;
 pub mod unconsolidated_deposit_type;
+pub mod unequip_medication_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_recruitment_role_reducer;
@@ -384,6 +401,9 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_committed_cuts_table::*;
+pub use backend_infection_episodes_table::*;
+pub use backend_medical_examinations_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
@@ -438,6 +458,7 @@ pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use claim_simulation_run_reducer::claim_simulation_run;
+pub use committed_cut_type::CommittedCut;
 pub use complete_quest_reducer::complete_quest;
 pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
@@ -448,6 +469,7 @@ pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use conviction_type::Conviction;
+pub use craft_medication_reducer::craft_medication;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
@@ -477,6 +499,8 @@ pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMeth
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
+pub use disease_notice_type::DiseaseNotice;
+pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
@@ -491,6 +515,10 @@ pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_reducer::equip_item;
+pub use equip_medication_reducer::equip_medication;
+pub use equipped_medication_table::*;
+pub use equipped_medication_type::EquippedMedication;
+pub use examine_patient_reducer::examine_patient;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
@@ -523,6 +551,7 @@ pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
 pub use industry_evidence_type::IndustryEvidence;
+pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
 pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
@@ -553,6 +582,7 @@ pub use located_route_landform_type::LocatedRouteLandform;
 pub use lutheran_reformed_church_type::LutheranReformedChurch;
 pub use mapped_surface_geology_type::MappedSurfaceGeology;
 pub use marine_water_access_type::MarineWaterAccess;
+pub use medical_examination_type::MedicalExamination;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
@@ -659,6 +689,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
+pub use seed_sick_character_reducer::seed_sick_character;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
 pub use self_regard_type::SelfRegard;
@@ -675,6 +706,8 @@ pub use settlement_description_table::*;
 pub use settlement_description_type::SettlementDescription;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
+pub use settlement_outbreak_table::*;
+pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
 pub use settlement_smith_table::*;
 pub use settlement_smith_type::SettlementSmith;
@@ -721,6 +754,7 @@ pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use turn_in_quest_reducer::turn_in_quest;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
+pub use unequip_medication_reducer::unequip_medication;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
 pub use update_recruitment_role_reducer::update_recruitment_role;
@@ -807,6 +841,11 @@ pub enum Reducer {
     },
     ContinueCampTravel {
         character_id: u64,
+    },
+    CraftMedication {
+        character_id: u64,
+        disease_id: String,
+        party_scope: bool,
     },
     CreateCharacter {
         id: u64,
@@ -899,6 +938,11 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    DismissMedicalExamination {
+        doctor_id: u64,
+        target_id: u64,
+        examination_id: u64,
+    },
     DismissPartyActionRequest {
         leader_id: u64,
         request_id: u64,
@@ -923,6 +967,14 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
         destination: ItemSlot,
+    },
+    EquipMedication {
+        character_id: u64,
+        inventory_item_id: u64,
+    },
+    ExaminePatient {
+        doctor_id: u64,
+        target_id: u64,
     },
     FinalizeMerchantTrade {
         character_id: u64,
@@ -1066,6 +1118,7 @@ pub enum Reducer {
     SeedPartyCompanions {
         leader_id: u64,
     },
+    SeedSickCharacter,
     SeedSimulationEquipmentDamage {
         character_id: u64,
         inventory_item_id: u64,
@@ -1130,6 +1183,10 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    UnequipMedication {
+        character_id: u64,
+        inventory_item_id: u64,
+    },
     UpdateCharacter {
         id: u64,
         name: String,
@@ -1193,6 +1250,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CompleteQuest { .. } => "complete_quest",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
+            Reducer::CraftMedication { .. } => "craft_medication",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
@@ -1210,12 +1268,15 @@ impl __sdk::Reducer for Reducer {
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
+            Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
+            Reducer::EquipMedication { .. } => "equip_medication",
+            Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
@@ -1250,6 +1311,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
+            Reducer::SeedSickCharacter => "seed_sick_character",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
@@ -1264,6 +1326,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
+            Reducer::UnequipMedication { .. } => "unequip_medication",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
@@ -1383,6 +1446,15 @@ Reducer::CancelMissionRequest{
                 character_id,
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::CraftMedication{
+                character_id,
+                disease_id,
+                party_scope,
+}             => __sats::bsatn::to_vec(&craft_medication_reducer::CraftMedicationArgs {
+                character_id: character_id.clone(),
+                disease_id: disease_id.clone(),
+                party_scope: party_scope.clone(),
 }),
             Reducer::CreateCharacter{
                 id,
@@ -1549,6 +1621,15 @@ Reducer::CancelMissionRequest{
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::DismissMedicalExamination{
+                doctor_id,
+                target_id,
+                examination_id,
+}             => __sats::bsatn::to_vec(&dismiss_medical_examination_reducer::DismissMedicalExaminationArgs {
+                doctor_id: doctor_id.clone(),
+                target_id: target_id.clone(),
+                examination_id: examination_id.clone(),
+}),
             Reducer::DismissPartyActionRequest{
                 leader_id,
                 request_id,
@@ -1592,6 +1673,20 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 destination: destination.clone(),
+}),
+            Reducer::EquipMedication{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&equip_medication_reducer::EquipMedicationArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::ExaminePatient{
+                doctor_id,
+                target_id,
+}             => __sats::bsatn::to_vec(&examine_patient_reducer::ExaminePatientArgs {
+                doctor_id: doctor_id.clone(),
+                target_id: target_id.clone(),
 }),
             Reducer::FinalizeMerchantTrade{
                 character_id,
@@ -1844,7 +1939,9 @@ Reducer::SeedPartyCompanions{
 }             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
                 leader_id: leader_id.clone(),
 }),
-            Reducer::SeedSimulationEquipmentDamage{
+            Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
+                }),
+Reducer::SeedSimulationEquipmentDamage{
                 character_id,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {
@@ -1959,6 +2056,13 @@ Reducer::SendLocalChatMessage{
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
 }),
+            Reducer::UnequipMedication{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&unequip_medication_reducer::UnequipMedicationArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+}),
             Reducer::UpdateCharacter{
                 id,
                 name,
@@ -2029,6 +2133,9 @@ Reducer::SendLocalChatMessage{
 #[doc(hidden)]
 pub struct DbUpdate {
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
+    backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
+    backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -2049,6 +2156,7 @@ pub struct DbUpdate {
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    equipped_medication: __sdk::TableUpdate<EquippedMedication>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
@@ -2074,6 +2182,7 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
+    settlement_outbreak: __sdk::TableUpdate<SettlementOutbreak>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
@@ -2095,6 +2204,15 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_committed_cuts" => db_update.backend_committed_cuts.append(
+                    backend_committed_cuts_table::parse_table_update(table_update)?,
+                ),
+                "backend_infection_episodes" => db_update.backend_infection_episodes.append(
+                    backend_infection_episodes_table::parse_table_update(table_update)?,
+                ),
+                "backend_medical_examinations" => db_update.backend_medical_examinations.append(
+                    backend_medical_examinations_table::parse_table_update(table_update)?,
+                ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(battle_loot_item_table::parse_table_update(table_update)?),
@@ -2155,6 +2273,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
+                    .append(equipped_medication_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -2230,6 +2351,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
+                    .append(settlement_outbreak_table::parse_table_update(table_update)?),
                 "settlement_smith" => db_update
                     .settlement_smith
                     .append(settlement_smith_table::parse_table_update(table_update)?),
@@ -2376,6 +2500,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_training_schedule,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.equipped_medication = cache
+            .apply_diff_to_table::<EquippedMedication>(
+                "equipped_medication",
+                &self.equipped_medication,
+            )
+            .with_updates_by_pk(|row| &row.inventory_item_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -2475,6 +2605,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.settlement_outbreak = cache
+            .apply_diff_to_table::<SettlementOutbreak>(
+                "settlement_outbreak",
+                &self.settlement_outbreak,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.settlement_smith = cache
             .apply_diff_to_table::<SettlementSmith>("settlement_smith", &self.settlement_smith)
             .with_updates_by_pk(|row| &row.settlement_id);
@@ -2514,6 +2650,18 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
+            "backend_committed_cuts",
+            &self.backend_committed_cuts,
+        );
+        diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>(
+            "backend_infection_episodes",
+            &self.backend_infection_episodes,
+        );
+        diff.backend_medical_examinations = cache.apply_diff_to_table::<MedicalExamination>(
+            "backend_medical_examinations",
+            &self.backend_medical_examinations,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -2525,6 +2673,15 @@ impl __sdk::DbUpdate for DbUpdate {
             match &table_rows.table[..] {
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_committed_cuts" => db_update
+                    .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_infection_episodes" => db_update
+                    .backend_infection_episodes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_medical_examinations" => db_update
+                    .backend_medical_examinations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2585,6 +2742,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
@@ -2660,6 +2820,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_description" => db_update
                     .settlement_description
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
@@ -2707,6 +2870,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_committed_cuts" => db_update
+                    .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_infection_episodes" => db_update
+                    .backend_infection_episodes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_medical_examinations" => db_update
+                    .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2766,6 +2938,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "equipped_medication" => db_update
+                    .equipped_medication
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
@@ -2842,6 +3017,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_outbreak" => db_update
+                    .settlement_outbreak
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2888,6 +3066,9 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
+    backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
+    backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -2908,6 +3089,7 @@ pub struct AppliedDiff<'r> {
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -2933,6 +3115,7 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
+    settlement_outbreak: __sdk::TableAppliedDiff<'r, SettlementOutbreak>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
@@ -2959,6 +3142,21 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CommittedCut>(
+            "backend_committed_cuts",
+            &self.backend_committed_cuts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
+            "backend_infection_episodes",
+            &self.backend_infection_episodes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<MedicalExamination>(
+            "backend_medical_examinations",
+            &self.backend_medical_examinations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -3055,6 +3253,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<EquippedMedication>(
+            "equipped_medication",
+            &self.equipped_medication,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
@@ -3160,6 +3363,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementOutbreak>(
+            "settlement_outbreak",
+            &self.settlement_outbreak,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SettlementSmith>(
@@ -3861,6 +4069,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         autoresolve_report_table::register_table(client_cache);
+        backend_committed_cuts_table::register_table(client_cache);
+        backend_infection_episodes_table::register_table(client_cache);
+        backend_medical_examinations_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -3881,6 +4092,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        equipped_medication_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -3906,6 +4118,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
+        settlement_outbreak_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
@@ -3919,6 +4132,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "autoresolve_report",
+        "backend_committed_cuts",
+        "backend_infection_episodes",
+        "backend_medical_examinations",
         "battle_loot_item",
         "battle_participant",
         "battle_result",
@@ -3939,6 +4155,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_time",
         "character_training_schedule",
         "connected_players",
+        "equipped_medication",
         "inventory_item",
         "inventory_quantity_target",
         "item",
@@ -3964,6 +4181,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
+        "settlement_outbreak",
         "settlement_smith",
         "simulation_character",
         "simulation_run",

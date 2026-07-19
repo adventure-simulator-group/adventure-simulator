@@ -2107,6 +2107,93 @@ pub(crate) fn create_solo_party_for_character(
     Ok(party_id)
 }
 
+/// Move a deterministic development fixture into another fixture's party
+/// without going through the player-facing recruitment workflow.
+pub(crate) fn attach_seeded_party_member(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    member_id: u64,
+    role: &str,
+) -> Result<(), String> {
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(leader_id)
+        .ok_or("Seed party leader not found")?;
+    let party_id = leader
+        .party_id
+        .clone()
+        .ok_or("Seed party leader has no party")?;
+    let mut member = ctx
+        .db
+        .character()
+        .id()
+        .find(member_id)
+        .ok_or("Seed party member not found")?;
+
+    if member.party_id.as_deref() == Some(&party_id) {
+        if let Some(mut membership) = ctx
+            .db
+            .party_member()
+            .character_id()
+            .filter(member_id)
+            .find(|membership| membership.party_id == party_id)
+        {
+            membership.role = Some(role.into());
+            ctx.db.party_member().id().update(membership);
+        }
+        return Ok(());
+    }
+
+    if let Some(source_party_id) = member.party_id.clone() {
+        let source_members: Vec<_> = ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(&source_party_id)
+            .collect();
+        if source_members
+            .iter()
+            .any(|membership| membership.character_id != member_id)
+        {
+            return Err("Seed party member belongs to a non-solo party".into());
+        }
+        for membership in source_members {
+            ctx.db.party_member().id().delete(membership.id);
+        }
+        for vote in ctx
+            .db
+            .party_leader_vote()
+            .party_id()
+            .filter(&source_party_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_leader_vote().id().delete(&vote.id);
+        }
+        ctx.db.party().id().delete(&source_party_id);
+    }
+
+    member.party_id = Some(party_id.clone());
+    member.current_settlement_id = leader.current_settlement_id.clone();
+    member.current_quest_location_id = leader.current_quest_location_id.clone();
+    ctx.db.character().id().update(member);
+    ctx.db.party_member().insert(PartyMember {
+        id: 0,
+        party_id: party_id.clone(),
+        character_id: member_id,
+        role: Some(role.into()),
+        recruitment_role_id: None,
+    });
+    put_leader_vote(ctx, &party_id, member_id, leader_id);
+    if let Some(mut party) = ctx.db.party().id().find(&party_id) {
+        party.is_solo = false;
+        ctx.db.party().id().update(party);
+    }
+    normalize_and_elect_party_leader(ctx, &party_id)?;
+    Ok(())
+}
+
 #[reducer]
 pub fn backfill_solo_parties(ctx: &ReducerContext) -> Result<(), String> {
     let ids: Vec<_> = ctx
@@ -3000,7 +3087,12 @@ fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
         })
 }
 
-fn add_to_party_inventory(ctx: &ReducerContext, party_id: &str, item_id: &str, quantity: u32) {
+pub(crate) fn add_to_party_inventory(
+    ctx: &ReducerContext,
+    party_id: &str,
+    item_id: &str,
+    quantity: u32,
+) {
     if quantity == 0 {
         return;
     }
@@ -3715,7 +3807,11 @@ pub fn finalize_merchant_trade(
         let Some(item) = ctx.db.item().id().find(item_id) else {
             return Err("Merchant item not found".into());
         };
-        if item.kind == crate::ItemKind::Currency || *quantity == 0 {
+        if matches!(
+            item.kind,
+            crate::ItemKind::Currency | crate::ItemKind::Medication
+        ) || *quantity == 0
+        {
             return Err("Invalid merchant purchase".into());
         }
         cost = cost.saturating_add(
@@ -3751,7 +3847,13 @@ pub fn finalize_merchant_trade(
         let Some(item) = ctx.db.item().id().find(&item_id) else {
             return Err("Item definition not found".into());
         };
-        if available < *quantity || *quantity == 0 || item.kind == crate::ItemKind::Currency {
+        if available < *quantity
+            || *quantity == 0
+            || matches!(
+                item.kind,
+                crate::ItemKind::Currency | crate::ItemKind::Medication
+            )
+        {
             return Err("Invalid merchant sale".into());
         }
         if !party_scope
@@ -4838,7 +4940,9 @@ pub fn travel_to_quest(
     )?);
     if leg_minutes < travel_minutes {
         for member_id in traveler_ids.iter().copied() {
-            advance_character_time(ctx, member_id, leg_minutes)?;
+            if !advance_character_time(ctx, member_id, leg_minutes)? {
+                return Ok(());
+            }
             let mut member = ctx
                 .db
                 .character()
@@ -4860,7 +4964,9 @@ pub fn travel_to_quest(
     }
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
-            advance_character_time(ctx, member.id, travel_minutes)?;
+            if !advance_character_time(ctx, member.id, travel_minutes)? {
+                return Ok(());
+            }
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
             ctx.db.character().id().update(member);
@@ -4997,7 +5103,9 @@ pub fn travel_to_settlement(
         )?);
         if leg_minutes < travel_minutes {
             for traveler_id in traveler_ids {
-                advance_character_time(ctx, traveler_id, leg_minutes)?;
+                if !advance_character_time(ctx, traveler_id, leg_minutes)? {
+                    return Ok(());
+                }
                 let mut traveler = ctx
                     .db
                     .character()
@@ -5019,7 +5127,9 @@ pub fn travel_to_settlement(
         }
     }
     for traveler_id in traveler_ids {
-        advance_character_time(ctx, traveler_id, travel_minutes)?;
+        if !advance_character_time(ctx, traveler_id, travel_minutes)? {
+            return Ok(());
+        }
         let mut traveler = ctx
             .db
             .character()
@@ -5134,7 +5244,9 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     for member_id in traveler_ids.iter().copied() {
-        advance_character_time(ctx, member_id, leg_minutes)?;
+        if !advance_character_time(ctx, member_id, leg_minutes)? {
+            return Ok(());
+        }
     }
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {
@@ -5443,6 +5555,7 @@ pub fn autoresolve_quest(
             member.id,
             member.blood_loss_fraction + deterioration_blood_loss,
         )?;
+        crate::disease::record_committed_cut(ctx, member.id, member.cut_damage, surgery_check)?;
         crate::capability::refresh_character_capability(ctx, member.id)?;
     }
 

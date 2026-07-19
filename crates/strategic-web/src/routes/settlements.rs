@@ -30,17 +30,18 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem, PartyJourney, PartyMember,
+    CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
+    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
+    ItemSlot, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyMember,
     PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements,
     ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement, SettlementAlias,
     SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
-    ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
-    inn_page, live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
-    party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
-    settlement_map_page, settlement_overview_page,
+    ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, alchemy_page,
+    camp_page, inn_page, live_merchant_shop_page, merchants_page, party_discard_page,
+    party_inventory_page, party_personal_page, party_pool_page, party_stats_page, religion_page,
+    rest_result_page, settlement_map_page, settlement_overview_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -48,6 +49,11 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}", get(show_settlement))
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
+        .route("/locations/settlement/{id}/alchemy", get(alchemy))
+        .route(
+            "/locations/settlement/{id}/alchemy/craft",
+            post(craft_medication),
+        )
         .route(
             "/locations/settlement/{id}/map/travel-configuration",
             post(update_travel_configuration),
@@ -110,6 +116,18 @@ pub fn routes() -> Router<AppState> {
             get(party_stats),
         )
         .route(
+            "/locations/{kind}/{id}/party/{target_id}/examine",
+            post(examine_patient),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{target_id}/medication/{equipment_id}/unequip",
+            post(unequip_medication),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{target_id}/examination/{examination_id}/dismiss",
+            post(dismiss_medical_examination),
+        )
+        .route(
             "/locations/{kind}/{id}/players/{character_id}",
             get(party_stats),
         )
@@ -146,10 +164,127 @@ pub fn routes() -> Router<AppState> {
             post(retrieve_repairs),
         )
         .route("/settlements/{id}/clothing", get(clothing))
+        .route("/settlements/{id}/herbalist", get(herbalist))
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
+}
+
+#[derive(Default, Deserialize)]
+struct AlchemyQuery {
+    recipe: Option<String>,
+    scope: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CraftMedicationForm {
+    disease_id: String,
+    #[serde(default)]
+    party_scope: bool,
+}
+
+async fn alchemy(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<AlchemyQuery>,
+    session: Session,
+) -> Html<String> {
+    let Some((character, inventory)) =
+        get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    if character.current_settlement_id.as_deref() != Some(&id) {
+        return Html("<h1>Your character is not at this settlement</h1>".into());
+    }
+    let medicine = get_character_capability(&state, character.id)
+        .await
+        .map_or(0.0, |capability| capability.medicine);
+    if medicine < adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD {
+        return Html("<h1>Medicine 2 is required to prepare medication</h1>".into());
+    }
+    let settlement: Option<Settlement> = state
+        .db
+        .query_one(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlement else {
+        return Html("<h1>Settlement not found</h1>".into());
+    };
+    let selected = query
+        .recipe
+        .as_deref()
+        .and_then(adventuresim_core::disease::medication_recipe_for_item)
+        .filter(|recipe| adventuresim_core::disease::can_prepare_medication(medicine, recipe))
+        .or_else(|| {
+            adventuresim_core::disease::MEDICATION_RECIPES
+                .iter()
+                .find(|recipe| adventuresim_core::disease::can_prepare_medication(medicine, recipe))
+        })
+        .expect("Medicine 2 always unlocks at least one recipe");
+    let party_scope = query.scope.as_deref() == Some("party");
+    let (members, items, trade_context) = tokio::join!(
+        get_active_party_members(&state, Some(&character)),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        inventory_trade_context(&state, &character),
+    );
+    let (personal_targets, party_targets, pooled) = trade_context;
+    Html(
+        alchemy_page(
+            &settlement,
+            &character,
+            &members,
+            medicine,
+            selected,
+            &inventory,
+            &pooled,
+            &items.unwrap_or_default(),
+            &personal_targets,
+            &party_targets,
+            party_scope,
+            session.theme(),
+        )
+        .into_string(),
+    )
+}
+
+async fn craft_medication(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<CraftMedicationForm>,
+) -> Redirect {
+    if let Some(character_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call(
+                "craft_medication",
+                &[
+                    json!(character_id),
+                    json!(form.disease_id),
+                    json!(form.party_scope),
+                ],
+            )
+            .await
+    {
+        tracing::warn!(%error, character_id, "medication crafting rejected");
+    }
+    let recipe = adventuresim_core::disease::MEDICATION_RECIPES
+        .iter()
+        .find(|recipe| format!("{:?}", recipe.disease_id).eq_ignore_ascii_case(&form.disease_id))
+        .map_or("", |recipe| recipe.item_id);
+    Redirect::to(&format!(
+        "/locations/settlement/{id}/alchemy?recipe={recipe}&scope={}",
+        if form.party_scope {
+            "party"
+        } else {
+            "personal"
+        }
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1308,6 +1443,11 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let can_examine = get_character_capability(&state, active_character.id)
+        .await
+        .is_some_and(|capability| {
+            capability.medicine >= adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD
+        });
     let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
     let settlement = if location.kind == LocationKind::Settlement {
         state
@@ -1340,6 +1480,7 @@ async fn party_personal(
         .map_or(0.0, |notoriety| notoriety.value);
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let medical = medical_presentation(&state, character_id, character_id).await;
     let religious_demand = state
         .db
         .query::<ReligiousDemand>(&format!(
@@ -1366,6 +1507,8 @@ async fn party_personal(
             religious_demand.as_ref(),
             notoriety,
             personality.as_ref(),
+            &medical,
+            can_examine,
             session.theme(),
         )
         .into_string(),
@@ -1748,6 +1891,25 @@ async fn set_equipment(
     let Some(definition) = definition else {
         return (StatusCode::NOT_FOUND, "Item definition is missing");
     };
+    if definition.kind == crate::spacetimedb::ItemKind::Medication {
+        let reducer = if form.equipped {
+            "equip_medication"
+        } else {
+            "unequip_medication"
+        };
+        if let Err(error) = state
+            .db
+            .call(
+                reducer,
+                &[json!(character_id), json!(form.inventory_item_id)],
+            )
+            .await
+        {
+            tracing::warn!(%error, character_id, "failed to update medication");
+            return (StatusCode::BAD_REQUEST, "Could not update medication");
+        }
+        return (StatusCode::NO_CONTENT, "");
+    }
     let destination = if form.equipped {
         definition.slot
     } else {
@@ -1971,6 +2133,11 @@ async fn party_stats(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let can_examine = get_character_capability(&state, active_character.id)
+        .await
+        .is_some_and(|capability| {
+            capability.medicine >= adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD
+        });
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -1981,6 +2148,7 @@ async fn party_stats(
         .map_or(0.0, |notoriety| notoriety.value);
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let medical = medical_presentation(&state, active_character.id, character_id).await;
     Html(
         party_stats_page(
             &location,
@@ -1998,10 +2166,132 @@ async fn party_stats(
             selected_party.as_ref(),
             notoriety,
             personality.as_ref(),
+            &medical,
+            can_examine,
             session.theme(),
         )
         .into_string(),
     )
+}
+
+pub(crate) async fn medical_presentation(
+    state: &AppState,
+    viewer_id: u64,
+    target_id: u64,
+) -> crate::medical::MedicalPresentation {
+    let viewer = get_character_capability(state, viewer_id).await;
+    let rows = match state
+        .db
+        .query::<InfectionEpisodeRow>(&format!(
+            "SELECT * FROM backend_infection_episodes WHERE character_id = {target_id}"
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::error!(%error,target_id,"private medical query failed closed");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
+        }
+    };
+    let time = query_single::<CharacterTime>(state, "character_time", target_id)
+        .await
+        .map_or(0, |t| t.minutes);
+    let attributes =
+        query_single::<CharacterAttributes>(state, "character_attributes", target_id).await;
+    let medications = state
+        .db
+        .query::<EquippedMedication>(&format!(
+            "SELECT * FROM equipped_medication WHERE character_id = {target_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let examination = match state
+        .db
+        .query::<MedicalExaminationRow>(&format!(
+            "SELECT * FROM backend_medical_examinations WHERE doctor_id = {viewer_id}"
+        ))
+        .await
+    {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.target_id == target_id)
+            .max_by_key(|row| row.id),
+        Err(error) => {
+            tracing::error!(%error,viewer_id,target_id,"private examination query failed closed");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
+        }
+    };
+    let cuts = match state
+        .db
+        .query::<CommittedCutRow>(&format!(
+            "SELECT * FROM backend_committed_cuts WHERE character_id = {target_id}"
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::error!(%error,target_id,"private damage query failed closed");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
+        }
+    };
+    let mut presentation = crate::medical::sanitize(
+        &rows,
+        &medications,
+        examination.as_ref(),
+        time,
+        attributes.map_or(3.0, |a| a.immunity),
+        viewer.map_or(0.0, |capability| capability.medicine),
+    );
+    presentation.obvious_cut = cuts
+        .iter()
+        .map(|cut| cut.severity)
+        .sum::<f32>()
+        .clamp(0.0, 1.0);
+    presentation
+}
+
+async fn examine_patient(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(doctor_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call("examine_patient", &[json!(doctor_id), json!(target_id)])
+            .await
+    {
+        tracing::warn!(%error, doctor_id, target_id, "patient examination rejected");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+}
+
+async fn dismiss_medical_examination(
+    State(state): State<AppState>,
+    Path((kind, id, target_id, examination_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(doctor_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call(
+                "dismiss_medical_examination",
+                &[json!(doctor_id), json!(target_id), json!(examination_id)],
+            )
+            .await
+    {
+        tracing::warn!(%error, doctor_id, target_id, examination_id, "examination dismissal rejected");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
 }
 
 async fn get_strategic_condition(
@@ -2200,7 +2490,7 @@ async fn finalize_merchant_offer(
         }
     }
     let return_to = match form.return_to.as_str() {
-        "weapons" | "armor" | "clothing" | "merchants" => form.return_to,
+        "weapons" | "armor" | "clothing" | "merchants" | "herbalist" => form.return_to,
         _ => "merchants".to_owned(),
     };
     Redirect::to(&format!("/settlements/{id}/{return_to}"))
@@ -2542,6 +2832,33 @@ async fn clothing(
     session: Session,
 ) -> Html<String> {
     merchant_shop(state, id, session, MerchantShop::Clothing).await
+}
+
+async fn unequip_medication(
+    State(state): State<AppState>,
+    Path((kind, id, target_id, equipment_id)): Path<(String, String, u64, u64)>,
+    session: Session,
+) -> Redirect {
+    if session.character_id_u64() == Some(target_id)
+        && let Err(error) = state
+            .db
+            .call(
+                "unequip_medication",
+                &[json!(target_id), json!(equipment_id)],
+            )
+            .await
+    {
+        tracing::warn!(%error, target_id, equipment_id, "medication removal rejected");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}"))
+}
+
+async fn herbalist(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    merchant_shop(state, id, session, MerchantShop::Herbalist).await
 }
 
 async fn religion(
