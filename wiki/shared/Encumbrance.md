@@ -19,12 +19,14 @@ inventory rows and count exactly once. Injury-adjusted capacity uses the
 average of left and right leg strength after multiplying each leg by its
 current health.
 
-Inventory rails show the exact burden and capacity to one decimal place, the
-exact penalty to one decimal percent, and a green-to-yellow-to-red meter whose
-marker follows the same linear penalty. The party chest shows an aggregate:
-all living party members' burdens and capacities are summed, with the shared
-chest burden added once. Dead members contribute neither burden nor capacity,
-but the shared chest remains part of the aggregate.
+Inventory rails show one compact row with the exact burden and capacity to one
+decimal place on the left, a green-to-yellow-to-red meter in the middle, and
+the exact penalty to one decimal percent on the right. The marker follows the
+same linear penalty. Merchant Player tabs use the personal summary; merchant
+Party tabs use the living-party aggregate. The party chest also shows this
+aggregate: all living party members' burdens and capacities are summed, with
+the shared chest burden added once. Dead members contribute neither burden nor
+capacity, but the shared chest remains part of the aggregate.
 
 The recruitment Athletics tag combines climbing and swimming performance and
 uses this same shared encumbrance penalty, so a packed inventory lowers the

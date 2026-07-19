@@ -1420,6 +1420,8 @@ pub fn live_merchant_shop_page(
     smith: Option<&crate::spacetimedb::SettlementSmith>,
     repair_orders: &[crate::spacetimedb::RepairOrder],
     now_minutes: u64,
+    personal_encumbrance: EncumbranceSummary,
+    party_encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
@@ -1432,6 +1434,11 @@ pub fn live_merchant_shop_page(
             }
         })
         .unwrap_or(0);
+    let player_footer = if matches!(shop, MerchantShop::Herbalist) {
+        html! {}
+    } else {
+        inventory_footer_controls("sell", "Sell surplus", "Sell everything")
+    };
     let content = html! {
         aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
@@ -1467,6 +1474,7 @@ pub fn live_merchant_shop_page(
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
+                (encumbrance_inventory_rail(html! {
                 (trade_inventory_table(true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1497,13 +1505,12 @@ pub fn live_merchant_shop_page(
                         }
                     }
                 }))
-                @if !matches!(shop, MerchantShop::Herbalist) {
-                    (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
-                }
+                }, player_footer, personal_encumbrance))
             }
             }
             @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
+                (encumbrance_inventory_rail(html! {
                 (trade_inventory_table(false, None, html! {
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1529,7 +1536,7 @@ pub fn live_merchant_shop_page(
                         }
                     }
                 }))
-                (inventory_footer_controls("sell", "Sell surplus", "Sell everything"))
+                }, inventory_footer_controls("sell", "Sell surplus", "Sell everything"), party_encumbrance))
             }
             }
             }
@@ -1650,18 +1657,15 @@ fn encumbrance_inventory_rail(
 
 fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     let penalty_percent = summary.penalty_fraction() * 100.0;
-    let weight_text = format!(
-        "Weight {:.1} / {:.1} kg",
+    let weight_text = format!("{:.1} / {:.1} kg", summary.burden_kg, summary.capacity_kg);
+    let penalty_text = format!("-{penalty_percent:.1}%");
+    let accessible_text = format!(
+        "Weight {:.1} / {:.1} kilograms; Penalty -{penalty_percent:.1}%",
         summary.burden_kg, summary.capacity_kg
     );
-    let penalty_text = format!("Penalty -{penalty_percent:.1}%");
-    let accessible_text = format!("{weight_text}; {penalty_text}");
     html! {
         div class="encumbrance" {
-            div class="encumbrance-copy" {
-                span { (weight_text) }
-                span { (penalty_text) }
-            }
+            span class="encumbrance-weight" { (weight_text) }
             div class="encumbrance-meter"
                 role="meter"
                 aria-label="Encumbrance"
@@ -1672,6 +1676,7 @@ fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
                 span class="encumbrance-marker"
                     style=(format!("--encumbrance-position: {penalty_percent:.4}%")) {}
             }
+            span class="encumbrance-penalty" { (penalty_text) }
         }
     }
 }
@@ -3605,8 +3610,9 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, need_balance_meter, repair_custody_panel, repair_submit_control,
+        Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
+        encumbrance_meter, live_merchant_shop_page, need_balance_meter, repair_custody_panel,
+        repair_submit_control,
         rest_default_minutes,
     };
     use crate::spacetimedb::ItemKind;
@@ -3628,8 +3634,11 @@ mod tests {
     #[test]
     fn encumbrance_meter_formats_exact_text_and_accessible_linear_position() {
         let markup = encumbrance_meter(EncumbranceSummary::new(85.36, 150.0)).into_string();
-        assert!(markup.contains("Weight 85.4 / 150.0 kg"));
-        assert!(markup.contains("Penalty -56.9%"));
+        assert!(markup.contains(">85.4 / 150.0 kg<"));
+        assert!(markup.contains(">-56.9%<"));
+        assert!(!markup.contains(">Weight"));
+        assert!(!markup.contains(">Penalty"));
+        assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("aria-valuenow=\"56.9\""));
         assert!(markup.contains("--encumbrance-position: 56.9067%"));
@@ -3638,8 +3647,8 @@ mod tests {
     #[test]
     fn overloaded_meter_keeps_burden_but_clamps_penalty_and_marker() {
         let markup = encumbrance_meter(EncumbranceSummary::new(185.4, 150.0)).into_string();
-        assert!(markup.contains("Weight 185.4 / 150.0 kg"));
-        assert!(markup.contains("Penalty -100.0%"));
+        assert!(markup.contains(">185.4 / 150.0 kg<"));
+        assert!(markup.contains(">-100.0%<"));
         assert!(markup.contains("--encumbrance-position: 100.0000%"));
     }
 
@@ -3669,6 +3678,56 @@ mod tests {
         assert!(css.contains("overflow-y: auto"));
         assert!(css.contains("padding-left: 1.75rem"));
         assert!(css.contains("padding-right: 1.75rem"));
+        assert!(css.contains("grid-template-columns: auto minmax(2.5rem, 1fr) auto"));
+    }
+
+    #[test]
+    fn merchant_tabs_render_personal_and_party_encumbrance_as_applicable() {
+        let character = Character {
+            id: 1,
+            name: "Trader".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("viabundus-1".into()),
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let render = |shop| {
+            live_merchant_shop_page(
+                &settlement(),
+                &character,
+                &[],
+                &[],
+                &[],
+                None,
+                &[],
+                &[],
+                &[],
+                "dark-arcanum",
+                shop,
+                &[],
+                None,
+                &[],
+                0,
+                EncumbranceSummary::new(10.0, 100.0),
+                EncumbranceSummary::new(30.0, 200.0),
+            )
+            .into_string()
+        };
+        let merchant = render(MerchantShop::Weapons);
+        assert!(merchant.contains("data-inventory-pane=\"player\""));
+        assert!(merchant.contains("data-inventory-pane=\"party\""));
+        assert!(merchant.contains(">10.0 / 100.0 kg<"));
+        assert!(merchant.contains(">30.0 / 200.0 kg<"));
+
+        let herbalist = render(MerchantShop::Herbalist);
+        assert!(herbalist.contains(">10.0 / 100.0 kg<"));
+        assert!(!herbalist.contains("data-inventory-pane=\"party\""));
+        assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
     }
 
     #[test]

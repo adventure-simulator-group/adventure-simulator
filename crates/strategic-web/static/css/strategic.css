@@ -345,6 +345,16 @@
   min-height: 0;
 }
 
+.inventory-owner-panel:has(.encumbrance-inventory-rail) {
+  display: flex;
+  flex-direction: column;
+}
+
+.inventory-owner-panel:has(.encumbrance-inventory-rail) > [data-inventory-pane] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .encumbrance-inventory-rail {
   display: flex;
   flex: 1 1 auto;
@@ -372,21 +382,22 @@
 }
 
 .encumbrance {
+  display: grid;
   flex: 0 0 auto;
-  margin-top: 0.6rem;
-  padding: 0.55rem var(--padding) var(--padding);
+  grid-template-columns: auto minmax(2.5rem, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+  padding: 0.55rem var(--padding) 0.65rem;
   border-top: 1px solid var(--border-color);
   background: var(--sidebar-bg);
-}
-
-.encumbrance-copy {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.25rem 0.75rem;
-  margin-bottom: 0.35rem;
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
+}
+
+.encumbrance-weight,
+.encumbrance-penalty {
+  white-space: nowrap;
 }
 
 .encumbrance-meter {

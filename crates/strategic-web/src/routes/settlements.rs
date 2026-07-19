@@ -1929,37 +1929,10 @@ async fn party_pool_inventory(
         .await
         .unwrap_or_default();
     let members = get_active_party_members(&state, Some(&character)).await;
-    let (member_ids, encumbrance_ids) = encumbrance_query_ids(&members, character.id);
-    let member_inventories = async {
-        let state_ref = &state;
-        stream::iter(member_ids.iter().copied())
-            .map(|member_id| async move {
-                state_ref
-                    .db
-                    .query::<InventoryItem>(&format!(
-                        "SELECT * FROM inventory_item WHERE character_id = {member_id}"
-                    ))
-                    .await
-                    .unwrap_or_default()
-            })
-            .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-    };
-    let all_inventories = member_inventories.await;
-    let encumbrance_rows = EncumbranceRows::query(&state, &encumbrance_ids).await;
-    let personal_encumbrance =
-        personal_encumbrance(character.id, &inventory, &items, &encumbrance_rows);
-    let party_encumbrance = party_encumbrance(
-        &members,
-        &all_inventories,
-        &pooled,
-        &items,
-        &encumbrance_rows,
-    );
+    let encumbrance = inventory_encumbrance_summaries(
+        &state, &character, &inventory, &members, &pooled, &items, true,
+    )
+    .await;
     let stake = stakes
         .iter()
         .find(|stake| stake.character_id == character.id)
@@ -1977,8 +1950,8 @@ async fn party_pool_inventory(
             equip.first(),
             &personal_targets,
             &party_targets,
-            party_encumbrance,
-            personal_encumbrance,
+            encumbrance.party,
+            encumbrance.personal,
         )
         .into_string(),
     )
@@ -3409,6 +3382,16 @@ async fn merchant_shop(
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
     let (personal_targets, party_targets, pooled) = trade_context;
+    let encumbrance = inventory_encumbrance_summaries(
+        &state,
+        character,
+        inventory,
+        &party_members,
+        &pooled,
+        &items,
+        !matches!(shop, MerchantShop::Herbalist),
+    )
+    .await;
     Html(
         live_merchant_shop_page(
             settlement,
@@ -3428,6 +3411,8 @@ async fn merchant_shop(
                 .unwrap_or_default()
                 .first()
                 .map_or(0, |time| time.minutes),
+            encumbrance.personal,
+            encumbrance.party,
         )
         .into_string(),
     )
@@ -3626,6 +3611,12 @@ struct EncumbranceRows {
 
 const ENCUMBRANCE_QUERY_CONCURRENCY: usize = 4;
 
+#[derive(Clone, Copy, Debug, Default)]
+struct InventoryEncumbranceSummaries {
+    personal: EncumbranceSummary,
+    party: EncumbranceSummary,
+}
+
 fn encumbrance_query_ids(members: &[Character], active_character_id: u64) -> (Vec<u64>, Vec<u64>) {
     let living_ids: std::collections::BTreeSet<u64> = members
         .iter()
@@ -3638,6 +3629,47 @@ fn encumbrance_query_ids(members: &[Character], active_character_id: u64) -> (Ve
         living_ids.into_iter().collect(),
         row_ids.into_iter().collect(),
     )
+}
+
+async fn inventory_encumbrance_summaries(
+    state: &AppState,
+    active_character: &Character,
+    active_inventory: &[InventoryItem],
+    members: &[Character],
+    pooled: &[PartyInventoryItem],
+    items: &[ItemDefinition],
+    include_party: bool,
+) -> InventoryEncumbranceSummaries {
+    let aggregate_members = include_party.then_some(members).unwrap_or_default();
+    let (member_ids, encumbrance_ids) =
+        encumbrance_query_ids(aggregate_members, active_character.id);
+    let all_inventories = stream::iter(member_ids)
+        .map(|member_id| async move {
+            if member_id == active_character.id {
+                active_inventory.to_vec()
+            } else {
+                state
+                    .db
+                    .query::<InventoryItem>(&format!(
+                        "SELECT * FROM inventory_item WHERE character_id = {member_id}"
+                    ))
+                    .await
+                    .unwrap_or_default()
+            }
+        })
+        .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let rows = EncumbranceRows::query(state, &encumbrance_ids).await;
+    InventoryEncumbranceSummaries {
+        personal: personal_encumbrance(active_character.id, active_inventory, items, &rows),
+        party: include_party
+            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &rows))
+            .unwrap_or_default(),
+    }
 }
 
 impl EncumbranceRows {
