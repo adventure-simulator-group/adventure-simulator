@@ -1,7 +1,7 @@
 //! Base layout template - Three-column strategic design.
 
 use crate::spacetimedb::SettlementCategory;
-use maud::{html, Markup, DOCTYPE};
+use maud::{DOCTYPE, Markup, html};
 
 use super::religion_game_icon_name;
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,13 +87,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                link rel="stylesheet" href="/static/css/base.css?v=environment-3";
+                link rel="stylesheet" href="/static/css/base.css?v=environment-5";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=environment-3";
+                link rel="stylesheet" href="/static/css/layout.css?v=environment-5";
                 link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
-                link rel="stylesheet" href="/static/css/strategic.css?v=environment-3";
-                link rel="stylesheet" href="/static/css/utilities.css?v=environment-3";
+                link rel="stylesheet" href="/static/css/strategic.css?v=environment-5";
+                link rel="stylesheet" href="/static/css/utilities.css?v=environment-5";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
@@ -397,6 +397,7 @@ mod tests {
             "lubeck",
             &SettlementCategory::City,
             "inn",
+            None,
             html! {},
             None,
         )
@@ -429,6 +430,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "religion",
+            None,
             None,
         )
         .into_string();

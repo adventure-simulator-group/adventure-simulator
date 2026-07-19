@@ -47,11 +47,19 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   const noon = window.strategicTimeLighting(12 * 60);
   const channels = noon.low.match(/\d+/g).map(Number);
   assert.ok(channels[0] >= 75 && channels[1] >= 150 && channels[2] >= 220);
-  assert.match(layoutCss, /\.settlement-time[\s\S]*background: rgb\(5 8 13 \/ 76%\)/);
+  assert.match(layoutCss, /\.settlement-time[\s\S]*background: rgb\(5 8 13 \/ 38%\)/);
   assert.match(layoutCss, /\.settlement-services \{[\s\S]*align-items: flex-end/);
   assert.match(baseCss, /--building-interactive:color-mix/);
   assert.match(strategicCss, /\.trade-inventory-row \{[\s\S]*background: var\(--building-interactive\)/);
   assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
+});
+
+test("building tabs have roofs without making the desktop header scroll", () => {
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.nav-tab::before/);
+  assert.match(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
+  assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
+  assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
+  assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
 });
 
 test("building state is re-applied when live regions replace party links", () => {

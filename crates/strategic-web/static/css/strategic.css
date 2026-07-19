@@ -1315,6 +1315,13 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   font: 800 0.72rem/1 sans-serif;
 }
 
+.settlement-identity .settlement-turn-in-badge {
+  position: absolute;
+  z-index: 2;
+  top: -0.45rem;
+  right: -0.45rem;
+}
+
 .settlement-turn-in-badge[hidden] { display: none; }
 
 .destination-turn-in-badge,

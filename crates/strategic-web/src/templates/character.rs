@@ -148,7 +148,7 @@ mod creation_tests {
 
     #[test]
     fn starting_equipment_uses_accessible_exact_item_icons() {
-        let markup = character_new_page(None, "fraktur-nocturne").into_string();
+        let markup = character_new_page(None).into_string();
         assert!(markup.contains("starting-equipment-table"));
         assert!(markup.contains("aria-label=\"Item type\""));
         assert!(markup.contains("/static/icons/game/torch.svg"));
