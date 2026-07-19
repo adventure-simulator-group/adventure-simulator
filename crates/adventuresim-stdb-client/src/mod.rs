@@ -312,6 +312,7 @@ pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
 pub mod seed_sick_character_reducer;
+pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
 pub mod self_regard_type;
@@ -703,6 +704,7 @@ pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
 pub use seed_sick_character_reducer::seed_sick_character;
+pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
 pub use self_regard_type::SelfRegard;
@@ -853,6 +855,7 @@ pub enum Reducer {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
     },
     ContinueCampTravel {
         character_id: u64,
@@ -1148,6 +1151,10 @@ pub enum Reducer {
         leader_id: u64,
     },
     SeedSickCharacter,
+    SeedSimulationDisease {
+        nonce: String,
+        character_id: u64,
+    },
     SeedSimulationEquipmentDamage {
         character_id: u64,
         inventory_item_id: u64,
@@ -1345,6 +1352,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
             Reducer::SeedSickCharacter => "seed_sick_character",
+            Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
@@ -1468,6 +1476,7 @@ Reducer::CancelMissionRequest{
                 attributes,
                 skills,
                 downtime,
+                personality,
 }             => __sats::bsatn::to_vec(&configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
@@ -1476,6 +1485,7 @@ Reducer::CancelMissionRequest{
                 attributes: attributes.clone(),
                 skills: skills.clone(),
                 downtime: downtime.clone(),
+                personality: personality.clone(),
 }),
             Reducer::ContinueCampTravel{
                 character_id,
@@ -2001,7 +2011,14 @@ Reducer::SeedPartyCompanions{
 }),
             Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
                 }),
-Reducer::SeedSimulationEquipmentDamage{
+Reducer::SeedSimulationDisease{
+                nonce,
+                character_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
+                nonce: nonce.clone(),
+                character_id: character_id.clone(),
+}),
+            Reducer::SeedSimulationEquipmentDamage{
                 character_id,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {

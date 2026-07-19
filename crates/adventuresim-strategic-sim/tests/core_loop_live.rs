@@ -103,6 +103,21 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
             CoreLoopEventKind::RetrieveRepair,
         ],
     );
+    assert!(report.metrics.diagnoses_attempted > 0);
+    assert!(report.metrics.diagnoses_confirmed > 0);
+    assert!(report.metrics.medications_crafted + report.metrics.medications_purchased > 0);
+    assert!(report.metrics.medications_equipped > 0);
+    assert!(report.metrics.treatment_rest_minutes > 0);
+    assert_ordered_subsequence(
+        &report,
+        &[
+            CoreLoopEventKind::Diagnose,
+            CoreLoopEventKind::BuyMedication,
+            CoreLoopEventKind::EquipMedication,
+            CoreLoopEventKind::Recover,
+            CoreLoopEventKind::IllnessRecovered,
+        ],
+    );
 
     let reuse_error = run_core_loop(config).expect_err("a claimed database cannot be reused");
     assert!(

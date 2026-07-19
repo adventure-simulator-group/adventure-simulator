@@ -24,29 +24,37 @@ use adventuresim_stdb_client::{
     accept_party_join_request_reducer::accept_party_join_request,
     accept_quest_reducer::accept_quest, autoresolve_quest_reducer::autoresolve_quest,
     autoresolve_report_table::AutoresolveReportTableAccess,
+    backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
     character_equip_table::CharacterEquipTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
+    character_personality_table::CharacterPersonalityTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
-    continue_camp_travel_reducer::continue_camp_travel,
+    continue_camp_travel_reducer::continue_camp_travel, craft_medication_reducer::craft_medication,
     create_named_character_with_id_reducer::create_named_character_with_id,
+    dismiss_herbalist_examination_reducer::dismiss_herbalist_examination,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
+    equip_medication_reducer::equip_medication,
+    equipped_medication_table::EquippedMedicationTableAccess,
+    examine_by_herbalist_reducer::examine_by_herbalist,
     finalize_merchant_trade_reducer::finalize_merchant_trade,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
     party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
-    party_table::PartyTableAccess, quest_status_type::QuestStatus, quest_table::QuestTableAccess,
+    party_table::PartyTableAccess, purchase_from_herbalist_reducer::purchase_from_herbalist,
+    quest_status_type::QuestStatus, quest_table::QuestTableAccess,
     repair_order_table::RepairOrderTableAccess,
     request_general_party_join_reducer::request_general_party_join,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
+    seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_world_reducer::seed_world, settlement_smith_table::SettlementSmithTableAccess,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
@@ -159,6 +167,16 @@ pub struct CoreLoopMetrics {
     pub repair_submissions: u32,
     pub repair_retrievals: u32,
     pub repair_wait_minutes: u64,
+    pub diagnoses_attempted: u32,
+    pub diagnoses_confirmed: u32,
+    pub medications_crafted: u32,
+    pub medications_purchased: u32,
+    pub medications_equipped: u32,
+    pub treatment_gold_spent: u64,
+    pub treatment_rest_minutes: u64,
+    pub illness_recoveries: u32,
+    pub disease_deaths: u32,
+    pub quests_suppressed_for_health: u32,
     pub earned_gold_withdrawn: u64,
     pub activity_days: u32,
     pub reducer_failures: u32,
@@ -188,6 +206,13 @@ pub enum CoreLoopEventKind {
     SubmitRepair,
     RetrieveRepair,
     WaitForRepair,
+    Diagnose,
+    CraftMedication,
+    BuyMedication,
+    EquipMedication,
+    IllnessRecovered,
+    QuestSuppressed,
+    Death,
     Activity,
 }
 
@@ -211,6 +236,8 @@ pub struct FinalAgentState {
     pub condition_status: String,
     pub worst_equipment_condition: f32,
     pub outstanding_repair_orders: u32,
+    pub alive: bool,
+    pub equipped_medication_courses: u32,
     pub elapsed_minutes: u64,
     pub personal_gold_coin: u64,
     pub party_treasury: u64,
@@ -305,6 +332,48 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         prayer_minutes: s.prayer,
         thievery_minutes: s.thievery,
         raiding_minutes: s.raiding,
+    }
+}
+
+fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPersonality {
+    CharacterPersonality {
+        character_id,
+        nerve: match p.nerve {
+            crate::Nerve::Neutral => adventuresim_stdb_client::Nerve::Neutral,
+            crate::Nerve::Brave => adventuresim_stdb_client::Nerve::Brave,
+            crate::Nerve::Fearful => adventuresim_stdb_client::Nerve::Fearful,
+        },
+        drive: match p.drive {
+            crate::Drive::Neutral => adventuresim_stdb_client::Drive::Neutral,
+            crate::Drive::Ambitious => adventuresim_stdb_client::Drive::Ambitious,
+            crate::Drive::Content => adventuresim_stdb_client::Drive::Content,
+        },
+        outlook: match p.outlook {
+            crate::Outlook::Neutral => adventuresim_stdb_client::Outlook::Neutral,
+            crate::Outlook::Sanguine => adventuresim_stdb_client::Outlook::Sanguine,
+            crate::Outlook::Brooding => adventuresim_stdb_client::Outlook::Brooding,
+        },
+        sociability: match p.sociability {
+            crate::Sociability::Neutral => adventuresim_stdb_client::Sociability::Neutral,
+            crate::Sociability::Gregarious => adventuresim_stdb_client::Sociability::Gregarious,
+            crate::Sociability::Solitary => adventuresim_stdb_client::Sociability::Solitary,
+        },
+        conscience: match p.conscience {
+            crate::Conscience::Neutral => adventuresim_stdb_client::Conscience::Neutral,
+            crate::Conscience::Compassionate => adventuresim_stdb_client::Conscience::Compassionate,
+            crate::Conscience::Callous => adventuresim_stdb_client::Conscience::Callous,
+            crate::Conscience::Cruel => adventuresim_stdb_client::Conscience::Cruel,
+        },
+        self_regard: match p.self_regard {
+            crate::SelfRegard::Neutral => adventuresim_stdb_client::SelfRegard::Neutral,
+            crate::SelfRegard::Proud => adventuresim_stdb_client::SelfRegard::Proud,
+            crate::SelfRegard::Humble => adventuresim_stdb_client::SelfRegard::Humble,
+        },
+        conviction: match p.conviction {
+            crate::Conviction::Neutral => adventuresim_stdb_client::Conviction::Neutral,
+            crate::Conviction::Zealous => adventuresim_stdb_client::Conviction::Zealous,
+            crate::Conviction::Irreverent => adventuresim_stdb_client::Conviction::Irreverent,
+        },
     }
 }
 
@@ -480,9 +549,279 @@ impl LiveRunner {
         Err("recovery bound exhausted".into())
     }
 
+    fn personal_gold(&self, character_id: u64) -> u64 {
+        self.connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .map(|row| u64::from(row.quantity))
+            .sum()
+    }
+
+    /// Observe only public condition plus the caller-scoped herbalist result.
+    /// Private infection episodes are deliberately absent from this policy.
+    fn ensure_medically_safe(&mut self, agent: u32) -> Result<bool, String> {
+        let character_id = self.character_ids[agent as usize];
+        for _ in 0..MAX_RECOVERY_ACTIONS {
+            let character = self
+                .connection
+                .db
+                .character()
+                .iter()
+                .find(|row| row.id == character_id)
+                .ok_or("missing medical character")?;
+            if !character.alive {
+                self.metrics.disease_deaths += 1;
+                self.event(agent, CoreLoopEventKind::Death, "terminal disease state");
+                return Ok(false);
+            }
+            let condition = self
+                .connection
+                .db
+                .character_strategic_condition()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing medical condition")?;
+            let treatment_active = self
+                .connection
+                .db
+                .equipped_medication()
+                .iter()
+                .any(|row| row.character_id == character_id);
+            if condition.status == "ready" && !treatment_active {
+                return Ok(true);
+            }
+            let Some(settlement) = character.current_settlement_id.clone() else {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("status={}", condition.status),
+                );
+                return Ok(false);
+            };
+
+            if treatment_active {
+                let result = reducer_call!(self, "ongoing_treatment_rest", |cb| self
+                    .connection
+                    .reducers
+                    .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+                self.call(result)?;
+                self.metrics.treatment_rest_minutes += 1_440;
+                self.metrics.recovery_rests += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Recover,
+                    "ongoing_treatment_minutes=1440",
+                );
+                let alive = self
+                    .connection
+                    .db
+                    .character()
+                    .iter()
+                    .find(|row| row.id == character_id)
+                    .is_some_and(|row| row.alive);
+                if !alive {
+                    continue;
+                }
+                let ready = self
+                    .connection
+                    .db
+                    .character_strategic_condition()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .is_some_and(|row| row.status == "ready");
+                let still_treated = self
+                    .connection
+                    .db
+                    .equipped_medication()
+                    .iter()
+                    .any(|row| row.character_id == character_id);
+                if ready && !still_treated {
+                    self.metrics.illness_recoveries += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::IllnessRecovered,
+                        "status=ready;treatment=complete",
+                    );
+                    return Ok(true);
+                }
+                continue;
+            }
+
+            let gold_before = self.personal_gold(character_id);
+            let result = reducer_call!(self, "examine_by_herbalist", |cb| self
+                .connection
+                .reducers
+                .examine_by_herbalist_then(character_id, settlement.clone(), cb));
+            self.call(result)?;
+            self.metrics.diagnoses_attempted += 1;
+            let examination = self
+                .connection
+                .db
+                .backend_herbalist_examinations()
+                .iter()
+                .find(|row| row.patient_id == character_id)
+                .ok_or("herbalist examination reducer returned no caller-scoped result")?;
+            self.event(
+                agent,
+                CoreLoopEventKind::Diagnose,
+                format!(
+                    "possibilities={};confirmed={}",
+                    examination.disease_names.len(),
+                    examination.medication_names.len()
+                ),
+            );
+            if !examination.medication_names.is_empty() {
+                self.metrics.diagnoses_confirmed += 1;
+            }
+            for medication_name in examination.medication_names.clone() {
+                let recipe = adventuresim_core::disease::MEDICATION_RECIPES
+                    .iter()
+                    .find(|recipe| recipe.name == medication_name)
+                    .ok_or_else(|| {
+                        format!("herbalist returned unknown medication {medication_name}")
+                    })?;
+                let capability = self
+                    .connection
+                    .db
+                    .character_capability()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing medicine capability")?;
+                let has_ingredients = recipe.ingredients.iter().all(|ingredient| {
+                    self.connection
+                        .db
+                        .inventory_item()
+                        .iter()
+                        .filter(|row| {
+                            row.character_id == character_id && row.item_id == ingredient.item_id
+                        })
+                        .map(|row| row.quantity)
+                        .sum::<u32>()
+                        >= ingredient.quantity
+                });
+                if capability.medicine >= f32::from(recipe.medicine_dc) && has_ingredients {
+                    let disease_id = format!("{:?}", recipe.disease_id).to_ascii_lowercase();
+                    let result = reducer_call!(self, "craft_medication", |cb| self
+                        .connection
+                        .reducers
+                        .craft_medication_then(character_id, disease_id.clone(), false, cb));
+                    self.call(result)?;
+                    self.metrics.medications_crafted += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::CraftMedication,
+                        format!("item={}", recipe.item_id),
+                    );
+                } else {
+                    let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
+                        .connection
+                        .reducers
+                        .purchase_from_herbalist_then(
+                            character_id,
+                            settlement.clone(),
+                            vec![recipe.item_id.into()],
+                            vec![1],
+                            cb
+                        ));
+                    self.call(result)?;
+                    self.metrics.medications_purchased += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::BuyMedication,
+                        format!("item={}", recipe.item_id),
+                    );
+                }
+                let course = self
+                    .connection
+                    .db
+                    .inventory_item()
+                    .iter()
+                    .find(|row| row.character_id == character_id && row.item_id == recipe.item_id)
+                    .ok_or("medication acquisition produced no course")?;
+                let course_id = course.id;
+                let result = reducer_call!(self, "equip_medication", |cb| self
+                    .connection
+                    .reducers
+                    .equip_medication_then(character_id, course_id, cb));
+                self.call(result)?;
+                if !self.connection.db.equipped_medication().iter().any(|row| {
+                    row.character_id == character_id && row.inventory_item_id == course_id
+                }) {
+                    return Err(
+                        "medication equip completed without authoritative equipped row".into(),
+                    );
+                }
+                self.metrics.medications_equipped += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::EquipMedication,
+                    format!("item={}", recipe.item_id),
+                );
+            }
+            let examination_id = examination.id;
+            let result = reducer_call!(self, "dismiss_herbalist_examination", |cb| self
+                .connection
+                .reducers
+                .dismiss_herbalist_examination_then(character_id, examination_id, cb));
+            self.call(result)?;
+            self.metrics.treatment_gold_spent +=
+                gold_before.saturating_sub(self.personal_gold(character_id));
+
+            let result = reducer_call!(self, "medical_recovery_rest", |cb| self
+                .connection
+                .reducers
+                .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+            self.call(result)?;
+            self.metrics.treatment_rest_minutes += 1_440;
+            self.metrics.recovery_rests += 1;
+            self.event(
+                agent,
+                CoreLoopEventKind::Recover,
+                "medical_rest_minutes=1440",
+            );
+            let after = self
+                .connection
+                .db
+                .character()
+                .iter()
+                .find(|row| row.id == character_id)
+                .ok_or("missing patient after medical rest")?;
+            if !after.alive {
+                continue;
+            }
+            let status = self
+                .connection
+                .db
+                .character_strategic_condition()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing condition after medical rest")?
+                .status;
+            let treatment_active = self
+                .connection
+                .db
+                .equipped_medication()
+                .iter()
+                .any(|row| row.character_id == character_id);
+            if status == "ready" && !treatment_active {
+                self.metrics.illness_recoveries += 1;
+                self.event(agent, CoreLoopEventKind::IllnessRecovered, "status=ready");
+                return Ok(true);
+            }
+        }
+        self.metrics.stuck_detections += 1;
+        Err("medical recovery bound exhausted".into())
+    }
+
     fn settlement_activity_day(&mut self, leader_agent: u32) -> Result<(), String> {
         let leader = self.character_ids[leader_agent as usize];
         for agent in self.party_agents(leader)? {
+            if !self.ensure_medically_safe(agent)? {
+                continue;
+            }
             self.maintain_equipment(agent)?;
             let character_id = self.character_ids[agent as usize];
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
@@ -499,6 +838,7 @@ impl LiveRunner {
                 ),
             );
             self.metrics.activity_days += 1;
+            self.ensure_medically_safe(agent)?;
         }
         Ok(())
     }
@@ -727,7 +1067,17 @@ impl LiveRunner {
 
     fn cycle(&mut self, leader_agent: u32, cycle: u32) -> Result<(), String> {
         let leader = self.character_ids[leader_agent as usize];
-        for agent in self.party_agents(leader)? {
+        let party_agents = self.party_agents(leader)?;
+        for &agent in &party_agents {
+            if !self.ensure_medically_safe(agent)? {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("cycle={cycle}"),
+                );
+                return Ok(());
+            }
             self.maintain_equipment(agent)?;
         }
         let party = self.party_for(leader)?;
@@ -765,6 +1115,73 @@ impl LiveRunner {
             format!("outbound={}", quest.id),
         );
         self.travel_camps(leader, leader_agent)?;
+
+        // Travel advances every member's disease clock. Re-observe public
+        // life/condition state before attempting a living-only combat reducer.
+        let unsafe_after_travel = party_agents
+            .iter()
+            .copied()
+            .filter(|agent| {
+                let id = self.character_ids[*agent as usize];
+                let alive = self
+                    .connection
+                    .db
+                    .character()
+                    .iter()
+                    .find(|row| row.id == id)
+                    .is_some_and(|row| row.alive);
+                let ready = self
+                    .connection
+                    .db
+                    .character_strategic_condition()
+                    .iter()
+                    .find(|row| row.character_id == id)
+                    .is_some_and(|row| row.status == "ready");
+                !alive || !ready
+            })
+            .collect::<Vec<_>>();
+        if !unsafe_after_travel.is_empty() {
+            for &agent in &unsafe_after_travel {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("after_travel;cycle={cycle}"),
+                );
+            }
+            let leader_alive = self
+                .connection
+                .db
+                .character()
+                .iter()
+                .find(|row| row.id == leader)
+                .is_some_and(|row| row.alive);
+            if !leader_alive {
+                self.metrics.disease_deaths += 1;
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::Death,
+                    "leader died during travel",
+                );
+                return Ok(());
+            }
+            let result = reducer_call!(self, "illness_retreat_to_settlement", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), false, cb));
+            self.call(result)?;
+            self.travel_camps(leader, leader_agent)?;
+            for agent in party_agents {
+                self.ensure_medically_safe(agent)?;
+            }
+            let result = reducer_call!(self, "abandon_unsafe_quest", |cb| self
+                .connection
+                .reducers
+                .abandon_quest_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            return Ok(());
+        }
 
         let mut victory = false;
         for attempt in 0..=MAX_DEFEAT_RETRIES {
@@ -1287,6 +1704,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         let attributes = live_attributes(character_id, &profile);
         let skills = live_skills(character_id, &profile);
         let downtime = live_schedule(&profile);
+        let personality = live_personality(character_id, &profile.personality);
         let result = reducer_call!(runner, "configure_simulation_character", |cb| runner
             .connection
             .reducers
@@ -1298,9 +1716,20 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 attributes.clone(),
                 skills.clone(),
                 downtime.clone(),
+                personality.clone(),
                 cb,
             ));
         runner.call(result)?;
+        let authoritative_personality = runner
+            .connection
+            .db
+            .character_personality()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .ok_or("configured character has no authoritative personality")?;
+        if authoritative_personality != personality {
+            return Err("authoritative personality does not match deterministic profile".into());
+        }
         let fixture_item = runner
             .connection
             .db
@@ -1327,6 +1756,13 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
             .reducers
             .seed_simulation_equipment_damage_then(character_id, fixture_item.id, cb));
         runner.call(result)?;
+        if agent == 0 {
+            let result = reducer_call!(runner, "seed_simulation_disease", |cb| runner
+                .connection
+                .reducers
+                .seed_simulation_disease_then(config.run_nonce.clone(), character_id, cb));
+            runner.call(result)?;
+        }
         runner.metrics.parties_formed += 1;
         runner.event(agent as u32, CoreLoopEventKind::FormParty, name);
     }
@@ -1518,6 +1954,13 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .iter()
                 .filter(|row| row.owner_character_id == *character_id)
                 .count() as u32;
+            let equipped_medication_courses = runner
+                .connection
+                .db
+                .equipped_medication()
+                .iter()
+                .filter(|row| row.character_id == *character_id)
+                .count() as u32;
             let party_id = character.party_id.clone().ok_or("missing final party")?;
             let party_treasury = runner
                 .connection
@@ -1550,6 +1993,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 condition_status: condition.status,
                 worst_equipment_condition,
                 outstanding_repair_orders,
+                alive: character.alive,
+                equipped_medication_courses,
                 elapsed_minutes,
                 personal_gold_coin,
                 party_treasury,
