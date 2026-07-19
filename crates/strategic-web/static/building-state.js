@@ -19,13 +19,31 @@
     tab.setAttribute("aria-current", selected ? "page" : "false");
     if (selected) document.documentElement.style.setProperty("--active-building-tint", tab.style.getPropertyValue("--building-tint"));
   });
-  document.querySelectorAll("a[href], form[action]").forEach((node) => {
-    const attribute = node.matches("form") ? "action" : "href";
-    const raw = node.getAttribute(attribute);
-    if (!raw || !raw.startsWith("/locations/")) return;
-    const url = new URL(raw, window.location.origin);
-    if (!url.pathname.includes("/party")) return;
-    url.searchParams.set("building", building);
-    node.setAttribute(attribute, `${url.pathname}${url.search}${url.hash}`);
-  });
+  const syncPartyLinks = (root = document) => {
+    root.querySelectorAll("a[href], form[action]").forEach((node) => {
+      const attribute = node.matches("form") ? "action" : "href";
+      const raw = node.getAttribute(attribute);
+      if (!raw || !raw.startsWith("/locations/")) return;
+      const url = new URL(raw, window.location.origin);
+      if (!url.pathname.includes("/party")) return;
+      url.searchParams.set("building", building);
+      node.setAttribute(attribute, `${url.pathname}${url.search}${url.hash}`);
+    });
+  };
+  syncPartyLinks();
+
+  // Live regions replace party controls after this deferred script runs. Keep
+  // the active building on links introduced by those server-driven updates.
+  new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (node.matches("a[href], form[action]")) {
+          syncPartyLinks(node.parentElement || node);
+        } else {
+          syncPartyLinks(node);
+        }
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
 })();

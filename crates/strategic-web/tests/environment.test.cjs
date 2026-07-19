@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = fs.readFileSync("crates/strategic-web/static/strategic-time.js", "utf8");
+const buildingSource = fs.readFileSync("crates/strategic-web/static/building-state.js", "utf8");
 const window = {
   queueStrategicInitialLoad: () => new Promise(() => {}),
   strategicBackgroundFetch() {},
@@ -29,4 +30,10 @@ test("celestial path is continuous through dawn, noon, dusk, and midnight", () =
     assert.ok(Math.abs(before.glowX - after.glowX) < 1);
     assert.ok(Math.abs(before.glowY - after.glowY) < 1);
   }
+});
+
+test("building state is re-applied when live regions replace party links", () => {
+  assert.match(buildingSource, /new MutationObserver/);
+  assert.match(buildingSource, /mutation\.addedNodes/);
+  assert.match(buildingSource, /syncPartyLinks\(node\)/);
 });
