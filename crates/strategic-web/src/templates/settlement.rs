@@ -3668,13 +3668,16 @@ fn settlement_rest_duration_control(value: u64, unit: &str) -> Markup {
                     label for="settlement-wake-time" { "Wake time" }
                     output for="settlement-wake-time" data-wake-time-output { "08:00" }
                 }
-                input id="settlement-wake-time" type="range" min="0" max="1439" step="1" value="480"
+                input id="settlement-wake-time" type="range" min="0" max="1380" step="60" value="480"
                     aria-label="Wake time" aria-valuetext="08:00" disabled[!hours_active] data-wake-time-slider;
             }
             div class="rest-days-control" {
                 button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest duration" data-rest-step="-1" { "−" }
-                input type="number" name="duration" value=(value) min=(if hours_active { "24" } else { "1" }) max=(if hours_active { "8760" } else { "365" })
-                    step=(if hours_active { "0.01" } else { "1" }) aria-label="Rest duration" data-rest-duration-input;
+                input type=(if hours_active { "text" } else { "number" }) name="duration"
+                    value=(if hours_active { format!("{value:02}:00") } else { value.to_string() })
+                    inputmode=(if hours_active { "text" } else { "numeric" })
+                    pattern="[0-9]+:[0-5][0-9]" min="1" max="365" step="1"
+                    aria-label="Rest duration" data-rest-duration-input;
                 span class="rest-days-unit" data-rest-unit-label { (unit) }
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
@@ -3926,7 +3929,11 @@ mod tests {
         let markup = settlement_rest_duration_control(24, "hours").into_string();
         assert!(markup.contains("data-wake-time"));
         assert!(markup.contains("type=\"range\""));
+        assert!(markup.contains("step=\"60\""));
         assert!(markup.contains("value=\"480\""));
+        assert!(markup.contains("type=\"text\""));
+        assert!(markup.contains("value=\"24:00\""));
+        assert!(markup.contains("pattern=\"[0-9]+:[0-5][0-9]\""));
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
@@ -3942,7 +3949,8 @@ mod tests {
                 "value=\"480\" aria-label=\"Wake time\" aria-valuetext=\"08:00\" disabled"
             )
         );
-        assert!(markup.contains("value=\"3\" min=\"1\" max=\"365\""));
+        assert!(markup.contains("type=\"number\" name=\"duration\" value=\"3\""));
+        assert!(markup.contains("min=\"1\" max=\"365\" step=\"1\""));
         assert!(markup.contains("name=\"requested_minutes\" disabled"));
     }
 

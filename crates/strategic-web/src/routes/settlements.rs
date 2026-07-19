@@ -2746,7 +2746,7 @@ async fn inn(
 
 #[derive(Deserialize)]
 struct RestForm {
-    duration: f64,
+    duration: String,
     unit: String,
     #[serde(default, deserialize_with = "deserialize_optional_u64")]
     requested_minutes: Option<u64>,
@@ -2768,10 +2768,26 @@ const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
 fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
     let minutes = match form.unit.as_str() {
         "hours" => {
-            if !form.duration.is_finite() || form.duration < 0.0 {
-                return Err("Rest hours must be a valid number");
+            let (hours, minutes) = form
+                .duration
+                .split_once(':')
+                .ok_or("Rest duration must use HH:MM")?;
+            if minutes.len() != 2 || !minutes.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err("Rest duration must use HH:MM");
             }
-            let duration_minutes = (form.duration * 60.0).round() as u64;
+            let hours = hours
+                .parse::<u64>()
+                .map_err(|_| "Rest duration must use HH:MM")?;
+            let minutes = minutes
+                .parse::<u64>()
+                .map_err(|_| "Rest duration must use HH:MM")?;
+            if minutes >= 60 {
+                return Err("Rest duration minutes must be between 00 and 59");
+            }
+            let duration_minutes = hours
+                .checked_mul(60)
+                .and_then(|value| value.checked_add(minutes))
+                .ok_or("Rest duration is too large")?;
             if let Some(requested_minutes) = form.requested_minutes
                 && requested_minutes != duration_minutes
             {
@@ -2780,10 +2796,11 @@ fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
             form.requested_minutes.unwrap_or(duration_minutes)
         }
         "days" => {
-            if !form.duration.is_finite() || form.duration.fract() != 0.0 {
-                return Err("Rest days must be a whole number");
-            }
-            (form.duration as u64).saturating_mul(1_440)
+            let days = form
+                .duration
+                .parse::<u64>()
+                .map_err(|_| "Rest days must be a whole number")?;
+            days.saturating_mul(1_440)
         }
         _ => return Err("Unknown rest duration unit"),
     };
@@ -3905,9 +3922,9 @@ pub(crate) async fn get_active_party_members(
 mod rest_form_tests {
     use super::{RestForm, settlement_rest_minutes};
 
-    fn form(duration: f64, unit: &str, requested_minutes: Option<u64>) -> RestForm {
+    fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
         RestForm {
-            duration,
+            duration: duration.into(),
             unit: unit.into(),
             requested_minutes,
         }
@@ -3916,28 +3933,30 @@ mod rest_form_tests {
     #[test]
     fn exact_hours_preserve_minutes_and_enforce_one_day() {
         assert_eq!(
-            settlement_rest_minutes(&form(24.02, "hours", Some(1_441))),
+            settlement_rest_minutes(&form("24:01", "hours", Some(1_441))),
             Ok(1_441)
         );
-        assert!(settlement_rest_minutes(&form(23.99, "hours", Some(1_439))).is_err());
+        assert!(settlement_rest_minutes(&form("23:59", "hours", Some(1_439))).is_err());
     }
 
     #[test]
-    fn decimal_hours_fallback_rounds_to_the_nearest_minute() {
+    fn hours_fallback_parses_hh_mm() {
         assert_eq!(
-            settlement_rest_minutes(&form(24.51, "hours", None)),
-            Ok(1_471)
+            settlement_rest_minutes(&form("24:31", "hours", None)),
+            Ok(1_471),
         );
+        assert!(settlement_rest_minutes(&form("24:60", "hours", None)).is_err());
+        assert!(settlement_rest_minutes(&form("24.5", "hours", None)).is_err());
     }
 
     #[test]
     fn days_are_independent_whole_days_with_a_minimum_of_one() {
         assert_eq!(
-            settlement_rest_minutes(&form(2.0, "days", Some(1_441))),
+            settlement_rest_minutes(&form("2", "days", Some(1_441))),
             Ok(2_880)
         );
-        assert!(settlement_rest_minutes(&form(0.0, "days", None)).is_err());
-        assert!(settlement_rest_minutes(&form(1.5, "days", None)).is_err());
+        assert!(settlement_rest_minutes(&form("0", "days", None)).is_err());
+        assert!(settlement_rest_minutes(&form("1.5", "days", None)).is_err());
     }
 
     #[test]
@@ -3950,7 +3969,7 @@ mod rest_form_tests {
             .expect("blank disabled-field fallback parses");
         assert_eq!(blank.requested_minutes, None);
         assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
-        assert!(settlement_rest_minutes(&form(24.0, "hours", Some(1_441))).is_err());
+        assert!(settlement_rest_minutes(&form("24:00", "hours", Some(1_441))).is_err());
     }
 }
 
