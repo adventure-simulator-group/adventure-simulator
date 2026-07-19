@@ -706,6 +706,80 @@ pub fn combined_state(
     (a, v, s, terminal)
 }
 
+/// Findings visible during an examination. Incidental complaints are derived
+/// from the infection identity, so they remain stable without additional
+/// per-character disease state.
+pub fn observed_symptoms(episodes: &[InfectionEpisode], now: u64, immunity: f32) -> Vec<Symptom> {
+    let (_, _, mut symptoms, _) = combined_state(episodes, now, immunity);
+    let Some(seed_episode) = episodes
+        .iter()
+        .filter(|episode| evaluate(**episode, now, immunity).progress > 0.0)
+        .min_by_key(|episode| episode.id)
+    else {
+        return symptoms;
+    };
+    const INCIDENTAL: [Symptom; 7] = [
+        Symptom::Coughing,
+        Symptom::Sneezing,
+        Symptom::Feverish,
+        Symptom::Fatigued,
+        Symptom::Vomiting,
+        Symptom::Rash,
+        Symptom::Trembling,
+    ];
+    let seed = severity_seed(*seed_episode);
+    for shift in [0, 11] {
+        let finding = INCIDENTAL[((seed >> shift) as usize) % INCIDENTAL.len()];
+        if !symptoms.contains(&finding) {
+            symptoms.push(finding);
+        }
+    }
+    symptoms.sort();
+    symptoms
+}
+
+fn finding_weight(symptom: Symptom) -> f32 {
+    match symptom {
+        Symptom::BloodyStool | Symptom::Spasms | Symptom::Lockjaw | Symptom::Buboes => 3.0,
+        Symptom::Rash | Symptom::Vomiting | Symptom::Trembling => 1.5,
+        Symptom::Coughing | Symptom::Sneezing | Symptom::Feverish | Symptom::Fatigued => 1.0,
+    }
+}
+
+/// Return the strongest compatible period diagnoses for an uncertain exam.
+/// The true illness is retained while common and incidental findings introduce
+/// plausible alternatives; distinctive findings carry more weight.
+pub fn differential_candidates(observed: &[Symptom], true_id: DiseaseId) -> Vec<DiseaseId> {
+    let mut scored = STARTER_DISEASES
+        .iter()
+        .map(|candidate| {
+            let matched = candidate
+                .symptoms
+                .iter()
+                .filter(|symptom| observed.contains(symptom))
+                .map(|symptom| finding_weight(*symptom))
+                .sum::<f32>();
+            let total = candidate
+                .symptoms
+                .iter()
+                .map(|symptom| finding_weight(*symptom))
+                .sum::<f32>();
+            (candidate.id, matched / total.max(1.0))
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| right.1.total_cmp(&left.1));
+    let mut candidates = vec![true_id];
+    for (id, score) in scored {
+        if id != true_id && score >= 0.25 && !candidates.contains(&id) {
+            candidates.push(id);
+        }
+        if candidates.len() == 3 {
+            break;
+        }
+    }
+    candidates
+}
+
 /// Earliest combined terminal failure in an interval. Structural boundaries
 /// split every deterministic curve into monotonic spans; binary search prevents
 /// two individually survivable infections from hiding a fatal combined peak.
@@ -834,6 +908,23 @@ mod tests {
         let (_, v, s, _) = combined_state(&[a, b], 100 + 4 * DAY, 3.0);
         assert!(v.phlegmatic > evaluate(a, 100 + 4 * DAY, 3.0).vitals.phlegmatic);
         assert_eq!(s.iter().filter(|x| **x == Symptom::Coughing).count(), 1);
+    }
+    #[test]
+    fn incidental_findings_are_stable_and_non_distinctive() {
+        let infection = e(1, DiseaseId::Influenza);
+        let first = observed_symptoms(&[infection], 100 + 4 * DAY, 3.0);
+        let second = observed_symptoms(&[infection], 100 + 4 * DAY, 3.0);
+        assert_eq!(first, second);
+        assert!(!first.contains(&Symptom::Buboes));
+        assert!(!first.contains(&Symptom::Lockjaw));
+    }
+    #[test]
+    fn uncertain_differential_keeps_truth_and_plausible_alternatives() {
+        let observed = observed_symptoms(&[e(1, DiseaseId::Influenza)], 100 + 4 * DAY, 3.0);
+        let candidates = differential_candidates(&observed, DiseaseId::Influenza);
+        assert_eq!(candidates.first(), Some(&DiseaseId::Influenza));
+        assert!(candidates.len() >= 2);
+        assert!(candidates.len() <= 3);
     }
     #[test]
     fn diagnosis_has_floor_and_gets_easier() {

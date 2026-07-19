@@ -696,6 +696,26 @@ pub struct CommittedCutRow {
     pub surgery_check: f32,
 }
 
+/// Queried only by strategic-web and filtered to the authenticated examining
+/// character before any medical knowledge is rendered.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MedicalExaminationRow {
+    pub id: u64,
+    pub doctor_id: u64,
+    pub target_id: u64,
+    pub examined_at: u64,
+    pub findings: Vec<String>,
+    pub reveals_vitals: bool,
+    pub sanguine: f32,
+    pub phlegmatic: f32,
+    pub choleric: f32,
+    pub melancholic: f32,
+    pub possible_disease_ids: Vec<String>,
+    pub confirmed_infection_ids: Vec<u64>,
+    pub confirmed_disease_ids: Vec<String>,
+    pub confirmed_stages: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {
     pub character_id: u64,

@@ -6,7 +6,10 @@ use adventuresim_core::disease::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character as _;
-use crate::{character_attributes, character_capability, character_skills, character_time};
+use crate::{
+    character_attributes, character_capability, character_condition, character_skills,
+    character_time,
+};
 
 /// The complete per-character disease state. This table is deliberately
 /// private: strategic-web derives a viewer-specific presentation instead of
@@ -68,10 +71,33 @@ pub struct DiseaseNotice {
     pub message: String,
 }
 
-/// Raw infection facts for strategic-web. This view is intentionally absent
-/// from browser subscriptions; the SSR backend sanitizes it against the active
-/// character's Medicine capability before rendering any response. Deployments
-/// must keep the strategic SpacetimeDB endpoint on the server network.
+/// Doctor-owned snapshot of a completed fifteen-minute examination. This is
+/// private medical knowledge, separate from the patient's disease state.
+#[derive(Clone, Debug)]
+#[table(accessor = medical_examination)]
+pub struct MedicalExamination {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub doctor_id: u64,
+    #[index(btree)]
+    pub target_id: u64,
+    pub examined_at: u64,
+    pub findings: Vec<String>,
+    pub reveals_vitals: bool,
+    pub sanguine: f32,
+    pub phlegmatic: f32,
+    pub choleric: f32,
+    pub melancholic: f32,
+    pub possible_disease_ids: Vec<String>,
+    pub confirmed_infection_ids: Vec<u64>,
+    pub confirmed_disease_ids: Vec<String>,
+    pub confirmed_stages: Vec<String>,
+}
+
+/// Narrow raw facts for the trusted SSR presentation boundary. The database
+/// endpoint is server-network-only; browsers never subscribe to these views.
 #[view(accessor = backend_infection_episodes, public)]
 pub fn backend_infection_episodes(ctx: &ViewContext) -> Vec<InfectionEpisodeRow> {
     ctx.db
@@ -81,12 +107,20 @@ pub fn backend_infection_episodes(ctx: &ViewContext) -> Vec<InfectionEpisodeRow>
         .collect()
 }
 
-/// Committed visible cut provenance for strategic-web's sanitizer.
 #[view(accessor = backend_committed_cuts, public)]
 pub fn backend_committed_cuts(ctx: &ViewContext) -> Vec<CommittedCut> {
     ctx.db
         .committed_cut()
         .character_id()
+        .filter(0u64..)
+        .collect()
+}
+
+#[view(accessor = backend_medical_examinations, public)]
+pub fn backend_medical_examinations(ctx: &ViewContext) -> Vec<MedicalExamination> {
+    ctx.db
+        .medical_examination()
+        .doctor_id()
         .filter(0u64..)
         .collect()
 }
@@ -141,6 +175,17 @@ fn episode(row: &InfectionEpisodeRow) -> Result<InfectionEpisode, String> {
         contracted_at: row.contracted_at,
         treated_at: row.treated_at,
     })
+}
+
+fn stage_key(stage: disease::DiseaseStage) -> &'static str {
+    match stage {
+        disease::DiseaseStage::Incubating => "hidden",
+        disease::DiseaseStage::Early => "early",
+        disease::DiseaseStage::Established => "established",
+        disease::DiseaseStage::Critical => "critical",
+        disease::DiseaseStage::Convalescent => "recovering",
+        disease::DiseaseStage::Resolved => "resolved",
+    }
 }
 
 pub fn character_episodes(
@@ -551,6 +596,21 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
             .update(character_time);
     }
 
+    let fixture_ids = std::iter::once(PHYSICIAN_ID)
+        .chain(PATIENTS.iter().map(|(id, _, _, _)| *id))
+        .collect::<Vec<_>>();
+    for examination in ctx
+        .db
+        .medical_examination()
+        .iter()
+        .filter(|exam| {
+            fixture_ids.contains(&exam.doctor_id) || fixture_ids.contains(&exam.target_id)
+        })
+        .collect::<Vec<_>>()
+    {
+        ctx.db.medical_examination().id().delete(examination.id);
+    }
+
     for (id, _, _, _) in PATIENTS.iter().skip(1) {
         crate::strategic::attach_seeded_party_member(ctx, SICK_CHARACTER_ID, *id, "Patient")?;
     }
@@ -597,6 +657,177 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 
+const EXAMINATION_MINUTES: u64 = 15;
+
+fn advance_examination_participants(
+    ctx: &ReducerContext,
+    doctor_id: u64,
+    target_id: u64,
+) -> Result<bool, String> {
+    let participants = if doctor_id == target_id {
+        vec![doctor_id]
+    } else {
+        vec![doctor_id, target_id]
+    };
+    let elapsed = participants
+        .iter()
+        .try_fold(EXAMINATION_MINUTES, |limit, character_id| {
+            preview_elapsed_for_disease(ctx, *character_id, limit).map(|safe| limit.min(safe))
+        })?;
+    for character_id in participants {
+        let mut time = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .ok_or("Examination participant is missing time data")?;
+        let (_, terminal) = clip_elapsed_for_disease(ctx, character_id, elapsed)?;
+        time.minutes = time.minutes.saturating_add(elapsed);
+        ctx.db.character_time().character_id().update(time);
+        finish_disease_interval(ctx, character_id, terminal)?;
+        if terminal.is_none() {
+            crate::capability::refresh_character_capability(ctx, character_id)?;
+        }
+    }
+    Ok(elapsed == EXAMINATION_MINUTES)
+}
+
+#[reducer]
+pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> Result<(), String> {
+    // Character selection is enforced by strategic-web's session POST
+    // boundary, matching the rest of the strategic reducer surface.
+    let doctor = crate::require_living_character(ctx, doctor_id)?;
+    let target = crate::require_living_character(ctx, target_id)?;
+    let same_place = doctor.current_settlement_id.is_some()
+        && doctor.current_settlement_id == target.current_settlement_id
+        || doctor.current_quest_location_id.is_some()
+            && doctor.current_quest_location_id == target.current_quest_location_id;
+    if !same_place {
+        return Err("Doctor and patient must be together".into());
+    }
+    if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
+        return Err("A doctor may examine only themselves or a member of their party".into());
+    }
+    if !advance_examination_participants(ctx, doctor_id, target_id)? {
+        return Ok(());
+    }
+
+    let medicine = ctx
+        .db
+        .character_capability()
+        .character_id()
+        .find(doctor_id)
+        .ok_or("Doctor capability not found")?
+        .medicine;
+    let target_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(target_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(target_id)
+        .ok_or("Patient attributes not found")?
+        .immunity;
+    let blood = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(target_id)
+        .map_or(1.0, |condition| {
+            if condition.maximum_blood_ml > 0.0 {
+                condition.current_blood_ml / condition.maximum_blood_ml
+            } else {
+                0.0
+            }
+        });
+    let episodes = character_episodes(ctx, target_id)?;
+    let (_, vitals, _, _) = disease::combined_state(&episodes, target_minute, immunity);
+    let findings = disease::observed_symptoms(&episodes, target_minute, immunity);
+    let mut possible = Vec::new();
+    let mut confirmed_ids = Vec::new();
+    let mut confirmed_diseases = Vec::new();
+    let mut confirmed_stages = Vec::new();
+    for infection in &episodes {
+        let state = disease::evaluate(*infection, target_minute, immunity);
+        if matches!(
+            state.stage,
+            disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
+        ) {
+            continue;
+        }
+        if medicine >= state.diagnosis_dc {
+            confirmed_ids.push(infection.id);
+            confirmed_diseases.push(format!("{:?}", infection.disease_id).to_ascii_lowercase());
+            confirmed_stages.push(stage_key(state.stage).into());
+        } else if medicine >= state.diagnosis_dc - 1.0 {
+            for candidate in disease::differential_candidates(&findings, infection.disease_id) {
+                let id = format!("{candidate:?}").to_ascii_lowercase();
+                if !possible.contains(&id) {
+                    possible.push(id);
+                }
+            }
+        }
+    }
+    if let Some(previous) = ctx
+        .db
+        .medical_examination()
+        .doctor_id()
+        .filter(doctor_id)
+        .filter(|exam| exam.target_id == target_id)
+        .max_by_key(|exam| exam.id)
+    {
+        for ((infection_id, disease_id), _stage) in previous
+            .confirmed_infection_ids
+            .iter()
+            .zip(&previous.confirmed_disease_ids)
+            .zip(&previous.confirmed_stages)
+        {
+            let Some(infection) = episodes.iter().find(|episode| episode.id == *infection_id)
+            else {
+                continue;
+            };
+            let current = disease::evaluate(*infection, target_minute, immunity);
+            if matches!(
+                current.stage,
+                disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
+            ) {
+                continue;
+            }
+            if !confirmed_ids.contains(infection_id) {
+                confirmed_ids.push(*infection_id);
+                confirmed_diseases.push(disease_id.clone());
+                confirmed_stages.push(stage_key(current.stage).into());
+            }
+        }
+    }
+    possible.retain(|candidate| !confirmed_diseases.contains(candidate));
+    ctx.db.medical_examination().insert(MedicalExamination {
+        id: 0,
+        doctor_id,
+        target_id,
+        examined_at: target_minute,
+        findings: findings
+            .into_iter()
+            .map(|finding| finding.period_label().into())
+            .collect(),
+        reveals_vitals: medicine >= disease::MEDICINE_VITALS_THRESHOLD,
+        sanguine: (blood.clamp(0.0, 1.0) - vitals.sanguine).clamp(0.0, 1.0),
+        phlegmatic: (1.0 - vitals.phlegmatic).clamp(0.0, 1.0),
+        choleric: (1.0 - vitals.choleric).clamp(0.0, 1.0),
+        melancholic: (1.0 - vitals.melancholic).clamp(0.0, 1.0),
+        possible_disease_ids: possible,
+        confirmed_infection_ids: confirmed_ids,
+        confirmed_disease_ids: confirmed_diseases,
+        confirmed_stages,
+    });
+    Ok(())
+}
+
 #[reducer]
 pub fn treat_disease(
     ctx: &ReducerContext,
@@ -618,13 +849,6 @@ pub fn treat_disease(
     if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
         return Err("A doctor may treat only themselves or a member of their party".into());
     }
-    let medicine = ctx
-        .db
-        .character_capability()
-        .character_id()
-        .find(doctor_id)
-        .ok_or("Doctor capability not found")?
-        .medicine;
     let now = ctx
         .db
         .character_time()
@@ -651,15 +875,23 @@ pub fn treat_disease(
     if row.treated_at.is_some() {
         return Err("This illness has already been treated".into());
     }
+    let examination = ctx
+        .db
+        .medical_examination()
+        .doctor_id()
+        .filter(doctor_id)
+        .filter(|exam| exam.target_id == target_id)
+        .max_by_key(|exam| exam.id)
+        .ok_or("Examine the patient before administering treatment")?;
+    if !examination.confirmed_infection_ids.contains(&infection_id) {
+        return Err("This doctor has not confirmed that diagnosis".into());
+    }
     let state = disease::evaluate(episode(&row)?, now, immunity);
     if matches!(
         state.stage,
         disease::DiseaseStage::Resolved | disease::DiseaseStage::Incubating
     ) {
         return Err("This illness cannot currently be treated".into());
-    }
-    if medicine < state.diagnosis_dc {
-        return Err("Medicine skill is too low to identify this illness".into());
     }
     row.treated_at = Some(now);
     ctx.db.infection_episode().id().update(row);

@@ -31,10 +31,11 @@ use crate::spacetimedb::{
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, CommittedCutRow, InfectionEpisodeRow, InventoryItem,
-    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemSlot, Party, PartyInventoryItem,
-    PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
-    RecruitmentRequirements, ReligiousDemand, RepairOrder, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemSlot, MedicalExaminationRow, Party,
+    PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
@@ -112,6 +113,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{target_id}/disease/{infection_id}/treat",
             post(treat_disease),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{target_id}/examine",
+            post(examine_patient),
         )
         .route(
             "/locations/{kind}/{id}/players/{character_id}",
@@ -2039,15 +2044,25 @@ pub(crate) async fn medical_presentation(
         .map_or(0, |t| t.minutes);
     let attributes =
         query_single::<CharacterAttributes>(state, "character_attributes", target_id).await;
-    let condition =
-        query_single::<CharacterCondition>(state, "character_condition", target_id).await;
-    let blood = condition.as_ref().map_or(1.0, |c| {
-        if c.maximum_blood_ml > 0.0 {
-            c.current_blood_ml / c.maximum_blood_ml
-        } else {
-            0.0
+    let examination = match state
+        .db
+        .query::<MedicalExaminationRow>(&format!(
+            "SELECT * FROM backend_medical_examinations WHERE doctor_id = {viewer_id}"
+        ))
+        .await
+    {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.target_id == target_id)
+            .max_by_key(|row| row.id),
+        Err(error) => {
+            tracing::error!(%error,viewer_id,target_id,"private examination query failed closed");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
         }
-    });
+    };
     let cuts = match state
         .db
         .query::<CommittedCutRow>(&format!(
@@ -2066,10 +2081,10 @@ pub(crate) async fn medical_presentation(
     };
     let mut presentation = crate::medical::sanitize(
         &rows,
+        examination.as_ref(),
         time,
         attributes.map_or(3.0, |a| a.immunity),
-        viewer.map_or(0.0, |c| c.medicine),
-        blood,
+        viewer.map_or(0.0, |capability| capability.medicine),
     );
     presentation.obvious_cut = cuts
         .iter()
@@ -2077,6 +2092,22 @@ pub(crate) async fn medical_presentation(
         .sum::<f32>()
         .clamp(0.0, 1.0);
     presentation
+}
+
+async fn examine_patient(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some(doctor_id) = session.character_id_u64()
+        && let Err(error) = state
+            .db
+            .call("examine_patient", &[json!(doctor_id), json!(target_id)])
+            .await
+    {
+        tracing::warn!(%error, doctor_id, target_id, "patient examination rejected");
+    }
+    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
 }
 
 #[derive(Deserialize)]

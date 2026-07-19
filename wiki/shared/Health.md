@@ -13,19 +13,29 @@ Why elves? Because they are the designated race for casual players who aren't lo
 ## Disease
 
 Characters do not innately know their diseases. Everyone can see compact,
-deduplicated outward symptoms. An individual effective Medicine check of at
-least 2 reveals Vitals; meeting a disease's stage-dependent diagnosis difficulty
-also reveals its period-facing name, suspected contagion, and treatment action.
-Party-aggregate Medicine does not grant this knowledge.
+deduplicated outward symptoms. A completed examination can additionally find
+deterministic incidental complaints that obscure the underlying cause. Vitals and diagnoses appear only after a
+specific character spends 15 personal minutes examining a co-located patient;
+the patient spends the same interval. Examination knowledge belongs to that
+doctor and remains a timestamped snapshot rather than a permanently live feed.
 
-The four displayed vitals are a period medical vocabulary over modern internal
+An examination within one point of a disease's stage-dependent difficulty
+produces a weighted differential of compatible period ailments. Meeting the
+difficulty confirms the disease and unlocks treatment. Repeating an unchanged
+examination does not reroll the deterministic findings or check. Party-aggregate
+Medicine does not grant medical knowledge.
+
+The four displayed vitals require Medicine 2 even after an examination. They
+are a period medical vocabulary over modern internal
 physiology: Sanguine covers blood and circulation, Phlegmatic breath, Choleric
 heat and digestion, and Melancholic sense and reason. Treatment adds one
 timestamp and continuously accelerates the remaining course while mitigating
 symptoms; it never instantly cures disease.
 
 Episodes retain only identity/associations, contraction minute, and optional
-treatment minute. Severity is deterministically seeded from those associations.
+treatment minute. Severity and incidental findings are deterministically seeded
+from those associations. Doctor-owned examination snapshots are separate private
+knowledge records rather than additional disease state.
 Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
 with Surgery reducing residual risk; blunt damage does not.

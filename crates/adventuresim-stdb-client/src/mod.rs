@@ -19,6 +19,7 @@ pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backend_committed_cuts_table;
 pub mod backend_infection_episodes_table;
+pub mod backend_medical_examinations_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
@@ -128,6 +129,7 @@ pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_reducer;
+pub mod examine_patient_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
 pub mod fallback_historical_vegetation_type;
@@ -191,6 +193,7 @@ pub mod located_route_landform_type;
 pub mod lutheran_reformed_church_type;
 pub mod mapped_surface_geology_type;
 pub mod marine_water_access_type;
+pub mod medical_examination_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
@@ -395,6 +398,7 @@ pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backend_committed_cuts_table::*;
 pub use backend_infection_episodes_table::*;
+pub use backend_medical_examinations_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
@@ -504,6 +508,7 @@ pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_reducer::equip_item;
+pub use examine_patient_reducer::examine_patient;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
@@ -567,6 +572,7 @@ pub use located_route_landform_type::LocatedRouteLandform;
 pub use lutheran_reformed_church_type::LutheranReformedChurch;
 pub use mapped_surface_geology_type::MappedSurfaceGeology;
 pub use marine_water_access_type::MarineWaterAccess;
+pub use medical_examination_type::MedicalExamination;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
@@ -942,6 +948,10 @@ pub enum Reducer {
         inventory_item_id: u64,
         destination: ItemSlot,
     },
+    ExaminePatient {
+        doctor_id: u64,
+        target_id: u64,
+    },
     FinalizeMerchantTrade {
         character_id: u64,
         settlement_id: String,
@@ -1240,6 +1250,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
+            Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
@@ -1618,6 +1629,13 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 destination: destination.clone(),
+}),
+            Reducer::ExaminePatient{
+                doctor_id,
+                target_id,
+}             => __sats::bsatn::to_vec(&examine_patient_reducer::ExaminePatientArgs {
+                doctor_id: doctor_id.clone(),
+                target_id: target_id.clone(),
 }),
             Reducer::FinalizeMerchantTrade{
                 character_id,
@@ -2068,6 +2086,7 @@ pub struct DbUpdate {
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
+    backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -2140,6 +2159,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_infection_episodes" => db_update.backend_infection_episodes.append(
                     backend_infection_episodes_table::parse_table_update(table_update)?,
+                ),
+                "backend_medical_examinations" => db_update.backend_medical_examinations.append(
+                    backend_medical_examinations_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2577,6 +2599,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_infection_episodes",
             &self.backend_infection_episodes,
         );
+        diff.backend_medical_examinations = cache.apply_diff_to_table::<MedicalExamination>(
+            "backend_medical_examinations",
+            &self.backend_medical_examinations,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -2594,6 +2620,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_medical_examinations" => db_update
+                    .backend_medical_examinations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2785,6 +2814,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_medical_examinations" => db_update
+                    .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2971,6 +3003,7 @@ pub struct AppliedDiff<'r> {
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
+    backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -3053,6 +3086,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
             "backend_infection_episodes",
             &self.backend_infection_episodes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<MedicalExamination>(
+            "backend_medical_examinations",
+            &self.backend_medical_examinations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -3962,6 +4000,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         autoresolve_report_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
+        backend_medical_examinations_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -4023,6 +4062,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "autoresolve_report",
         "backend_committed_cuts",
         "backend_infection_episodes",
+        "backend_medical_examinations",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

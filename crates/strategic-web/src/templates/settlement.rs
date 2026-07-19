@@ -2510,6 +2510,20 @@ fn medical_rail(
                 }
             }))
         }
+        @if allow_treatment {
+            (sidebar_section("Examination", html! {
+                @if let Some(examined_at) = medical.examined_at {
+                    p class="text-muted small-copy" { "Last examined at personal minute " (examined_at) "." }
+                } @else {
+                    p class="text-muted small-copy" { "Humour readings and internal causes require a hands-on examination." }
+                }
+                form method="post" action=(format!("{location_path}/party/{target_id}/examine")) {
+                    button type="submit" class="btn btn-primary" {
+                        @if medical.examined_at.is_some() { "Examine again — 15 minutes" } @else { "Examine — 15 minutes" }
+                    }
+                }
+            }))
+        }
         @if let Some(vitals)=medical.vitals {
             (sidebar_section("Vitals", html! {
                 div class="humour-vitals" aria-label="Four humours" {
@@ -2517,6 +2531,17 @@ fn medical_rail(
                     (humour_bar("Phlegmatic", "Breath", vitals.phlegmatic, "phlegmatic"))
                     (humour_bar("Choleric", "Heat and digestion", vitals.choleric, "choleric"))
                     (humour_bar("Melancholic", "Sense and reason", vitals.melancholic, "melancholic"))
+                }
+                @if !medical.findings.is_empty() {
+                    h3 { "Examination findings" }
+                    p class="medical-symptoms" { (medical.findings.join(" · ")) }
+                }
+                @if !medical.possible_diagnoses.is_empty() {
+                    div class="medical-diagnoses" {
+                        h3 { "Possible ailments" }
+                        p class="small-copy" { "The findings do not permit a confident distinction." }
+                        ul { @for possibility in &medical.possible_diagnoses { li { (possibility) } } }
+                    }
                 }
                 @if !medical.diagnoses.is_empty(){div class="medical-diagnoses" {h3 {"Diagnosed conditions"}@for diagnosis in &medical.diagnoses {article {strong {(diagnosis.period_name)} span class="condition-stage" {" — "(diagnosis.stage)} p class="small-copy" {(diagnosis.contagion)} @if allow_treatment && diagnosis.treatable {form method="post" action=(format!("{location_path}/party/{target_id}/disease/{}/treat",diagnosis.infection_id)){input type="hidden" name="doctor_id" value=(doctor_id);button type="submit" class="btn btn-primary" {"Treat"}}}}}}}
             }))
@@ -3980,6 +4005,7 @@ mod tests {
             symptoms: vec!["coughing"],
             vitals: None,
             diagnoses: Vec::new(),
+            ..Default::default()
         };
         let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
         assert!(markup.contains("coughing"));
