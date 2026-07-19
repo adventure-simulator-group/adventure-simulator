@@ -20,10 +20,7 @@
     const timestamp = document.createElement("span");
     timestamp.className = "chat-timestamp";
     timestamp.textContent = "[--:--] ";
-    const badge = document.createElement("span");
-    badge.className = "chat-channel-badge";
-    badge.textContent = "[Local] ";
-    row.append(timestamp, badge);
+    row.append(timestamp);
     if (speaker) {
       const name = document.createElement("strong");
       name.textContent = `${speaker}: `;
@@ -191,6 +188,10 @@
       return;
     }
     line("npc", quest.npc_name, quest.turn_in_response);
+    window.strategicChat?.appendInfo(
+      chat,
+      `${result.reward} gold has been added to your party inventory.`,
+    );
     clearTracker();
     const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
     const badge = tab?.querySelector("[data-service-quest-badge]");

@@ -2694,12 +2694,26 @@ fn incapacitation_wheel(character_id: u64) -> Markup {
 /// filters are present so their messages can join the same stream as their
 /// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    chat_area(location, active_character, None, None)
+    chat_area(location, active_character, None, None, &[])
+}
+
+pub(crate) fn settlement_chat_area_with_info(
+    location: &str,
+    active_character: Option<&Character>,
+    info_messages: &[String],
+) -> Markup {
+    chat_area(location, active_character, None, None, info_messages)
 }
 
 fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
     let context = ("player", subject.id.to_string());
-    chat_area(&subject.name, Some(active_character), None, Some(context))
+    chat_area(
+        &subject.name,
+        Some(active_character),
+        None,
+        Some(context),
+        &[],
+    )
 }
 
 fn settlement_service_chat_area(
@@ -2714,6 +2728,7 @@ fn settlement_service_chat_area(
         active_character,
         Some((settlement_id, service_id)),
         Some(("npc", subject_id)),
+        &[],
     )
 }
 
@@ -2722,6 +2737,7 @@ fn chat_area(
     _active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
     local_context: Option<(&str, String)>,
+    info_messages: &[String],
 ) -> Markup {
     html! {
         section class="settlement-chat" aria-label="Settlement chat"
@@ -2743,18 +2759,23 @@ fn chat_area(
                     ("guild", "Guild"),
                     ("info", "Info"),
                 ] {
-                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) {
-                        input type="checkbox" checked data-chat-filter=(channel);
-                        span { (label) }
+                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
+                        input type="checkbox" checked data-chat-filter=(channel)
+                            aria-label=(label) title=(label);
                     }
                 }
             }
             div class="settlement-chat-messages" aria-live="polite" {
                 @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
-                    span class="chat-timestamp" { "[--:--]" }
-                    span class="chat-channel-badge" { " [Info] " }
+                    span class="chat-timestamp" { "[--:--] " }
                     " Select a local character or settlement service to begin talking."
                 } }
+                @for message in info_messages {
+                    div class="chat-system-message" data-chat-channel="info" {
+                        span class="chat-timestamp" { "[--:--] " }
+                        (message)
+                    }
+                }
             }
             div class="settlement-chat-composer" {
                 input type="text" name="body" disabled[local_context.is_none()]
@@ -3602,7 +3623,7 @@ mod tests {
 
     #[test]
     fn chat_uses_one_stream_with_all_channel_filters() {
-        let markup = chat_area("Lubeck", None, None, None).into_string();
+        let markup = chat_area("Lubeck", None, None, None, &[]).into_string();
 
         assert!(!markup.contains("role=\"tablist\""));
         for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
@@ -3612,7 +3633,11 @@ mod tests {
             );
         }
         assert!(markup.contains("data-chat-channel=\"info\""));
-        assert!(markup.contains("class=\"chat-channel-badge\"> [Info] "));
+        assert!(!markup.contains("chat-channel-badge"));
+        for label in ["Local", "Party", "Settlement", "DMs", "Guild", "Info"] {
+            assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
+            assert!(!markup.contains(&format!(">{label}</")));
+        }
     }
 
     #[test]
@@ -3641,9 +3666,9 @@ mod tests {
             (lighter + 0.05) / (darker + 0.05)
         }
 
-        // The 88% #0c0f18 surface over white is the lightest possible panel
+        // The 88% default umber surface over white is the lightest possible panel
         // composite and therefore the lowest-contrast case for this palette.
-        let lightest_chat_surface = [41, 43, 52];
+        let lightest_chat_surface = [60, 49, 44];
         for (channel, color) in [
             ("Local", [0xff, 0xff, 0xff]),
             ("Party", [0x6f, 0xb5, 0xff]),
@@ -3665,13 +3690,18 @@ mod tests {
         let utilities = include_str!("../../static/css/utilities.css");
         let trade_script = include_str!("../../static/party-trade.js");
         let fallback = css
-            .find("background: rgb(12 15 24 / 88%);")
+            .find("background: rgb(33 21 15 / 88%);")
             .expect("chat needs a background fallback");
         let enhanced = css
-            .find("background: color-mix(in srgb, #0c0f18 88%, transparent);")
-            .expect("chat should enhance its fallback with color-mix");
+            .find("background: color-mix(in srgb, var(--panel-bg) 88%, transparent);")
+            .expect("chat should derive its translucent surface from the theme");
 
         assert!(fallback < enhanced);
+        assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
+        assert!(css.contains(".chat-channel-filter input::after"));
+        assert!(css.contains("border-radius: 0.05rem;"));
+        assert!(!css.contains(".chat-channel-badge"));
+        assert!(css.contains("@media (max-width: 768px)"));
         assert!(css.contains("flex-wrap: nowrap;"));
         assert!(css.contains("min-height: 10rem;"));
         assert!(css.contains(".repair-custody-list { margin-top: auto; }"));

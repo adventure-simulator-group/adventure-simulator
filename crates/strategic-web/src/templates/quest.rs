@@ -11,8 +11,8 @@ use crate::spacetimedb::{
 use crate::{
     spacetimedb::Character,
     templates::settlement::{
-        map_destination_detail, map_destination_list, party_portrait_overlay, settlement_chat_area,
-        travel_planner_bar, visual_stage,
+        map_destination_detail, map_destination_list, party_portrait_overlay,
+        settlement_chat_area_with_info, travel_planner_bar, visual_stage,
     },
 };
 
@@ -111,6 +111,7 @@ fn quest_location_center(
     autoresolve_report: Option<&AutoresolveReport>,
     travel_planner: Option<Markup>,
 ) -> Markup {
+    let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
         main class="center-content settlement-main quest-location-main" {
             (party_portrait_overlay(
@@ -139,27 +140,22 @@ fn quest_location_center(
                 }
             }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
-            @if let Some(report) = autoresolve_report {
-                section class="autoresolve-report" aria-label="Autoresolve report" {
-                    h2 { "Combat summary" }
-                    p {
-                        strong { (report.victor) }
-                        " - Seed " code { (report.seed) }
-                    }
-                    p { (&report.summary) }
-                    details {
-                        summary { "Combat log (" (report.log.len()) " exchanges)" }
-                        ol {
-                            @for entry in &report.log {
-                                li { (entry) }
-                            }
-                        }
-                    }
-                }
-            }
-            (settlement_chat_area(&quest.title, active_character))
+            (settlement_chat_area_with_info(&quest.title, active_character, &autoresolve_messages))
         }
     }
+}
+
+fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> {
+    let Some(report) = report else {
+        return Vec::new();
+    };
+    let mut messages = Vec::with_capacity(report.log.len() + 1);
+    messages.push(format!(
+        "{} Victor: {}; {} rounds; seed {}.",
+        report.summary, report.victor, report.rounds, report.seed
+    ));
+    messages.extend(report.log.iter().cloned());
+    messages
 }
 
 /// Loot and shared inventory at an off-road quest location.
@@ -267,5 +263,36 @@ fn loot_stage_form(quest_id: &str) -> Markup {
             button type="button" class="party-offer-cancel" data-cancel-loot { "Cancel" }
             button type="submit" disabled { "Apply" }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autoresolve_report_becomes_complete_info_stream_rows() {
+        let report = AutoresolveReport {
+            quest_id: "quest-1".into(),
+            party_id: "party-1".into(),
+            seed: 42,
+            victor: "players".into(),
+            rounds: 3,
+            summary: "The party defeated the bandits.".into(),
+            log: vec!["Alice struck a bandit.".into(), "The bandit fell.".into()],
+        };
+
+        let messages = autoresolve_info_messages(Some(&report));
+        assert_eq!(messages.len(), report.log.len() + 1);
+        assert!(messages[0].contains(&report.summary));
+        assert_eq!(&messages[1..], report.log.as_slice());
+
+        let markup = settlement_chat_area_with_info("Bandit camp", None, &messages).into_string();
+        assert_eq!(markup.matches("data-chat-channel=\"info\"").count(), 4);
+        assert!(markup.contains("The party defeated the bandits."));
+        assert!(markup.contains("Alice struck a bandit."));
+        assert!(markup.contains("The bandit fell."));
+        assert!(!markup.contains("autoresolve-report"));
+        assert!(!markup.contains("chat-channel-badge"));
     }
 }
