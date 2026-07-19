@@ -684,10 +684,11 @@ pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
 
 const EXAMINATION_MINUTES: u64 = 15;
 
-fn advance_examination_participants(
+fn advance_medical_participants(
     ctx: &ReducerContext,
     doctor_id: u64,
     target_id: u64,
+    requested_minutes: u64,
 ) -> Result<bool, String> {
     let participants = if doctor_id == target_id {
         vec![doctor_id]
@@ -696,7 +697,7 @@ fn advance_examination_participants(
     };
     let elapsed = participants
         .iter()
-        .try_fold(EXAMINATION_MINUTES, |limit, character_id| {
+        .try_fold(requested_minutes, |limit, character_id| {
             preview_elapsed_for_disease(ctx, *character_id, limit).map(|safe| limit.min(safe))
         })?;
     for character_id in participants {
@@ -714,7 +715,7 @@ fn advance_examination_participants(
             crate::capability::refresh_character_capability(ctx, character_id)?;
         }
     }
-    Ok(elapsed == EXAMINATION_MINUTES)
+    Ok(elapsed == requested_minutes)
 }
 
 #[reducer]
@@ -733,10 +734,6 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
     if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
         return Err("A doctor may examine only themselves or a member of their party".into());
     }
-    if !advance_examination_participants(ctx, doctor_id, target_id)? {
-        return Ok(());
-    }
-
     let medicine = ctx
         .db
         .character_capability()
@@ -744,6 +741,12 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
         .find(doctor_id)
         .ok_or("Doctor capability not found")?
         .medicine;
+    if medicine < disease::MEDICINE_VITALS_THRESHOLD {
+        return Err("Medicine 2 is required to examine a patient".into());
+    }
+    if !advance_medical_participants(ctx, doctor_id, target_id, EXAMINATION_MINUTES)? {
+        return Ok(());
+    }
     let target_minute = ctx
         .db
         .character_time()
@@ -872,14 +875,14 @@ pub fn treat_disease(
     if doctor_id != target_id && (doctor.party_id.is_none() || doctor.party_id != target.party_id) {
         return Err("A doctor may treat only themselves or a member of their party".into());
     }
-    let now = ctx
+    let starting_minute = ctx
         .db
         .character_time()
         .character_id()
         .find(target_id)
         .ok_or("Patient time not found")?
         .minutes;
-    let immunity = ctx
+    let starting_immunity = ctx
         .db
         .character_attributes()
         .character_id()
@@ -909,20 +912,34 @@ pub fn treat_disease(
     if !examination.confirmed_infection_ids.contains(&infection_id) {
         return Err("This doctor has not confirmed that diagnosis".into());
     }
-    let state = disease::evaluate(episode(&row)?, now, immunity);
+    let disease_id = parse_id(&row.disease_id)?;
+    let state = disease::evaluate(episode(&row)?, starting_minute, starting_immunity);
     if matches!(
         state.stage,
         disease::DiseaseStage::Resolved | disease::DiseaseStage::Incubating
     ) {
         return Err("This illness cannot currently be treated".into());
     }
-    row.treated_at = Some(now);
+    let treatment_gold = disease::treatment_gold(disease_id);
+    let treatment_minutes = disease::treatment_minutes(disease_id);
+    crate::strategic::consume_personal_gold(ctx, target_id, u64::from(treatment_gold))?;
+    if !advance_medical_participants(ctx, doctor_id, target_id, treatment_minutes)? {
+        return Ok(());
+    }
+    let administered_at = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(target_id)
+        .ok_or("Patient time not found after treatment preparation")?
+        .minutes;
+    row.treated_at = Some(administered_at);
     ctx.db.infection_episode().id().update(row);
     notice(
         ctx,
         target_id,
         infection_id,
-        now,
+        administered_at,
         "treatment",
         "Treatment was administered.",
     );

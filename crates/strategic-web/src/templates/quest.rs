@@ -119,6 +119,7 @@ fn quest_location_center(
                 active_character,
                 &format!("/locations/quest/{}", quest.id),
                 None,
+                false,
             ))
             div class="quest-visual-wrap" {
                 (visual_stage("map", &quest.title, "TODO: quest location image"))

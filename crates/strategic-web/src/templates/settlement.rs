@@ -270,7 +270,7 @@ pub fn settlement_overview_page(
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (visual_stage("map", &settlement.name, "TODO: settlement image"))
             (settlement_chat_area(&settlement.name, active_character))
         }
@@ -359,7 +359,7 @@ pub fn settlement_map_page(
     let content = html! {
         (map_destination_list(destinations, selected_id, &base_path))
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (visual_stage("map", &settlement.name, "TODO: settlement map"))
             (travel_planner_bar(selected, active_party.map_or(50, |party| party.camp_fatigue_percent)))
             (settlement_chat_area(&settlement.name, active_character))
@@ -588,7 +588,7 @@ pub fn camp_page(
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, "/camp", None))
+            (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             (visual_stage("camp", "Camp", "The party is resting beside the road."))
             (travel_planner_bar_for(destination_name, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey))
             (settlement_chat_area("Camp", active_character))
@@ -844,7 +844,7 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (player_chat_area(selected, active_character))
             form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden {
@@ -880,7 +880,7 @@ pub fn party_discard_page(
             }))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             form id="inventory-discard" class="party-offer"
@@ -915,20 +915,27 @@ pub fn party_personal_page(
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
+    can_examine: bool,
     theme: &str,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (character_summary_rail(capability))
-            (party_attributes_rail("Your attributes", attributes, limbs))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical))
             @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
             (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action), Some(activity_preview)))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
+            (party_portrait_overlay(
+                party_members,
+                Some(active_character),
+                &location.base_path(),
+                Some(active_character.id),
+                can_examine,
+            ))
             (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, active_character.id))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, active_character.id, limbs))
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
@@ -986,6 +993,7 @@ pub fn party_stats_page(
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
+    can_examine: bool,
     theme: &str,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
@@ -993,14 +1001,20 @@ pub fn party_stats_page(
     let content = html! {
         aside class="left-sidebar" {
             (character_summary_rail(capability))
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical))
             (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
+            (party_portrait_overlay(
+                party_members,
+                Some(active_character),
+                &location.base_path(),
+                Some(selected.id),
+                can_examine,
+            ))
             (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, selected.id))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, selected.id, selected_limbs))
         }
         aside class="right-sidebar" {
             (strategic_condition_rail(condition, morale_sources))
@@ -1116,7 +1130,7 @@ fn service_page(
             }
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
             (settlement_service_chat_area(
                 title,
@@ -1291,7 +1305,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -1420,7 +1434,7 @@ pub fn party_pool_page(
             }))
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
+            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None, false))
             (visual_stage("npc", "Party chest", "Shared party inventory chest"))
             (settlement_chat_area("Party inventory", Some(character)))
         }
@@ -2194,7 +2208,7 @@ pub(crate) fn character_stats_panel(
 ) -> Markup {
     html! {
         (character_summary_rail(capability))
-        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
+        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical))
         (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None, None))
         (medical_rail(medical, "", 0, character.id, false))
     }
@@ -2490,10 +2504,10 @@ fn strategic_condition_rail(
 
 fn medical_rail(
     medical: &MedicalPresentation,
-    location_path: &str,
+    _location_path: &str,
     _doctor_id: u64,
-    target_id: u64,
-    allow_treatment: bool,
+    _target_id: u64,
+    _allow_treatment: bool,
 ) -> Markup {
     html! {
         (sidebar_section("Symptoms", html! {
@@ -2512,14 +2526,6 @@ fn medical_rail(
                 }
             }))
         }
-        @if allow_treatment {
-            (sidebar_section("Examination", html! {
-                p class="text-muted small-copy" { "Humour readings and internal causes require a hands-on examination." }
-                form method="post" action=(format!("{location_path}/party/{target_id}/examine")) {
-                    button type="submit" class="btn btn-primary" { "Examine — 15 minutes" }
-                }
-            }))
-        }
     }
 }
 
@@ -2528,6 +2534,7 @@ fn medical_examination_popup(
     location_path: &str,
     doctor_id: u64,
     target_id: u64,
+    limbs: Option<&CharacterLimbs>,
 ) -> Markup {
     let Some(examination_id) = medical.examination_id else {
         return html! {};
@@ -2548,12 +2555,20 @@ fn medical_examination_popup(
                         button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
                     }
                 }
-                @if let Some(vitals)=medical.vitals {
-                    div class="humour-vitals" aria-label="Four humours" {
-                        (humour_bar("Sanguine", "Blood and circulation", vitals.sanguine, "sanguine"))
-                        (humour_bar("Phlegmatic", "Breath", vitals.phlegmatic, "phlegmatic"))
-                        (humour_bar("Choleric", "Heat and digestion", vitals.choleric, "choleric"))
-                        (humour_bar("Melancholic", "Sense and reason", vitals.melancholic, "melancholic"))
+                @if medical.regional_humours.is_some() {
+                    div class="examination-region-bars" aria-label="Examined body regions" {
+                        h3 { "Body regions" }
+                        @let health = regional_health_values(limbs);
+                        @let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
+                        @for (index, name) in ["Left arm", "Right arm", "Left leg", "Right leg", "Chest", "Stomach", "Head"].into_iter().enumerate() {
+                            @let reading = medical.regional_humours.map(|regions| regions[index]).unwrap_or_default();
+                            @if health[index] < 1.0 || reading.sanguine + reading.phlegmatic + reading.choleric + reading.melancholic > 0.0 {
+                                div class="examination-region-row" {
+                                    strong { (name) }
+                                    (regional_health_bar(name, health[index], cut_fraction, medical, index))
+                                }
+                            }
+                        }
                     }
                 }
                 @if !medical.findings.is_empty() {
@@ -2578,7 +2593,9 @@ fn medical_examination_popup(
                                 @if diagnosis.treatable {
                                     form method="post" action=(format!("{location_path}/party/{target_id}/disease/{}/treat", diagnosis.infection_id)) {
                                         input type="hidden" name="doctor_id" value=(doctor_id);
-                                        button type="submit" class="btn btn-primary" { "Treat" }
+                                        button type="submit" class="btn btn-primary" {
+                                            "Treat — " (diagnosis.treatment_gold) " gold · " (diagnosis.treatment_minutes) " minutes"
+                                        }
                                     }
                                 }
                             }
@@ -2593,15 +2610,37 @@ fn medical_examination_popup(
     }
 }
 
-fn humour_bar(name: &str, meaning: &str, value: f32, family: &str) -> Markup {
-    let pct = (value.clamp(0.0, 1.0) * 100.0).round();
-    html! {div class="humour-vital" {div class="humour-heading" {strong {(name)} span {(format!("{pct:.0}%"))}} div class="humour-track" role="meter" aria-label=(format!("{name}: {meaning}, {pct:.0} percent function")) aria-valuemin="0" aria-valuemax="100" aria-valuenow=(pct) {span class="humour-current" style=(format!("width:{pct:.0}%")) {} span class=(format!("humour-impairment impairment-{family}")) style=(format!("left:{pct:.0}%;width:{:.0}%",100.0-pct)) aria-hidden="true" {}}}}
+fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
+    limbs.map_or([1.0; 7], |limbs| {
+        [
+            limbs.left_arm_health,
+            limbs.right_arm_health,
+            limbs.left_leg_health,
+            limbs.right_leg_health,
+            limbs.chest_health,
+            limbs.stomach_health,
+            limbs.head_health,
+        ]
+    })
+}
+
+fn physical_cut_fraction(health: &[f32; 7], obvious_cut: f32) -> f32 {
+    let total = health
+        .iter()
+        .map(|health| (1.0 - health).max(0.0))
+        .sum::<f32>();
+    if total > 0.0 {
+        (obvious_cut / total).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
 ) -> Markup {
     let Some(attributes) = attributes else {
         return html! {};
@@ -2613,38 +2652,48 @@ fn party_attributes_rail(
     let right_arm_health = limbs.map_or(1.0, |limbs| limbs.right_arm_health);
     let left_leg_health = limbs.map_or(1.0, |limbs| limbs.left_leg_health);
     let right_leg_health = limbs.map_or(1.0, |limbs| limbs.right_leg_health);
+    let health = [
+        left_arm_health,
+        right_arm_health,
+        left_leg_health,
+        right_leg_health,
+        chest_health,
+        stomach_health,
+        head_health,
+    ];
+    let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", head_health, &[
+                (attribute_group("Head", head_health, cut_fraction, medical, 6, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", chest_health, &[
+                (attribute_group("Chest", chest_health, cut_fraction, medical, 4, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", stomach_health, &[
+                (attribute_group("Stomach", stomach_health, cut_fraction, medical, 5, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "limb-left", left_arm_health, &[
+                    (limb_attribute_column("Left arm", "limb-left", left_arm_health, cut_fraction, medical, 0, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "limb-right", right_arm_health, &[
+                    (limb_attribute_column("Right arm", "limb-right", right_arm_health, cut_fraction, medical, 1, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "limb-left", left_leg_health, &[
+                    (limb_attribute_column("Left leg", "limb-left", left_leg_health, cut_fraction, medical, 2, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "limb-right", right_leg_health, &[
+                    (limb_attribute_column("Right leg", "limb-right", right_leg_health, cut_fraction, medical, 3, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -2658,37 +2707,150 @@ fn limb_attribute_column(
     name: &str,
     side: &str,
     health: f32,
+    cut_fraction: f32,
+    medical: &MedicalPresentation,
+    region: usize,
     rows: &[(&str, &str, f32)],
 ) -> Markup {
-    attribute_group_with_labels(name, health, rows, false, Some(side))
+    attribute_group_with_labels(
+        name,
+        health,
+        cut_fraction,
+        medical,
+        region,
+        rows,
+        false,
+        Some(side),
+    )
 }
 
-fn attribute_group(name: &str, health: f32, rows: &[(&str, &str, f32)]) -> Markup {
-    attribute_group_with_labels(name, health, rows, true, None)
+fn attribute_group(
+    name: &str,
+    health: f32,
+    cut_fraction: f32,
+    medical: &MedicalPresentation,
+    region: usize,
+    rows: &[(&str, &str, f32)],
+) -> Markup {
+    attribute_group_with_labels(
+        name,
+        health,
+        cut_fraction,
+        medical,
+        region,
+        rows,
+        true,
+        None,
+    )
 }
 
 fn attribute_group_with_labels(
     name: &str,
     health: f32,
+    cut_fraction: f32,
+    medical: &MedicalPresentation,
+    region: usize,
     rows: &[(&str, &str, f32)],
     show_labels: bool,
     side: Option<&str>,
 ) -> Markup {
     let health = health.clamp(0.0, 1.0);
-    let health_width = health * 100.0;
-    let damage_width = (1.0 - health) * 100.0;
     html! {
         div class=(match side {
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
             div class="attribute-group-heading" { (name) }
-            div class="attribute-health-bar" title=(format!("{name} health: {health_width:.0}%")) {
-                span class="attribute-health-current" style=(format!("width:{health_width:.1}%")) {}
-                span class="attribute-health-damage" style=(format!("left:{health_width:.1}%;width:{damage_width:.1}%")) {}
-            }
+            (regional_health_bar(name, health, cut_fraction, medical, region))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
+            }
+        }
+    }
+}
+
+fn regional_health_bar(
+    name: &str,
+    physical_health: f32,
+    cut_fraction: f32,
+    medical: &MedicalPresentation,
+    region: usize,
+) -> Markup {
+    let physical_health = physical_health.clamp(0.0, 1.0);
+    let physical_damage = 1.0 - physical_health;
+    let cut = physical_damage * cut_fraction;
+    let blunt = physical_damage - cut;
+    let humour = medical.regional_humours.map(|values| values[region]);
+    let values = humour.unwrap_or_default();
+    let humour_total = if humour.is_some() {
+        values.sanguine + values.phlegmatic + values.choleric + values.melancholic
+    } else {
+        medical.concealed_other[region]
+    };
+    let other = physical_health * humour_total.clamp(0.0, 1.0);
+    let okay = (physical_health - other).max(0.0);
+    let scale = if humour.is_some() && humour_total > 1.0 {
+        other / humour_total
+    } else {
+        physical_health
+    };
+    let segments = if humour.is_some() {
+        vec![
+            (
+                "Sanguine",
+                "attribute-health-sanguine",
+                values.sanguine * scale,
+            ),
+            (
+                "Phlegmatic",
+                "attribute-health-phlegmatic",
+                values.phlegmatic * scale,
+            ),
+            (
+                "Choleric",
+                "attribute-health-choleric",
+                values.choleric * scale,
+            ),
+            (
+                "Melancholic",
+                "attribute-health-melancholic",
+                values.melancholic * scale,
+            ),
+        ]
+    } else {
+        vec![("Other impairment", "attribute-health-other", other)]
+    };
+    let reading = if humour.is_some() {
+        format!(
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            okay * 100.0,
+            cut * 100.0,
+            blunt * 100.0,
+            values.sanguine * scale * 100.0,
+            values.phlegmatic * scale * 100.0,
+            values.choleric * scale * 100.0,
+            values.melancholic * scale * 100.0,
+        )
+    } else {
+        format!(
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% other impairment",
+            okay * 100.0,
+            cut * 100.0,
+            blunt * 100.0,
+            other * 100.0,
+        )
+    };
+    html! {
+        div class="attribute-health-bar" role="meter"
+            aria-label=(reading)
+            aria-valuemin="0" aria-valuemax="100" aria-valuenow=(okay * 100.0) {
+            span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
+            span class="attribute-health-cut" title="Cut damage" style=(format!("width:{:.1}%", cut * 100.0)) {}
+            span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
+            @for (label, class, amount) in segments {
+                @if amount > 0.0 {
+                    span class=(class) title=(label) style=(format!("width:{:.1}%", amount * 100.0)) {}
+                }
             }
         }
     }
@@ -2745,6 +2907,7 @@ pub(crate) fn party_portrait_overlay(
     active_character: Option<&Character>,
     location_path: &str,
     selected_character_id: Option<u64>,
+    can_examine: bool,
 ) -> Markup {
     let members: Vec<&Character> = if party_members.is_empty() {
         active_character.into_iter().collect()
@@ -2786,6 +2949,15 @@ pub(crate) fn party_portrait_overlay(
                         }
                         @if member.alive && active_character.is_some_and(|character| character.alive) {
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
+                            @if can_examine {
+                                form method="post" action=(format!("{}/party/{}/examine", location_path, member.id)) {
+                                    button type="submit" class="party-portrait-action party-medical-examine"
+                                        title=(format!("Examine {} (15 minutes)", member.name))
+                                        aria-label=(format!("Examine {} (15 minutes)", member.name)) {
+                                        span aria-hidden="true" { "⚕" }
+                                    }
+                                }
+                            }
                             a href=(format!("{}/party/{}/inventory", location_path, member.id))
                                 class="party-portrait-action"
                                 title=(if is_active { "Open inventory and discard items".to_string() } else { format!("Compare inventory with {}", member.name) }) {
@@ -4047,15 +4219,42 @@ mod tests {
             unavailable: false,
             obvious_cut: 0.0,
             symptoms: vec!["coughing"],
-            vitals: None,
             diagnoses: Vec::new(),
             ..Default::default()
         };
         let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
         assert!(markup.contains("coughing"));
+        assert!(!markup.contains("Examine"));
         for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
             assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
         }
+    }
+
+    #[test]
+    fn medicine_portrait_action_is_contextual_and_quotes_examination_time() {
+        let doctor = Character {
+            id: 1,
+            name: "Doctor".into(),
+            xp: 0,
+            level: 1,
+            gold: 100,
+            current_settlement_id: Some("willowmere".into()),
+            current_quest_location_id: None,
+            party_id: Some("demo".into()),
+            age_years: 30,
+            alive: true,
+            temporary: false,
+        };
+        let hidden =
+            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), false)
+                .into_string();
+        let visible =
+            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), true)
+                .into_string();
+        assert!(!hidden.contains("/examine"));
+        assert!(visible.contains("/party/1/examine"));
+        assert!(visible.contains("Examine Doctor (15 minutes)"));
+        assert!(visible.contains("party-medical-examine"));
     }
 
     #[test]
@@ -4064,12 +4263,14 @@ mod tests {
             findings: vec!["coughing".into(), "fatigued".into()],
             examination_id: Some(44),
             examined_at: Some(8_640),
-            vitals: Some(crate::medical::HumourVitals {
-                sanguine: 0.9,
-                phlegmatic: 0.6,
-                choleric: 0.8,
-                melancholic: 1.0,
-            }),
+            regional_humours: Some(
+                [crate::medical::HumourVitals {
+                    sanguine: 0.9,
+                    phlegmatic: 0.6,
+                    choleric: 0.8,
+                    melancholic: 1.0,
+                }; 7],
+            ),
             possible_diagnoses: vec!["Catarrhal fever", "Consumption"],
             ..Default::default()
         };
@@ -4078,10 +4279,12 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let popup = medical_examination_popup(&presentation, "/location", 1, 2).into_string();
+        let popup = medical_examination_popup(&presentation, "/location", 1, 2, None).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
+        assert!(popup.contains("Body regions"));
+        assert!(popup.contains("attribute-health-phlegmatic"));
         assert!(popup.contains("Catarrhal fever"));
         assert!(popup.contains("Close examination findings"));
         assert!(popup.contains('×'));
@@ -4094,10 +4297,19 @@ mod tests {
     }
 
     #[test]
-    fn humour_meter_has_text_and_aria_not_color_alone() {
-        let markup = humour_bar("Phlegmatic", "Breath", 0.4, "phlegmatic").into_string();
+    fn examined_region_meter_has_text_and_aria_not_color_alone() {
+        let presentation = crate::medical::MedicalPresentation {
+            regional_humours: Some(
+                [crate::medical::HumourVitals {
+                    phlegmatic: 0.4,
+                    ..Default::default()
+                }; 7],
+            ),
+            ..Default::default()
+        };
+        let markup = regional_health_bar("Chest", 1.0, 0.0, &presentation, 4).into_string();
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
-        assert!(markup.contains("Breath, 40 percent function"));
+        assert!(markup.contains("Chest:"));
     }
 }

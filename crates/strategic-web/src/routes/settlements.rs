@@ -1321,6 +1321,11 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let can_examine = get_character_capability(&state, active_character.id)
+        .await
+        .is_some_and(|capability| {
+            capability.medicine >= adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD
+        });
     let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
     let settlement = if location.kind == LocationKind::Settlement {
         state
@@ -1381,6 +1386,7 @@ async fn party_personal(
             notoriety,
             personality.as_ref(),
             &medical,
+            can_examine,
             session.theme(),
         )
         .into_string(),
@@ -1986,6 +1992,11 @@ async fn party_stats(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let can_examine = get_character_capability(&state, active_character.id)
+        .await
+        .is_some_and(|capability| {
+            capability.medicine >= adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD
+        });
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -2015,6 +2026,7 @@ async fn party_stats(
             notoriety,
             personality.as_ref(),
             &medical,
+            can_examine,
             session.theme(),
         )
         .into_string(),

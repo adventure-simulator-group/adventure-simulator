@@ -1659,6 +1659,18 @@
 .medical-examination-popup > .medical-diagnoses,
 .medical-examination-popup > h3 { margin-top: 1rem; }
 
+.examination-region-bars { margin-top: 1rem; }
+.examination-region-bars h3 { margin: 0 0 0.45rem; }
+.examination-region-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.3rem;
+  font-size: var(--font-size-xs);
+}
+.examination-region-row .attribute-health-bar { height: 0.55rem; }
+
 .rest-summary ul {
   margin: 0.25rem 0 0;
   padding-left: 1.2rem;
@@ -2222,21 +2234,35 @@ button.party-portrait-action {
 }
 
 .attribute-health-bar {
-  position: relative;
+  display: flex;
   height: 0.35rem;
   overflow: hidden;
   background: var(--bg-tertiary);
 }
 
 .attribute-health-current,
-.attribute-health-damage {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-}
+.attribute-health-cut,
+.attribute-health-blunt,
+.attribute-health-other,
+.attribute-health-sanguine,
+.attribute-health-phlegmatic,
+.attribute-health-choleric,
+.attribute-health-melancholic { display: block; height: 100%; flex: 0 0 auto; }
 
-.attribute-health-current { left: 0; background: var(--success); }
-.attribute-health-damage { background: var(--danger); }
+.attribute-health-current { background: #f4f1e8; }
+.attribute-health-cut { background: #c63b3b; }
+.attribute-health-blunt { background: #c7a7e8; }
+.attribute-health-other { background: #5f9e55; }
+.attribute-health-sanguine { background: #e889a8; }
+.attribute-health-phlegmatic { background: #6fa9dc; }
+.attribute-health-choleric { background: #e1c34e; }
+.attribute-health-melancholic { background: #5b3a73; }
+
+.party-medical-examine {
+  color: #6fa9dc;
+  font-size: 1.15rem;
+  line-height: 1;
+}
 
 .limb-right .stat-icon {
   transform: scaleX(-1);

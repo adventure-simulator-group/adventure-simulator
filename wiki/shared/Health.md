@@ -27,18 +27,24 @@ difficulty confirms the disease and unlocks treatment. Repeating an unchanged
 examination does not reroll the deterministic findings or check. Party-aggregate
 Medicine does not grant medical knowledge.
 
-The four displayed vitals require Medicine 2 even after an examination. They
-are a period medical vocabulary over modern internal
-physiology: Sanguine covers blood and circulation, Phlegmatic breath, Choleric
-heat and digestion, and Melancholic sense and reason. Treatment adds one
-timestamp and continuously accelerates the remaining course while mitigating
-symptoms; it never instantly cures disease.
+Body-region health is always perceptible, but its cause is not. A lay view uses
+only white for sound tissue, red for visible cut damage, light purple for blunt
+damage, and green for every other impairment. After a Medicine 2 character
+spends 15 personal minutes examining a co-located patient, the one-shot result
+replaces green on each affected region with the four period medical channels:
+pink Sanguine, blue Phlegmatic, yellow Choleric, and dark-purple Melancholic.
+The channels are a period vocabulary over modern internal physiology, derived
+per region from the infection episode rather than persisted as disease state.
 
 Episodes retain only identity/associations, contraction minute, and optional
 treatment minute. Severity and incidental findings are deterministically seeded
 from those associations. Pending examination results are transient action state,
 not additional disease state, and are deleted after treatment or dismissal.
-Immunity resists acquisition and attenuates severity; resolved episodes can
+Treatment has a disease-specific ingredient cost and preparation time, both
+quoted on the treatment action. The patient pays the gold and both physician
+and patient spend the preparation interval. Successful treatment adds one
+timestamp and continuously accelerates the remaining course while mitigating
+symptoms; it never instantly cures disease. Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
 with Surgery reducing residual risk; blunt damage does not.
 
@@ -46,8 +52,10 @@ Outbreak acquisition hashes each actual minute of presence. This keeps late
 arrival, departure and re-entry exact and makes one long stay identical to the
 same stay split among many actions without persisting disease state beyond an
 infection episode. Current committed combat provenance is an aggregate cut
-amount: the UI can honestly distinguish visible physical cuts, but per-limb
-source families await a tactical result format that reports them.
+amount. The strategic display apportions that known cut share across regions
+that actually have physical damage and displays the remainder as blunt damage.
+Exact per-region source provenance remains a future tactical result-format
+improvement.
 
 Ten percent or less remaining blood volume is terminal circulatory failure.
 Gut impairment contributes to Choleric/homeostatic failure through disease;

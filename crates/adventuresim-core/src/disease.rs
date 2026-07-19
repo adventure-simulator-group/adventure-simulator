@@ -83,6 +83,44 @@ pub struct VitalImpairment {
     pub melancholic: f32,
 }
 
+/// Body regions used to localize the complaints caused by otherwise global
+/// disease physiology. These readings are derived from an infection episode;
+/// they are presentation facts, not additional persisted disease state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyRegion {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+impl BodyRegion {
+    pub const ALL: [Self; 7] = [
+        Self::LeftArm,
+        Self::RightArm,
+        Self::LeftLeg,
+        Self::RightLeg,
+        Self::Chest,
+        Self::Stomach,
+        Self::Head,
+    ];
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::LeftArm => 0,
+            Self::RightArm => 1,
+            Self::LeftLeg => 2,
+            Self::RightLeg => 3,
+            Self::Chest => 4,
+            Self::Stomach => 5,
+            Self::Head => 6,
+        }
+    }
+}
+
 impl VitalImpairment {
     pub fn terminal_failure(self) -> Option<TerminalFailure> {
         [
@@ -403,6 +441,30 @@ pub fn definition(id: DiseaseId) -> &'static DiseaseDefinition {
     &STARTER_DISEASES[id as usize]
 }
 
+/// Coin cost of acquiring and preparing one course of treatment.
+pub const fn treatment_gold(id: DiseaseId) -> u32 {
+    match id {
+        DiseaseId::Influenza => 2,
+        DiseaseId::Dysentery => 4,
+        DiseaseId::Typhus => 8,
+        DiseaseId::Tetanus => 10,
+        DiseaseId::Erysipelas => 6,
+        DiseaseId::Smallpox => 8,
+        DiseaseId::Plague => 12,
+        DiseaseId::Consumption => 6,
+    }
+}
+
+/// Hands-on minutes required to acquire, prepare, and administer treatment.
+pub const fn treatment_minutes(id: DiseaseId) -> u64 {
+    match id {
+        DiseaseId::Influenza => 30,
+        DiseaseId::Dysentery | DiseaseId::Erysipelas => 60,
+        DiseaseId::Typhus | DiseaseId::Smallpox | DiseaseId::Consumption => 90,
+        DiseaseId::Tetanus | DiseaseId::Plague => 120,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InfectionEpisode {
     pub id: u64,
@@ -706,6 +768,62 @@ pub fn combined_state(
     (a, v, s, terminal)
 }
 
+/// Derives where a patient experiences each humour imbalance. The disease's
+/// global vital impairment still determines terminal failure; this regional
+/// projection exists so a patient can perceive *where* they feel unwell while
+/// only an examined physician can distinguish *why*.
+pub fn regional_vitals(
+    episodes: &[InfectionEpisode],
+    now: u64,
+    immunity: f32,
+) -> [VitalImpairment; 7] {
+    let mut regions = [VitalImpairment::default(); 7];
+    for episode in episodes {
+        let state = evaluate(*episode, now, immunity);
+        for (region, weight) in disease_region_weights(*episode) {
+            regions[region.index()].add(state.vitals.scaled(weight));
+        }
+    }
+    regions
+}
+
+fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
+    use BodyRegion::{Chest, Head, LeftArm, LeftLeg, RightArm, RightLeg, Stomach};
+    match episode.disease_id {
+        DiseaseId::Influenza => vec![(Chest, 1.0), (Head, 0.35)],
+        DiseaseId::Dysentery => vec![(Stomach, 1.0), (Chest, 0.25)],
+        DiseaseId::Typhus => vec![(Chest, 0.8), (Head, 1.0), (Stomach, 0.45)],
+        DiseaseId::Tetanus => vec![
+            (Chest, 1.0),
+            (Head, 0.7),
+            (LeftArm, 0.65),
+            (RightArm, 0.65),
+            (LeftLeg, 0.65),
+            (RightLeg, 0.65),
+        ],
+        DiseaseId::Erysipelas => {
+            let limb =
+                [LeftArm, RightArm, LeftLeg, RightLeg][(severity_seed(episode) as usize) % 4];
+            vec![(limb, 1.0), (Chest, 0.35)]
+        }
+        DiseaseId::Smallpox => vec![
+            (Head, 1.0),
+            (Chest, 0.8),
+            (Stomach, 0.6),
+            (LeftArm, 0.45),
+            (RightArm, 0.45),
+            (LeftLeg, 0.45),
+            (RightLeg, 0.45),
+        ],
+        DiseaseId::Plague => {
+            let limb =
+                [LeftArm, RightArm, LeftLeg, RightLeg][(severity_seed(episode) as usize) % 4];
+            vec![(Chest, 1.0), (Stomach, 0.75), (Head, 0.55), (limb, 0.8)]
+        }
+        DiseaseId::Consumption => vec![(Chest, 1.0), (Stomach, 0.3)],
+    }
+}
+
 /// Findings visible during an examination. Incidental complaints are derived
 /// from the infection identity, so they remain stable without additional
 /// per-character disease state.
@@ -908,6 +1026,30 @@ mod tests {
         let (_, v, s, _) = combined_state(&[a, b], 100 + 4 * DAY, 3.0);
         assert!(v.phlegmatic > evaluate(a, 100 + 4 * DAY, 3.0).vitals.phlegmatic);
         assert_eq!(s.iter().filter(|x| **x == Symptom::Coughing).count(), 1);
+    }
+    #[test]
+    fn regional_projection_localizes_complaints_without_new_episode_state() {
+        let influenza = e(1, DiseaseId::Influenza);
+        let regions = regional_vitals(&[influenza], 100 + 4 * DAY, 3.0);
+        assert!(regions[BodyRegion::Chest.index()].phlegmatic > 0.0);
+        assert!(regions[BodyRegion::Head.index()].phlegmatic > 0.0);
+        assert_eq!(
+            regions[BodyRegion::Stomach.index()],
+            VitalImpairment::default()
+        );
+
+        let erysipelas = e(2, DiseaseId::Erysipelas);
+        assert_eq!(
+            regional_vitals(&[erysipelas], 100 + 4 * DAY, 3.0),
+            regional_vitals(&[erysipelas], 100 + 4 * DAY, 3.0)
+        );
+    }
+    #[test]
+    fn treatment_quotes_are_nonzero_and_disease_specific() {
+        assert_eq!(treatment_gold(DiseaseId::Influenza), 2);
+        assert_eq!(treatment_minutes(DiseaseId::Influenza), 30);
+        assert!(treatment_gold(DiseaseId::Plague) > treatment_gold(DiseaseId::Influenza));
+        assert!(treatment_minutes(DiseaseId::Plague) > treatment_minutes(DiseaseId::Influenza));
     }
     #[test]
     fn incidental_findings_are_stable_and_non_distinctive() {

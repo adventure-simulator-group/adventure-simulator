@@ -12,11 +12,14 @@ pub struct MedicalPresentation {
     pub findings: Vec<String>,
     pub examination_id: Option<u64>,
     pub examined_at: Option<u64>,
-    pub vitals: Option<HumourVitals>,
+    /// Disease impairment by body region. Lay views collapse each row into
+    /// `concealed_other`; an examination lets the physician see the channels.
+    pub regional_humours: Option<[HumourVitals; 7]>,
+    pub concealed_other: [f32; 7],
     pub possible_diagnoses: Vec<&'static str>,
     pub diagnoses: Vec<DiagnosisPresentation>,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct HumourVitals {
     pub sanguine: f32,
     pub phlegmatic: f32,
@@ -30,6 +33,8 @@ pub struct DiagnosisPresentation {
     pub contagion: &'static str,
     pub stage: String,
     pub treatable: bool,
+    pub treatment_gold: u32,
+    pub treatment_minutes: u64,
 }
 
 fn parse(value: &str) -> Option<DiseaseId> {
@@ -66,6 +71,10 @@ pub fn sanitize(
         .collect::<Vec<_>>();
     let (_, _, outward_symptoms, _) =
         disease::combined_state(&episodes, target_minute, target_immunity);
+    let current_regional = disease::regional_vitals(&episodes, target_minute, target_immunity);
+    let concealed_other = current_regional.map(|vitals| {
+        (vitals.sanguine + vitals.phlegmatic + vitals.choleric + vitals.melancholic).clamp(0.0, 1.0)
+    });
     let symptoms = outward_symptoms
         .into_iter()
         .map(Symptom::period_label)
@@ -73,6 +82,7 @@ pub fn sanitize(
     let Some(examination) = examination else {
         return MedicalPresentation {
             symptoms,
+            concealed_other,
             ..MedicalPresentation::default()
         };
     };
@@ -90,6 +100,8 @@ pub fn sanitize(
                 period_name: d.period_name,
                 contagion: d.contagion,
                 stage: stage.clone(),
+                treatment_gold: disease::treatment_gold(id),
+                treatment_minutes: disease::treatment_minutes(id),
                 treatable: rows
                     .iter()
                     .find(|row| row.id == *infection_id)
@@ -122,6 +134,18 @@ pub fn sanitize(
         .iter()
         .filter_map(|id| parse(id).map(|id| disease::definition(id).period_name))
         .collect();
+    let reveals_humours =
+        examination.reveals_vitals && viewer_medicine >= disease::MEDICINE_VITALS_THRESHOLD;
+    let regional_humours = reveals_humours.then(|| {
+        disease::regional_vitals(&episodes, examination.examined_at, target_immunity).map(
+            |vitals| HumourVitals {
+                sanguine: vitals.sanguine,
+                phlegmatic: vitals.phlegmatic,
+                choleric: vitals.choleric,
+                melancholic: vitals.melancholic,
+            },
+        )
+    });
     MedicalPresentation {
         unavailable: false,
         obvious_cut: 0.0,
@@ -129,14 +153,8 @@ pub fn sanitize(
         findings: examination.findings.clone(),
         examination_id: Some(examination.id),
         examined_at: Some(examination.examined_at),
-        vitals: (examination.reveals_vitals
-            && viewer_medicine >= disease::MEDICINE_VITALS_THRESHOLD)
-            .then_some(HumourVitals {
-                sanguine: examination.sanguine,
-                phlegmatic: examination.phlegmatic,
-                choleric: examination.choleric,
-                melancholic: examination.melancholic,
-            }),
+        regional_humours,
+        concealed_other,
         possible_diagnoses,
         diagnoses,
     }
@@ -176,16 +194,20 @@ mod tests {
     fn unexamined_patient_has_signs_but_no_vitals_or_identifiers() {
         let p = sanitize(&[row()], None, 4 * 1_440, 0.0, 0.0);
         assert!(!p.symptoms.is_empty());
-        assert!(p.vitals.is_none());
+        assert!(p.regional_humours.is_none());
+        assert!(p.concealed_other.iter().any(|value| *value > 0.0));
         assert!(p.diagnoses.is_empty());
     }
     #[test]
     fn completed_examination_reveals_its_snapshot() {
         let exam = examination();
         let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 2.0);
-        assert!(p.vitals.is_some());
+        assert!(p.regional_humours.is_some());
+        assert!(p.regional_humours.unwrap()[4].phlegmatic > 0.0);
         assert_eq!(p.diagnoses.len(), 1);
         assert_eq!(p.diagnoses[0].period_name, "Catarrhal fever");
+        assert_eq!(p.diagnoses[0].treatment_gold, 2);
+        assert_eq!(p.diagnoses[0].treatment_minutes, 30);
         assert_eq!(p.examined_at, Some(4 * 1_440));
     }
     #[test]
@@ -193,7 +215,7 @@ mod tests {
         let mut exam = examination();
         exam.reveals_vitals = false;
         let p = sanitize(&[row()], Some(&exam), 4 * 1_440, 3.0, 1.99);
-        assert!(p.vitals.is_none());
+        assert!(p.regional_humours.is_none());
         assert_eq!(p.examined_at, Some(4 * 1_440));
     }
     #[test]

@@ -220,12 +220,15 @@ Party Charisma is led by the strongest individual check. Additional members rece
 
 ### Medicine (trained, 10000 hours)
 Medicine governs what a particular character can discern about illness. Below
-an effective individual check of 2 the Vitals section is absent, even when
-examining oneself. At 2, a physician can assess the four humours and distinguish
-broad non-obvious impairment families. Each disease has a stage-dependent
+an effective individual check of 2 no examination action appears, even for
+oneself. Everyone can perceive where the body feels impaired, but the lay
+health bars collapse non-cut and non-blunt causes into green. At 2, a physician
+can spend 15 minutes examining a co-located patient; the resulting one-shot
+view splits that green impairment per body region into the four humours. Each disease has a stage-dependent
 diagnosis difficulty (never below 2); meeting it reveals a period-facing
-diagnosis and permits treatment. Obvious cuts and burns remain distinct without
-Medicine. Party Medicine still assists wound recovery, but party aggregation
+diagnosis and permits a quoted gold-and-time treatment. Cuts and blunt trauma
+remain distinct without Medicine; all other sources, including burns, use the
+green lay category. Party Medicine still assists wound recovery, but party aggregation
 never grants medical visibility or diagnosis.
 
 Medicine and Surgery use the same bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
