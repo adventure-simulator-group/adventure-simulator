@@ -16,8 +16,6 @@ pub enum OfficialReligion {
 
     Anglican,
 
-    ProtestantUnspecified,
-
     EasternOrthodox,
 
     Islamic,

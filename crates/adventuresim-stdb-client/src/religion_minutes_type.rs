@@ -11,7 +11,6 @@ pub struct ReligionMinutes {
     pub lutheran: u16,
     pub reformed: u16,
     pub anglican: u16,
-    pub protestant: u16,
     pub eastern_orthodox: u16,
     pub islamic: u16,
     pub judaism: u16,

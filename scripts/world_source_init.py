@@ -90,8 +90,8 @@ TREES_FILE = {
     "sha256": "be115f771e5598e6fd180621e1a32922880cf7ac8e2cb59ba0eabd7f15bfeda4",
 }
 RELIGION_FILE = Path("assets/world-data/ieg-religion-1544.csv")
-RELIGION_SIZE = 1_069
-RELIGION_SHA256 = "7172f286bad8ef9d0bb891dfe576b3c7978ce04de14eba254a300a81299aaa8e"
+RELIGION_SIZE = 991
+RELIGION_SHA256 = "d33f6ffd2706acedfb5b02007b8a71cbf93df8e1bb377b73278235b1c7e66c35"
 RELIGION_HEADER = ("priority", "region", "min_latitude", "max_latitude", "min_longitude", "max_longitude", "status", "religions", "church")
 RELIGION_STATUSES = {"established", "multi_confessional", "parity", "locally_determined"}
 SAFE_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -403,8 +403,8 @@ def verify_religion(path: Path = RELIGION_FILE) -> None:
                 raise RuntimeError("curated religion CSV ordering, bounds, or values are invalid")
             priorities.add(priority)
             previous = priority
-        if rows != 14:
-            raise RuntimeError("curated religion CSV must contain exactly 14 regions")
+        if rows != 13:
+            raise RuntimeError("curated religion CSV must contain exactly 13 regions")
 
 
 def main() -> None:

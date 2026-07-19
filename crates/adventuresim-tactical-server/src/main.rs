@@ -199,7 +199,6 @@ fn spawn_connected_player(
                 religion.lutheran,
                 religion.reformed,
                 religion.anglican,
-                religion.protestant,
                 religion.eastern_orthodox,
                 religion.islamic,
                 religion.judaism,

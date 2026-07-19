@@ -11,7 +11,6 @@ pub struct ReligionHours {
     pub lutheran: f32,
     pub reformed: f32,
     pub anglican: f32,
-    pub protestant: f32,
     pub eastern_orthodox: f32,
     pub islamic: f32,
     pub judaism: f32,

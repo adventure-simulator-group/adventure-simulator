@@ -2551,7 +2551,8 @@ button.party-portrait-action {
 .skill-schedule .schedule-effect-column { width: 1.55rem; }
 .skill-schedule .party-skill-time-column { width: 2.55rem; }
 
-.party-skills-table td {
+.party-skills-table td,
+.party-skills-table tbody th {
   padding: 0.42rem 0;
   vertical-align: middle;
   border-bottom: 1px solid var(--border-light);
@@ -2566,19 +2567,37 @@ button.party-portrait-action {
 }
 
 .religion-expand-button {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 700;
-    padding: 0;
-    cursor: pointer;
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 0.8rem;
+  width: 0.8rem;
+  height: 1.2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
 }
 
 .religion-expand-button:focus-visible,
-.religion-auto-cell input:focus-visible {
+.religion-auto-toggle-label input:focus-visible {
     outline: 2px solid var(--accent, #d0ad63);
     outline-offset: 2px;
+}
+
+.religion-expand-chevron {
+  display: inline-block;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+
+.religion-expand-button[aria-expanded="true"] .religion-expand-chevron {
+  transform: rotate(90deg);
 }
 
 .religion-tradition-icon {
@@ -2592,22 +2611,28 @@ button.party-portrait-action {
     padding-left: 0.15rem;
 }
 
-.religion-auto-cell {
-    padding: 0.35rem 0.5rem 0.55rem 2rem;
+.religion-auto-toggle-cell { text-align: center; }
+.religion-auto-toggle-label { display: inline-flex; align-items: center; cursor: pointer; }
+.religion-auto-toggle-label input { width: 0.9rem; height: 0.9rem; margin: 0; }
+
+.religion-primary-allocation-content {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 
-.religion-auto-control {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    white-space: nowrap;
+.religion-meter-with-expand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
 }
-
-.religion-auto-control input { margin: 0; }
 
 [data-religion-auto-control],
 [data-religion-primary-manual-control] {
-    display: inline;
+    position: relative;
+    display: inline-block;
 }
 
 [data-religion-auto-control][hidden],

@@ -498,9 +498,6 @@ fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
             adventuresim_world_schema::OfficialReligion::Lutheran => "Lutheran",
             adventuresim_world_schema::OfficialReligion::Reformed => "Reformed",
             adventuresim_world_schema::OfficialReligion::Anglican => "Anglican",
-            adventuresim_world_schema::OfficialReligion::ProtestantUnspecified => {
-                "ProtestantUnspecified"
-            }
             adventuresim_world_schema::OfficialReligion::EasternOrthodox => "EasternOrthodox",
             adventuresim_world_schema::OfficialReligion::Islamic => "Islamic",
             adventuresim_world_schema::OfficialReligion::Judaism => "Judaism",

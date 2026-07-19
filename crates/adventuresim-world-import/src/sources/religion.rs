@@ -153,7 +153,6 @@ fn parse_religion(path: &Path, field: &'static str, value: &str) -> Result<Offic
         "lutheran" => Ok(OfficialReligion::Lutheran),
         "reformed" => Ok(OfficialReligion::Reformed),
         "anglican" => Ok(OfficialReligion::Anglican),
-        "protestant_unspecified" => Ok(OfficialReligion::ProtestantUnspecified),
         "eastern_orthodox" => Ok(OfficialReligion::EasternOrthodox),
         "islamic" => Ok(OfficialReligion::Islamic),
         _ => Err(Error::InvalidField {
@@ -403,7 +402,7 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/world-data/ieg-religion-1544.csv");
         let regions = read_regions(&path).unwrap();
-        assert_eq!(regions.len(), 14);
+        assert_eq!(regions.len(), 13);
         assert!(regions.iter().any(|region| {
             matches!(
                 region.status,

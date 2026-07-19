@@ -1780,8 +1780,6 @@ struct TrainingScheduleForm {
     #[serde(default)]
     religion_anglican_minutes: u16,
     #[serde(default)]
-    religion_protestant_minutes: u16,
-    #[serde(default)]
     religion_eastern_orthodox_minutes: u16,
     #[serde(default)]
     religion_islamic_minutes: u16,
@@ -1864,7 +1862,6 @@ async fn update_training_schedule(
                             lutheran: form.religion_lutheran_minutes,
                             reformed: form.religion_reformed_minutes,
                             anglican: form.religion_anglican_minutes,
-                            protestant: form.religion_protestant_minutes,
                             eastern_orthodox: form.religion_eastern_orthodox_minutes,
                             islamic: form.religion_islamic_minutes,
                             judaism: form.religion_judaism_minutes,

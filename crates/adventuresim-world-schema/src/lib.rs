@@ -7,8 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-pub const WORLD_SCHEMA_VERSION: u32 = 22;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 6;
+pub const WORLD_SCHEMA_VERSION: u32 = 23;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 7;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Source and inference notes are deliberately unstructured Markdown for a
@@ -36,19 +36,17 @@ pub enum OfficialReligion {
     Lutheran,
     Reformed,
     Anglican,
-    ProtestantUnspecified,
     EasternOrthodox,
     Islamic,
     Judaism,
 }
 
 impl OfficialReligion {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 7] = [
         Self::RomanCatholic,
         Self::Lutheran,
         Self::Reformed,
         Self::Anglican,
-        Self::ProtestantUnspecified,
         Self::EasternOrthodox,
         Self::Islamic,
         Self::Judaism,
@@ -61,7 +59,6 @@ impl OfficialReligion {
             Self::Lutheran => "lutheran",
             Self::Reformed => "reformed",
             Self::Anglican => "anglican",
-            Self::ProtestantUnspecified => "protestant",
             Self::EasternOrthodox => "eastern_orthodox",
             Self::Islamic => "islamic",
             Self::Judaism => "judaism",
@@ -74,7 +71,6 @@ impl OfficialReligion {
             Self::Lutheran => "Lutheranism",
             Self::Reformed => "Reformed Christianity",
             Self::Anglican => "Anglicanism",
-            Self::ProtestantUnspecified => "Protestantism",
             Self::EasternOrthodox => "Eastern Orthodoxy",
             Self::Islamic => "Islam",
             Self::Judaism => "Judaism",
@@ -93,23 +89,21 @@ impl OfficialReligion {
             Self::Lutheran => 1,
             Self::Reformed => 2,
             Self::Anglican => 3,
-            Self::ProtestantUnspecified => 4,
-            Self::EasternOrthodox => 5,
-            Self::Islamic => 6,
-            Self::Judaism => 7,
+            Self::EasternOrthodox => 4,
+            Self::Islamic => 5,
+            Self::Judaism => 6,
         }
     }
 
     pub const fn correlation(self, other: Self) -> f32 {
-        const C: [[f32; 8]; 8] = [
-            [1.0, 0.80, 0.75, 0.80, 0.75, 0.65, 0.10, 0.10],
-            [0.80, 1.0, 0.90, 0.85, 0.95, 0.50, 0.10, 0.10],
-            [0.75, 0.90, 1.0, 0.85, 0.95, 0.45, 0.10, 0.10],
-            [0.80, 0.85, 0.85, 1.0, 0.90, 0.55, 0.10, 0.10],
-            [0.75, 0.95, 0.95, 0.90, 1.0, 0.45, 0.10, 0.10],
-            [0.65, 0.50, 0.45, 0.55, 0.45, 1.0, 0.15, 0.10],
-            [0.10, 0.10, 0.10, 0.10, 0.10, 0.15, 1.0, 0.35],
-            [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.35, 1.0],
+        const C: [[f32; 7]; 7] = [
+            [1.0, 0.80, 0.75, 0.80, 0.65, 0.10, 0.10],
+            [0.80, 1.0, 0.90, 0.85, 0.50, 0.10, 0.10],
+            [0.75, 0.90, 1.0, 0.85, 0.45, 0.10, 0.10],
+            [0.80, 0.85, 0.85, 1.0, 0.55, 0.10, 0.10],
+            [0.65, 0.50, 0.45, 0.55, 1.0, 0.15, 0.10],
+            [0.10, 0.10, 0.10, 0.10, 0.15, 1.0, 0.35],
+            [0.10, 0.10, 0.10, 0.10, 0.10, 0.35, 1.0],
         ];
         C[self.index()][other.index()]
     }
@@ -122,7 +116,6 @@ pub struct ReligionHours {
     pub lutheran: f32,
     pub reformed: f32,
     pub anglican: f32,
-    pub protestant: f32,
     pub eastern_orthodox: f32,
     pub islamic: f32,
     pub judaism: f32,
@@ -149,7 +142,6 @@ impl ReligionHours {
             OfficialReligion::Lutheran => self.lutheran,
             OfficialReligion::Reformed => self.reformed,
             OfficialReligion::Anglican => self.anglican,
-            OfficialReligion::ProtestantUnspecified => self.protestant,
             OfficialReligion::EasternOrthodox => self.eastern_orthodox,
             OfficialReligion::Islamic => self.islamic,
             OfficialReligion::Judaism => self.judaism,
@@ -162,7 +154,6 @@ impl ReligionHours {
             OfficialReligion::Lutheran => &mut self.lutheran,
             OfficialReligion::Reformed => &mut self.reformed,
             OfficialReligion::Anglican => &mut self.anglican,
-            OfficialReligion::ProtestantUnspecified => &mut self.protestant,
             OfficialReligion::EasternOrthodox => &mut self.eastern_orthodox,
             OfficialReligion::Islamic => &mut self.islamic,
             OfficialReligion::Judaism => &mut self.judaism,
@@ -222,7 +213,6 @@ pub struct ReligionMinutes {
     pub lutheran: u16,
     pub reformed: u16,
     pub anglican: u16,
-    pub protestant: u16,
     pub eastern_orthodox: u16,
     pub islamic: u16,
     pub judaism: u16,
@@ -235,7 +225,6 @@ impl ReligionMinutes {
             OfficialReligion::Lutheran => self.lutheran,
             OfficialReligion::Reformed => self.reformed,
             OfficialReligion::Anglican => self.anglican,
-            OfficialReligion::ProtestantUnspecified => self.protestant,
             OfficialReligion::EasternOrthodox => self.eastern_orthodox,
             OfficialReligion::Islamic => self.islamic,
             OfficialReligion::Judaism => self.judaism,
@@ -267,7 +256,6 @@ impl ReligionMinutes {
                 OfficialReligion::Lutheran => result.lutheran = value,
                 OfficialReligion::Reformed => result.reformed = value,
                 OfficialReligion::Anglican => result.anglican = value,
-                OfficialReligion::ProtestantUnspecified => result.protestant = value,
                 OfficialReligion::EasternOrthodox => result.eastern_orthodox = value,
                 OfficialReligion::Islamic => result.islamic = value,
                 OfficialReligion::Judaism => result.judaism = value,
