@@ -24,6 +24,9 @@
   };
 
   const selectedInventoryTab = () => document.querySelector("[data-inventory-tab].active")?.dataset.inventoryTab;
+  const scheduleEditorIsPending = () => Boolean(
+    document.querySelector('[data-skill-schedule][data-schedule-pending]'),
+  );
 
   const restoreInventoryTab = (name) => {
     if (!name) return;
@@ -47,8 +50,22 @@
     return true;
   };
 
+  const scrollOffsets = (selector) => {
+    const region = document.querySelector(selector);
+    return region ? { left: region.scrollLeft, top: region.scrollTop } : null;
+  };
+
+  const restoreScrollOffsets = (selector, offsets) => {
+    if (!offsets) return;
+    const region = document.querySelector(selector);
+    if (!region) return;
+    region.scrollLeft = offsets.left;
+    region.scrollTop = offsets.top;
+  };
+
   const refresh = async () => {
     const currentGeneration = ++generation;
+    const schedulePendingAtStart = scheduleEditorIsPending();
     const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
       headers: { Accept: "text/html", "X-Strategic-Live-Region": "true" },
     });
@@ -59,18 +76,23 @@
     // Match the post-mount table structure before comparing it with the live DOM.
     window.strategicTradeUi?.mountInventoryBulkControls?.(nextDocument);
     const inventoryTab = selectedInventoryTab();
+    const leftSidebarScroll = scrollOffsets(".left-sidebar");
+    const rightSidebarScroll = scrollOffsets(".right-sidebar");
     const replaced = [];
 
     if (replaceIfChanged("[data-party-portrait-members]", nextDocument)) {
       replaced.push("party-portraits");
     }
     if (!sidebarsAreBusy()) {
-      if (replaceIfChanged(".left-sidebar", nextDocument)) replaced.push("left-sidebar");
+      if (!schedulePendingAtStart && !scheduleEditorIsPending()
+        && replaceIfChanged(".left-sidebar", nextDocument)) replaced.push("left-sidebar");
       if (replaceIfChanged(".right-sidebar", nextDocument)) replaced.push("right-sidebar");
     }
 
     if (!replaced.length) return;
     restoreInventoryTab(inventoryTab);
+    if (replaced.includes("left-sidebar")) restoreScrollOffsets(".left-sidebar", leftSidebarScroll);
+    if (replaced.includes("right-sidebar")) restoreScrollOffsets(".right-sidebar", rightSidebarScroll);
     document.dispatchEvent(new CustomEvent("strategic-live-regions-refreshed", {
       detail: { regions: replaced },
     }));

@@ -724,6 +724,7 @@ impl PlayerSkills for SimSkills {
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
             Skill::Surgeon => self.0.surgeon,
+            Skill::Smithing => self.0.smithing,
         }
     }
 }

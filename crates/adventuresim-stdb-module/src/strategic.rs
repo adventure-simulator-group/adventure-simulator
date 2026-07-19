@@ -26,6 +26,7 @@ use crate::{
     },
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
+    repair::item_condition,
     tactical::tactical_server_request,
     time::advance_character_time,
 };
@@ -888,6 +889,7 @@ pub fn import_settlements(
             ctx.db.settlement().insert(row);
         }
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
+        crate::repair::ensure_settlement_smith(ctx, &settlement_id);
     }
     Ok(())
 }
@@ -1434,6 +1436,20 @@ pub struct PartyInventoryItem {
     #[index(btree)]
     pub item_id: String,
     pub quantity: u32,
+}
+
+/// Condition follows a durable item while it is held in the shared party pool.
+/// Durable party rows are always individual (`quantity == 1`) and never merge.
+#[derive(Clone, Debug)]
+#[table(accessor = party_item_condition, public)]
+pub struct PartyItemCondition {
+    #[primary_key]
+    pub party_inventory_item_id: u64,
+    pub tier_1: f32,
+    pub tier_2: f32,
+    pub tier_3: f32,
+    pub tier_4: f32,
+    pub tier_5: f32,
 }
 
 /// Desired retained quantity used by bulk inventory actions. Party targets are
@@ -2612,15 +2628,20 @@ pub fn accept_party_join_request(
     // Preserve the source party's jointly-owned assets and each member's absolute
     // stake. Combining the ledgers does not dilute either party; only future loot
     // is shared among the newly combined membership.
-    for entry in ctx
+    for mut entry in ctx
         .db
         .party_inventory_item()
         .party_id()
         .filter(&source_party_id)
         .collect::<Vec<_>>()
     {
-        add_to_party_inventory(ctx, &request.party_id, &entry.item_id, entry.quantity);
-        ctx.db.party_inventory_item().id().delete(entry.id);
+        if item_is_durable(ctx, &entry.item_id) {
+            entry.party_id = request.party_id.clone();
+            ctx.db.party_inventory_item().id().update(entry);
+        } else {
+            add_to_party_inventory(ctx, &request.party_id, &entry.item_id, entry.quantity);
+            ctx.db.party_inventory_item().id().delete(entry.id);
+        }
     }
     for stake in ctx
         .db
@@ -2917,6 +2938,17 @@ pub fn transfer_party_item(
         return Err("Unequip an item before transferring it".into());
     }
 
+    let durable = item_is_durable(ctx, &source_item.item_id);
+    if durable {
+        if quantity != 1 || source_item.quantity != 1 {
+            return Err("Equipment instances must be transferred individually".into());
+        }
+        let mut transferred = source_item;
+        transferred.character_id = to_character_id;
+        ctx.db.inventory_item().id().update(transferred);
+        return Ok(());
+    }
+
     if source_item.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory_item_id);
     } else {
@@ -2955,8 +2987,40 @@ fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, Stri
         .ok_or_else(|| format!("Item {item_id} has no objective value"))
 }
 
+fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
+    ctx.db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| {
+            matches!(
+                definition.kind,
+                crate::ItemKind::Weapon | crate::ItemKind::Armor | crate::ItemKind::Shield
+            )
+        })
+}
+
 fn add_to_party_inventory(ctx: &ReducerContext, party_id: &str, item_id: &str, quantity: u32) {
     if quantity == 0 {
+        return;
+    }
+    if item_is_durable(ctx, item_id) {
+        for _ in 0..quantity {
+            let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
+                id: 0,
+                party_id: party_id.to_string(),
+                item_id: item_id.to_string(),
+                quantity: 1,
+            });
+            ctx.db.party_item_condition().insert(PartyItemCondition {
+                party_inventory_item_id: row.id,
+                tier_1: 0.0,
+                tier_2: 0.0,
+                tier_3: 0.0,
+                tier_4: 0.0,
+                tier_5: 0.0,
+            });
+        }
         return;
     }
     if let Some(mut stack) = ctx
@@ -3230,7 +3294,44 @@ pub fn deposit_party_inventory_item(
         return Err("Unequip an item before depositing it".into());
     }
     let value = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    let durable = item_is_durable(ctx, &inventory.item_id);
+    if durable && (quantity != 1 || inventory.quantity != 1) {
+        return Err("Equipment instances must be deposited individually".into());
+    }
+    let preserved_condition = if durable {
+        ctx.db
+            .item_condition()
+            .inventory_item_id()
+            .find(inventory.id)
+    } else {
+        None
+    };
     add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    if let Some(condition) = preserved_condition {
+        let party_row = ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(&party_id)
+            .filter(|row| row.item_id == inventory.item_id)
+            .max_by_key(|row| row.id)
+            .expect("durable party row was just inserted");
+        ctx.db
+            .party_item_condition()
+            .party_inventory_item_id()
+            .update(PartyItemCondition {
+                party_inventory_item_id: party_row.id,
+                tier_1: condition.tier_1,
+                tier_2: condition.tier_2,
+                tier_3: condition.tier_3,
+                tier_4: condition.tier_4,
+                tier_5: condition.tier_5,
+            });
+        ctx.db
+            .item_condition()
+            .inventory_item_id()
+            .delete(inventory.id);
+    }
     credit_party_stake(ctx, &party_id, character_id, value);
     if inventory.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory.id);
@@ -3241,7 +3342,7 @@ pub fn deposit_party_inventory_item(
     Ok(())
 }
 
-fn consume_personal_gold(
+pub(crate) fn consume_personal_gold(
     ctx: &ReducerContext,
     character_id: u64,
     mut amount: u64,
@@ -3313,7 +3414,34 @@ pub fn withdraw_party_inventory_item(
         stake.value = stake.value.saturating_sub(cost);
         ctx.db.party_stake().id().update(stake.clone());
     }
-    crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    let durable = item_is_durable(ctx, &inventory.item_id);
+    if durable && (quantity != 1 || inventory.quantity != 1) {
+        return Err("Equipment instances must be withdrawn individually".into());
+    }
+    let preserved_condition = ctx
+        .db
+        .party_item_condition()
+        .party_inventory_item_id()
+        .find(inventory.id);
+    let new_inventory_id =
+        crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    if let (Some(condition), Some(new_id)) = (preserved_condition, new_inventory_id) {
+        ctx.db
+            .item_condition()
+            .inventory_item_id()
+            .update(crate::repair::ItemCondition {
+                inventory_item_id: new_id,
+                tier_1: condition.tier_1,
+                tier_2: condition.tier_2,
+                tier_3: condition.tier_3,
+                tier_4: condition.tier_4,
+                tier_5: condition.tier_5,
+            });
+        ctx.db
+            .party_item_condition()
+            .party_inventory_item_id()
+            .delete(inventory.id);
+    }
     if inventory.quantity == quantity {
         ctx.db.party_inventory_item().id().delete(inventory.id);
     } else {
@@ -3373,6 +3501,10 @@ pub fn liquidate_party_inventory(
     for (mut entry, quantity) in staged {
         if entry.quantity == quantity {
             ctx.db.party_inventory_item().id().delete(entry.id);
+            ctx.db
+                .party_item_condition()
+                .party_inventory_item_id()
+                .delete(entry.id);
         } else {
             entry.quantity -= quantity;
             ctx.db.party_inventory_item().id().update(entry);
@@ -3424,6 +3556,7 @@ pub fn discard_inventory_items(
     for (mut item, quantity) in staged {
         if item.quantity == quantity {
             ctx.db.inventory_item().id().delete(item.id);
+            ctx.db.item_condition().inventory_item_id().delete(item.id);
         } else {
             item.quantity -= quantity;
             ctx.db.inventory_item().id().update(item);
@@ -3666,6 +3799,10 @@ pub fn finalize_merchant_trade(
                 .unwrap();
             if inventory.quantity == *quantity {
                 ctx.db.party_inventory_item().id().delete(*inventory_id);
+                ctx.db
+                    .party_item_condition()
+                    .party_inventory_item_id()
+                    .delete(*inventory_id);
             } else {
                 inventory.quantity -= quantity;
                 ctx.db.party_inventory_item().id().update(inventory);
@@ -3674,6 +3811,10 @@ pub fn finalize_merchant_trade(
             let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
             if inventory.quantity == *quantity {
                 ctx.db.inventory_item().id().delete(*inventory_id);
+                ctx.db
+                    .item_condition()
+                    .inventory_item_id()
+                    .delete(*inventory_id);
             } else {
                 inventory.quantity -= quantity;
                 ctx.db.inventory_item().id().update(inventory);
@@ -3688,26 +3829,28 @@ pub fn finalize_merchant_trade(
         }
         // Never add purchases to an equipped stack. An equipped item must stay
         // independently sellable from an otherwise identical spare item.
-        if let Some(mut stack) = ctx
-            .db
-            .inventory_item()
-            .character_and_item_id()
-            .filter((character_id, item_id))
-            .find(|stack| {
-                !equip
-                    .as_ref()
-                    .is_some_and(|equip| equip.is_equiped(stack.id).is_some())
-            })
+        let durable = ctx.db.item().id().find(item_id).is_some_and(|definition| {
+            matches!(
+                definition.kind,
+                crate::ItemKind::Weapon | crate::ItemKind::Armor | crate::ItemKind::Shield
+            )
+        });
+        if !durable
+            && let Some(mut stack) = ctx
+                .db
+                .inventory_item()
+                .character_and_item_id()
+                .filter((character_id, item_id))
+                .find(|stack| {
+                    !equip
+                        .as_ref()
+                        .is_some_and(|equip| equip.is_equiped(stack.id).is_some())
+                })
         {
             stack.quantity = stack.quantity.saturating_add(*quantity);
             ctx.db.inventory_item().id().update(stack);
         } else {
-            ctx.db.inventory_item().insert(InventoryItem {
-                id: 0,
-                character_id,
-                item_id: item_id.clone(),
-                quantity: *quantity,
-            });
+            crate::add_inventory_item(ctx, character_id, item_id, *quantity);
         }
     }
     let net = proceeds as i64 - cost as i64;
@@ -5233,6 +5376,38 @@ pub fn autoresolve_quest(
     let outcome = resolve_battle(allies, enemies, seed);
     record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
 
+    // Tactical exchanges remain transient; condition crosses the boundary only
+    // here, alongside wounds and ammunition in the final autoresolve result.
+    for exchange in &outcome.log {
+        if let Some(id) = exchange.weapon_inventory_item_id {
+            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+        }
+        if let Some(id) = exchange.defender_contact_item_id {
+            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+        }
+        if exchange.armor_contact && exchange.contact_stress > 0.0 {
+            if let Some(equip) = ctx
+                .db
+                .character_equip()
+                .character_id()
+                .find(exchange.defender_id)
+            {
+                let armor_id = match exchange.body_part {
+                    BodyPart::LeftArm => equip.left_arm_armor_id,
+                    BodyPart::RightArm => equip.right_arm_armor_id,
+                    BodyPart::LeftLeg => equip.left_leg_armor_id,
+                    BodyPart::RightLeg => equip.right_leg_armor_id,
+                    BodyPart::Chest => equip.chest_armor_id,
+                    BodyPart::Stomach => equip.stomach_armor_id,
+                    BodyPart::Head => equip.head_armor_id,
+                };
+                if let Some(id) = armor_id {
+                    crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+                }
+            }
+        }
+    }
+
     for member in &outcome.allies {
         consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
         let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member.id) else {
@@ -5438,6 +5613,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     for settlement_id in settlement_ids {
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
+        crate::repair::ensure_settlement_smith(ctx, &settlement_id);
     }
 
     Ok(())

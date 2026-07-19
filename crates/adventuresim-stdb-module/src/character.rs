@@ -4,6 +4,8 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item, enter_mission, inventory_item,
+    item::item,
+    repair::item_condition,
     strategic::{party, settlement},
     time::character_time,
 };
@@ -204,6 +206,7 @@ pub struct CharacterSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 /// [`Character`] limbs
@@ -339,6 +342,88 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     limbs.stomach_health = 0.70;
     ctx.db.character_limbs().character_id().update(limbs);
 
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(DAMAGED_CHARACTER_ID)
+        .ok_or_else(|| "Damaged demo character is missing equipment data".to_string())?;
+
+    // Exercise field, settlement, and beyond-smith repair states across both
+    // specialist screens. Equipped pieces make the durability column useful,
+    // while the two spares also exercise the combined sell/repair row actions.
+    for (inventory_item_id, bins) in [
+        (equip.left_hand_item_id, [0.20, 0.0, 0.0, 0.0, 0.0]),
+        (equip.right_hand_item_id, [0.08, 0.17, 0.0, 0.0, 0.0]),
+        (equip.left_arm_armor_id, [0.18, 0.0, 0.0, 0.0, 0.0]),
+        (equip.right_arm_armor_id, [0.0, 0.10, 0.10, 0.0, 0.0]),
+        (equip.left_leg_armor_id, [0.10, 0.0, 0.08, 0.0, 0.0]),
+        (equip.right_leg_armor_id, [0.0, 0.0, 0.0, 0.12, 0.08]),
+        (equip.head_armor_id, [0.0, 0.0, 0.15, 0.05, 0.0]),
+        (equip.chest_armor_id, [0.05, 0.10, 0.08, 0.07, 0.0]),
+        (equip.stomach_armor_id, [0.0, 0.14, 0.0, 0.0, 0.0]),
+    ] {
+        if let Some(inventory_item_id) = inventory_item_id {
+            set_demo_item_damage(ctx, inventory_item_id, bins)?;
+        }
+    }
+
+    for (item_id, bins) in [
+        ("arming_sword", [0.10, 0.08, 0.12, 0.05, 0.0]),
+        ("brigandine", [0.06, 0.10, 0.08, 0.08, 0.04]),
+    ] {
+        let inventory_item_id = ctx
+            .db
+            .inventory_item()
+            .character_id()
+            .filter(DAMAGED_CHARACTER_ID)
+            .find(|inventory| inventory.item_id == item_id)
+            .map(|inventory| inventory.id)
+            .or_else(|| add_inventory_item(ctx, DAMAGED_CHARACTER_ID, item_id, 1))
+            .ok_or_else(|| format!("Failed to add {item_id} to damaged demo inventory"))?;
+        set_demo_item_damage(ctx, inventory_item_id, bins)?;
+    }
+
+    Ok(())
+}
+
+fn set_demo_item_damage(
+    ctx: &ReducerContext,
+    inventory_item_id: u64,
+    bins: [f32; 5],
+) -> Result<(), String> {
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or_else(|| format!("Damaged demo item {inventory_item_id} is missing"))?;
+    let quality = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .map_or(1, |definition| definition.quality.clamp(1, 5));
+    let bins = adventuresim_core::durability::DamageBins(bins)
+        .capped_to_quality(quality)
+        .0;
+    let mut condition = ctx
+        .db
+        .item_condition()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .ok_or_else(|| format!("Damaged demo item {inventory_item_id} has no condition row"))?;
+    [
+        condition.tier_1,
+        condition.tier_2,
+        condition.tier_3,
+        condition.tier_4,
+        condition.tier_5,
+    ] = bins;
+    ctx.db
+        .item_condition()
+        .inventory_item_id()
+        .update(condition);
     Ok(())
 }
 
@@ -409,6 +494,7 @@ fn insert_character_with_origin(
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
         surgeon_hours: 1000.0,
+        smithing_hours: 1000.0,
     });
     crate::time::initialize_character_time(ctx, id)?;
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
@@ -486,16 +572,27 @@ pub fn equip_item(
     destination: ItemSlot,
 ) -> Result<(), String> {
     require_living_character(ctx, character_id)?;
-    if ctx
+    let inventory = ctx
         .db
         .inventory_item()
         .character_and_id()
         .filter((character_id, inventory_item_id))
         .next()
-        .is_none()
-    {
-        return Err(format!(
+        .ok_or_else(|| {
+            format!(
             "Can't equip item: InventoryItem@{inventory_item_id} doesn't exist for Character@{character_id}"
+            )
+        })?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .ok_or_else(|| format!("Can't equip unknown item {}", inventory.item_id))?;
+    if destination != ItemSlot::None && !item_slot_accepts(definition.slot, destination) {
+        return Err(format!(
+            "Can't equip {} in {:?}; its equipment slot is {:?}",
+            inventory.item_id, destination, definition.slot
         ));
     }
 
@@ -536,11 +633,29 @@ pub fn equip_item(
         ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
         ItemSlot::Chest => equip.chest_armor_id = Some(inventory_item_id),
         ItemSlot::Stomach => equip.stomach_armor_id = Some(inventory_item_id),
-        ItemSlot::None => {}
+        ItemSlot::None => crate::repair::unequip(&mut equip, inventory_item_id),
     }
 
     ctx.db.character_equip().character_id().update(equip);
     Ok(())
+}
+
+fn item_slot_accepts(catalog_slot: ItemSlot, destination: ItemSlot) -> bool {
+    match catalog_slot {
+        ItemSlot::AnyHolding => matches!(
+            destination,
+            ItemSlot::AnyHolding | ItemSlot::LeftHolding | ItemSlot::RightHolding
+        ),
+        ItemSlot::AnyArm => matches!(
+            destination,
+            ItemSlot::AnyArm | ItemSlot::LeftArm | ItemSlot::RightArm
+        ),
+        ItemSlot::AnyLeg => matches!(
+            destination,
+            ItemSlot::AnyLeg | ItemSlot::LeftLeg | ItemSlot::RightLeg
+        ),
+        slot => slot == destination,
+    }
 }
 
 #[reducer]

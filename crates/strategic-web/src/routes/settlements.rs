@@ -3,7 +3,7 @@
 use adventuresim_core::prelude::{
     ProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
     STRATEGIC_PROVISION_BUFFER_PERCENT, STRATEGIC_TRAVEL_KCAL_PER_DAY,
-    STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+    STRATEGIC_TRAVEL_WATER_ML_PER_DAY, Skill,
 };
 use axum::{
     Form, Json, Router,
@@ -30,14 +30,16 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemDefinition, Party,
+    CharacterTime, CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemSlot, Party,
     PartyInventoryItem, PartyJourney, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, Settlement,
-    SettlementAlias, SettlementDescription, TravelEdge,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    TravelEdge,
 };
 use crate::templates::settlement::{
-    LocationKind, LocationView, MerchantShop, RestSummary, camp_page, inn_page,
-    live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
+    ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, camp_page,
+    inn_page, live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_stats_page, religion_page, rest_result_page,
     settlement_map_page, settlement_overview_page,
 };
@@ -103,6 +105,7 @@ pub fn routes() -> Router<AppState> {
             post(liquidate_party_assets),
         )
         .route("/api/inventory-target", post(set_inventory_target))
+        .route("/api/equipment", post(set_equipment))
         .route(
             "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
@@ -130,11 +133,123 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/settlements/{id}/weapons", get(weapons))
         .route("/settlements/{id}/armor", get(armor))
+        .route("/settlements/{id}/{shop}/repair", post(submit_repair))
+        .route(
+            "/settlements/{id}/{shop}/repair-all",
+            post(submit_all_repairs),
+        )
+        .route(
+            "/settlements/{id}/{shop}/repairs/{order_id}/retrieve",
+            post(retrieve_repair),
+        )
+        .route(
+            "/settlements/{id}/{shop}/repairs/retrieve",
+            post(retrieve_repairs),
+        )
         .route("/settlements/{id}/clothing", get(clothing))
         .route("/settlements/{id}/inn", get(inn))
         .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
+}
+
+#[derive(Deserialize)]
+struct RepairItemForm {
+    inventory_item_id: u64,
+}
+
+async fn submit_repair(
+    State(state): State<AppState>,
+    Path((id, shop)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<RepairItemForm>,
+) -> Redirect {
+    if matches!(shop.as_str(), "weapons" | "armor") {
+        if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+        {
+            let _ = state
+                .db
+                .call(
+                    "submit_item_for_repair",
+                    &[
+                        json!(character.id),
+                        json!(id),
+                        json!(form.inventory_item_id),
+                    ],
+                )
+                .await;
+        }
+    }
+    Redirect::to(&format!("/settlements/{id}/{shop}"))
+}
+
+async fn submit_all_repairs(
+    State(state): State<AppState>,
+    Path((id, shop)): Path<(String, String)>,
+    session: Session,
+) -> Redirect {
+    if matches!(shop.as_str(), "weapons" | "armor") {
+        if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+        {
+            let _ = state
+                .db
+                .call(
+                    "submit_all_repairable_items",
+                    &[json!(character.id), json!(id), json!(shop == "armor")],
+                )
+                .await;
+        }
+    }
+    Redirect::to(&format!("/settlements/{id}/{shop}"))
+}
+
+async fn retrieve_repair(
+    State(state): State<AppState>,
+    Path((id, shop, order_id)): Path<(String, String, u64)>,
+    session: Session,
+) -> Redirect {
+    if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
+        let _ = state
+            .db
+            .call(
+                "retrieve_repaired_item",
+                &[json!(character.id), json!(order_id)],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{id}/{shop}"))
+}
+
+#[derive(Deserialize)]
+struct RetrieveRepairsForm {
+    item_id: Option<String>,
+    limit: u32,
+}
+
+async fn retrieve_repairs(
+    State(state): State<AppState>,
+    Path((id, shop)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<RetrieveRepairsForm>,
+) -> Redirect {
+    if matches!(shop.as_str(), "weapons" | "armor")
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    {
+        let _ = state
+            .db
+            .call(
+                "retrieve_repaired_items",
+                &[
+                    json!(character.id),
+                    json!(id),
+                    json!(shop == "armor"),
+                    json!(form.item_id),
+                    json!(form.limit),
+                ],
+            )
+            .await;
+    }
+    Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
 
 async fn show_settlement(Path(id): Path<String>) -> Redirect {
@@ -1193,6 +1308,28 @@ async fn party_personal(
         .await
         .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
+    let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
+    let settlement = if location.kind == LocationKind::Settlement {
+        state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(&location.id)
+            ))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let activity_preview = ActivityPreviewRates::from_character(
+        attributes.first(),
+        skills.first(),
+        limbs.first(),
+        capability.as_ref(),
+        settlement.as_ref(),
+        stats.as_ref(),
+    );
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -1225,6 +1362,7 @@ async fn party_personal(
             &morale_sources,
             religion.as_deref(),
             schedule.first(),
+            activity_preview,
             religious_demand.as_ref(),
             notoriety,
             personality.as_ref(),
@@ -1272,25 +1410,11 @@ struct TrainingScheduleForm {
     stealth_minutes: u16,
     balance_minutes: u16,
     surgeon_minutes: u16,
+    smithing_minutes: u16,
     labor_minutes: u16,
     prayer_minutes: u16,
     thievery_minutes: u16,
     raiding_minutes: u16,
-    travel_melee_minutes: u16,
-    travel_dodge_minutes: u16,
-    travel_block_minutes: u16,
-    travel_ranged_minutes: u16,
-    travel_will_minutes: u16,
-    travel_charisma_minutes: u16,
-    travel_medicine_minutes: u16,
-    travel_faith_minutes: u16,
-    travel_stealth_minutes: u16,
-    travel_balance_minutes: u16,
-    travel_surgeon_minutes: u16,
-    travel_labor_minutes: u16,
-    travel_prayer_minutes: u16,
-    travel_thievery_minutes: u16,
-    travel_raiding_minutes: u16,
 }
 
 async fn update_training_schedule(
@@ -1306,36 +1430,25 @@ async fn update_training_schedule(
                 "update_training_schedule",
                 &[
                     json!(character_id),
-                    json!(form.melee_minutes),
-                    json!(form.dodge_minutes),
-                    json!(form.block_minutes),
-                    json!(form.ranged_minutes),
-                    json!(form.will_minutes),
-                    json!(form.charisma_minutes),
-                    json!(form.medicine_minutes),
-                    json!(form.faith_minutes),
-                    json!(form.stealth_minutes),
-                    json!(form.balance_minutes),
-                    json!(form.surgeon_minutes),
-                    json!(form.labor_minutes),
-                    json!(form.prayer_minutes),
-                    json!(form.thievery_minutes),
-                    json!(form.raiding_minutes),
-                    json!(form.travel_melee_minutes),
-                    json!(form.travel_dodge_minutes),
-                    json!(form.travel_block_minutes),
-                    json!(form.travel_ranged_minutes),
-                    json!(form.travel_will_minutes),
-                    json!(form.travel_charisma_minutes),
-                    json!(form.travel_medicine_minutes),
-                    json!(form.travel_faith_minutes),
-                    json!(form.travel_stealth_minutes),
-                    json!(form.travel_balance_minutes),
-                    json!(form.travel_surgeon_minutes),
-                    json!(form.travel_labor_minutes),
-                    json!(form.travel_prayer_minutes),
-                    json!(form.travel_thievery_minutes),
-                    json!(form.travel_raiding_minutes),
+                    json!(ScheduleAllocation {
+                        melee_minutes: form.melee_minutes,
+                        dodge_minutes: form.dodge_minutes,
+                        block_minutes: form.block_minutes,
+                        ranged_minutes: form.ranged_minutes,
+                        will_minutes: form.will_minutes,
+                        charisma_minutes: form.charisma_minutes,
+                        medicine_minutes: form.medicine_minutes,
+                        faith_minutes: form.faith_minutes,
+                        stealth_minutes: form.stealth_minutes,
+                        balance_minutes: form.balance_minutes,
+                        surgeon_minutes: form.surgeon_minutes,
+                        smithing_minutes: form.smithing_minutes,
+                        labor_minutes: form.labor_minutes,
+                        prayer_minutes: form.prayer_minutes,
+                        thievery_minutes: form.thievery_minutes,
+                        raiding_minutes: form.raiding_minutes,
+                    }),
+                    json!(ScheduleAllocation::default()),
                 ],
             )
             .await;
@@ -1582,6 +1695,88 @@ async fn set_inventory_target(
             (axum::http::StatusCode::BAD_REQUEST, "Could not save target")
         }
     }
+}
+
+#[derive(Deserialize)]
+struct EquipmentForm {
+    inventory_item_id: u64,
+    equipped: bool,
+}
+
+async fn set_equipment(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<EquipmentForm>,
+) -> impl IntoResponse {
+    let Some(character_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character");
+    };
+    let inventory: Option<InventoryItem> = match state
+        .db
+        .query_one(&format!(
+            "SELECT * FROM inventory_item WHERE id = {} AND character_id = {character_id}",
+            form.inventory_item_id
+        ))
+        .await
+    {
+        Ok(inventory) => inventory,
+        Err(error) => {
+            tracing::warn!(%error, character_id, "failed to load equipment inventory row");
+            return (StatusCode::SERVICE_UNAVAILABLE, "Inventory is unavailable");
+        }
+    };
+    let Some(inventory) = inventory else {
+        return (StatusCode::NOT_FOUND, "Item is not in this inventory");
+    };
+    let definition: Option<ItemDefinition> = match state
+        .db
+        .query_one(&format!(
+            "SELECT * FROM item WHERE id = {}",
+            sql_string_literal(&inventory.item_id)
+        ))
+        .await
+    {
+        Ok(definition) => definition,
+        Err(error) => {
+            tracing::warn!(%error, character_id, "failed to load equipment definition");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Equipment catalog is unavailable",
+            );
+        }
+    };
+    let Some(definition) = definition else {
+        return (StatusCode::NOT_FOUND, "Item definition is missing");
+    };
+    let destination = if form.equipped {
+        definition.slot
+    } else {
+        ItemSlot::None
+    };
+    if form.equipped && destination == ItemSlot::None {
+        return (StatusCode::BAD_REQUEST, "This item cannot be equipped");
+    }
+    if let Err(error) = state
+        .db
+        .call(
+            "equip_item",
+            &[
+                json!(character_id),
+                json!(form.inventory_item_id),
+                destination.sats_json(),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(%error, character_id, "failed to update equipment");
+        return (StatusCode::BAD_REQUEST, "Could not update equipment");
+    }
+    for reducer in ["refresh_capabilities", "refresh_strategic_condition"] {
+        if let Err(error) = state.db.call(reducer, &[json!(character_id)]).await {
+            tracing::warn!(%error, character_id, reducer, "failed to refresh equipment projection");
+        }
+    }
+    (StatusCode::NO_CONTENT, "")
 }
 
 async fn deposit_party_inventory(
@@ -2054,6 +2249,17 @@ async fn inn(
         }
         None => None,
     };
+    let (field_repair_minutes, smith_wait_minutes) = match active_character.as_ref() {
+        Some((character, inventory)) => {
+            equipment_rest_recommendation(&state, character.id, &id, inventory).await
+        }
+        None => (0, 0),
+    };
+    let items = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         inn_page(
             settlement,
@@ -2061,10 +2267,13 @@ async fn inn(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &items,
             &party_members,
             limbs.as_ref(),
             stats.as_ref(),
             condition.as_ref(),
+            field_repair_minutes,
+            smith_wait_minutes,
             logged_in_as.as_deref(),
             session.theme(),
         )
@@ -2160,6 +2369,11 @@ async fn rest(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let items = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         rest_result_page(
             settlement,
@@ -2167,6 +2381,7 @@ async fn rest(
             active_character
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
+            &items,
             &party_members,
             logged_in_as.as_deref(),
             session.theme(),
@@ -2267,6 +2482,7 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
         ("Surgeon", before.surgeon_hours, after.surgeon_hours),
+        ("Smithing", before.smithing_hours, after.smithing_hours),
     ]
     .into_iter()
     .filter_map(|(name, before, after)| {
@@ -2486,10 +2702,13 @@ type ServiceRenderer = fn(
     &Settlement,
     Option<&Character>,
     &[InventoryItem],
+    &[ItemDefinition],
     &[Character],
     Option<&CharacterLimbs>,
     Option<&CharacterStats>,
     Option<&CharacterCondition>,
+    u64,
+    u64,
     Option<&str>,
     &str,
 ) -> maud::Markup;
@@ -2500,7 +2719,8 @@ async fn merchant_shop(
     session: Session,
     shop: MerchantShop,
 ) -> Html<String> {
-    let settlement_sql = format!("SELECT * FROM settlement WHERE id = '{}'", id);
+    let settlement_literal = sql_string_literal(&id);
+    let settlement_sql = format!("SELECT * FROM settlement WHERE id = {settlement_literal}");
     let (settlements, active_character) = tokio::join!(
         state.db.query::<Settlement>(&settlement_sql),
         get_active_character(&state, session.character_id_u64()),
@@ -2530,11 +2750,26 @@ async fn merchant_shop(
         "SELECT * FROM character_equip WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, equip, trade_context) = tokio::join!(
+    let condition_sql = format!("SELECT * FROM item_condition");
+    let smith_sql =
+        format!("SELECT * FROM settlement_smith WHERE settlement_id = {settlement_literal}");
+    let order_sql = format!(
+        "SELECT * FROM repair_order WHERE owner_character_id = {} AND settlement_id = {settlement_literal}",
+        character.id
+    );
+    let time_sql = format!(
+        "SELECT * FROM character_time WHERE character_id = {}",
+        character.id
+    );
+    let (party_members, items, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state.db.query::<CharacterEquip>(&equip_sql),
         inventory_trade_context(&state, character),
+        state.db.query::<ItemCondition>(&condition_sql),
+        state.db.query::<SettlementSmith>(&smith_sql),
+        state.db.query::<RepairOrder>(&order_sql),
+        state.db.query::<CharacterTime>(&time_sql),
     );
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
@@ -2552,6 +2787,13 @@ async fn merchant_shop(
             &pooled,
             session.theme(),
             shop,
+            &conditions.unwrap_or_default(),
+            smiths.unwrap_or_default().first(),
+            &orders.unwrap_or_default(),
+            times
+                .unwrap_or_default()
+                .first()
+                .map_or(0, |time| time.minutes),
         )
         .into_string(),
     )
@@ -2652,11 +2894,21 @@ async fn render_service_page(
             None => None,
         }
     };
-    let (party_members, limbs, stats, condition) = tokio::join!(
+    let equipment_lookup = async {
+        match active_character.as_ref() {
+            Some((character, inventory)) => {
+                equipment_rest_recommendation(&state, character.id, &id, inventory).await
+            }
+            None => (0, 0),
+        }
+    };
+    let (party_members, items, limbs, stats, condition, equipment_recovery) = tokio::join!(
         get_active_party_members(&state, active_character_ref),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
         limbs_lookup,
         stats_lookup,
         condition_lookup,
+        equipment_lookup,
     );
     let logged_in_as = active_character
         .as_ref()
@@ -2670,15 +2922,65 @@ async fn render_service_page(
             settlement,
             active_character.as_ref().map(|(character, _)| character),
             &inventory,
+            &items.unwrap_or_default(),
             &party_members,
             limbs.as_ref(),
             stats.as_ref(),
             condition.as_ref(),
+            equipment_recovery.0,
+            equipment_recovery.1,
             logged_in_as.as_deref(),
             session.theme(),
         )
         .into_string(),
     )
+}
+
+async fn equipment_rest_recommendation(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+    inventory: &[InventoryItem],
+) -> (u64, u64) {
+    let skills_sql = format!("SELECT * FROM character_skills WHERE character_id = {character_id}");
+    let settlement_literal = sql_string_literal(settlement_id);
+    let orders_sql = format!(
+        "SELECT * FROM repair_order WHERE owner_character_id = {character_id} AND settlement_id = {settlement_literal}"
+    );
+    let time_sql = format!("SELECT * FROM character_time WHERE character_id = {character_id}");
+    let (conditions, skills, orders, times) = tokio::join!(
+        state
+            .db
+            .query::<ItemCondition>("SELECT * FROM item_condition"),
+        state.db.query::<CharacterSkills>(&skills_sql),
+        state.db.query::<RepairOrder>(&orders_sql),
+        state.db.query::<CharacterTime>(&time_sql),
+    );
+    let skill = skills
+        .unwrap_or_default()
+        .first()
+        .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
+        .unwrap_or(0)
+        .min(2);
+    let owned: std::collections::HashSet<u64> = inventory.iter().map(|item| item.id).collect();
+    let yellow: f32 = conditions
+        .unwrap_or_default()
+        .iter()
+        .filter(|condition| owned.contains(&condition.inventory_item_id))
+        .map(|condition| condition.bins().iter().take(skill as usize).sum::<f32>())
+        .sum();
+    let field_minutes = (yellow * 2_880.0).ceil() as u64;
+    let now = times
+        .unwrap_or_default()
+        .first()
+        .map_or(0, |time| time.minutes);
+    let smith_wait = orders
+        .unwrap_or_default()
+        .iter()
+        .map(|order| order.ready_at_minutes.saturating_sub(now))
+        .max()
+        .unwrap_or(0);
+    (field_minutes, smith_wait)
 }
 
 async fn get_active_character(

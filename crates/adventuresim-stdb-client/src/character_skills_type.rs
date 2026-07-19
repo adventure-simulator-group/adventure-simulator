@@ -19,6 +19,7 @@ pub struct CharacterSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub surgeon_hours: f32,
+    pub smithing_hours: f32,
 }
 
 impl __sdk::InModule for CharacterSkills {
@@ -41,6 +42,7 @@ pub struct CharacterSkillsCols {
     pub stealth_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub balance_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub surgeon_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub smithing_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterSkills {
@@ -59,6 +61,7 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
             balance_hours: __sdk::__query_builder::Col::new(table_name, "balance_hours"),
             surgeon_hours: __sdk::__query_builder::Col::new(table_name, "surgeon_hours"),
+            smithing_hours: __sdk::__query_builder::Col::new(table_name, "smithing_hours"),
         }
     }
 }

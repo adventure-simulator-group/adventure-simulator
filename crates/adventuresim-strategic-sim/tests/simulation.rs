@@ -191,6 +191,7 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
         surgeon: MAX_INITIAL_SKILL_HOURS,
+        smithing: MAX_INITIAL_SKILL_HOURS,
     };
     let report = run_profiles(config(88, 1, MAX_DAYS), vec![profile]).unwrap();
     assert!(report.metrics[0].skill_hours.is_finite());

@@ -131,18 +131,19 @@ fn page_shell(
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=viewport-grid-1";
                 link rel="stylesheet" href="/static/css/components.css?v=map-quest-status-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=death-leadership-6";
-                link rel="stylesheet" href="/static/css/utilities.css?v=typed-frontend-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=schedule-save-status-1";
+                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-dynamic-transfer-2";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-1" {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
-                    script src="/static/live-regions.js?v=live-regions-2" defer {}
+                    script src="/static/live-regions.js?v=schedule-pending-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
-                    script src="/static/party-trade.js?v=live-control-init-1" {}
+                    script src="/static/party-trade.js?v=inventory-dynamic-transfer-2" {}
+                    script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=unified-chat-2" defer {}

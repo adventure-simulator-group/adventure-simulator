@@ -131,6 +131,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             stealth: initial(&mut rng),
             balance: initial(&mut rng),
             surgeon: initial(&mut rng),
+            smithing: initial(&mut rng),
         },
         schedule,
         preferred_activity,

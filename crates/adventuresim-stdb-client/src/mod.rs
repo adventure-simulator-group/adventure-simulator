@@ -18,6 +18,7 @@ pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backfill_character_deaths_and_leadership_reducer;
+pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
@@ -165,6 +166,8 @@ pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
+pub mod item_condition_table;
+pub mod item_condition_type;
 pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
@@ -206,6 +209,8 @@ pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
 pub mod party_inventory_state_table;
 pub mod party_inventory_state_type;
+pub mod party_item_condition_table;
+pub mod party_item_condition_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
 pub mod party_journey_table;
@@ -244,6 +249,8 @@ pub mod religious_demand_table;
 pub mod religious_demand_type;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
+pub mod repair_order_table;
+pub mod repair_order_type;
 pub mod request_general_party_join_reducer;
 pub mod request_party_action_reducer;
 pub mod request_tactical_server_for_scene_reducer;
@@ -253,6 +260,8 @@ pub mod resolve_religious_demand_reducer;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
+pub mod retrieve_repaired_item_reducer;
+pub mod retrieve_repaired_items_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
@@ -283,6 +292,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_bot_join_requests_reducer;
 pub mod seed_damaged_character_reducer;
 pub mod seed_party_companions_reducer;
+pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_world_reducer;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
@@ -299,6 +309,8 @@ pub mod settlement_description_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_religious_status_type;
+pub mod settlement_smith_table;
+pub mod settlement_smith_type;
 pub mod settlement_table;
 pub mod settlement_type;
 pub mod simulation_character_table;
@@ -320,6 +332,8 @@ pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
 pub mod strategic_incident_table;
 pub mod strategic_incident_type;
+pub mod submit_all_repairable_items_reducer;
+pub mod submit_item_for_repair_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
@@ -371,6 +385,7 @@ pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
+pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
@@ -518,6 +533,8 @@ pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
+pub use item_condition_table::*;
+pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
@@ -559,6 +576,8 @@ pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
 pub use party_inventory_state_table::*;
 pub use party_inventory_state_type::PartyInventoryState;
+pub use party_item_condition_table::*;
+pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
 pub use party_journey_table::*;
@@ -597,6 +616,8 @@ pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
 pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
+pub use repair_order_table::*;
+pub use repair_order_type::RepairOrder;
 pub use request_general_party_join_reducer::request_general_party_join;
 pub use request_party_action_reducer::request_party_action;
 pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_scene;
@@ -606,6 +627,8 @@ pub use resolve_religious_demand_reducer::resolve_religious_demand;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
+pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
+pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
@@ -636,6 +659,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
 pub use seed_damaged_character_reducer::seed_damaged_character;
 pub use seed_party_companions_reducer::seed_party_companions;
+pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_world_reducer::seed_world;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
@@ -652,6 +676,8 @@ pub use settlement_description_type::SettlementDescription;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
+pub use settlement_smith_table::*;
+pub use settlement_smith_type::SettlementSmith;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
 pub use simulation_character_table::*;
@@ -673,6 +699,8 @@ pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
 pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
+pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
+pub use submit_item_for_repair_reducer::submit_item_for_repair;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
@@ -742,6 +770,7 @@ pub enum Reducer {
         quest_id: String,
     },
     BackfillCharacterDeathsAndLeadership,
+    BackfillEquipmentConditionAndSmiths,
     BackfillItemValues,
     BackfillSoloParties,
     BeginWorldDataImport {
@@ -1013,6 +1042,17 @@ pub enum Reducer {
         requested_minutes: u64,
         at_inn: bool,
     },
+    RetrieveRepairedItem {
+        character_id: u64,
+        order_id: u64,
+    },
+    RetrieveRepairedItems {
+        character_id: u64,
+        settlement_id: String,
+        armourer: bool,
+        item_id: Option<String>,
+        limit: u32,
+    },
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
@@ -1025,6 +1065,10 @@ pub enum Reducer {
     SeedDamagedCharacter,
     SeedPartyCompanions {
         leader_id: u64,
+    },
+    SeedSimulationEquipmentDamage {
+        character_id: u64,
+        inventory_item_id: u64,
     },
     SeedWorld,
     SendLocalChatMessage {
@@ -1052,6 +1096,16 @@ pub enum Reducer {
         quest_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
+    },
+    SubmitAllRepairableItems {
+        character_id: u64,
+        settlement_id: String,
+        armourer: bool,
+    },
+    SubmitItemForRepair {
+        character_id: u64,
+        settlement_id: String,
+        inventory_item_id: u64,
     },
     SynchronizeCharacterTime {
         character_id: u64,
@@ -1097,36 +1151,8 @@ pub enum Reducer {
     },
     UpdateTrainingSchedule {
         character_id: u64,
-        melee_minutes: u16,
-        dodge_minutes: u16,
-        block_minutes: u16,
-        ranged_minutes: u16,
-        will_minutes: u16,
-        charisma_minutes: u16,
-        medicine_minutes: u16,
-        faith_minutes: u16,
-        stealth_minutes: u16,
-        balance_minutes: u16,
-        surgeon_minutes: u16,
-        labor_minutes: u16,
-        prayer_minutes: u16,
-        thievery_minutes: u16,
-        raiding_minutes: u16,
-        travel_melee_minutes: u16,
-        travel_dodge_minutes: u16,
-        travel_block_minutes: u16,
-        travel_ranged_minutes: u16,
-        travel_will_minutes: u16,
-        travel_charisma_minutes: u16,
-        travel_medicine_minutes: u16,
-        travel_faith_minutes: u16,
-        travel_stealth_minutes: u16,
-        travel_balance_minutes: u16,
-        travel_surgeon_minutes: u16,
-        travel_labor_minutes: u16,
-        travel_prayer_minutes: u16,
-        travel_thievery_minutes: u16,
-        travel_raiding_minutes: u16,
+        downtime: ScheduleAllocation,
+        travel: ScheduleAllocation,
     },
     VoteForPartyLeader {
         voter_id: u64,
@@ -1153,6 +1179,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
+            }
+            Reducer::BackfillEquipmentConditionAndSmiths => {
+                "backfill_equipment_condition_and_smiths"
             }
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
@@ -1215,16 +1244,21 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtCamp { .. } => "rest_at_camp",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
+            Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
+            Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
             Reducer::SeedDamagedCharacter => "seed_damaged_character",
             Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
+            Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedWorld => "seed_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
+            Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
+            Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
@@ -1280,6 +1314,8 @@ impl __sdk::Reducer for Reducer {
                 quest_id: quest_id.clone(),
 }),
             Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
+                }),
+Reducer::BackfillEquipmentConditionAndSmiths => __sats::bsatn::to_vec(&backfill_equipment_condition_and_smiths_reducer::BackfillEquipmentConditionAndSmithsArgs {
                 }),
 Reducer::BackfillItemValues => __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {
                 }),
@@ -1765,6 +1801,26 @@ Reducer::CancelMissionRequest{
                 requested_minutes: requested_minutes.clone(),
                 at_inn: at_inn.clone(),
 }),
+            Reducer::RetrieveRepairedItem{
+                character_id,
+                order_id,
+}             => __sats::bsatn::to_vec(&retrieve_repaired_item_reducer::RetrieveRepairedItemArgs {
+                character_id: character_id.clone(),
+                order_id: order_id.clone(),
+}),
+            Reducer::RetrieveRepairedItems{
+                character_id,
+                settlement_id,
+                armourer,
+                item_id,
+                limit,
+}             => __sats::bsatn::to_vec(&retrieve_repaired_items_reducer::RetrieveRepairedItemsArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                armourer: armourer.clone(),
+                item_id: item_id.clone(),
+                limit: limit.clone(),
+}),
             Reducer::SaveRecruitmentRole{
                 owner_id,
                 name,
@@ -1787,6 +1843,13 @@ Reducer::SeedPartyCompanions{
                 leader_id,
 }             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
                 leader_id: leader_id.clone(),
+}),
+            Reducer::SeedSimulationEquipmentDamage{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SeedWorld => __sats::bsatn::to_vec(&seed_world_reducer::SeedWorldArgs {
                 }),
@@ -1836,6 +1899,24 @@ Reducer::SendLocalChatMessage{
                 quest_id: quest_id.clone(),
                 loot_item_ids: loot_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::SubmitAllRepairableItems{
+                character_id,
+                settlement_id,
+                armourer,
+}             => __sats::bsatn::to_vec(&submit_all_repairable_items_reducer::SubmitAllRepairableItemsArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                armourer: armourer.clone(),
+}),
+            Reducer::SubmitItemForRepair{
+                character_id,
+                settlement_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&submit_item_for_repair_reducer::SubmitItemForRepairArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{
                 character_id,
@@ -1915,68 +1996,12 @@ Reducer::SendLocalChatMessage{
 }),
             Reducer::UpdateTrainingSchedule{
                 character_id,
-                melee_minutes,
-                dodge_minutes,
-                block_minutes,
-                ranged_minutes,
-                will_minutes,
-                charisma_minutes,
-                medicine_minutes,
-                faith_minutes,
-                stealth_minutes,
-                balance_minutes,
-                surgeon_minutes,
-                labor_minutes,
-                prayer_minutes,
-                thievery_minutes,
-                raiding_minutes,
-                travel_melee_minutes,
-                travel_dodge_minutes,
-                travel_block_minutes,
-                travel_ranged_minutes,
-                travel_will_minutes,
-                travel_charisma_minutes,
-                travel_medicine_minutes,
-                travel_faith_minutes,
-                travel_stealth_minutes,
-                travel_balance_minutes,
-                travel_surgeon_minutes,
-                travel_labor_minutes,
-                travel_prayer_minutes,
-                travel_thievery_minutes,
-                travel_raiding_minutes,
+                downtime,
+                travel,
 }             => __sats::bsatn::to_vec(&update_training_schedule_reducer::UpdateTrainingScheduleArgs {
                 character_id: character_id.clone(),
-                melee_minutes: melee_minutes.clone(),
-                dodge_minutes: dodge_minutes.clone(),
-                block_minutes: block_minutes.clone(),
-                ranged_minutes: ranged_minutes.clone(),
-                will_minutes: will_minutes.clone(),
-                charisma_minutes: charisma_minutes.clone(),
-                medicine_minutes: medicine_minutes.clone(),
-                faith_minutes: faith_minutes.clone(),
-                stealth_minutes: stealth_minutes.clone(),
-                balance_minutes: balance_minutes.clone(),
-                surgeon_minutes: surgeon_minutes.clone(),
-                labor_minutes: labor_minutes.clone(),
-                prayer_minutes: prayer_minutes.clone(),
-                thievery_minutes: thievery_minutes.clone(),
-                raiding_minutes: raiding_minutes.clone(),
-                travel_melee_minutes: travel_melee_minutes.clone(),
-                travel_dodge_minutes: travel_dodge_minutes.clone(),
-                travel_block_minutes: travel_block_minutes.clone(),
-                travel_ranged_minutes: travel_ranged_minutes.clone(),
-                travel_will_minutes: travel_will_minutes.clone(),
-                travel_charisma_minutes: travel_charisma_minutes.clone(),
-                travel_medicine_minutes: travel_medicine_minutes.clone(),
-                travel_faith_minutes: travel_faith_minutes.clone(),
-                travel_stealth_minutes: travel_stealth_minutes.clone(),
-                travel_balance_minutes: travel_balance_minutes.clone(),
-                travel_surgeon_minutes: travel_surgeon_minutes.clone(),
-                travel_labor_minutes: travel_labor_minutes.clone(),
-                travel_prayer_minutes: travel_prayer_minutes.clone(),
-                travel_thievery_minutes: travel_thievery_minutes.clone(),
-                travel_raiding_minutes: travel_raiding_minutes.clone(),
+                downtime: downtime.clone(),
+                travel: travel.clone(),
 }),
             Reducer::VoteForPartyLeader{
                 voter_id,
@@ -2027,12 +2052,14 @@ pub struct DbUpdate {
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
+    item_condition: __sdk::TableUpdate<ItemCondition>,
     local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
     party_inventory_item: __sdk::TableUpdate<PartyInventoryItem>,
     party_inventory_state: __sdk::TableUpdate<PartyInventoryState>,
+    party_item_condition: __sdk::TableUpdate<PartyItemCondition>,
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
@@ -2042,10 +2069,12 @@ pub struct DbUpdate {
     quest: __sdk::TableUpdate<Quest>,
     quest_issuer: __sdk::TableUpdate<QuestIssuer>,
     religious_demand: __sdk::TableUpdate<ReligiousDemand>,
+    repair_order: __sdk::TableUpdate<RepairOrder>,
     saved_recruitment_role: __sdk::TableUpdate<SavedRecruitmentRole>,
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
+    settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
@@ -2135,6 +2164,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "item" => db_update
                     .item
                     .append(item_table::parse_table_update(table_update)?),
+                "item_condition" => db_update
+                    .item_condition
+                    .append(item_condition_table::parse_table_update(table_update)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(local_chat_message_table::parse_table_update(table_update)?),
@@ -2152,6 +2184,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "party_inventory_state" => db_update.party_inventory_state.append(
                     party_inventory_state_table::parse_table_update(table_update)?,
+                ),
+                "party_item_condition" => db_update.party_item_condition.append(
+                    party_item_condition_table::parse_table_update(table_update)?,
                 ),
                 "party_join_request" => db_update
                     .party_join_request
@@ -2180,6 +2215,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "religious_demand" => db_update
                     .religious_demand
                     .append(religious_demand_table::parse_table_update(table_update)?),
+                "repair_order" => db_update
+                    .repair_order
+                    .append(repair_order_table::parse_table_update(table_update)?),
                 "saved_recruitment_role" => db_update.saved_recruitment_role.append(
                     saved_recruitment_role_table::parse_table_update(table_update)?,
                 ),
@@ -2192,6 +2230,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
+                "settlement_smith" => db_update
+                    .settlement_smith
+                    .append(settlement_smith_table::parse_table_update(table_update)?),
                 "simulation_character" => db_update.simulation_character.append(
                     simulation_character_table::parse_table_update(table_update)?,
                 ),
@@ -2347,6 +2388,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.item = cache
             .apply_diff_to_table::<Item>("item", &self.item)
             .with_updates_by_pk(|row| &row.id);
+        diff.item_condition = cache
+            .apply_diff_to_table::<ItemCondition>("item_condition", &self.item_condition)
+            .with_updates_by_pk(|row| &row.inventory_item_id);
         diff.local_chat_message = cache
             .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
             .with_updates_by_pk(|row| &row.id);
@@ -2374,6 +2418,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.party_inventory_state,
             )
             .with_updates_by_pk(|row| &row.party_id);
+        diff.party_item_condition = cache
+            .apply_diff_to_table::<PartyItemCondition>(
+                "party_item_condition",
+                &self.party_item_condition,
+            )
+            .with_updates_by_pk(|row| &row.party_inventory_item_id);
         diff.party_join_request = cache
             .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
             .with_updates_by_pk(|row| &row.id);
@@ -2404,6 +2454,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.religious_demand = cache
             .apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand)
             .with_updates_by_pk(|row| &row.id);
+        diff.repair_order = cache
+            .apply_diff_to_table::<RepairOrder>("repair_order", &self.repair_order)
+            .with_updates_by_pk(|row| &row.id);
         diff.saved_recruitment_role = cache
             .apply_diff_to_table::<SavedRecruitmentRole>(
                 "saved_recruitment_role",
@@ -2422,6 +2475,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.settlement_smith = cache
+            .apply_diff_to_table::<SettlementSmith>("settlement_smith", &self.settlement_smith)
+            .with_updates_by_pk(|row| &row.settlement_id);
         diff.simulation_character = cache
             .apply_diff_to_table::<SimulationCharacter>(
                 "simulation_character",
@@ -2539,6 +2595,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "item" => db_update
                     .item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "item_condition" => db_update
+                    .item_condition
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2556,6 +2615,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_inventory_state" => db_update
                     .party_inventory_state
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_item_condition" => db_update
+                    .party_item_condition
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_join_request" => db_update
                     .party_join_request
@@ -2584,6 +2646,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "religious_demand" => db_update
                     .religious_demand
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "repair_order" => db_update
+                    .repair_order
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "saved_recruitment_role" => db_update
                     .saved_recruitment_role
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2595,6 +2660,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_description" => db_update
                     .settlement_description
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_smith" => db_update
+                    .settlement_smith
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_character" => db_update
                     .simulation_character
@@ -2708,6 +2776,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "item" => db_update
                     .item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "item_condition" => db_update
+                    .item_condition
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2725,6 +2796,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_inventory_state" => db_update
                     .party_inventory_state
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_item_condition" => db_update
+                    .party_item_condition
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_join_request" => db_update
                     .party_join_request
@@ -2753,6 +2827,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "religious_demand" => db_update
                     .religious_demand
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "repair_order" => db_update
+                    .repair_order
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "saved_recruitment_role" => db_update
                     .saved_recruitment_role
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2764,6 +2841,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_description" => db_update
                     .settlement_description
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_smith" => db_update
+                    .settlement_smith
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_character" => db_update
                     .simulation_character
@@ -2831,12 +2911,14 @@ pub struct AppliedDiff<'r> {
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
+    item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
     local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
     party_inventory_item: __sdk::TableAppliedDiff<'r, PartyInventoryItem>,
     party_inventory_state: __sdk::TableAppliedDiff<'r, PartyInventoryState>,
+    party_item_condition: __sdk::TableAppliedDiff<'r, PartyItemCondition>,
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
@@ -2846,10 +2928,12 @@ pub struct AppliedDiff<'r> {
     quest: __sdk::TableAppliedDiff<'r, Quest>,
     quest_issuer: __sdk::TableAppliedDiff<'r, QuestIssuer>,
     religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
+    repair_order: __sdk::TableAppliedDiff<'r, RepairOrder>,
     saved_recruitment_role: __sdk::TableAppliedDiff<'r, SavedRecruitmentRole>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
+    settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
@@ -2984,6 +3068,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Item>("item", &self.item, event);
+        callbacks.invoke_table_row_callbacks::<ItemCondition>(
+            "item_condition",
+            &self.item_condition,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
             "local_chat_message",
             &self.local_chat_message,
@@ -3008,6 +3097,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyInventoryState>(
             "party_inventory_state",
             &self.party_inventory_state,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyItemCondition>(
+            "party_item_condition",
+            &self.party_item_condition,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyJoinRequest>(
@@ -3047,6 +3141,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.religious_demand,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<RepairOrder>(
+            "repair_order",
+            &self.repair_order,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>(
             "saved_recruitment_role",
             &self.saved_recruitment_role,
@@ -3061,6 +3160,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementSmith>(
+            "settlement_smith",
+            &self.settlement_smith,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SimulationCharacter>(
@@ -3780,12 +3884,14 @@ impl __sdk::SpacetimeModule for RemoteModule {
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
+        item_condition_table::register_table(client_cache);
         local_chat_message_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_action_request_table::register_table(client_cache);
         party_inventory_item_table::register_table(client_cache);
         party_inventory_state_table::register_table(client_cache);
+        party_item_condition_table::register_table(client_cache);
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
@@ -3795,10 +3901,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         quest_table::register_table(client_cache);
         quest_issuer_table::register_table(client_cache);
         religious_demand_table::register_table(client_cache);
+        repair_order_table::register_table(client_cache);
         saved_recruitment_role_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
+        settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
@@ -3834,12 +3942,14 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "inventory_item",
         "inventory_quantity_target",
         "item",
+        "item_condition",
         "local_chat_message",
         "morale_event",
         "party",
         "party_action_request",
         "party_inventory_item",
         "party_inventory_state",
+        "party_item_condition",
         "party_join_request",
         "party_journey",
         "party_leader_vote",
@@ -3849,10 +3959,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "quest",
         "quest_issuer",
         "religious_demand",
+        "repair_order",
         "saved_recruitment_role",
         "settlement",
         "settlement_alias",
         "settlement_description",
+        "settlement_smith",
         "simulation_character",
         "simulation_run",
         "strategic_incident",

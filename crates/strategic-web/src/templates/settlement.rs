@@ -4,6 +4,16 @@
 //! settlement-owned information on the left, service context in the center,
 //! and the active player's party on the right.
 
+use adventuresim_core::{
+    activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    prelude::Skill,
+    strategic_schedule::{
+        BASELINE_FATIGUE_PER_DAY, DailySchedule, FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+        LABOR_FATIGUE_PER_HOUR, LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT,
+        LEISURE_MORALE_SCALE_FATIGUE, LeisureOutcome, settlement_leisure_outcome,
+    },
+    strategic_time::MINUTES_PER_DAY,
+};
 use maud::{Markup, html};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
@@ -15,8 +25,9 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, Party, PartyInventoryItem,
-    PartyJourney, Settlement, SettlementAlias, SettlementDescription, SettlementDescriptionKind,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
+    PartyInventoryItem, PartyJourney, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -24,6 +35,87 @@ pub struct LocationView {
     pub kind: LocationKind,
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ActivityPreviewRates {
+    labor_gold_per_hour: f32,
+    thievery_gold_per_hour: f32,
+    thievery_virtue_per_hour: f32,
+    raiding_gold_per_hour: f32,
+    raiding_virtue_per_hour: f32,
+    current_fatigue: f32,
+}
+
+impl ActivityPreviewRates {
+    pub fn from_character(
+        attributes: Option<&CharacterAttributes>,
+        skills: Option<&CharacterSkills>,
+        limbs: Option<&CharacterLimbs>,
+        capability: Option<&CharacterCapability>,
+        settlement: Option<&Settlement>,
+        stats: Option<&CharacterStats>,
+    ) -> Self {
+        let current_fatigue = stats.map_or(0.0, |stats| stats.calories_used.max(0.0));
+        let (Some(attributes), Some(skills), Some(limbs), Some(capability), Some(settlement)) =
+            (attributes, skills, limbs, capability, settlement)
+        else {
+            return Self {
+                current_fatigue,
+                ..Self::default()
+            };
+        };
+        let limb_health = [
+            limbs.left_arm_health,
+            limbs.right_arm_health,
+            limbs.left_leg_health,
+            limbs.right_leg_health,
+        ];
+        let strength = [
+            attributes.left_arm_strength,
+            attributes.right_arm_strength,
+            attributes.left_leg_strength,
+            attributes.right_leg_strength,
+        ]
+        .into_iter()
+        .zip(limb_health)
+        .map(|(value, health)| value * health.clamp(0.0, 1.0) * 0.25)
+        .sum::<f32>();
+        let agility = [
+            attributes.left_arm_agility,
+            attributes.right_arm_agility,
+            attributes.left_leg_agility,
+            attributes.right_leg_agility,
+        ]
+        .into_iter()
+        .zip(limb_health)
+        .map(|(value, health)| value * health.clamp(0.0, 1.0) * 0.25)
+        .sum::<f32>();
+        let usable_limbs = limb_health
+            .into_iter()
+            .map(|health| health.clamp(0.0, 1.0) * 0.25)
+            .sum::<f32>();
+        let precision = attributes.precision * usable_limbs;
+        let stealth =
+            (Skill::Stealth.training_rank(skills.stealth_hours) + agility + precision) * 0.5;
+        let endurance = attributes.endurance * limbs.chest_health.clamp(0.0, 1.0);
+        let population = settlement_population_scale(
+            settlement.population_level,
+            settlement.population_estimate,
+        );
+        let combat = capability
+            .weapon_precision
+            .max(capability.athletics)
+            .max(capability.endurance);
+        Self {
+            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 8.0,
+            thievery_gold_per_hour: population.max(0.0) * (1.0 + stealth.max(0.0)) / 8.0,
+            thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
+            raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
+            raiding_virtue_per_hour: -1.5,
+            current_fatigue,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,11 +227,11 @@ impl MerchantShop {
     fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
         match self {
             Self::General => kind != crate::spacetimedb::ItemKind::Currency,
-            Self::Weapons => kind == crate::spacetimedb::ItemKind::Weapon,
-            Self::Armor => matches!(
+            Self::Weapons => matches!(
                 kind,
-                crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield
+                crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield
             ),
+            Self::Armor => kind == crate::spacetimedb::ItemKind::Armor,
             Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
         }
     }
@@ -641,6 +733,7 @@ pub fn merchants_page(
         "Merchant stock and prices will appear here once the trade backend is available.",
         active_character,
         inventory,
+        &[],
         party_members,
         logged_in_as,
         theme,
@@ -654,10 +747,13 @@ pub fn inn_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -669,10 +765,17 @@ pub fn inn_page(
         "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
         active_character,
         inventory,
+        items,
         party_members,
         logged_in_as,
         theme,
-        rest_default_minutes(limbs, stats, condition),
+        rest_default_minutes(
+            limbs,
+            stats,
+            condition,
+            field_repair_minutes,
+            smith_wait_minutes,
+        ),
         None,
     )
 }
@@ -682,10 +785,13 @@ pub fn religion_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
     logged_in_as: Option<&str>,
     theme: &str,
 ) -> Markup {
@@ -697,10 +803,17 @@ pub fn religion_page(
         "Faith, donations, and divine services require the religion and reputation systems.",
         active_character,
         inventory,
+        items,
         party_members,
         logged_in_as,
         theme,
-        rest_default_minutes(limbs, stats, condition),
+        rest_default_minutes(
+            limbs,
+            stats,
+            condition,
+            field_repair_minutes,
+            smith_wait_minutes,
+        ),
         None,
     )
 }
@@ -755,7 +868,7 @@ pub fn party_discard_page(
             (sidebar_section("Discard", html! {
                 p class="text-muted small-copy" data-discard-empty { "Stage carried items here before discarding them." }
                 table class="trade-inventory-table" data-discard-table hidden {
-                    (trade_inventory_table_header(false))
+                    (trade_inventory_table_header(false, None))
                     tbody data-discard-list {}
                 }
             }))
@@ -791,6 +904,7 @@ pub fn party_personal_page(
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
     schedule: Option<&CharacterTrainingSchedule>,
+    activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
@@ -801,7 +915,7 @@ pub fn party_personal_page(
             (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs))
             @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action)))
+            (party_skills_rail("Your skills", skills, limbs, schedule, Some(&schedule_action), Some(activity_preview)))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
@@ -870,7 +984,7 @@ pub fn party_stats_page(
         aside class="left-sidebar" {
             (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs))
-            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None))
+            (party_skills_rail(&selected_skills_title, selected_skills, selected_limbs, None, None, None))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
@@ -927,6 +1041,7 @@ fn service_page(
     todo: &str,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
@@ -1003,6 +1118,7 @@ fn service_page(
                 (inventory_rail(
                     active_character,
                     inventory,
+                    items,
                     Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
                     matches!(service_id, "weapons" | "armor" | "clothing"),
                 ))
@@ -1010,11 +1126,12 @@ fn service_page(
                 (inventory_rail(
                     active_character,
                     inventory,
+                    items,
                     Some(("Repair", "TODO: repairs require durability, pricing, and smithing reducers")),
                     true,
                 ))
             } @else if service_id == "religion" {
-                (inventory_rail(active_character, inventory, None, false))
+                (inventory_rail(active_character, inventory, items, None, false))
             } @else {
                 (sidebar_section("Service", html! {
                     p class="text-muted small-copy" { (todo) }
@@ -1048,18 +1165,18 @@ fn party_trade_inventory_rail(
             @if inventory.is_empty() {
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
-                (trade_inventory_table(true, html! {
+                (trade_inventory_table(true, None, html! {
                     @for item in inventory {
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let target = target_quantity(recipient_targets, &item.item_id);
                             tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                 td class="inventory-item-name" {
-                                    (&item.item_id)
-                                    @if !is_equipped { span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode=(mode) aria-label=(format!("Transfer {}", item.item_id)) title="Stage items for trade" { (transfer_glyph(arrows)) } } } }
+                                    (item_name_with_quality(&item.item_id, definition))
+                                    @if !is_equipped { span class="inventory-row-actions" { button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) } } }
                                 }
                                 td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -1083,22 +1200,26 @@ fn discard_inventory_rail(
             @if inventory.is_empty() {
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
-                (trade_inventory_table(true, html! {
+                (trade_inventory_table(true, None, html! {
                     @for item in inventory {
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
                             td class="inventory-item-name" {
-                                (&item.item_id)
+                                (item_name_with_quality(&item.item_id, definition))
                                 @if !is_equipped {
                                     button type="button" class="trade-transfer trade-transfer-left"
                                         data-discard-item=(item.id) data-count=(item.qty)
+                                        data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                                        data-label-one=(format!("Discard one {}", item.item_id))
+                                        data-label-target=(format!("Discard {} down to target", item.item_id))
+                                        data-label-all=(format!("Discard all {}", item.item_id))
                                         aria-label=(format!("Discard {}", item.item_id))
-                                        title="Stage one item for discarding" {}
+                                        title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
                                 }
                             }
                             td class="inventory-count" { (item.qty) }
-                            td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; }
+                            td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1121,21 +1242,40 @@ pub fn live_merchant_shop_page(
     pooled: &[PartyInventoryItem],
     theme: &str,
     shop: MerchantShop,
+    conditions: &[crate::spacetimedb::ItemCondition],
+    smith: Option<&crate::spacetimedb::SettlementSmith>,
+    repair_orders: &[crate::spacetimedb::RepairOrder],
+    now_minutes: u64,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
+    let smith_skill = smith
+        .map(|smith| {
+            if matches!(shop, MerchantShop::Armor) {
+                smith.armourer_skill
+            } else {
+                smith.weaponsmith_skill
+            }
+        })
+        .unwrap_or(0);
     let content = html! {
-        aside class="left-sidebar" { (sidebar_section("Merchant stock", html! {
-            (trade_inventory_table(false, html! {
+        aside class="left-sidebar smith-wares-column" { (sidebar_section("Merchant stock", html! {
+            div class="smith-wares-scroll" {
+            (trade_inventory_table(false, None, html! {
                 @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let buy_price = (item.base_value.unwrap_or(1) as f32 * 1.375).ceil() as u32;
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (&item.id) (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) { td class="inventory-item-name" { (item_name_with_quality(&item.id, Some(item))) (merchant_buy_controls(&item.id, buy_price, target, 999)) } td class="inventory-count" { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
-        })) }
+            }
+        }))
+        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
+            (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
+        }
+        }
         main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(format!("/settlements/{}/merchants/offer", settlement.id)) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
@@ -1144,7 +1284,7 @@ pub fn live_merchant_shop_page(
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
-                (trade_inventory_table(true, html! {
+                (trade_inventory_table(true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor).then(|| repair_all_header(settlement, service_id)), html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -1152,15 +1292,21 @@ pub fn live_merchant_shop_page(
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
-                        td class="inventory-item-name" { (&item.item_id) @if !is_currency && !is_equipped { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.qty, target)) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { input type="checkbox" checked[is_equipped] disabled; } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
+                        @let repair_skill = smith_skill;
+                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield));
+                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
+                        @let can_sell = !is_currency && !is_equipped;
+                        td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if can_sell || service_matches { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id)) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
-                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-item-name" { (item_name_with_quality(&target.item_id, definition)) }
                             td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, false)) }
                             td class="inventory-equipped" { input type="checkbox" disabled; }
+                            td class="inventory-durability" { "—" }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1171,14 +1317,14 @@ pub fn live_merchant_shop_page(
             }
             div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
-                (trade_inventory_table(false, html! {
+                (trade_inventory_table(false, None, html! {
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
-                            td class="inventory-item-name" { (&item.item_id) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
+                            td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (sell_price) }
@@ -1187,7 +1333,7 @@ pub fn live_merchant_shop_page(
                     @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id)) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
-                            td class="inventory-item-name" { (&target.item_id) }
+                            td class="inventory-item-name" { (item_name_with_quality(&target.item_id, definition)) }
                             td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
@@ -1232,7 +1378,7 @@ pub fn party_pool_page(
                     strong { (stake) " gold" }
                 }
                 p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
-                (trade_inventory_table(false, html! {
+                (trade_inventory_table(false, None, html! {
                     @for item in pooled {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
@@ -1240,8 +1386,8 @@ pub fn party_pool_page(
                         @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
-                                (&item.item_id)
-                                span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-right" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode=(mode) data-count=(item.quantity) data-current=(current) data-target=(target) title=(if value > stake { format!("Withdraw; {} personal gold required", value - stake) } else { "Withdraw using your stake".to_string() }) aria-label=(format!("Withdraw {}", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                (item_name_with_quality(&item.item_id, definition))
+                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal gold required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
                             }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
@@ -1260,7 +1406,7 @@ pub fn party_pool_page(
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 p class="small-copy text-muted" { "Add items at their objective gold value." }
-                (trade_inventory_table(true, html! {
+                (trade_inventory_table(true, None, html! {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
@@ -1268,13 +1414,13 @@ pub fn party_pool_page(
                         @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
                         tr class="trade-inventory-row" {
                             td class="inventory-item-name" {
-                                (&item.item_id)
+                                (item_name_with_quality(&item.item_id, definition))
                                 @if !equipped {
-                                    span class="inventory-row-actions" { @for (mode, arrows) in [("one",1),("target",2),("all",3)] { button type="button" class="trade-transfer trade-transfer-left" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode=(mode) data-count=(item.qty) data-current=(current) data-target=(target) aria-label=(format!("Add {} to party inventory", item.item_id)) { (transfer_glyph(arrows)) } } }
+                                    span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) } }
                                 }
                             }
                             td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                            td class="inventory-equipped" { input type="checkbox" checked[equipped] disabled; }
+                            td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1292,9 +1438,60 @@ fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
 }
 
+fn equipment_checkbox(
+    inventory: &InventoryItem,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    equipped: bool,
+) -> Markup {
+    let equippable = definition.is_some_and(|definition| definition.slot != ItemSlot::None);
+    let label = if equipped {
+        format!("Unequip {}", inventory.item_id)
+    } else {
+        format!("Equip {}", inventory.item_id)
+    };
+    html! {
+        input type="checkbox"
+            checked[equipped]
+            disabled[!equippable]
+            data-equipment-toggle
+            data-inventory-item-id=(inventory.id)
+            aria-label=(label)
+            title=(if equippable { "Equip or unequip this item" } else { "This item cannot be equipped" });
+    }
+}
+
 fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.and_then(|item| item.base_value)
         .map_or_else(|| "—".to_owned(), |value| value.to_string())
+}
+
+pub(super) fn item_name_with_quality(
+    item_id: &str,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+) -> Markup {
+    let quality = definition
+        .filter(|item| {
+            matches!(
+                item.kind,
+                crate::spacetimedb::ItemKind::Weapon
+                    | crate::spacetimedb::ItemKind::Armor
+                    | crate::spacetimedb::ItemKind::Shield
+            )
+        })
+        .map(|item| item.quality.clamp(1, 5));
+    let label = quality.map(|quality| match quality {
+        1 => "Quality 1",
+        2 => "Quality 2",
+        3 => "Quality 3 — munition grade",
+        4 => "Quality 4 — knightly commission",
+        5 => "Quality 5 — royal or heroic commission",
+        _ => unreachable!(),
+    });
+    html! {
+        span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label] {
+            (item_id)
+        }
+    }
 }
 
 fn weight_display(weight: f32) -> String {
@@ -1305,19 +1502,23 @@ fn weight_display(weight: f32) -> String {
         .to_owned()
 }
 
-fn trade_inventory_table(show_equipped: bool, rows: Markup) -> Markup {
+fn trade_inventory_table(
+    show_equipped: bool,
+    condition_header: Option<Markup>,
+    rows: Markup,
+) -> Markup {
+    let show_condition = condition_header.is_some();
     html! {
-        table class="trade-inventory-table" {
-            @if show_equipped {
-                colgroup {
-                    col class="inventory-column-item";
-                    col class="inventory-column-count";
-                    col class="inventory-column-equipped";
-                    col class="inventory-column-weight";
-                    col class="inventory-column-gold";
-                }
+        table class=(if show_condition { "trade-inventory-table smith-player-inventory-table" } else { "trade-inventory-table" }) {
+            colgroup {
+                col class="inventory-column-item";
+                col class="inventory-column-count";
+                @if show_equipped { col class="inventory-column-equipped"; }
+                @if show_condition { col class="inventory-column-durability"; }
+                col class="inventory-column-weight";
+                col class="inventory-column-gold";
             }
-            (trade_inventory_table_header(show_equipped))
+            (trade_inventory_table_header(show_equipped, condition_header))
             tbody { (rows) }
         }
     }
@@ -1349,9 +1550,7 @@ pub(crate) fn transfer_glyph(count: usize) -> Markup {
 
 fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" aria-label=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="target" data-target=(target) data-count=(available) aria-label=(format!("Buy {item_id} to target")) { (transfer_glyph(2)) }
-        button type="button" class="trade-transfer trade-transfer-right" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="all" data-count=(available) aria-label=(format!("Buy all {item_id}")) { (transfer_glyph(3)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_id}")) data-label-target=(format!("Buy {item_id} to target")) data-label-all=(format!("Buy all {item_id}")) aria-label=(format!("Buy one {item_id}")) title=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -1363,10 +1562,197 @@ fn merchant_sell_controls(
     target: u32,
 ) -> Markup {
     html! { span class="inventory-row-actions" {
-        @for (mode, arrows, label) in [("one", 1, "Sell one"), ("target", 2, "Sell surplus"), ("all", 3, "Sell all")] {
-            button type="button" class="trade-transfer trade-transfer-left" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode=(mode) data-count=(quantity) data-target=(target) aria-label=(format!("{label} {item_id}")) { (transfer_glyph(arrows)) }
-        }
+        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
     } }
+}
+
+fn merchant_sell_repair_controls(
+    id: u64,
+    item_id: &str,
+    price: u32,
+    quantity: u32,
+    target: u32,
+    can_sell: bool,
+    repair: Option<Markup>,
+) -> Markup {
+    html! { div class="inventory-row-actions smith-player-actions" {
+        @if can_sell {
+            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
+        }
+        @if let Some(repair) = repair { (repair) }
+    } }
+}
+
+fn condition_bar(
+    condition: Option<&crate::spacetimedb::ItemCondition>,
+    repair_skill: Option<u8>,
+) -> Markup {
+    let bins = condition.map(|value| value.bins()).unwrap_or([0.0; 5]);
+    let total = bins.iter().sum::<f32>().clamp(0.0, 1.0);
+    let green = (1.0 - total).max(0.0);
+    let label = if total <= f32::EPSILON {
+        "Full durability".to_string()
+    } else if repair_skill
+        .is_some_and(|skill| bins.iter().take(skill.min(5) as usize).sum::<f32>() > f32::EPSILON)
+    {
+        "Damaged; the flashing portion can be repaired by this smith".to_string()
+    } else {
+        "Damaged beyond this smith's skill".to_string()
+    };
+    html! {
+        span class="condition-bar" title=(&label) aria-label=(&label) {
+            span class="condition-green" style=(format!("width:{}%", green * 100.0)) {}
+            @for (index, amount) in bins.iter().enumerate() {
+                @let repairable = repair_skill.is_some_and(|skill| index < skill.min(5) as usize);
+                span class=(format!("condition-tier-{}{}", index + 1, if repairable { " condition-repairable" } else { "" })) style=(format!("width:{}%", amount.clamp(0.0, 1.0) * 100.0)) {}
+            }
+        }
+    }
+}
+
+fn completed_repair_condition_bar(
+    condition: Option<&crate::spacetimedb::ItemCondition>,
+    smith_skill: u8,
+) -> Markup {
+    let Some(condition) = condition else {
+        return condition_bar(None, None);
+    };
+    let mut repaired = condition.clone();
+    let mut bins = [
+        &mut repaired.tier_1,
+        &mut repaired.tier_2,
+        &mut repaired.tier_3,
+        &mut repaired.tier_4,
+        &mut repaired.tier_5,
+    ];
+    for amount in bins.iter_mut().take(smith_skill.min(5) as usize) {
+        **amount = 0.0;
+    }
+    condition_bar(Some(&repaired), None)
+}
+
+fn repair_all_header(settlement: &Settlement, service_id: &str) -> Markup {
+    html! {
+        span class="sr-only" { "Durability" }
+        form class="repair-all-form" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
+            button type="submit" class="repair-all-button" title="Entrust all eligible items for repair" aria-label="Repair all eligible items" {
+                span class="repair-action-icon" aria-hidden="true" {}
+            }
+        }
+    }
+}
+
+fn repair_submit_control(
+    settlement: &Settlement,
+    service_id: &str,
+    inventory_item_id: u64,
+    condition: Option<&crate::spacetimedb::ItemCondition>,
+    skill: u8,
+) -> Markup {
+    let total = condition.map_or(0.0, |value| value.total());
+    let repairable = condition.map_or(0.0, |value| value.repairable(skill));
+    let residual = condition.map_or(0.0, |value| value.residual(skill));
+    let disabled = total <= f32::EPSILON || repairable <= f32::EPSILON;
+    let explanation = if total <= f32::EPSILON {
+        "Item is already in full condition".to_string()
+    } else if repairable <= f32::EPSILON {
+        format!("All damage requires Smithing above this smith's level {skill}")
+    } else if residual > f32::EPSILON {
+        "Repair all damage within this smith's skill; harder damage will remain".to_string()
+    } else {
+        format!("Repair all damage (smith level {skill})")
+    };
+    html! {
+        form class="row-repair-form" action=(format!("/settlements/{}/{}/repair", settlement.id, service_id)) method="post" {
+            input type="hidden" name="inventory_item_id" value=(inventory_item_id);
+            @if disabled {
+                span class="disabled-repair-explanation" tabindex="0" title=(&explanation) aria-label=(&explanation) {
+                    button type="submit" class="repair-item-button" disabled { span class="repair-action-icon" aria-hidden="true" {} }
+                }
+            } @else {
+                button type="submit" class="repair-item-button" title=(&explanation) aria-label=(&explanation) { span class="repair-action-icon" aria-hidden="true" {} }
+            }
+        }
+    }
+}
+
+fn repair_custody_panel(
+    settlement: &Settlement,
+    shop: MerchantShop,
+    orders: &[crate::spacetimedb::RepairOrder],
+    conditions: &[crate::spacetimedb::ItemCondition],
+    items: &[crate::spacetimedb::ItemDefinition],
+    now: u64,
+    smith_skill: u8,
+) -> Markup {
+    let service_id = shop.service_id();
+    let mut matching: Vec<_> = orders
+        .iter()
+        .filter(|order| {
+            order.settlement_id == settlement.id
+                && items
+                    .iter()
+                    .find(|item| item.id == order.item_id)
+                    .is_some_and(|item| shop.stocks(item.kind))
+        })
+        .collect();
+    matching.sort_by_key(|order| (order.submitted_at_minutes, order.id));
+    html! {
+        section class="repair-custody-panel" aria-label="Items entrusted for repair" {
+            header class="repair-custody-header" {
+                h3 { "In the smith's care" }
+                span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
+                    (stat_icon("Smithing", "skills", "smithing"))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}")))
+                }
+            }
+            div class="repair-custody-scroll" {
+                @if matching.is_empty() { p class="text-muted small-copy" { "No items entrusted." } }
+                div class="repair-custody-list" {
+                    table class="trade-inventory-table repair-custody-table" {
+                        thead { tr {
+                            th scope="col" class="inventory-column-item" {
+                                span class="repair-custody-item-heading" { span { "Item" }
+                                    form class="repair-retrieve-all-form" data-repair-retrieve-form data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
+                                        input type="hidden" name="limit" value="2";
+                                        button type="submit" class="trade-transfer trade-transfer-right repair-retrieve-all" data-dynamic-transfer data-default-transfer-mode="target" data-transfer-mode="target" data-label-target="Retrieve up to two completed repairs" data-label-all="Retrieve all completed repairs" title="Retrieve up to two completed repairs" aria-label="Retrieve up to two completed repairs" { (transfer_glyph(2)) }
+                                    }
+                                }
+                            }
+                            th scope="col" class="inventory-column-durability" { "Durability" }
+                            th scope="col" class="repair-column-eta" { "ETA" }
+                            th scope="col" class="inventory-column-gold" title="Full repair cost (Currency)" { (currency_header("Full repair cost in Currency")) }
+                        } }
+                        tbody {
+                        @for order in matching {
+                            @let condition = conditions.iter().find(|condition| condition.inventory_item_id == order.inventory_item_id);
+                            @let definition = items.iter().find(|item| item.id == order.item_id);
+                            @let ready = now >= order.ready_at_minutes;
+                            @let remaining = order.ready_at_minutes.saturating_sub(now);
+                            tr class="trade-inventory-row trade-row-merchant repair-order-row" {
+                                td class="inventory-item-name" { (item_name_with_quality(&order.item_id, definition))
+                                    span class="inventory-row-actions repair-retrieve-actions" {
+                                        form data-repair-retrieve-form data-single-action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) method="post" {
+                                            input type="hidden" name="item_id" value=(&order.item_id);
+                                            input type="hidden" name="limit" value="1" disabled;
+                                            button type="submit" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one" data-label-one="Retrieve this completed item" data-label-target="Retrieve up to two completed matching items" data-label-all="Retrieve all completed matching items" disabled[!ready] title=(if ready { "Retrieve this completed item" } else { "Repair is still underway" }) aria-label="Retrieve this completed item" { (transfer_glyph(1)) }
+                                        }
+                                    }
+                                }
+                                td class="inventory-durability" {
+                                    @if ready { (completed_repair_condition_bar(condition, order.smith_skill)) }
+                                    @else { (condition_bar(condition, Some(order.smith_skill))) }
+                                }
+                                td class="repair-column-eta" { @if ready { "Ready" } @else { (format!("{}h {}m", remaining / 60, remaining % 60)) } }
+                                td class="inventory-gold" title="Quoted full-job cost, paid on retrieval" { (order.quoted_cost) }
+                            }
+                        }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn inventory_footer_controls(
@@ -1375,19 +1761,23 @@ pub(crate) fn inventory_footer_controls(
     all_label: &str,
 ) -> Markup {
     html! { div class="inventory-footer-actions" {
-        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="target" aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
-        button type="button" class="trade-transfer inventory-footer-transfer" data-inventory-bulk=(action) data-transfer-mode="all" aria-label=(all_label) title=(all_label) { (transfer_glyph(3)) }
+        button type="button" class="trade-transfer inventory-footer-transfer" data-dynamic-transfer data-default-transfer-mode="target" data-inventory-bulk=(action) data-transfer-mode="target" data-label-target=(target_label) data-label-all=(all_label) aria-label=(target_label) title=(target_label) { (transfer_glyph(2)) }
     } }
 }
 
-fn trade_inventory_table_header(show_equipped: bool) -> Markup {
+fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Markup>) -> Markup {
     html! { thead { tr {
         th scope="col" class="inventory-column-item" { "Item" }
         th scope="col" class="inventory-column-count" { "#" }
         @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { "✓" } }
+        @if let Some(condition_header) = condition_header { th scope="col" class="inventory-column-durability" { (condition_header) } }
         th scope="col" class="inventory-column-weight" title="Weight" { span class="inventory-header-weight" aria-label="Weight" {} }
-        th scope="col" class="inventory-column-gold" title="Gold" { span class="inventory-header-coin" aria-label="Gold" {} }
+        th scope="col" class="inventory-column-gold" title="Currency" { (currency_header("Currency")) }
     } } }
+}
+
+fn currency_header(label: &str) -> Markup {
+    html! { span class="currency-header-icon" role="img" aria-label=(label) title="Currency" { "💎" } }
 }
 
 fn party_skills_rail(
@@ -1396,6 +1786,7 @@ fn party_skills_rail(
     limbs: Option<&CharacterLimbs>,
     schedule: Option<&CharacterTrainingSchedule>,
     schedule_action: Option<&str>,
+    activity_preview: Option<ActivityPreviewRates>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -1405,17 +1796,23 @@ fn party_skills_rail(
         (limbs.left_leg_health + limbs.right_leg_health) / 2.0
     });
     html! {
-        (sidebar_section(title, html! {
+        (sidebar_section("", html! {
             @if let Some(skills) = skills {
+                h3 class="sr-only" { (title) }
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
                     form class="skill-schedule" data-skill-schedule action=(action) method="post" {
-                        (skills_table(skills, head_health, upper_health, lower_health, Some(schedule)))
+                        (skills_table(title, skills, head_health, upper_health, lower_health, Some(schedule), activity_preview))
+                        div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
+                            span { "Schedule could not be saved." }
+                            button type="button" data-schedule-retry { "Retry" }
+                        }
                     }
-                    script src="/static/training-schedule.js?v=dual-context-1" {}
+                    script src="/static/training-schedule.js?v=leisure-preview-1" {}
                 } @else {
-                    (skills_table(skills, head_health, upper_health, lower_health, None))
+                    (skills_table(title, skills, head_health, upper_health, lower_health, None, None))
                 }
             } @else {
+                h3 class="sidebar-header" { (title) }
                 p class="text-muted small-copy" { "Skill records have not been created yet." }
             }
         }))
@@ -1423,96 +1820,234 @@ fn party_skills_rail(
 }
 
 fn skills_table(
+    title: &str,
     skills: &CharacterSkills,
     head_health: f32,
     upper_health: f32,
     lower_health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
+    activity_preview: Option<ActivityPreviewRates>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
                 colgroup {
                     col class="party-skill-icon-column";
                     col class="party-skill-name-column";
-                    col class="party-skill-meter-column";
                     @if schedule.is_some() {
-                        col class="party-skill-time-column";
-                        col class="party-skill-time-column";
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
+                        col class="schedule-effect-column";
+                    } @else {
+                        col class="party-skill-meter-column";
                     }
                 }
                 @if schedule.is_some() {
-                    thead { tr class="schedule-context-heading" {
-                        th colspan="3" { }
-                        th scope="col" title="Daily plan used while resting or waiting in a settlement" { "Downtime" }
-                        th scope="col" title="Daily plan used while traveling between locations" { "Travel" }
-                    } }
+                    colgroup { col class="party-skill-time-column"; }
                 }
+                thead { tr class="schedule-context-heading" {
+                        th scope="colgroup" colspan=(if schedule.is_some() { "6" } else { "3" }) class="schedule-table-title" { (title) }
+                    @if schedule.is_some() {
+                        th scope="col" title="Daily plan used while resting or waiting in a settlement" {
+                            (schedule_header_icon("⌛", "Daily allocation"))
+                        }
+                    }
+                } }
                 tbody {
-                    (party_skill_row("Will", "will", skills.will_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.will_minutes, s.travel.will_minutes))))
-                    (party_skill_row("Charisma", "charisma", skills.charisma_hours, 20_000.0, head_health, schedule.map(|s| (s.downtime.charisma_minutes, s.travel.charisma_minutes))))
-                    (party_skill_row("Medicine", "medicine", skills.medicine_hours, 10_000.0, head_health, schedule.map(|s| (s.downtime.medicine_minutes, s.travel.medicine_minutes))))
-                    (party_skill_row("Faith", "faith", skills.faith_hours, 5_000.0, head_health, schedule.map(|s| (s.downtime.faith_minutes, s.travel.faith_minutes))))
-                    (party_skill_row("Melee", "melee", skills.melee_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.melee_minutes, s.travel.melee_minutes))))
-                    (party_skill_row("Ranged", "ranged", skills.ranged_hours, 15_000.0, upper_health, schedule.map(|s| (s.downtime.ranged_minutes, s.travel.ranged_minutes))))
-                    (party_skill_row("Dodge", "dodge", skills.dodge_hours, 20_000.0, lower_health, schedule.map(|s| (s.downtime.dodge_minutes, s.travel.dodge_minutes))))
-                    (party_skill_row("Block", "block", skills.block_hours, 12_000.0, upper_health, schedule.map(|s| (s.downtime.block_minutes, s.travel.block_minutes))))
-                    (party_skill_row("Stealth", "stealth", skills.stealth_hours, 8_000.0, upper_health, schedule.map(|s| (s.downtime.stealth_minutes, s.travel.stealth_minutes))))
-                    (party_skill_row("Balance", "balance", skills.balance_hours, 30_000.0, lower_health, schedule.map(|s| (s.downtime.balance_minutes, s.travel.balance_minutes))))
-                    (party_skill_row("Surgeon", "surgeon", skills.surgeon_hours, 10_000.0, upper_health, schedule.map(|s| (s.downtime.surgeon_minutes, s.travel.surgeon_minutes))))
+                    (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
+                    (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
+                    (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| s.downtime.medicine_minutes)))
+                    (party_skill_row("Faith", "faith", Skill::Faith, skills.faith_hours, head_health, schedule.map(|s| s.downtime.faith_minutes)))
+                    (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| s.downtime.melee_minutes)))
+                    (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| s.downtime.ranged_minutes)))
+                    (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| s.downtime.dodge_minutes)))
+                    (party_skill_row("Block", "block", Skill::Block, skills.block_hours, upper_health, schedule.map(|s| s.downtime.block_minutes)))
+                    (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| s.downtime.stealth_minutes)))
+                    (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| s.downtime.balance_minutes)))
+                    (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| s.downtime.surgeon_minutes)))
+                    (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| s.downtime.smithing_minutes)))
                     @if let Some(schedule) = schedule {
-                        tr class="schedule-divider" { td colspan="5" {} }
-                        tr class="schedule-section-heading" { td colspan="5" { "Activities" } }
-                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, "travel_prayer_minutes", schedule.travel.prayer_minutes, true, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
-                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, "travel_labor_minutes", schedule.travel.labor_minutes, true, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed in either plan."))
-                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, "travel_thievery_minutes", schedule.travel.thievery_minutes, true, "Settlement downtime can earn gold and risk discovery; either plan trains Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, "travel_raiding_minutes", schedule.travel.raiding_minutes, true, "Settlement downtime can earn gold and risk retaliation; either plan trains with equipped weapons and armor."))
-                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, "travel_leisure_minutes", 0, false, "Unallocated time in each plan for sleep and personal needs."))
+                        @let preview = activity_preview.unwrap_or_default();
+                        tr class="schedule-divider" { td colspan="7" {} }
+                        tr class="schedule-section-heading" {
+                            th colspan="2" { "Activities" }
+                            th scope="col" title="Currency" { (schedule_header_icon("💎", "Currency")) }
+                            th scope="col" title="Virtue" { (schedule_header_icon("⚖️", "Virtue")) }
+                            th scope="col" title="Morale" { (schedule_header_icon("🙂", "Morale")) }
+                            th scope="col" title="Fatigue" { (schedule_header_icon("💤", "Fatigue")) }
+                            th scope="col" title="Daily allocation" { (schedule_header_icon("⌛", "Daily allocation")) }
+                        }
+                        (schedule_special_row("Prayer", "church", "prayer_minutes", schedule.downtime.prayer_minutes, true, ActivityEffectRates::prayer(), None, "Recite prayers. Trains Faith at 25% speed, improves morale, and satisfies Fervor-driven daily prayer needs."))
+                        (schedule_special_row("Labor", "clothing", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Thievery", "market", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "weapons", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
+                        (schedule_special_row("Leisure", "inn", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
             }
         }
     }
 }
 
+fn schedule_header_icon(glyph: &str, label: &str) -> Markup {
+    html! { span class="schedule-header-icon" role="img" aria-label=(label) title=(label) { (glyph) } }
+}
+
 fn party_skill_row(
     name: &str,
     icon: &str,
+    skill: Skill,
     hours: f32,
-    half_hours: f32,
     health: f32,
-    schedule_minutes: Option<(u16, u16)>,
+    schedule_minutes: Option<u16>,
 ) -> Markup {
-    let rank = 5.0 * hours / (hours + half_hours);
+    let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
-    let current_width = (effective_rank.clamp(0.0, 5.0) / 5.0) * 100.0;
-    let damage_width = ((rank - effective_rank).max(0.0) / 5.0) * 100.0;
     let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
             td class="party-skill-icon-cell" { (stat_icon(name, "skills", icon)) }
             td class="party-skill-name" { (name) }
-            td class="party-skill-meter" {
-                div class="skill-rank-bar" title=(format!("{invested_hours} hours invested")) {
-                    span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
-                    span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
-                    span class="skill-rank-value" style=(format!("left:{current_width:.1}%")) { (format!("{effective_rank:.1}")) }
-                    @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
-                        (schedule_handle(name, &format!("{}_minutes", icon), downtime_minutes, "downtime"))
-                        (schedule_handle(name, &format!("travel_{}_minutes", icon), travel_minutes, "travel"))
-                    }
+            td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
+                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
+            }
+            @if let Some(minutes) = schedule_minutes {
+                (schedule_allocation_cell(&format!("{}_minutes", icon), minutes, true))
+            }
+        }
+    }
+}
+
+fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
+    let rank = rank.clamp(0.0, 5.0);
+    let effective_rank = effective_rank.clamp(0.0, rank);
+    let value_left = (effective_rank / 5.0 * 100.0).clamp(2.0, 98.0);
+    html! {
+        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5")) {
+            @for tier in 1..=5 {
+                @let offset = (tier - 1) as f32;
+                @let current = (effective_rank - offset).clamp(0.0, 1.0) * 100.0;
+                @let trained = (rank - offset).clamp(0.0, 1.0) * 100.0;
+                @let damaged = (trained - current).max(0.0);
+                span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
+                    span class="rank-current" style=(format!("width:{current:.1}%")) {}
+                    span class="rank-damage" style=(format!("left:{current:.1}%;width:{damaged:.1}%")) {}
                 }
             }
-            @if let Some((downtime_minutes, travel_minutes)) = schedule_minutes {
-                td class="party-skill-allocation" data-schedule-value=(format!("{}_minutes", icon)) {
-                    (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
-                    (schedule_step_button("Increase daily allocation", 15))
-                }
-                td class="party-skill-allocation travel-allocation" data-schedule-value=(format!("travel_{}_minutes", icon)) {
-                    (schedule_step_button("Decrease travel allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
-                    (schedule_step_button("Increase travel allocation", 15))
-                }
-            }
+            span class="skill-rank-value" style=(format!("left:{value_left:.1}%")) { (format!("{effective_rank:.1}")) }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ActivityEffectRates {
+    gold_per_hour: f32,
+    virtue_per_hour: f32,
+    morale_per_hour: f32,
+    fatigue_per_hour: f32,
+    prayer_morale: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LeisurePreview {
+    current_fatigue: f32,
+    outcome: LeisureOutcome,
+    fatigue_display: f32,
+}
+
+fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
+    DailySchedule {
+        melee: schedule.melee_minutes,
+        dodge: schedule.dodge_minutes,
+        block: schedule.block_minutes,
+        ranged: schedule.ranged_minutes,
+        will: schedule.will_minutes,
+        charisma: schedule.charisma_minutes,
+        medicine: schedule.medicine_minutes,
+        faith: schedule.faith_minutes,
+        stealth: schedule.stealth_minutes,
+        balance: schedule.balance_minutes,
+        surgeon: schedule.surgeon_minutes,
+        smithing: schedule.smithing_minutes,
+        labor: schedule.labor_minutes,
+        prayer: schedule.prayer_minutes,
+        thievery: schedule.thievery_minutes,
+        raiding: schedule.raiding_minutes,
+    }
+}
+
+fn leisure_preview(schedule: &ScheduleAllocation, current_fatigue: f32) -> LeisurePreview {
+    let outcome = settlement_leisure_outcome(
+        core_daily_schedule(schedule),
+        MINUTES_PER_DAY,
+        current_fatigue,
+    );
+    let labor_fatigue = f32::from(schedule.labor_minutes) / 60.0 * LABOR_FATIGUE_PER_HOUR;
+    LeisurePreview {
+        current_fatigue,
+        outcome,
+        fatigue_display: (outcome.fatigue_delta - labor_fatigue)
+            / FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+    }
+}
+
+impl ActivityEffectRates {
+    const fn linear(gold: f32, virtue: f32, morale: f32, fatigue: f32) -> Self {
+        Self {
+            gold_per_hour: gold,
+            virtue_per_hour: virtue,
+            morale_per_hour: morale,
+            fatigue_per_hour: fatigue,
+            prayer_morale: false,
+        }
+    }
+
+    const fn prayer() -> Self {
+        Self {
+            prayer_morale: true,
+            ..Self::linear(0.0, 0.0, 0.0, 0.0)
+        }
+    }
+
+    fn values(self, minutes: u16) -> [f32; 4] {
+        let hours = f32::from(minutes) / 60.0;
+        let morale = if self.prayer_morale {
+            PRAYER_MORALE_LIMIT * (1.0 - (-f32::from(minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
+        } else {
+            self.morale_per_hour * hours
+        };
+        [
+            (self.gold_per_hour * hours).round(),
+            self.virtue_per_hour * hours,
+            morale,
+            self.fatigue_per_hour * hours,
+        ]
+    }
+}
+
+fn activity_effect_cell(kind: &str, value: f32) -> Markup {
+    let rounded = if kind == "gold" {
+        value.round()
+    } else {
+        (value * 10.0).round() / 10.0
+    };
+    let state = if rounded > 0.0 {
+        "positive"
+    } else if rounded < 0.0 {
+        "negative"
+    } else {
+        "neutral"
+    };
+    let display = if state == "neutral" {
+        "0".to_string()
+    } else if kind == "gold" {
+        format!("{rounded:+.0}")
+    } else {
+        format!("{rounded:+.1}")
+    };
+    html! {
+        td class=(format!("schedule-effect schedule-effect-{state}")) data-activity-effect=(kind) {
+            (display)
         }
     }
 }
@@ -1520,42 +2055,41 @@ fn party_skill_row(
 fn schedule_special_row(
     label: &str,
     icon: &str,
-    downtime_name: &str,
-    downtime_minutes: u16,
-    travel_name: &str,
-    travel_minutes: u16,
+    allocation_name: &str,
+    allocation_minutes: u16,
     editable: bool,
+    effects: ActivityEffectRates,
+    leisure: Option<LeisurePreview>,
     description: &str,
 ) -> Markup {
+    let values = leisure.map_or_else(
+        || effects.values(allocation_minutes),
+        |preview| [0.0, 0.0, preview.outcome.morale, preview.fatigue_display],
+    );
     html! {
-        tr class="party-skill-row schedule-special-row" title=(description) {
+        tr class="party-skill-row schedule-special-row" title=(description)
+            data-activity-row data-activity-allocation=(allocation_name)
+            data-gold-rate=(effects.gold_per_hour)
+            data-virtue-rate=(effects.virtue_per_hour)
+            data-morale-rate=(effects.morale_per_hour)
+            data-fatigue-rate=(effects.fatigue_per_hour)
+            data-prayer-morale=[effects.prayer_morale.then_some("true")]
+            data-prayer-morale-limit=[effects.prayer_morale.then_some(PRAYER_MORALE_LIMIT)]
+            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)]
+            data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
+            data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
+            data-leisure-labor-fatigue-rate=[leisure.map(|_| LABOR_FATIGUE_PER_HOUR)]
+            data-leisure-recovery-rate=[leisure.map(|_| LEISURE_FATIGUE_RECOVERY_PER_HOUR)]
+            data-leisure-morale-limit=[leisure.map(|_| LEISURE_MORALE_LIMIT)]
+            data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
+            data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
             td class="party-skill-icon-cell" { (schedule_icon(label, icon)) }
             td class="party-skill-name" { strong { (label) } }
-            td class="party-skill-meter" {
-                div class="skill-rank-bar schedule-special-track" {
-                @if editable {
-                    (schedule_handle(label, downtime_name, downtime_minutes, "downtime"))
-                    (schedule_handle(label, travel_name, travel_minutes, "travel"))
-                } @else {
-                    span class="schedule-leisure-fill" data-leisure-fill="downtime" {}
-                    span class="schedule-leisure-fill travel-leisure-fill" data-leisure-fill="travel" {}
-                }
-                }
-            }
-            td class="party-skill-allocation" data-schedule-value=(downtime_name) {
-                @if editable {
-                    (schedule_step_button("Decrease daily allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(downtime_minutes)) }
-                    (schedule_step_button("Increase daily allocation", 15))
-                } @else { span data-schedule-display { "0h" } }
-            }
-            td class="party-skill-allocation travel-allocation" data-schedule-value=(travel_name) {
-                @if editable {
-                    (schedule_step_button("Decrease travel allocation", -15))
-                    span data-schedule-display { (format_schedule_hours(travel_minutes)) }
-                    (schedule_step_button("Increase travel allocation", 15))
-                } @else { span data-schedule-display { "0h" } }
-            }
+            (activity_effect_cell("gold", values[0]))
+            (activity_effect_cell("virtue", values[1]))
+            (activity_effect_cell("morale", values[2]))
+            (activity_effect_cell("fatigue", values[3]))
+            (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
         }
     }
 }
@@ -1564,6 +2098,23 @@ fn schedule_step_button(label: &str, delta: i16) -> Markup {
     html! {
         button type="button" class=(if delta < 0 { "schedule-step schedule-step-decrease" } else { "schedule-step schedule-step-increase" })
             data-schedule-step=(delta) aria-label=(label) {}
+    }
+}
+
+fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
+    html! {
+        td class="party-skill-allocation" data-schedule-value=(name) {
+            @if editable {
+                input type="hidden" name=(name) value=(minutes) data-schedule-input;
+                (schedule_step_button("Decrease daily allocation", -15))
+                span data-schedule-display tabindex="0" role="button" title="Click to enter a time such as 8, 8:30, or 830" {
+                    (format_schedule_hours(minutes))
+                }
+                (schedule_step_button("Increase daily allocation", 15))
+            } @else {
+                span data-schedule-display { "0h" }
+            }
+        }
     }
 }
 
@@ -1576,16 +2127,6 @@ fn schedule_icon(label: &str, icon: &str) -> Markup {
             aria-label=(label)
             title=(label)
         {}
-    }
-}
-
-fn schedule_handle(label: &str, name: &str, minutes: u16, context: &str) -> Markup {
-    html! {
-        input type="hidden" name=(name) value=(minutes) data-schedule-input;
-        button type="button" class=(format!("schedule-handle schedule-handle-{context}")) data-schedule-handle data-schedule-name=(name)
-            aria-label=(format!("{} {} allocation", label, context)) aria-valuemin="0" aria-valuemax="1440"
-            aria-valuenow=(minutes) title=(format!("{} per {} day", format_schedule_hours(minutes), context))
-            data-on:pointerdown="scheduleDrag.start(el, evt)" data-on:keydown="scheduleDrag.key(el, evt)" {}
     }
 }
 
@@ -1629,7 +2170,7 @@ pub(crate) fn character_stats_panel(
     html! {
         (character_summary_rail(capability))
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs))
-        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None))
+        (party_skills_rail(&format!("{}'s skills", character.name), skills, limbs, None, None, None))
     }
 }
 
@@ -1665,11 +2206,16 @@ fn character_bio_rail(
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
+    let virtue = if notoriety.abs() < 0.0005 {
+        0.0
+    } else {
+        -notoriety
+    };
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt { "Age" } dd { (character.age_years) " years" } }
-                div { dt { "Notoriety" } dd title="Tracked now; consequences will be added later." { (format!("{notoriety:.1}")) } }
+                div { dt { "Virtue" } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
                 @if let Some(personality) = personality {
                     @let tags = personality_tags(personality);
                     @if !tags.is_empty() {
@@ -2029,10 +2575,15 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
 }
 
 fn stat_icon(label: &str, category: &str, icon: &str) -> Markup {
+    let path = if icon == "smithing" {
+        "/static/icons/character/repair.png".to_string()
+    } else {
+        format!("/static/icons/stats/{category}/{icon}.png")
+    };
     html! {
         span
             class=(format!("stat-icon stat-icon-{icon}"))
-            style=(format!("--stat-icon: url('/static/icons/stats/{category}/{icon}.png')"))
+            style=(format!("--stat-icon: url('{path}')"))
             role="img"
             aria-label=(label)
             title=(label)
@@ -2223,7 +2774,7 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
         (sidebar_section(title, html! {
             p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
             table class="trade-inventory-table" {
-                (trade_inventory_table_header(false))
+                (trade_inventory_table_header(false, None))
                 tbody {
                 @for offer in placeholder_offers {
                     tr class="trade-inventory-row trade-row-merchant"
@@ -2248,6 +2799,7 @@ fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
 fn inventory_rail(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     trade_action: Option<(&str, &str)>,
     show_repair: bool,
 ) -> Markup {
@@ -2261,12 +2813,13 @@ fn inventory_rail(
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
                 table class="trade-inventory-table" {
-                    (trade_inventory_table_header(false))
+                    (trade_inventory_table_header(false, None))
                     tbody {
                     @for item in inventory {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
                             td class="inventory-item-name" {
-                                (&item.item_id)
+                                (item_name_with_quality(&item.item_id, definition))
                                 @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
                                     aria-label=(format!("{} {}", action, item.item_id))
@@ -2296,6 +2849,7 @@ pub fn rest_result_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    items: &[crate::spacetimedb::ItemDefinition],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     theme: &str,
@@ -2310,6 +2864,7 @@ pub fn rest_result_page(
         "",
         active_character,
         inventory,
+        items,
         party_members,
         logged_in_as,
         theme,
@@ -2364,7 +2919,7 @@ fn rest_service_menu(
                     p { @if summary.minutes >= 1_440 { (summary.minutes / 1_440) " day" @if summary.minutes / 1_440 != 1 { "s" } " passed." } @else { (summary.minutes / 60) " hour" @if summary.minutes / 60 != 1 { "s" } " passed." } }
                     @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
-                    @if summary.notoriety_gained > 0.0 { p { "+" (format!("{:.1}", summary.notoriety_gained)) " notoriety gained." } }
+                    @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
@@ -2399,6 +2954,8 @@ fn rest_default_minutes(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
+    field_repair_minutes: u64,
+    smith_wait_minutes: u64,
 ) -> Option<u64> {
     let healing_days = limbs.map(days_to_full_health).unwrap_or(0);
     let healing_minutes = u64::from(healing_days) * 1_440;
@@ -2409,7 +2966,9 @@ fn rest_default_minutes(
     (limbs.is_some() || stats.is_some() || condition.is_some()).then_some(
         healing_minutes
             .max(fatigue_minutes)
-            .max(blood_recovery_minutes),
+            .max(blood_recovery_minutes)
+            .saturating_add(field_repair_minutes)
+            .max(smith_wait_minutes),
     )
 }
 
@@ -2427,7 +2986,10 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 }
 #[cfg(test)]
 mod tests {
-    use super::{CharacterCondition, LocationKind, rest_default_minutes};
+    use super::{
+        CharacterCondition, LocationKind, MerchantShop, repair_custody_panel,
+        repair_submit_control, rest_default_minutes,
+    };
 
     #[test]
     fn location_kind_rejects_unknown_path_segments() {
@@ -2446,8 +3008,8 @@ mod tests {
         };
 
         assert_eq!(
-            rest_default_minutes(None, None, Some(&condition)),
-            Some(1_440)
+            rest_default_minutes(None, None, Some(&condition), 0, 0),
+            Some(2_880)
         );
     }
 
@@ -2483,6 +3045,426 @@ mod tests {
             religion_id: "western_church".into(),
             source_node_id: Some(1),
         }
+    }
+
+    #[test]
+    fn disabled_repair_explanation_is_hoverable_and_focusable() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.0,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.2,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "weapons", 4, Some(&condition), 3).into_string();
+        assert!(rendered.contains("disabled-repair-explanation"));
+        assert!(rendered.contains("tabindex=\"0\""));
+        assert!(rendered.contains("All damage requires Smithing"));
+        assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn smith_player_actions_keep_sell_and_repair_in_one_hover_area() {
+        let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
+        let rendered =
+            merchant_sell_repair_controls(4, "torch", 2, 3, 1, true, Some(repair)).into_string();
+
+        assert!(rendered.starts_with("<div class=\"inventory-row-actions smith-player-actions\">"));
+        assert_eq!(rendered.matches("data-merchant-sell=\"").count(), 1);
+        assert!(rendered.contains("data-dynamic-transfer"));
+        assert!(rendered.contains("data-default-transfer-mode=\"one\""));
+        assert!(rendered.contains("data-label-target=\"Sell surplus torch\""));
+        assert!(rendered.contains("data-label-all=\"Sell all torch\""));
+        assert!(rendered.contains("row-repair-form"));
+        assert_eq!(rendered.matches("smith-player-actions").count(), 1);
+    }
+
+    #[test]
+    fn equipped_smith_items_retain_the_repair_action_without_sell_controls() {
+        let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
+        let rendered =
+            merchant_sell_repair_controls(4, "sword", 10, 1, 0, false, Some(repair)).into_string();
+
+        assert!(rendered.contains("smith-player-actions"));
+        assert!(rendered.contains("row-repair-form"));
+        assert!(!rendered.contains("data-merchant-sell"));
+    }
+
+    #[test]
+    fn durability_bar_uses_qualitative_copy_and_marks_smith_repairable_damage() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.1,
+            tier_2: 0.0,
+            tier_3: 0.2,
+            tier_4: 0.1,
+            tier_5: 0.0,
+        };
+        let rendered = condition_bar(Some(&condition), Some(3)).into_string();
+        assert!(rendered.contains("condition-repairable"));
+        for tier in 1..=5 {
+            assert!(rendered.contains(&format!("condition-tier-{tier}")));
+        }
+        assert!(rendered.contains("flashing portion can be repaired"));
+        assert!(!rendered.contains("condition-number"));
+        assert!(!rendered.contains("% condition"));
+    }
+
+    #[test]
+    fn durable_item_names_expose_quality_color_and_description() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "commissioned_sword".into(),
+            weight: 1.0,
+            slot: ItemSlot::AnyHolding,
+            kind: crate::spacetimedb::ItemKind::Weapon,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 4,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+        };
+
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("item-quality-4"));
+        assert!(rendered.contains("knightly commission"));
+    }
+
+    #[test]
+    fn completed_repair_bar_projects_the_condition_before_retrieval() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.1,
+            tier_2: 0.2,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+
+        let rendered = completed_repair_condition_bar(Some(&condition), 3).into_string();
+        assert!(rendered.contains("Full durability"));
+        assert!(rendered.contains("width:100%"));
+    }
+
+    #[test]
+    fn smith_player_inventory_uses_the_compact_six_column_table() {
+        let rendered = trade_inventory_table(
+            true,
+            Some(repair_all_header(&settlement(), "weapons")),
+            html! {},
+        )
+        .into_string();
+        assert!(rendered.contains("smith-player-inventory-table"));
+        assert!(rendered.contains("inventory-column-durability"));
+        assert!(rendered.contains("Repair all eligible items"));
+        assert!(rendered.contains("class=\"sr-only\">Durability</span>"));
+        assert!(!rendered.contains("durability-header-label"));
+    }
+
+    #[test]
+    fn skill_meter_and_schedule_use_segmented_rank_and_text_time_controls() {
+        let meter = skill_rank_bar(3.5, 2.75, "Skill test").into_string();
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        let allocation = schedule_allocation_cell("smithing_minutes", 75, true).into_string();
+        assert!(allocation.contains("data-schedule-input"));
+        assert!(allocation.contains("data-schedule-display"));
+        assert!(allocation.contains("Click to enter a time such as 8, 8:30, or 830"));
+        assert!(!allocation.contains("type=\"range\""));
+        assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn schedule_table_uses_compact_accessible_icon_headers() {
+        let skills = CharacterSkills {
+            character_id: 1,
+            melee_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            ranged_hours: 0.0,
+            will_hours: 0.0,
+            charisma_hours: 0.0,
+            medicine_hours: 0.0,
+            faith_hours: 0.0,
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            surgeon_hours: 0.0,
+            smithing_hours: 0.0,
+        };
+        let schedule = CharacterTrainingSchedule {
+            character_id: 1,
+            downtime: crate::spacetimedb::ScheduleAllocation::default(),
+            travel: crate::spacetimedb::ScheduleAllocation::default(),
+        };
+        let rendered = skills_table("Your skills", &skills, 1.0, 1.0, 1.0, Some(&schedule), None)
+            .into_string();
+
+        assert!(rendered.contains(
+            "scope=\"colgroup\" colspan=\"6\" class=\"schedule-table-title\">Your skills"
+        ));
+        assert_eq!(rendered.matches("<colgroup>").count(), 2);
+        assert_eq!(
+            rendered.matches("aria-label=\"Daily allocation\"").count(),
+            2
+        );
+        for label in ["Currency", "Virtue", "Morale", "Fatigue"] {
+            assert!(rendered.contains(&format!("aria-label=\"{label}\"")));
+        }
+        assert!(rendered.contains('\u{1f48e}'));
+        assert!(!rendered.contains(">Gold</th>"));
+        assert!(!rendered.contains(">Virt.</th>"));
+
+        let rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/schedule"),
+            None,
+        )
+        .into_string();
+        assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
+        assert!(rail.contains("<h3 class=\"sr-only\">Your skills</h3>"));
+        assert!(rail.contains("data-schedule-save-status"));
+        assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
+        assert!(rail.contains("data-schedule-retry>Retry</button>"));
+    }
+
+    #[test]
+    fn activity_rows_show_signed_daily_effects_instead_of_allocation_bars() {
+        let rendered = schedule_special_row(
+            "Thievery",
+            "market",
+            "thievery_minutes",
+            120,
+            true,
+            ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            None,
+            "Test activity",
+        )
+        .into_string();
+        for effect in ["gold", "virtue", "morale", "fatigue"] {
+            assert!(rendered.contains(&format!("data-activity-effect=\"{effect}\"")));
+        }
+        assert!(rendered.contains("schedule-effect-positive"));
+        assert!(rendered.contains(">+4</td>"));
+        assert!(rendered.contains("schedule-effect-negative"));
+        assert!(rendered.contains(">-2.0</td>"));
+        assert!(!rendered.contains("schedule-allocation-fill"));
+        assert!(!rendered.contains("schedule-special-track"));
+    }
+
+    #[test]
+    fn server_rendered_effects_normalize_negative_zero() {
+        let rendered = activity_effect_cell("fatigue", -0.0006).into_string();
+        assert!(rendered.contains("schedule-effect-neutral"));
+        assert!(rendered.contains(">0</td>"));
+        assert!(!rendered.contains("-0.0"));
+
+        let negative = activity_effect_cell("fatigue", -0.06).into_string();
+        assert!(negative.contains("schedule-effect-negative"));
+        assert!(negative.contains(">-0.1</td>"));
+    }
+
+    #[test]
+    fn leisure_and_labor_previews_decompose_the_shared_fatigue_outcome() {
+        let schedule = ScheduleAllocation {
+            labor_minutes: 240,
+            melee_minutes: 720,
+            ..Default::default()
+        };
+        let leisure = leisure_preview(&schedule, 0.0);
+        assert_eq!(leisure.outcome.leisure_hours, 8.0);
+        assert_eq!(leisure.outcome.fatigue_delta, 0.0);
+        assert_eq!(leisure.outcome.morale, 0.0);
+        assert_eq!(leisure.fatigue_display, -2.0);
+        assert_eq!(
+            ActivityEffectRates::linear(
+                0.0,
+                0.0,
+                0.0,
+                LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+            )
+            .values(schedule.labor_minutes)[3],
+            2.0
+        );
+        let rendered = schedule_special_row(
+            "Leisure",
+            "inn",
+            "leisure_minutes",
+            0,
+            false,
+            ActivityEffectRates::default(),
+            Some(leisure),
+            "Test leisure",
+        )
+        .into_string();
+        for attribute in [
+            "data-leisure-baseline-fatigue",
+            "data-leisure-labor-fatigue-rate",
+            "data-leisure-recovery-rate",
+            "data-leisure-morale-limit",
+            "data-leisure-morale-scale",
+            "data-leisure-fatigue-preview-divisor",
+        ] {
+            assert!(rendered.contains(attribute));
+        }
+        assert!(rendered.contains(">-2.0</td>"));
+    }
+
+    #[test]
+    fn equipment_checkbox_is_enabled_only_for_equippable_items() {
+        let inventory = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "sword".into(),
+            qty: 1,
+        };
+        let mut definition = crate::spacetimedb::ItemDefinition {
+            id: "sword".into(),
+            weight: 1.0,
+            slot: ItemSlot::AnyHolding,
+            kind: crate::spacetimedb::ItemKind::Weapon,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 3,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+        };
+        let enabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(enabled.contains("data-equipment-toggle"));
+        assert!(!enabled.contains(" disabled"));
+        definition.slot = ItemSlot::None;
+        let disabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(disabled.contains(" disabled"));
+    }
+
+    #[test]
+    fn merchant_stock_table_keeps_quantity_weight_and_gold_columns() {
+        let rendered = trade_inventory_table(false, None, html! {}).into_string();
+        assert!(rendered.contains("<colgroup>"));
+        assert!(rendered.contains("inventory-column-count"));
+        assert!(rendered.contains("inventory-column-weight"));
+        assert!(rendered.contains("inventory-column-gold"));
+        assert!(rendered.contains("title=\"Currency\""));
+        assert!(rendered.contains("aria-label=\"Currency\""));
+        assert!(rendered.contains('\u{1f48e}'));
+    }
+
+    #[test]
+    fn smith_custody_panel_shows_only_matching_service_orders() {
+        let orders = [
+            crate::spacetimedb::RepairOrder {
+                id: 1,
+                owner_character_id: 9,
+                inventory_item_id: 11,
+                item_id: "sword".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+                quoted_cost: 12,
+            },
+            crate::spacetimedb::RepairOrder {
+                id: 2,
+                owner_character_id: 9,
+                inventory_item_id: 12,
+                item_id: "cuirass".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+                quoted_cost: 24,
+            },
+        ];
+        let items = [
+            crate::spacetimedb::ItemDefinition {
+                id: "sword".into(),
+                weight: 1.0,
+                slot: ItemSlot::AnyHolding,
+                kind: crate::spacetimedb::ItemKind::Weapon,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+            },
+            crate::spacetimedb::ItemDefinition {
+                id: "cuirass".into(),
+                weight: 1.0,
+                slot: ItemSlot::Chest,
+                kind: crate::spacetimedb::ItemKind::Armor,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+            },
+        ];
+        let weapons = repair_custody_panel(
+            &settlement(),
+            MerchantShop::Weapons,
+            &orders,
+            &[],
+            &items,
+            0,
+            4,
+        )
+        .into_string();
+        let armor = repair_custody_panel(
+            &settlement(),
+            MerchantShop::Armor,
+            &orders,
+            &[],
+            &items,
+            0,
+            3,
+        )
+        .into_string();
+        assert!(weapons.contains("sword"));
+        assert!(!weapons.contains("cuirass"));
+        assert!(weapons.contains("repair-custody-table"));
+        assert!(weapons.contains("Smithing 4"));
+        assert!(weapons.contains("stat-icon-smithing"));
+        for tier in 1..=5 {
+            assert!(weapons.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert!(weapons.contains("repair-custody-item-heading"));
+        assert!(weapons.contains("Durability"));
+        assert!(weapons.contains("ETA"));
+        assert!(weapons.contains("Full repair cost"));
+        assert!(weapons.contains("repair-retrieve-all"));
+        assert!(weapons.contains("Retrieve up to two completed matching items"));
+        assert!(!weapons.to_lowercase().contains("affordable prefix"));
+        assert!(weapons.contains("/repairs/1/retrieve"));
+        assert!(weapons.contains(">12<"));
+        assert!(!weapons.contains("Target "));
+        assert!(armor.contains("cuirass"));
+        assert!(!armor.contains("sword"));
     }
 
     #[test]
@@ -2680,6 +3662,8 @@ mod tests {
     #[test]
     fn chat_css_keeps_fallbacks_and_mobile_message_space() {
         let css = include_str!("../../static/css/strategic.css");
+        let utilities = include_str!("../../static/css/utilities.css");
+        let trade_script = include_str!("../../static/party-trade.js");
         let fallback = css
             .find("background: rgb(12 15 24 / 88%);")
             .expect("chat needs a background fallback");
@@ -2688,7 +3672,88 @@ mod tests {
             .expect("chat should enhance its fallback with color-mix");
 
         assert!(fallback < enhanced);
-        assert!(css.contains(".settlement-chat-filters {\n    flex-wrap: nowrap;"));
+        assert!(css.contains("flex-wrap: nowrap;"));
         assert!(css.contains("min-height: 10rem;"));
+        assert!(css.contains(".repair-custody-list { margin-top: auto; }"));
+        assert!(css.contains("max-height: 50%;"));
+        assert!(css.contains("@keyframes repairable-damage-pulse"));
+        assert!(css.contains("@media (prefers-reduced-motion: reduce)"));
+        let repairable_rule = css
+            .split(".condition-repairable {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("repairable condition segments need a style rule");
+        assert!(!repairable_rule.contains("background-image"));
+        assert!(!repairable_rule.contains("box-shadow"));
+        for tier in 1..=5 {
+            assert!(css.contains(&format!(".condition-tier-{tier}")));
+            assert!(css.contains(&format!(".item-quality-{tier}")));
+        }
+        assert!(css.contains("color-mix(in srgb, var(--quality-color) 50%, var(--text-primary))"));
+        assert!(css.contains("filter: brightness(1.15)"));
+        assert!(css.contains("0%, 58%, 82%, 100%"));
+        assert!(css.contains("66%, 74%"));
+        assert!(!css.contains("left: -7rem;"));
+        assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
+        assert!(css.contains("overflow-x: hidden;"));
+        assert!(css.contains("col.inventory-column-item { width: auto; }"));
+        assert!(css.contains(".smith-player-inventory-table"));
+        assert!(css.contains("width: 3.65rem;"));
+        assert!(css.contains(".repair-custody-item-heading"));
+        assert!(css.contains("width: calc(100% + 1.65rem);"));
+        assert!(css.contains("right: -1.65rem;"));
+        assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
+        assert!(utilities.contains(".smith-wares-scroll .inventory-row-actions"));
+        assert!(utilities.contains(".smith-wares-scroll .inventory-footer-actions"));
+        assert!(utilities.contains("grid-template-columns:repeat(2,1.35rem)"));
+        assert!(utilities.contains(
+            ".right-sidebar .inventory-row-actions.smith-player-actions { left:-3.15rem; }"
+        ));
+        assert!(
+            utilities
+                .contains(".smith-player-actions .row-repair-form { position:static; order:0;")
+        );
+        assert!(trade_script.contains("if (stockRow) changeTradeDraftCount(stockRow, amount);"));
+        assert!(trade_script.contains("function applyDynamicTransferModifiers(event)"));
+        assert!(trade_script.contains("event.key === \"Shift\" || event.key === \"Control\""));
+        assert!(trade_script.contains("controlKey ? \"all\""));
+    }
+
+    #[test]
+    fn schedule_and_equipment_scripts_use_the_new_interactions() {
+        let schedule = include_str!("../../static/training-schedule.js");
+        let equipment = include_str!("../../static/equipment-toggle.js");
+        let live_regions = include_str!("../../static/live-regions.js");
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(schedule.contains("function parseClock(value)"));
+        assert!(schedule.contains("input.type = 'text'"));
+        assert!(schedule.contains("/^\\d{3,4}$/"));
+        assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
+        assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
+        assert!(schedule.contains("function calculateLeisurePreview"));
+        assert!(schedule.contains("row.dataset.leisureFatiguePreviewDivisor"));
+        assert!(schedule.contains("function mountSchedules(root = document)"));
+        assert!(schedule.contains("'strategic-live-regions-refreshed'"));
+        assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
+        assert!(schedule.contains("function createLatestSaveQueue(send"));
+        assert!(schedule.contains("data-schedule-pending"));
+        assert!(schedule.contains("retry()"));
+        assert!(schedule.contains("data-schedule-save-status"));
+        assert!(schedule.contains("data-schedule-retry"));
+        assert!(schedule.contains("strategic-live-refresh-requested"));
+        assert!(schedule.contains("schedule-effect-positive"));
+        assert!(!schedule.contains("scheduleDrag"));
+        assert!(!schedule.contains("travel_"));
+        assert!(equipment.contains("'/api/equipment'"));
+        assert!(equipment.contains("window.location.reload()"));
+        assert!(live_regions.contains("const scrollOffsets = (selector)"));
+        assert!(live_regions.contains("region.scrollTop = offsets.top"));
+        assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
+        assert!(live_regions.contains("scheduleEditorIsPending"));
+        assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
+        assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
+        assert!(css.contains(".schedule-time-input {"));
+        assert!(css.contains("position: absolute;"));
+        assert!(css.contains(".schedule-save-status"));
     }
 }

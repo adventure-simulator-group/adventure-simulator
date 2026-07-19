@@ -86,7 +86,7 @@ let fervor = 1.0 - (-pressure / 5.0).exp();
 
 The curve lets arbitrarily high pressure approach 100% without reaching it. The strategic character rail displays this value from Calm through Fervent to Frenzy.
 
-Daily prayer is an activity in the character schedule rather than a dialogue-style demand. Prayer adds a positive morale source with diminishing returns and trains Faith at 25% of the explicit study rate. Fervor creates a continuous desired prayer allocation of up to two hours per day. Meeting that allocation removes the prayer-neglect penalty; partial observance reduces it proportionally. Characters save separate downtime and travel prayer allocations. Settlement morale uses the downtime plan, while a journey applies any travel-prayer shortfall proportionally to its duration as a recent morale event.
+Daily prayer is an activity in the settlement-downtime schedule rather than a dialogue-style demand. Prayer adds a positive morale source with diminishing returns and trains Faith at 25% of the explicit study rate. Fervor creates a continuous desired prayer allocation of up to two hours per day. Meeting that allocation removes the prayer-neglect penalty; partial observance reduces it proportionally. Scheduled prayer is not attempted while traveling.
 
 Sunday remains an explicit demand rather than a random Fervor event. Day 7 and every seventh calendar day thereafter is Sunday. A professing character with nonzero Fervor who is at a settlement receives the choice once that Sunday:
 

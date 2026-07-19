@@ -79,6 +79,30 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
     assert_eq!(report.metrics.reducer_failures, 0);
     assert_eq!(report.metrics.stuck_detections, 0);
     assert_eq!(report.metrics.duplicate_semantic_events, 0);
+    assert!(
+        report.metrics.repair_submissions > 0,
+        "fixture wear should exercise NPC repair policy"
+    );
+    assert_eq!(
+        report.metrics.repair_submissions,
+        report.metrics.repair_retrievals
+    );
+    assert!(report.metrics.repair_wait_minutes > 0);
+    assert!(
+        report
+            .final_agents
+            .iter()
+            .all(|agent| agent.outstanding_repair_orders == 0),
+        "NPCs must not strand completed work"
+    );
+    assert_ordered_subsequence(
+        &report,
+        &[
+            CoreLoopEventKind::SubmitRepair,
+            CoreLoopEventKind::WaitForRepair,
+            CoreLoopEventKind::RetrieveRepair,
+        ],
+    );
 
     let reuse_error = run_core_loop(config).expect_err("a claimed database cannot be reused");
     assert!(

@@ -40,6 +40,14 @@ pub fn prayer_observance(fervor: f32, prayer_minutes: u16) -> f32 {
     }
 }
 
+pub fn settlement_population_scale(population_level: i32, population_estimate: u32) -> f32 {
+    if population_estimate > 0 {
+        ((population_estimate as f32 + 1.0).ln() / 4.0).clamp(1.0, 4.0)
+    } else {
+        (population_level.max(1) as f32 / 2.0).clamp(0.5, 3.0)
+    }
+}
+
 pub fn labor_gold(hours: f32, strength_check: f32, endurance_check: f32) -> u32 {
     (hours.max(0.0) * (strength_check.max(0.0) + endurance_check.max(0.0)) / 8.0).round() as u32
 }
@@ -91,6 +99,13 @@ mod tests {
         assert!(
             thievery_discovery_chance(8.0, 2.0, 4.0) < thievery_discovery_chance(8.0, 2.0, 1.0)
         );
+    }
+
+    #[test]
+    fn settlement_population_scale_uses_estimates_when_available() {
+        assert_eq!(settlement_population_scale(1, 0), 0.5);
+        assert!(settlement_population_scale(1, 10_000) > 2.0);
+        assert_eq!(settlement_population_scale(10, 0), 3.0);
     }
 
     #[test]

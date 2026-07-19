@@ -1,3 +1,4 @@
+use crate::{character::character_equip, repair::item_condition};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use strum::{EnumCount, VariantArray};
 
@@ -81,6 +82,15 @@ pub struct Item {
     pub nutrition_kcal: f32,
     /// Water capacity contributed while this item is in personal inventory.
     pub water_capacity_ml: u32,
+    /// Craftsmanship and maintenance target, on the shared 1..5 skill scale.
+    pub quality: u8,
+    /// Explicit construction/material inputs; never inferred from market value.
+    pub durability_yield: f32,
+    pub durability_fracture: f32,
+    pub durability_wear: f32,
+    pub durability_failure_share: f32,
+    pub edge_sensitivity: f32,
+    pub handling_sensitivity: f32,
 }
 
 /// A static item definition used to seed the strategic item table.
@@ -132,7 +142,7 @@ const fn weapon(
         id,
         weight,
         base_value,
-        slot: ItemSlot::None,
+        slot: ItemSlot::AnyHolding,
         kind: ItemKind::Weapon,
         accuracy,
         reach,
@@ -194,7 +204,7 @@ const fn shield(id: &'static str, weight: f32, base_value: u32, block: f32) -> E
         id,
         weight,
         base_value,
-        slot: ItemSlot::None,
+        slot: ItemSlot::AnyHolding,
         kind: ItemKind::Shield,
         accuracy: 0.0,
         reach: 0.0,
@@ -774,6 +784,16 @@ const ARMOR: &[EquipmentDefinition] = &[
     ),
 ];
 
+fn equipment_quality(item_id: &str) -> u8 {
+    match item_id {
+        "buckler" => 1,
+        "katzbalger" | "padded_skirt" => 2,
+        "arming_cap" | "arming_doublet" | "arming_sword" => 4,
+        "padded_chausses" | "brigandine" => 5,
+        _ => 3,
+    }
+}
+
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
@@ -828,6 +848,37 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             blunt: definition.blunt,
             slash: definition.slash,
             pierce: definition.pierce,
+            quality: equipment_quality(definition.id),
+            durability_yield: if definition.kind == ItemKind::Armor {
+                35.0
+            } else {
+                65.0
+            },
+            durability_fracture: if definition.kind == ItemKind::Armor {
+                130.0
+            } else {
+                100.0
+            },
+            durability_wear: if definition.kind == ItemKind::Armor {
+                0.18
+            } else {
+                0.10
+            },
+            durability_failure_share: if matches!(definition.id, "brigandine" | "jack_of_plates") {
+                0.08
+            } else {
+                0.65
+            },
+            edge_sensitivity: if definition.kind == ItemKind::Weapon && !definition.blunt {
+                0.8
+            } else {
+                0.2
+            },
+            handling_sensitivity: if definition.kind == ItemKind::Armor {
+                0.7
+            } else {
+                0.5
+            },
             ..Item::default()
         });
     }
@@ -912,6 +963,13 @@ pub fn define_weapon(
         slash,
         pierce,
         kind: ItemKind::Weapon,
+        quality: 1,
+        durability_yield: 55.0,
+        durability_fracture: 95.0,
+        durability_wear: 0.1,
+        durability_failure_share: 0.65,
+        edge_sensitivity: if slash || pierce { 0.8 } else { 0.2 },
+        handling_sensitivity: 0.5,
         ..Item::default()
     });
 }
@@ -924,6 +982,12 @@ pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f3
         base_value: Some((weight * 8.0).ceil() as u32),
         block,
         kind: ItemKind::Shield,
+        quality: 1,
+        durability_yield: 35.0,
+        durability_fracture: 100.0,
+        durability_wear: 0.15,
+        durability_failure_share: 0.4,
+        handling_sensitivity: 0.8,
         ..Item::default()
     });
 }
@@ -962,6 +1026,12 @@ pub fn define_armor(
         flexibility,
         range_of_motion,
         kind: ItemKind::Armor,
+        quality: 1,
+        durability_yield: 30.0,
+        durability_fracture: 125.0,
+        durability_wear: 0.18,
+        durability_failure_share: 0.65,
+        handling_sensitivity: 0.7,
         ..Item::default()
     });
 }
@@ -976,14 +1046,30 @@ pub fn add_inventory_item(
         return None;
     }
 
-    let item = ctx.db.inventory_item().insert(InventoryItem {
-        id: 0,
-        character_id: character_id,
-        item_id: item_id.to_string(),
-        quantity,
-    });
-
-    Some(item.id)
+    let durable = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| {
+            matches!(
+                definition.kind,
+                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+            )
+        });
+    let count = if durable { quantity } else { 1 };
+    let mut first = None;
+    for _ in 0..count {
+        let item = ctx.db.inventory_item().insert(InventoryItem {
+            id: 0,
+            character_id,
+            item_id: item_id.to_string(),
+            quantity: if durable { 1 } else { quantity },
+        });
+        crate::repair::initialize_item_condition(ctx, &item);
+        first.get_or_insert(item.id);
+    }
+    first
 }
 
 #[reducer]
@@ -994,6 +1080,70 @@ pub fn change_inventory_item(
     by_quantity: i32,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
+    let durable = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| {
+            matches!(
+                definition.kind,
+                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+            )
+        });
+    if durable {
+        let (add, remove) = adventuresim_core::durability::bounded_durable_change(by_quantity)
+            .map_err(str::to_owned)?;
+        if add > 0 {
+            add_inventory_item(ctx, character_id, item_id, add);
+            return Ok(());
+        }
+        if remove > 0 {
+            let instances: Vec<_> = ctx
+                .db
+                .inventory_item()
+                .character_and_item_id()
+                .filter((character_id, item_id))
+                .collect();
+            if instances.len() < remove as usize {
+                return Err("not enough durable instances to remove".into());
+            }
+            let mut equip = ctx.db.character_equip().character_id().find(character_id);
+            let removal_ids = adventuresim_core::durability::durable_removal_ids(
+                instances
+                    .iter()
+                    .map(|item| {
+                        (
+                            item.id,
+                            equip
+                                .as_ref()
+                                .is_some_and(|equip| crate::repair::is_equipped(equip, item.id)),
+                        )
+                    })
+                    .collect(),
+                remove,
+            );
+            let mut equipment_changed = false;
+            for id in removal_ids {
+                if let Some(equip) = equip.as_mut()
+                    && crate::repair::is_equipped(equip, id)
+                {
+                    crate::repair::unequip(equip, id);
+                    equipment_changed = true;
+                }
+                ctx.db.inventory_item().id().delete(id);
+                ctx.db.item_condition().inventory_item_id().delete(id);
+            }
+            if equipment_changed {
+                ctx.db
+                    .character_equip()
+                    .character_id()
+                    .update(equip.expect("equipment exists when it changed"));
+                crate::capability::refresh_character_capability(ctx, character_id)?;
+            }
+        }
+        return Ok(());
+    }
     let mut is_found = false;
 
     for mut item in ctx
@@ -1007,7 +1157,7 @@ pub fn change_inventory_item(
         is_found = true;
     }
 
-    if !is_found {
+    if !is_found && by_quantity > 0 {
         add_inventory_item(ctx, character_id, item_id, by_quantity as u32);
     }
     Ok(())
@@ -1048,7 +1198,7 @@ mod tests {
 
             match definition.kind {
                 ItemKind::Weapon => {
-                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
                     assert!(definition.accuracy > 0.0);
                     assert!(definition.reach > 0.0);
                     assert!(definition.blunt || definition.slash || definition.pierce);
@@ -1070,11 +1220,22 @@ mod tests {
                     assert!((0.0..=1.0).contains(&definition.range_of_motion));
                 }
                 ItemKind::Shield => {
-                    assert_eq!(definition.slot, ItemSlot::None);
+                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
                     assert!((1.0..=5.0).contains(&definition.block));
                 }
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
             }
         }
+    }
+
+    #[test]
+    fn development_catalog_exercises_every_quality_level() {
+        let qualities: HashSet<_> = WEAPONS
+            .iter()
+            .chain(SHIELDS)
+            .chain(ARMOR)
+            .map(|definition| equipment_quality(definition.id))
+            .collect();
+        assert_eq!(qualities, HashSet::from([1, 2, 3, 4, 5]));
     }
 }

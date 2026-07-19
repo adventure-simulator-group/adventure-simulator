@@ -65,9 +65,17 @@
 .inventory-owner-panel [data-inventory-pane] .sidebar-header { display:none; }
 .left-sidebar:has(.trade-inventory-table) .sidebar-section,
 .right-sidebar:has(.trade-inventory-table) .sidebar-section { position:relative; }
-.inventory-row-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; opacity:0; transform:translateY(-50%); transition:opacity .12s; }
-.left-sidebar .inventory-row-actions { right:-4.55rem; }
-.right-sidebar .inventory-row-actions { left:-4.55rem; }
+.inventory-row-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:1.35rem; gap:2px; width:1.35rem; opacity:0; transform:translateY(-50%); transition:opacity .12s; }
+.left-sidebar .inventory-row-actions { right:-1.65rem; }
+.right-sidebar .inventory-row-actions { left:-1.65rem; }
+.smith-wares-scroll .inventory-row-actions {
+  right:5.35rem;
+  padding-left:.25rem;
+  background:linear-gradient(90deg, transparent, var(--panel-bg) .25rem);
+}
+.inventory-row-actions.smith-player-actions { grid-template-columns:repeat(2,1.35rem); width:2.85rem; }
+.right-sidebar .inventory-row-actions.smith-player-actions { left:-3.15rem; }
+.smith-player-actions .row-repair-form { position:static; order:0; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
 .trade-inventory-row:hover .inventory-row-actions, .inventory-row-actions:focus-within { opacity:1; }
 .inventory-row-actions .trade-transfer { position:static; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
 .inventory-row-actions .trade-transfer::before, .inventory-footer-transfer::before { display:none; }
@@ -82,17 +90,16 @@
 .inventory-transfer-glyph i:first-child { margin-left:0; }
 .trade-transfer-left .inventory-transfer-glyph { transform:rotate(180deg); }
 .trade-inventory-table thead tr { position:relative; }
-.inventory-footer-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:repeat(3,1.35rem); gap:2px; width:4.25rem; padding:0; transform:translateY(-50%); }
-.left-sidebar .inventory-footer-actions { right:-4.55rem; }
-.right-sidebar .inventory-footer-actions { left:-4.55rem; }
+.inventory-footer-actions { position:absolute; z-index:30; top:50%; display:grid; grid-template-columns:1.35rem; gap:2px; width:1.35rem; padding:0; transform:translateY(-50%); }
+.left-sidebar .inventory-footer-actions { right:-1.65rem; }
+.right-sidebar .inventory-footer-actions { left:-1.65rem; }
+.smith-wares-scroll .inventory-footer-actions {
+  right:5.35rem;
+  padding-left:.25rem;
+  background:linear-gradient(90deg, transparent, var(--panel-bg) .25rem);
+}
 .inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
-.inventory-footer-transfer:first-child { grid-column:2; }
 .right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
-.right-sidebar .inventory-row-actions [data-transfer-mode="all"],
-.right-sidebar .inventory-footer-actions [data-transfer-mode="all"] { order:1; }
-.right-sidebar .inventory-row-actions [data-transfer-mode="target"],
-.right-sidebar .inventory-footer-actions [data-transfer-mode="target"] { order:2; }
-.right-sidebar .inventory-row-actions [data-transfer-mode="one"] { order:3; }
 
 .party-portrait-overlay > .party-aggregate-checks {
   position:static;

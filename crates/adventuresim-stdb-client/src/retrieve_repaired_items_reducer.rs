@@ -4,61 +4,74 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::schedule_allocation_type::ScheduleAllocation;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct UpdateTrainingScheduleArgs {
+pub(super) struct RetrieveRepairedItemsArgs {
     pub character_id: u64,
-    pub downtime: ScheduleAllocation,
-    pub travel: ScheduleAllocation,
+    pub settlement_id: String,
+    pub armourer: bool,
+    pub item_id: Option<String>,
+    pub limit: u32,
 }
 
-impl From<UpdateTrainingScheduleArgs> for super::Reducer {
-    fn from(args: UpdateTrainingScheduleArgs) -> Self {
-        Self::UpdateTrainingSchedule {
+impl From<RetrieveRepairedItemsArgs> for super::Reducer {
+    fn from(args: RetrieveRepairedItemsArgs) -> Self {
+        Self::RetrieveRepairedItems {
             character_id: args.character_id,
-            downtime: args.downtime,
-            travel: args.travel,
+            settlement_id: args.settlement_id,
+            armourer: args.armourer,
+            item_id: args.item_id,
+            limit: args.limit,
         }
     }
 }
 
-impl __sdk::InModule for UpdateTrainingScheduleArgs {
+impl __sdk::InModule for RetrieveRepairedItemsArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `update_training_schedule`.
+/// Extension trait for access to the reducer `retrieve_repaired_items`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait update_training_schedule {
-    /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible.
+pub trait retrieve_repaired_items {
+    /// Request that the remote module invoke the reducer `retrieve_repaired_items` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`update_training_schedule:update_training_schedule_then`] to run a callback after the reducer completes.
-    fn update_training_schedule(
+    /// /// Use [`retrieve_repaired_items:retrieve_repaired_items_then`] to run a callback after the reducer completes.
+    fn retrieve_repaired_items(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        settlement_id: String,
+        armourer: bool,
+        item_id: Option<String>,
+        limit: u32,
     ) -> __sdk::Result<()> {
-        self.update_training_schedule_then(character_id, downtime, travel, |_, _| {})
+        self.retrieve_repaired_items_then(
+            character_id,
+            settlement_id,
+            armourer,
+            item_id,
+            limit,
+            |_, _| {},
+        )
     }
 
-    /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `retrieve_repaired_items` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn update_training_schedule_then(
+    fn retrieve_repaired_items_then(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        settlement_id: String,
+        armourer: bool,
+        item_id: Option<String>,
+        limit: u32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -68,12 +81,14 @@ pub trait update_training_schedule {
     ) -> __sdk::Result<()>;
 }
 
-impl update_training_schedule for super::RemoteReducers {
-    fn update_training_schedule_then(
+impl retrieve_repaired_items for super::RemoteReducers {
+    fn retrieve_repaired_items_then(
         &self,
         character_id: u64,
-        downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
+        settlement_id: String,
+        armourer: bool,
+        item_id: Option<String>,
+        limit: u32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -82,10 +97,12 @@ impl update_training_schedule for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            UpdateTrainingScheduleArgs {
+            RetrieveRepairedItemsArgs {
                 character_id,
-                downtime,
-                travel,
+                settlement_id,
+                armourer,
+                item_id,
+                limit,
             },
             callback,
         )

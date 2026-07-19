@@ -52,7 +52,53 @@ layering field. A `mail_shirt`, for example, is a chest-slot alternative to a
 brigandine rather than a simultaneous underlayer. This is an explicit temporary
 representation constraint, not a claim that period armor was worn in one
 layer. Adding layering, ammunition-specific projectile behavior, condition, or
-rust belongs to later schema and durability work.
+rust belongs to later corrosion work.
+
+## Condition and repair
+
+Weapons, shields, and armor are individual inventory instances. Their condition is a continuous
+five-bin bar: tier one is yellow-green, tier two yellow, tier three orange, tier four red, and tier
+five violet. Bins one and two are field-repairable, while bins three through five require a
+settlement smith. Repairing bin *n* requires Smithing skill *n*; field work is capped at bin two.
+Equipment quality is also its required maintenance skill, so a lesser smith can improve a
+masterwork item without restoring it completely. Damage can never occupy a tier above the item's
+quality: only quality-5 equipment can acquire violet tier-5 damage.
+
+Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
+color, adjusted toward the active theme's text color for readability. Quality 3 is ordinary
+munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is
+work for royalty or an esteemed hero. Munition grade is the neutral durability baseline. Quality
+1--5 multiplies physical durability by 0.65, 0.80, 1.00, 1.25, and 1.60 respectively: the multiplier
+raises yield and fracture stress and inversely scales ordinary wear. Outside durability and its
+maintenance requirements, quality does not currently change combat statistics, coverage, handling,
+price, or any other item property.
+
+The local catalog assigns several starter and demo items across all five qualities so the Wounded
+Demo fixture exercises each color and repair ceiling.
+
+Equippable personal-inventory rows expose a checkbox backed by the item's catalog slot. Checking
+it equips that exact inventory instance, displacing any item already occupying the selected slot;
+unchecking it unequips the instance. Non-equipment rows keep a disabled checkbox.
+
+Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. Database upgrades
+split any legacy durable stack into quantity-one instances while retaining the original row ID for
+one piece, preserving equipped references; pooled party equipment is migrated the same way.
+
+Rest resolves health first, then automatic field maintenance, then scheduled downtime. Settlement
+rest recommendations also include unfinished local smith orders. Smiths have independently seeded
+Weaponsmith and Armourer ratings of 3--5. Repair orders escrow the exact item instance, have an ETA,
+retain damage beyond the smith's skill, and never expire. A job's stable quote is
+`ceil(base_value * repairable_damage)`, with a minimum of one gold; only bins within that smith's
+skill contribute. The quote is charged atomically from personal gold when the repaired item is
+retrieved. Bulk collection is deterministic: orders are considered by submission time and ID, and
+the affordable prefix is retrieved without skipping an earlier unaffordable job.
+
+Impact damage uses each item's explicit yield, fracture, wear, and failure-share values. Ductile
+armor yields and dents readily but resists catastrophic fracture; stiff weapons resist ordinary
+wear but fail more sharply under a sufficiently large impact. Failure share models construction:
+one failed plate in segmented armor contributes less total damage than failure of a monolithic
+breastplate. Wear continuously reduces weapon precision and armor/shield handling, without reducing
+coverage for the sake of a single local hole.
 
 Weights are kilograms. The documented object weights below anchor the scale;
 the other weights are bounded gameplay estimates for ordinary serviceable

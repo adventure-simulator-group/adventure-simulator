@@ -7,6 +7,8 @@ Most aspects of resupplying, looting, selling, and stocking rations for an upcom
 ### Resupplying
 Players can define "sets" for their character. This is their weapons, armor, ammunition, potions, and tools (like pack, rope, torch, firestarting kit, and bedroll) which they expect to have on them when they set out. When in a trade menu, you can press a "resupply" button to automatically purchase any equipment that you need for your currently selected "set" that you don't already have. The button can be blue, and any items which _would_ be purchased, were you to press it, can be highlighted as blue.
 
+Durable equipment is never stacked: every weapon, shield, and armor piece is a distinct instance whose condition follows it through personal transfers, trade, loot, and the shared party inventory. Smith custody likewise preserves the instance until retrieval.
+
 ### Looting and Selling
 A party can configure a weight limit using a slider, which shows them what the total party [travel](../strategic/Travel.md) speed would be at a given limit presuming that the load is optimally distributed (such that all characters can maintain the same pace). When a tactical simulation ends, the party sees a screen that displays all of the loot available to collect. They _could_ loot each individual item and decide whose inventories they are going into, _or_ they could just press the "autoloot" button which will loot items in order of their value to weight ratio until the weight limit is reached. Like with resupplying, you can anticipate this behavior because any items to be looted will have a gold highlight which matches the gold loot button. When in a town, the loot button becomes a sell button, and any items not in any of your equipment sets will be sold.
 

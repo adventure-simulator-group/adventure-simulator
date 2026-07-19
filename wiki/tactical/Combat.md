@@ -170,23 +170,22 @@ Calibration:
 
 > Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](../shared/Stats.md) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
 ## Durability
-Each material has two numbers relevant to durability, one is durability itself, the other is "resilience". Resilience refers to how much durability damage the armor takes from hits which do *not* penetrate.
+Every durable item defines an elastic/yield threshold, catastrophic fracture threshold, ordinary
+wear rate, and catastrophic failure share. Impacts below yield do no condition damage. Above yield,
+ordinary wear accumulates continuously; above fracture, additional damage is assigned to the bin
+matching the impact severity. The failure share makes segmented construction localize a broken
+plate while a monolithic breastplate loses much more usefulness from a comparable fracture.
 
-$$
-\mathrm{DurabilityDamage} = 1 - \mathrm{resilience} \cdot \mathrm{(ImpartedJoules - threshold)}
-$$
+The five-bin condition remains one visually continuous bar. Bins indicate the Smithing skill needed
+to repair that portion, not discrete named faults. The first two bins are yellow and field-repairable;
+the last three are red and require settlement facilities. Stiff weapon steel has a relatively high
+yield threshold but a closer fracture threshold. Ductile armor yields and dents sooner while being
+harder to shatter.
 
-Extremely hard and brittle materials, such diamond, have 1.0 resilience (but low durability). Solid, ductile materials which deform plastically have very low resilience (like metal plate). And most flexible materials have fairly high resilience, since they are able to absorb a lot of the force as they bend.
-
-### Examples 
-(resistance, padding, durability, flexibility, brittleness)
-
-> Halbe: These numbers are not super well thought out
-- 3mm steel breastplate (120r, 60p, 1000, 0, 0)
-- Steel chainmail (70r, 40p, 1000, 0.8, 0)
-- Padded gambeson (60r, 40p, 250, 0.3, 0.6, 0)
-- 3mm steel brigandine (100r, 40p, 600, 0.4, 0)
-- 7mm wooden shield (100r, 20p, 100, 0.1, 0.9)
+Condition continuously lowers weapon precision (and other edge-sensitive performance) and increases
+the handling/mobility penalty of armor and shields. Armor coverage is not reduced merely because a
+local hole exists. Thus deformation of a helmet or breastplate can still impede movement without
+pretending that the whole protected region has disappeared.
 
 ## Strategic autoresolve
 

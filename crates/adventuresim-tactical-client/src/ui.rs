@@ -368,6 +368,7 @@ fn update_skills_ui(
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::Surgeon => format!("{:.2}", skills.surgeon_hours),
+            Skill::Smithing => format!("{:.2}", skills.smithing_hours),
         };
     }
 }
@@ -541,7 +542,7 @@ fn on_successful_attack_display(
             ));
             children.spawn(TextSpan::new(": "));
             match event.result {
-                AttackResult::ToAttacker { balance_damage } => {
+                AttackResult::ToAttacker { balance_damage, .. } => {
                     children.spawn((ClassList::new("error"), TextSpan::new("fail")));
                     children.spawn(TextSpan::new(format!(
                         "\n\nGot {balance_damage:.1} balance damage\n\n[part: {}]",
@@ -552,6 +553,7 @@ fn on_successful_attack_display(
                     cut_damage,
                     blunt_damage,
                     balance_damage,
+                    ..
                 } => {
                     children.spawn((ClassList::new("success"), TextSpan::new("success")));
                     children.spawn(TextSpan::new(format!(
