@@ -71,6 +71,7 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
   assert.match(layoutCss, /--building-frame-corner-size: 1\.35rem/);
   assert.match(layoutCss, /--building-panel-recess: color-mix/);
+  assert.match(layoutCss, /padding-block: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
   assert.match(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
