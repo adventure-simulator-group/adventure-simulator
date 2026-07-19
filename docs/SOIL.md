@@ -38,6 +38,15 @@ replaced, so a failed 207-file build cannot corrupt the prior generation. The
 Rust importer rechecks inventory, hashes, dimensions, nodata, Float32 band and
 compression shape, EPSG:3035 GeoKeys, transform, units, and canonical grid.
 
+Interrupted preparation preserves its private `.soilgrids-staging` directory.
+Each completed raster is validated and hash-checkpointed before the next layer
+begins, so rerunning the same `--prepare` command reuses only those verified
+layers and retries the remainder. An output from an interrupted `gdalwarp` that
+was not checkpointed is discarded; an incomplete staging directory is never
+included in a bundle or selected by the importer. Network retries use bounded
+exponential backoff (10 seconds, doubling to a five-minute cap) for both
+metadata retrieval and complete GDAL layer attempts.
+
 `latest` is a mutable rolling publication, not an immutable source pin. The
 manifest therefore records `source_reproducibility: unpinned-rolling-latest`,
 observational source SHA-256/size, ETag and Last-Modified when supplied, and

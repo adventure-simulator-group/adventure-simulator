@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -28,11 +27,13 @@ WRB = ("most-probable", "Histosols-probability", "Leptosols-probability")
 EXTENT = (900_000, 900_000, 7_400_000, 5_500_000)
 MAX_SOURCE_BYTES = 256 * 1024 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
-MAX_SOURCE_SECONDS = 300
+MAX_SOURCE_SECONDS = 900
 MAX_PIXELS = 32_000_000
-HTTP_RETRIES = 5
-HTTP_RETRY_DELAY_SECONDS = 5
-WARP_ATTEMPTS = 3
+HTTP_RETRIES = 8
+HTTP_INITIAL_RETRY_DELAY_SECONDS = 10
+HTTP_MAX_RETRY_DELAY_SECONDS = 300
+WARP_ATTEMPTS = 8
+CHECKPOINT_SCHEMA = 1
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -97,11 +98,19 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def retry_delay(attempt: int) -> int:
+    """Return a bounded exponential delay before the next retry."""
+    if attempt < 1:
+        raise ValueError("retry attempts start at one")
+    return min(HTTP_INITIAL_RETRY_DELAY_SECONDS * (2 ** (attempt - 1)),
+               HTTP_MAX_RETRY_DELAY_SECONDS)
+
+
 def command(layer: dict[str, str], vrt: str | Path, output: Path, size: int) -> list[str]:
     west, south, east, north = EXTENT
     return ["gdalwarp",
         "--config", f"GDAL_HTTP_MAX_RETRY={HTTP_RETRIES}",
-        "--config", f"GDAL_HTTP_RETRY_DELAY={HTTP_RETRY_DELAY_SECONDS}",
+        "--config", f"GDAL_HTTP_RETRY_DELAY={HTTP_INITIAL_RETRY_DELAY_SECONDS}",
         "--config", "GDAL_HTTP_RETRY_CODES=429,500,502,503,504",
         "--config", "GDAL_HTTP_TCP_KEEPALIVE=YES",
         "-overwrite", "-of", "GTiff", "-ot", "Float32", "-srcnodata",
@@ -148,7 +157,7 @@ def source_metadata(url: str) -> dict[str, object]:
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as error:
             if attempt == HTTP_RETRIES:
                 raise RuntimeError(f"SoilGrids source metadata failed after {HTTP_RETRIES} attempts: {url}") from error
-            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
+            time.sleep(retry_delay(attempt))
     raise AssertionError("metadata retry loop must return or raise")
 
 
@@ -163,7 +172,7 @@ def warp_with_retries(layer: dict[str, str], output: Path, size: int) -> None:
             output.unlink(missing_ok=True)
             if attempt == WARP_ATTEMPTS:
                 raise
-            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
+            time.sleep(retry_delay(attempt))
 
 
 def validate_prepared(path: Path, size: int) -> None:
@@ -183,6 +192,67 @@ def validate_prepared(path: Path, size: int) -> None:
         raise RuntimeError("prepared SoilGrids raster must be single-band Float32 with NaN nodata")
     if compression != "DEFLATE":
         raise RuntimeError("prepared SoilGrids raster must use DEFLATE compression")
+
+
+def checkpoint_path(staging: Path) -> Path:
+    return staging / "checkpoint.json"
+
+
+def checkpoint_header(size: int) -> dict[str, object]:
+    west, south, east, north = EXTENT
+    return {"schema": CHECKPOINT_SCHEMA, "source": "ISRIC SoilGrids rolling-v2",
+        "source_version": "latest", "crs": "EPSG:3035", "cell_size_meters": size,
+        "west": west, "south": south, "east": east, "north": north}
+
+
+def load_checkpoint(staging: Path, size: int) -> list[dict[str, object]]:
+    """Load and validate completed layers retained in an interrupted staging run."""
+    path = checkpoint_path(staging)
+    if not path.exists():
+        return []
+    if path.stat().st_size > MAX_MANIFEST_BYTES:
+        raise RuntimeError("staging checkpoint exceeds size cap")
+    checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    if any(checkpoint.get(key) != value for key, value in checkpoint_header(size).items()):
+        raise RuntimeError("staging checkpoint has a different source or grid contract")
+    records = checkpoint.get("files")
+    if not isinstance(records, list) or len(records) > len(layers()):
+        raise RuntimeError("staging checkpoint file inventory is invalid")
+    expected = {(x["property"], x["depth"], x["quantile"]): x for x in layers()}
+    root = staging.resolve()
+    identities, filenames = set(), set()
+    for record in records:
+        identity = (record.get("property"), record.get("depth"), record.get("quantile"))
+        canonical = expected.get(identity)
+        if identity in identities or record.get("filename") in filenames or canonical is None:
+            raise RuntimeError("staging checkpoint has duplicate or unexpected layer")
+        if any(record.get(key) != canonical[key] for key in ("filename", "source_url", "unit")):
+            raise RuntimeError("staging checkpoint layer differs from canonical inventory")
+        prepared = (staging / canonical["filename"]).resolve()
+        if prepared.parent != root:
+            raise RuntimeError("staging checkpoint path escapes staging directory")
+        if not prepared.is_file() or prepared.stat().st_size != record.get("prepared_size") or sha256(prepared) != record.get("prepared_sha256"):
+            raise RuntimeError(f"staging checkpoint file mismatch: {canonical['filename']}")
+        validate_prepared(prepared, size)
+        identities.add(identity)
+        filenames.add(canonical["filename"])
+    return records
+
+
+def save_checkpoint(staging: Path, size: int, records: list[dict[str, object]]) -> None:
+    checkpoint = {**checkpoint_header(size), "files": records}
+    temporary = staging / ".checkpoint.json.tmp"
+    temporary.write_text(json.dumps(checkpoint, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, checkpoint_path(staging))
+
+
+def discard_uncheckpointed_layers(staging: Path, records: list[dict[str, object]]) -> None:
+    """Drop only incomplete raster outputs left by a process killed between checkpoints."""
+    retained = {record["filename"] for record in records}
+    expected = {layer["filename"] for layer in layers()}
+    for prepared in staging.glob("*.tif"):
+        if prepared.name in expected and prepared.name not in retained:
+            prepared.unlink()
 
 
 def verify(directory: Path, size: int) -> None:
@@ -248,43 +318,50 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     generations = args.output_dir / "generations"
     generations.mkdir(exist_ok=True)
-    records = []
-    temp = Path(tempfile.mkdtemp(prefix=".soilgrids-generation-", dir=generations))
-    try:
-        for index, layer in enumerate(layers()):
-            prepared = temp / layer["filename"]
-            metadata = source_metadata(layer["source_url"])
-            warp_with_retries(layer, prepared, args.grid_cell_size_meters)
-            records.append({**layer, **metadata, "prepared_size": prepared.stat().st_size,
-                "prepared_sha256": sha256(prepared)})
-        if len(records) != 207:
-            raise RuntimeError("staged generation is incomplete")
-        for record in records:
-            prepared = temp / record["filename"]
-            validate_prepared(prepared, args.grid_cell_size_meters)
-            if prepared.stat().st_size != record["prepared_size"] or sha256(prepared) != record["prepared_sha256"]:
-                raise RuntimeError("staged generation changed before publication")
-        from datetime import datetime, timezone
-        west, south, east, north = EXTENT
-        manifest = {"schema": 1, "source": "ISRIC SoilGrids rolling-v2", "source_version": "latest",
-            "source_reproducibility": "unpinned-rolling-latest",
-            "retrieved_at": datetime.now(timezone.utc).isoformat(), "crs": "EPSG:3035",
-            "origin_easting_meters": 0, "origin_northing_meters": 0,
-            "cell_size_meters": args.grid_cell_size_meters, "west": west, "south": south,
-            "east": east, "north": north, "files": records}
-        generation = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
-        manifest["generation"] = generation
-        generation_dir = generations / generation
-        if generation_dir.exists():
-            raise RuntimeError("generation already exists; verify or choose a fresh output directory")
-        os.replace(temp, generation_dir)
-        temporary_manifest = args.output_dir / ".soilgrids-manifest.json.tmp"
-        temporary_manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        os.replace(temporary_manifest, args.output_dir / "soilgrids-manifest.json")
-        verify(args.output_dir, args.grid_cell_size_meters)
-    finally:
-        if temp.exists():
-            shutil.rmtree(temp)
+    staging = generations / ".soilgrids-staging"
+    staging.mkdir(exist_ok=True)
+    records = load_checkpoint(staging, args.grid_cell_size_meters)
+    discard_uncheckpointed_layers(staging, records)
+    records_by_identity = {(record["property"], record["depth"], record["quantile"]): record for record in records}
+    for layer in layers():
+        identity = (layer["property"], layer["depth"], layer["quantile"])
+        if identity in records_by_identity:
+            print(f"Reusing checkpointed {layer['filename']}")
+            continue
+        prepared = staging / layer["filename"]
+        metadata = source_metadata(layer["source_url"])
+        warp_with_retries(layer, prepared, args.grid_cell_size_meters)
+        validate_prepared(prepared, args.grid_cell_size_meters)
+        record = {**layer, **metadata, "prepared_size": prepared.stat().st_size,
+            "prepared_sha256": sha256(prepared)}
+        records.append(record)
+        records_by_identity[identity] = record
+        save_checkpoint(staging, args.grid_cell_size_meters, records)
+    if len(records) != 207:
+        raise RuntimeError("staged generation is incomplete")
+    for record in records:
+        prepared = staging / record["filename"]
+        validate_prepared(prepared, args.grid_cell_size_meters)
+        if prepared.stat().st_size != record["prepared_size"] or sha256(prepared) != record["prepared_sha256"]:
+            raise RuntimeError("staged generation changed before publication")
+    from datetime import datetime, timezone
+    west, south, east, north = EXTENT
+    manifest = {"schema": 1, "source": "ISRIC SoilGrids rolling-v2", "source_version": "latest",
+        "source_reproducibility": "unpinned-rolling-latest",
+        "retrieved_at": datetime.now(timezone.utc).isoformat(), "crs": "EPSG:3035",
+        "origin_easting_meters": 0, "origin_northing_meters": 0,
+        "cell_size_meters": args.grid_cell_size_meters, "west": west, "south": south,
+        "east": east, "north": north, "files": records}
+    generation = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    manifest["generation"] = generation
+    generation_dir = generations / generation
+    if generation_dir.exists():
+        raise RuntimeError("generation already exists; verify or choose a fresh output directory")
+    os.replace(staging, generation_dir)
+    temporary_manifest = args.output_dir / ".soilgrids-manifest.json.tmp"
+    temporary_manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary_manifest, args.output_dir / "soilgrids-manifest.json")
+    verify(args.output_dir, args.grid_cell_size_meters)
 
 
 if __name__ == "__main__":

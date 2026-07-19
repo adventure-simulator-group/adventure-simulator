@@ -40,8 +40,15 @@ class SoilGridsInitializerTests(unittest.TestCase):
         self.assertIn("-dstnodata", command)
         self.assertEqual(command[command.index("-ot") + 1], "Float32")
         self.assertEqual(command[command.index("-t_srs") + 1], "EPSG:3035")
-        self.assertIn("GDAL_HTTP_MAX_RETRY=5", command)
+        self.assertIn(f"GDAL_HTTP_MAX_RETRY={module.HTTP_RETRIES}", command)
         self.assertIn("GDAL_HTTP_RETRY_CODES=429,500,502,503,504", command)
+
+    def test_retry_delay_is_bounded_exponential_backoff(self):
+        self.assertEqual(module.retry_delay(1), module.HTTP_INITIAL_RETRY_DELAY_SECONDS)
+        self.assertEqual(module.retry_delay(2), module.HTTP_INITIAL_RETRY_DELAY_SECONDS * 2)
+        self.assertEqual(module.retry_delay(99), module.HTTP_MAX_RETRY_DELAY_SECONDS)
+        with self.assertRaises(ValueError):
+            module.retry_delay(0)
 
     @patch("time.sleep")
     @patch("subprocess.run")
@@ -52,7 +59,7 @@ class SoilGridsInitializerTests(unittest.TestCase):
             output.write_bytes(b"partial")
             module.warp_with_retries(module.layers()[0], output, 1000)
             self.assertEqual(run.call_count, 2)
-            self.assertEqual(sleep.call_args.args[0], module.HTTP_RETRY_DELAY_SECONDS)
+            self.assertEqual(sleep.call_args.args[0], module.retry_delay(1))
             self.assertFalse(output.exists())
 
     @patch("time.sleep")
@@ -62,7 +69,30 @@ class SoilGridsInitializerTests(unittest.TestCase):
         opener.side_effect = [urllib.error.URLError("temporary"), type("Opener", (), {"open": lambda self, request, timeout: response})()]
         result = module.source_metadata("https://files.isric.org/soilgrids/latest/data/sand/sand_0-5cm_Q0.05.vrt")
         self.assertEqual(result["source_observation_size"], 0)
-        self.assertEqual(sleep.call_args.args[0], module.HTTP_RETRY_DELAY_SECONDS)
+        self.assertEqual(sleep.call_args.args[0], module.retry_delay(1))
+
+    @patch.object(module, "validate_prepared")
+    def test_checkpoint_reuses_verified_layers_and_discards_uncheckpointed_output(self, validate):
+        layer = module.layers()[0]
+        with tempfile.TemporaryDirectory() as directory:
+            staging = Path(directory) / ".soilgrids-staging"
+            staging.mkdir()
+            completed = staging / layer["filename"]
+            completed.write_bytes(b"completed")
+            record = {**layer, "source_observation_size": 0,
+                "source_observation_sha256": "0" * 64, "source_observation_etag": None,
+                "source_observation_last_modified": None, "prepared_size": completed.stat().st_size,
+                "prepared_sha256": module.sha256(completed)}
+            module.save_checkpoint(staging, 1000, [record])
+            (staging / module.layers()[1]["filename"]).write_bytes(b"incomplete")
+
+            records = module.load_checkpoint(staging, 1000)
+            module.discard_uncheckpointed_layers(staging, records)
+
+            self.assertEqual(records, [record])
+            self.assertTrue(completed.exists())
+            self.assertFalse((staging / module.layers()[1]["filename"]).exists())
+            self.assertEqual(validate.call_count, 1)
 
     def test_vsicurl_preserves_master_url_for_relative_vrt_tiles(self):
         url = module.layers()[0]["source_url"]
