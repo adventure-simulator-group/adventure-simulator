@@ -1021,9 +1021,10 @@ async fn continue_camp_travel(State(state): State<AppState>, session: Session) -
         .call("continue_camp_travel", &[json!(character_id)])
         .await
     {
-        // Navigation follows the authoritative SSE revision once the party
-        // state is visible to every connected member.
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // A normal form redirect re-renders the authoritative camp or arrival
+        // state. This remains reliable even when the live revision races the
+        // reducer response.
+        Ok(()) => Redirect::to("/camp").into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }

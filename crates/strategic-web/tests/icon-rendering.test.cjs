@@ -36,11 +36,14 @@ test("travel planner renders journey provisions and exact staged market quantiti
   assert.match(planner, /VERTICAL_PATH_END - VERTICAL_PATH_START/);
   assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
-  assert.match(planner, /const vertical = progress \* 100/);
+  assert.match(planner, /const vertical = VERTICAL_PATH_START \+ \(VERTICAL_PATH_END - VERTICAL_PATH_START\) \* progress/);
   assert.match(planner, /journeyTurnaroundMinutes/);
   assert.match(planner, /setPathRange\(planner\.querySelector\("\[data-travel-progress\]"\), 0, progressPercent\)/);
   assert.match(planner, /else targetPath\.removeAttribute\("d"\)/);
   assert.match(planner, /pathname === "\/camp\/continue"/);
+  assert.match(planner, /dataset\.travelPlannerReady === "true"/);
+  assert.match(planner, /"strategic-live-regions-refreshed"/);
+  assert.match(planner, /includes\("right-sidebar"\)\) initializeTravelPlanner\(\)/);
   assert.match(planner, /setTimeout\(\(\) => window\.location\.assign\(fallbackDestination\), 1800\)/);
   assert.doesNotMatch(planner, /clearTimeout\(fallback\)/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(remainingDays \+ target - foodDays\)/);
@@ -74,6 +77,9 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.doesNotMatch(planner, /travel-plan-label/);
   assert.match(template, /data-travel-progress/);
   assert.match(template, /data-journey-turnaround-minutes/);
+  assert.match(template, /right-sidebar travel-configuration-sidebar/);
+  assert.match(template, /form action="\/camp\/continue" method="post" \{/);
+  assert.doesNotMatch(template, /form action="\/camp\/continue" method="post" data-travel-submit/);
   assert.match(template, /"travel-planner-vertical no-destination"/);
   assert.doesNotMatch(template, /Break camp to travel the next planned leg|The whole party rests/);
   assert.match(css, /\.camp-journey-section[^}]+flex: 1 1 auto/);
@@ -87,4 +93,12 @@ test("merchant provisioning initializes only once the Party tab DOM exists", () 
   assert.match(trade, /partyTab\.click\(\)/);
   assert.match(trade, /\["travel_ration", parseQuantity\("provision_rations"\)\]/);
   assert.match(trade, /\["waterskin", parseQuantity\("provision_waterskins"\)\]/);
+});
+
+test("live sidebar refreshes stop once form navigation begins", () => {
+  const source = fs.readFileSync(path.join(staticRoot, "static", "live-regions.js"), "utf8");
+  assert.match(source, /let navigating = false/);
+  assert.match(source, /if \(navigating\) return/);
+  assert.match(source, /"strategic-navigation-start"/);
+  assert.match(source, /window\.clearTimeout\(refreshTimer\)/);
 });

@@ -1,6 +1,8 @@
 (() => {
+  const initializeTravelPlanner = () => {
   const planner = document.querySelector("[data-travel-planner]");
-  if (!planner) return;
+  if (!planner || planner.dataset.travelPlannerReady === "true") return;
+  planner.dataset.travelPlannerReady = "true";
 
   const route = planner.querySelector("[data-travel-planner-route]");
   const targetInput = document.querySelector("[data-target-surplus]");
@@ -71,7 +73,7 @@
       element.setAttribute("aria-label", node.label);
       element.title = node.description || node.label;
       const progress = node.minute / totalMinutes;
-      const vertical = progress * 100;
+      const vertical = VERTICAL_PATH_START + (VERTICAL_PATH_END - VERTICAL_PATH_START) * progress;
       element.style.top = `${vertical}%`;
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
@@ -313,5 +315,11 @@
       control.querySelectorAll(".rest-duration-unit").forEach((label) => label.classList.toggle("active", label.contains(radio) && radio.checked));
       control.querySelector("[data-rest-unit-label]").textContent = radio.value;
     }));
+  });
+  };
+
+  initializeTravelPlanner();
+  document.addEventListener("strategic-live-regions-refreshed", (event) => {
+    if (event.detail?.regions?.includes("right-sidebar")) initializeTravelPlanner();
   });
 })();

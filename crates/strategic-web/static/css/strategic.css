@@ -230,6 +230,22 @@
   background: transparent;
   box-shadow: none;
 }
+.travel-configuration-sidebar { display: flex; flex-direction: column; overflow-y: hidden; }
+.travel-configuration-sidebar > .sidebar-section:first-child {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: .75rem;
+}
+.travel-configuration-sidebar > .sidebar-section:first-child .travel-planner-vertical {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 8rem;
+  margin: .15rem 0 .45rem;
+}
+.travel-configuration-sidebar > .sidebar-section:first-child .travel-track { min-height: 0; }
+.travel-configuration-sidebar > .sidebar-section:not(:first-child) { flex: 0 0 auto; }
 .camp-journey-sidebar { display: flex; flex-direction: column; overflow-y: hidden; }
 .camp-journey-section { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; margin-bottom: 0; }
 .camp-journey-section .travel-planner-vertical { flex: 1 1 auto; height: auto; min-height: 0; margin: .15rem 0 .45rem; }

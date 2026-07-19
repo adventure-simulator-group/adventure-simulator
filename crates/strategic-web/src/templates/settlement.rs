@@ -628,7 +628,7 @@ pub(crate) fn map_destination_detail(
             .unwrap_or("")
     );
     html! {
-        aside class="right-sidebar" {
+        aside class=(if party.is_some() && can_configure_travel { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
@@ -908,7 +908,7 @@ pub fn camp_page(
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast))
                 }
-                form action="/camp/continue" method="post" data-travel-submit {
+                form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
                 }
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
