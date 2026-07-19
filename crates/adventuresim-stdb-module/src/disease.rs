@@ -73,6 +73,18 @@ pub struct DiseaseNotice {
     pub message: String,
 }
 
+/// Public agent knowledge distilled from symptom notices. It deliberately
+/// carries no infection ID, disease identity, differential, or private vitals.
+#[derive(Clone, Debug)]
+#[table(accessor = character_illness_status, public)]
+pub struct CharacterIllnessStatus {
+    #[primary_key]
+    pub character_id: u64,
+    pub symptomatic: bool,
+    pub critical: bool,
+    pub updated_at_minute: u64,
+}
+
 /// Pending one-shot result of a completed fifteen-minute examination. It is
 /// removed when the doctor treats or declines and is never medical history.
 #[derive(Clone, Debug)]
@@ -213,7 +225,7 @@ fn notice(
     minute: u64,
     kind: &str,
     message: &str,
-) {
+) -> Result<(), String> {
     let id = format!("disease-{infection_id}-{minute}-{kind}");
     if ctx.db.disease_notice().id().find(&id).is_none() {
         ctx.db.disease_notice().insert(DiseaseNotice {
@@ -224,6 +236,43 @@ fn notice(
             message: message.into(),
         });
     }
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |attributes| attributes.immunity);
+    let states = character_episodes(ctx, character_id)?
+        .into_iter()
+        .map(|episode| disease::evaluate(episode, minute, immunity))
+        .collect::<Vec<_>>();
+    let symptomatic = states.iter().any(|state| {
+        !matches!(
+            state.stage,
+            disease::DiseaseStage::Incubating | disease::DiseaseStage::Resolved
+        )
+    });
+    let critical = states
+        .iter()
+        .any(|state| state.stage == disease::DiseaseStage::Critical);
+    let row = CharacterIllnessStatus {
+        character_id,
+        symptomatic,
+        critical,
+        updated_at_minute: minute,
+    };
+    if ctx
+        .db
+        .character_illness_status()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        ctx.db.character_illness_status().character_id().update(row);
+    } else {
+        ctx.db.character_illness_status().insert(row);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, SpacetimeType)]
@@ -453,7 +502,7 @@ pub fn clip_elapsed_for_disease(
                 event.minute,
                 "symptom-onset",
                 "New symptoms have appeared.",
-            ),
+            )?,
             DiseaseEventKind::Peak => {}
             DiseaseEventKind::Critical(_) => notice(
                 ctx,
@@ -462,7 +511,7 @@ pub fn clip_elapsed_for_disease(
                 event.minute,
                 "critical",
                 "A vital humour is failing.",
-            ),
+            )?,
             DiseaseEventKind::Resolution => notice(
                 ctx,
                 character_id,
@@ -470,7 +519,7 @@ pub fn clip_elapsed_for_disease(
                 event.minute,
                 "resolution",
                 "The illness's visible effects have resolved.",
-            ),
+            )?,
         }
     }
     let Some(death_minute) = death_minute else {
@@ -483,7 +532,7 @@ pub fn clip_elapsed_for_disease(
         death_minute,
         "critical",
         "A vital humour is failing.",
-    );
+    )?;
     Ok((
         death_minute.saturating_sub(now),
         terminal.map(|value| value.1),

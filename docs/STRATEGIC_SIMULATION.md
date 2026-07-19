@@ -103,11 +103,14 @@ guarded to registered simulation characters.
 
 Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
 fixture seeds one deterministic influenza episode behind the same claimed-run capability boundary as
-other simulator-only setup. Policy observes public condition rather than private infection identity,
-uses the ordinary herbalist examination and reads only its caller-scoped one-shot result, then either
+other simulator-only setup. Policy observes public condition and the narrow public symptomatic/critical
+signal rather than private infection identity or vitals, uses the ordinary herbalist examination and
+filters the trusted one-shot result by its simulator-owned patient ID, then either
 crafts a matching course when skill and already-owned ingredients justify it or buys the prepared
 course. It verifies the authoritative equipped-medication row, dismisses the examination, and rests in
-bounded one-day steps until ready. Quests remain suppressed while a member is unsafe. Reports audit
+bounded one-day steps until ready. While treatment is active it authoritatively replaces the saved
+personality schedule with pure rest, then restores that profile schedule after recovery so labor or
+thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
 diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
 recoveries, suppression, and terminal deaths.
 

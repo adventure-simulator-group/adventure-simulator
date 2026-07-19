@@ -101,7 +101,16 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
             CoreLoopEventKind::SubmitRepair,
             CoreLoopEventKind::WaitForRepair,
             CoreLoopEventKind::RetrieveRepair,
+            CoreLoopEventKind::Equip,
         ],
+    );
+    assert!(
+        report
+            .final_agents
+            .iter()
+            .filter(|agent| agent.alive)
+            .all(|agent| !agent.equipment_item_ids.is_empty()),
+        "living NPCs must retain equipped items after smith retrieval"
     );
     assert!(report.metrics.diagnoses_attempted > 0);
     assert!(report.metrics.diagnoses_confirmed > 0);

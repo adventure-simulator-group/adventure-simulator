@@ -285,17 +285,25 @@ pub fn seed_simulation_disease(
             contracted_at: 0,
             treated_at: None,
         });
+    let requested =
+        adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)
+            .incubation_minutes
+            .saturating_add(60);
+    // Advance through the same disease interval hooks as ordinary gameplay so
+    // the simulator observes symptom onset instead of receiving hidden fixture
+    // knowledge from the private infection row.
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, requested)?;
     let mut time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or("Simulation character time not found")?;
-    time.minutes =
-        adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)
-            .incubation_minutes
-            .saturating_add(60);
+    time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    crate::require_living_character(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
