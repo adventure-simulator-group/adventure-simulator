@@ -822,7 +822,9 @@ pub struct CharacterStrategicCondition {
     pub fatigue: f32,
     pub hunger: f32,
     pub thirst: f32,
+    /// Positive physiological food reserve in travel days; excludes inventory.
     pub food_days: f32,
+    /// Positive physiological hydration reserve in travel days; excludes carried water.
     pub water_days: f32,
     pub water_capacity_ml: u32,
     pub incapacitation: f32,

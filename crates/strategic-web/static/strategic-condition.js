@@ -11,13 +11,15 @@
       return;
     }
 
+    const styles = getComputedStyle(wheel);
+    const color = (name, fallback) => styles.getPropertyValue(`--incap-${name}`).trim() || fallback;
     const components = [
-      ["pain", condition.pain, "#d973a2"],
-      ["blood loss", condition.blood_loss, "#c84747"],
-      ["fear", condition.fear, "#4f83cc"],
-      ["fatigue", condition.fatigue, "#202020"],
-      ["hunger", condition.hunger, "#b57a35"],
-      ["thirst", condition.thirst, "#3f9fa8"],
+      ["pain", condition.pain, color("pain", "#d973a2")],
+      ["blood loss", condition.blood_loss, color("blood", "#c84747")],
+      ["fear", condition.fear, color("fear", "#4f83cc")],
+      ["fatigue", condition.fatigue, color("fatigue", "#202020")],
+      ["hunger", condition.hunger, color("hunger", "#b57a35")],
+      ["thirst", condition.thirst, color("thirst", "#3f9fa8")],
     ];
     let cursor = 0;
     const stops = [];

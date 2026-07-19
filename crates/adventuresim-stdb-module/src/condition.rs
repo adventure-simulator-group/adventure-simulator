@@ -97,7 +97,9 @@ pub struct CharacterStrategicCondition {
     pub fatigue: f32,
     pub hunger: f32,
     pub thirst: f32,
+    /// Positive physiological food reserve, expressed in travel days.
     pub food_days: f32,
+    /// Positive physiological hydration reserve, expressed in travel days.
     pub water_days: f32,
     pub water_capacity_ml: u32,
     pub incapacitation: f32,
@@ -181,6 +183,14 @@ fn inventory_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) ->
         .filter((character_id, item_id))
         .map(|entry| entry.quantity)
         .sum()
+}
+
+fn food_reserve_days(needs: &CharacterNeeds) -> f32 {
+    needs.food_balance_kcal.max(0.0) / TRAVEL_CALORIES_PER_DAY
+}
+
+fn water_reserve_days(needs: &CharacterNeeds) -> f32 {
+    needs.water_balance_ml.max(0.0) / TRAVEL_WATER_ML_PER_DAY
 }
 
 fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
@@ -936,10 +946,8 @@ fn evaluate_strategic_condition(
             fatigue: incapacitation.fatigue,
             hunger: incapacitation.hunger,
             thirst: incapacitation.thirst,
-            food_days: (needs.food_balance_kcal.max(0.0) / TRAVEL_CALORIES_PER_DAY)
-                + inventory_quantity(ctx, character_id, TRAVEL_RATION_ID) as f32,
-            water_days: (needs.water_balance_ml.max(0.0) + needs.carried_water_ml)
-                / TRAVEL_WATER_ML_PER_DAY,
+            food_days: food_reserve_days(&needs),
+            water_days: water_reserve_days(&needs),
             water_capacity_ml: water_capacity,
             incapacitation: incapacitation.total(),
             check_multiplier: incapacitation.check_multiplier(),
@@ -1661,8 +1669,9 @@ pub fn set_character_religion(
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectedMoraleSource, accumulated_leisure_morale, condition_projection_member_ids,
-        holy_day_demand_has_expired, leisure_morale_effect, rank_morale_sources,
+        CharacterNeeds, ProjectedMoraleSource, accumulated_leisure_morale,
+        condition_projection_member_ids, food_reserve_days, holy_day_demand_has_expired,
+        leisure_morale_effect, rank_morale_sources, water_reserve_days,
     };
 
     #[test]
@@ -1680,6 +1689,19 @@ mod tests {
         DailySchedule, LEISURE_MORALE_LIMIT, settlement_leisure_outcome,
     };
     use adventuresim_core::strategic_time::MINUTES_PER_DAY;
+
+    #[test]
+    fn condition_reserve_days_exclude_carried_provisions() {
+        let needs = CharacterNeeds {
+            character_id: 1,
+            food_balance_kcal: 3_000.0,
+            water_balance_ml: 1_000.0,
+            carried_water_ml: 40_000.0,
+        };
+
+        assert_eq!(food_reserve_days(&needs), 0.5);
+        assert_eq!(water_reserve_days(&needs), 0.25);
+    }
 
     #[test]
     fn holy_day_demands_expire_after_their_day_or_on_departure() {
