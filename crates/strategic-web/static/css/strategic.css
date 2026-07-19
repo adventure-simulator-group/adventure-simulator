@@ -701,30 +701,15 @@
 .repair-custody-skill .skill-rank-bar { flex: 1; }
 .repair-custody-panel h3 { margin: 0; padding: 0.55rem var(--padding); font-size: var(--font-size-sm); }
 .repair-retrieve-all-form { display: contents; }
-.repair-custody-item-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.2rem;
-  white-space: nowrap;
-}
-.repair-custody-table thead .repair-retrieve-all {
-  position: absolute;
-  top: 50%;
-  right: -1.65rem;
-  width: 1.35rem;
-  height: 1.35rem;
-  opacity: 0.8;
-  transform: translateY(-50%);
-}
 .repair-custody-scroll {
+  --repair-custody-action-overhang: calc(1.35rem + var(--building-frame-corner-size, 0rem) + .3rem);
   box-sizing: border-box;
-  width: calc(100% + 1.65rem);
+  width: calc(100% + var(--repair-custody-action-overhang));
   min-height: 0;
-  padding-right: 1.65rem;
+  padding-right: var(--repair-custody-action-overhang);
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
 }

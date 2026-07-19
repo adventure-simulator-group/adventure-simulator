@@ -93,9 +93,10 @@
 .inventory-transfer-glyph i:first-child { margin-left:0; }
 .trade-transfer-left .inventory-transfer-glyph { transform:rotate(180deg); }
 .inventory-actions-header { z-index:40; }
-.inventory-footer-actions { position:absolute; top:50%; display:flex; align-items:center; gap:2px; width:max-content; padding:0; transform:translateY(-50%); }
-.left-sidebar .inventory-actions-header > .inventory-footer-actions { left:.3rem; }
-.right-sidebar .inventory-actions-header > .inventory-footer-actions { right:.3rem; }
+.inventory-footer-actions { position:absolute; top:50%; box-sizing:border-box; display:flex; align-items:center; gap:2px; width:max-content; height:100%; min-height:1.8rem; border-bottom:1px solid var(--border-light); background:var(--panel-bg); opacity:0; transform:translateY(-50%); transition:opacity .12s; }
+.left-sidebar .inventory-actions-header > .inventory-footer-actions { left:0; padding-left:.3rem; }
+.right-sidebar .inventory-actions-header > .inventory-footer-actions { right:0; padding-right:.3rem; }
+.trade-inventory-table thead:hover .inventory-footer-actions, .inventory-footer-actions:hover, .inventory-footer-actions:focus-within { opacity:1; }
 .inventory-footer-transfer { position:static; width:1.35rem; height:1.35rem; opacity:.8; transform:none; }
 .inventory-footer-repair { display:block; width:1.35rem; height:1.35rem; }
 .inventory-footer-repair .repair-all-button { width:1.35rem; height:1.35rem; opacity:.8; }

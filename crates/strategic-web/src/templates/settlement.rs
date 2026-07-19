@@ -2025,19 +2025,28 @@ fn repair_custody_panel(
                 @if matching.is_empty() { p class="text-muted small-copy" { "No items entrusted." } }
                 div class="repair-custody-list" {
                     table class="trade-inventory-table repair-custody-table" {
+                        colgroup {
+                            col class="inventory-column-type";
+                            col class="inventory-column-item";
+                            col class="inventory-column-durability";
+                            col class="repair-column-eta";
+                            col class="inventory-column-gold";
+                            col class="inventory-column-actions";
+                        }
                         thead { tr {
                             (item_type_header())
-                            th scope="col" class="inventory-column-item" {
-                                span class="repair-custody-item-heading" { span { "Item" }
-                                    form class="repair-retrieve-all-form" data-repair-retrieve-form data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
-                                        input type="hidden" name="limit" value="2";
-                                        button type="submit" class="trade-transfer trade-transfer-right repair-retrieve-all" data-dynamic-transfer data-default-transfer-mode="target" data-transfer-mode="target" data-label-target="Retrieve up to two completed repairs" data-label-all="Retrieve all completed repairs" title="Retrieve up to two completed repairs" aria-label="Retrieve up to two completed repairs" { (transfer_glyph(2)) }
-                                    }
-                                }
-                            }
+                            th scope="col" class="inventory-column-item" { "Item" }
                             th scope="col" class="inventory-column-durability" { "Durability" }
                             th scope="col" class="repair-column-eta" { "ETA" }
                             th scope="col" class="inventory-column-gold" title="Full repair cost (Currency)" { (currency_header("Full repair cost in Currency")) }
+                            th class="inventory-actions-header" aria-label="Repair retrieval actions" {
+                                div class="inventory-footer-actions repair-custody-header-actions" {
+                                    form class="repair-retrieve-all-form" data-repair-retrieve-form data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) method="post" {
+                                        input type="hidden" name="limit" value="2";
+                                        button type="submit" class="trade-transfer trade-transfer-right inventory-footer-transfer repair-retrieve-all" data-dynamic-transfer data-default-transfer-mode="target" data-transfer-mode="target" data-label-target="Retrieve up to two completed repairs" data-label-all="Retrieve all completed repairs" title="Retrieve up to two completed repairs" aria-label="Retrieve up to two completed repairs" { (transfer_glyph(2)) }
+                                    }
+                                }
+                            }
                         } }
                         tbody {
                         @for order in matching {
@@ -2047,7 +2056,14 @@ fn repair_custody_panel(
                             @let remaining = order.ready_at_minutes.saturating_sub(now);
                             tr class="trade-inventory-row trade-row-merchant repair-order-row" {
                                 td class="inventory-item-type" { (item_type_icon(&order.item_id)) }
-                                td class="inventory-item-name" { (item_name_with_quality(&order.item_id, definition))
+                                td class="inventory-item-name" { (item_name_with_quality(&order.item_id, definition)) }
+                                td class="inventory-durability" {
+                                    @if ready { (completed_repair_condition_bar(condition, order.smith_skill)) }
+                                    @else { (condition_bar(condition, Some(order.smith_skill))) }
+                                }
+                                td class="repair-column-eta" { @if ready { "Ready" } @else { (format!("{}h {}m", remaining / 60, remaining % 60)) } }
+                                td class="inventory-gold" title="Quoted full-job cost, paid on retrieval" { (order.quoted_cost) }
+                                td class="inventory-actions-cell" aria-label="Item actions" {
                                     span class="inventory-row-actions repair-retrieve-actions" {
                                         form data-repair-retrieve-form data-single-action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) data-bulk-action=(format!("/settlements/{}/{}/repairs/retrieve", settlement.id, service_id)) action=(format!("/settlements/{}/{}/repairs/{}/retrieve", settlement.id, service_id, order.id)) method="post" {
                                             input type="hidden" name="item_id" value=(&order.item_id);
@@ -2056,12 +2072,6 @@ fn repair_custody_panel(
                                         }
                                     }
                                 }
-                                td class="inventory-durability" {
-                                    @if ready { (completed_repair_condition_bar(condition, order.smith_skill)) }
-                                    @else { (condition_bar(condition, Some(order.smith_skill))) }
-                                }
-                                td class="repair-column-eta" { @if ready { "Ready" } @else { (format!("{}h {}m", remaining / 60, remaining % 60)) } }
-                                td class="inventory-gold" title="Quoted full-job cost, paid on retrieval" { (order.quoted_cost) }
                             }
                         }
                         }
@@ -4406,7 +4416,9 @@ mod tests {
         for tier in 1..=5 {
             assert!(weapons.contains(&format!("skill-rank-segment-{tier}")));
         }
-        assert!(weapons.contains("repair-custody-item-heading"));
+        assert!(weapons.contains("repair-custody-header-actions"));
+        assert!(weapons.contains("inventory-actions-header"));
+        assert!(weapons.contains("inventory-actions-cell"));
         assert!(weapons.contains("Durability"));
         assert!(weapons.contains("ETA"));
         assert!(weapons.contains("Full repair cost"));
@@ -4859,9 +4871,10 @@ mod tests {
         assert!(css.contains("col.inventory-column-item { width: auto; }"));
         assert!(css.contains(".smith-player-inventory-table"));
         assert!(css.contains("width: 3.65rem;"));
-        assert!(css.contains(".repair-custody-item-heading"));
-        assert!(css.contains("width: calc(100% + 1.65rem);"));
-        assert!(css.contains("right: -1.65rem;"));
+        assert!(css.contains("--repair-custody-action-overhang"));
+        assert!(css.contains("width: calc(100% + var(--repair-custody-action-overhang));"));
+        assert!(css.contains("padding-right: var(--repair-custody-action-overhang);"));
+        assert!(css.contains("scrollbar-gutter: stable;"));
         assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
         assert!(!utilities.contains(".smith-wares-scroll .inventory-row-actions"));
         assert!(utilities.contains(".inventory-actions-cell"));
@@ -4885,6 +4898,8 @@ mod tests {
         assert!(utilities.contains(".inventory-footer-repair .repair-all-button"));
         assert!(utilities.contains("grid-template-columns:repeat(2,1.35rem)"));
         assert!(utilities.contains(".inventory-actions-header > .inventory-footer-actions"));
+        assert!(utilities.contains("thead:hover .inventory-footer-actions"));
+        assert!(utilities.contains("background:var(--panel-bg)"));
         assert!(
             utilities
                 .contains(".smith-player-actions .row-repair-form { position:static; order:0;")
