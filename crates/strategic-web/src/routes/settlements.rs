@@ -101,10 +101,11 @@ use crate::spacetimedb::{
     TravelEdge,
 };
 use crate::templates::settlement::{
-    ActivityPreviewRates, LocationKind, LocationView, MerchantShop, RestSummary, alchemy_page,
-    camp_page, inn_page, live_merchant_shop_page, merchants_page, party_discard_page,
-    party_inventory_page, party_personal_page, party_pool_page, party_stats_page, religion_page,
-    rest_result_page, settlement_map_page, settlement_overview_page,
+    ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
+    RestSummary, alchemy_page, camp_page, inn_page, live_merchant_shop_page, merchants_page,
+    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
+    party_stats_page, religion_page, rest_result_page, settlement_map_page,
+    settlement_overview_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -124,6 +125,7 @@ pub fn routes() -> Router<AppState> {
         .route("/camp", get(camp))
         .route("/camp/rest", post(rest_at_camp))
         .route("/camp/continue", post(continue_camp_travel))
+        .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
             "/api/settlements/{id}/service-quests",
             get(service_quest_offers),
@@ -904,6 +906,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .await
     .ok()
     .flatten();
+    let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
     Html(
         camp_page(
             &party,
@@ -911,6 +914,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &destination_name,
             Some(&character),
             &party_members,
+            &camp_destinations,
             provision_forecast.as_ref(),
             default_rest_minutes,
             Some(&character.name),
@@ -918,6 +922,57 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .into_string(),
     )
     .into_response()
+}
+
+async fn camp_settlement_destinations(
+    state: &AppState,
+    party: &Party,
+    journey: Option<&PartyJourney>,
+) -> Vec<CampTravelDestination> {
+    let Some(journey) = journey else {
+        return Vec::new();
+    };
+    let mut endpoints = Vec::new();
+    if journey.origin_kind == "settlement" && journey.completed_minutes > 0 {
+        endpoints.push((journey.origin_id.as_str(), journey.completed_minutes));
+    }
+    if journey.destination_kind == "settlement" {
+        endpoints.push((
+            journey.destination_id.as_str(),
+            journey
+                .total_minutes
+                .saturating_sub(journey.completed_minutes),
+        ));
+    }
+
+    let mut destinations = Vec::new();
+    for (id, journey_minutes) in endpoints {
+        if destinations
+            .iter()
+            .any(|destination: &CampTravelDestination| destination.id == id)
+        {
+            continue;
+        }
+        let settlement = state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(id)
+            ))
+            .await
+            .ok()
+            .flatten();
+        if let Some(settlement) = settlement {
+            destinations.push(CampTravelDestination {
+                current: party.camp_destination_kind.as_deref() == Some("settlement")
+                    && party.camp_destination_id.as_deref() == Some(id),
+                id: settlement.id,
+                name: settlement.name,
+                journey_minutes,
+            });
+        }
+    }
+    destinations
 }
 
 #[derive(Deserialize)]
@@ -969,6 +1024,27 @@ async fn continue_camp_travel(State(state): State<AppState>, session: Session) -
         // Navigation follows the authoritative SSE revision once the party
         // state is visible to every connected member.
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn change_camp_destination(
+    State(state): State<AppState>,
+    session: Session,
+    Path(settlement_id): Path<String>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "travel_to_settlement",
+            &[json!(character_id), json!(settlement_id)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }

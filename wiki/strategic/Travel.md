@@ -66,8 +66,10 @@ no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
 shared Map tab: destinations are selected in the left rail while the right rail
 sets the fatigue threshold at which the first tiring member makes camp.
-Hovering or selecting a destination previews the route above chat with start,
-camp, destination, and animated party pins. The preview is calculated from the
+Selecting a destination previews the route in the travel-configuration rail.
+Food and water form adjacent vertical rails, a white rail replaces them behind
+the party as travel progresses, and horizontal markers identify the start,
+forecast camps, quest turnaround, and end. The preview is calculated from the
 same least-rested-member fatigue and Endurance rule that advances travel, so it
 does not use a browser-only daily-march approximation. A journey longer than a
 leg stops at a persisted camp; the leader may rest the whole party for free and
@@ -76,7 +78,10 @@ original endpoints, total duration, actual camp checkpoints, and the remaining
 forecast. SSE updates therefore keep every party member's tracker consistent
 across camp rests and page navigations. A shorter-than-recommended camp rest
 can legitimately add a future projected camp, but camps already reached never
-disappear. A party's
+disappear. While camped, the left rail keeps the journey's settlement endpoints
+available, so the leader can redirect the remaining journey or turn back before
+continuing. Choosing a different endpoint only changes the plan; the party can
+rest before attempting the new leg. A party's
 active quest destination is added to the settlement Map list only while the
 party is at the quest's posting settlement; it carries a red exclamation. From
 any other settlement, the Map traces the shortest road/ferry path to the
@@ -120,17 +125,18 @@ Recommendations of a day or longer are shown in days.
 
 Travel has one **Begin journey** action. The route preview aggregates the
 physiological reserves and provisions of every living member together with the
-shared party inventory. Food and water tracks show where each aggregate supply
-runs out and report a signed surplus or shortfall in days. Route, food, and
-water share one horizontal timeline. Settlement journeys end at the settlement;
-quest journeys place the quest destination midway and extend the return journey
-to home after it, including return-leg camp estimates because a quest location
-cannot resupply the party.
+shared party inventory. Food and water rails show where each aggregate supply
+runs out. Settlement journeys end at the settlement; quest journeys place the
+quest destination partway down the rails and extend the estimate through the
+return journey home, including return-leg camp estimates because a quest
+location cannot resupply the party.
 
 The leader can set a transient target surplus, including a negative target, in
 Travel configuration. **Buy** opens the current settlement's General Market,
 selects Party inventory, and stages the exact whole rations and waterskins
-needed to reach that target. It does not submit the offer. Party gold pays when
+needed to reach that target. The transparent target rails are removed after
+departure, when the settlement merchant is no longer available. It does not
+submit the offer. Party gold pays when
 the leader accepts the normal merchant offer; the former fixed 30% buffer and
 automatic provisioning purchase no longer apply.
 

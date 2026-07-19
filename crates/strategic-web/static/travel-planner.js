@@ -71,7 +71,7 @@
       element.setAttribute("aria-label", node.label);
       element.title = node.description || node.label;
       const progress = node.minute / totalMinutes;
-      const vertical = 5 + progress * 90;
+      const vertical = progress * 100;
       element.style.top = `${vertical}%`;
       if (index < nodes.length - 1) element.dataset.connects = "true";
       return element;
@@ -195,8 +195,10 @@
           showStatus("Travel request sent to the party leader.");
           return;
         }
-        const fallback = window.setTimeout(() => window.location.assign("/camp"), 1800);
-        document.addEventListener("strategic-navigation-start", () => window.clearTimeout(fallback), { once: true });
+        const fallbackDestination = new URL(form.action, window.location.href).pathname === "/camp/continue"
+          ? "/"
+          : "/camp";
+        window.setTimeout(() => window.location.assign(fallbackDestination), 1800);
       } catch (error) {
         form.dataset.submitting = "";
         showStatus(error.message || "Unable to begin this journey.");
@@ -271,7 +273,9 @@
       const remainingDays = Math.max(0, (totalMinutes - completedMinutes) / 1440);
       const targetEnd = progressPercent + (remainingDays + target) / journeyDays * 100;
       setPathRange(row.querySelector("[data-resource-fill]"), progressPercent, availableEnd);
-      setPathRange(row.querySelector("[data-resource-target]"), progressPercent, targetEnd);
+      const targetPath = row.querySelector("[data-resource-target]");
+      if (targetInput) setPathRange(targetPath, progressPercent, targetEnd);
+      else targetPath.removeAttribute("d");
       const sign = target < 0 ? "negative" : target > 0 ? "positive" : "zero";
       row.dataset.targetSign = sign;
     });

@@ -36,9 +36,13 @@ test("travel planner renders journey provisions and exact staged market quantiti
   assert.match(planner, /VERTICAL_PATH_END - VERTICAL_PATH_START/);
   assert.doesNotMatch(planner, /strokeDasharray/);
   assert.doesNotMatch(planner, /RETURN_PATH/);
-  assert.match(planner, /const vertical = 5 \+ progress \* 90/);
+  assert.match(planner, /const vertical = progress \* 100/);
   assert.match(planner, /journeyTurnaroundMinutes/);
   assert.match(planner, /setPathRange\(planner\.querySelector\("\[data-travel-progress\]"\), 0, progressPercent\)/);
+  assert.match(planner, /else targetPath\.removeAttribute\("d"\)/);
+  assert.match(planner, /pathname === "\/camp\/continue"/);
+  assert.match(planner, /setTimeout\(\(\) => window\.location\.assign\(fallbackDestination\), 1800\)/);
+  assert.doesNotMatch(planner, /clearTimeout\(fallback\)/);
   assert.match(planner, /Math\.ceil\(Math\.max\(0, \(remainingDays \+ target - foodDays\)/);
   assert.match(planner, /params\.set\("provision_rations"/);
   assert.match(planner, /params\.set\("provision_waterskins"/);

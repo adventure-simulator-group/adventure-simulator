@@ -5021,6 +5021,59 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     }
 }
 
+fn camp_redirect_minutes(journey: &PartyJourney, settlement_id: &str) -> Option<u64> {
+    if journey.origin_kind == "settlement" && journey.origin_id == settlement_id {
+        return Some(journey.completed_minutes);
+    }
+    if journey.destination_kind == "settlement" && journey.destination_id == settlement_id {
+        return Some(
+            journey
+                .total_minutes
+                .saturating_sub(journey.completed_minutes),
+        );
+    }
+    None
+}
+
+fn redirect_camped_party_to_settlement(
+    ctx: &ReducerContext,
+    party: &mut Party,
+    destination: &Settlement,
+) -> Result<(), String> {
+    let mut journey = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party.id)
+        .ok_or("Camp journey not found")?;
+    let travel_minutes = camp_redirect_minutes(&journey, &destination.id)
+        .ok_or("That settlement is not an endpoint of this camp journey")?;
+    if travel_minutes == 0 {
+        return Err("The party is already at that journey endpoint".into());
+    }
+
+    journey.origin_kind = "camp".into();
+    journey.origin_id = party.id.clone();
+    journey.origin_name = "Camp".into();
+    journey.destination_kind = "settlement".into();
+    journey.destination_id = destination.id.clone();
+    journey.destination_name = destination.name.clone();
+    journey.total_minutes = travel_minutes;
+    journey.completed_minutes = 0;
+    journey.camp_stop_minutes.clear();
+    journey.forecast_camp_stop_minutes =
+        forecast_camp_stop_minutes(ctx, &party.id, travel_minutes, 0, journey.fatigue_percent)?;
+    ctx.db.party_journey().party_id().update(journey);
+
+    party.current_settlement_id = None;
+    party.current_quest_location_id = None;
+    party.camp_destination_kind = Some("settlement".into());
+    party.camp_destination_id = Some(destination.id.clone());
+    party.camp_remaining_minutes = travel_minutes;
+    ctx.db.party().id().update(party.clone());
+    Ok(())
+}
+
 #[reducer]
 pub fn travel_to_quest(
     ctx: &ReducerContext,
@@ -5158,14 +5211,22 @@ pub fn travel_to_settlement(
         if party.leader_id != character_id {
             return Err("Only the party leader can travel".into());
         }
+    }
+
+    // Choosing a different camp destination only changes the planned route.
+    // The party can rest before it attempts the newly selected leg.
+    if let Some(party) = party.as_mut()
+        && party.camp_destination_id.is_some()
+    {
+        return redirect_camped_party_to_settlement(ctx, party, &destination);
+    }
+
+    if let Some(party) = party.as_ref() {
         // A defeated party can withdraw from an off-road quest location to
         // recover at a settlement, but may not begin ordinary travel while a
         // member is incapacitated.
         if party.current_quest_location_id.is_none() {
             require_party_ready(ctx, &party.id)?;
-        }
-        if party.camp_destination_id.is_some() {
-            return Err("Break camp and continue the current journey first".into());
         }
     } else {
         crate::condition::require_character_ready(ctx, character_id)?;

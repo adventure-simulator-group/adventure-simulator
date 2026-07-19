@@ -235,6 +235,9 @@
 .camp-journey-section .travel-planner-vertical { flex: 1 1 auto; height: auto; min-height: 0; margin: .15rem 0 .45rem; }
 .camp-journey-section .travel-track { min-height: 0; }
 .camp-journey-section form { flex: 0 0 auto; }
+.camp-destination-list form { margin: 0; }
+.camp-destination-row { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.camp-destination-row:disabled { cursor: default; opacity: 1; }
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
 .travel-provisioning-input input { min-width: 0; width: 7rem; }
 .travel-provisioning-unit { white-space: nowrap; }

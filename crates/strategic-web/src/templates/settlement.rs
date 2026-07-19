@@ -851,6 +851,13 @@ fn format_camp_forecasts(destination: &TravelDestination) -> String {
         .join("|")
 }
 
+pub(crate) struct CampTravelDestination {
+    pub id: String,
+    pub name: String,
+    pub journey_minutes: u64,
+    pub current: bool,
+}
+
 /// The transient strategic location between planned travel legs.
 pub fn camp_page(
     party: &Party,
@@ -858,6 +865,7 @@ pub fn camp_page(
     destination_name: &str,
     active_character: Option<&Character>,
     party_members: &[Character],
+    camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
     logged_in_as: Option<&str>,
@@ -870,6 +878,24 @@ pub fn camp_page(
                 p class="text-muted small-copy" { "Destination: " (destination_name) }
                 p class="text-muted small-copy" { (format_journey_time(party.camp_remaining_minutes)) " remaining" }
             }))
+            @if !camp_destinations.is_empty() {
+                (sidebar_section("Destinations", html! {
+                    nav class="location-destination-list camp-destination-list" aria-label="Available camp destinations" {
+                        @for destination in camp_destinations {
+                            form action=(format!("/camp/destination/{}", destination.id)) method="post" {
+                                button type="submit" class="list-item travel-destination-row camp-destination-row"
+                                    disabled[destination.current] {
+                                    strong { (&destination.name) }
+                                    span class="text-muted small-copy" {
+                                        @if destination.current { "Current" }
+                                        @else { (format_journey_time(destination.journey_minutes)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }))
+            }
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
