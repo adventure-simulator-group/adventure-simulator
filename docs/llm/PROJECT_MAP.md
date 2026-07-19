@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (796)
+## Files (797)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -546,6 +546,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/tests/viabundus_fixture.rs` — Rust source module.
 - `crates/adventuresim-world-schema/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-world-schema/src/lib.rs` — Rust source module for this component.
+- `crates/strategic-web/AGENTS.md` — Project documentation.
 - `crates/strategic-web/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/strategic-web/Dockerfile` — Container build definition.
 - `crates/strategic-web/README.md` — Component overview and usage notes.

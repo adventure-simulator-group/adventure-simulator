@@ -21,6 +21,11 @@ documentation is intentionally changed as part of the task.
 - Prefer `just fmt`, `just check`, `just test`, or the narrowest relevant command for verification.
 - Treat generated SpacetimeDB client bindings in `crates/adventuresim-stdb-client/src/` as generated output; regenerate them with `just generate-db-client` when changing their source schema.
 - Update the relevant README, `docs/`, or `wiki/` page whenever a change affects documented behavior, architecture, or developer workflow.
+- Use icons where they improve the clarity or usability of the interface. Prefer the
+  locally vendored Game Icons SVGs in `crates/strategic-web/static/icons/game/`;
+  when a suitable icon is missing, source it from the same Game-Icons.net collection
+  through Iconify (`@iconify-json/game-icons`) and update both that directory's
+  `ATTRIBUTION.md` and `THIRD_PARTY_NOTICES.md`.
 
 ## Project map maintenance
 
