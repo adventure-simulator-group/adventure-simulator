@@ -2746,8 +2746,37 @@ async fn inn(
 
 #[derive(Deserialize)]
 struct RestForm {
-    duration: u64,
+    duration: f64,
     unit: String,
+    requested_minutes: Option<u64>,
+}
+
+const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
+
+fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+    let minutes = match form.unit.as_str() {
+        "hours" => form.requested_minutes.unwrap_or_else(|| {
+            if form.duration.is_finite() && form.duration >= 0.0 {
+                (form.duration * 60.0).round() as u64
+            } else {
+                0
+            }
+        }),
+        "days" => {
+            if !form.duration.is_finite() || form.duration.fract() != 0.0 {
+                return Err("Rest days must be a whole number");
+            }
+            (form.duration as u64).saturating_mul(1_440)
+        }
+        _ => return Err("Unknown rest duration unit"),
+    };
+    if minutes < 1_440 {
+        return Err("Settlement rest must last at least one day");
+    }
+    if minutes > MAX_SETTLEMENT_REST_MINUTES {
+        return Err("Settlement rest cannot exceed 365 days");
+    }
+    Ok(minutes)
 }
 
 async fn rest(
@@ -2764,6 +2793,16 @@ async fn rest(
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
+    let requested_minutes = match settlement_rest_minutes(&form) {
+        Ok(minutes) => minutes,
+        Err(message) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Html(format!("<h1>Unable to rest</h1><p>{message}</p>")),
+            )
+                .into_response();
+        }
+    };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
         query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
@@ -2778,11 +2817,7 @@ async fn rest(
         .db
         .call(
             "rest_at_settlement_hours",
-            &[
-                json!(character_id),
-                json!(rest_duration_minutes(form.duration, &form.unit)),
-                json!(at_inn),
-            ],
+            &[json!(character_id), json!(requested_minutes), json!(at_inn)],
         )
         .await
     {
@@ -3847,6 +3882,46 @@ pub(crate) async fn get_active_party_members(
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
+}
+
+#[cfg(test)]
+mod rest_form_tests {
+    use super::{RestForm, settlement_rest_minutes};
+
+    fn form(duration: f64, unit: &str, requested_minutes: Option<u64>) -> RestForm {
+        RestForm {
+            duration,
+            unit: unit.into(),
+            requested_minutes,
+        }
+    }
+
+    #[test]
+    fn exact_hours_preserve_minutes_and_enforce_one_day() {
+        assert_eq!(
+            settlement_rest_minutes(&form(24.02, "hours", Some(1_441))),
+            Ok(1_441)
+        );
+        assert!(settlement_rest_minutes(&form(23.99, "hours", Some(1_439))).is_err());
+    }
+
+    #[test]
+    fn decimal_hours_fallback_rounds_to_the_nearest_minute() {
+        assert_eq!(
+            settlement_rest_minutes(&form(24.51, "hours", None)),
+            Ok(1_471)
+        );
+    }
+
+    #[test]
+    fn days_are_independent_whole_days_with_a_minimum_of_one() {
+        assert_eq!(
+            settlement_rest_minutes(&form(2.0, "days", Some(1_441))),
+            Ok(2_880)
+        );
+        assert!(settlement_rest_minutes(&form(0.0, "days", None)).is_err());
+        assert!(settlement_rest_minutes(&form(1.5, "days", None)).is_err());
+    }
 }
 
 #[cfg(test)]

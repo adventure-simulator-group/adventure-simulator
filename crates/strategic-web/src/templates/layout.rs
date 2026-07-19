@@ -115,6 +115,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
                     script src="/static/travel-planner.js?v=journey-state-1" defer {}
+                    script src="/static/rest-duration.js?v=wake-time-1" defer {}
                 }
             }
             body {
@@ -223,7 +224,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=environment-2" {}
+        script src="/static/strategic-time.js?v=wake-time-1" {}
     }
 }
 
