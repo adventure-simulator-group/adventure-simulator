@@ -206,16 +206,17 @@
   position: absolute;
   z-index: 0;
   display: block;
-  inset: -0.25rem -0.35rem 0.15rem;
+  inset: -0.25rem -0.35rem -0.25rem;
   background-image:
     linear-gradient(var(--building-tint), var(--building-tint)),
     var(--service-building-image);
-  background-position: center;
+  background-position: center bottom;
   background-size: contain;
   background-repeat: no-repeat;
   background-blend-mode: color, normal;
-  -webkit-mask: var(--service-building-image) center / contain no-repeat;
-  mask: var(--service-building-image) center / contain no-repeat;
+  -webkit-mask: var(--service-building-image) center bottom / contain no-repeat;
+  mask: var(--service-building-image) center bottom / contain no-repeat;
+  filter: brightness(var(--building-light, 78%));
   pointer-events: none;
 }
 
@@ -230,6 +231,18 @@
 .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab.active {
   background: transparent;
   border-color: var(--accent-light);
+}
+
+.settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab.active::after {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--accent-light);
+  content: "";
+  pointer-events: none;
 }
 
 /* Village art is the per-service baseline for every settlement tier. Town and
@@ -306,7 +319,25 @@
   left: 50%;
   bottom: 0.65rem;
   transform: translateX(-50%);
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 65%));
+  background-color: transparent;
+  -webkit-mask: none;
+  mask: none;
+  filter: none;
+}
+
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon::before,
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon::after {
+  position: absolute;
+  inset: 0;
+  background-color: var(--text-primary);
+  -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
+  mask: var(--service-tab-icon) center / contain no-repeat;
+  content: "";
+}
+
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon::before {
+  background-color: rgb(18 17 16 / 92%);
+  transform: scale(1.16);
 }
 
 .service-tab-icon-market { --service-tab-icon: url("/static/icons/game/scales.svg"); }
@@ -322,6 +353,11 @@
 
 .settlement-services .nav-tab:hover .service-tab-icon,
 .settlement-services .nav-tab.active .service-tab-icon { background-color: var(--text-primary); }
+
+.settlement-top-bar[data-environment="settlement"] .nav-tab:hover .service-tab-icon,
+.settlement-top-bar[data-environment="settlement"] .nav-tab.active .service-tab-icon {
+  background-color: transparent;
+}
 
 .service-tab-icon-provisions {
   --service-tab-icon: url("/static/icons/game/bread.svg");
