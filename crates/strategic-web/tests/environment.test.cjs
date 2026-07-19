@@ -55,8 +55,11 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
 });
 
 test("building tabs have roofs without making the desktop header scroll", () => {
+  assert.match(baseCss, /--settlement-header-height:112px/);
+  assert.match(layoutCss, /body:has\(\.settlement-top-bar\) \.main-grid \{[\s\S]*var\(--settlement-header-height\)/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.nav-tab::before/);
   assert.match(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
+  assert.match(layoutCss, /\.settlement-services \.nav-tab \{[\s\S]*height: 4\.25rem/);
   assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
