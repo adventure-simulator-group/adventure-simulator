@@ -70,6 +70,10 @@ dev:
 dev-full:
     @just web
 
+# Start only the persistent strategic layer and its browser UI.
+dev-strategic:
+    @just web-strategic
+
 # Start the local browser stack.
 web: preflight spacetime-start publish _seed-world build-wasm build-tactical
     @just _spawner-start
@@ -85,10 +89,29 @@ web: preflight spacetime-start publish _seed-world build-wasm build-tactical
      TACTICAL_STATIC_DIR={{strategic_static}} \
      cargo run -p strategic-web
 
+# Start the strategic browser stack without building or running tactical services.
+web-strategic: preflight spacetime-start publish _seed-world verify-db-client
+    @just _spawner-stop
+    @echo ""
+    @echo "Starting strategic-web server (strategic-only mode)..."
+    @echo "Open: http://localhost:{{web_port}}"
+    @echo "Tactical server spawning is disabled."
+    @echo ""
+    @SPACETIMEDB_HOST={{spacetime_url}} \
+     SPACETIMEDB_DATABASE={{spacetime_module}} \
+     BIND_ADDRESS=127.0.0.1:{{web_port}} \
+     STATIC_DIR={{strategic_web_dir}}/static \
+     TACTICAL_STATIC_DIR={{strategic_static}} \
+     cargo run -p strategic-web
+
 # Start a disposable, worktree-safe stack. Every destructive target is derived
 # from the validated profile and loopback base port.
 web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-client build-wasm build-tactical
     @{{python_bin}} scripts/dev_stack.py run-profile {{quote(profile)}} {{quote(base_port)}}
+
+# Start a disposable, worktree-safe strategic-only stack.
+web-isolated-strategic profile="renderer-demo" base_port="23100": preflight verify-db-client
+    @{{python_bin}} scripts/dev_stack.py run-profile --strategic-only {{quote(profile)}} {{quote(base_port)}}
 
 # Canonical database deletion is deliberately unavailable. Use web-isolated.
 web-reset:

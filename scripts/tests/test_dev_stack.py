@@ -41,6 +41,14 @@ class ProfileTests(unittest.TestCase):
             port = listener.getsockname()[1]
             self.assertEqual(dev_stack.ports_in_use([port]), [port])
 
+    def test_strategic_only_profile_does_not_reserve_tactical_port(self):
+        values = dev_stack.profile_values("demo", 23100)
+        self.assertEqual(dev_stack.profile_ports(values, with_tactical=False), [23100, 23101])
+        self.assertEqual(
+            dev_stack.profile_ports(values, with_tactical=True),
+            [23100, 23101, 23102],
+        )
+
     def test_symlink_profile_path_rejected(self):
         with tempfile.TemporaryDirectory() as state:
             root = Path(state)
@@ -172,6 +180,14 @@ class WorkflowTests(unittest.TestCase):
                     "--reset-profile", "demo", "--base-port", "23100",
                 ])
 
+    def test_profile_parser_supports_strategic_only_mode(self):
+        args = dev_stack.create_parser().parse_args([
+            "run-profile", "--strategic-only", "demo", "23100",
+        ])
+        self.assertTrue(args.strategic_only)
+        self.assertEqual(args.name, "demo")
+        self.assertEqual(args.base_port, 23100)
+
     def test_binding_diff_detects_changed_and_extra_files(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
             Path(left, "a.rs").write_text("fn a() {}\n")
@@ -203,6 +219,13 @@ class WorkflowTests(unittest.TestCase):
                 dev_stack.stop_recorded(metadata, {"role": "test"})
             self.assertTrue(metadata.exists())
 
+    def test_canonical_stop_does_not_require_tactical_binaries(self):
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.object(dev_stack, "runtime_root", return_value=Path(temp)), \
+             mock.patch.object(dev_stack, "spawner_identity") as spawner_identity:
+            self.assertEqual(dev_stack.canonical_spawner("stop"), 0)
+        spawner_identity.assert_not_called()
+
     def test_child_exit_rejected_during_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
             metadata = Path(temp, "process.json")
@@ -216,10 +239,20 @@ class WorkflowTests(unittest.TestCase):
 
     def test_just_recipe_shell_quotes_untrusted_parameters(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()
-        line = next(line for line in source.splitlines() if "run-profile" in line)
-        self.assertIn("{{quote(profile)}}", line)
-        self.assertIn("{{quote(base_port)}}", line)
-        self.assertNotIn("'{{profile}}'", line)
+        lines = [line for line in source.splitlines() if "run-profile" in line]
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertIn("{{quote(profile)}}", line)
+            self.assertIn("{{quote(base_port)}}", line)
+            self.assertNotIn("'{{profile}}'", line)
+
+    def test_strategic_only_recipes_skip_tactical_builds(self):
+        source = Path(dev_stack.ROOT, "justfile").read_text()
+        canonical = next(line for line in source.splitlines() if line.startswith("web-strategic:"))
+        isolated = next(line for line in source.splitlines() if line.startswith("web-isolated-strategic "))
+        for line in (canonical, isolated):
+            self.assertNotIn("build-wasm", line)
+            self.assertNotIn("build-tactical", line)
 
 
 if __name__ == "__main__":
