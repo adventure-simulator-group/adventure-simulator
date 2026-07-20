@@ -1,9 +1,35 @@
 (() => {
+  const createDirtyRetryPolicy = ({ setTimer, clearTimer, maxAttempts = 6 }) => {
+    let attempts = 0;
+    let timer;
+    return {
+      schedule(callback) {
+        if (attempts >= maxAttempts) return false;
+        clearTimer(timer);
+        const delay = Math.min(4000, 250 * (2 ** attempts));
+        attempts += 1;
+        timer = setTimer(callback, delay);
+        return true;
+      },
+      reset() {
+        attempts = 0;
+        clearTimer(timer);
+        timer = undefined;
+      },
+      attempts: () => attempts,
+    };
+  };
+  window.strategicLiveRetryPolicyFactory = createDirtyRetryPolicy;
   if (!document.querySelector("#strategic-live-revision")) return;
 
   let generation = 0;
   let refreshTimer;
   let navigating = false;
+  let dirtyRetryPending = false;
+  const dirtyRetry = createDirtyRetryPolicy({
+    setTimer: window.setTimeout.bind(window),
+    clearTimer: window.clearTimeout.bind(window),
+  });
 
   const draftMaps = ["merchantDraft", "merchantSells", "partyTradeDraft",
     "inventoryDiscardDraft", "lootTransferDraft", "poolTransferDraft"];
@@ -90,9 +116,18 @@
       replaced.push("party-portraits");
     }
     if (!sidebarsAreBusy()) {
+      dirtyRetryPending = false;
+      dirtyRetry.reset();
       if (!schedulePendingAtStart && !scheduleEditorIsPending()
         && replaceIfChanged(".left-sidebar", nextDocument)) replaced.push("left-sidebar");
       if (replaceIfChanged(".right-sidebar", nextDocument)) replaced.push("right-sidebar");
+    } else {
+      // Do not lose the invalidation while an editor protects its local draft.
+      // A bounded timer keeps retrying until the region is safe to reconcile.
+      dirtyRetryPending = true;
+      dirtyRetry.schedule(() => {
+        if (dirtyRetryPending) refresh().catch((error) => window.reportStrategicError(error, "live regions"));
+      });
     }
 
     if (!replaced.length) return;
@@ -110,12 +145,23 @@
     refreshTimer = window.setTimeout(() => refresh().catch((error) => window.reportStrategicError(error, "live regions")), 40);
   };
 
+  const reconcileDirtyWhenIdle = () => {
+    if (!dirtyRetryPending || sidebarsAreBusy()) return;
+    dirtyRetry.reset();
+    scheduleRefresh();
+  };
+
   document.addEventListener("strategic-navigation-start", () => {
     navigating = true;
     generation += 1;
     window.clearTimeout(refreshTimer);
+    dirtyRetry.reset();
   });
 
   document.addEventListener("strategic-live-update", scheduleRefresh);
   document.addEventListener("strategic-live-refresh-requested", scheduleRefresh);
+  document.addEventListener("focusout", reconcileDirtyWhenIdle);
+  document.addEventListener("change", reconcileDirtyWhenIdle);
+  document.addEventListener("strategic-editor-idle", reconcileDirtyWhenIdle);
+  document.addEventListener("strategic-trade-draft-changed", reconcileDirtyWhenIdle);
 })();

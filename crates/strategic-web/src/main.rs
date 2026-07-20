@@ -79,7 +79,9 @@ async fn main() -> anyhow::Result<()> {
     let app = app.layer(axum::middleware::from_fn(log_http_request));
 
     // Parse bind address
-    let addr: SocketAddr = config.bind_address.parse()?;
+    let addr: SocketAddr = config
+        .validated_bind_address()
+        .map_err(anyhow::Error::msg)?;
 
     // Start server
     let listener = tokio::net::TcpListener::bind(addr).await?;

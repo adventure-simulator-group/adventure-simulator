@@ -59,7 +59,7 @@ pub(crate) fn enrich(
             .ok_or_else(|| Error::Validation(format!("route {} has missing to node", edge.id)))?;
         let a = projection.project(from.0, from.1)?;
         let b = projection.project(to.0, to.1)?;
-        let cell = u32::from(world.metadata.spatial_grid.cell_size_meters().get());
+        let cell = world.metadata.spatial_grid.cell_size_meters().get();
         let route_direction = (
             b.easting_millimeters() - a.easting_millimeters(),
             b.northing_millimeters() - a.northing_millimeters(),

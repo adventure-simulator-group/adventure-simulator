@@ -89,8 +89,8 @@ impl PartyAction {
             Self::TravelToSettlement { .. } | Self::TravelToQuest { .. } => "travel".into(),
             Self::RemovePartyMember { .. } => "kick".into(),
             Self::CreateRecruitmentRole { .. } => "add_role".into(),
-            Self::UpdateRecruitmentRole { role_id, .. } => format!("edit_role:{role_id}"),
-            Self::DeleteRecruitmentRole { role_id } => format!("delete_role:{role_id}"),
+            Self::UpdateRecruitmentRole { .. } => "edit_role".into(),
+            Self::DeleteRecruitmentRole { .. } => "delete_role".into(),
             Self::AcceptJoinRequest { .. } => "accept_join".into(),
             Self::RejectJoinRequest { .. } => "reject_join".into(),
             Self::AcceptQuest { .. } => "accept_quest".into(),
@@ -236,11 +236,12 @@ impl PartyAction {
                 scene_key,
             } => (
                 "request_tactical_server",
-                vec![json!(mission_id), json!(scene_key)],
+                vec![json!(actor_id), json!(mission_id), json!(scene_key)],
             ),
-            Self::CancelMission { mission_id } => {
-                ("cancel_mission_request", vec![json!(mission_id)])
-            }
+            Self::CancelMission { mission_id } => (
+                "cancel_mission_request",
+                vec![json!(actor_id), json!(mission_id)],
+            ),
         }
     }
 }
@@ -269,6 +270,30 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<PartyAction>(&encoded).unwrap(),
             action
+        );
+    }
+
+    #[test]
+    fn recruitment_role_kinds_are_stable_and_keep_ids_in_the_payload() {
+        let edit = PartyAction::UpdateRecruitmentRole {
+            role_id: 17,
+            name: "Scout".into(),
+            quantity: 1,
+            requirements: RecruitmentRequirements::default(),
+            weapon_precision: 0.0,
+        };
+        let delete = PartyAction::DeleteRecruitmentRole { role_id: 17 };
+        assert_eq!(edit.kind(), "edit_role");
+        assert_eq!(delete.kind(), "delete_role");
+        assert!(
+            serde_json::to_string(&edit)
+                .unwrap()
+                .contains("\"role_id\":17")
+        );
+        assert!(
+            serde_json::to_string(&delete)
+                .unwrap()
+                .contains("\"role_id\":17")
         );
     }
 }

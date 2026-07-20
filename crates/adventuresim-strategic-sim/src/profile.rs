@@ -328,8 +328,10 @@ fn generated_schedule(
     // Ten-minute units make profiles readable and keep allocation exact.
     let activity_minutes = 240 + (rng.next_u64() % 49) as u16 * 10;
     let training_minutes = 120 + (rng.next_u64() % 37) as u16 * 10;
-    let mut s = DailySchedule::default();
-    s.combat_auto_train = false;
+    let mut s = DailySchedule {
+        combat_auto_train: false,
+        ..DailySchedule::default()
+    };
     match preferred {
         ActivityPreference::Labor => s.labor = activity_minutes,
         ActivityPreference::Prayer => s.prayer = activity_minutes,
@@ -363,28 +365,28 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
     for axis in axes.into_iter().take(count) {
         match axis {
             0 => {
-                p.nerve = if rng.next_u64() % 2 == 0 {
+                p.nerve = if rng.next_u64().is_multiple_of(2) {
                     Nerve::Brave
                 } else {
                     Nerve::Fearful
                 }
             }
             1 => {
-                p.drive = if rng.next_u64() % 2 == 0 {
+                p.drive = if rng.next_u64().is_multiple_of(2) {
                     Drive::Ambitious
                 } else {
                     Drive::Content
                 }
             }
             2 => {
-                p.outlook = if rng.next_u64() % 2 == 0 {
+                p.outlook = if rng.next_u64().is_multiple_of(2) {
                     Outlook::Sanguine
                 } else {
                     Outlook::Brooding
                 }
             }
             3 => {
-                p.sociability = if rng.next_u64() % 2 == 0 {
+                p.sociability = if rng.next_u64().is_multiple_of(2) {
                     Sociability::Gregarious
                 } else {
                     Sociability::Solitary
@@ -398,14 +400,14 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
                 }
             }
             5 => {
-                p.self_regard = if rng.next_u64() % 2 == 0 {
+                p.self_regard = if rng.next_u64().is_multiple_of(2) {
                     SelfRegard::Proud
                 } else {
                     SelfRegard::Humble
                 }
             }
             _ => {
-                p.conviction = if rng.next_u64() % 2 == 0 {
+                p.conviction = if rng.next_u64().is_multiple_of(2) {
                     Conviction::Zealous
                 } else {
                     Conviction::Irreverent

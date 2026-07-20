@@ -3487,7 +3487,7 @@ impl GridCellSizeMeters {
     pub const DEFAULT: u32 = 1_000;
 
     pub fn new(meters: u32) -> Result<Self, SpatialGridSpecError> {
-        if !(Self::MIN..=Self::MAX).contains(&meters) || meters % 250 != 0 {
+        if !(Self::MIN..=Self::MAX).contains(&meters) || !meters.is_multiple_of(250) {
             return Err(SpatialGridSpecError::InvalidCellSize(meters));
         }
         Ok(Self(meters))
@@ -3884,6 +3884,7 @@ pub struct TravelEdgeImport {
 pub struct SettlementImport {
     pub id: String,
     pub source_node_id: u64,
+    #[serde(deserialize_with = "deserialize_settlement_name")]
     pub name: String,
     pub longitude: f64,
     pub latitude: f64,
@@ -3903,6 +3904,43 @@ pub struct SettlementImport {
     pub industries: InferredIndustryProfile,
     pub scene_key: String,
     pub sources: String,
+}
+
+pub const MAX_SETTLEMENT_NAME_CHARS: usize = 160;
+
+pub fn valid_settlement_name(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.chars().count() <= MAX_SETTLEMENT_NAME_CHARS
+        && !value.chars().any(char::is_control)
+}
+
+fn deserialize_settlement_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if valid_settlement_name(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(
+            "settlement name must contain 1 to 160 non-control characters",
+        ))
+    }
+}
+
+#[cfg(test)]
+mod settlement_name_tests {
+    use super::*;
+
+    #[test]
+    fn settlement_names_are_bounded_and_reject_controls() {
+        assert!(valid_settlement_name("Lübeck"));
+        assert!(!valid_settlement_name(""));
+        assert!(!valid_settlement_name("bad\nname"));
+        assert!(!valid_settlement_name(
+            &"x".repeat(MAX_SETTLEMENT_NAME_CHARS + 1)
+        ));
+    }
 }
 
 #[cfg(test)]

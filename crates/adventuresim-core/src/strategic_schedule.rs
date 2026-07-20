@@ -325,8 +325,8 @@ pub fn apply_adaptive_combat_training(
         });
         let low = normalized.into_iter().fold(f32::INFINITY, f32::min);
         if !low.is_finite() || adaptive <= EPS {
-            for i in 0..4 {
-                *hours.get_mut(i).unwrap() += base[i] * remaining;
+            for (hours, base) in hours.iter_mut().zip(base) {
+                *hours += base * remaining;
             }
             break;
         }

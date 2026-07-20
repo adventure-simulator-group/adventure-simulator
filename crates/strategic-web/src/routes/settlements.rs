@@ -579,7 +579,10 @@ async fn settlement_map(
     {
         state
             .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -878,7 +881,10 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     for attempt in 0..4 {
         party = state
             .db
-            .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{party_id}'"))
+            .query_one::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .ok()
             .flatten();
@@ -902,7 +908,8 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         Some("settlement") => state
             .db
             .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = '{destination_id}'"
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(destination_id)
             ))
             .await
             .ok()
@@ -911,7 +918,8 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         Some("quest") => state
             .db
             .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = '{destination_id}'"
+                "SELECT * FROM quest WHERE id = {}",
+                sql_string_literal(destination_id)
             ))
             .await
             .ok()
@@ -928,8 +936,8 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         journey = state
             .db
             .query_one::<PartyJourney>(&format!(
-                "SELECT * FROM party_journey WHERE party_id = '{}'",
-                party.id
+                "SELECT * FROM party_journey WHERE party_id = {}",
+                sql_string_literal(&party.id)
             ))
             .await
             .ok()
@@ -968,8 +976,8 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     let itinerary = state
         .db
         .query_one::<PartyJourneyItinerary>(&format!(
-            "SELECT * FROM party_journey_itinerary WHERE party_id = '{}'",
-            party.id
+            "SELECT * FROM party_journey_itinerary WHERE party_id = {}",
+            sql_string_literal(&party.id)
         ))
         .await
         .ok()
@@ -1234,8 +1242,8 @@ async fn travel_provision_forecast_for_minutes(
         let pooled: Vec<PartyInventoryItem> = state
             .db
             .query(&format!(
-                "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-                party.id
+                "SELECT * FROM party_inventory_item WHERE party_id = {}",
+                sql_string_literal(&party.id)
             ))
             .await
             .map_err(|error| error.to_string())?;
@@ -1354,16 +1362,16 @@ async fn service_quest_offers(
     let issuers: Vec<QuestIssuer> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest_issuer WHERE settlement_id = '{}'",
-            id
+            "SELECT * FROM quest_issuer WHERE settlement_id = {}",
+            sql_string_literal(&id)
         ))
         .await
         .unwrap_or_default();
     let quests: Vec<Quest> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = '{}'",
-            id
+            "SELECT * FROM quest WHERE settlement_id = {}",
+            sql_string_literal(&id)
         ))
         .await
         .unwrap_or_default();
@@ -1383,7 +1391,10 @@ async fn service_quest_offers(
     {
         state
             .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -1742,7 +1753,10 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
     let location = match kind {
         LocationKind::Settlement => state
             .db
-            .query_one::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(id)
+            ))
             .await
             .map(|row| {
                 row.map(|settlement| {
@@ -1755,7 +1769,10 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
             }),
         LocationKind::Quest => state
             .db
-            .query_one::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+            .query_one::<Quest>(&format!(
+                "SELECT * FROM quest WHERE id = {}",
+                sql_string_literal(id)
+            ))
             .await
             .map(|row| row.map(|quest| (quest.title, None, None))),
     };
@@ -2316,16 +2333,16 @@ async fn party_pool_inventory(
     let pooled: Vec<PartyInventoryItem> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_inventory_item WHERE party_id = {}",
+            sql_string_literal(party_id)
         ))
         .await
         .unwrap_or_default();
     let stakes: Vec<PartyStake> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_stake WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_stake WHERE party_id = {}",
+            sql_string_literal(party_id)
         ))
         .await
         .unwrap_or_default();
@@ -2680,7 +2697,10 @@ async fn party_stats(
     let active_party = match active_character.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -2690,7 +2710,10 @@ async fn party_stats(
     let selected_party = match selected.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -3137,7 +3160,10 @@ async fn inn(
 ) -> Html<String> {
     let settlements: Vec<Settlement> = state
         .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .query(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default();
 
@@ -3335,7 +3361,10 @@ async fn rest(
 
     let settlements: Vec<Settlement> = state
         .db
-        .query(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .query(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.first() else {
@@ -3736,7 +3765,10 @@ async fn religion_dialogue(
 ) -> Json<ReligionDialogue> {
     let settlement = state
         .db
-        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .query::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -3788,7 +3820,10 @@ async fn set_religion(
     let religion_id = form.religion_id.trim();
     let settlement = state
         .db
-        .query::<Settlement>(&format!("SELECT * FROM settlement WHERE id = '{}'", id))
+        .query::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -3990,7 +4025,10 @@ async fn inventory_trade_context(
         let personal = state.db.query(&personal_sql).await.unwrap_or_default();
         return (personal, Vec::new(), Vec::new());
     };
-    let party_sql = format!("SELECT * FROM party WHERE id = '{}'", party_id);
+    let party_sql = format!(
+        "SELECT * FROM party WHERE id = {}",
+        sql_string_literal(party_id)
+    );
     let (personal, party) = tokio::join!(
         state.db.query(&personal_sql),
         state.db.query::<Party>(&party_sql),
@@ -4005,8 +4043,8 @@ async fn inventory_trade_context(
         party.leader_id
     );
     let pooled_sql = format!(
-        "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-        party_id
+        "SELECT * FROM party_inventory_item WHERE party_id = {}",
+        sql_string_literal(party_id)
     );
     let (party_targets, pooled) = tokio::join!(
         state.db.query(&party_targets_sql),
@@ -4032,7 +4070,10 @@ async fn render_service_page(
     session: Session,
     render: ServiceRenderer,
 ) -> Html<String> {
-    let settlement_sql = format!("SELECT * FROM settlement WHERE id = '{}'", id);
+    let settlement_sql = format!(
+        "SELECT * FROM settlement WHERE id = {}",
+        sql_string_literal(&id)
+    );
     let (settlements, active_character) = tokio::join!(
         state.db.query::<Settlement>(&settlement_sql),
         get_active_character(&state, session.character_id_u64()),
@@ -4417,8 +4458,14 @@ pub(crate) async fn get_active_party_members(
     let Some(party_id) = active_character.and_then(|character| character.party_id.as_ref()) else {
         return Vec::new();
     };
-    let memberships_sql = format!("SELECT * FROM party_member WHERE party_id = '{}'", party_id);
-    let party_sql = format!("SELECT * FROM party WHERE id = '{}'", party_id);
+    let memberships_sql = format!(
+        "SELECT * FROM party_member WHERE party_id = {}",
+        sql_string_literal(party_id)
+    );
+    let party_sql = format!(
+        "SELECT * FROM party WHERE id = {}",
+        sql_string_literal(party_id)
+    );
     let (memberships, party) = tokio::join!(
         state.db.query::<PartyMember>(&memberships_sql),
         state.db.query::<Party>(&party_sql),

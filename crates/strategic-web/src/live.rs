@@ -75,7 +75,7 @@ use tokio::sync::broadcast;
 use crate::{
     routes::AppState,
     session::Session,
-    spacetimedb::{Character, Party},
+    spacetimedb::{Character, Party, sql_string_literal},
 };
 
 struct LiveInner {
@@ -287,12 +287,18 @@ async fn stream(
     State(state): State<AppState>,
     _session: Session,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Subscribe before taking the baseline. Otherwise an invalidation between
+    // the load and subscribe operations can be lost forever by a new stream.
+    let receiver = state.live.subscribe();
     let revision = state.live.revision();
     let initial = stream::iter([Ok(revision_patch(revision))]);
-    let updates = stream::unfold(state.live.subscribe(), |mut receiver| async move {
+    let updates = stream::unfold(receiver, move |mut receiver| async move {
         loop {
             match receiver.recv().await {
-                Ok(revision) => return Some((Ok(revision_patch(revision)), receiver)),
+                Ok(next_revision) if next_revision > revision => {
+                    return Some((Ok(revision_patch(next_revision)), receiver));
+                }
+                Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
@@ -339,7 +345,10 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         if let Some(party_id) = character.party_id.as_deref()
             && state
                 .db
-                .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{party_id}'"))
+                .query_one::<Party>(&format!(
+                    "SELECT * FROM party WHERE id = {}",
+                    sql_string_literal(party_id)
+                ))
                 .await
                 .ok()
                 .flatten()

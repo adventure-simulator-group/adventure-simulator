@@ -551,11 +551,11 @@ impl JungRaster {
                 let pn = NORTH - row as f64 * PIXEL;
                 let overlap = (east.min(pw + PIXEL) - west.max(pw)).max(0.0)
                     * (north.min(pn) - south.max(pn - PIXEL)).max(0.0);
-                if overlap > 0.0 {
-                    if let Some(value) = self.value(col as u32, row as u32)? {
-                        weighted += f64::from(value) * overlap;
-                        area += overlap;
-                    }
+                if overlap > 0.0
+                    && let Some(value) = self.value(col as u32, row as u32)?
+                {
+                    weighted += f64::from(value) * overlap;
+                    area += overlap;
                 }
             }
         }
@@ -579,10 +579,10 @@ impl JungRaster {
                 let pn = NORTH - row as f64 * PIXEL;
                 let overlap = (east.min(pw + PIXEL) - west.max(pw)).max(0.0)
                     * (north.min(pn) - south.max(pn - PIXEL)).max(0.0);
-                if overlap > 0.0 {
-                    if let Some(value) = self.value(col as u32, row as u32)? {
-                        area[value as usize - 1] += overlap;
-                    }
+                if overlap > 0.0
+                    && let Some(value) = self.value(col as u32, row as u32)?
+                {
+                    area[value as usize - 1] += overlap;
                 }
             }
         }

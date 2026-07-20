@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import secrets
 from pathlib import Path
 import re
 import socket
@@ -129,17 +130,16 @@ def publish(server: str, database: str) -> int:
     return result.returncode
 
 
-def seed(server: str, database: str, include_damaged_demo: bool = False) -> int:
-    reducers = ["seed_world", "seed_sick_character"]
-    if include_damaged_demo:
-        reducers.extend(["seed_damaged_character", "seed_religion_scholar_character"])
-    for reducer in reducers:
-        result = run_checked(["spacetime", "call", "--server", server, database, reducer])
-        sys.stdout.write(result.stdout)
-        if result.returncode:
-            print(f"{reducer} failed; refusing to hide the reducer error.", file=sys.stderr)
-            return result.returncode
-    return 0
+def seed(server: str, database: str, bootstrap_token: str, include_damaged_demo: bool = False) -> int:
+    result = run_checked([
+        "spacetime", "call", "--server", server, database,
+        "bootstrap_development_world", bootstrap_token,
+        "true" if include_damaged_demo else "false",
+    ])
+    sys.stdout.write(result.stdout)
+    if result.returncode:
+        print("development bootstrap failed; refusing to hide the reducer error.", file=sys.stderr)
+    return result.returncode
 
 
 def binding_differences(expected: Path, actual: Path) -> list[str]:
@@ -627,10 +627,24 @@ def run_profile(
                 lock=lifecycle,
                 listener=listener,
             )
-            code = reset_publish(capability)
+            bootstrap_token = secrets.token_hex(32)
+            previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
+            os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
+            try:
+                code = reset_publish(capability)
+            finally:
+                if previous_token is None:
+                    os.environ.pop("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN", None)
+                else:
+                    os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
             if code:
                 return code
-            code = seed(server, str(values["database"]), include_damaged_demo=True)
+            code = seed(
+                server,
+                str(values["database"]),
+                bootstrap_token,
+                include_damaged_demo=True,
+            )
             if code:
                 return code
             if with_tactical:
@@ -727,6 +741,7 @@ def create_parser() -> argparse.ArgumentParser:
     seed_parser = sub.add_parser("seed")
     seed_parser.add_argument("--server", required=True)
     seed_parser.add_argument("--database", required=True)
+    seed_parser.add_argument("--token", required=True)
     sub.add_parser("verify-bindings")
     runner = sub.add_parser("run-profile")
     runner.add_argument("--strategic-only", action="store_true")
@@ -750,7 +765,7 @@ def main() -> int:
         if args.command == "publish":
             return publish(args.server, args.database)
         if args.command == "seed":
-            return seed(args.server, args.database)
+            return seed(args.server, args.database, args.token)
         if args.command == "verify-bindings":
             return verify_bindings()
         if args.command == "run-profile":

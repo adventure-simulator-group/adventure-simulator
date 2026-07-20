@@ -40,10 +40,11 @@
     messages.append(row);
     messages.scrollTop = messages.scrollHeight;
     const subject = chat.dataset.localChatSubject;
-    if (persist && subject) {
-      const form = new URLSearchParams({ body: body || "", speaker: speaker || "" });
-      const suffix = kind === "player" ? "" : "/npc";
-      window.strategicFetch(`/api/local-chat/npc/${encodeURIComponent(subject)}${suffix}`, {
+    // Only player speech may cross the authoritative chat boundary. NPC lines
+    // are browser-rendered scripted presentation, not user-supplied history.
+    if (persist && kind === "player" && subject) {
+      const form = new URLSearchParams({ body: body || "" });
+      window.strategicFetch(`/api/local-chat/npc/${encodeURIComponent(subject)}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form,

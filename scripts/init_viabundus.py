@@ -51,27 +51,71 @@ def record_files() -> list[dict[str, object]]:
     return files
 
 
-def download_file(file: dict[str, object], destination: Path) -> dict[str, str]:
+def download_file(file: dict[str, object], destination: Path) -> dict[str, object]:
     name = file["key"]
     links = file.get("links", {})
     url = links.get("content") or links.get("self")
     if not isinstance(name, str) or not isinstance(url, str):
         raise RuntimeError("A Viabundus CSV entry has invalid download metadata.")
 
-    digest = hashlib.sha256()
+    expected_size = file.get("size")
+    checksum = file.get("checksum")
+    if not isinstance(expected_size, int) or expected_size < 0:
+        raise RuntimeError(f"{name} has invalid upstream size metadata.")
+    if not isinstance(checksum, str) or ":" not in checksum:
+        raise RuntimeError(f"{name} has invalid upstream checksum metadata.")
+    algorithm, expected_digest = checksum.split(":", 1)
+    if algorithm not in hashlib.algorithms_available or not expected_digest:
+        raise RuntimeError(f"{name} uses unsupported checksum metadata.")
+    upstream_digest = hashlib.new(algorithm)
+    sha256 = hashlib.sha256()
+    written = 0
     try:
         with request(url) as response, destination.open("wb") as output:
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
-                digest.update(chunk)
+                written += len(chunk)
+                upstream_digest.update(chunk)
+                sha256.update(chunk)
     except (urllib.error.URLError, urllib.error.HTTPError) as error:
         raise RuntimeError(f"Could not download {name}: {error}") from error
 
-    return {"name": name, "sha256": digest.hexdigest(), "url": url, "size": destination.stat().st_size}
+    if written != expected_size:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"{name} size mismatch: expected {expected_size}, received {written}.")
+    if upstream_digest.hexdigest().lower() != expected_digest.lower():
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"{name} checksum mismatch.")
+    return {"name": name, "sha256": sha256.hexdigest(), "url": url, "size": written}
 
 
 def is_initialised(destination: Path) -> bool:
     return destination.is_dir() and all((destination / name).is_file() for name in REQUIRED_FILES)
+
+
+def validate_destination(destination: Path) -> None:
+    """Reject broad/destructive force targets before any network work."""
+    repository = Path(__file__).resolve().parents[1]
+    home = Path.home().resolve()
+    anchors = {Path(destination.anchor).resolve(), repository, home}
+    if destination in anchors or destination.name.lower() != "viabundus":
+        raise RuntimeError(
+            "Destination must be a dedicated directory named 'viabundus', not a filesystem, home, or repository root."
+        )
+def publish_replacement(replacement: Path, destination: Path) -> None:
+    backup = destination.with_name(f".{destination.name}.previous")
+    if backup.exists():
+        raise RuntimeError(f"Refusing to overwrite recovery directory: {backup}")
+    if destination.exists():
+        destination.replace(backup)
+    try:
+        replacement.replace(destination)
+    except Exception:
+        if backup.exists() and not destination.exists():
+            backup.replace(destination)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
 
 
 def main() -> int:
@@ -89,6 +133,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     destination = args.destination.resolve()
+    validate_destination(destination)
 
     if is_initialised(destination) and not args.force:
         print(f"Viabundus v{VERSION} is already initialised at {destination}.")
@@ -100,7 +145,8 @@ def main() -> int:
     print(f"Downloading Viabundus v{VERSION} from {RECORD_URL}...")
     files = record_files()
 
-    with tempfile.TemporaryDirectory(prefix="viabundus-") as temporary:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".viabundus-", dir=destination.parent) as temporary:
         temporary_path = Path(temporary)
         replacement = temporary_path / "viabundus"
         replacement.mkdir()
@@ -124,10 +170,7 @@ def main() -> int:
             encoding="utf-8",
         )
 
-        if destination.exists():
-            shutil.rmtree(destination)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(replacement), str(destination))
+        publish_replacement(replacement, destination)
 
     print(f"Initialised {destination} from {len(downloaded)} CSV files.")
     return 0

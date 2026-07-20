@@ -982,6 +982,8 @@ pub struct TacticalServer {
     pub identity: Option<String>,
     pub mission_id: String,
     pub scene_key: String,
+    pub quest_id: String,
+    pub party_id: String,
     #[serde(default)]
     pub status: MissionStatus,
     #[serde(default)]
@@ -990,16 +992,14 @@ pub struct TacticalServer {
     pub cert_digest: String,
     #[serde(default)]
     pub character_id: Option<u64>,
-    #[serde(default)]
-    pub party_id: Option<String>,
 }
 
 impl TacticalServer {
     pub fn pending(
         mission_id: String,
         scene_key: String,
-        character_id: u64,
-        party_id: Option<String>,
+        quest_id: String,
+        party_id: String,
     ) -> Self {
         Self {
             identity: None,
@@ -1008,7 +1008,8 @@ impl TacticalServer {
             status: MissionStatus::Pending,
             addr: String::new(),
             cert_digest: String::new(),
-            character_id: Some(character_id),
+            character_id: None,
+            quest_id,
             party_id,
         }
     }
@@ -1049,6 +1050,9 @@ impl MissionStatus {
 pub struct TacticalServerRequest {
     pub mission_id: String,
     pub scene_key: String,
+    pub quest_id: String,
+    pub party_id: String,
+    pub requested_by: u64,
 }
 
 #[cfg(test)]

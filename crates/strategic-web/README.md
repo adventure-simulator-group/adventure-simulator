@@ -41,8 +41,8 @@ spacetime start
 cd crates/adventuresim-stdb-module
 spacetime publish adventuresim-stdb-module
 
-# Seed the world (optional)
-spacetime call adventuresim-stdb-module seed_world
+# Seed through the capability-owned isolated workflow.
+just web-isolated demo 3200
 ```
 
 ### Run the Web Server
@@ -51,7 +51,10 @@ spacetime call adventuresim-stdb-module seed_world
 cargo run -p strategic-web
 ```
 
-The server will start on `http://localhost:8080`.
+The server will start on `http://localhost:8080`. This is an anonymous,
+single-user development UI: the character cookie selects a character but does
+not authenticate a person. The process therefore refuses non-loopback binds by
+default.
 
 ## Configuration
 
@@ -59,7 +62,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BIND_ADDRESS` | `0.0.0.0:8080` | Server bind address |
+| `BIND_ADDRESS` | `127.0.0.1:8080` | Server bind address |
+| `ALLOW_INSECURE_NON_LOOPBACK_BIND` | `false` | Explicitly allow an anonymous non-loopback development bind; never use as an authentication substitute |
 | `STATIC_DIR` | `static` | Path to strategic-web static files |
 | `TACTICAL_STATIC_DIR` | `crates/adventuresim-stdb-module/static` | Path to tactical web client static files |
 | `SPACETIMEDB_HOST` | `http://localhost:3000` | SpacetimeDB HTTP API URL |
@@ -113,7 +117,7 @@ Build and run with Docker:
 ```bash
 # From workspace root
 docker build -f crates/strategic-web/Dockerfile -t strategic-web .
-docker run -p 8080:8080 -e SPACETIMEDB_HOST=http://host.docker.internal:3000 strategic-web
+docker run -p 8080:8080 -e BIND_ADDRESS=0.0.0.0:8080 -e ALLOW_INSECURE_NON_LOOPBACK_BIND=true -e SPACETIMEDB_HOST=http://host.docker.internal:3000 strategic-web
 ```
 
 ## Development

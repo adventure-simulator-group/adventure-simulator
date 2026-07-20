@@ -6,41 +6,44 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SeedWorldArgs {}
+pub(super) struct SeedSimulationWorldArgs {
+    pub nonce: String,
+}
 
-impl From<SeedWorldArgs> for super::Reducer {
-    fn from(args: SeedWorldArgs) -> Self {
-        Self::SeedWorld
+impl From<SeedSimulationWorldArgs> for super::Reducer {
+    fn from(args: SeedSimulationWorldArgs) -> Self {
+        Self::SeedSimulationWorld { nonce: args.nonce }
     }
 }
 
-impl __sdk::InModule for SeedWorldArgs {
+impl __sdk::InModule for SeedSimulationWorldArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `seed_world`.
+/// Extension trait for access to the reducer `seed_simulation_world`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait seed_world {
-    /// Request that the remote module invoke the reducer `seed_world` to run as soon as possible.
+pub trait seed_simulation_world {
+    /// Request that the remote module invoke the reducer `seed_simulation_world` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`seed_world:seed_world_then`] to run a callback after the reducer completes.
-    fn seed_world(&self) -> __sdk::Result<()> {
-        self.seed_world_then(|_, _| {})
+    /// /// Use [`seed_simulation_world:seed_simulation_world_then`] to run a callback after the reducer completes.
+    fn seed_simulation_world(&self, nonce: String) -> __sdk::Result<()> {
+        self.seed_simulation_world_then(nonce, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `seed_world` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `seed_simulation_world` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn seed_world_then(
+    fn seed_simulation_world_then(
         &self,
+        nonce: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -50,9 +53,10 @@ pub trait seed_world {
     ) -> __sdk::Result<()>;
 }
 
-impl seed_world for super::RemoteReducers {
-    fn seed_world_then(
+impl seed_simulation_world for super::RemoteReducers {
+    fn seed_simulation_world_then(
         &self,
+        nonce: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -61,6 +65,6 @@ impl seed_world for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(SeedWorldArgs {}, callback)
+            .invoke_reducer_with_callback(SeedSimulationWorldArgs { nonce }, callback)
     }
 }

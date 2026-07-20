@@ -128,10 +128,14 @@ fn ready_state(server: &TacticalServer) -> Markup {
                         }
                     }
                 }
-                a href=(format!("/tactical/tactical.html?server={}&id={}&autostart=1", server.addr, server.character_id.unwrap_or_default()))
-                    class="btn btn-primary btn-large btn-block mt-2"
-                {
-                    "Connect to Mission"
+                @if let Some(character_id) = server.character_id {
+                    a href=(format!("/tactical/tactical.html?server={}&id={character_id}&autostart=1", server.addr))
+                        class="btn btn-primary btn-large btn-block mt-2"
+                    {
+                        "Connect to Mission"
+                    }
+                } @else {
+                    p class="text-danger" { "Mission enrollment is unavailable." }
                 }
             }
         }))

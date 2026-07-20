@@ -841,8 +841,13 @@ fn read_feature_table(
     } else {
         ""
     };
+    let order_by = layout
+        .integer_primary_key
+        .as_ref()
+        .map(|column| format!(" ORDER BY f.{}", quote_identifier(column)))
+        .unwrap_or_else(|| format!(" ORDER BY f.{}", quote_identifier(geometry_column)));
     let sql = format!(
-        "SELECT f.{}, {}, {}, {}, {} FROM {from}{where_clause}",
+        "SELECT f.{}, {}, {}, {}, {} FROM {from}{where_clause}{order_by}",
         quote_identifier(geometry_column),
         value("STRAHLER"),
         value("HYP"),
@@ -1363,7 +1368,7 @@ mod tests {
                         (distance_from_start / 100_000.0 * 1_000.0) as u16,
                     )
                     .unwrap(),
-                    watercourse: watercourse.clone(),
+                    watercourse,
                     traversal: CrossingTraversal::Bridge,
                 },
                 distance_from_start,

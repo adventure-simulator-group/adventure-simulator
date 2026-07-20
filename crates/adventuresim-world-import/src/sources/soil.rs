@@ -412,12 +412,11 @@ fn prediction_from_sample(
             summary.get(&(*property, "Q0.50")),
             summary.get(&(*property, "mean")),
             summary.get(&(*property, "Q0.95")),
-        ) {
-            if !(a <= b && b <= d && a <= c && c <= d) {
-                return Err(Error::Validation(format!(
-                    "SoilGrids quantiles are unordered for {property}"
-                )));
-            }
+        ) && !(a <= b && b <= d && a <= c && c <= d)
+        {
+            return Err(Error::Validation(format!(
+                "SoilGrids quantiles are unordered for {property}"
+            )));
         }
     }
     let mean = |p| summary.get(&(p, "mean")).copied();
@@ -839,9 +838,7 @@ impl PreparedRaster {
         let geokey = |id, value| {
             keys.len() >= 4
                 && keys[3] as usize * 4 + 4 <= keys.len()
-                && keys[4..]
-                    .chunks_exact(4)
-                    .any(|key| key == [id, 0, 1, value])
+                && keys[4..].as_chunks::<4>().0.contains(&[id, 0, 1, value])
         };
         let has_epsg3035 = geokey(1024, 1) && geokey(1025, 1) && geokey(3072, 3035);
         if scale

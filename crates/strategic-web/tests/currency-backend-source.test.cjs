@@ -12,6 +12,7 @@ test("currency issuance validates and uses the persisted settlement denomination
 
 test("repeated personal currency credits merge their existing denomination stack", () => {
   assert.match(source, /character_and_item_id\(\)[\s\S]*filter\(\(character_id, &currency_id\)\)/);
-  assert.match(source, /stack\.quantity = merged_currency_quantity\(stack\.quantity, amount\)/);
+  assert.match(source, /if let Some\(quantity\) = merged_currency_quantity\(stack\.quantity, amount\)/);
+  assert.match(source, /existing\.checked_add\(credit\)/);
   assert.match(source, /inventory_item\(\)\.id\(\)\.update\(stack\)/);
 });

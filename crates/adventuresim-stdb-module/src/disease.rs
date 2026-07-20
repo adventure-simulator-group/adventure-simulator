@@ -382,20 +382,25 @@ fn outbreak_episodes_through(
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
     let existing_len = episodes.len();
-    for outbreak in ctx
+    let mut outbreaks = ctx
         .db
         .settlement_outbreak()
         .settlement_id()
         .filter(&settlement_id)
-    {
+        .collect::<Vec<_>>();
+    outbreaks.sort_by(|left, right| {
+        (left.start_minute, left.id.as_str()).cmp(&(right.start_minute, right.id.as_str()))
+    });
+    for outbreak in outbreaks {
         let disease_id = parse_id(&outbreak.disease_id)?;
-        let prior = disease::acquired_immunity(&episodes, disease_id, from, immunity);
         let overlap_from = from.max(outbreak.start_minute);
         let overlap_to = to.min(outbreak.end_minute);
         if overlap_to <= overlap_from {
             continue;
         }
-        let Some(at) = disease::first_presence_exposure_minute(
+        let Some(at) = disease::first_eligible_presence_exposure_minute(
+            &episodes,
+            disease_id,
             character_id,
             &outbreak.id,
             overlap_from,
@@ -403,7 +408,6 @@ fn outbreak_episodes_through(
             outbreak.intensity,
             disease::definition(disease_id).base_acquisition,
             immunity,
-            prior,
         ) else {
             continue;
         };
@@ -423,13 +427,12 @@ fn outbreak_episodes_through(
     Ok(episodes.split_off(existing_len))
 }
 
-fn acquire_outbreaks_through(
+fn persist_outbreak_episodes(
     ctx: &ReducerContext,
     character_id: u64,
-    from: u64,
-    to: u64,
+    episodes: impl IntoIterator<Item = InfectionEpisode>,
 ) -> Result<(), String> {
-    for episode in outbreak_episodes_through(ctx, character_id, from, to)? {
+    for episode in episodes {
         let disease_id = match episode.disease_id {
             DiseaseId::Influenza => "influenza",
             DiseaseId::Dysentery => "dysentery",
@@ -475,14 +478,16 @@ pub fn clip_elapsed_for_disease(
         .character_id()
         .find(character_id)
         .map_or(0, |t| t.minutes);
-    acquire_outbreaks_through(ctx, character_id, now, now.saturating_add(requested))?;
     let immunity = ctx
         .db
         .character_attributes()
         .character_id()
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
-    let episodes = character_episodes(ctx, character_id)?;
+    let mut episodes = character_episodes(ctx, character_id)?;
+    let proposed =
+        outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?;
+    episodes.extend(proposed.iter().copied());
     let mut events = episodes
         .iter()
         .copied()
@@ -493,6 +498,16 @@ pub fn clip_elapsed_for_disease(
         disease::first_combined_terminal(&episodes, now, now.saturating_add(requested), immunity);
     let death_minute = terminal.map(|value| value.0);
     let through = death_minute.unwrap_or_else(|| now.saturating_add(requested));
+    // The terminal minute is inclusive: infections and notices occurring at
+    // that boundary are committed; later effects from the requested interval
+    // are never persisted.
+    persist_outbreak_episodes(
+        ctx,
+        character_id,
+        proposed
+            .into_iter()
+            .filter(|episode| disease::infection_occurs_through(*episode, through)),
+    )?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
             DiseaseEventKind::SymptomOnset => notice(
@@ -951,8 +966,7 @@ pub fn record_committed_cut(
 
 /// Create or reset the diagnostic party used by the default development seed.
 /// It includes a healthy physician and patients with staggered disease ages.
-#[reducer]
-pub fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     const SICK_CHARACTER_ID: u64 = 9_999_999_999_999_998;
     const PHYSICIAN_ID: u64 = 9_999_999_999_999_997;
     const AMBIGUOUS_PHYSICIAN_ID: u64 = 9_999_999_999_999_989;

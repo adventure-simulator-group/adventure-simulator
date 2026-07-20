@@ -227,9 +227,9 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 settlement.id
             )));
         }
-        if settlement.name.trim().is_empty() {
+        if !adventuresim_world_schema::valid_settlement_name(&settlement.name) {
             return Err(Error::Validation(format!(
-                "settlement {} has no name",
+                "settlement {} has an invalid name",
                 settlement.id
             )));
         }
@@ -825,9 +825,11 @@ mod tests {
             }
             assert!(!super::historical_report_matches(&mislabeled, (0, 0, 0, 0)));
         }
-        let mut overflow = WorldBuildReport::default();
-        overflow.historical_vegetation_direct_samples = usize::MAX;
-        overflow.historical_vegetation_derived_samples = usize::MAX;
+        let overflow = WorldBuildReport {
+            historical_vegetation_direct_samples: usize::MAX,
+            historical_vegetation_derived_samples: usize::MAX,
+            ..WorldBuildReport::default()
+        };
         assert!(!super::historical_report_matches(&overflow, (0, 0, 0, 0)));
     }
 

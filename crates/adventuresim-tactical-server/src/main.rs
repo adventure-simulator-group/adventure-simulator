@@ -36,10 +36,6 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
 
-    /// Whether or not the server should be created for the associated request.
-    #[arg(long)]
-    requested: bool,
-
     /// Unique mission instance ID
     #[arg(long)]
     mission_id: String,
@@ -56,9 +52,9 @@ struct Args {
     #[arg(long, default_value_t = TERRAIN_SIZE)]
     scene_depth: usize,
 
-    /// Amount of bots to spawn.
-    #[arg(long, default_value_t = 0)]
-    bots: usize,
+    /// Authoritative number of quest enemies that must be defeated.
+    #[arg(long)]
+    required_enemy_kills: u32,
 
     /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
@@ -103,6 +99,7 @@ fn main() {
                 .then_some(args.timeout)
                 .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
             enemies_killed: 0,
+            required_enemy_kills: args.required_enemy_kills,
             committed: false,
         })
         .insert_resource(args)
@@ -118,6 +115,7 @@ fn main() {
         .add_observer(on_join_request)
         .add_observer(on_player_input)
         .add_observer(on_client_disconnected)
+        .add_observer(on_authoritative_enemy_death)
         .run();
 }
 
@@ -130,7 +128,38 @@ struct LoadingPlayer {
 struct MissionState {
     timeout: Option<Timer>,
     enemies_killed: u32,
+    required_enemy_kills: u32,
     committed: bool,
+}
+
+#[derive(Component)]
+struct MissionEnemy;
+
+#[derive(Component)]
+struct CountedEnemyDeath;
+
+/// Emitted only by the server's authoritative combat/death pipeline. Combat
+/// damage is not implemented yet, so no client-controlled path can emit it and
+/// incomplete missions fail closed at timeout.
+#[derive(Event)]
+struct AuthoritativeEnemyDeath(Entity);
+
+fn mission_objective_satisfied(required: u32, killed: u32) -> bool {
+    killed >= required
+}
+
+fn on_authoritative_enemy_death(
+    death: On<AuthoritativeEnemyDeath>,
+    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDeath>)>,
+    mut commands: Commands,
+    mut state: ResMut<MissionState>,
+) {
+    let entity = death.0;
+    if enemies.get(entity).is_err() {
+        return;
+    }
+    commands.entity(entity).insert(CountedEnemyDeath);
+    state.enemies_killed = state.enemies_killed.saturating_add(1);
 }
 
 fn setup_server(mut commands: Commands, args: Res<Args>) {
@@ -169,7 +198,7 @@ fn spawn_connected_player(
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.character.temporary {
-        cmd.spawn_empty().id()
+        cmd.spawn(MissionEnemy).id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -418,7 +447,7 @@ fn check_mission_timeout(
     info!("Mission timeout, committing results...");
     state.committed = true;
 
-    let success = state.enemies_killed > 0;
+    let success = mission_objective_satisfied(state.required_enemy_kills, state.enemies_killed);
     let xp_gained = (state.enemies_killed * 25) as i32;
 
     conn.reducers().end_tactical_server(success, xp_gained)?;
@@ -487,24 +516,18 @@ fn on_server_started(
 
     info!("Creating tactical server in stdb...");
 
-    if args.requested {
-        conn.reducers().create_tactical_server_for_request(
-            args.mission_id.clone(),
-            args.addr.to_string(),
-            default(),
-        )?;
-    } else {
-        conn.reducers().create_tactical_server(
-            args.mission_id.clone(),
-            args.scene_key.clone(),
-            args.addr.to_string(),
-            default(),
-        )?;
-    }
+    conn.reducers().create_tactical_server_for_request(
+        args.mission_id.clone(),
+        args.addr.to_string(),
+        default(),
+    )?;
 
-    if args.bots > 0 {
-        info!("Requesting {} bots...", args.bots);
-        for _ in 0..args.bots {
+    if args.required_enemy_kills > 0 {
+        info!(
+            "Requesting {} mission enemies...",
+            args.required_enemy_kills
+        );
+        for _ in 0..args.required_enemy_kills {
             conn.reducers()
                 .create_temporary_character(conn.identity())?;
         }
@@ -528,7 +551,11 @@ fn on_join_request(
         return Ok(());
     }
 
-    conn.reducers().create_character(join.player_id)?;
+    // JoinRequest carries a character id chosen by the client. The strategic
+    // reducer therefore treats it only as a request to enroll an existing
+    // member of this mission's authoritative party; it never creates a row.
+    // Until the netcode authenticates character ownership, deployments must
+    // keep tactical clients within the trusted mission boundary.
     conn.reducers()
         .enter_mission(join.player_id, conn.identity())?;
 
@@ -542,6 +569,20 @@ fn on_join_request(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mission_objective_satisfied;
+
+    #[test]
+    fn mission_success_requires_the_full_authoritative_objective() {
+        assert!(mission_objective_satisfied(0, 0));
+        assert!(!mission_objective_satisfied(3, 0));
+        assert!(!mission_objective_satisfied(3, 2));
+        assert!(mission_objective_satisfied(3, 3));
+        assert!(mission_objective_satisfied(3, 4));
+    }
 }
 
 fn on_player_input(

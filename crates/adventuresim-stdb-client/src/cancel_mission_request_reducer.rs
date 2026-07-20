@@ -7,12 +7,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct CancelMissionRequestArgs {
+    pub character_id: u64,
     pub mission_id: String,
 }
 
 impl From<CancelMissionRequestArgs> for super::Reducer {
     fn from(args: CancelMissionRequestArgs) -> Self {
         Self::CancelMissionRequest {
+            character_id: args.character_id,
             mission_id: args.mission_id,
         }
     }
@@ -33,8 +35,8 @@ pub trait cancel_mission_request {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`cancel_mission_request:cancel_mission_request_then`] to run a callback after the reducer completes.
-    fn cancel_mission_request(&self, mission_id: String) -> __sdk::Result<()> {
-        self.cancel_mission_request_then(mission_id, |_, _| {})
+    fn cancel_mission_request(&self, character_id: u64, mission_id: String) -> __sdk::Result<()> {
+        self.cancel_mission_request_then(character_id, mission_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `cancel_mission_request` to run as soon as possible,
@@ -45,6 +47,7 @@ pub trait cancel_mission_request {
     ///  and its status can be observed with the `callback`.
     fn cancel_mission_request_then(
         &self,
+        character_id: u64,
         mission_id: String,
 
         callback: impl FnOnce(
@@ -58,6 +61,7 @@ pub trait cancel_mission_request {
 impl cancel_mission_request for super::RemoteReducers {
     fn cancel_mission_request_then(
         &self,
+        character_id: u64,
         mission_id: String,
 
         callback: impl FnOnce(
@@ -66,7 +70,12 @@ impl cancel_mission_request for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(CancelMissionRequestArgs { mission_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            CancelMissionRequestArgs {
+                character_id,
+                mission_id,
+            },
+            callback,
+        )
     }
 }

@@ -4,12 +4,22 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
-    condition::character_condition,
+    capability::character_capability,
+    condition::{
+        character_condition, character_morale_source, character_needs,
+        character_strategic_condition, morale_event, religious_demand,
+    },
+    disease::{
+        character_illness_status, committed_cut, disease_notice, equipped_medication,
+        herbalist_examination, infection_episode, medical_examination,
+    },
     enter_mission, inventory_item,
     item::item,
-    repair::item_condition,
-    strategic::{party, settlement},
-    time::character_time,
+    personality::character_personality,
+    repair::{item_condition, repair_order},
+    strategic::{inventory_quantity_target, party, party_member, settlement},
+    tactical::tactical_server,
+    time::{character_notoriety, character_time, character_training_schedule},
 };
 
 /// General character info
@@ -124,8 +134,9 @@ pub fn transition_character_to_dead(
         strategic_minute,
     });
     character.alive = false;
-    character.in_server = false;
-    character.server = Identity::ZERO;
+    // Keep an active tactical assignment until that server commits or removes
+    // the character. This lets mission teardown find and cascade temporary
+    // combatants that died in transient tactical state.
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
     if let Some(party_id) = party_id {
@@ -278,6 +289,10 @@ impl CharacterEquip {
 pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Result<(), String> {
     use petname::Generator;
 
+    if ctx.sender() != server || ctx.db.tactical_server().identity().find(server).is_none() {
+        return Err("Only a registered tactical server can create its temporary characters".into());
+    }
+
     let name = petname::Petnames::default()
         .generate(&mut ctx.rng(), 1, " ")
         .ok_or_else(|| format!("Can't generate a name for a temporary character"))?;
@@ -288,6 +303,241 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
 
     insert_new_character(ctx, name, id, true)?;
     enter_mission(ctx, id, server)
+}
+
+/// Transactionally delete a temporary tactical character and every durable
+/// strategic row that is owned by it. This must run before deleting Character
+/// so no orphan can survive a successful reducer commit.
+pub(crate) fn delete_temporary_character(
+    ctx: &ReducerContext,
+    character: Character,
+) -> Result<(), String> {
+    if !character.temporary {
+        return Err("Refusing to cascade-delete a persistent character".into());
+    }
+    if let Some(party_id) = character.party_id.as_deref() {
+        crate::strategic::delete_temporary_character_party(ctx, character.id, party_id)?;
+    } else {
+        for membership in ctx
+            .db
+            .party_member()
+            .character_id()
+            .filter(character.id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.party_member().id().delete(membership.id);
+        }
+    }
+
+    // Repair custody changes InventoryItem.character_id to zero while retaining
+    // the real owner on RepairOrder. Remove those custody rows before scanning
+    // ordinary owned inventory so a temporary character cannot leave orphaned
+    // smith inventory behind.
+    for order in ctx
+        .db
+        .repair_order()
+        .owner_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        if ctx
+            .db
+            .item_condition()
+            .inventory_item_id()
+            .find(order.inventory_item_id)
+            .is_some()
+        {
+            ctx.db
+                .item_condition()
+                .inventory_item_id()
+                .delete(order.inventory_item_id);
+        }
+        ctx.db.inventory_item().id().delete(order.inventory_item_id);
+        ctx.db.repair_order().id().delete(order.id);
+    }
+
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>();
+    for row in inventory {
+        if ctx
+            .db
+            .item_condition()
+            .inventory_item_id()
+            .find(row.id)
+            .is_some()
+        {
+            ctx.db.item_condition().inventory_item_id().delete(row.id);
+        }
+        if ctx
+            .db
+            .equipped_medication()
+            .inventory_item_id()
+            .find(row.id)
+            .is_some()
+        {
+            ctx.db
+                .equipped_medication()
+                .inventory_item_id()
+                .delete(row.id);
+        }
+        for repair in ctx
+            .db
+            .repair_order()
+            .iter()
+            .filter(|repair| repair.inventory_item_id == row.id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.repair_order().id().delete(repair.id);
+        }
+        ctx.db.inventory_item().id().delete(row.id);
+    }
+
+    for row in ctx
+        .db
+        .infection_episode()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.infection_episode().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .committed_cut()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.committed_cut().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .disease_notice()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.disease_notice().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .medical_examination()
+        .iter()
+        .filter(|row| row.doctor_id == character.id || row.target_id == character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.medical_examination().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .herbalist_examination()
+        .patient_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.herbalist_examination().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.morale_event().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .character_morale_source()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.character_morale_source().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .religious_demand()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.religious_demand().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .inventory_quantity_target()
+        .owner_character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.inventory_quantity_target().id().delete(&row.id);
+    }
+
+    ctx.db.character_stats().character_id().delete(character.id);
+    ctx.db
+        .character_skills()
+        .character_id()
+        .delete(character.id);
+    ctx.db.character_time().character_id().delete(character.id);
+    ctx.db
+        .character_training_schedule()
+        .character_id()
+        .delete(character.id);
+    ctx.db
+        .character_notoriety()
+        .character_id()
+        .delete(character.id);
+    ctx.db.character_limbs().character_id().delete(character.id);
+    ctx.db.character_equip().character_id().delete(character.id);
+    ctx.db
+        .character_attributes()
+        .character_id()
+        .delete(character.id);
+    ctx.db
+        .character_personality()
+        .character_id()
+        .delete(character.id);
+    ctx.db
+        .character_capability()
+        .character_id()
+        .delete(character.id);
+    ctx.db
+        .character_condition()
+        .character_id()
+        .delete(character.id);
+    ctx.db.character_needs().character_id().delete(character.id);
+    ctx.db
+        .character_strategic_condition()
+        .character_id()
+        .delete(character.id);
+    if ctx
+        .db
+        .character_illness_status()
+        .character_id()
+        .find(character.id)
+        .is_some()
+    {
+        ctx.db
+            .character_illness_status()
+            .character_id()
+            .delete(character.id);
+    }
+    if ctx
+        .db
+        .character_death()
+        .character_id()
+        .find(character.id)
+        .is_some()
+    {
+        ctx.db.character_death().character_id().delete(character.id);
+    }
+    ctx.db.character().delete(character);
+    Ok(())
 }
 
 /// Create a new character with generated name and add initial items to it
@@ -324,8 +574,7 @@ pub fn create_named_character_with_id(
 }
 
 /// Seed an injured character for local UI development and visual verification.
-#[reducer]
-pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     const DAMAGED_CHARACTER_ID: u64 = 9_999_999_999_999_999;
 
     if ctx.db.character().id().find(DAMAGED_CHARACTER_ID).is_none() {
@@ -394,8 +643,7 @@ pub fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 /// Seed a character with direct training in every religion for local UI development.
-#[reducer]
-pub fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<(), String> {
     const RELIGION_SCHOLAR_CHARACTER_ID: u64 = 9_999_999_999_999_988;
 
     if ctx
@@ -491,7 +739,6 @@ fn set_demo_item_damage(
     Ok(())
 }
 
-#[reducer]
 pub(crate) fn insert_new_character(
     ctx: &ReducerContext,
     name: String,
@@ -672,6 +919,10 @@ pub fn equip_item(
         .find(character_id)
         .ok_or_else(|| "Can't find character".to_string())?;
 
+    // One inventory instance may occupy at most one slot. Clear any previous
+    // occurrence before selecting the new destination.
+    crate::repair::unequip(&mut equip, inventory_item_id);
+
     match destination {
         ItemSlot::AnyHolding if equip.left_hand_item_id.is_none() => {
             equip.left_hand_item_id = Some(inventory_item_id)
@@ -702,10 +953,11 @@ pub fn equip_item(
         ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
         ItemSlot::Chest => equip.chest_armor_id = Some(inventory_item_id),
         ItemSlot::Stomach => equip.stomach_armor_id = Some(inventory_item_id),
-        ItemSlot::None => crate::repair::unequip(&mut equip, inventory_item_id),
+        ItemSlot::None => {}
     }
 
     ctx.db.character_equip().character_id().update(equip);
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -727,7 +979,6 @@ fn item_slot_accepts(catalog_slot: ItemSlot, destination: ItemSlot) -> bool {
     }
 }
 
-#[reducer]
 pub fn add_and_equip_item(
     ctx: &ReducerContext,
     character_id: u64,

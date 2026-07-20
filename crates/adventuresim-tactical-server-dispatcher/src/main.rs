@@ -116,13 +116,16 @@ fn main() {
                 request.mission_id, request.scene_key, port
             );
 
+            let required_enemy_kills = request.required_enemy_kills.to_string();
+
             match Command::new(&bin)
                 .args([
-                    "--requested",
                     "--mission-id",
                     &request.mission_id,
                     "--scene-key",
                     &request.scene_key,
+                    "--required-enemy-kills",
+                    &required_enemy_kills,
                     "--addr",
                     &SocketAddr::new(host, port).to_string(),
                     "--spacetimedb-url",

@@ -79,36 +79,25 @@ class WorkflowTests(unittest.TestCase):
     @mock.patch.object(dev_stack, "run_checked")
     def test_seed_propagates_reducer_failure(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=7, stdout="reducer rejected\n")
-        self.assertEqual(dev_stack.seed("http://localhost:1", "db"), 7)
+        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 7)
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_seed_includes_sick_demo_character(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
-        self.assertEqual(dev_stack.seed("http://localhost:1", "db"), 0)
-        self.assertEqual(
-            [call.args[0][-1] for call in run_checked.call_args_list],
-            ["seed_world", "seed_sick_character"],
-        )
+        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
+        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "false"])
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_seed_includes_damaged_demo_character(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
         self.assertEqual(
-            dev_stack.seed("http://localhost:1", "db", include_damaged_demo=True),
+            dev_stack.seed("http://localhost:1", "db", "a" * 64, include_damaged_demo=True),
             0,
         )
 
-        self.assertEqual(
-            [call.args[0][-1] for call in run_checked.call_args_list],
-            [
-                "seed_world",
-                "seed_sick_character",
-                "seed_damaged_character",
-                "seed_religion_scholar_character",
-            ],
-        )
+        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "true"])
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):

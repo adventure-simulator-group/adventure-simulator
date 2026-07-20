@@ -90,8 +90,8 @@ TREES_FILE = {
     "sha256": "be115f771e5598e6fd180621e1a32922880cf7ac8e2cb59ba0eabd7f15bfeda4",
 }
 RELIGION_FILE = Path("assets/world-data/ieg-religion-1544.csv")
-RELIGION_SIZE = 991
-RELIGION_SHA256 = "d33f6ffd2706acedfb5b02007b8a71cbf93df8e1bb377b73278235b1c7e66c35"
+RELIGION_SIZE = 977
+RELIGION_SHA256 = "aa01864770b91d04cbfd569b366f0952f2cfee3e1c0cbeb1e15b1579d6a1de1b"
 RELIGION_HEADER = ("priority", "region", "min_latitude", "max_latitude", "min_longitude", "max_longitude", "status", "religions", "church")
 RELIGION_STATUSES = {"established", "multi_confessional", "parity", "locally_determined"}
 SAFE_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")

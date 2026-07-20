@@ -52,7 +52,7 @@ bevy_enhanced_input = { version = "0.23", default-features = false }
 bevy_flair = "0.7"
 noiz = "0.4.0"
 
-serde = { version = "1", default-features = false, features = ["derive"] }
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = "1"
 sha2 = "0.10"
 netcdf-reader = { version = "0.8", default-features = false, features = ["netcdf4"] }
