@@ -98,8 +98,13 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.match(css, /--travel-rail-gap: \.22rem/);
   assert.match(css, /gap: var\(--travel-rail-gap\)/);
   assert.match(css, /\.travel-resource-path\.base/);
+  const resourcePathRule = css.match(/\.travel-resource-path \{[^}]+\}/)?.[0] || "";
+  assert.match(resourcePathRule, /stroke-width: 20/);
+  assert.doesNotMatch(resourcePathRule, /vector-effect/);
   assert.match(template, /travel-period-option travel-period-day/);
   assert.match(template, /travel-period-option travel-period-night/);
+  assert.match(css, /\.travel-period-night::after/);
+  assert.match(css, /\.travel-period-thumb::before/);
   assert.match(template, /travel-destination-caption/);
   assert.match(css, /box-shadow: inset/);
   assert.doesNotMatch(css, /\.travel-fatigue-segment\.camp\s*\{[^}]*opacity/);

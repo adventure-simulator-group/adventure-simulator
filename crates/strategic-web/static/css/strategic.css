@@ -214,7 +214,15 @@
   opacity: .38;
 }
 .travel-period-day { left: .34rem; background: #f5cc68; -webkit-mask: url('/static/icons/game/sun.svg') center / contain no-repeat; mask: url('/static/icons/game/sun.svg') center / contain no-repeat; }
-.travel-period-night { right: .34rem; border-radius: 50%; box-shadow: inset .28rem -.04rem 0 0 #172037; }
+.travel-period-night { right: .34rem; overflow: hidden; border-radius: 50%; }
+.travel-period-night::after {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #172037;
+  content: '';
+  transform: translate(-.24rem, -.06rem);
+}
 .travel-period-thumb {
   position: absolute;
   top: .12rem;
@@ -234,15 +242,25 @@
   -webkit-mask: url('/static/icons/game/sun.svg') center / contain no-repeat;
   mask: url('/static/icons/game/sun.svg') center / contain no-repeat;
 }
+.travel-period-thumb::before { content: none; }
 .travel-period-toggle input:checked + .travel-period-track .travel-period-thumb {
   transform: translateX(1.86rem);
 }
 .travel-period-toggle input:checked + .travel-period-track .travel-period-thumb::after {
   border-radius: 50%;
   background: #fff;
-  box-shadow: inset .36rem -.06rem 0 .01rem #26324a;
+  box-shadow: none;
   -webkit-mask: none;
   mask: none;
+}
+.travel-period-toggle input:checked + .travel-period-track .travel-period-thumb::before {
+  position: absolute;
+  z-index: 1;
+  inset: .15rem;
+  border-radius: 50%;
+  background: #26324a;
+  content: '';
+  transform: translate(-.28rem, -.06rem);
 }
 .travel-period-toggle input:focus-visible + .travel-period-track { outline: 2px solid var(--accent-light); outline-offset: 3px; }
 
@@ -273,7 +291,7 @@
 .travel-resource-row.daylight .travel-resource-icon { color: #f5cc68; }
 .travel-resource-track { width: var(--travel-rail-width); height: 100%; overflow: visible; }
 .travel-resource-path.base { stroke: color-mix(in srgb, var(--text-muted) 20%, transparent); }
-.travel-resource-path { fill: none; stroke-linecap: butt; stroke-width: 20; vector-effect: non-scaling-stroke; }
+.travel-resource-path { fill: none; stroke-linecap: butt; stroke-width: 20; }
 .travel-resource-path.target { stroke-width: 20; }
 .travel-resource-row.food .travel-resource-path.actual { stroke: #e9a45d; }
 .travel-resource-row.water .travel-resource-path.actual { stroke: #579fd7; }

@@ -92,7 +92,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
                 // Datastar
