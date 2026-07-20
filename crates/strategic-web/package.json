@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "test": "cd ../.. && node --test crates/strategic-web/tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.12"
+  }
+}

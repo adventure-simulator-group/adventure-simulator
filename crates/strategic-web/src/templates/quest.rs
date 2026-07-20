@@ -218,7 +218,7 @@ pub fn quest_location_page(
             (sidebar_section("Party inventory", html! {
                 div class="party-stake-summary" {
                     span { "Your available stake" }
-                    strong { (stake) " gold" }
+                    strong { (stake) " coin" }
                 }
                 @if pooled.is_empty() {
                     (empty_state("The party chest is empty.", None, None))

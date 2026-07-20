@@ -77,7 +77,7 @@ The tactical server calls `commit_mission` when the mission ends:
 ```rust
 // Tactical server computes results in memory
 let xp_gained = enemies_killed * 25;
-let items = vec![("gold_coin", 10), ("health_potion", 2)];
+let items = vec![("lubeck_mark", 10), ("health_potion", 2)];
 let items_json = serde_json::to_string(&items)?;
 
 // Commit to SpacetimeDB

@@ -313,20 +313,20 @@ pub fn provision_character_for_travel(
     let cost = rations_to_buy
         .saturating_mul(ration.base_value.unwrap_or(0))
         .saturating_add(waterskins_to_buy.saturating_mul(waterskin.base_value.unwrap_or(0)));
-    let mut character = ctx
+    let character = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    if character.gold < cost {
+    let available = crate::item::personal_currency_total(ctx, character_id);
+    if available < u64::from(cost) {
         return Err(format!(
-            "{} needs {cost} gold for food and water provisions but has only {}",
-            character.name, character.gold
+            "{} needs {cost} coin for food and water provisions but has only {available}",
+            character.name
         ));
     }
-    character.gold -= cost;
-    ctx.db.character().id().update(character);
+    crate::item::consume_personal_currency(ctx, character_id, u64::from(cost))?;
     crate::add_inventory_item(ctx, character_id, TRAVEL_RATION_ID, rations_to_buy);
     crate::add_inventory_item(ctx, character_id, WATERSKIN_ID, waterskins_to_buy);
 

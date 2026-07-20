@@ -43,6 +43,17 @@ test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof syncPanelWidth, "function");
 });
 
+test("currency rows use one aggregate parent and dedicated denomination components", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /groupCurrencyRows\(browser\)/);
+  assert.match(source, /currency-parent-row/);
+  assert.match(source, /currency-component-row/);
+  assert.match(source, /data-coin-toggle/);
+  assert.match(source, /row\._currencyComponents/);
+  assert.match(source, /not\(\.currency-component-row\)/);
+  assert.doesNotMatch(source, /No additional details[\s\S]*currency-component-row/);
+});
+
 test("rail measurement excludes projected action overflow", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /table\?\.getBoundingClientRect\?\.\(\)\.width/);

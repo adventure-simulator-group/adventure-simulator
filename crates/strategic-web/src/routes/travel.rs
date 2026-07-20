@@ -407,6 +407,7 @@ mod tests {
             .unwrap(),
             scene_key: String::new(),
             religion_id: String::new(),
+            currency_id: "rhenish_gulden".into(),
             source_node_id: Some(node),
         }
     }

@@ -1,6 +1,28 @@
-use crate::{character::character_equip, repair::item_condition};
+use crate::{character::character_equip, repair::item_condition, strategic::settlement};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use strum::{EnumCount, VariantArray};
+
+pub use adventuresim_core::strategic_currency::CURRENCY_IDS;
+
+pub fn settlement_currency_id(settlement_id: &str) -> &'static str {
+    adventuresim_core::strategic_currency::assigned_currency_id(settlement_id)
+}
+
+pub fn currency_id_for_settlement(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<String, String> {
+    match ctx.db.settlement().id().find(settlement_id.to_string()) {
+        Some(settlement) if CURRENCY_IDS.contains(&settlement.currency_id.as_str()) => {
+            Ok(settlement.currency_id)
+        }
+        Some(settlement) => Err(format!(
+            "Settlement {} has invalid currency {}",
+            settlement.id, settlement.currency_id
+        )),
+        None => Ok(settlement_currency_id(settlement_id).to_string()),
+    }
+}
 
 /// [`Item`] that is in the inventory
 #[derive(Clone, Debug)]
@@ -803,13 +825,15 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 
     define_item(ctx, "torch", 0.5);
     define_item(ctx, "arrow", 0.05);
-    ctx.db.item().insert(Item {
-        id: "gold_coin".into(),
-        weight: 0.01,
-        base_value: Some(1),
-        kind: ItemKind::Currency,
-        ..Item::default()
-    });
+    for id in CURRENCY_IDS {
+        ctx.db.item().insert(Item {
+            id: id.into(),
+            weight: 0.01,
+            base_value: Some(1),
+            kind: ItemKind::Currency,
+            ..Item::default()
+        });
+    }
     define_item(ctx, "bandage", 0.05);
     for (id, weight) in [
         ("honey", 0.25),
@@ -1106,6 +1130,113 @@ pub fn add_inventory_item(
     first
 }
 
+pub fn is_currency(ctx: &ReducerContext, item_id: &str) -> bool {
+    ctx.db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|item| item.kind == ItemKind::Currency)
+}
+
+pub fn personal_currency_total(ctx: &ReducerContext, character_id: u64) -> u64 {
+    ctx.db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter(|stack| is_currency(ctx, &stack.item_id))
+        .map(|stack| u64::from(stack.quantity))
+        .sum()
+}
+
+fn currency_withdrawal_plan(
+    mut stacks: Vec<(String, u64, u32)>,
+    amount: u64,
+) -> Option<Vec<(u64, u32)>> {
+    if stacks
+        .iter()
+        .map(|(_, _, quantity)| u64::from(*quantity))
+        .sum::<u64>()
+        < amount
+    {
+        return None;
+    }
+    stacks.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+    let mut remaining = amount;
+    let mut plan = Vec::new();
+    for (_, id, quantity) in stacks {
+        if remaining == 0 {
+            break;
+        }
+        let taken = remaining.min(u64::from(quantity)) as u32;
+        remaining -= u64::from(taken);
+        plan.push((id, taken));
+    }
+    Some(plan)
+}
+
+/// Atomically consumes equal-value currency in a stable denomination/stack
+/// order.  The preflight makes an insufficient payment a no-op.
+pub fn consume_personal_currency(
+    ctx: &ReducerContext,
+    character_id: u64,
+    amount: u64,
+) -> Result<(), String> {
+    let stacks: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter(|stack| is_currency(ctx, &stack.item_id))
+        .collect();
+    let plan = currency_withdrawal_plan(
+        stacks
+            .iter()
+            .map(|stack| (stack.item_id.clone(), stack.id, stack.quantity))
+            .collect(),
+        amount,
+    )
+    .ok_or_else(|| "Not enough coin to cover this payment".to_string())?;
+    for (id, taken) in plan {
+        let mut stack = stacks.iter().find(|stack| stack.id == id).cloned().unwrap();
+        stack.quantity -= taken;
+        if stack.quantity == 0 {
+            ctx.db.inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.inventory_item().id().update(stack);
+        }
+    }
+    Ok(())
+}
+
+pub fn credit_personal_currency(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    amount: u32,
+) -> Result<(), String> {
+    if amount == 0 {
+        return Ok(());
+    }
+    let currency_id = currency_id_for_settlement(ctx, settlement_id)?;
+    if let Some(mut stack) = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, &currency_id))
+        .next()
+    {
+        stack.quantity = merged_currency_quantity(stack.quantity, amount);
+        ctx.db.inventory_item().id().update(stack);
+    } else {
+        add_inventory_item(ctx, character_id, &currency_id, amount);
+    }
+    Ok(())
+}
+
+fn merged_currency_quantity(existing: u32, credit: u32) -> u32 {
+    existing.saturating_add(credit)
+}
+
 #[reducer]
 pub fn change_inventory_item(
     ctx: &ReducerContext,
@@ -1201,6 +1332,40 @@ pub fn change_inventory_item(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn settlement_currency_assignment_is_stable_and_uses_the_fixed_catalog() {
+        let first = settlement_currency_id("viabundus-12345");
+        assert_eq!(first, settlement_currency_id("viabundus-12345"));
+        assert!(CURRENCY_IDS.contains(&first));
+        assert_eq!(
+            CURRENCY_IDS.len(),
+            CURRENCY_IDS.iter().copied().collect::<HashSet<_>>().len()
+        );
+        assert!(
+            (0..128)
+                .map(|id| settlement_currency_id(&format!("demo-{id}")))
+                .collect::<HashSet<_>>()
+                .len()
+                > 1
+        );
+    }
+
+    #[test]
+    fn mixed_currency_withdrawal_plan_is_deterministic_and_atomic() {
+        let stacks = vec![("lubeck_mark".into(), 4, 3), ("danish_mark".into(), 9, 2)];
+        assert_eq!(
+            currency_withdrawal_plan(stacks.clone(), 4),
+            Some(vec![(9, 2), (4, 2)])
+        );
+        assert_eq!(currency_withdrawal_plan(stacks, 6), None);
+    }
+
+    #[test]
+    fn repeated_same_denomination_credits_merge_safely() {
+        assert_eq!(merged_currency_quantity(40, 2), 42);
+        assert_eq!(merged_currency_quantity(u32::MAX, 1), u32::MAX);
+    }
 
     #[test]
     fn historical_equipment_catalog_is_well_formed() {

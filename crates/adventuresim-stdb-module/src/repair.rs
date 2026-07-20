@@ -558,19 +558,13 @@ pub fn retrieve_repaired_items(
     if ids.is_empty() {
         return Err("No completed matching repairs are ready to retrieve".into());
     }
-    let available_gold: u64 = ctx
-        .db
-        .inventory_item()
-        .character_and_item_id()
-        .filter((character_id, &"gold_coin".to_string()))
-        .map(|stack| u64::from(stack.quantity))
-        .sum();
+    let available_gold = crate::item::personal_currency_total(ctx, character_id);
     let affordable = adventuresim_core::durability::affordable_repair_prefix(
         available_gold,
         &ids.iter().map(|(_, _, cost)| *cost).collect::<Vec<_>>(),
     );
     if affordable == 0 {
-        return Err("Not enough personal gold to retrieve the next completed repair".into());
+        return Err("Not enough personal coin to retrieve the next completed repair".into());
     }
     for (_, order_id, _) in ids.into_iter().take(affordable) {
         retrieve(ctx, character_id, order_id)?;

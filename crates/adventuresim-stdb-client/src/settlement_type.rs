@@ -42,6 +42,7 @@ pub struct Settlement {
     pub industries: InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,
+    pub currency_id: String,
     pub source_node_id: Option<u64>,
     pub sources: String,
 }
@@ -75,6 +76,7 @@ pub struct SettlementCols {
     pub industries: __sdk::__query_builder::Col<Settlement, InferredIndustryProfile>,
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
+    pub currency_id: __sdk::__query_builder::Col<Settlement, String>,
     pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
     pub sources: __sdk::__query_builder::Col<Settlement, String>,
 }
@@ -113,6 +115,7 @@ impl __sdk::__query_builder::HasCols for Settlement {
             industries: __sdk::__query_builder::Col::new(table_name, "industries"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
+            currency_id: __sdk::__query_builder::Col::new(table_name, "currency_id"),
             source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),
             sources: __sdk::__query_builder::Col::new(table_name, "sources"),
         }

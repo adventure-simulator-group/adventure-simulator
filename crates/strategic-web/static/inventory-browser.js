@@ -182,10 +182,118 @@
     grid.style.setProperty(`--inventory-${side}-width`, `${contentWidth + frameWidth}px`);
   }
 
-  function apply(browser, state) {
+  function currencyNumber(cell) {
+    const value = Number(String(cell?.dataset.sortValue || cell?.textContent || "0").replace(/[^0-9+.-]/g, ""));
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function currencyRowQuantity(row) {
+    const count = row.querySelector(".inventory-count");
+    const base = Number(row.dataset.inventoryQuantity
+      ?? count?.dataset.base
+      ?? row.querySelector("[data-target-control]")?.dataset.quantity
+      ?? row.querySelector("[data-count]")?.dataset.count
+      ?? currencyNumber(count));
+    const change = Number(count?.dataset.tradeDraftChange || 0);
+    return Math.max(0, (Number.isFinite(base) ? base : 0) + (Number.isFinite(change) ? change : 0));
+  }
+
+  function currencyRowTarget(row) {
+    return Math.max(0, Number(row.dataset.target
+      ?? row.querySelector("[data-target-value]")?.textContent
+      ?? row.querySelector("[data-target]")?.dataset.target
+      ?? 0) || 0);
+  }
+
+  function groupCurrencyRows(browser) {
     const body = browser.querySelector("tbody");
     if (!body) return;
-    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row)")];
+    const previousParent = body.querySelector(":scope > .currency-parent-row");
+    const wasExpanded = previousParent?.getAttribute("aria-expanded") === "true";
+    const parentDraftChange = Number(previousParent?.querySelector(".inventory-count")?.dataset.tradeDraftChange || 0);
+    previousParent?.remove();
+    const components = [...body.querySelectorAll(":scope > tr.trade-inventory-row")]
+      .filter((row) => !row.classList.contains("currency-parent-row") && row.querySelector('[data-item-kind="currency"]'));
+    if (!components.length) return;
+    const first = components[0];
+    const parent = first.cloneNode(true);
+    parent.classList.add("currency-parent-row");
+    parent.classList.remove("currency-component-row");
+    parent.dataset.itemKey = "coin";
+    parent.dataset.merchantItem = "coin";
+    const labels = parent.querySelectorAll("[data-item-name]");
+    labels.forEach((label) => { label.dataset.itemName = "Coin"; label.textContent = "Coin"; delete label.dataset.currencyName; });
+    const componentTotal = components.reduce((sum, row) => sum + currencyRowQuantity(row), 0);
+    const total = Math.max(0, componentTotal + (Number.isFinite(parentDraftChange) ? parentDraftChange : 0));
+    const target = components.reduce((sum, row) => sum + currencyRowTarget(row), 0);
+    const componentWeight = components.reduce((sum, row) => {
+      const quantity = currencyRowQuantity(row);
+      return sum + quantity * currencyNumber(row.querySelector(".inventory-weight"));
+    }, 0);
+    const unitWeight = currencyNumber(first.querySelector(".inventory-weight"));
+    const weight = Math.max(0, componentWeight + parentDraftChange * unitWeight);
+    parent.querySelector("[data-target-control]")?.remove();
+    const count = parent.querySelector(".inventory-count");
+    if (count) {
+      count.textContent = String(total);
+      count.dataset.base = String(componentTotal);
+      if (parentDraftChange) count.dataset.tradeDraftChange = String(parentDraftChange);
+      else delete count.dataset.tradeDraftChange;
+    }
+    parent.dataset.inventoryQuantity = String(componentTotal);
+    parent.dataset.target = String(target);
+    const targetCell = parent.querySelector(":scope > .inventory-target");
+    if (targetCell) targetCell.textContent = String(target);
+    const weightCell = parent.querySelector(".inventory-weight");
+    if (weightCell) { weightCell.textContent = weight.toFixed(2).replace(/\.00$/, ""); weightCell.dataset.sortValue = String(weight); }
+    const valueCell = parent.querySelector(".inventory-gold");
+    if (valueCell) { valueCell.textContent = String(total); valueCell.dataset.sortValue = String(total); }
+    parent.querySelectorAll("button,input,select").forEach((control) => {
+      if (control.matches("button.trade-transfer")) {
+        ["data-item", "data-item-name", "data-key", "data-from", "data-to", "data-discard-item", "data-pool-stage", "data-loot-stage", "data-merchant-sell"].forEach((attribute) => control.removeAttribute(attribute));
+        control.dataset.coinAction = "true";
+        control.dataset.count = String(total);
+        control.dataset.target = String(target);
+        control.dataset.labelOne = "Transfer one Coin";
+        control.dataset.labelTarget = "Transfer Coin to target";
+        control.dataset.labelAll = "Transfer all Coin";
+        control.setAttribute("aria-label", "Transfer Coin");
+        control.title = "Transfer Coin";
+      } else if (!control.matches('[data-coin-toggle]')) control.remove();
+    });
+    const nameCell = parent.querySelector(".inventory-item-name");
+    if (nameCell) {
+      const toggle = document.createElement("button");
+      toggle.type = "button"; toggle.className = "currency-disclosure"; toggle.dataset.coinToggle = "true";
+      toggle.setAttribute("aria-label", "Show currency denominations"); toggle.setAttribute("aria-expanded", "false");
+      toggle.textContent = "›";
+      const coinLabel = nameCell.querySelector("[data-item-name]");
+      if (coinLabel) coinLabel.after(toggle);
+      else nameCell.append(toggle);
+    }
+    parent.querySelectorAll(".game-icon").forEach((icon) => {
+      icon.setAttribute("aria-label", "Item type: Coin");
+      icon.setAttribute("title", "Item type: Coin");
+    });
+    components.forEach((row) => {
+      row.classList.add("currency-component-row"); row.hidden = true; row.tabIndex = -1;
+      const label = row.querySelector("[data-currency-name]");
+      if (label) { label.textContent = label.dataset.currencyName; label.dataset.itemName = label.dataset.currencyName; }
+      const componentCount = row.querySelector(".inventory-count");
+      if (componentCount) componentCount.textContent = String(currencyRowQuantity(row));
+    });
+    first.before(parent);
+    parent._currencyComponents = components;
+    parent.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+    parent.querySelector("[data-coin-toggle]")?.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+    components.forEach((component) => { component.hidden = !wasExpanded; });
+  }
+
+  function apply(browser, state) {
+    groupCurrencyRows(browser);
+    const body = browser.querySelector("tbody");
+    if (!body) return;
+    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row)")];
     rows.forEach((row) => normalizeDestinationRow(row, browser));
     rows.forEach((row) => {
       row.tabIndex = 0;
@@ -194,11 +302,15 @@
       row.hidden = !name.includes(state.query.toLocaleLowerCase());
       Object.keys(OPTIONAL_COLUMNS).forEach((column) => optionalCell(row, column).hidden = !state.columns.includes(column));
       if (row._inventoryDetail) { row._inventoryDetail.remove(); row._inventoryDetail = null; }
-      if (row.getAttribute("aria-expanded") === "true") createDetail(row, browser);
+      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents) createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
-    rows.map((row, index) => ({ row, index })).sort((a, b) => compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index).forEach(({ row }) => {
+    rows.map((row, index) => ({ row, index })).sort((a, b) => {
+      const coinPriority = Number(!a.row.classList.contains("currency-parent-row")) - Number(!b.row.classList.contains("currency-parent-row"));
+      return coinPriority || compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index;
+    }).forEach(({ row }) => {
       body.append(row);
+      if (row._currencyComponents) row._currencyComponents.forEach((component) => body.append(component));
       const detail = row._inventoryDetail;
       if (detail) body.append(detail);
     });
@@ -246,6 +358,11 @@
   function toggleExpanded(row, browser) {
     const open = row.getAttribute("aria-expanded") === "true";
     row.setAttribute("aria-expanded", String(!open));
+    if (row._currencyComponents) {
+      row.querySelector("[data-coin-toggle]")?.setAttribute("aria-expanded", String(!open));
+      row._currencyComponents.forEach((component) => { component.hidden = open || row.hidden; });
+      return;
+    }
     if (!open) createDetail(row, browser);
     else if (row._inventoryDetail) row._inventoryDetail.hidden = true;
   }
@@ -280,6 +397,35 @@
     search.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
     search.addEventListener("blur", () => { browser._searchEditing = false; });
     browser.addEventListener("click", (event) => {
+      const coinAction = event.target.closest("[data-coin-action]");
+      if (coinAction) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        const row = coinAction.closest(".currency-parent-row");
+        const buttons = row?._currencyComponents?.map((component) => component.querySelector("button.trade-transfer:not([disabled])")).filter(Boolean) || [];
+        const mode = coinAction.dataset.transferMode || "one";
+        if (mode === "one") buttons.find((button) => currencyRowQuantity(button.closest("tr")) > 0)?.click();
+        else if (mode === "all") buttons.forEach((button) => { button.dataset.transferMode = "all"; button.click(); });
+        else {
+          let remaining = Math.max(0, currencyRowQuantity(row) - Number(coinAction.dataset.target || 0));
+          buttons.forEach((button) => {
+            if (remaining === 0) return;
+            const component = button.closest("tr");
+            const quantity = currencyRowQuantity(component);
+            const transfer = Math.min(quantity, remaining);
+            const originalTarget = button.dataset.target;
+            button.dataset.target = String(quantity - transfer);
+            button.dataset.transferMode = "target";
+            button.click();
+            if (originalTarget == null) delete button.dataset.target;
+            else button.dataset.target = originalTarget;
+            remaining -= transfer;
+          });
+        }
+        groupCurrencyRows(browser);
+        return;
+      }
+      const coinToggle = event.target.closest("[data-coin-toggle]");
+      if (coinToggle) { event.preventDefault(); toggleExpanded(coinToggle.closest(".currency-parent-row"), browser); return; }
       const sort = event.target.closest("[data-inventory-sort]");
       if (sort) { const key = sort.dataset.inventorySort; state.direction = state.sort === key && state.direction === "asc" ? "desc" : "asc"; state.sort = key; updateHistory(browser, state); apply(browser, state); return; }
       const row = event.target.closest("tr.trade-inventory-row");
@@ -302,7 +448,7 @@
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)));
     });
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, mountAll, refresh, syncPanelWidth };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) { global.addEventListener("DOMContentLoaded", () => mountAll()); global.addEventListener("popstate", () => mountAll()); }

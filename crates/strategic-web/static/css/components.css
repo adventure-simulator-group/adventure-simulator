@@ -339,6 +339,24 @@
 
 .gold-amount .game-icon { margin-left: 0.18em; }
 
+.currency-disclosure {
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  margin-left: 0.3rem;
+  padding: 0.1rem 0.25rem;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.currency-disclosure[aria-expanded="true"] { transform: rotate(90deg); }
+.currency-disclosure:focus-visible { outline: 2px solid var(--accent-color, currentColor); outline-offset: 2px; }
+.currency-component-row .inventory-item-name { padding-left: 1.4rem; }
+.currency-component-row .inventory-row-actions,
+.currency-component-row .inventory-actions-cell,
+.currency-component-row button,
+.currency-component-row input { visibility: hidden; }
+
 .xp-amount {
   color: var(--xp-color);
   font-weight: 600;

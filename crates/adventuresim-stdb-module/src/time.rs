@@ -514,9 +514,12 @@ fn apply_activity_outcomes(
         },
     );
     if outcome.gold_earned > 0 {
-        let mut character = character;
-        character.gold = character.gold.saturating_add(outcome.gold_earned);
-        ctx.db.character().id().update(character);
+        crate::item::credit_personal_currency(
+            ctx,
+            character_id,
+            &settlement.id,
+            outcome.gold_earned,
+        )?;
     }
     initialize_notoriety(ctx, character_id);
     let notoriety_gain = outcome.notoriety_gained;
@@ -661,17 +664,8 @@ fn rest_for_minutes(
     let cost =
         (requested_minutes.div_ceil(MINUTES_PER_DAY) as u32).saturating_mul(INN_GOLD_PER_DAY);
     if at_inn {
-        let mut character = ctx
-            .db
-            .character()
-            .id()
-            .find(character_id)
-            .ok_or_else(|| "Character not found".to_string())?;
-        if character.gold < cost {
-            return Err("Not enough gold to pay for the inn stay".into());
-        }
-        character.gold -= cost;
-        ctx.db.character().id().update(character);
+        crate::item::consume_personal_currency(ctx, character_id, u64::from(cost))
+            .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
     }
 
     let (elapsed, terminal) =

@@ -15,6 +15,7 @@ pub mod morale;
 pub mod provisioning;
 pub mod simulation_security;
 pub mod skill;
+pub mod strategic_currency;
 pub mod strategic_economy;
 pub mod strategic_schedule;
 pub mod strategic_time;

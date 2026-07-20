@@ -17,6 +17,8 @@ use std::{
     sync::mpsc,
     time::Duration,
 };
+
+use adventuresim_core::strategic_currency::is_currency_id;
 use url::Url;
 
 use adventuresim_stdb_client::{
@@ -631,7 +633,7 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum()
     }
@@ -1079,7 +1081,7 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum();
 
@@ -1201,7 +1203,7 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id && row.item_id == "gold_coin")
+            .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum();
         let affordable: Vec<_> = orders
@@ -1638,7 +1640,7 @@ impl LiveRunner {
             .db
             .party_inventory_item()
             .iter()
-            .filter(|row| row.party_id == party.id && row.item_id != "gold_coin")
+            .filter(|row| row.party_id == party.id && !is_currency_id(&row.item_id))
             .collect();
         if !sale.is_empty() {
             let before_coins: u64 = self
@@ -1646,7 +1648,7 @@ impl LiveRunner {
                 .db
                 .party_inventory_item()
                 .iter()
-                .filter(|row| row.party_id == party.id && row.item_id == "gold_coin")
+                .filter(|row| row.party_id == party.id && is_currency_id(&row.item_id))
                 .map(|row| u64::from(row.quantity))
                 .sum();
             let ids = sale.iter().map(|row| row.id).collect();
@@ -1667,7 +1669,7 @@ impl LiveRunner {
                 .db
                 .party_inventory_item()
                 .iter()
-                .filter(|row| row.party_id == party.id && row.item_id == "gold_coin")
+                .filter(|row| row.party_id == party.id && is_currency_id(&row.item_id))
                 .map(|row| u64::from(row.quantity))
                 .sum();
             self.metrics.sale_proceeds += after_coins.saturating_sub(before_coins);
@@ -1792,21 +1794,35 @@ impl LiveRunner {
         let Some((improvement, cost, candidate)) = candidates.into_iter().next() else {
             return Ok(());
         };
-        let treasury = self
+        let mut treasury: Vec<_> = self
             .connection
             .db
             .party_inventory_item()
             .iter()
-            .find(|row| row.party_id == party_id && row.item_id == "gold_coin")
-            .ok_or("earned party treasury is missing")?;
-        if treasury.quantity < cost {
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .collect();
+        treasury.sort_by_key(|row| (row.item_id.clone(), row.id));
+        if treasury
+            .iter()
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>()
+            < u64::from(cost)
+        {
             return Ok(());
         }
-        let result = reducer_call!(self, "withdraw_earned_upgrade_gold", |cb| self
-            .connection
-            .reducers
-            .withdraw_party_inventory_item_then(character_id, treasury.id, cost, cb));
-        self.call(result)?;
+        let mut remaining = cost;
+        for stack in treasury {
+            let quantity = remaining.min(stack.quantity);
+            let result = reducer_call!(self, "withdraw_earned_upgrade_coin", |cb| self
+                .connection
+                .reducers
+                .withdraw_party_inventory_item_then(character_id, stack.id, quantity, cb));
+            self.call(result)?;
+            remaining -= quantity;
+            if remaining == 0 {
+                break;
+            }
+        }
         self.metrics.earned_gold_withdrawn += u64::from(cost);
         let result = reducer_call!(self, "finalize_merchant_trade", |cb| self
             .connection
@@ -2295,12 +2311,12 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .find(|row| row.character_id == *character_id)
                 .ok_or("missing final clock")?
                 .minutes;
-            let personal_gold_coin = runner
+            let personal_gold_coin: u64 = runner
                 .connection
                 .db
                 .inventory_item()
                 .iter()
-                .filter(|row| row.character_id == *character_id && row.item_id == "gold_coin")
+                .filter(|row| row.character_id == *character_id && is_currency_id(&row.item_id))
                 .map(|row| u64::from(row.quantity))
                 .sum();
             let worst_equipment_condition = equipped_ids
@@ -2339,7 +2355,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .db
                 .party_inventory_item()
                 .iter()
-                .filter(|row| row.party_id == party_id && row.item_id == "gold_coin")
+                .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
                 .map(|row| u64::from(row.quantity))
                 .sum();
             let party_stake = runner
@@ -2352,7 +2368,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
             Ok(FinalAgentState {
                 agent_id: agent as u32,
                 character_id: *character_id,
-                gold: character.gold,
+                gold: personal_gold_coin.min(u64::from(u32::MAX)) as u32,
                 equipment_item_ids,
                 capability_summary: format!(
                     "melee={};ranged={};heavy={};athletics={:.2};endurance={:.2}",
