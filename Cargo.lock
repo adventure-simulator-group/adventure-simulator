@@ -223,6 +223,7 @@ dependencies = [
  "image",
  "netcdf-reader",
  "proj4rs",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

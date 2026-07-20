@@ -276,8 +276,8 @@ ferries, sparsely samples installed GLO-30 tiles into elevation bands and
 contours, and reduces every available prepared forest tile into bounded density
 and leaf-type regions. Missing forest tiles remain absent and their coverage is
 reported as partial; they do not block map generation. The command clips and
-simplifies presentation geometry, renders Atlas and Paper AVIF pyramids through
-zoom level 4, concatenates the independently addressable images into one pack,
+simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
+level 6, concatenates the independently addressable images into one pack,
 and embeds a digest
 over every presentation-affecting package field. The
 versioned filename is stable rather than content-addressed. Legacy Viabundus
@@ -294,8 +294,12 @@ directory flags when regenerating from another reviewed installation.
 The JSON package and AVIF pack are compiled into strategic-web for bounds,
 attribution, indexed byte ranges, and integrity checks. Individual tile routes
 include the pack's SHA-256 in their query string and receive a one-year
-immutable cache policy. The browser requests only the Atlas or Paper tiles
-covering its current view and replaces them as it pans or crosses a zoom level.
+immutable cache policy. The browser requests only the Paper tiles covering its
+current view and replaces them as it pans or crosses a zoom level. The deepest
+level uses a higher AVIF quality setting for close inspection. Every encoded
+tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
+levels 5 and 6 retain elevation contours but replace coarse tint cells and
+forest squares with a cleaner close-view presentation.
 Settlement pins, route availability, current location, and selection remain in
 the authenticated HTML/SVG overlay and are never cached as
 part of the world asset.

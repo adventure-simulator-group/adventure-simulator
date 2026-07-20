@@ -1,11 +1,9 @@
 (() => {
   "use strict";
 
-  const THEME_KEY = "adventuresim.map-theme";
   const PIN_REFERENCE_WIDTH = 390;
-  const MIN_VIEW_WIDTH = 20;
+  const MIN_VIEW_WIDTH = 10;
   const MIN_VIEW_HEIGHT = MIN_VIEW_WIDTH / 1.5;
-  const THEMES = new Set(["paper", "atlas"]);
   const SVG_NS = "http://www.w3.org/2000/svg";
   const parseViewBox = (svg) => svg.getAttribute("viewBox").trim().split(/\s+/).map(Number);
   const scalePins = (svg, width) => {
@@ -39,22 +37,24 @@
     if (!layer) return;
     const tileSize = Number(map.dataset.mapTileSize);
     const maxZoom = Number(map.dataset.mapMaxTileZoom);
+    const gutter = Number(map.dataset.mapTileGutter || 0);
     const version = map.dataset.mapTileVersion;
     const root = map.dataset.mapTileRoot;
     if (!tileSize || !Number.isFinite(maxZoom) || !version || !root) return;
     const rect = svg.getBoundingClientRect();
     const zoom = tileZoom(view[2], rect.width || 768, globalThis.devicePixelRatio || 1, maxZoom);
     const range = visibleTileRange(view, tileSize, zoom);
+    const tileGutter = gutter / 2 ** zoom;
     const key = [theme, zoom, range.minX, range.maxX, range.minY, range.maxY].join(":");
     if (layer.dataset.tileKey === key) return;
     const tiles = [];
     for (let y = range.minY; y <= range.maxY; y += 1) {
       for (let x = range.minX; x <= range.maxX; x += 1) {
         const image = document.createElementNS(SVG_NS, "image");
-        image.setAttribute("x", (x * range.span).toFixed(3));
-        image.setAttribute("y", (y * range.span).toFixed(3));
-        image.setAttribute("width", (range.span + 0.02).toFixed(3));
-        image.setAttribute("height", (range.span + 0.02).toFixed(3));
+        image.setAttribute("x", (x * range.span - tileGutter).toFixed(3));
+        image.setAttribute("y", (y * range.span - tileGutter).toFixed(3));
+        image.setAttribute("width", (range.span + 2 * tileGutter).toFixed(3));
+        image.setAttribute("height", (range.span + 2 * tileGutter).toFixed(3));
         image.setAttribute("preserveAspectRatio", "none");
         image.setAttribute("href", `${root}${theme}/${zoom}/${x}/${y}.avif?v=${version}`);
         tiles.push(image);
@@ -72,27 +72,14 @@
   };
   const pannedView = ([x, y, width, height], dx, dy) => [x + dx, y + dy, width, height];
 
-  const applyTheme = (map, theme, storage = globalThis.localStorage) => {
-    const chosen = THEMES.has(theme) ? theme : "atlas";
-    map.dataset.mapTheme = chosen;
-    map.querySelectorAll("[data-map-theme-choice]").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.mapThemeChoice === chosen));
-    });
-    try { storage?.setItem(THEME_KEY, chosen); } catch (_) { /* storage may be disabled */ }
-    return chosen;
-  };
-
-  const initializeMap = (map, storage = globalThis.localStorage) => {
+  const initializeMap = (map) => {
     if (map.dataset.mapReady === "true") return;
     map.dataset.mapReady = "true";
     const svg = map.querySelector("[data-map-svg]");
     if (!svg) return;
     const initial = parseViewBox(svg);
     scalePins(svg, initial[2]);
-    let stored = "atlas";
-    try { stored = storage?.getItem(THEME_KEY) || "atlas"; } catch (_) { /* use default */ }
-    const initialTheme = applyTheme(map, stored, storage);
-    renderTiles(map, svg, initial, initialTheme);
+    renderTiles(map, svg, initial, "paper");
 
     const updateView = (view) => {
       writeViewBox(svg, view);
@@ -100,11 +87,6 @@
     };
     const zoom = (factor) => updateView(zoomedView(parseViewBox(svg), factor));
     map.addEventListener("click", (event) => {
-      const theme = event.target.closest?.("[data-map-theme-choice]");
-      if (theme) {
-        const chosen = applyTheme(map, theme.dataset.mapThemeChoice, storage);
-        renderTiles(map, svg, parseViewBox(svg), chosen);
-      }
       const control = event.target.closest?.("[data-map-zoom]");
       if (control) zoom(control.dataset.mapZoom === "in" ? 0.8 : 1.25);
       if (event.target.closest?.("[data-map-reset]")) updateView(initial);
@@ -134,7 +116,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { applyTheme, initializeMap, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { initializeMap, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();

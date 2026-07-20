@@ -1,4 +1,5 @@
 use image::{ExtendedColorType, ImageEncoder, codecs::avif::AvifEncoder};
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
@@ -8,6 +9,7 @@ use super::{Package, Point, TileEntry, TilePyramid};
 
 const WIDTH: f64 = 1_200.0;
 const HEIGHT: f64 = 800.0;
+const TILE_GUTTER: u8 = 4;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileConfig {
@@ -19,7 +21,7 @@ impl Default for TileConfig {
     fn default() -> Self {
         Self {
             tile_size: 512,
-            max_zoom: 4,
+            max_zoom: 6,
         }
     }
 }
@@ -57,26 +59,6 @@ const PAPER: Palette = Palette {
     ],
 };
 
-const ATLAS: Palette = Palette {
-    land: [231, 234, 213, 255],
-    water: [120, 183, 221, 255],
-    water_edge: [69, 120, 153, 255],
-    road: [154, 104, 55, 255],
-    ferry: [36, 93, 136, 255],
-    contour: [117, 107, 85, 125],
-    forest: [79, 138, 88, 130],
-    conifer: [53, 107, 82, 155],
-    elevation: [
-        [219, 229, 199, 255],
-        [210, 221, 186, 255],
-        [197, 208, 168, 255],
-        [211, 194, 154, 255],
-        [196, 170, 130, 255],
-        [179, 143, 114, 255],
-        [155, 120, 105, 255],
-    ],
-};
-
 pub(super) fn build(
     package: &Package,
     config: TileConfig,
@@ -86,29 +68,35 @@ pub(super) fn build(
     }
     let mut bytes = Vec::new();
     let mut entries = Vec::new();
-    for (theme, palette) in [("atlas", ATLAS), ("paper", PAPER)] {
-        for zoom in 0..=config.max_zoom {
-            let scale = f64::from(1_u32 << zoom);
-            let span = f64::from(config.tile_size) / scale;
-            let columns = (WIDTH / span).ceil() as u16;
-            let rows = (HEIGHT / span).ceil() as u16;
-            for y in 0..rows {
-                for x in 0..columns {
-                    let tile = render(package, config.tile_size, scale, x, y, palette)?;
-                    let offset = u64::try_from(bytes.len())?;
-                    let encoded = encode(&tile)?;
-                    let length = u32::try_from(encoded.len())?;
-                    bytes.extend_from_slice(&encoded);
-                    entries.push(TileEntry {
-                        theme,
-                        zoom,
-                        x,
-                        y,
-                        offset,
-                        length,
-                    });
-                }
-            }
+    for zoom in 0..=config.max_zoom {
+        let scale = f64::from(1_u32 << zoom);
+        let span = f64::from(config.tile_size) / scale;
+        let columns = (WIDTH / span).ceil() as u16;
+        let rows = (HEIGHT / span).ceil() as u16;
+        let coordinates: Vec<_> = (0..rows)
+            .flat_map(|y| (0..columns).map(move |x| (x, y)))
+            .collect();
+        let quality = if zoom == config.max_zoom { 95 } else { 82 };
+        let encoded_tiles: Result<Vec<Vec<u8>>, String> = coordinates
+            .par_iter()
+            .map(|&(x, y)| {
+                let tile = render(package, config.tile_size, TILE_GUTTER, scale, x, y, PAPER)
+                    .map_err(|error| error.to_string())?;
+                encode(&tile, quality).map_err(|error| error.to_string())
+            })
+            .collect();
+        for ((x, y), encoded) in coordinates.into_iter().zip(encoded_tiles?) {
+            let offset = u64::try_from(bytes.len())?;
+            let length = u32::try_from(encoded.len())?;
+            bytes.extend_from_slice(&encoded);
+            entries.push(TileEntry {
+                theme: "paper",
+                zoom,
+                x,
+                y,
+                offset,
+                length,
+            });
         }
     }
     let content_sha256 = format!("{:x}", Sha256::digest(&bytes));
@@ -116,6 +104,7 @@ pub(super) fn build(
         TilePyramid {
             format: "avif",
             tile_size: config.tile_size,
+            gutter: TILE_GUTTER,
             max_zoom: config.max_zoom,
             content_sha256,
             entries,
@@ -124,9 +113,9 @@ pub(super) fn build(
     ))
 }
 
-fn encode(pixmap: &Pixmap) -> Result<Vec<u8>, image::ImageError> {
+fn encode(pixmap: &Pixmap, quality: u8) -> Result<Vec<u8>, image::ImageError> {
     let mut bytes = Vec::new();
-    AvifEncoder::new_with_speed_quality(&mut bytes, 10, 68).write_image(
+    AvifEncoder::new_with_speed_quality(&mut bytes, 10, quality).write_image(
         pixmap.data(),
         pixmap.width(),
         pixmap.height(),
@@ -138,38 +127,42 @@ fn encode(pixmap: &Pixmap) -> Result<Vec<u8>, image::ImageError> {
 fn render(
     package: &Package,
     tile_size: u32,
+    gutter: u8,
     scale: f64,
     tile_x: u16,
     tile_y: u16,
     palette: Palette,
 ) -> Result<Pixmap, Box<dyn std::error::Error>> {
-    let mut pixmap = Pixmap::new(tile_size, tile_size).ok_or("invalid tile dimensions")?;
+    let render_size = tile_size + 2 * u32::from(gutter);
+    let mut pixmap = Pixmap::new(render_size, render_size).ok_or("invalid tile dimensions")?;
     pixmap.fill(color(palette.land));
     let origin = (
-        f64::from(tile_x) * f64::from(tile_size),
-        f64::from(tile_y) * f64::from(tile_size),
+        f64::from(tile_x) * f64::from(tile_size) - f64::from(gutter),
+        f64::from(tile_y) * f64::from(tile_size) - f64::from(gutter),
     );
     let logical_bounds = [
         origin.0 / scale,
         origin.1 / scale,
-        (origin.0 + f64::from(tile_size)) / scale,
-        (origin.1 + f64::from(tile_size)) / scale,
+        (origin.0 + f64::from(render_size)) / scale,
+        (origin.1 + f64::from(render_size)) / scale,
     ];
 
-    for cell in &package.elevation.cells {
-        let index = [50, 100, 250, 500, 1_000, 1_500, 2_000]
-            .iter()
-            .position(|value| *value == cell.band_m)
-            .unwrap_or_default();
-        fill_source_bounds(
-            &mut pixmap,
-            cell.bounds,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            palette.elevation[index],
-        );
+    if scale < 32.0 {
+        for cell in &package.elevation.cells {
+            let index = [50, 100, 250, 500, 1_000, 1_500, 2_000]
+                .iter()
+                .position(|value| *value == cell.band_m)
+                .unwrap_or_default();
+            fill_source_bounds(
+                &mut pixmap,
+                cell.bounds,
+                package.bounds,
+                scale,
+                origin,
+                logical_bounds,
+                palette.elevation[index],
+            );
+        }
     }
     for ring in &package.water {
         stroke_and_fill_source_path(
@@ -194,15 +187,28 @@ fn render(
             2 => (u16::from(shade[3]) * 2 / 3) as u8,
             _ => shade[3],
         };
-        fill_source_bounds(
-            &mut pixmap,
-            region.bounds,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            shade,
-        );
+        if scale < 32.0 {
+            fill_source_bounds(
+                &mut pixmap,
+                region.bounds,
+                package.bounds,
+                scale,
+                origin,
+                logical_bounds,
+                shade,
+            );
+        } else {
+            fill_forest_symbols(
+                &mut pixmap,
+                region.bounds,
+                region.density,
+                package.bounds,
+                scale,
+                origin,
+                logical_bounds,
+                shade,
+            );
+        }
     }
     for contour in &package.elevation.contours {
         stroke_raw_path(
@@ -258,6 +264,51 @@ fn fill_source_bounds(
         return;
     };
     pixmap.fill_rect(rect, &paint(shade), Transform::identity(), None);
+}
+
+fn fill_forest_symbols(
+    pixmap: &mut Pixmap,
+    [west, south, east, north]: [f64; 4],
+    density: u8,
+    map_bounds: [f64; 4],
+    scale: f64,
+    origin: (f64, f64),
+    tile_bounds: [f64; 4],
+    mut shade: [u8; 4],
+) {
+    let (left, top) = project(west, north, map_bounds);
+    let (right, bottom) = project(east, south, map_bounds);
+    if !intersects([left, top, right, bottom], tile_bounds) {
+        return;
+    }
+    shade[3] = match density {
+        1 => 105,
+        2 => 145,
+        _ => 180,
+    };
+    let positions = [
+        (0.25, 0.30),
+        (0.72, 0.68),
+        (0.70, 0.24),
+        (0.30, 0.76),
+        (0.50, 0.50),
+        (0.86, 0.82),
+    ];
+    let count = usize::from(density.clamp(1, 3)) * 2;
+    for (relative_x, relative_y) in positions.into_iter().take(count) {
+        let x = ((left + (right - left) * relative_x) * scale - origin.0) as f32;
+        let y = ((top + (bottom - top) * relative_y) * scale - origin.1) as f32;
+        let Some(path) = PathBuilder::from_circle(x, y, 2.4) else {
+            continue;
+        };
+        pixmap.fill_path(
+            &path,
+            &paint(shade),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 fn stroke_source_path(

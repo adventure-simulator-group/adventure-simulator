@@ -33,7 +33,7 @@ settlements without using a fallback.
 
 The settlement Map presentation separately samples the installed GLO-30 tiles
 on a coarse deterministic grid. It emits generalized elevation tint cells and
-contour segments into both styles of the versioned AVIF tile pyramid. Browsers
+contour segments into the versioned Paper AVIF tile pyramid. Browsers
 receive only the compressed tiles covering their current view; raw DEM pixels
 are not served and the presentation layer is not persisted in SpacetimeDB.
 
