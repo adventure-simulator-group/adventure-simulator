@@ -261,6 +261,10 @@ cartoon village, a textured painting, or a detailed model building.
 - Prefer simple gable roofs: two pitched planes meeting at a ridge, like a
   precisely folded sheet of paper. Use hipped or pyramidal roofs sparingly for
   justified variation. A row should be predominantly gabled.
+- Draw every service building as an orthographic front elevation, square to the
+  camera. Center ordinary gable peaks over their facades and keep the two roof
+  slopes visually balanced. Do not show side walls, receding ridges, or
+  three-quarter perspective; silhouette variation must remain front-aligned.
 - Reserve the largest uninterrupted facade field for the overlaid service mark.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.
