@@ -154,7 +154,7 @@
 }
 
 .settlement-top-bar[data-building-tier="city"] {
-  --service-icon-bottom: 2.15rem;
+  --service-icon-bottom: 1.8rem;
   --service-icon-size: 1.75rem;
 }
 

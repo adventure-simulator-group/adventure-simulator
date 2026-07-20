@@ -73,7 +73,7 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-icon \{[\s\S]*bottom: var\(--service-icon-bottom, 1\.2rem\)[\s\S]*filter: brightness\(var\(--building-light, 78%\)\)/);
   assert.match(layoutCss, /data-building-tier="village"[\s\S]*--service-icon-bottom: 1\.2rem[\s\S]*--service-icon-size: 1\.6rem/);
   assert.match(layoutCss, /data-building-tier="town"[\s\S]*--service-icon-bottom: 1\.5rem[\s\S]*--service-icon-size: 1\.7rem/);
-  assert.match(layoutCss, /data-building-tier="city"[\s\S]*--service-icon-bottom: 2\.15rem[\s\S]*--service-icon-size: 1\.75rem/);
+  assert.match(layoutCss, /data-building-tier="city"[\s\S]*--service-icon-bottom: 1\.8rem[\s\S]*--service-icon-size: 1\.75rem/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.settlement-services \.nav-tab \{[\s\S]*width: 5\.25rem[\s\S]*height: 6\.75rem/);
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
   assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
