@@ -315,6 +315,13 @@ def ports_in_use(ports: list[int]) -> list[int]:
     return occupied
 
 
+def profile_ports(values: dict[str, object], with_tactical: bool) -> list[int]:
+    keys = ["spacetime_port", "web_port"]
+    if with_tactical:
+        keys.append("tactical_port")
+    return [int(values[key]) for key in keys]
+
+
 def listener_process_snapshot(port: int) -> dict[str, object] | None:
     if os.name == "nt":
         result = subprocess.run(
@@ -576,14 +583,19 @@ def wait_for_spacetime(process: subprocess.Popen[str], metadata_file: Path, log_
     raise RuntimeError(f"isolated SpacetimeDB did not become ready; see {log_file}")
 
 
-def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
+def run_profile(
+    name: str,
+    base_port: int,
+    verify_http: bool = False,
+    with_tactical: bool = True,
+) -> int:
     values = profile_values(name, base_port)
     state_root = runtime_root()
     profile_dir = ensure_secure_directory(Path(str(values["profile_dir"])), state_root)
     run_dir = ensure_secure_directory(profile_dir / "run", state_root)
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
     with ProfileLock(profile_dir / "lifecycle.lock") as lifecycle:
-        ports = [int(values[key]) for key in ("spacetime_port", "web_port", "tactical_port")]
+        ports = profile_ports(values, with_tactical)
         occupied = ports_in_use(ports)
         if occupied:
             raise ValueError(f"isolated profile ports already occupied: {occupied}")
@@ -621,8 +633,15 @@ def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
             code = seed(server, str(values["database"]), include_damaged_demo=True)
             if code:
                 return code
-            spawner_config = spawner_identity(name, server, str(values["database"]), "127.0.0.1", int(values["tactical_port"]))
-            spawner = start_spawner(run_dir, spawner_config)
+            if with_tactical:
+                spawner_config = spawner_identity(
+                    name,
+                    server,
+                    str(values["database"]),
+                    "127.0.0.1",
+                    int(values["tactical_port"]),
+                )
+                spawner = start_spawner(run_dir, spawner_config)
             built = subprocess.run(["cargo", "build", "-p", "strategic-web"], cwd=ROOT)
             if built.returncode:
                 return built.returncode
@@ -633,7 +652,11 @@ def run_profile(name: str, base_port: int, verify_http: bool = False) -> int:
                 "STATIC_DIR": str(ROOT / "crates" / "strategic-web" / "static"),
                 "TACTICAL_STATIC_DIR": str(ROOT / "crates" / "adventuresim-stdb-module" / "static"),
             })
-            print(f"Starting isolated profile {name!r} at http://127.0.0.1:{values['web_port']}")
+            mode = "full-stack" if with_tactical else "strategic-only"
+            print(
+                f"Starting isolated {mode} profile {name!r} "
+                f"at http://127.0.0.1:{values['web_port']}"
+            )
             executable = ROOT / "target" / "debug" / ("strategic-web.exe" if os.name == "nt" else "strategic-web")
             web_config = {"role": "strategic-web", "profile": name, "executable": str(executable), "server": server}
             log = secure_log(run_dir / "web.log")
@@ -674,16 +697,18 @@ def canonical_spawner(action: str) -> int:
         state_root / worktree_fingerprint() / "canonical", state_root
     )
     run_dir = ensure_secure_directory(profile_dir / "run", state_root)
-    config = spawner_identity(
-        "canonical", "http://localhost:3000", "adventuresim-stdb-module", "127.0.0.1", 6001
-    )
     with ProfileLock(profile_dir / "lifecycle.lock"):
+        identity_file = run_dir / "spawner.identity.json"
+        if action == "stop":
+            stop_recorded(identity_file)
+            return 0
+        config = spawner_identity(
+            "canonical", "http://localhost:3000", "adventuresim-stdb-module", "127.0.0.1", 6001
+        )
         if action == "start":
             start_spawner(run_dir, config)
-        elif action == "stop":
-            stop_recorded(run_dir / "spawner.identity.json", config)
         else:
-            status = check_spawner_identity(run_dir / "spawner.identity.json", config)
+            status = check_spawner_identity(identity_file, config)
             if status == 1:
                 print("Tactical spawner: not running")
             return 0 if status in {0, 1} else status
@@ -704,9 +729,11 @@ def create_parser() -> argparse.ArgumentParser:
     seed_parser.add_argument("--database", required=True)
     sub.add_parser("verify-bindings")
     runner = sub.add_parser("run-profile")
+    runner.add_argument("--strategic-only", action="store_true")
     runner.add_argument("name")
     runner.add_argument("base_port", type=int)
     verifier = sub.add_parser("verify-profile")
+    verifier.add_argument("--strategic-only", action="store_true")
     verifier.add_argument("name")
     verifier.add_argument("base_port", type=int)
     canonical = sub.add_parser("canonical-spawner")
@@ -727,9 +754,14 @@ def main() -> int:
         if args.command == "verify-bindings":
             return verify_bindings()
         if args.command == "run-profile":
-            return run_profile(args.name, args.base_port)
+            return run_profile(args.name, args.base_port, with_tactical=not args.strategic_only)
         if args.command == "verify-profile":
-            return run_profile(args.name, args.base_port, verify_http=True)
+            return run_profile(
+                args.name,
+                args.base_port,
+                verify_http=True,
+                with_tactical=not args.strategic_only,
+            )
         if args.command == "canonical-spawner":
             return canonical_spawner(args.action)
     except (ValueError, RuntimeError) as error:

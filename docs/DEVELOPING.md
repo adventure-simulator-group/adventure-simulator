@@ -87,6 +87,31 @@ just build-wasm
 
 Now when you click a location in the browser, a tactical server will automatically spawn.
 
+## Strategic-Only Development
+
+For strategic-layer work, start SpacetimeDB and the server-rendered browser UI
+without building the tactical WASM client or tactical server binaries and
+without running the tactical dispatcher:
+
+```bash
+just dev-strategic
+```
+
+This preserves the canonical local database just like `just dev`. It also
+stops a canonical dispatcher left by an earlier full-stack run. Tactical
+missions can still enter the pending state, but they will not start until the
+full stack is running again.
+
+For a disposable, worktree-safe strategic-only database, use:
+
+```bash
+just web-isolated-strategic renderer-demo 23100
+```
+
+The isolated lifecycle retains the same guarded reset, ownership checks, and
+cleanup as `web-isolated`, but it neither reserves the tactical port nor starts
+a dispatcher.
+
 For native tactical testing from WSL on Windows, the equivalent of running
 `just dev`, `just tactical`, and `just client 0` in separate Linux terminals is:
 
@@ -129,7 +154,9 @@ package `gcc-mingw-w64-x86-64` must already be installed.
 ```bash
 # Development
 just dev              # Start the complete browser stack
+just dev-strategic    # Start only SpacetimeDB and the strategic browser UI
 just web-isolated     # Reset and start an explicitly isolated local profile
+just web-isolated-strategic # Reset and start an isolated strategic-only profile
 just web-secure       # Start strategic-web at https://localhost:8443
 just secure-web-trust # Trust Caddy's local development CA (normally once)
 just web-damaged      # Refuses canonical reset; seed damage in an isolated profile
