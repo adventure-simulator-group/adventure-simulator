@@ -27,7 +27,13 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
     match item_id {
         "torch" => "torch",
         "arrow" => "plain-arrow",
-        "gold_coin" => "coins",
+        "rhenish_gulden"
+        | "lubeck_mark"
+        | "hamburg_mark"
+        | "saxon_thaler"
+        | "brandenburg_groschen"
+        | "danish_mark"
+        | "coin" => "coins",
         "bandage" => "bandage-roll",
         "travel_ration" => "bread",
         "waterskin" => "waterskin",
@@ -203,16 +209,6 @@ pub fn input_field(
     }
 }
 
-/// Gold amount display
-pub fn gold_display(amount: impl std::fmt::Display) -> Markup {
-    html! {
-        span class="gold-amount" {
-            (amount)
-            (game_icon("Gold", "coins"))
-        }
-    }
-}
-
 #[cfg(test)]
 mod icon_tests {
     use super::*;
@@ -287,7 +283,12 @@ mod icon_tests {
         let mappings = [
             ("torch", "torch"),
             ("arrow", "plain-arrow"),
-            ("gold_coin", "coins"),
+            ("rhenish_gulden", "coins"),
+            ("lubeck_mark", "coins"),
+            ("hamburg_mark", "coins"),
+            ("saxon_thaler", "coins"),
+            ("brandenburg_groschen", "coins"),
+            ("danish_mark", "coins"),
             ("bandage", "bandage-roll"),
             ("travel_ration", "bread"),
             ("waterskin", "waterskin"),

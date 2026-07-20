@@ -1293,7 +1293,7 @@ async fn service_quest_offers(
                     state,
                     waiting: "Hello again, I eagerly await the results of your efforts.",
                     turn_in_response: format!(
-                        "Excellent work. Here is the promised {} gold. You've earned it.",
+                        "Excellent work. Here is the promised {} coin. You've earned it.",
                         quest.gold_reward
                     ),
                     can_accept,
@@ -1360,7 +1360,7 @@ fn service_quest_details(
         ),
     };
     format!(
-        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} gold to anyone who clears them out. Are you",
+        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} coin to anyone who clears them out. Are you",
         quest.enemy_type, quest.gold_reward,
     )
 }
@@ -3042,8 +3042,12 @@ async fn rest(
     let after_notoriety =
         query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
     let summary = rest_summary(
-        before_character.as_ref().map(|(character, _)| character),
-        active_character.as_ref().map(|(character, _)| character),
+        before_character
+            .as_ref()
+            .map_or(&[], |(_, inventory)| inventory.as_slice()),
+        active_character
+            .as_ref()
+            .map_or(&[], |(_, inventory)| inventory.as_slice()),
         before_limbs.as_ref(),
         after_limbs.as_ref(),
         before_skills.as_ref(),
@@ -3096,8 +3100,8 @@ async fn query_single<T: serde::de::DeserializeOwned>(
 }
 
 fn rest_summary(
-    before_character: Option<&Character>,
-    after_character: Option<&Character>,
+    before_inventory: &[InventoryItem],
+    after_inventory: &[InventoryItem],
     before_limbs: Option<&CharacterLimbs>,
     after_limbs: Option<&CharacterLimbs>,
     before_skills: Option<&CharacterSkills>,
@@ -3110,12 +3114,27 @@ fn rest_summary(
     let minutes = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes)
     });
-    let gold_spent = before_character
-        .zip(after_character)
-        .map_or(0, |(before, after)| before.gold.saturating_sub(after.gold));
-    let gold_earned = before_character
-        .zip(after_character)
-        .map_or(0, |(before, after)| after.gold.saturating_sub(before.gold));
+    let currency_total = |inventory: &[InventoryItem]| -> u32 {
+        inventory
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.item_id.as_str(),
+                    "rhenish_gulden"
+                        | "lubeck_mark"
+                        | "hamburg_mark"
+                        | "saxon_thaler"
+                        | "brandenburg_groschen"
+                        | "danish_mark"
+                )
+            })
+            .map(|item| item.qty)
+            .sum()
+    };
+    let before_currency = currency_total(before_inventory);
+    let after_currency = currency_total(after_inventory);
+    let gold_spent = before_currency.saturating_sub(after_currency);
+    let gold_earned = after_currency.saturating_sub(before_currency);
     let notoriety_gained = after_notoriety.map_or(0.0, |after| {
         after.value - before_notoriety.map_or(0.0, |before| before.value)
     });

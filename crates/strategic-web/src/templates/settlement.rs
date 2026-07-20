@@ -819,11 +819,11 @@ fn travel_provision_forecast(forecast: Option<&TravelProvisionForecast>) -> Mark
                         (&traveler.name) ": "
                         (traveler.rations_to_buy) " ration" @if traveler.rations_to_buy != 1 { "s" }
                         " · " (traveler.waterskins_to_buy) " waterskin" @if traveler.waterskins_to_buy != 1 { "s" }
-                        " · " (traveler.cost) " gold"
+                        " · " (traveler.cost) " coin"
                     }
                 }
                 p class="text-muted small-copy" {
-                    "Party total: " (forecast.total_cost) " gold · includes 30% reserve"
+                    "Party total: " (forecast.total_cost) " coin · includes 30% reserve"
                 }
             } @else {
                 p class="text-muted small-copy" { "Provision costs are temporarily unavailable." }
@@ -1480,7 +1480,7 @@ pub fn live_merchant_shop_page(
         aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.shows_inventory(item.kind)) {
+                @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
                     @let buy_price = medication_recipe.map_or_else(
@@ -1613,9 +1613,9 @@ pub fn party_pool_page(
                 (encumbrance_inventory_rail(html! {
                     div class="party-stake-summary" {
                         span { "Your available stake" }
-                        strong { (stake) " gold" }
+                        strong { (stake) " coin" }
                     }
-                    p class="small-copy text-muted" { "Withdrawals use your stake. Personal gold automatically covers an indivisible item's shortfall." }
+                    p class="small-copy text-muted" { "Withdrawals use your stake. Personal coin automatically covers an indivisible item's shortfall." }
                     (trade_inventory_table("party-pool-left", InventoryColumnSet::All, true, false, false, html! {
                         @for item in pooled {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1645,7 +1645,7 @@ pub fn party_pool_page(
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (encumbrance_inventory_rail(html! {
-                    p class="small-copy text-muted" { "Add items at their objective gold value." }
+                    p class="small-copy text-muted" { "Add items at their objective coin value." }
                     (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, true, false, html! {
                         @for item in inventory {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1761,7 +1761,23 @@ pub(super) fn item_name_with_quality(
     item_id: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
-    item_name_with_display(item_id, definition)
+    let currency_name = match item_id {
+        "rhenish_gulden" => Some("Rhenish gulden"),
+        "lubeck_mark" => Some("Lübeck mark"),
+        "hamburg_mark" => Some("Hamburg mark"),
+        "saxon_thaler" => Some("Saxon thaler"),
+        "brandenburg_groschen" => Some("Brandenburg groschen"),
+        "danish_mark" => Some("Danish mark"),
+        _ => None,
+    };
+    if let Some(currency_name) = currency_name {
+        html! {
+            span class="inventory-item-label" data-item-name="Coin"
+                data-item-kind="currency" data-currency-name=(currency_name) { "Coin" }
+        }
+    } else {
+        item_name_with_display(item_id, definition)
+    }
 }
 
 fn item_name_with_display(
@@ -2270,9 +2286,9 @@ fn skills_table(
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
-                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
-                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
+                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
                         (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
@@ -3924,7 +3940,7 @@ fn rest_service_menu(
     section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "A bed costs 1 gold per day. Injuries are tended before any downtime." }
+            p class="rest-service-copy" { "A bed costs 1 coin per day. Injuries are tended before any downtime." }
         } @else {
             p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
         }
@@ -3957,8 +3973,8 @@ fn rest_service_menu(
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
                     p { (format_rest_duration(summary.minutes)) " passed." }
-                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " gold paid." } }
-                    @if summary.gold_earned > 0 { p { (summary.gold_earned) " gold earned from activities." } }
+                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " coin paid." } }
+                    @if summary.gold_earned > 0 { p { (summary.gold_earned) " coin earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
@@ -4345,6 +4361,7 @@ mod tests {
             .unwrap(),
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
+            currency_id: "lubeck_mark".into(),
             source_node_id: Some(1),
         }
     }
@@ -4365,6 +4382,21 @@ mod tests {
         assert!(rendered.contains("tabindex=\"0\""));
         assert!(rendered.contains("All damage requires Smithing"));
         assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn collapsed_currency_label_hides_the_historical_denomination() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "lubeck_mark".into(),
+            kind: crate::spacetimedb::ItemKind::Currency,
+            base_value: Some(1),
+            weight: 0.01,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains(">Coin<"));
+        assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
+        assert!(!rendered.contains(">Lübeck mark<"));
     }
 
     #[test]

@@ -530,7 +530,9 @@ fn insert_character_with_origin(
         name,
         xp: 0,
         level: 1,
-        gold: 100,
+        // Legacy scalar retained only for schema compatibility. Currency is
+        // authoritative in inventory.
+        gold: 0,
         current_settlement_id: Some(start_settlement.id.clone()),
         current_quest_location_id: None,
         party_id: None,
@@ -608,7 +610,7 @@ fn insert_character_with_origin(
     crate::personality::initialize_personality(ctx, id, npc);
 
     // Starter items
-    add_inventory_item(ctx, character.id, "gold_coin", 100);
+    crate::item::credit_personal_currency(ctx, character.id, &start_settlement.id, 100);
     add_inventory_item(ctx, character.id, "torch", 1);
     add_inventory_item(ctx, character.id, "bandage", 3);
 

@@ -91,7 +91,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
-                link rel="stylesheet" href="/static/css/components.css?v=game-icons-2";
+                link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-1";
                 link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
@@ -104,8 +104,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
-                    script src="/static/inventory-browser.js?v=inventory-browser-8" defer {}
-                    script src="/static/party-trade.js?v=inventory-browser-8" {}
+                    script src="/static/inventory-browser.js?v=coin-currencies-1" defer {}
+                    script src="/static/party-trade.js?v=coin-currencies-1" {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}

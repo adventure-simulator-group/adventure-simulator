@@ -12,7 +12,13 @@ Durable equipment is never stacked: every weapon, shield, and armor piece is a d
 ### Looting and Selling
 A party can configure a weight limit using a slider, which shows them what the total party [travel](../strategic/Travel.md) speed would be at a given limit presuming that the load is optimally distributed (such that all characters can maintain the same pace). When a tactical simulation ends, the party sees a screen that displays all of the loot available to collect. They _could_ loot each individual item and decide whose inventories they are going into, _or_ they could just press the "autoloot" button which will loot items in order of their value to weight ratio until the weight limit is reached. Like with resupplying, you can anticipate this behavior because any items to be looted will have a gold highlight which matches the gold loot button. When in a town, the loot button becomes a sell button, and any items not in any of your equipment sets will be sold.
 
-For the current implementation, battle loot first enters a shared party inventory. Every item has an objective hardcoded gold value. New battle loot credits each battle participant an equal stake by value, with an indivisible remainder retained by the party and eventually awarded to the captain when the party closes. A character may deposit personal items for an equivalent increase in their own stake, or withdraw items against that stake. If an indivisible item is worth more than the character's remaining stake, personal gold may cover the difference and enters the party inventory. The two-sided party-inventory view keeps the shared chest on the left and the active character's inventory on the right. At settlement merchants, party-owned items can be liquidated into party gold without changing the existing stakes. A dead character's stake currently expires; inheritance is a future system.
+For the current implementation, battle loot first enters a shared party inventory. Every item has an objective hardcoded coin value. New battle loot credits each battle participant an equal stake by value, with an indivisible remainder retained by the party and eventually awarded to the captain when the party closes. A character may deposit personal items for an equivalent increase in their own stake, or withdraw items against that stake. If an indivisible item is worth more than the character's remaining stake, personal coin may cover the difference and enters the party inventory without changing denomination. The two-sided party-inventory view keeps the shared chest on the left and the active character's inventory on the right. At settlement merchants, party-owned items can be liquidated into locally denominated party coin without changing the existing stakes. A dead character's stake currently expires; inheritance is a future system.
+
+Currency stacks are grouped into a single **Coin** row throughout inventory UI.
+The collapsed row supports the normal transfer, trade, and discard interactions;
+expanding its chevron reveals the historical denominations without treating
+them as independent rows for search, sorting, or bulk operations. Currency is
+excluded from ordinary sale and liquidation.
 
 Some items might also automatically be flagged as "keep" (perhaps a checkbox next to them in the inventory menu), such as goblin ears if you're on a quest to kill goblins and this is the required trophy to turn in for the reward.
 
@@ -23,8 +29,8 @@ Any items which _are_ in your equipment sets, but not in the currently configure
 The trade/loot page can also have a red button+highlight for rations. When pressed, you will purchase however many rations would be required for the currently planned journey. It may also have a slider to increase/decrease the number of expected days in case you want some safety margin or to eat something at your destination (warning: orc and goblin meat is nasty and unsanitary).
 
 The current implementation defines personal `travel_ration` and `waterskin`
-items. A ration weighs 1 kg, costs 3 gold through automatic provisioning, and
-supplies 6,000 kcal. A waterskin weighs 0.5 kg empty, costs 2 gold, and adds 4
+items. A ration weighs 1 kg, costs 3 coin through automatic provisioning, and
+supplies 6,000 kcal. A waterskin weighs 0.5 kg empty, costs 2 coin, and adds 4
 litres of aggregate carried-water capacity. Water volume is tracked per
 character rather than per individual container; carried water adds one kilogram
 per litre to that character's encumbrance. Party-pool provisions are not

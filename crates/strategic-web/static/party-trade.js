@@ -298,7 +298,7 @@ function updateMerchantGoldDraft() {
     if (quantity > 0) goldChange -= buyPrices.get(itemId) * quantity;
     if (quantity < 0) goldChange += saleDetails.get([...sales.keys()].find((inventoryId) => saleDetails.get(inventoryId).itemId === itemId)).price * -quantity;
   });
-  const goldRow = merchantRow("gold_coin", document.querySelector(".right-sidebar"));
+  const goldRow = merchantRow("coin", document.querySelector(".right-sidebar"));
   if (goldRow) setTradeDraftCount(goldRow, goldChange);
 }
 

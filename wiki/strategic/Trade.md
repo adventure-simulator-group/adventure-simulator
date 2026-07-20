@@ -6,12 +6,22 @@ consume these signals, but rules v6 does not create prices, inventory, or
 shipping flows.
 
 For the current strategic prototype, every settlement exposes the same unlimited
-merchant catalogue, including imported Viabundus settlements. Items have a base gold value; merchant buy and sell prices are
+merchant catalogue, including imported Viabundus settlements. Items have a base coin value; merchant buy and sell prices are
 derived from it with shared hidden profit-margin and sales-tax multipliers.
 Both the merchant and player inventory tables display each item's per-unit
-weight and relevant gold value.
-Gold is represented by the `gold_coin` inventory item, in the `Currency`
-category, rather than a separate character resource.
+weight and relevant coin value.
+Coin is authoritative inventory rather than a separate character resource.
+Every settlement reproducibly selects one denomination from a fixed 1544-flavoured
+set: Rhenish gulden, Lübeck mark, Hamburg mark, Saxon thaler, Brandenburg
+groschen, and Danish mark. Starter funds and newly issued payments use the
+issuing settlement's denomination; quest and battle rewards use the quest's
+issuing settlement. All denominations currently have equal value and are
+accepted everywhere.
+
+Inventory presents every character or party's currency as one ordinary,
+collapsed **Coin** row. Its quantity, value, and weight aggregate the underlying
+stacks. An accessible disclosure reveals read-only denomination rows; expansion
+is transient and has no effect on sorting, filtering, or bulk actions.
 
 The General Market, Weaponsmith, Armourer, and Tailor use the same live trade
 interface and transaction reducer. The specialist storefronts filter their
@@ -36,8 +46,8 @@ separate actions that never enter the sale draft. A smith repairs only condition
 their independently seeded skill (minimum 3), but may accept an item with additional harder damage
 and leave that residual condition untouched. Custody and the quoted ETA persist across travel and
 have no collection deadline. The smith quotes the full job when accepting it: the item's base value
-multiplied by the share of damage that smith can repair, rounded up to at least one gold. The quote
-is stable while the item is in custody and is paid from personal gold when completed work is
+multiplied by the share of damage that smith can repair, rounded up to at least one coin. The quote
+is stable while the item is in custody and is paid from personal coin when completed work is
 retrieved. The custody table shows durability, ETA, and this full-job cost. A row arrow retrieves
 that exact quoted order by default; Shift changes it to retrieve up to two matching ready orders,
 and Control changes it to retrieve all matching ready orders. The header arrow defaults to two and

@@ -129,6 +129,7 @@ pub struct Settlement {
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
     pub scene_key: String,
     pub religion_id: String,
+    pub currency_id: String,
     pub source_node_id: Option<u64>,
 }
 

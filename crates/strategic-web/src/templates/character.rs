@@ -2,10 +2,7 @@
 
 use maud::{Markup, html};
 
-use super::{
-    entry_layout, gold_display, input_field, item_type_header, item_type_icon, panel,
-    sidebar_section,
-};
+use super::{entry_layout, input_field, item_type_header, item_type_icon, panel, sidebar_section};
 use crate::spacetimedb::Character;
 
 /// List all characters and select the adventurer who enters the strategic layer.
@@ -37,7 +34,6 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
                                         @if character.alive { "Alive" } @else { span class="badge badge-danger" { "Dead" } }
                                     }
                                 }
-                                div class="stat-item" { span class="stat-label" { "Gold" } span class="stat-value" { (gold_display(character.gold)) } }
                             }
                             @if is_current {
                                 p class="text-accent small-copy" {
@@ -105,7 +101,7 @@ pub fn character_new_page(_logged_in_as: Option<&str>) -> Markup {
                 (panel("", html! {
                     p style="font-size:var(--font-size-sm)" {
                         "Choose a name for your adventurer. You'll start with "
-                        "100 gold and some basic supplies."
+                        "100 coin and some basic supplies."
                     }
                 }))
             }))

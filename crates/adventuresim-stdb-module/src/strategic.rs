@@ -520,6 +520,8 @@ pub struct Settlement {
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
+    /// Stable local denomination assigned from the settlement ID.
+    pub currency_id: String,
     /// Viabundus node that supplies this settlement, if it was imported from
     /// the historical world dataset. Demo settlements deliberately leave this
     /// empty.
@@ -934,6 +936,7 @@ pub fn import_settlements(
                 settlement.id
             ));
         }
+        let currency_id = crate::item::settlement_currency_id(&settlement.id).to_string();
         let row = Settlement {
             id: settlement.id,
             name: settlement.name,
@@ -955,6 +958,7 @@ pub fn import_settlements(
             geology,
             scene_key: settlement.scene_key,
             religion_id: settlement.religious_status.church().religion_id().into(),
+            currency_id,
             religious_status: settlement.religious_status,
             drought,
             hydrology: settlement.hydrology,
@@ -3317,7 +3321,9 @@ pub(crate) fn record_battle_result(
         let maximum_gold = quest.difficulty.max(1) as u32 * 10;
         let gold = 1 + (ctx.random::<u64>() % u64::from(maximum_gold)) as u32;
         if gold > 0 {
-            *combined.entry("gold_coin".into()).or_default() += gold;
+            *combined
+                .entry(crate::item::settlement_currency_id(&quest.settlement_id).into())
+                .or_default() += gold;
         }
     }
     for (item_id, quantity) in combined {
@@ -3521,28 +3527,137 @@ pub fn deposit_party_inventory_item(
 pub(crate) fn consume_personal_gold(
     ctx: &ReducerContext,
     character_id: u64,
-    mut amount: u64,
+    amount: u64,
 ) -> Result<(), String> {
-    let stacks: Vec<_> = ctx
+    crate::item::consume_personal_currency(ctx, character_id, amount)
+}
+
+pub(crate) fn party_currency_total(ctx: &ReducerContext, party_id: &str) -> u64 {
+    ctx.db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|stack| crate::item::is_currency(ctx, &stack.item_id))
+        .map(|stack| u64::from(stack.quantity))
+        .sum()
+}
+
+pub(crate) fn consume_party_currency(
+    ctx: &ReducerContext,
+    party_id: &str,
+    amount: u64,
+) -> Result<(), String> {
+    let mut stacks: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|stack| crate::item::is_currency(ctx, &stack.item_id))
+        .collect();
+    if stacks
+        .iter()
+        .map(|stack| u64::from(stack.quantity))
+        .sum::<u64>()
+        < amount
+    {
+        return Err("Not enough party coin to cover this payment".into());
+    }
+    stacks.sort_by(|a, b| (&a.item_id, a.id).cmp(&(&b.item_id, b.id)));
+    let mut remaining = amount;
+    for mut stack in stacks {
+        let taken = remaining.min(u64::from(stack.quantity)) as u32;
+        stack.quantity -= taken;
+        remaining -= u64::from(taken);
+        if stack.quantity == 0 {
+            ctx.db.party_inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.party_inventory_item().id().update(stack);
+        }
+        if remaining == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn credit_party_currency(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement_id: &str,
+    amount: u32,
+) {
+    add_to_party_inventory(
+        ctx,
+        party_id,
+        crate::item::settlement_currency_id(settlement_id),
+        amount,
+    );
+}
+
+fn transfer_personal_currency_to_party(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: &str,
+    amount: u64,
+) -> Result<(), String> {
+    let mut stacks: Vec<_> = ctx
         .db
         .inventory_item()
-        .character_and_item_id()
-        .filter((character_id, &"gold_coin".to_string()))
+        .character_id()
+        .filter(character_id)
+        .filter(|stack| crate::item::is_currency(ctx, &stack.item_id))
         .collect();
-    let available: u64 = stacks.iter().map(|stack| u64::from(stack.quantity)).sum();
-    if available < amount {
-        return Err("Not enough personal gold to cover this withdrawal".into());
+    if stacks.iter().map(|s| u64::from(s.quantity)).sum::<u64>() < amount {
+        return Err("Not enough personal coin".into());
     }
+    stacks.sort_by(|a, b| (&a.item_id, a.id).cmp(&(&b.item_id, b.id)));
+    let mut remaining = amount;
     for mut stack in stacks {
-        let taken = amount.min(u64::from(stack.quantity)) as u32;
+        let taken = remaining.min(u64::from(stack.quantity)) as u32;
+        add_to_party_inventory(ctx, party_id, &stack.item_id, taken);
         stack.quantity -= taken;
-        amount -= u64::from(taken);
+        remaining -= u64::from(taken);
         if stack.quantity == 0 {
             ctx.db.inventory_item().id().delete(stack.id);
         } else {
             ctx.db.inventory_item().id().update(stack);
         }
-        if amount == 0 {
+        if remaining == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn transfer_party_currency_to_personal(
+    ctx: &ReducerContext,
+    party_id: &str,
+    character_id: u64,
+    amount: u64,
+) -> Result<(), String> {
+    let mut stacks: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|stack| crate::item::is_currency(ctx, &stack.item_id))
+        .collect();
+    if stacks.iter().map(|s| u64::from(s.quantity)).sum::<u64>() < amount {
+        return Err("The party has insufficient coin".into());
+    }
+    stacks.sort_by(|a, b| (&a.item_id, a.id).cmp(&(&b.item_id, b.id)));
+    let mut remaining = amount;
+    for mut stack in stacks {
+        let taken = remaining.min(u64::from(stack.quantity)) as u32;
+        crate::add_inventory_item(ctx, character_id, &stack.item_id, taken);
+        stack.quantity -= taken;
+        remaining -= u64::from(taken);
+        if stack.quantity == 0 {
+            ctx.db.party_inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.party_inventory_item().id().update(stack);
+        }
+        if remaining == 0 {
             break;
         }
     }
@@ -3583,8 +3698,7 @@ pub fn withdraw_party_inventory_item(
     let stake_value = stake.as_ref().map_or(0, |stake| stake.value);
     if cost > stake_value {
         let top_up = cost - stake_value;
-        consume_personal_gold(ctx, character_id, top_up)?;
-        add_to_party_inventory(ctx, &party_id, "gold_coin", top_up as u32);
+        transfer_personal_currency_to_party(ctx, character_id, &party_id, top_up)?;
     }
     if let Some(ref mut stake) = stake {
         stake.value = stake.value.saturating_sub(cost);
@@ -3665,7 +3779,7 @@ pub fn liquidate_party_inventory(
         if quantity == 0
             || entry.party_id != party_id
             || entry.quantity < quantity
-            || entry.item_id == "gold_coin"
+            || crate::item::is_currency(ctx, &entry.item_id)
         {
             return Err("Invalid party asset liquidation".into());
         }
@@ -3686,7 +3800,7 @@ pub fn liquidate_party_inventory(
             ctx.db.party_inventory_item().id().update(entry);
         }
     }
-    add_to_party_inventory(ctx, &party_id, "gold_coin", proceeds as u32);
+    credit_party_currency(ctx, &party_id, &settlement_id, proceeds as u32);
     Ok(())
 }
 
@@ -3955,25 +4069,13 @@ pub fn finalize_merchant_trade(
                 * quantity,
         );
     }
-    let coins: u64 = if party_scope {
-        let party_id = party_id.as_ref().ok_or("Character has no party")?;
-        ctx.db
-            .party_inventory_item()
-            .party_id()
-            .filter(party_id)
-            .filter(|v| v.item_id == "gold_coin")
-            .map(|v| u64::from(v.quantity))
-            .sum()
+    let coins = if party_scope {
+        party_currency_total(ctx, party_id.as_ref().ok_or("Character has no party")?)
     } else {
-        ctx.db
-            .inventory_item()
-            .character_and_item_id()
-            .filter((character_id, &"gold_coin".to_string()))
-            .map(|coin| u64::from(coin.quantity))
-            .sum()
+        crate::item::personal_currency_total(ctx, character_id)
     };
     if coins.saturating_add(u64::from(proceeds)) < u64::from(cost) {
-        return Err("Not enough gold".into());
+        return Err("Not enough coin".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
         if party_scope {
@@ -4042,45 +4144,14 @@ pub fn finalize_merchant_trade(
     let net = proceeds as i64 - cost as i64;
     if party_scope && net > 0 {
         let party_id = party_id.as_ref().unwrap();
-        let mut coin = ctx
-            .db
-            .party_inventory_item()
-            .party_id()
-            .filter(party_id)
-            .find(|v| v.item_id == "gold_coin");
-        if let Some(ref mut coin) = coin {
-            coin.quantity = coin.quantity.saturating_add(net as u32);
-            ctx.db.party_inventory_item().id().update(coin.clone());
-        } else {
-            add_to_party_inventory(ctx, party_id, "gold_coin", net as u32);
-        }
+        credit_party_currency(ctx, party_id, &settlement_id, net as u32);
     } else if party_scope && net < 0 {
         let party_id = party_id.as_ref().unwrap();
-        let mut remaining = (-net) as u64;
-        for mut coin in ctx
-            .db
-            .party_inventory_item()
-            .party_id()
-            .filter(party_id)
-            .filter(|row| row.item_id == "gold_coin")
-            .collect::<Vec<_>>()
-        {
-            let taken = remaining.min(u64::from(coin.quantity)) as u32;
-            coin.quantity -= taken;
-            remaining -= u64::from(taken);
-            if coin.quantity == 0 {
-                ctx.db.party_inventory_item().id().delete(coin.id);
-            } else {
-                ctx.db.party_inventory_item().id().update(coin);
-            }
-            if remaining == 0 {
-                break;
-            }
-        }
+        consume_party_currency(ctx, party_id, (-net) as u64)?;
     } else if net < 0 {
         consume_personal_gold(ctx, character_id, (-net) as u64)?;
     } else if net > 0 {
-        crate::add_inventory_item(ctx, character_id, "gold_coin", net as u32);
+        crate::item::credit_personal_currency(ctx, character_id, &settlement_id, net as u32);
     }
     Ok(())
 }
@@ -4238,16 +4309,7 @@ fn settle_temporary_member_stake(
     if stake_value == 0 {
         return Ok(());
     }
-    let gold = ctx
-        .db
-        .party_inventory_item()
-        .party_id()
-        .filter(party_id)
-        .find(|item| item.item_id == "gold_coin")
-        .ok_or("The party has no liquid gold to settle this companion's stake")?;
-    let quantity =
-        u32::try_from(stake_value).map_err(|_| "Companion stake is too large to settle")?;
-    withdraw_party_inventory_item(ctx, member_character_id, gold.id, quantity)
+    transfer_party_currency_to_personal(ctx, party_id, member_character_id, stake_value)
 }
 
 #[reducer]
@@ -4285,7 +4347,7 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
         .map_or(0, |state| state.reserve_value);
     if pooled_items
         .iter()
-        .any(|entry| entry.item_id != "gold_coin")
+        .any(|entry| !crate::item::is_currency(ctx, &entry.item_id))
         || pooled_items
             .iter()
             .map(|entry| u64::from(entry.quantity))
@@ -4295,7 +4357,7 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
         return Err("Liquidate and distribute the party inventory before disbanding".into());
     }
     if reserve > 0 {
-        crate::add_inventory_item(ctx, party.leader_id, "gold_coin", reserve as u32);
+        transfer_party_currency_to_personal(ctx, &party_id, party.leader_id, reserve)?;
     }
     for entry in pooled_items {
         ctx.db.party_inventory_item().id().delete(entry.id);
@@ -5472,7 +5534,7 @@ pub fn turn_in_quest(
 
     let reward = quest.gold_reward.max(0) as u64;
     if reward > 0 {
-        add_to_party_inventory(ctx, &party_id, "gold_coin", reward as u32);
+        credit_party_currency(ctx, &party_id, &quest.settlement_id, reward as u32);
         let recipients = living_party_member_ids(ctx, &party_id);
         let recipient_count = recipients.len().max(1) as u64;
         let share = reward / recipient_count;
@@ -5797,6 +5859,7 @@ pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 ]).unwrap(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
+                currency_id: crate::item::settlement_currency_id(id).into(),
                 source_node_id: None,
                 sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
