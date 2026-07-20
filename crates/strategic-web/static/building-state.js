@@ -1,5 +1,5 @@
 (() => {
-  const services = new Set(["map", "merchants", "weapons", "armor", "clothing", "inn", "religion"]);
+  const services = new Set(["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
   const nav = document.querySelector("[data-settlement-id]");
   if (!nav) return;
   const current = new URL(window.location.href);

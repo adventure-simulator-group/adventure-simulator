@@ -87,10 +87,10 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) " - Adventure Simulator" }
 
-                link rel="stylesheet" href="/static/css/base.css?v=environment-12";
+                link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
+                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-settlement-watchtowers-10";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
@@ -114,7 +114,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
-                    script src="/static/building-state.js?v=environment-2" defer {}
+                    script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-polish-6" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
@@ -173,7 +173,10 @@ fn settlement_top_bar(
         @let active_material = if active_service == "religion" { "stone" } else { material };
         @let active_tint = building_tint(settlement_id, active_service, active_material);
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
-        header class=(format!("top-bar settlement-top-bar material-{material}")) data-environment="settlement" {
+        header class=(format!("top-bar settlement-top-bar material-{material}"))
+            data-environment="settlement"
+            data-building-tier=(building_tier(category))
+            data-horizon-variant=(horizon_variant(settlement_id).as_str()) {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
@@ -205,6 +208,7 @@ fn settlement_top_bar(
                         title=(label)
                         aria-current=(if active_service == path { "page" } else { "false" })
                     {
+                        span class="service-tab-building" aria-hidden="true" {}
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
@@ -291,15 +295,16 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "weapons" => 2,
         "armor" => 3,
         "clothing" => 4,
-        "inn" => 5,
-        "religion" => 6,
-        _ => (hash % 7) as usize,
+        "herbalist" => 5,
+        "inn" => 6,
+        "religion" => 7,
+        _ => (hash % 8) as usize,
     };
     let settlement_shift = ((hash >> 24) % 9) as u64;
     let hue = if material == "stone" {
-        [205, 224, 252, 282, 164, 36, 214][service_slot] + settlement_shift
+        [205, 224, 252, 282, 164, 128, 36, 214][service_slot] + settlement_shift
     } else {
-        [8, 20, 31, 43, 56, 72, 350][service_slot] + settlement_shift
+        [8, 20, 31, 43, 56, 104, 72, 350][service_slot] + settlement_shift
     };
     let saturation = if material == "stone" {
         12 + (hash >> 8) % 13
@@ -308,6 +313,48 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     };
     let lightness = 19 + (hash >> 16) % 8;
     format!("hsl({hue} {saturation}% {lightness}%)")
+}
+
+fn building_tier(category: &SettlementCategory) -> &'static str {
+    match category {
+        SettlementCategory::Unknown | SettlementCategory::Hamlet | SettlementCategory::Village => {
+            "village"
+        }
+        SettlementCategory::Town => "town",
+        SettlementCategory::City | SettlementCategory::Capital => "city",
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum HorizonVariant {
+    Inland,
+    Coastal,
+    River,
+}
+
+impl HorizonVariant {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Inland => "inland",
+            Self::Coastal => "coastal",
+            Self::River => "river",
+        }
+    }
+}
+
+/// Temporary stable scenery selection. Imported hydrology will replace only
+/// this selector; settlement markup and CSS remain variant-driven.
+fn horizon_variant(settlement_id: &str) -> HorizonVariant {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in settlement_id.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    match hash % 3 {
+        0 => HorizonVariant::Inland,
+        1 => HorizonVariant::Coastal,
+        _ => HorizonVariant::River,
+    }
 }
 
 fn character_switcher(name: &str) -> Markup {
@@ -344,7 +391,8 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        building_tint, quest_location_top_bar, settlement_layout_with_session, settlement_top_bar,
+        HorizonVariant, building_tier, building_tint, horizon_variant, quest_location_top_bar,
+        religion_icon_path, settlement_layout_with_session, settlement_top_bar,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -365,6 +413,7 @@ mod tests {
             "weapons",
             "armor",
             "clothing",
+            "herbalist",
             "inn",
             "religion",
         ]
@@ -379,6 +428,90 @@ mod tests {
         let hue = |tint: String| tint[4..].split(' ').next().unwrap().parse::<u64>().unwrap();
         assert!((8..=80).contains(&hue(building_tint("lubeck", "inn", "wood"))));
         assert!((36..=290).contains(&hue(building_tint("lubeck", "inn", "stone"))));
+    }
+
+    #[test]
+    fn settlement_categories_select_the_expected_building_tier() {
+        for (category, tier) in [
+            (SettlementCategory::Unknown, "village"),
+            (SettlementCategory::Hamlet, "village"),
+            (SettlementCategory::Village, "village"),
+            (SettlementCategory::Town, "town"),
+            (SettlementCategory::City, "city"),
+            (SettlementCategory::Capital, "city"),
+        ] {
+            assert_eq!(building_tier(&category), tier);
+            let markup =
+                settlement_top_bar("Place", "p", &category, "map", None, None).into_string();
+            assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
+        }
+    }
+
+    #[test]
+    fn horizon_variants_are_stable_reachable_and_emitted() {
+        assert_eq!(horizon_variant("lubeck"), horizon_variant("lubeck"));
+        let variants = (0..128)
+            .map(|id| horizon_variant(&format!("settlement-{id}")))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            variants,
+            [
+                HorizonVariant::Inland,
+                HorizonVariant::Coastal,
+                HorizonVariant::River
+            ]
+            .into_iter()
+            .collect()
+        );
+        let expected = horizon_variant("stable-place").as_str();
+        let markup = settlement_top_bar(
+            "Stable Place",
+            "stable-place",
+            &SettlementCategory::Town,
+            "map",
+            None,
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("data-building-tier=\"town\""));
+        assert!(markup.contains(&format!("data-horizon-variant=\"{expected}\"")));
+    }
+
+    #[test]
+    fn settlement_tabs_layer_village_buildings_beneath_accessible_service_icons() {
+        let markup = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "religion",
+            Some("roman_catholic"),
+            None,
+        )
+        .into_string();
+        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 8);
+        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 8);
+        assert!(markup.contains("aria-label=\"Church\""));
+        assert!(markup.contains("aria-current=\"page\""));
+        assert!(markup.contains("--service-tab-icon: url("));
+        assert!(markup.contains(religion_icon_path(Some("roman_catholic"))));
+
+        let css = include_str!("../../static/css/layout.css");
+        for service in [
+            "map",
+            "merchants",
+            "weapons",
+            "armor",
+            "clothing",
+            "herbalist",
+            "inn",
+            "religion",
+        ] {
+            assert!(css.contains(&format!(
+                "/static/styles/timber-framed/building/village/{service}.png"
+            )));
+        }
+        assert!(css.contains("--service-building-image"));
+        assert!(css.contains("data-building-tier"));
     }
 
     #[test]

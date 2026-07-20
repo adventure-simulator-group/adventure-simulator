@@ -54,15 +54,50 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
 });
 
-test("building tabs have roofs without making the desktop header scroll", () => {
-  assert.match(baseCss, /--settlement-header-height:112px/);
+test("settlement tabs layer tiered tintable buildings and proportional horizons beneath service icons", () => {
+  assert.match(baseCss, /--settlement-header-height:144px/);
   assert.match(layoutCss, /body:has\(\.settlement-top-bar\) \.main-grid \{[\s\S]*var\(--settlement-header-height\)/);
-  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.nav-tab::before/);
-  assert.match(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
-  assert.match(layoutCss, /\.settlement-services \.nav-tab \{[\s\S]*height: 4\.25rem/);
-  assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building/);
+  assert.match(layoutCss, /\.service-tab-building \{[\s\S]*inset: -0\.45rem -0\.65rem -0\.5rem/);
+  assert.match(layoutCss, /background-blend-mode: color, normal/);
+  assert.match(layoutCss, /mask: var\(--service-building-image\) center bottom \/ contain no-repeat/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building \{[\s\S]*display: block/);
+  assert.match(layoutCss, /filter: brightness\(var\(--building-light, 78%\)\) brightness\(0\.55\)/);
+  assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
+  assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
+  assert.match(layoutCss, /\.settlement-top-bar\[data-environment="settlement"\]::before \{[\s\S]*background-size: cover;[\s\S]*background-position: center bottom;[\s\S]*brightness\(var\(--building-light/);
+  assert.doesNotMatch(layoutCss, /background-size: 100% 100%/);
+  assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
+  assert.match(layoutCss, /\.service-tab-icon::after \{[\s\S]*background-color: #fff[\s\S]*mask: var\(--service-tab-icon\)/);
+  assert.doesNotMatch(layoutCss, /\.service-tab-icon::before/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-icon \{[\s\S]*bottom: var\(--service-icon-bottom, 1\.2rem\)[\s\S]*filter: brightness\(var\(--building-light, 78%\)\)/);
+  assert.match(layoutCss, /data-building-tier="village"[\s\S]*--service-icon-bottom: 1\.2rem[\s\S]*--service-icon-size: 1\.6rem/);
+  assert.match(layoutCss, /data-building-tier="town"[\s\S]*--service-icon-bottom: 1\.5rem[\s\S]*--service-icon-size: 1\.7rem/);
+  assert.match(layoutCss, /data-building-tier="city"[\s\S]*--service-icon-bottom: 1\.8rem[\s\S]*--service-icon-size: 1\.75rem/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.settlement-services \.nav-tab \{[\s\S]*width: 5\.25rem[\s\S]*height: 6\.75rem/);
+  assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
+  assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
+  assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4[\s\S]*bottom: 0[\s\S]*height: 3px/);
+  assert.match(layoutCss, /\.settlement-top-bar \{[\s\S]*padding-inline: 0/);
+  assert.match(layoutCss, /\.settlement-top-bar \.settlement-location \{[\s\S]*position: absolute;[\s\S]*z-index: 10;[\s\S]*top: 0\.5rem;[\s\S]*left: 0\.75rem/);
+  assert.match(layoutCss, /\.settlement-top-bar \.top-bar-right \{[\s\S]*position: absolute;[\s\S]*z-index: 10;[\s\S]*top: 0\.5rem;[\s\S]*right: 0\.75rem/);
+  assert.match(layoutCss, /\.settlement-services \{[\s\S]*width: 100%;[\s\S]*padding-inline: 0;[\s\S]*overflow: visible/);
+  assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 4\.25rem/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
+  for (const tier of ["village", "town", "city"]) {
+    for (const service of ["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]) {
+      assert.match(layoutCss, new RegExp(`building/${tier}/${service}\\.png`));
+    }
+    for (const variant of ["inland", "coastal", "river"]) {
+      assert.match(layoutCss, new RegExp(`background/${tier}/${variant}\\.png`));
+    }
+  }
+  assert.equal((layoutCss.match(/building\/(?:village|town|city)\/map\.png\?v=watchtower-2/g) || []).length, 3);
+  for (const icon of ["travel", "market", "weapons", "armor", "clothing", "herbalist", "inn"]) {
+    assert.match(layoutCss, new RegExp(`settlement-services/${icon}\\.png`));
+  }
+  assert.match(buildingSource, /"clothing", "herbalist", "inn"/);
 });
 
 test("settlement side panels use tint-derived beams and corner blocks", () => {

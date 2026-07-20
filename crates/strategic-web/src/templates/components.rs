@@ -146,10 +146,10 @@ pub fn stat_icon_path(category: &str, icon: &str) -> String {
     }
 }
 
-/// Open-source religious symbol for a supported profession.
+/// Resolve the shared denomination symbol used by skills and settlement temples.
 pub fn religion_icon_path(religion_id: Option<&str>) -> &'static str {
     match religion_id {
-        Some("roman_catholic") => "/static/icons/religion/catholic-crucifix.svg",
+        Some("roman_catholic") => "/static/icons/religion/catholic-cross-bottony.png",
         Some("lutheran") => "/static/icons/religion/luther-rose.svg",
         Some("reformed") => "/static/icons/religion/huguenot-cross.svg",
         Some("anglican") => "/static/icons/religion/canterbury-cross.svg",
@@ -242,7 +242,7 @@ mod icon_tests {
         );
         assert_eq!(
             religion_icon_path(Some("roman_catholic")),
-            "/static/icons/religion/catholic-crucifix.svg"
+            "/static/icons/religion/catholic-cross-bottony.png"
         );
         assert_eq!(
             religion_icon_path(Some("lutheran")),
