@@ -50,9 +50,11 @@ server. `strategic-web` optionally loads `STRATEGIC_MAP_BUNDLE_DIR` (default
 `target/strategic-map`) at runtime and has no raster renderer or encoder
 dependency. A missing or invalid bundle does not prevent startup: settlement
 selection and direct travel continue through the surrounding HTML interface.
-Current and selected settlements,
-direct-route state, and pin links remain dynamic HTML/SVG and are served on
-every map response. A four-pixel encoded gutter prevents seams between lossy
+Current and selected settlements, direct-route state, population-class
+settlement pictograms, collision-managed names, and destination links remain
+dynamic HTML/SVG and are served on every map response. Label priority responds
+to the current zoom while the raster package remains unchanged and cacheable.
+A four-pixel encoded gutter prevents seams between lossy
 tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
 detail instead of magnifying the overview's generalized square cells. Close
 levels use deterministic overlapping tree groves and curved profile hill/ridge

@@ -49,6 +49,43 @@ test("pin symbols retain their screen size while zooming and resetting", () => {
   assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
 });
 
+test("label priority reveals progressively smaller settlements while zooming", () => {
+  const { helpers } = load();
+  assert.equal(helpers.labelPriorityThreshold(800), 80);
+  assert.equal(helpers.labelPriorityThreshold(390), 60);
+  assert.equal(helpers.labelPriorityThreshold(90), 40);
+  assert.equal(helpers.labelPriorityThreshold(50), 20);
+});
+
+test("label layout keeps important names and moves collisions to the alternate side", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<svg viewBox="0 0 100 66.67">
+    <g data-map-label data-map-x="50" data-map-y="30" data-map-label-priority="100" data-map-label-width="70" data-map-label-essential="true"><text>Current</text></g>
+    <g data-map-label data-map-x="51" data-map-y="30" data-map-label-priority="60" data-map-label-width="70" data-map-label-essential="false"><text>Town</text></g>
+    <g data-map-label data-map-x="80" data-map-y="50" data-map-label-priority="50" data-map-label-width="70" data-map-label-essential="false"><text>Village</text></g>
+  </svg>`;
+  const svg = document.querySelector("svg");
+  svg.getBoundingClientRect = () => ({ width: 600, height: 400 });
+  helpers.layoutLabels(svg, [0, 0, 100, 66.67]);
+  const labels = svg.querySelectorAll("[data-map-label]");
+  assert.equal(labels[0].getAttribute("display"), "inline");
+  assert.equal(labels[1].getAttribute("display"), "inline");
+  assert.equal(labels[1].querySelector("text").getAttribute("text-anchor"), "end");
+  assert.equal(labels[2].getAttribute("display"), "inline");
+});
+
+test("collision helper treats padded touching labels as overlapping", () => {
+  const { helpers } = load();
+  assert.equal(helpers.boxesOverlap(
+    { left: 0, right: 20, top: 0, bottom: 10 },
+    { left: 22, right: 42, top: 0, bottom: 10 },
+  ), true);
+  assert.equal(helpers.boxesOverlap(
+    { left: 0, right: 20, top: 0, bottom: 10 },
+    { left: 24, right: 44, top: 0, bottom: 10 },
+  ), false);
+});
+
 test("pin links remain ordinary destination URLs", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="0 0 400 200"><a data-map-pin href="/locations/settlement/a/map?destination=b"><circle/></a></svg></section>`;

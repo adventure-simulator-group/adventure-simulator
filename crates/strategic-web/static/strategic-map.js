@@ -12,9 +12,75 @@
       symbol.setAttribute("transform", `scale(${scale.toFixed(5)})`);
     });
   };
+  const labelPriorityThreshold = (viewWidth) => {
+    if (viewWidth > 700) return 80;
+    if (viewWidth > 400) return 70;
+    if (viewWidth > 250) return 60;
+    if (viewWidth > 140) return 50;
+    if (viewWidth > 70) return 40;
+    return 20;
+  };
+  const boxesOverlap = (a, b, padding = 3) => !(
+    a.right + padding <= b.left || a.left >= b.right + padding
+    || a.bottom + padding <= b.top || a.top >= b.bottom + padding
+  );
+  const layoutLabels = (svg, [viewX, viewY, viewWidth, viewHeight]) => {
+    const labels = [...svg.querySelectorAll("[data-map-label]")];
+    if (!labels.length) return;
+    const rect = svg.getBoundingClientRect();
+    const pixelWidth = rect.width || 1200;
+    const pixelHeight = rect.height || pixelWidth / 1.5;
+    const worldPerPixelX = viewWidth / pixelWidth;
+    const worldPerPixelY = viewHeight / pixelHeight;
+    const threshold = labelPriorityThreshold(viewWidth);
+    const candidates = labels.map((label) => {
+      const x = Number(label.dataset.mapX);
+      const y = Number(label.dataset.mapY);
+      const priority = Number(label.dataset.mapLabelPriority);
+      const width = Number(label.dataset.mapLabelWidth) || 80;
+      return {
+        label, x, y, priority, width,
+        essential: label.dataset.mapLabelEssential === "true",
+        screenX: (x - viewX) / viewWidth * pixelWidth,
+        screenY: (y - viewY) / viewHeight * pixelHeight,
+      };
+    }).filter(({ x, y, priority, essential }) => Number.isFinite(x) && Number.isFinite(y)
+      && (essential || priority >= threshold)
+      && x >= viewX && x <= viewX + viewWidth && y >= viewY && y <= viewY + viewHeight)
+      .sort((a, b) => b.priority - a.priority || a.y - b.y || a.x - b.x);
+    const placed = [];
+    const visible = new Set();
+    const labelGap = 22;
+    for (const candidate of candidates) {
+      const preferLeft = candidate.screenX + candidate.width + 14 > pixelWidth;
+      let placement = null;
+      for (const left of preferLeft ? [true, false] : [false, true]) {
+        const box = left
+          ? { left: candidate.screenX - candidate.width - labelGap, right: candidate.screenX - labelGap, top: candidate.screenY - 15, bottom: candidate.screenY + 3 }
+          : { left: candidate.screenX + labelGap, right: candidate.screenX + candidate.width + labelGap, top: candidate.screenY - 15, bottom: candidate.screenY + 3 };
+        if (box.left < 2 || box.right > pixelWidth - 2 || box.top < 2 || box.bottom > pixelHeight - 2) continue;
+        if (!placed.some((other) => boxesOverlap(box, other))) { placement = { left, box }; break; }
+      }
+      if (!placement && candidate.essential) {
+        const left = preferLeft;
+        placement = { left, box: left
+          ? { left: candidate.screenX - candidate.width - labelGap, right: candidate.screenX - labelGap, top: candidate.screenY - 15, bottom: candidate.screenY + 3 }
+          : { left: candidate.screenX + labelGap, right: candidate.screenX + candidate.width + labelGap, top: candidate.screenY - 15, bottom: candidate.screenY + 3 } };
+      }
+      if (!placement) continue;
+      candidate.label.setAttribute("transform", `translate(${((placement.left ? -labelGap : labelGap) * worldPerPixelX).toFixed(3)} ${(-3 * worldPerPixelY).toFixed(3)})`);
+      candidate.label.style.setProperty("--map-label-font-size", `${(12 * worldPerPixelY).toFixed(3)}px`);
+      candidate.label.style.setProperty("--map-label-stroke-width", `${(3.5 * worldPerPixelY).toFixed(3)}px`);
+      candidate.label.querySelector("text")?.setAttribute("text-anchor", placement.left ? "end" : "start");
+      placed.push(placement.box);
+      visible.add(candidate.label);
+    }
+    labels.forEach((label) => label.setAttribute("display", visible.has(label) ? "inline" : "none"));
+  };
   const writeViewBox = (svg, view) => {
     svg.setAttribute("viewBox", view.map((value) => value.toFixed(2)).join(" "));
     scalePins(svg, view[2]);
+    layoutLabels(svg, view);
   };
   const tileZoom = (viewWidth, pixelWidth, pixelRatio, maxZoom) => {
     const density = Math.max(1, pixelWidth * pixelRatio / viewWidth);
@@ -79,6 +145,7 @@
     if (!svg) return;
     const initial = parseViewBox(svg);
     scalePins(svg, initial[2]);
+    layoutLabels(svg, initial);
     renderTiles(map, svg, initial, "paper");
 
     const updateView = (view) => {
@@ -116,7 +183,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { initializeMap, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();
