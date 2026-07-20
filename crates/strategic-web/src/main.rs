@@ -66,7 +66,10 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { db, live };
 
     // Build router
-    let app = build_router(state);
+    let app = build_router(state).route(
+        "/map/tiles/{theme}/{zoom}/{x}/{tile}",
+        axum::routing::get(strategic_map::world_tile),
+    );
 
     // Add static file serving
     let static_path = PathBuf::from(&config.static_dir);
@@ -102,7 +105,7 @@ async fn health_check() -> &'static str {
 
 async fn cache_immutable_world_map(request: Request, next: Next) -> Response {
     let cacheable =
-        strategic_map::is_current_world_svg(request.uri().path(), request.uri().query());
+        strategic_map::is_current_world_tile(request.uri().path(), request.uri().query());
     let mut response = next.run(request).await;
     if cacheable
         && (response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED)

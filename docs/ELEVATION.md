@@ -33,9 +33,9 @@ settlements without using a fallback.
 
 The settlement Map presentation separately samples the installed GLO-30 tiles
 on a coarse deterministic grid. It emits generalized elevation tint cells and
-contour segments into the versioned SVG map package; raw raster pixels are not
-served to browsers and the presentation layer is not persisted in
-SpacetimeDB.
+contour segments into both styles of the versioned AVIF tile pyramid. Browsers
+receive only the compressed tiles covering their current view; raw DEM pixels
+are not served and the presentation layer is not persisted in SpacetimeDB.
 
 Elevation is stored on settlements because it describes the settlement's own
 location and can directly influence scene selection, climate inference,
