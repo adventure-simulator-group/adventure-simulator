@@ -266,6 +266,20 @@ Use `python3 scripts/init_viabundus.py --force` only when replacing an existing
 local download. The command records the source URLs and SHA-256 checksums in
 `viabundus/.viabundus-source.json`.
 
+After initialization, run `just build-strategic-map` to regenerate
+`crates/strategic-web/static/map/strategic-map-v1.json`. This deterministic
+presentation package verifies the initialized v2 edge and water files against
+their recorded SHA-256 identities, retains only active 1544 overview roads and
+ferries, clips and simplifies line and water geometry to bounded SVG detail,
+and embeds a digest over every presentation-affecting package field. The
+versioned filename is stable rather than content-addressed. Legacy Viabundus
+sidecars without byte sizes remain usable for local generation but the package
+marks them `legacy-release-blocked-missing-sizes`; they are not a fully verified
+release snapshot. It is presentation data only: settlements still come
+from the canonical strategic database and map geometry is not persisted in
+SpacetimeDB. Run this command whenever the initialized Viabundus release or map
+package schema changes.
+
 `just compile-world` retains active 1544 land and ferry segments, all nodes
 needed to connect those segments, active settlements and their alternative
 names, and typed settlement/city descriptions. The Rust world

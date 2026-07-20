@@ -325,18 +325,22 @@ replace-world-data archive descriptor descriptor_sha256:
 
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
-	@cargo run --package adventuresim-world-import --
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
+
+# Derive the bounded, deterministic SVG road/water package after Viabundus is initialized.
+build-strategic-map:
+	@cargo run --package adventuresim-world-import --bin build-strategic-map --
 
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world
 
 # Compile and load the world into the published local module.
 load-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Compatibility name for the former Viabundus-only loader.
 load-viabundus-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
 build-tactical: verify-db-client

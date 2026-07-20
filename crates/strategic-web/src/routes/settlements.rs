@@ -854,7 +854,12 @@ async fn settlement_map(
         .query("SELECT * FROM travel_edge")
         .await
         .unwrap_or_default();
-    let mut destinations = connected_destinations(settlement, &settlements, &edges);
+    let map_data_initialized = crate::strategic_map::has_geographic_source(settlement);
+    let mut destinations = if map_data_initialized {
+        connected_destinations(settlement, &settlements, &edges)
+    } else {
+        Vec::new()
+    };
     let quests: Vec<Quest> = state
         .db
         .query("SELECT * FROM quest")
@@ -891,7 +896,7 @@ async fn settlement_map(
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    let can_travel = is_current_settlement && active_party.is_some();
+    let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
     if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Accepted) {
         if can_travel && settlement.id == quest.settlement_id {
             let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
@@ -1027,6 +1032,7 @@ async fn settlement_map(
     Html(
         settlement_map_page(
             settlement,
+            &settlements,
             &destinations,
             query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),

@@ -28,6 +28,23 @@ approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
+The settlement Map screen uses the separately generated
+`static/map/strategic-map-v1.json` presentation package. `just
+build-strategic-map` derives that versioned file with an embedded content digest from the
+initialized Viabundus v2 roads, ferries, and 1500 water polygons. It clips the
+view to the supported northern-European envelope and simplifies source WKT for
+an SVG overview; it does not change or replace canonical routing data. The
+current source bundle has no map-ready historical terrain or forest polygon
+layer, so the UI makes that limitation explicit rather than inferring one from
+unrelated environmental samples.
+
+The stable `strategic-map-v1.json` filename is versioned, not content-addressed.
+Its embedded SHA-256 covers schema, year, bounds, source identity and status,
+roads, water, and the optional terrain field; strategic-web revalidates that
+digest before rendering. A legacy initializer sidecar without recorded byte
+sizes is accepted only with the explicit
+`legacy-release-blocked-missing-sizes` package status.
+
 Active Viabundus bridge and toll nodes are projected onto their incident travel
 edges with their `from`, `to`, or `both` endpoint identity intact. Ferry routes
 and land routes with an optional bridge are distinct enum variants, so invalid

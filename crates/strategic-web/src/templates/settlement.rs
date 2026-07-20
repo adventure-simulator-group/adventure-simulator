@@ -467,11 +467,12 @@ fn language_label(language: Option<&str>) -> &str {
 
 pub fn settlement_map_page(
     settlement: &Settlement,
+    settlements: &[Settlement],
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
     active_party: Option<&Party>,
-    party_members: &[Character],
+    _party_members: &[Character],
     default_rest_minutes: u64,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -482,7 +483,14 @@ pub fn settlement_map_page(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
+    let selected_settlement =
+        selected_id.and_then(|id| settlements.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
+    let connected_ids = destinations
+        .iter()
+        .filter(|destination| !destination.quest_in_progress)
+        .map(|destination| destination.id.as_str())
+        .collect::<BTreeSet<_>>();
     let content = html! {
         (map_destination_list_with_context(
             destinations,
@@ -510,13 +518,23 @@ pub fn settlement_map_page(
                 }
             }),
         ))
-        main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("route", &settlement.name, "Roads and known destinations from this settlement"))
-            (settlement_chat_area(&settlement.name, active_character))
+        main class="center-content settlement-main settlement-map-main" {
+            @if settlement.source_node_id.is_some() {
+                (crate::strategic_map::strategic_map(
+                    settlements,
+                    &settlement.id,
+                    &connected_ids,
+                    selected_id,
+                    &base_path,
+                ))
+            } @else {
+                (crate::strategic_map::strategic_map_unavailable(&settlement.name))
+            }
         }
         (map_destination_detail(
             selected,
+            selected_settlement,
+            selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
             true,
             provision_forecast,
@@ -701,6 +719,8 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
 
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
+    selected_settlement: Option<&Settlement>,
+    selected_is_current: bool,
     can_travel: bool,
     provisioning_available: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -711,6 +731,7 @@ pub(crate) fn map_destination_detail(
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
+    let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -720,7 +741,7 @@ pub(crate) fn map_destination_detail(
             .unwrap_or("")
     );
     html! {
-        aside class=(if party.is_some() && can_configure_travel { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
+        aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
@@ -783,6 +804,23 @@ pub(crate) fn map_destination_detail(
                         }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
+                    }
+                }))
+            } @else if let Some(destination) = selected_settlement {
+                (sidebar_section("Destination", html! {
+                    h3 { (&destination.name) }
+                    p { (settlement_description(destination.population_level)) }
+                    dl class="settlement-stats" {
+                        div { dt { "Size" } dd { (format_population(destination)) } }
+                    }
+                    p class="no-direct-route" role="status" {
+                        @if selected_is_current {
+                            strong { "Current settlement." }
+                            " Your party is already here."
+                        } @else {
+                            strong { "No direct route." }
+                            " Travel is only available to settlements connected to the current location."
+                        }
                     }
                 }))
             } @else {
@@ -6086,6 +6124,8 @@ mod tests {
         let destination = quest_destination();
         let markup = map_destination_detail(
             Some(&destination),
+            None,
+            false,
             true,
             false,
             None,
@@ -6101,6 +6141,58 @@ mod tests {
         assert!(!markup.contains("Active quest"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
+    }
+
+    #[test]
+    fn nonconnected_map_selection_has_detail_but_no_travel_form() {
+        let mut destination = settlement();
+        destination.id = "viabundus-99".into();
+        destination.name = "Distant town".into();
+        let markup = map_destination_detail(
+            None,
+            Some(&destination),
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Distant town"));
+        assert!(markup.contains("No direct route."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn connected_settlement_selection_keeps_existing_travel_action() {
+        let mut destination = quest_destination();
+        destination.id = "viabundus-2".into();
+        destination.name = "Connected town".into();
+        destination.quest_in_progress = false;
+        destination.travel_action = "/settlements/viabundus-2/travel".into();
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("action=\"/settlements/viabundus-2/travel\""));
+        assert!(markup.contains("data-travel-submit"));
+        assert!(markup.contains("Begin journey"));
+        assert!(!markup.contains("No direct route"));
     }
 
     #[test]
