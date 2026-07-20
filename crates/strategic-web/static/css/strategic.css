@@ -4148,6 +4148,7 @@ body.chat-resizing {
 .strategic-map { display: grid; grid-template-rows: auto minmax(20rem, 1fr) auto auto; height: 100%; min-height: 32rem; background: #dce5dc; color: #202820; }
 .strategic-map-toolbar { z-index: 2; display: flex; justify-content: space-between; gap: .5rem; padding: .45rem; background: color-mix(in srgb, #fff 88%, transparent); border-bottom: 1px solid #637464; }
 .strategic-map-toolbar > div { display: flex; gap: .25rem; }
+.strategic-map-zoom { margin-left: auto; }
 .strategic-map-toolbar button { min-width: 2.25rem; min-height: 2.25rem; padding: .25rem .55rem; border: 1px solid #566456; border-radius: .2rem; background: #fff; color: #1d281f; font: inherit; cursor: pointer; }
 .strategic-map-toolbar button[aria-pressed="true"] { outline: 3px double currentColor; outline-offset: -4px; font-weight: 800; }
 .strategic-map-svg { display: block; width: 100%; height: 100%; min-height: 20rem; cursor: grab; touch-action: none; background: var(--map-land); }
@@ -4156,7 +4157,6 @@ body.chat-resizing {
 .map-tile-layer { pointer-events: none; image-rendering: auto; }
 .map-overlay-layer { pointer-events: auto; }
 .strategic-map { --map-land: #e6e1cb; --map-water: #b8c9c5; --map-road: #6e654f; --map-ferry: #625f58; --map-pin: #6c6250; --map-connected: #8e2c24; --map-selected: #171511; --map-text: #241f18; --map-height-50: #ddd5ba; --map-height-100: #d4c9aa; --map-height-250: #c9b999; --map-height-500: #baa686; --map-height-1000: #aa9277; --map-height-1500: #987f6c; --map-height-2000: #826b60; --map-contour: #665b49; --map-forest: #73806a; --map-forest-conifer: #586a5d; }
-.strategic-map[data-map-theme="atlas"] { --map-land: #e7ead5; --map-water: #78b7dd; --map-road: #9a6837; --map-ferry: #245d88; --map-pin: #59656a; --map-connected: #bb2d26; --map-selected: #121212; --map-text: #17232b; --map-height-50: #dbe5c7; --map-height-100: #d2ddba; --map-height-250: #c5d0a8; --map-height-500: #d3c29a; --map-height-1000: #c4aa82; --map-height-1500: #b38f72; --map-height-2000: #9b7869; --map-contour: #756b55; --map-forest: #4f8a58; --map-forest-conifer: #356b52; }
 .map-pin-link:focus { outline: none; }
 .map-pin-shape { fill: var(--map-pin); stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 .map-pin.connected .map-pin-shape { fill: var(--map-connected); }

@@ -42,6 +42,7 @@ struct Package {
 struct TilePyramid {
     format: String,
     tile_size: u32,
+    gutter: u8,
     max_zoom: u8,
     content_sha256: String,
     entries: Vec<TileEntry>,
@@ -174,6 +175,7 @@ fn package() -> &'static Package {
         );
         assert_eq!(package.tiles.format, "avif", "unsupported map tile format");
         assert!(package.tiles.tile_size.is_power_of_two());
+        assert!(u32::from(package.tiles.gutter) < package.tiles.tile_size / 4);
         assert!(package.tiles.max_zoom <= 8);
         assert_eq!(
             format!("{:x}", Sha256::digest(TILE_PACK_BYTES)),
@@ -243,7 +245,7 @@ fn tile_coordinates(path: &str) -> Option<(&str, u8, u16, u16)> {
     let zoom = parts.next()?.parse().ok()?;
     let x = parts.next()?.parse().ok()?;
     let y = parts.next()?.parse().ok()?;
-    if parts.next().is_some() || !matches!(theme, "atlas" | "paper") {
+    if parts.next().is_some() || theme != "paper" {
         return None;
     }
     Some((theme, zoom, x, y))
@@ -313,18 +315,16 @@ pub fn strategic_map(
     let initial_tile_zoom = initial_tile_zoom(initial_view.width, package.tiles.max_zoom);
     let initial_tiles = visible_tiles(initial_view, package.tiles.tile_size, initial_tile_zoom);
     let tile_span = f64::from(package.tiles.tile_size) / f64::from(1_u32 << initial_tile_zoom);
+    let tile_gutter = f64::from(package.tiles.gutter) / f64::from(1_u32 << initial_tile_zoom);
 
     html! {
-        section class="strategic-map" data-strategic-map data-map-theme="atlas"
+        section class="strategic-map" data-strategic-map data-map-theme="paper"
             data-origin-x=(format!("{origin_x:.3}")) data-origin-y=(format!("{origin_y:.3}"))
             data-map-tile-size=(package.tiles.tile_size) data-map-max-tile-zoom=(package.tiles.max_zoom)
+            data-map-tile-gutter=(package.tiles.gutter)
             data-map-tile-version=(&package.tiles.content_sha256) data-map-tile-root=(TILE_PATH_PREFIX)
             aria-label=(format!("Map around {}", current.map_or("the current settlement", |item| item.name.as_str()))) {
             div class="strategic-map-toolbar" role="toolbar" aria-label="Map controls" {
-                div class="strategic-map-theme" aria-label="Map appearance" {
-                    button type="button" class="map-theme-button" data-map-theme-choice="paper" aria-pressed="false" { "Paper" }
-                    button type="button" class="map-theme-button" data-map-theme-choice="atlas" aria-pressed="true" { "Atlas" }
-                }
                 div class="strategic-map-zoom" {
                     button type="button" data-map-zoom="in" aria-label="Zoom map in" { "+" }
                     button type="button" data-map-zoom="out" aria-label="Zoom map out" { "−" }
@@ -338,10 +338,10 @@ pub fn strategic_map(
                 g data-map-viewport {
                     g class="map-tile-layer" data-map-tile-layer aria-hidden="true" {
                         @for (x, y, left, top) in initial_tiles {
-                            image x=(format!("{left:.3}")) y=(format!("{top:.3}"))
-                                width=(format!("{tile_span:.3}")) height=(format!("{tile_span:.3}"))
+                            image x=(format!("{:.3}", left - tile_gutter)) y=(format!("{:.3}", top - tile_gutter))
+                                width=(format!("{:.3}", tile_span + 2.0 * tile_gutter)) height=(format!("{:.3}", tile_span + 2.0 * tile_gutter))
                                 preserveAspectRatio="none"
-                                href=(tile_url("atlas", initial_tile_zoom, x, y, &package.tiles.content_sha256)) {}
+                                href=(tile_url("paper", initial_tile_zoom, x, y, &package.tiles.content_sha256)) {}
                         }
                     }
                     g class="map-overlay-layer" {
@@ -502,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn tiled_map_has_two_themes_accessible_controls_and_canonical_pin_links() {
+    fn tiled_map_has_accessible_controls_and_canonical_pin_links() {
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
         let settlements = [
@@ -521,8 +521,8 @@ mod tests {
         )
         .into_string();
 
-        assert!(markup.contains("data-map-theme-choice=\"paper\""));
-        assert!(markup.contains("data-map-theme-choice=\"atlas\""));
+        assert!(markup.contains("data-map-theme=\"paper\""));
+        assert!(!markup.contains("data-map-theme-choice"));
         assert!(markup.contains("aria-label=\"Zoom map in\""));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("?destination=near"));
@@ -599,13 +599,14 @@ mod tests {
             entry.theme, entry.zoom, entry.x, entry.y
         );
         assert!(markup.contains("data-map-tile-version"));
+        assert!(markup.contains("data-map-tile-gutter=\"4\""));
         assert!(is_current_world_tile(
             &path,
             Some(&format!("v={}", package.tiles.content_sha256))
         ));
         assert!(!is_current_world_tile(&path, None));
         assert!(!is_current_world_tile(&path, Some("v=stale")));
-        assert!(!is_current_world_tile("/map/tiles/atlas/0/0/0.png", None));
+        assert!(!is_current_world_tile("/map/tiles/paper/0/0/0.png", None));
         let start = usize::try_from(entry.offset).unwrap();
         let end = start + entry.length as usize;
         assert!(

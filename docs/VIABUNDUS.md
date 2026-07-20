@@ -44,10 +44,12 @@ missing regions with inferred vegetation.
 The server exposes individual AVIF images from an indexed pack beneath a small
 inline SVG settlement overlay. Each tile URL includes the pack's SHA-256 and is
 served with `public, max-age=31536000, immutable`. The browser loads only tiles
-covering the current viewport at an appropriate zoom and swaps between the
-pre-rendered Atlas and Paper pyramids. Current and selected settlements,
+covering the current viewport at an appropriate zoom from the Paper pyramid.
+Current and selected settlements,
 direct-route state, and pin links remain dynamic HTML/SVG and are served on
-every map response.
+every map response. A four-pixel encoded gutter prevents seams between lossy
+tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
+detail instead of magnifying the overview's generalized square cells.
 
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every

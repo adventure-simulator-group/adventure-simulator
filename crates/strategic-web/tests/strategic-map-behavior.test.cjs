@@ -19,20 +19,7 @@ test("zoom preserves focus and clamps readable bounds", () => {
   const { helpers } = load();
   assert.deepEqual(Array.from(helpers.zoomedView([100, 100, 400, 200], .5)), [200, 150, 200, 100]);
   assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 80, 160 / 3], .5)), [20, 40 / 3, 40, 80 / 3]);
-  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 20, 40 / 3], .5)), [0, 0, 20, 40 / 3]);
-});
-
-test("theme toggle persists and exposes pressed state", () => {
-  const { document, helpers } = load();
-  document.body.innerHTML = `<section data-strategic-map data-map-theme="atlas"><button data-map-theme-choice="paper"></button><button data-map-theme-choice="atlas"></button><svg data-map-svg viewBox="0 0 400 200"></svg></section>`;
-  const values = new Map();
-  const storage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) };
-  const map = document.querySelector("section");
-  helpers.initializeMap(map, storage);
-  map.querySelector('[data-map-theme-choice="paper"]').click();
-  assert.equal(map.dataset.mapTheme, "paper");
-  assert.equal(map.querySelector('[data-map-theme-choice="paper"]').getAttribute("aria-pressed"), "true");
-  assert.equal(values.get("adventuresim.map-theme"), "paper");
+  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 10, 20 / 3], .5)), [0, 0, 10, 20 / 3]);
 });
 
 test("keyboard pan and reset change only the SVG viewBox", () => {
@@ -71,9 +58,9 @@ test("pin links remain ordinary destination URLs", () => {
 
 test("tile zoom follows display density and respects the generated ceiling", () => {
   const { helpers } = load();
-  assert.equal(helpers.tileZoom(400, 800, 1, 4), 1);
-  assert.equal(helpers.tileZoom(90, 1200, 1, 4), 4);
-  assert.equal(helpers.tileZoom(20, 1200, 2, 4), 4);
+  assert.equal(helpers.tileZoom(400, 800, 1, 6), 1);
+  assert.equal(helpers.tileZoom(90, 1200, 1, 6), 4);
+  assert.equal(helpers.tileZoom(10, 1200, 1, 6), 6);
 });
 
 test("visible tile range loads exact intersections and clamps to the world", () => {
@@ -86,15 +73,14 @@ test("visible tile range loads exact intersections and clamps to the world", () 
   );
 });
 
-test("theme changes replace only the cached raster tile layer", () => {
+test("paper tiles render independently of the dynamic pin layer", () => {
   const { document, helpers } = load();
-  document.body.innerHTML = `<section data-strategic-map data-map-theme="atlas" data-map-tile-size="512" data-map-max-tile-zoom="4" data-map-tile-version="abc123" data-map-tile-root="/map/tiles/"><button data-map-theme-choice="paper"></button><button data-map-theme-choice="atlas"></button><svg data-map-svg viewBox="590 390 90 60"><g data-map-tile-layer></g><g data-map-pin-symbol></g></svg></section>`;
+  document.body.innerHTML = `<section data-strategic-map data-map-theme="paper" data-map-tile-size="512" data-map-tile-gutter="4" data-map-max-tile-zoom="6" data-map-tile-version="abc123" data-map-tile-root="/map/tiles/"><svg data-map-svg viewBox="590 390 10 6.67"><g data-map-tile-layer></g><g data-map-pin-symbol></g></svg></section>`;
   const map = document.querySelector("section");
   const svg = map.querySelector("svg");
   svg.getBoundingClientRect = () => ({ width: 1200, height: 800 });
   helpers.initializeMap(map, null);
-  assert.match(map.querySelector("[data-map-tile-layer] image").getAttribute("href"), /^\/map\/tiles\/atlas\/4\//);
-  map.querySelector('[data-map-theme-choice="paper"]').click();
-  assert.match(map.querySelector("[data-map-tile-layer] image").getAttribute("href"), /^\/map\/tiles\/paper\/4\//);
+  assert.match(map.querySelector("[data-map-tile-layer] image").getAttribute("href"), /^\/map\/tiles\/paper\/6\//);
+  assert.equal(map.querySelector("[data-map-tile-layer] image").getAttribute("width"), "8.125");
   assert.equal(map.querySelectorAll("[data-map-pin-symbol]").length, 1);
 });

@@ -86,6 +86,7 @@ struct Package {
 struct TilePyramid {
     format: &'static str,
     tile_size: u32,
+    gutter: u8,
     max_zoom: u8,
     content_sha256: String,
     entries: Vec<TileEntry>,
@@ -265,6 +266,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         tiles: TilePyramid {
             format: "avif",
             tile_size: 0,
+            gutter: 0,
             max_zoom: 0,
             content_sha256: String::new(),
             entries: Vec::new(),
@@ -644,7 +646,8 @@ mod tests {
         assert_eq!(first_manifest, second_manifest);
         assert_eq!(first_tiles, second_tiles);
         assert!(first_tiles.windows(8).any(|bytes| bytes == b"ftypavif"));
-        assert_eq!(first_manifest.entries.len(), 494);
+        assert_eq!(first_manifest.entries.len(), 247);
+        assert_eq!(first_manifest.gutter, 4);
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.water.len(), 1);
         fs::write(root.join("edges.csv"), b"changed").unwrap();
