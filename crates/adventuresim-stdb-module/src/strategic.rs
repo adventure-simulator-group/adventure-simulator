@@ -4140,6 +4140,7 @@ pub fn finalize_merchant_trade(
     }
     let coins = if party_scope {
         party_currency_total(ctx, party_id.as_ref().ok_or("Character has no party")?)
+            .saturating_add(crate::item::personal_currency_total(ctx, character_id))
     } else {
         crate::item::personal_currency_total(ctx, character_id)
     };
@@ -4216,7 +4217,21 @@ pub fn finalize_merchant_trade(
         credit_party_currency(ctx, party_id, &settlement_id, net as u32)?;
     } else if party_scope && net < 0 {
         let party_id = party_id.as_ref().unwrap();
-        consume_party_currency(ctx, party_id, (-net) as u64)?;
+        let amount = (-net) as u64;
+        let party_coins = party_currency_total(ctx, party_id);
+        let personal_coins = crate::item::personal_currency_total(ctx, character_id);
+        let (pooled, personal) =
+            adventuresim_core::strategic_economy::split_party_purchase_payment(
+                party_coins,
+                personal_coins,
+                amount,
+            )
+            .ok_or("Not enough coin")?;
+        consume_party_currency(ctx, party_id, pooled)?;
+        consume_personal_gold(ctx, character_id, personal)?;
+        if personal > 0 {
+            credit_party_stake(ctx, party_id, character_id, personal);
+        }
     } else if net < 0 {
         consume_personal_gold(ctx, character_id, (-net) as u64)?;
     } else if net > 0 {
@@ -5608,6 +5623,15 @@ pub fn travel_to_quest(
     for member_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, member_id, true)?;
     }
+    // Filling shared waterskins updates the persisted party row. Keep the
+    // local copy in sync so the camp/location update below cannot restore the
+    // pre-departure pooled-water value.
+    party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party changed while its waterskins were filled")?;
     let leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     if leg_minutes < travel_minutes {
@@ -5787,8 +5811,17 @@ pub fn travel_to_settlement(
         )?;
     }
     let departing_settlement = character.current_settlement_id.is_some();
-    if let Some(party) = party.as_ref() {
-        crate::condition::prepare_party_waterskins(ctx, &party.id, departing_settlement)?;
+    if let Some(current_party) = party.as_ref() {
+        crate::condition::prepare_party_waterskins(ctx, &current_party.id, departing_settlement)?;
+        // prepare_party_waterskins persists the new volume. Reload before any
+        // later camp/location write so that write preserves the filled water.
+        party = Some(
+            ctx.db
+                .party()
+                .id()
+                .find(&current_party.id)
+                .ok_or("Party changed while its waterskins were prepared")?,
+        );
     }
     for traveler_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;

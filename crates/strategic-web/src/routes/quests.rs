@@ -42,6 +42,10 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/quest/{id}/map", get(quest_location_map))
         .route("/locations/quest/{id}/loot", get(quest_location_loot))
         .route("/locations/quest/{id}/rest", post(rest_at_quest_location))
+        .route(
+            "/locations/quest/{id}/map/rest",
+            post(rest_at_quest_location_map),
+        )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
 }
@@ -357,6 +361,39 @@ async fn rest_at_quest_location(
     session: Session,
     Form(form): Form<RestForm>,
 ) -> Response {
+    rest_at_quest_location_with_redirect(
+        state,
+        id.clone(),
+        session,
+        form,
+        &format!("/locations/quest/{id}"),
+    )
+    .await
+}
+
+async fn rest_at_quest_location_map(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<RestForm>,
+) -> Response {
+    rest_at_quest_location_with_redirect(
+        state,
+        id.clone(),
+        session,
+        form,
+        &format!("/locations/quest/{id}/map"),
+    )
+    .await
+}
+
+async fn rest_at_quest_location_with_redirect(
+    state: AppState,
+    id: String,
+    session: Session,
+    form: RestForm,
+    redirect_path: &str,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
@@ -391,7 +428,7 @@ async fn rest_at_quest_location(
         )
         .await
     {
-        Ok(()) => Redirect::to(&format!("/locations/quest/{id}")).into_response(),
+        Ok(()) => Redirect::to(redirect_path).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -469,6 +506,10 @@ async fn render_quest_location(
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
     let can_control = character.as_ref().zip(party.as_ref()).is_some();
+    let can_configure_travel = character
+        .as_ref()
+        .zip(party.as_ref())
+        .is_some_and(|(character, party)| party.leader_id == character.id);
     let results: Vec<BattleResult> = state
         .db
         .query(&format!(
@@ -625,6 +666,8 @@ async fn render_quest_location(
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
+            party.as_ref(),
+            can_configure_travel,
             default_rest_minutes,
             logged_in_as,
         ),
@@ -638,6 +681,9 @@ async fn render_quest_location(
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
+            party.as_ref(),
+            can_configure_travel,
+            default_rest_minutes,
             logged_in_as,
         ),
         QuestLocationTab::Loot => quest_location_page(

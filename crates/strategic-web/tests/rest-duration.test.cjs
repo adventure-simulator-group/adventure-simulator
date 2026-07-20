@@ -48,6 +48,7 @@ test("markup reuses the accessible wake-time control for settlement and field re
   assert.match(partyControl, /wake_time_rest_duration_control/);
   assert.match(source, /data-rest-minimum-minutes/);
   assert.match(source, /data-rest-default-minutes/);
+  assert.match(source, /data-rest-scheduled-wake-minute/);
 });
 
 test("controls remount after replacement and keep independent days state", () => {
@@ -66,7 +67,7 @@ test("controls remount after replacement and keep independent days state", () =>
       setAttribute(name, value) { this[name] = String(value); },
     };
   };
-  const makeControl = (unit, value) => {
+  const makeControl = (unit, value, dataset = {}) => {
     const submit = { disabled: false };
     const form = { querySelector: () => submit };
     const labels = [{ classList: { toggle() {} } }, { classList: { toggle() {} } }];
@@ -87,7 +88,7 @@ test("controls remount after replacement and keep independent days state", () =>
       ["[data-wake-time-panel]", panel], ["[data-rest-unit-label]", { textContent: "" }],
     ]);
     const control = {
-      dataset: {},
+      dataset,
       closest: () => form,
       querySelector: (selector) => bySelector.get(selector),
       querySelectorAll: (selector) => selector.includes("radio") ? radios : buttons,
@@ -137,4 +138,21 @@ test("controls remount after replacement and keep independent days state", () =>
   replacement.buttons[1].dispatchEvent(new Event("click"));
   assert.equal(replacement.duration.value, "27:00");
   assert.equal(replacement.exact.value, "1620");
+
+  const scheduled = makeControl("hours", "16:00", {
+    restDefaultMinutes: "960",
+    restMinimumMinutes: "1",
+    restScheduledWakeMinute: "480",
+  });
+  liveControls = [scheduled];
+  documentListeners["strategic-live-regions-refreshed"][0](new Event("strategic-live-regions-refreshed"));
+  documentListeners["strategic-time-ready"][0](new Event("strategic-time-ready", { detail: { characterMinutes: 960 } }));
+  assert.equal(scheduled.slider.value, 480);
+  assert.equal(scheduled.duration.value, "16:00");
+  documentListeners["strategic-time-ready"][0](new Event("strategic-time-ready", { detail: { characterMinutes: 1020 } }));
+  assert.equal(scheduled.slider.value, 480);
+  assert.equal(scheduled.duration.value, "15:00");
+  documentListeners["strategic-time-ready"][0](new Event("strategic-time-ready", { detail: { characterMinutes: 1930 } }));
+  assert.equal(scheduled.slider.value, 480);
+  assert.equal(scheduled.duration.value, "23:50");
 });

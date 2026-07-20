@@ -7,6 +7,7 @@ use adventuresim_core::{
         STRATEGIC_TRAVEL_KCAL_PER_DAY, Skill,
     },
     strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
+    strategic_time::{is_walking_time, minutes_until_next_walking_start},
 };
 use adventuresim_world_schema::OfficialReligion;
 use axum::{
@@ -82,6 +83,7 @@ use super::AppState;
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
+use super::redirect_to_local;
 use super::travel::{
     QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
     active_quest_tooltip, connected_destinations, next_settlement_toward,
@@ -123,8 +125,20 @@ pub fn routes() -> Router<AppState> {
             "/locations/settlement/{id}/map/travel-configuration",
             post(update_travel_configuration),
         )
+        .route(
+            "/locations/settlement/{id}/map/rest",
+            post(rest_at_settlement_map),
+        )
+        .route(
+            "/locations/quest/{id}/map/travel-configuration",
+            post(update_travel_configuration),
+        )
         .route("/camp", get(camp))
         .route("/camp/rest", post(rest_at_camp))
+        .route(
+            "/camp/travel-configuration",
+            post(update_camp_travel_configuration),
+        )
         .route("/camp/continue", post(continue_camp_travel))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
@@ -648,6 +662,20 @@ async fn settlement_map(
     )
     .await;
     let living_party_members = living_party_members(&party_members);
+    let stats: Vec<CharacterStats> = state
+        .db
+        .query("SELECT * FROM character_stats")
+        .await
+        .unwrap_or_default();
+    let default_rest_minutes = living_party_members
+        .iter()
+        .filter_map(|member| stats.iter().find(|row| row.character_id == member.id))
+        .map(|row| {
+            (row.calories_used.max(0.0) / STRATEGIC_TRAVEL_KCAL_PER_DAY * 1_440.0).ceil() as u64
+        })
+        .max()
+        .unwrap_or(0)
+        .max(1);
     if can_travel {
         if let Some(party) = active_party.as_ref() {
             let attributes: Vec<CharacterAttributes> = state
@@ -658,11 +686,6 @@ async fn settlement_map(
             let limbs: Vec<CharacterLimbs> = state
                 .db
                 .query("SELECT * FROM character_limbs")
-                .await
-                .unwrap_or_default();
-            let stats: Vec<CharacterStats> = state
-                .db
-                .query("SELECT * FROM character_stats")
                 .await
                 .unwrap_or_default();
             let times: Vec<CharacterTime> = state
@@ -718,6 +741,7 @@ async fn settlement_map(
             active_character.as_ref().map(|(character, _)| character),
             active_party.as_ref(),
             &party_members,
+            default_rest_minutes,
             can_travel,
             provision_forecast,
             is_current_settlement,
@@ -798,6 +822,22 @@ async fn update_travel_configuration(
     Path(_id): Path<String>,
     session: Session,
     Form(form): Form<TravelConfigurationForm>,
+) -> Response {
+    save_travel_configuration(&state, &session, form).await
+}
+
+async fn update_camp_travel_configuration(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<TravelConfigurationForm>,
+) -> Response {
+    save_travel_configuration(&state, &session, form).await
+}
+
+async fn save_travel_configuration(
+    state: &AppState,
+    session: &Session,
+    form: TravelConfigurationForm,
 ) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
@@ -900,24 +940,25 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
     let party_members = get_active_party_members(&state, Some(&character)).await;
+    let member_times: Vec<CharacterTime> = state
+        .db
+        .query("SELECT * FROM character_time")
+        .await
+        .unwrap_or_default();
+    let current_party_minute = party_members
+        .iter()
+        .filter_map(|member| {
+            member_times
+                .iter()
+                .find(|time| time.character_id == member.id)
+        })
+        .map(|time| time.minutes)
+        .max()
+        .unwrap_or(0);
     if let Some(legacy) = journey.as_mut().filter(|journey| journey.plan_version == 0) {
-        let member_times: Vec<CharacterTime> = state
-            .db
-            .query("SELECT * FROM character_time")
-            .await
-            .unwrap_or_default();
-        let current = party_members
-            .iter()
-            .filter_map(|member| {
-                member_times
-                    .iter()
-                    .find(|time| time.character_id == member.id)
-            })
-            .map(|time| time.minutes)
-            .max()
-            .unwrap_or(0);
         legacy.completed_elapsed_minutes = legacy.completed_minutes;
-        legacy.departure_minute = current.saturating_sub(legacy.completed_elapsed_minutes);
+        legacy.departure_minute =
+            current_party_minute.saturating_sub(legacy.completed_elapsed_minutes);
         legacy.total_elapsed_minutes = if legacy.destination_kind == "quest" {
             legacy.total_minutes.saturating_mul(2)
         } else {
@@ -944,10 +985,20 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .map(|stat| ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY) * 1_440.0).ceil() as u64)
         .max()
         .unwrap_or(0);
-    let default_rest_minutes = itinerary
-        .as_ref()
-        .and_then(|typed| typed.forecast_camp_intervals.first())
-        .map_or(fatigue_rest_minutes, |camp| camp.elapsed_minutes);
+    let default_rest_minutes = minutes_until_next_walking_start(
+        current_party_minute,
+        party.walking_minutes_per_day,
+        party.travel_at_night,
+    )
+    .unwrap_or(fatigue_rest_minutes)
+    .max(1);
+    let planned_wake_minute =
+        (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
+    let can_continue_travel = is_walking_time(
+        current_party_minute,
+        party.walking_minutes_per_day,
+        party.travel_at_night,
+    );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
@@ -976,6 +1027,8 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &camp_destinations,
             provision_forecast.as_ref(),
             default_rest_minutes,
+            planned_wake_minute,
+            can_continue_travel,
             Some(&character.name),
         )
         .into_string(),
@@ -2997,6 +3050,8 @@ async fn finalize_merchant_offer(
     session: Session,
     Form(form): Form<MerchantOfferForm>,
 ) -> Redirect {
+    let fallback = format!("/settlements/{id}/merchants");
+    let mut trade_completed = false;
     if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
         if let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
             let (items, quantities): (Vec<_>, Vec<_>) = buys
@@ -3008,7 +3063,7 @@ async fn finalize_merchant_offer(
                 .map(|entry| (entry.id, entry.quantity))
                 .unzip();
             if !items.is_empty() || !sell_ids.is_empty() {
-                let _ = state
+                match state
                     .db
                     .call(
                         "finalize_merchant_trade",
@@ -3022,15 +3077,57 @@ async fn finalize_merchant_offer(
                             json!(form.inventory_scope == "party"),
                         ],
                     )
-                    .await;
+                    .await
+                {
+                    Ok(()) => trade_completed = true,
+                    Err(error) => {
+                        tracing::warn!(%error, settlement_id = %id, "merchant offer was rejected");
+                    }
+                }
+            } else {
+                trade_completed = true;
             }
         }
     }
-    let return_to = match form.return_to.as_str() {
-        "weapons" | "armor" | "clothing" | "merchants" | "herbalist" => form.return_to,
-        _ => "merchants".to_owned(),
+    if trade_completed {
+        redirect_to_local(&form.return_to, &fallback)
+    } else {
+        Redirect::to(&fallback)
+    }
+}
+
+async fn rest_at_settlement_map(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<RestForm>,
+) -> Response {
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Redirect::to("/characters").into_response();
     };
-    Redirect::to(&format!("/settlements/{id}/{return_to}"))
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "The party is not at this settlement",
+        )
+            .into_response();
+    }
+    let requested_minutes = match travel_rest_minutes(&form) {
+        Ok(minutes) => minutes,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+    };
+    match state
+        .db
+        .call(
+            "rest_at_camp",
+            &[json!(character.id), json!(requested_minutes)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(&format!("/locations/settlement/{id}/map")).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 async fn inn(
@@ -4350,6 +4447,8 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod rest_form_tests {
+    use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
+
     use super::{RestForm, settlement_rest_minutes, travel_rest_minutes};
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
@@ -4409,6 +4508,29 @@ mod rest_form_tests {
         assert_eq!(blank.requested_minutes, None);
         assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
         assert!(settlement_rest_minutes(&form("24:00", "hours", Some(1_441))).is_err());
+    }
+
+    #[test]
+    fn camp_wake_defaults_follow_the_absolute_daily_schedule() {
+        assert_eq!(
+            minutes_until_next_walking_start(60, 8 * 60, true),
+            Some(19 * 60)
+        );
+        assert_eq!(
+            minutes_until_next_walking_start(7 * 60, 8 * 60, false),
+            Some(60)
+        );
+        assert!(!is_walking_time(7 * 60, 8 * 60, false));
+        assert!(is_walking_time(9 * 60, 8 * 60, false));
+        assert_eq!(
+            minutes_until_next_walking_start(9 * 60, 8 * 60, false),
+            Some(23 * 60)
+        );
+        assert_eq!(
+            minutes_until_next_walking_start(18 * 60, 8 * 60, true),
+            Some(2 * 60)
+        );
+        assert!(is_walking_time(21 * 60, 8 * 60, true));
     }
 }
 

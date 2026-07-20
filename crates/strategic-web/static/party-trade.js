@@ -132,7 +132,10 @@ function setTradeDraftCount(row, draftChange) {
 }
 
 function merchantRow(itemId, sidebar) {
-  return sidebar.querySelector(`tr[data-merchant-item="${CSS.escape(itemId)}"]`);
+  const inventoryRoot = sidebar?.matches?.(".right-sidebar")
+    ? sidebar.querySelector('[data-inventory-pane]:not([hidden])') || sidebar
+    : sidebar;
+  return inventoryRoot?.querySelector(`tr[data-merchant-item="${CSS.escape(itemId)}"]`) || null;
 }
 
 function ensureMerchantPlayerRow(itemId, sourceRow) {

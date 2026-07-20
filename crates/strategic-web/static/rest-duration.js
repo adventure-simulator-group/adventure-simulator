@@ -68,6 +68,9 @@
     const radios = [...control.querySelectorAll("input[type=radio][name=unit]")];
     const minimumMinutes = Math.max(1, Math.round(Number(control.dataset.restMinimumMinutes) || DAY_MINUTES));
     const defaultMinutes = Math.max(0, Math.round(Number(control.dataset.restDefaultMinutes) || 0));
+    const scheduledWakeMinute = control.dataset.restScheduledWakeMinute === undefined
+      ? null
+      : normalizeMinute(Number(control.dataset.restScheduledWakeMinute));
     let characterMinutes = Number.isFinite(Number(window.strategicCharacterMinutes))
       ? Number(window.strategicCharacterMinutes)
       : null;
@@ -117,9 +120,9 @@
       }
     };
 
-    setTarget(characterMinutes !== null && defaultMinutes > 0
+    setTarget(scheduledWakeMinute ?? (characterMinutes !== null && defaultMinutes > 0
       ? targetForDuration(characterMinutes, defaultMinutes)
-      : 480);
+      : 480));
     slider.addEventListener("input", () => {
       dirty.add(control);
       const clock = formatClock(slider.value);
@@ -190,8 +193,17 @@
         characterMinutes = Number(minutes);
         if (selectedUnit() === "hours") {
           if (!dirty.has(control) && defaultMinutes > 0) {
-            setTarget(targetForDuration(characterMinutes, defaultMinutes));
-            setHoursMinutes(defaultMinutes);
+            if (scheduledWakeMinute === null) {
+              setTarget(targetForDuration(characterMinutes, defaultMinutes));
+              setHoursMinutes(defaultMinutes);
+            } else {
+              setTarget(scheduledWakeMinute);
+              setHoursMinutes(minutesUntilWakeWithMinimum(
+                characterMinutes,
+                scheduledWakeMinute,
+                minimumMinutes,
+              ));
+            }
           } else {
             setHoursMinutes(minutesUntilWakeWithMinimum(characterMinutes, slider.value, minimumMinutes));
           }

@@ -453,6 +453,7 @@ pub fn settlement_map_page(
     active_character: Option<&Character>,
     active_party: Option<&Party>,
     party_members: &[Character],
+    default_rest_minutes: u64,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
@@ -476,6 +477,18 @@ pub fn settlement_map_page(
             abandonable_quest.map(|quest| MapAbandonableQuest {
                 id: &quest.id,
                 title: &quest.title,
+            }),
+            active_party.filter(|_| can_travel).map(|_| html! {
+                section class="rest-service-menu map-rest-menu" aria-label="Rest" {
+                    (party_rest_menu(
+                        &format!("{base_path}/rest"),
+                        "map-rest",
+                        "Rest here",
+                        "Rest party",
+                        default_rest_minutes,
+                        None,
+                    ))
+                }
             }),
         ))
         main class="center-content settlement-main settlement-overview" {
@@ -519,12 +532,29 @@ struct MapAbandonableQuest<'a> {
     title: &'a str,
 }
 
+#[cfg(test)]
 pub(crate) fn map_destination_list(
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     base_path: &str,
 ) -> Markup {
-    map_destination_list_with_context(destinations, selected_id, base_path, None, None)
+    map_destination_list_with_context(destinations, selected_id, base_path, None, None, None)
+}
+
+pub(crate) fn map_destination_list_with_rest(
+    destinations: &[TravelDestination],
+    selected_id: Option<&str>,
+    base_path: &str,
+    rest_menu: Markup,
+) -> Markup {
+    map_destination_list_with_context(
+        destinations,
+        selected_id,
+        base_path,
+        None,
+        None,
+        Some(rest_menu),
+    )
 }
 
 fn map_destination_list_with_context(
@@ -533,9 +563,11 @@ fn map_destination_list_with_context(
     base_path: &str,
     current_location: Option<MapCurrentLocation<'_>>,
     abandonable_quest: Option<MapAbandonableQuest<'_>>,
+    rest_menu: Option<Markup>,
 ) -> Markup {
     html! {
-        aside class="left-sidebar" {
+        aside class=(if rest_menu.is_some() { "left-sidebar map-rest-sidebar" } else { "left-sidebar" }) {
+            div class=[rest_menu.is_some().then_some("map-rest-sidebar-content")] {
             (sidebar_section("Destinations", html! {
                 @if destinations.is_empty() && current_location.is_none() {
                     (empty_state("No destinations are available from this location.", None, None))
@@ -604,6 +636,46 @@ fn map_destination_list_with_context(
                     }
                 }
             }))
+            }
+            @if let Some(rest_menu) = rest_menu {
+                (rest_menu)
+            }
+        }
+    }
+}
+
+pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
+    let walking_hours = f32::from(party.walking_minutes_per_day) / 60.0;
+    let travel_at_night = party.travel_at_night;
+    let walking_hours_title = if travel_at_night {
+        "Walking is centered on midnight; shorter first and final days are forecast automatically."
+    } else {
+        "Walking is centered on solar noon; shorter first and final days are forecast automatically."
+    };
+    html! {
+        form method="post" action=(action) class="travel-configuration-form" data-travel-configuration {
+            div class="travel-setting-heading" title=(walking_hours_title) {
+                label for="walking-hours" { "Walking hours per day" }
+                span class="travel-walking-value" {
+                    output for="walking-hours" data-walking-hours-output { (format!("{walking_hours}")) }
+                    span aria-hidden="true" { " h" }
+                }
+            }
+            div class="travel-fatigue-control" {
+                input id="walking-hours" type="range" name="walking_hours" min="0" max="24" step="0.25" value=(walking_hours) data-walking-hours {}
+            }
+            div class="travel-period-control" {
+                span { "Travel during" }
+                label class="travel-period-toggle" title=(if travel_at_night { "Travel at night; camp time is centered on noon" } else { "Travel during the day; walking time is centered on noon" }) {
+                    input type="checkbox" name="travel_at_night" value="true" checked[travel_at_night]
+                        aria-label="Travel at night" data-travel-period-toggle;
+                    span class="travel-period-track" aria-hidden="true" {
+                        span class="travel-period-option travel-period-day" {}
+                        span class="travel-period-option travel-period-night" {}
+                        span class="travel-period-thumb" {}
+                    }
+                }
+            }
         }
     }
 }
@@ -619,14 +691,7 @@ pub(crate) fn map_destination_detail(
     map_path: &str,
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
-    let walking_hours = party.map_or(8.0, |party| f32::from(party.walking_minutes_per_day) / 60.0);
-    let travel_at_night = party.is_some_and(|party| party.travel_at_night);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
-    let walking_hours_title = if travel_at_night {
-        "Walking is centered on midnight; shorter first and final days are forecast automatically."
-    } else {
-        "Walking is centered on solar noon; shorter first and final days are forecast automatically."
-    };
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -642,40 +707,20 @@ pub(crate) fn map_destination_detail(
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
-                form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
-                    div class="travel-setting-heading" title=(walking_hours_title) {
-                        label for="walking-hours" { "Walking hours per day" }
-                        span class="travel-walking-value" {
-                            output for="walking-hours" data-walking-hours-output { (format!("{walking_hours}")) }
-                            span aria-hidden="true" { " h" }
-                        }
-                    }
-                    div class="travel-fatigue-control" {
-                        input id="walking-hours" type="range" name="walking_hours" min="0" max="24" step="0.25" value=(walking_hours) data-walking-hours {}
-                    }
-                    div class="travel-period-control" {
-                        span { "Travel during" }
-                        label class="travel-period-toggle" title=(if travel_at_night { "Travel at night; camp time is centered on noon" } else { "Travel during the day; walking time is centered on noon" }) {
-                            input type="checkbox" name="travel_at_night" value="true" checked[travel_at_night]
-                                aria-label="Travel at night" data-travel-period-toggle;
-                            span class="travel-period-track" aria-hidden="true" {
-                                span class="travel-period-option travel-period-day" {}
-                                span class="travel-period-option travel-period-night" {}
-                                span class="travel-period-thumb" {}
-                            }
-                        }
-                    }
-                }
+                (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
                 @if provisioning_available {
                     div class="travel-provisioning-control" data-provisioning-control {
-                        span { "Provisioning" }
                         div class="travel-provisioning-input" {
                             input type="hidden" value="0" data-target-surplus;
                             span class="travel-provisioning-target" {
                                 span id="target-surplus" class="travel-provisioning-value" data-target-surplus-display
                                     role="button" tabindex="0" aria-label="Target surplus in days"
                                     title="Click to edit target surplus" { "0" }
-                                span class="travel-provisioning-unit" { "days surplus" }
+                                span class="travel-provisioning-unit" { "d surplus" }
+                            }
+                            span class="travel-provisioning-icons" {
+                                span class="travel-provisioning-icon food" { (game_icon("Food", "meal")) }
+                                span class="travel-provisioning-icon water" { (game_icon("Water", "water-drop")) }
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
@@ -703,10 +748,6 @@ pub(crate) fn map_destination_detail(
             }
             @if let Some(destination) = selected {
                 (sidebar_section("", html! {
-                    p class="travel-destination-caption"
-                        title=(&destination.name) {
-                        (&destination.name)
-                    }
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) data-travel-submit {
                             button type="submit" class="btn btn-primary btn-block"
@@ -716,9 +757,6 @@ pub(crate) fn map_destination_detail(
                             }
                         }
                         p class="travel-action-status" data-travel-action-status role="alert" hidden {}
-                    }
-                    @if !destination.quest_in_progress {
-                        p { (&destination.description) }
                     }
                     p class="text-muted small-copy" {
                         @if !destination.quest_in_progress {
@@ -1079,11 +1117,13 @@ pub fn camp_page(
     camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
+    planned_wake_minute: u16,
+    can_continue_travel: bool,
     logged_in_as: Option<&str>,
 ) -> Markup {
-    let rest_hours = default_rest_minutes.div_ceil(60);
     let content = html! {
-        aside class="left-sidebar" {
+        aside class="left-sidebar map-rest-sidebar" {
+            div class="map-rest-sidebar-content" {
             (sidebar_section("Camp", html! {
                 p { "The party has made camp between travel legs." }
                 p class="text-muted small-copy" { "Destination: " (destination_name) }
@@ -1107,6 +1147,17 @@ pub fn camp_page(
                     }
                 }))
             }
+            }
+            section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
+                (party_rest_menu(
+                    "/camp/rest",
+                    "camp-rest",
+                    "Rest at camp",
+                    "Rest party",
+                    default_rest_minutes,
+                    Some(planned_wake_minute),
+                ))
+            }
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
@@ -1120,13 +1171,15 @@ pub fn camp_page(
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
                 }
                 form action="/camp/continue" method="post" {
-                    button type="submit" class="btn btn-primary btn-small btn-block" { "Continue travel" }
+                    button type="submit" class="btn btn-primary btn-small btn-block"
+                        disabled[!can_continue_travel]
+                        title=(if can_continue_travel { "Continue travel" } else { "Rest until the planned walking window begins" }) {
+                        "Continue travel"
+                    }
                 }
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
             }
-            section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
-                (party_rest_menu("/camp/rest", "camp-rest", "Rest at camp", "Rest party", rest_hours))
-            }
+            (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
         }
     };
     quest_location_layout_with_session("Camp", "Camp", &party.id, "camp", content, logged_in_as)
@@ -1138,6 +1191,7 @@ pub(crate) fn party_rest_menu(
     heading: &str,
     submit_label: &str,
     default_minutes: u64,
+    scheduled_wake_minute: Option<u16>,
 ) -> Markup {
     html! {
         div class="rest-service-heading" { strong { (heading) } }
@@ -1148,6 +1202,7 @@ pub(crate) fn party_rest_menu(
                 "hours",
                 1,
                 Some(default_minutes.max(1)),
+                scheduled_wake_minute,
             ))
             button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit {
                 (submit_label)
@@ -1826,7 +1881,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden { input type="hidden" name="return_to" value=(service_id); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden { input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -1885,6 +1940,19 @@ pub fn live_merchant_shop_page(
                             td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (sell_price) }
+                        }
+                    }
+                    // Party purchases may spend pooled coin first and the active
+                    // character's coin second. Show both funding sources as the
+                    // same collapsed Coin row in this scope.
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency)) {
+                        @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        tr class="trade-inventory-row trade-row-player party-personal-currency" data-merchant-item=(&item.item_id) data-inventory-quantity=(item.qty) data-target="0" title="Personal coin available for party purchases" {
+                            td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                            td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) }
+                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-gold" { (item_value(definition)) }
                         }
                     }
                     @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
@@ -4308,7 +4376,7 @@ fn rest_service_menu(
 }
 
 fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
-    wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None)
+    wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None, None)
 }
 
 fn wake_time_rest_duration_control(
@@ -4317,6 +4385,7 @@ fn wake_time_rest_duration_control(
     unit: &str,
     minimum_minutes: u64,
     default_minutes: Option<u64>,
+    scheduled_wake_minute: Option<u16>,
 ) -> Markup {
     let hours_active = unit == "hours";
     let wake_id = format!("{id_prefix}-wake-time");
@@ -4328,7 +4397,8 @@ fn wake_time_rest_duration_control(
     html! {
         div class="rest-duration-control settlement-rest-duration" data-rest-duration data-wake-time
             data-rest-minimum-minutes=(minimum_minutes)
-            data-rest-default-minutes=[default_minutes] {
+            data-rest-default-minutes=[default_minutes]
+            data-rest-scheduled-wake-minute=[scheduled_wake_minute] {
             div class="rest-duration-units" role="radiogroup" aria-label="Rest duration" {
                 label class=(if hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
                     input type="radio" name="unit" value="hours" checked[hours_active] {}
@@ -5490,6 +5560,7 @@ mod tests {
                 turn_in_ready: false,
             }),
             None,
+            None,
         )
         .into_string();
 
@@ -5510,6 +5581,7 @@ mod tests {
                 open_quest_available: true,
                 turn_in_ready: true,
             }),
+            None,
             None,
         )
         .into_string();
@@ -5534,6 +5606,7 @@ mod tests {
                 id: "active",
                 title: "Drive off the bandits",
             }),
+            None,
         )
         .into_string();
 
@@ -5541,6 +5614,22 @@ mod tests {
         assert!(markup.contains("Drive off the bandits"));
         assert!(markup.contains("action=\"/quests/active/abandon\""));
         assert!(markup.contains("Abandon active quest"));
+    }
+
+    #[test]
+    fn map_rest_menu_is_pinned_below_the_destination_list() {
+        let markup = map_destination_list_with_rest(
+            &[],
+            None,
+            "/locations/quest/active/map",
+            html! { section class="rest-service-menu" { "Rest party" } },
+        )
+        .into_string();
+
+        assert!(markup.contains("left-sidebar map-rest-sidebar"));
+        assert!(markup.contains("map-rest-sidebar-content"));
+        assert!(markup.contains("rest-service-menu"));
+        assert!(markup.contains("Rest party"));
     }
 
     #[test]

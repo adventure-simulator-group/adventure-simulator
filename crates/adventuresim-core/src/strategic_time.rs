@@ -121,44 +121,71 @@ fn walking_window_at_or_after(
     walking_minutes: u16,
     travel_at_night: bool,
 ) -> Option<(u64, u64)> {
+    let (start, end) =
+        scheduled_walking_window_at_or_after(absolute_minute, walking_minutes, travel_at_night)?;
+    Some((start.max(absolute_minute), end))
+}
+
+/// Return whether the supplied canonical minute falls inside the party's
+/// configured daily walking window.
+pub fn is_walking_time(absolute_minute: u64, walking_minutes: u16, travel_at_night: bool) -> bool {
+    let Some((start, end)) =
+        scheduled_walking_window_at_or_after(absolute_minute, walking_minutes, travel_at_night)
+    else {
+        return false;
+    };
+    absolute_minute >= start && absolute_minute < end
+}
+
+/// Return the minutes until the next scheduled start of the walking window.
+/// When the party is already inside today's window, this deliberately points
+/// at the following day's start so an optional extra rest still wakes on the
+/// established daily schedule.
+pub fn minutes_until_next_walking_start(
+    absolute_minute: u64,
+    walking_minutes: u16,
+    travel_at_night: bool,
+) -> Option<u64> {
+    let (start, end) =
+        scheduled_walking_window_at_or_after(absolute_minute, walking_minutes, travel_at_night)?;
+    let next_start = if absolute_minute < start {
+        start
+    } else {
+        scheduled_walking_window_at_or_after(end, walking_minutes, travel_at_night)?.0
+    };
+    Some(next_start.saturating_sub(absolute_minute))
+}
+
+fn scheduled_walking_window_at_or_after(
+    absolute_minute: u64,
+    walking_minutes: u16,
+    travel_at_night: bool,
+) -> Option<(u64, u64)> {
     let (day_start, day_end) = daylight_walking_window(walking_minutes)?;
     let day = absolute_minute / MINUTES_PER_DAY;
     if !travel_at_night {
         let start = day * MINUTES_PER_DAY + u64::from(day_start);
         let end = day * MINUTES_PER_DAY + u64::from(day_end);
-        return if absolute_minute < start {
+        return if absolute_minute < end {
             Some((start, end))
-        } else if absolute_minute < end {
-            Some((absolute_minute, end))
         } else {
             Some((start + MINUTES_PER_DAY, end + MINUTES_PER_DAY))
         };
     }
 
-    // Night travel uses one contiguous window centered on midnight. Looking
-    // at the windows around the current and following midnight avoids
-    // splitting a single march into two artificial calendar-day segments.
     let before_midnight = u64::from(walking_minutes / 2);
     let after_midnight = u64::from(walking_minutes) - before_midnight;
     let current_midnight = day * MINUTES_PER_DAY;
     let current_start = current_midnight.saturating_sub(before_midnight);
     let current_end = current_midnight.saturating_add(after_midnight);
-    if absolute_minute >= current_start && absolute_minute < current_end {
-        return Some((absolute_minute, current_end));
+    if absolute_minute < current_end {
+        return Some((current_start, current_end));
     }
     let next_midnight = current_midnight.saturating_add(MINUTES_PER_DAY);
-    let next_start = next_midnight.saturating_sub(before_midnight);
-    let next_end = next_midnight.saturating_add(after_midnight);
-    if absolute_minute < next_start {
-        Some((next_start, next_end))
-    } else if absolute_minute < next_end {
-        Some((absolute_minute, next_end))
-    } else {
-        Some((
-            next_start.saturating_add(MINUTES_PER_DAY),
-            next_end.saturating_add(MINUTES_PER_DAY),
-        ))
-    }
+    Some((
+        next_midnight.saturating_sub(before_midnight),
+        next_midnight.saturating_add(after_midnight),
+    ))
 }
 
 pub fn forecast_itinerary(
@@ -441,6 +468,37 @@ mod tests {
         assert_eq!(daylight_walking_window(24 * 60), Some((0, 24 * 60)));
         assert_eq!(daylight_walking_window(0), None);
         assert_eq!(daylight_walking_window(24 * 60 + 1), None);
+    }
+
+    #[test]
+    fn camp_wake_time_stays_on_the_absolute_daylight_schedule() {
+        assert_eq!(
+            minutes_until_next_walking_start(7 * 60, 8 * 60, false),
+            Some(60)
+        );
+        assert!(!is_walking_time(7 * 60, 8 * 60, false));
+        assert!(is_walking_time(9 * 60, 8 * 60, false));
+        assert_eq!(
+            minutes_until_next_walking_start(9 * 60, 8 * 60, false),
+            Some(23 * 60)
+        );
+    }
+
+    #[test]
+    fn camp_wake_time_stays_on_the_absolute_night_schedule() {
+        assert_eq!(
+            minutes_until_next_walking_start(60, 8 * 60, true),
+            Some(19 * 60)
+        );
+        assert_eq!(
+            minutes_until_next_walking_start(18 * 60, 8 * 60, true),
+            Some(2 * 60)
+        );
+        assert!(is_walking_time(21 * 60, 8 * 60, true));
+        assert_eq!(
+            minutes_until_next_walking_start(21 * 60, 8 * 60, true),
+            Some(23 * 60)
+        );
     }
 
     #[test]

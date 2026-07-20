@@ -15,6 +15,7 @@ pub(crate) mod travel;
 use axum::{
     Router,
     extract::{Request, State},
+    http::Uri,
     middleware::{self, Next},
     response::{IntoResponse, Json, Redirect, Response},
     routing::get,
@@ -43,6 +44,56 @@ pub(crate) use party_actions::PartyAction;
 pub(crate) enum PartyActionOutcome {
     Executed,
     Requested,
+}
+
+/// Accept a return destination only when it is a local absolute-path URL.
+///
+/// Workflows may carry this value through query strings and hidden form fields,
+/// but every completion handler must validate it before emitting a redirect.
+pub(crate) fn local_return_url(value: &str) -> Option<&str> {
+    if !value.starts_with('/')
+        || value.starts_with("//")
+        || value.contains('\\')
+        || value.chars().any(char::is_control)
+    {
+        return None;
+    }
+    let uri = value.parse::<Uri>().ok()?;
+    (uri.scheme().is_none() && uri.authority().is_none() && uri.path().starts_with('/'))
+        .then_some(value)
+}
+
+pub(crate) fn redirect_to_local(return_to: &str, fallback: &str) -> Redirect {
+    Redirect::to(local_return_url(return_to).unwrap_or(fallback))
+}
+
+#[cfg(test)]
+mod return_url_tests {
+    use super::local_return_url;
+
+    #[test]
+    fn return_urls_are_local_paths_with_optional_query_and_fragment() {
+        assert_eq!(
+            local_return_url(
+                "/locations/settlement/riverdale/map?destination=quest-1&target_surplus=1.5#plan"
+            ),
+            Some("/locations/settlement/riverdale/map?destination=quest-1&target_surplus=1.5#plan")
+        );
+        assert_eq!(local_return_url("https://example.com/steal"), None);
+        assert_eq!(local_return_url("//example.com/steal"), None);
+        assert_eq!(local_return_url("/\\example.com/steal"), None);
+        assert_eq!(local_return_url("merchants"), None);
+        assert_eq!(local_return_url("/safe\nLocation: /unsafe"), None);
+    }
+
+    #[test]
+    fn party_purchase_funding_uses_shared_coin_before_personal_coin() {
+        use adventuresim_core::strategic_economy::split_party_purchase_payment;
+
+        assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
+        assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
+        assert_eq!(split_party_purchase_payment(4, 5, 10), None);
+    }
 }
 
 /// Corpses remain party members for rendering and history, but do not

@@ -74,7 +74,10 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /game_icon\("Day and night", "sun"\)/);
   assert.match(template, /class="sr-only" data-surplus-summary/);
   assert.match(template, /class="sr-only" data-fatigue-summary/);
-  assert.match(template, /"days surplus"/);
+  assert.match(template, /"d surplus"/);
+  assert.match(template, /travel-provisioning-icon food/);
+  assert.match(template, /travel-provisioning-icon water/);
+  assert.doesNotMatch(template, /span \{ "Provisioning" \}/);
   assert.match(css, /\.travel-resource-meters[^}]+grid-template-columns: repeat\(var\(--travel-rail-count\), var\(--travel-rail-width\)\)/);
   assert.match(css, /\.travel-progress-path[^}]+stroke: #fff/);
   assert.doesNotMatch(css, /travel-party-pin|rotate\(-90deg\)/);

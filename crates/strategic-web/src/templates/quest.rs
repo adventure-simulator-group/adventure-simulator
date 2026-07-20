@@ -12,8 +12,8 @@ use crate::spacetimedb::{
 use crate::{
     spacetimedb::Character,
     templates::settlement::{
-        map_destination_detail, map_destination_list, party_portrait_overlay, party_rest_menu,
-        settlement_chat_area_with_info, travel_planner_bar, visual_stage,
+        map_destination_detail, map_destination_list_with_rest, party_portrait_overlay,
+        party_rest_menu, settlement_chat_area_with_info, travel_preferences_form, visual_stage,
     },
 };
 
@@ -24,12 +24,24 @@ pub fn quest_location_base_page(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    party: Option<&crate::spacetimedb::Party>,
+    can_configure_travel: bool,
     default_rest_minutes: u64,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let content = html! {
-        aside class="left-sidebar" {
+        aside class="left-sidebar map-rest-sidebar" {
             (sidebar_section("Location", html! { p { (&quest.location_description) } }))
+            section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
+                (party_rest_menu(
+                    &format!("/locations/quest/{}/rest", quest.id),
+                    "quest-rest",
+                    "Rest before battle",
+                    "Rest party",
+                    default_rest_minutes,
+                    None,
+                ))
+            }
         }
         (quest_location_center(
             quest,
@@ -40,14 +52,14 @@ pub fn quest_location_base_page(
             autoresolve_report,
             None,
         ))
-        aside class="right-sidebar" aria-label="Location details" {
-            section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
-                (party_rest_menu(
-                    &format!("/locations/quest/{}/rest", quest.id),
-                    "quest-rest",
-                    "Rest before battle",
-                    "Rest party",
-                    default_rest_minutes,
+        aside class="right-sidebar travel-preferences-only-sidebar" aria-label="Location details" {
+            @if let Some(party) = party.filter(|_| can_configure_travel) {
+                (sidebar_section(
+                    "Travel preferences",
+                    travel_preferences_form(
+                        party,
+                        &format!("/locations/quest/{}/map/travel-configuration", quest.id),
+                    ),
                 ))
             }
         }
@@ -72,14 +84,29 @@ pub fn quest_location_map_page(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    party: Option<&crate::spacetimedb::Party>,
+    can_configure_travel: bool,
+    default_rest_minutes: u64,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
     let content = html! {
-        (map_destination_list(
+        (map_destination_list_with_rest(
             nearby,
             selected_id,
             &format!("/locations/quest/{}/map", quest.id),
+            html! {
+                section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
+                    (party_rest_menu(
+                        &format!("/locations/quest/{}/map/rest", quest.id),
+                        "quest-map-rest",
+                        "Rest before battle",
+                        "Rest party",
+                        default_rest_minutes,
+                        None,
+                    ))
+                }
+            },
         ))
         (quest_location_center(
             quest,
@@ -95,9 +122,9 @@ pub fn quest_location_map_page(
             can_travel,
             false,
             None,
+            party,
+            can_configure_travel,
             None,
-            false,
-            Some(travel_planner_bar(selected, 50)),
             &format!("/locations/quest/{}/map", quest.id),
         ))
     };

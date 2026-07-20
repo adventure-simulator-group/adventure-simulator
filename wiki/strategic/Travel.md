@@ -70,6 +70,9 @@ travel centers the walking window on solar noon. Night travel centers its
 contiguous walking window on midnight, which equivalently centers the camp and
 downtime interval on noon. A sun/moon switch in the travel configuration saves
 this choice with the party and immediately recomputes the remaining forecast.
+These travel preferences remain available on the right side of the Map while
+the party is at a settlement, camp, or quest destination. Provision purchasing
+is shown only at settlements, where a market can actually fulfill it.
 Every minute outside the walking window is camp/downtime, so a full day's camp
 interval is 24 hours minus the configured walking hours. A
 member who cannot clear their fatigue in that interval carries it into the next
@@ -119,12 +122,17 @@ personal supplies. Each member rests until their own fatigue reaches zero; the
 remaining interval applies safe saved downtime proportionally. Labor,
 Thievery, and Raiding, including their rewards and incidents, are suppressed,
 while healing and field repair retain their priority. Disease boundaries clip
-the party to one common safe interval. Manual rest remains available both at
-an en-route camp and after arriving at a quest destination, so a leader can
-clear fatigue or wait until a chosen time before beginning combat. Field rest
-is free. It reuses the wake-time control from settlement rest, but permits an
-exact sub-24-hour interval; choosing the current clock time means the next
-day's occurrence.
+the party to one common safe interval. Manual rest remains pinned to the bottom
+of the Map's left sidebar at a settlement, an en-route camp, and a quest
+destination, so a leader can clear fatigue or wait until a chosen time before
+departing or beginning combat. Field rest is free. It reuses the wake-time
+control from settlement rest, but permits an exact sub-24-hour interval;
+choosing the current clock time means the next day's occurrence.
+At an en-route camp, the recommended duration always targets the next absolute
+start of the configured walking window rather than adding a fixed interval to
+the camp's arrival time. If another system advances party time, the
+recommendation shrinks toward that same scheduled wake time. Continue travel is
+disabled outside the walking window and becomes available once it opens.
 
 At an inn or church, resting remains personal rather than party-wide. The rest
 control can switch between **Hours** and **Days**; its recommendation heals the

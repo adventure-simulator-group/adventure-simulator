@@ -921,9 +921,9 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     Ok(())
 }
 
-/// Field rest is a party action at either an en-route camp or a quest
-/// destination: the leader chooses a duration and every party member spends
-/// the same strategic time without settlement replenishment or prices.
+/// Field rest is a party action from the map at a settlement, an en-route camp,
+/// or a quest destination: the leader chooses a duration and every party member
+/// spends the same strategic time without settlement replenishment or prices.
 #[reducer]
 pub fn rest_at_camp(
     ctx: &ReducerContext,
@@ -950,7 +950,10 @@ pub fn rest_at_camp(
     if party.leader_id != character_id {
         return Err("Only the party leader can rest the party at camp".into());
     }
-    if party.camp_destination_id.is_none() && party.current_quest_location_id.is_none() {
+    if party.current_settlement_id.is_none()
+        && party.camp_destination_id.is_none()
+        && party.current_quest_location_id.is_none()
+    {
         return Err("The party is not at a field rest location".into());
     }
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);

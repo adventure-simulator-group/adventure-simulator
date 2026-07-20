@@ -1,9 +1,17 @@
 (() => {
   const DAY = 1440;
+  const DAYS_PER_YEAR = 365;
   const LUNAR_CYCLE = 42524;
+  const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const MAX_U32 = 4294967295;
   const TRACK_START = 3;
   const TRACK_END = 97;
+  const DAWN = 6 * 60;
+  const DAYLIGHT = 8 * 60;
+  const SUNSET = 18 * 60;
+  const NIGHT = 20 * 60;
   let moonSequence = 0;
   const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
   const parseStops = (value) => (value || "").split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
@@ -34,13 +42,79 @@
     return Number(clamp(Number(value) + direction * step, minimum, maximum).toFixed(precision));
   };
 
-  const fatigueColor = (fraction) => {
-    // Fatigue may legitimately exceed capacity. Keep the authoritative value
-    // for warnings, but saturate the display at red so color-mix percentages
-    // never become negative and invalidate the whole segment background.
-    const value = clamp(fraction, 0, 1);
-    if (value <= .5) return `color-mix(in srgb, #58b66b ${Math.round((1 - value * 2) * 100)}%, #e0c54f)`;
-    return `color-mix(in srgb, #e0c54f ${Math.round((1 - (value - .5) * 2) * 100)}%, #d65757)`;
+  const fatigueBand = (fraction) => fraction >= 1 ? "stopped" : fraction >= .8 ? "red" : fraction >= .5 ? "yellow" : "green";
+  const splitFatigueSegment = (segment) => {
+    const delta = segment.fatigueEnd - segment.fatigueStart;
+    const points = [0, 1];
+    if (delta !== 0) {
+      for (const threshold of [.5, .8, 1]) {
+        const fraction = (threshold - segment.fatigueStart) / delta;
+        if (fraction > 0 && fraction < 1) points.push(fraction);
+      }
+    }
+    points.sort((left, right) => left - right);
+    return points.slice(0, -1).map((startFraction, index) => {
+      const endFraction = points[index + 1];
+      const middleFatigue = segment.fatigueStart + delta * ((startFraction + endFraction) / 2);
+      return {
+        start: segment.start + segment.duration * startFraction,
+        duration: segment.duration * (endFraction - startFraction),
+        band: fatigueBand(middleFatigue),
+      };
+    });
+  };
+  const fatigueAtElapsed = (segments, elapsed) => {
+    const segment = segments.find((candidate) => elapsed >= candidate.start && elapsed <= candidate.start + candidate.duration) || segments.at(-1);
+    if (!segment) return 0;
+    const fraction = segment.duration > 0 ? clamp((elapsed - segment.start) / segment.duration) : 1;
+    return segment.fatigueStart + (segment.fatigueEnd - segment.fatigueStart) * fraction;
+  };
+  const timePeriodAt = (absoluteMinute) => {
+    const minute = ((Math.floor(absoluteMinute) % DAY) + DAY) % DAY;
+    if (minute >= DAWN && minute < DAYLIGHT) return "sunrise";
+    if (minute >= DAYLIGHT && minute < SUNSET) return "day";
+    if (minute >= SUNSET && minute < NIGHT) return "sunset";
+    return "night";
+  };
+  const formatClock = (absoluteMinute) => {
+    const minute = ((Math.floor(absoluteMinute) % DAY) + DAY) % DAY;
+    return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+  };
+  const attachRailTooltip = (track, valueAtFraction) => {
+    const tooltip = document.createElement("span");
+    tooltip.className = "travel-rail-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.hidden = true;
+    track.append(tooltip);
+    track.onpointermove = (event) => {
+      track.closest(".travel-resource-meters")?.querySelectorAll(".travel-rail-tooltip").forEach((candidate) => {
+        if (candidate !== tooltip) candidate.hidden = true;
+      });
+      const rect = track.getBoundingClientRect();
+      const fraction = clamp((event.clientY - rect.top) / rect.height);
+      tooltip.textContent = valueAtFraction(fraction);
+      tooltip.style.left = `${Math.min(event.clientX + 10, window.innerWidth - 104)}px`;
+      tooltip.style.top = `${event.clientY}px`;
+      tooltip.hidden = false;
+    };
+    track.onpointerleave = () => { tooltip.hidden = true; };
+  };
+
+  const calendarDate = (absoluteMinute) => {
+    const absoluteDay = Math.floor(absoluteMinute / DAY);
+    let dayOfYear = ((absoluteDay % DAYS_PER_YEAR) + DAYS_PER_YEAR) % DAYS_PER_YEAR;
+    let monthIndex = 0;
+    while (dayOfYear >= MONTH_DAYS[monthIndex]) {
+      dayOfYear -= MONTH_DAYS[monthIndex];
+      monthIndex += 1;
+    }
+    const weekdayIndex = ((absoluteDay % WEEKDAYS.length) + WEEKDAYS.length) % WEEKDAYS.length;
+    return {
+      weekday: WEEKDAYS[weekdayIndex],
+      day: dayOfYear + 1,
+      month: MONTHS[monthIndex],
+      isSunday: weekdayIndex === 6,
+    };
   };
 
   const moonName = (phase) => {
@@ -97,28 +171,45 @@
   const renderTimeRail = (planner, departure, total) => {
     const track = planner.querySelector("[data-daylight-track]");
     if (!track || total <= 0) return;
-    const stops = [];
-    const samples = Math.max(2, Math.min(256, Math.ceil(total / 60)));
-    for (let index = 0; index <= samples; index += 1) {
-      const elapsed = total * index / samples;
-      const hour = ((departure + elapsed) % DAY) / 60;
-      const daylight = hour >= 6 && hour < 18;
-      const progress = daylight ? (hour - 6) / 12 : ((hour + 6) % 24) / 12;
-      const color = daylight
-        ? `color-mix(in srgb, #d9b95f ${Math.round((1 - Math.abs(progress - .5) * 2) * 62 + 20)}%, #718a9d)`
-        : `color-mix(in srgb, #14223a ${Math.round((1 - Math.abs(progress - .5) * 2) * 62 + 32)}%, #34465d)`;
-      stops.push(`${color} ${(index / samples * 100).toFixed(2)}%`);
-    }
-    track.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
     track.replaceChildren();
+    let elapsed = 0;
+    while (elapsed < total) {
+      const absolute = departure + elapsed;
+      const dayStart = Math.floor(absolute / DAY) * DAY;
+      const nextBoundary = [dayStart + DAWN, dayStart + DAYLIGHT, dayStart + SUNSET, dayStart + NIGHT, dayStart + DAY + DAWN]
+        .find((boundary) => boundary > absolute);
+      const end = Math.min(total, elapsed + Math.max(1, nextBoundary - absolute));
+      const segment = document.createElement("span");
+      segment.className = `travel-daylight-segment ${timePeriodAt(absolute)}`;
+      segment.style.top = `${elapsed / total * 100}%`;
+      segment.style.height = `${(end - elapsed) / total * 100}%`;
+      track.append(segment);
+      elapsed = end;
+    }
     const firstMidnight = Math.ceil(departure / DAY) * DAY;
     for (let midnight = firstMidnight; midnight <= departure + total; midnight += DAY) {
       const tick = document.createElement("span");
       tick.className = "travel-midnight-tick";
       tick.style.top = `${(midnight - departure) / total * 100}%`;
-      tick.append(moonSvg(midnight));
+      const date = calendarDate(midnight);
+      tick.classList.toggle("sunday", date.isSunday);
+      const label = document.createElement("span");
+      label.className = "travel-calendar-label";
+      const weekday = document.createElement("span");
+      weekday.className = "travel-calendar-weekday";
+      weekday.textContent = date.weekday;
+      const calendarDay = document.createElement("span");
+      calendarDay.className = "travel-calendar-date";
+      calendarDay.textContent = `${date.day} ${date.month}`;
+      label.append(weekday, calendarDay);
+      tick.append(moonSvg(midnight), label);
       track.append(tick);
     }
+    attachRailTooltip(track, (fraction) => {
+      const absolute = departure + total * fraction;
+      const period = timePeriodAt(absolute);
+      return `${period[0].toUpperCase()}${period.slice(1)} · ${formatClock(absolute)}`;
+    });
   };
 
   const renderFatigue = (planner, segments, total) => {
@@ -142,13 +233,15 @@
       minimum = Math.min(minimum, segment.fatigueStart, segment.fatigueEnd);
       maximum = Math.max(maximum, segment.fatigueStart, segment.fatigueEnd);
       peak = Math.max(peak, segment.fatigueMax, segment.fatigueStart, segment.fatigueEnd);
-      const part = document.createElement("span");
-      part.className = `travel-fatigue-segment ${segment.kind === "w" ? "walking" : "camp"}`;
-      part.style.top = `${segment.start / total * 100}%`;
-      part.style.height = `${segment.duration / total * 100}%`;
-      part.style.background = `linear-gradient(to bottom, ${fatigueColor(segment.fatigueStart)}, ${fatigueColor(segment.fatigueEnd)})`;
-      track.append(part);
+      for (const slice of splitFatigueSegment(segment)) {
+        const part = document.createElement("span");
+        part.className = `travel-fatigue-segment ${slice.band} ${segment.kind === "w" ? "walking" : "camp"}`;
+        part.style.top = `${slice.start / total * 100}%`;
+        part.style.height = `${slice.duration / total * 100}%`;
+        track.append(part);
+      }
     }
+    attachRailTooltip(track, (fraction) => `Average fatigue · ${Math.round(fatigueAtElapsed(continuous, total * fraction) * 100)}%`);
     if (summary && Number.isFinite(minimum)) {
       summary.textContent = `${Math.round(minimum * 100)}–${Math.round(maximum * 100)}% · max ${Math.round(peak * 100)}%`;
       summary.title = `Average party fatigue ranges from ${Math.round(minimum * 100)}% to ${Math.round(maximum * 100)}%; highest member reaches ${Math.round(peak * 100)}%.`;
@@ -164,6 +257,12 @@
     const route = planner.querySelector("[data-travel-planner-route]");
     const targetInput = document.querySelector("[data-target-surplus]");
     const targetDisplay = document.querySelector("[data-target-surplus-display]");
+    const targetFromUrl = Number(new URLSearchParams(location.search).get("target_surplus"));
+    if (targetInput && targetDisplay && Number.isFinite(targetFromUrl)) {
+      const initialTarget = clamp(targetFromUrl, -365, 365);
+      targetInput.value = String(initialTarget);
+      targetDisplay.textContent = String(initialTarget);
+    }
     let currentPlan;
 
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
@@ -191,7 +290,7 @@
           const bracePath = document.createElementNS(brace.namespaceURI, "path");
           // Open the brace toward the rails. Its two right-hand tips mark the
           // exact camp bounds; the outside cusp is the tent's anchor.
-          bracePath.setAttribute("d", "M 11 0 C 3 0 3 20 6 32 C 7 39 4 47 1 50 C 4 53 7 61 6 68 C 3 80 3 100 11 100");
+          bracePath.setAttribute("d", "M 12 0 C 3 0 3 20 6 32 C 7 39 4 47 1 50 C 4 53 7 61 6 68 C 3 80 3 100 12 100");
           brace.append(bracePath);
           element.append(tent, brace);
         } else {
@@ -231,6 +330,10 @@
       const waterDays = Number(planner.dataset.provisionWaterDays);
       if (![total, members, foodDays, waterDays].every(Number.isFinite) || total <= 0 || members <= 0) return;
       const target = clamp(Number(targetInput?.value || 0), -365, 365);
+      const returnUrl = new URL(location.href);
+      if (target) returnUrl.searchParams.set("target_surplus", String(Number(target.toFixed(2))));
+      else returnUrl.searchParams.delete("target_surplus");
+      history.replaceState(history.state, "", `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`);
       const totalDays = total / DAY;
       const completedDays = completed / DAY;
       [["food", foodDays], ["water", waterDays]].forEach(([kind, available]) => {
@@ -248,6 +351,7 @@
       const buy = document.querySelector("[data-provision-buy]");
       if (buy) {
         const params = new URLSearchParams({ inventory_scope: "party" });
+        params.set("return_to", `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`);
         const stageable = rations <= MAX_U32 && skins <= MAX_U32;
         if (stageable && rations) params.set("provision_rations", String(rations));
         if (stageable && skins) params.set("provision_waterskins", String(skins));
