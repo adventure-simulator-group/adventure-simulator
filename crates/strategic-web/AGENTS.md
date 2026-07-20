@@ -261,8 +261,12 @@ cartoon village, a textured painting, or a detailed model building.
 - Use the original monochrome PNG masks in `static/icons/settlement-services/`
   for settlement services instead of generic inventory icon SVGs. Keep temple
   marks denomination-specific by resolving the same religion asset used by the
-  skill menu. Travel architecture is always a gatehouse: a fence-gate shack in
-  villages, a civic gate in towns, and a fortified urban gate in cities.
+  skill menu. Travel architecture is always a freestanding watchtower: a
+  modest wooden lookout in villages, a civic masonry tower in towns, and a
+  prestigious urban tower in cities. Every tier needs an accessible roof-level
+  gallery with open views on all four sides so a watchman can patrol and observe
+  through 360 degrees. Keep the enclosed shaft solid and clear for the travel
+  mark; do not use defensive wall towers, gates, or attached walls.
 - Apply the same time-of-day lighting value to both the tinted building raster
   and its service mark. Keep them as separate layers, but do not let the mark
   remain at full daytime brightness while the architecture darkens.
