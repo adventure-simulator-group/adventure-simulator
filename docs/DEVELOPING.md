@@ -268,8 +268,9 @@ local download. The command records the source URLs and SHA-256 checksums in
 
 After Viabundus and the world-data inputs are installed, run `just
 build-strategic-map` to regenerate
-`crates/strategic-web/static/map/strategic-map-v1.json`. This deterministic
-presentation package verifies the initialized v2 edge and water files against
+`crates/strategic-web/static/map/strategic-map-v1.json` and the derived
+`strategic-map-world-v1.svg`. These deterministic presentation assets verify
+the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
 ferries, sparsely samples installed GLO-30 tiles into elevation bands and
 contours, and reduces every available prepared forest tile into bounded density
@@ -287,6 +288,14 @@ package schema changes. The elevation and forest directories default to
 `target/world-data-sources/raw/elevation/` and
 `target/world-data-sources/raw/forest-cover/`; use the generator's explicit
 directory flags when regenerating from another reviewed installation.
+
+The JSON package is compiled into strategic-web for bounds, attribution, and
+integrity checks. The large world-geometry SVG is served separately and
+referenced from the dynamic map overlay with the SVG file's SHA-256 in its query
+string. Strategic-web gives only that content-versioned SVG a one-year immutable
+cache policy. Settlement pins, route availability, current location, and
+selection remain in the authenticated HTML response and are never cached as
+part of the world asset.
 
 `just compile-world` retains active 1544 land and ferry segments, all nodes
 needed to connect those segments, active settlements and their alternative
