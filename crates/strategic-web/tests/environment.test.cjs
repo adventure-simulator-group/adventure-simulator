@@ -65,6 +65,10 @@ test("settlement tabs layer tintable village buildings beneath service icons", (
   assert.match(layoutCss, /inset: -0\.45rem -0\.65rem -0\.25rem/);
   assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
   assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
+  assert.match(
+    layoutCss,
+    /\.settlement-top-bar\[data-environment="settlement"\]::before \{[\s\S]*village-horizon\.png[\s\S]*brightness\(var\(--building-light/,
+  );
   assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
   assert.match(layoutCss, /\.service-tab-icon::after \{[\s\S]*background-color: #fff[\s\S]*mask: var\(--service-tab-icon\)/);
   assert.doesNotMatch(layoutCss, /\.service-tab-icon::before/);

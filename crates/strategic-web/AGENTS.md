@@ -265,6 +265,10 @@ cartoon village, a textured painting, or a detailed model building.
   camera. Center ordinary gable peaks over their facades and keep the two roof
   slopes visually balanced. Do not show side walls, receding ridges, or
   three-quarter perspective; silhouette variation must remain front-aligned.
+- Keep settlement horizon art in a separate transparent layer behind the
+  service buildings. Confine distant fields, fences, trees, cottages, and
+  church silhouettes to the lower portion so the runtime sky remains visible,
+  and apply the same time-of-day brightness variable to the horizon layer.
 - Reserve the largest uninterrupted facade field for the overlaid service mark.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.

@@ -100,6 +100,22 @@
     linear-gradient(100deg, var(--sky-low, #151d2b), var(--sky-high, #080b12));
 }
 
+.settlement-top-bar[data-environment="settlement"]::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: url("/static/styles/timber-framed/background/village-horizon.png") center bottom / 100% 100% no-repeat;
+  content: "";
+  filter: brightness(var(--building-light, 78%));
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.settlement-top-bar[data-environment="settlement"] > * {
+  position: relative;
+  z-index: 1;
+}
+
 .entry-top-bar {
   justify-content: space-between;
 }

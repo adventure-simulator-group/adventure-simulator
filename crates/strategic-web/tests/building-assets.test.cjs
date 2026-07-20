@@ -16,6 +16,7 @@ const assetRoot = path.join(
   "building",
   "village",
 );
+const horizonAsset = path.join(assetRoot, "..", "..", "background", "village-horizon.png");
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -103,4 +104,21 @@ test("village building backgrounds are normalized tintable RGBA assets", () => {
     baselines.push(bottom);
   }
   assert.ok(Math.max(...baselines) - Math.min(...baselines) <= 1, "shared bottom baseline");
+});
+
+test("village horizon leaves the runtime sky transparent", () => {
+  const { width, height, rgba } = decodeRgbaPng(horizonAsset);
+  assert.ok(width >= 2000);
+  assert.ok(width / height > 2.8 && width / height < 3.2);
+
+  let visible = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = rgba[(y * width + x) * 4 + 3];
+      if (y < height / 2) assert.equal(alpha, 0, "upper sky is transparent");
+      if (alpha) visible += 1;
+    }
+  }
+  assert.ok(visible > width * height * 0.1);
+  assert.ok(visible < width * height * 0.3);
 });
