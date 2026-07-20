@@ -189,9 +189,9 @@
 }
 
 .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
-  width: 4.25rem;
-  height: 5.75rem;
-  flex: 0 0 4.25rem;
+  width: 5.25rem;
+  height: 6.75rem;
+  flex: 0 0 5.25rem;
   overflow: visible;
   isolation: isolate;
   border: 0;
@@ -208,7 +208,7 @@
   position: absolute;
   z-index: 0;
   display: block;
-  inset: -0.35rem -0.55rem -0.25rem;
+  inset: -0.45rem -0.65rem -0.25rem;
   background-image:
     linear-gradient(var(--building-tint), var(--building-tint)),
     var(--service-building-image);
@@ -218,7 +218,7 @@
   background-blend-mode: color, normal;
   -webkit-mask: var(--service-building-image) center bottom / contain no-repeat;
   mask: var(--service-building-image) center bottom / contain no-repeat;
-  filter: brightness(var(--building-light, 78%));
+  filter: brightness(var(--building-light, 78%)) brightness(0.7);
   pointer-events: none;
 }
 
@@ -319,7 +319,7 @@
 .settlement-top-bar[data-environment="settlement"] .service-tab-icon {
   position: absolute;
   left: 50%;
-  bottom: 0.42rem;
+  bottom: 0.34rem;
   width: 1.65rem;
   height: 1.65rem;
   transform: translateX(-50%);
@@ -586,9 +586,9 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     padding: 0;
   }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
-    width: 3.5rem;
-    height: 5.25rem;
-    flex-basis: 3.5rem;
+    width: 4.25rem;
+    height: 6.25rem;
+    flex-basis: 4.25rem;
   }
   .settlement-services {
     gap: 0.42rem;
@@ -663,9 +663,9 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     scrollbar-width: none;
   }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
-    width: 4rem;
-    height: 5.5rem;
-    flex-basis: 4rem;
+    width: 4.5rem;
+    height: 6.25rem;
+    flex-basis: 4.5rem;
   }
   .settlement-services::-webkit-scrollbar { display: none; }
   .entry-message {

@@ -255,6 +255,9 @@ cartoon village, a textured painting, or a detailed model building.
 - Render the overlaid service SVG as one solid pale mask. Ignore any source SVG
   fills, strokes, or internal black-and-white treatment; time-of-day lighting
   may change the mask's brightness, but it must remain a single flat tone.
+- Keep the rendered architecture materially darker than the pale service mark
+  at every time of day. Environmental lighting affects both layers, but a
+  separate fixed building darkening pass should preserve facade contrast.
 - Prefer simple gable roofs: two pitched planes meeting at a ridge, like a
   precisely folded sheet of paper. Use hipped or pyramidal roofs sparingly for
   justified variation. A row should be predominantly gabled.
