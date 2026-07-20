@@ -289,6 +289,10 @@ verify-hydrology:
 
 # Verify or atomically install a downloaded source-separated world-data bundle.
 # `replace-world-data` first retains a recoverable backup under target/.
+init-world-data:
+	@{{python_bin}} scripts/init_world_data.py --repository .
+rebuild-world-data:
+	@{{python_bin}} scripts/init_world_data.py --repository . --rebuild
 verify-world-data-bundle archive descriptor descriptor_sha256:
 	@{{python_bin}} scripts/world_data_bundle.py verify {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}}
 install-world-data archive descriptor descriptor_sha256:

@@ -7,10 +7,25 @@ world artifact and not a declaration that all component licences are mutually
 compatible.
 
 ```bash
+just init-world-data
 just verify-world-data-bundle /path/to/adventuresim-world-inputs.zip /path/to/adventuresim-world-inputs.release.json <published-descriptor-sha256>
 just install-world-data /path/to/adventuresim-world-inputs.zip /path/to/adventuresim-world-inputs.release.json <published-descriptor-sha256>
 just compile-world
 ```
+
+`just init-world-data` is the standard developer path. It downloads the exact
+full release pinned in the checked-in `world-data-release.lock.json` from the
+project's public R2 development URL, resumes an interrupted byte-range download,
+verifies the separately pinned descriptor, and atomically installs the
+source-separated inputs. It does not download a combined `world-1544.json`.
+The installer retains the downloaded ZIP below `target/world-data-bundle-cache/`
+for later verification and requires roughly 50 GiB of free disk space while it
+installs. If a different release is already installed, rerun the script with
+`--replace` only after checking its recoverable backup.
+
+`just rebuild-world-data` deliberately skips R2 and compiles a world from
+already installed local inputs. It is the explicit rebuild path; it does not
+re-acquire the upstream sources or overwrite the pinned release.
 
 The installer stages and verifies every member before it changes any destination.
 It refuses to merge with an existing local component. To intentionally replace
