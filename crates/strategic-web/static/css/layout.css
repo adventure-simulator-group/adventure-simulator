@@ -104,11 +104,42 @@
   position: absolute;
   z-index: 0;
   inset: 0;
-  background: url("/static/styles/timber-framed/background/village-horizon.png") center bottom / 100% 100% no-repeat;
+  background-image: var(--settlement-horizon-image);
+  background-position: center bottom;
+  background-size: cover;
+  background-repeat: no-repeat;
   content: "";
   filter: brightness(var(--building-light, 78%));
   opacity: 0.72;
   pointer-events: none;
+}
+
+.settlement-top-bar[data-building-tier="village"][data-horizon-variant="inland"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/village/inland.png");
+}
+.settlement-top-bar[data-building-tier="village"][data-horizon-variant="coastal"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/village/coastal.png");
+}
+.settlement-top-bar[data-building-tier="village"][data-horizon-variant="river"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/village/river.png");
+}
+.settlement-top-bar[data-building-tier="town"][data-horizon-variant="inland"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/inland.png");
+}
+.settlement-top-bar[data-building-tier="town"][data-horizon-variant="coastal"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/coastal.png");
+}
+.settlement-top-bar[data-building-tier="town"][data-horizon-variant="river"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/river.png");
+}
+.settlement-top-bar[data-building-tier="city"][data-horizon-variant="inland"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/inland.png");
+}
+.settlement-top-bar[data-building-tier="city"][data-horizon-variant="coastal"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/coastal.png");
+}
+.settlement-top-bar[data-building-tier="city"][data-horizon-variant="river"] {
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/river.png");
 }
 
 .settlement-top-bar[data-environment="settlement"] > * {
@@ -298,6 +329,25 @@
   .nav-tab[data-service-id="religion"] {
   --service-building-image: url("/static/styles/timber-framed/building/village/religion.png");
 }
+
+/* Higher tiers are complete sets; village remains the explicit fallback above. */
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/town/map.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/town/merchants.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/town/weapons.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/town/armor.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="clothing"] { --service-building-image: url("/static/styles/timber-framed/building/town/clothing.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="herbalist"] { --service-building-image: url("/static/styles/timber-framed/building/town/herbalist.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="inn"] { --service-building-image: url("/static/styles/timber-framed/building/town/inn.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/town/religion.png"); }
+
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/city/map.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/city/merchants.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/city/weapons.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/city/armor.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="clothing"] { --service-building-image: url("/static/styles/timber-framed/building/city/clothing.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="herbalist"] { --service-building-image: url("/static/styles/timber-framed/building/city/herbalist.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="inn"] { --service-building-image: url("/static/styles/timber-framed/building/city/inn.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/city/religion.png"); }
 
 .service-notification-badge {
   position: absolute;

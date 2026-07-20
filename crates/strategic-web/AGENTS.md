@@ -269,6 +269,17 @@ cartoon village, a textured painting, or a detailed model building.
   service buildings. Confine distant fields, fences, trees, cottages, and
   church silhouettes to the lower portion so the runtime sky remains visible,
   and apply the same time-of-day brightness variable to the horizon layer.
+- Store horizon variants at
+  `styles/timber-framed/background/<village|town|city>/<inland|coastal|river>.png`.
+  Every horizon is a 2880-by-240 transparent RGBA panorama with subdued
+  grayscale scenery, a shared bottom baseline, and low terrain or water that
+  reaches both horizontal edges. Render it proportionally with `cover`,
+  centered at the bottom; never force it to `100% 100%`. Wider viewports may
+  clip the sides, but must not stretch landmarks.
+- Inland horizons use fields and roads; river horizons use a lateral water band
+  plus a tier-appropriate bridge, quay, or mill; coastal horizons use a Baltic
+  shoreline plus tier-appropriate sheds, wharves, masts, or warehouses. Keep
+  water shallow and the center quiet so the service tabs remain dominant.
 - Reserve the largest uninterrupted facade field for the overlaid service mark.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.
@@ -323,6 +334,10 @@ styles/timber-framed/building/city/inn.png
   baseline. Add town or city overrides one service at a time only when the
   corresponding asset exists, so an incomplete higher-tier set falls back to
   village without requesting a missing file.
+- The horizon tier follows the same category mapping. Until imported hydrology
+  is available, the server emits a stable settlement-ID-derived inland,
+  coastal, or river variant. Keep that temporary selector centralized so the
+  imported dataset can replace it without changing markup or CSS contracts.
 - These three-tone service backgrounds are exempt from the general texture
   rule requiring pure black, pure white, and intermediate detail.
 - Continue to use the locally vendored Game Icons collection in

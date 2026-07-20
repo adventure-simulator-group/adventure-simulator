@@ -7,16 +7,17 @@ const zlib = require("node:zlib");
 const services = [
   "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion",
 ];
-const assetRoot = path.join(
+const buildingRoot = path.join(
   __dirname,
   "..",
   "static",
   "styles",
   "timber-framed",
   "building",
-  "village",
 );
-const horizonAsset = path.join(assetRoot, "..", "..", "background", "village-horizon.png");
+const tiers = ["village", "town", "city"];
+const variants = ["inland", "coastal", "river"];
+const horizonRoot = path.join(buildingRoot, "..", "background");
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -72,53 +73,70 @@ function decodeRgbaPng(file) {
   return { width, height, rgba };
 }
 
-test("village building backgrounds are normalized tintable RGBA assets", () => {
-  assert.deepEqual(
-    fs.readdirSync(assetRoot).filter((file) => file.endsWith(".png")).sort(),
-    services.map((service) => `${service}.png`).sort(),
-  );
+test("all settlement building backgrounds are normalized tintable RGBA assets", () => {
   const baselines = [];
-  for (const service of services) {
-    const { width, height, rgba } = decodeRgbaPng(path.join(assetRoot, `${service}.png`));
-    assert.equal(width, 512);
-    assert.equal(height, 512);
-    const cornerOffsets = [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4];
-    for (const offset of cornerOffsets) assert.equal(rgba[offset + 3], 0, `${service} corner alpha`);
+  for (const tier of tiers) {
+    const assetRoot = path.join(buildingRoot, tier);
+    assert.deepEqual(
+      fs.readdirSync(assetRoot).filter((file) => file.endsWith(".png")).sort(),
+      services.map((service) => `${service}.png`).sort(),
+    );
+    for (const service of services) {
+      const label = `${tier}/${service}`;
+      const { width, height, rgba } = decodeRgbaPng(path.join(assetRoot, `${service}.png`));
+      assert.equal(width, 512);
+      assert.equal(height, 512);
+      const cornerOffsets = [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4];
+      for (const offset of cornerOffsets) assert.equal(rgba[offset + 3], 0, `${label} corner alpha`);
 
-    const tones = new Set();
-    let visible = 0;
-    let bottom = -1;
-    for (let i = 0; i < rgba.length; i += 4) {
-      const alpha = rgba[i + 3];
-      if (!alpha) continue;
-      const [red, green, blue] = [rgba[i], rgba[i + 1], rgba[i + 2]];
-      assert.equal(red, green, `${service} has no colored fringe`);
-      assert.equal(green, blue, `${service} is grayscale`);
-      tones.add(red);
-      visible += 1;
-      bottom = Math.max(bottom, Math.floor(i / 4 / width));
+      const tones = new Set();
+      let visible = 0;
+      let bottom = -1;
+      for (let i = 0; i < rgba.length; i += 4) {
+        const alpha = rgba[i + 3];
+        if (!alpha) continue;
+        const [red, green, blue] = [rgba[i], rgba[i + 1], rgba[i + 2]];
+        assert.equal(red, green, `${label} has no colored fringe`);
+        assert.equal(green, blue, `${label} is grayscale`);
+        tones.add(red);
+        visible += 1;
+        bottom = Math.max(bottom, Math.floor(i / 4 / width));
+      }
+      assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220]);
+      assert.ok(visible > width * height * 0.08, `${label} has useful visible coverage`);
+      assert.ok(visible < width * height * 0.65, `${label} retains transparent padding`);
+      baselines.push(bottom);
     }
-    assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220]);
-    assert.ok(visible > width * height * 0.08, `${service} has useful visible coverage`);
-    assert.ok(visible < width * height * 0.65, `${service} retains transparent padding`);
-    baselines.push(bottom);
   }
   assert.ok(Math.max(...baselines) - Math.min(...baselines) <= 1, "shared bottom baseline");
 });
 
-test("village horizon leaves the runtime sky transparent", () => {
-  const { width, height, rgba } = decodeRgbaPng(horizonAsset);
-  assert.ok(width >= 2000);
-  assert.ok(width / height > 2.8 && width / height < 3.2);
+test("all settlement horizons are standardized transparent panoramic assets", () => {
+  for (const tier of tiers) {
+    for (const variant of variants) {
+      const label = `${tier}/${variant}`;
+      const { width, height, rgba } = decodeRgbaPng(path.join(horizonRoot, tier, `${variant}.png`));
+      assert.equal(width, 2880, `${label} width`);
+      assert.equal(height, 240, `${label} height`);
+      assert.equal(width / height, 12, `${label} aspect ratio`);
 
-  let visible = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const alpha = rgba[(y * width + x) * 4 + 3];
-      if (y < height / 2) assert.equal(alpha, 0, "upper sky is transparent");
-      if (alpha) visible += 1;
+      let visible = 0;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const alpha = rgba[(y * width + x) * 4 + 3];
+          if (y === 0) assert.equal(alpha, 0, `${label} upper sky is transparent`);
+          if (alpha) {
+            assert.equal(rgba[(y * width + x) * 4], rgba[(y * width + x) * 4 + 1], `${label} no green fringe`);
+            assert.equal(rgba[(y * width + x) * 4 + 1], rgba[(y * width + x) * 4 + 2], `${label} grayscale`);
+          }
+          if (alpha) visible += 1;
+        }
+      }
+      assert.ok(visible > width * height * 0.05, `${label} useful scenery`);
+      assert.ok(visible < width * height * 0.65, `${label} keeps sky transparent`);
+      for (const x of [0, width - 1]) {
+        assert.ok(rgba[((height - 1) * width + x) * 4 + 3] > 0, `${label} reaches bottom corner`);
+      }
     }
   }
-  assert.ok(visible > width * height * 0.1);
-  assert.ok(visible < width * height * 0.3);
 });

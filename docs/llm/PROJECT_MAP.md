@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (844)
+## Files (868)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -761,7 +761,31 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
-- `crates/strategic-web/static/styles/timber-framed/background/village-horizon.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/city/coastal.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/city/inland.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/city/river.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/town/coastal.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/town/inland.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/town/river.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/village/coastal.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/village/inland.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/village/river.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/armor.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/clothing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/herbalist.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/inn.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/map.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/merchants.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/religion.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/city/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/armor.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/clothing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/herbalist.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/inn.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/map.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/merchants.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/religion.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/building/town/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/armor.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/clothing.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/herbalist.png` — Binary game or UI asset.

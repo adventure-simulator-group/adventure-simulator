@@ -90,7 +90,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-village-building-tabs-4";
+                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-settlement-horizons-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
@@ -175,7 +175,8 @@ fn settlement_top_bar(
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
         header class=(format!("top-bar settlement-top-bar material-{material}"))
             data-environment="settlement"
-            data-building-tier=(building_tier(category)) {
+            data-building-tier=(building_tier(category))
+            data-horizon-variant=(horizon_variant(settlement_id).as_str()) {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
@@ -324,6 +325,38 @@ fn building_tier(category: &SettlementCategory) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum HorizonVariant {
+    Inland,
+    Coastal,
+    River,
+}
+
+impl HorizonVariant {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Inland => "inland",
+            Self::Coastal => "coastal",
+            Self::River => "river",
+        }
+    }
+}
+
+/// Temporary stable scenery selection. Imported hydrology will replace only
+/// this selector; settlement markup and CSS remain variant-driven.
+fn horizon_variant(settlement_id: &str) -> HorizonVariant {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in settlement_id.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    match hash % 3 {
+        0 => HorizonVariant::Inland,
+        1 => HorizonVariant::Coastal,
+        _ => HorizonVariant::River,
+    }
+}
+
 fn character_switcher(name: &str) -> Markup {
     let initial = name.chars().next().unwrap_or('?');
     html! {
@@ -358,8 +391,8 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        building_tier, building_tint, quest_location_top_bar, settlement_layout_with_session,
-        settlement_top_bar,
+        HorizonVariant, building_tier, building_tint, horizon_variant, quest_location_top_bar,
+        settlement_layout_with_session, settlement_top_bar,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -412,6 +445,36 @@ mod tests {
                 settlement_top_bar("Place", "p", &category, "map", None, None).into_string();
             assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
         }
+    }
+
+    #[test]
+    fn horizon_variants_are_stable_reachable_and_emitted() {
+        assert_eq!(horizon_variant("lubeck"), horizon_variant("lubeck"));
+        let variants = (0..128)
+            .map(|id| horizon_variant(&format!("settlement-{id}")))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            variants,
+            [
+                HorizonVariant::Inland,
+                HorizonVariant::Coastal,
+                HorizonVariant::River
+            ]
+            .into_iter()
+            .collect()
+        );
+        let expected = horizon_variant("stable-place").as_str();
+        let markup = settlement_top_bar(
+            "Stable Place",
+            "stable-place",
+            &SettlementCategory::Town,
+            "map",
+            None,
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("data-building-tier=\"town\""));
+        assert!(markup.contains(&format!("data-horizon-variant=\"{expected}\"")));
     }
 
     #[test]

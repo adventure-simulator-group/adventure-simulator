@@ -54,7 +54,7 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
 });
 
-test("settlement tabs layer tintable village buildings beneath service icons", () => {
+test("settlement tabs layer tiered tintable buildings and proportional horizons beneath service icons", () => {
   assert.match(baseCss, /--settlement-header-height:144px/);
   assert.match(layoutCss, /body:has\(\.settlement-top-bar\) \.main-grid \{[\s\S]*var\(--settlement-header-height\)/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building/);
@@ -65,10 +65,8 @@ test("settlement tabs layer tintable village buildings beneath service icons", (
   assert.match(layoutCss, /inset: -0\.45rem -0\.65rem -0\.25rem/);
   assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
   assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
-  assert.match(
-    layoutCss,
-    /\.settlement-top-bar\[data-environment="settlement"\]::before \{[\s\S]*village-horizon\.png[\s\S]*brightness\(var\(--building-light/,
-  );
+  assert.match(layoutCss, /\.settlement-top-bar\[data-environment="settlement"\]::before \{[\s\S]*background-size: cover;[\s\S]*background-position: center bottom;[\s\S]*brightness\(var\(--building-light/);
+  assert.doesNotMatch(layoutCss, /background-size: 100% 100%/);
   assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
   assert.match(layoutCss, /\.service-tab-icon::after \{[\s\S]*background-color: #fff[\s\S]*mask: var\(--service-tab-icon\)/);
   assert.doesNotMatch(layoutCss, /\.service-tab-icon::before/);
@@ -81,8 +79,13 @@ test("settlement tabs layer tintable village buildings beneath service icons", (
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 4\.25rem/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
-  for (const service of ["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]) {
-    assert.match(layoutCss, new RegExp(`building/village/${service}\\.png`));
+  for (const tier of ["village", "town", "city"]) {
+    for (const service of ["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]) {
+      assert.match(layoutCss, new RegExp(`building/${tier}/${service}\\.png`));
+    }
+    for (const variant of ["inland", "coastal", "river"]) {
+      assert.match(layoutCss, new RegExp(`background/${tier}/${variant}\\.png`));
+    }
   }
   assert.match(layoutCss, /service-tab-icon-medical-pack[\s\S]*medical-pack\.svg/);
   assert.match(buildingSource, /"clothing", "herbalist", "inn"/);

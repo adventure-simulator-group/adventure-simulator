@@ -15,6 +15,20 @@ The backend classifies every materialized settlement by population as Hamlet, Vi
 
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
 
+The location header reflects settlement scale through architecture and its
+distant horizon. Unknown settlements, hamlets, and villages use the low village
+set; towns use moderately prosperous two- and three-story guildhouses; cities
+and capitals use taller masonry civic and merchant buildings. Each tier has
+inland, Baltic coastal, and river horizons. Until the world import supplies
+hydrology, a deterministic hash of the settlement ID assigns one of those three
+variants, so the view is stable between visits without creating persistent
+geographic data. The imported selector is intended to replace that temporary
+hash directly.
+
+Horizon art preserves its aspect ratio and stays centered on the bottom edge.
+Ordinary wider screens crop its sides instead of stretching fields, buildings,
+bridges, ships, or towers; ultrawide-specific composition is deferred.
+
 Services show up at the top, above the list of items in their own list. Each service has a button to expand it, which shows a custom per-service form. To rest at an inn, for example, there is a slider for how many nights you would like to pay for. Doctors may have a healing menu for different treatments (bandaging, medicine for diseases, surgery). Smiths may have a menu where you can search for a custom piece of equipment designed by another player which you can pay them to produce. Mount & Blade Bannerlord has a good reference for this menu, including the ability to trade intangibles (the barter menu with other lords kind of has this).
 
 Weaponsmith and Armourer trade rows also offer **Repair**, plus a **Repair all** action. An action is disabled only when the item is undamaged or every damaged condition bin exceeds that smith's skill; mixed damage is accepted and repaired as far as the smith can manage. Submitted items leave the owner's inventory and appear in a bottom-anchored custody panel below the independently scrolling wares list. The panel grows only as needed up to half the list height and then scrolls internally. It shows the ETA and the residual condition the smith cannot repair. Finished items can be retrieved after leaving and returning to the settlement, with no expiry.
