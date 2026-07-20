@@ -5859,7 +5859,8 @@ mod tests {
         assert!(css.contains("transform: translate(-50%, -50%);"));
         assert!(css.contains(".numeric-editor-input::selection {"));
         assert!(numeric.contains("document.body.append(editor)"));
-        assert!(numeric.contains("display.hidden = true"));
+        assert!(numeric.contains("display.style.visibility = 'hidden'"));
+        assert!(!numeric.contains("display.hidden = true"));
         assert!(numeric.contains("window.addEventListener('resize', positionEditor)"));
         assert!(!css.contains(".party-skill-icon-column"));
         assert!(css.contains(".numeric-editor-action {"));

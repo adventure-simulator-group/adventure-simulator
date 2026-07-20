@@ -33,3 +33,9 @@ test("skill allocation and provisioning both use the shared numeric editor", () 
   assert.match(travel, /step: \.25/);
   assert.match(travel, /minimum: -365/);
 });
+
+test("shared numeric editor keeps its trigger in layout while positioning", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "static", "numeric-editor.js"), "utf8");
+  assert.match(source, /display\.style\.visibility = 'hidden'/);
+  assert.doesNotMatch(source, /display\.hidden = true/);
+});

@@ -29,6 +29,10 @@
     rations: rationKcal > 0 ? Math.ceil(Math.max(0, (remainingDays + target - foodDays) * members * 6000) / rationKcal) : 0,
     skins: skinMl > 0 ? Math.ceil(Math.max(0, (remainingDays + target - waterDays) * members * 4000) / skinMl) : 0,
   });
+  const stepRangeValue = (value, direction, step, minimum, maximum) => {
+    const precision = Math.max(0, (String(step).split('.')[1] || '').length);
+    return Number(clamp(Number(value) + direction * step, minimum, maximum).toFixed(precision));
+  };
 
   const fatigueColor = (fraction) => {
     // Fatigue may legitimately exceed capacity. Keep the authoritative value
@@ -306,6 +310,24 @@
         const response = await fetch(configuration.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(configuration)) });
         if (response.ok) window.location.reload();
       };
+      let walkingWheelSave;
+      walkingHours?.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const next = stepRangeValue(
+          walkingHours.value,
+          event.deltaY < 0 ? 1 : -1,
+          Number(walkingHours.step) || .25,
+          Number(walkingHours.min) || 0,
+          Number(walkingHours.max) || 24,
+        );
+        if (String(next) === walkingHours.value) return;
+        walkingHours.value = String(next);
+        walkingHours.dispatchEvent(new Event("input", { bubbles: true }));
+        window.clearTimeout(walkingWheelSave);
+        walkingWheelSave = window.setTimeout(() => {
+          walkingHours.dispatchEvent(new Event("change", { bubbles: true }));
+        }, 250);
+      }, { passive: false });
       configuration.querySelectorAll("input").forEach((input) => input.addEventListener("change", save));
     }
 

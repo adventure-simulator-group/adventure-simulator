@@ -104,7 +104,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
-                    script src="/static/numeric-editor.js?v=shared-numeric-editor-1" defer {}
+                    script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3" defer {}
                     script src="/static/party-trade.js?v=coin-currencies-2-travel-provisioning-2" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
@@ -115,7 +115,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
-                    script src="/static/travel-planner.js?v=travel-controls-1" defer {}
+                    script src="/static/travel-planner.js?v=travel-controls-2" defer {}
                     script src="/static/rest-duration.js?v=wake-time-2" defer {}
                 }
             }

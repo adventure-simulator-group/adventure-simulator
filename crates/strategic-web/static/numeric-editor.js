@@ -75,6 +75,7 @@
     };
 
     let finished = false;
+    const previousVisibility = display.style.visibility;
     const finish = (commit) => {
       if (finished) return;
       const parsed = parse(input.value);
@@ -89,7 +90,7 @@
       rail?.removeEventListener('scroll', positionEditor);
       window.removeEventListener('resize', positionEditor);
       editor.remove();
-      display.hidden = false;
+      display.style.visibility = previousVisibility;
       display.focus();
     };
     const adjust = (direction) => {
@@ -121,7 +122,10 @@
     cancel.addEventListener('click', () => finish(false));
     editor.addEventListener('click', (event) => event.stopPropagation());
 
-    display.hidden = true;
+    // Keep the trigger in layout while editing so it remains a stable anchor.
+    // Using `hidden` collapses its client rect to the page origin before the
+    // floating editor is positioned.
+    display.style.visibility = 'hidden';
     document.body.append(editor);
     positionEditor();
     rail?.addEventListener('scroll', positionEditor, { passive: true });

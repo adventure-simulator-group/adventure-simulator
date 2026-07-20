@@ -11,7 +11,7 @@ const plannerHelpers = () => {
   let source = fs.readFileSync(plannerPath, "utf8");
   source = source.replace(
     "  initializeTravelPlanner();",
-    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, provisionQuantities, fatigueColor };",
+    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, provisionQuantities, fatigueColor, stepRangeValue };",
   );
   const context = { document: { addEventListener() {} } };
   vm.runInNewContext(source, context);
@@ -36,6 +36,14 @@ test("provision target math supports positive and negative surplus", () => {
     { ...helpers.provisionQuantities({ remainingDays: 2, target: -1, foodDays: 1, waterDays: 2, members: 2, rationKcal: 3000, skinMl: 4000 }) },
     { rations: 0, skins: 0 },
   );
+});
+
+test("walking-hours wheel steps respect slider precision and bounds", () => {
+  const helpers = plannerHelpers();
+  assert.equal(helpers.stepRangeValue("8", 1, .25, 0, 24), 8.25);
+  assert.equal(helpers.stepRangeValue("8", -1, .25, 0, 24), 7.75);
+  assert.equal(helpers.stepRangeValue("24", 1, .25, 0, 24), 24);
+  assert.equal(helpers.stepRangeValue("0", -1, .25, 0, 24), 0);
 });
 
 test("fatigue colors remain valid and saturate at red above capacity", () => {
@@ -72,6 +80,7 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.doesNotMatch(template, /class="travel-resource-summary"/);
   assert.match(template, /type="range" name="walking_hours" min="0" max="24"/);
   assert.match(template, /data-walking-hours-output/);
+  assert.match(source, /walkingHours\?\.addEventListener\("wheel"/);
   assert.match(template, /Travel during/);
   assert.match(template, /name="travel_at_night" value="true"/);
   assert.match(template, /data-travel-period-toggle/);
