@@ -16,8 +16,10 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
+import subprocess
 import tempfile
 import zipfile
+from urllib.parse import urlparse
 
 SCHEMA = 1
 CHUNK = 1024 * 1024
@@ -30,6 +32,9 @@ MAX_MEMBER_BYTES = 4 * 1024 * 1024 * 1024
 MAX_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 MAX_RATIO = 200
 WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+R2_BUCKET = "adventuresim-world-data"
+R2_RELEASE_PREFIX = "releases/world-data"
+R2_UPLOAD_ENV = ("R2_ACCOUNT_ID", "R2_S3_ACCESS_KEY_ID", "R2_S3_SECRET_ACCESS_KEY", "R2_S3_API_ENDPOINT")
 
 # `destination` is relative to the repository root.  `checked-in` deliberately
 # has no payload: copying it from a bundle would overwrite a tracked asset.
@@ -77,6 +82,61 @@ TRANSIENT_INPUT_SUFFIXES = (".part",)
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
+
+
+def dotenv(path: Path) -> dict[str, str]:
+    """Read a deliberately small, dependency-free subset of .env syntax."""
+    if not path.is_file():
+        fail(f"R2 environment file is absent: {path}")
+    values = {}
+    for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").lstrip()
+        if "=" not in line:
+            fail(f"invalid .env assignment at line {number}")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not key.replace("_", "").isalnum() or not key[0].isalpha():
+            fail(f"invalid .env key at line {number}")
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def r2_environment(env_file: Path) -> tuple[dict[str, str], str]:
+    file_values = dotenv(env_file)
+    values = {key: os.environ.get(key, file_values.get(key, "")) for key in R2_UPLOAD_ENV}
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        fail("missing R2 upload settings: " + ", ".join(missing))
+    endpoint = values["R2_S3_API_ENDPOINT"].rstrip("/")
+    parsed = urlparse(endpoint)
+    account = values["R2_ACCOUNT_ID"]
+    allowed_hosts = {
+        f"{account}.r2.cloudflarestorage.com",
+        f"{account}.eu.r2.cloudflarestorage.com",
+        f"{account}.fedramp.r2.cloudflarestorage.com",
+    }
+    if parsed.scheme != "https" or parsed.hostname not in allowed_hosts or parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        fail("R2_S3_API_ENDPOINT must be the HTTPS endpoint for R2_ACCOUNT_ID")
+    environment = os.environ.copy()
+    environment.update({
+        "AWS_ACCESS_KEY_ID": values["R2_S3_ACCESS_KEY_ID"],
+        "AWS_SECRET_ACCESS_KEY": values["R2_S3_SECRET_ACCESS_KEY"],
+        "AWS_REGION": "auto",
+        "AWS_DEFAULT_REGION": "auto",
+        "AWS_EC2_METADATA_DISABLED": "true",
+    })
+    return environment, endpoint
+
+
+def r2_key(prefix: str, filename: str) -> str:
+    return f"{safe_path(prefix)}/{safe_part(filename)}"
 
 
 def sha256(path: Path) -> str:
@@ -450,6 +510,36 @@ def build(output: Path, components: list[tuple[str, Path]], include_checked_in: 
         temporary.unlink(missing_ok=True)
 
 
+def publish(archive_path: Path, descriptor: Path, descriptor_sha256: str, env_file: Path, prefix: str) -> list[str]:
+    """Verify, then upload an immutable release pair through R2's S3 API."""
+    archive, _, _ = inspect(archive_path, descriptor, descriptor_sha256, allow_partial=False)
+    archive.close()
+    if shutil.which("aws") is None:
+        fail("AWS CLI v2 is required for multipart R2 upload; install it before publishing")
+    environment, endpoint = r2_environment(env_file)
+    archive_key = r2_key(prefix, archive_path.name)
+    descriptor_key = r2_key(prefix, descriptor.name)
+    if archive_key == descriptor_key:
+        fail("archive and descriptor must have distinct R2 keys")
+
+    def upload(path: Path, key: str) -> None:
+        subprocess.run([
+            "aws", "s3", "cp", str(path), f"s3://{R2_BUCKET}/{key}",
+            "--endpoint-url", endpoint,
+        ], check=True, shell=False, env=environment)
+        result = subprocess.run([
+            "aws", "s3api", "head-object", "--bucket", R2_BUCKET, "--key", key,
+            "--endpoint-url", endpoint, "--output", "json",
+        ], check=True, shell=False, env=environment, capture_output=True, text=True)
+        metadata = json.loads(result.stdout)
+        if metadata.get("ContentLength") != path.stat().st_size:
+            fail(f"R2 uploaded size mismatch for {key}")
+
+    upload(archive_path, archive_key)
+    upload(descriptor, descriptor_key)
+    return [archive_key, descriptor_key]
+
+
 def install(archive_path: Path, descriptor: Path, descriptor_sha256: str, repository: Path, replace: bool, allow_partial: bool = False) -> list[Path]:
     archive, components, members = inspect(archive_path, descriptor, descriptor_sha256, allow_partial)
     repository = repository.resolve()
@@ -542,6 +632,12 @@ def main() -> None:
     verify_parser.add_argument("--descriptor", required=True, type=Path)
     verify_parser.add_argument("--descriptor-sha256", required=True)
     verify_parser.add_argument("--allow-partial", action="store_true")
+    publish_parser = commands.add_parser("publish", help="verify and upload a full release to the project R2 bucket")
+    publish_parser.add_argument("archive", type=Path)
+    publish_parser.add_argument("--descriptor", required=True, type=Path)
+    publish_parser.add_argument("--descriptor-sha256", required=True)
+    publish_parser.add_argument("--env-file", type=Path, default=Path(".env"))
+    publish_parser.add_argument("--prefix", default=R2_RELEASE_PREFIX)
     install_parser = commands.add_parser("install", help="stage and atomically install a verified bundle")
     install_parser.add_argument("archive", type=Path)
     install_parser.add_argument("--descriptor", required=True, type=Path)
@@ -557,6 +653,9 @@ def main() -> None:
     elif args.command == "verify":
         archive, _, _ = inspect(args.archive, args.descriptor, args.descriptor_sha256, args.allow_partial)
         archive.close()
+    elif args.command == "publish":
+        for key in publish(args.archive, args.descriptor, args.descriptor_sha256, args.env_file, args.prefix):
+            print(f"s3://{R2_BUCKET}/{key}")
     else:
         for path in install(args.archive, args.descriptor, args.descriptor_sha256, args.repository, args.replace, args.allow_partial):
             print(path)

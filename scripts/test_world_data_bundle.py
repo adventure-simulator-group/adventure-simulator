@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
+import subprocess
 
 import world_data_bundle as bundle
 
@@ -219,6 +221,45 @@ class WorldDataBundleTests(unittest.TestCase):
             bundle.write_release_descriptor(full, root / "full.release.json")
             checked = bundle.inspect(full, root / "full.release.json", bundle.sha256(root / "full.release.json"), allow_partial=False)
             checked[0].close()
+
+    def test_r2_environment_reads_only_required_s3_settings_and_validates_endpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text("\n".join([
+                "R2_ACCOUNT_ID=account123",
+                "R2_API_TOKEN=not-used-for-s3",
+                "R2_S3_ACCESS_KEY_ID=access",
+                "R2_S3_SECRET_ACCESS_KEY=secret",
+                "R2_S3_API_ENDPOINT=https://account123.r2.cloudflarestorage.com",
+            ]), encoding="utf-8")
+            with patch.dict("os.environ", {}, clear=True):
+                environment, endpoint = bundle.r2_environment(env_file)
+            self.assertEqual(endpoint, "https://account123.r2.cloudflarestorage.com")
+            self.assertEqual(environment["AWS_ACCESS_KEY_ID"], "access")
+            self.assertEqual(environment["AWS_SECRET_ACCESS_KEY"], "secret")
+            self.assertEqual(environment["AWS_REGION"], "auto")
+            env_file.write_text(env_file.read_text(encoding="utf-8").replace("account123.r2", "elsewhere.r2"), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "endpoint"):
+                bundle.r2_environment(env_file)
+
+    def test_publish_uses_fixed_bucket_and_confirms_object_sizes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / "release.zip"
+            descriptor = root / "release.release.json"
+            archive.write_bytes(b"archive")
+            descriptor.write_bytes(b"descriptor")
+            closed = type("Archive", (), {"close": lambda self: None})()
+            response = lambda size: subprocess.CompletedProcess([], 0, stdout=json.dumps({"ContentLength": size}), stderr="")
+            with patch.object(bundle, "inspect", return_value=(closed, [], {})), \
+                 patch.object(bundle, "r2_environment", return_value=({"AWS_REGION": "auto"}, "https://account.r2.cloudflarestorage.com")), \
+                 patch("shutil.which", return_value="aws"), \
+                 patch("subprocess.run", side_effect=[None, response(archive.stat().st_size), None, response(descriptor.stat().st_size)]) as run:
+                keys = bundle.publish(archive, descriptor, "0" * 64, root / ".env", "releases/world-data")
+            self.assertEqual(keys, ["releases/world-data/release.zip", "releases/world-data/release.release.json"])
+            uploads = [call.args[0] for call in run.call_args_list if call.args[0][1:3] == ["s3", "cp"]]
+            self.assertEqual(len(uploads), 2)
+            self.assertTrue(all(command[4].startswith(f"s3://{bundle.R2_BUCKET}/") for command in uploads))
 
 
 if __name__ == "__main__":

@@ -103,6 +103,27 @@ python3 scripts/world_data_bundle.py describe adventuresim-world-inputs.zip \
 
 Source bytes are deliberately not committed to this repository.
 
+## Publishing to the project R2 bucket
+
+The release tool can upload a verified full ZIP and its external descriptor to
+the fixed `adventuresim-world-data` Cloudflare R2 bucket. It reads the local
+repository `.env` without displaying its values. The file must provide
+`R2_ACCOUNT_ID`, `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`, and
+`R2_S3_API_ENDPOINT`; `R2_API_TOKEN` is not used for S3 object upload. The
+endpoint must be the HTTPS R2 endpoint for the stated account. Install AWS CLI
+v2, which uses multipart upload for this large object, then publish only after
+the release descriptor is final:
+
+```powershell
+python scripts/world_data_bundle.py publish adventuresim-world-inputs.zip `
+  --descriptor adventuresim-world-inputs.release.json `
+  --descriptor-sha256 <published-descriptor-sha256>
+```
+
+The command validates the ZIP and descriptor before uploading, writes the ZIP
+and descriptor below `releases/world-data/`, and verifies each resulting R2
+object's content length. It never uploads a partial profile.
+
 ## Future combined release
 
 This workflow is separate from a future download of a fully compiled
