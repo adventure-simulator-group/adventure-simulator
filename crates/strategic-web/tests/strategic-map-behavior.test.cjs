@@ -18,7 +18,8 @@ const load = () => {
 test("zoom preserves focus and clamps readable bounds", () => {
   const { helpers } = load();
   assert.deepEqual(Array.from(helpers.zoomedView([100, 100, 400, 200], .5)), [200, 150, 200, 100]);
-  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 80, 53.33], .5)), [0, 0, 80, 53.33]);
+  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 80, 160 / 3], .5)), [20, 40 / 3, 40, 80 / 3]);
+  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 20, 40 / 3], .5)), [0, 0, 20, 40 / 3]);
 });
 
 test("theme toggle persists and exposes pressed state", () => {

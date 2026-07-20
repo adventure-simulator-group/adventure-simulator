@@ -3,6 +3,8 @@
 
   const THEME_KEY = "adventuresim.map-theme";
   const PIN_REFERENCE_WIDTH = 390;
+  const MIN_VIEW_WIDTH = 20;
+  const MIN_VIEW_HEIGHT = MIN_VIEW_WIDTH / 1.5;
   const THEMES = new Set(["paper", "atlas"]);
   const parseViewBox = (svg) => svg.getAttribute("viewBox").trim().split(/\s+/).map(Number);
   const scalePins = (svg, width) => {
@@ -16,8 +18,8 @@
     scalePins(svg, view[2]);
   };
   const zoomedView = ([x, y, width, height], factor, focusX = x + width / 2, focusY = y + height / 2) => {
-    const nextWidth = Math.min(1200, Math.max(80, width * factor));
-    const nextHeight = Math.min(800, Math.max(53.33, height * factor));
+    const nextWidth = Math.min(1200, Math.max(MIN_VIEW_WIDTH, width * factor));
+    const nextHeight = Math.min(800, Math.max(MIN_VIEW_HEIGHT, height * factor));
     const ratioX = (focusX - x) / width;
     const ratioY = (focusY - y) / height;
     return [focusX - nextWidth * ratioX, focusY - nextHeight * ratioY, nextWidth, nextHeight];
