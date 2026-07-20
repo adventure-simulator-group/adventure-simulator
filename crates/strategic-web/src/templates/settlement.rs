@@ -4225,6 +4225,12 @@ fn regional_health_bar(
         .min(total_blunt);
     let blunt = (total_blunt - fracture).max(0.0);
     let bandaged = injury.is_some_and(|row| row.bandaged);
+    let splinted = injury.is_some_and(|row| row.splint_inventory_item_id.is_some());
+    let fracture_label = if splinted {
+        "splinted fracture"
+    } else {
+        "fracture"
+    };
     let humour = medical.regional_humours.map(|values| values[region]);
     let values = humour.unwrap_or_default();
     let humour_total = if humour.is_some() {
@@ -4267,7 +4273,7 @@ fn regional_health_bar(
     };
     let reading = if humour.is_some() {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% fracture, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
@@ -4279,7 +4285,7 @@ fn regional_health_bar(
         )
     } else {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% fracture, {:.0}% other impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
@@ -4294,7 +4300,9 @@ fn regional_health_bar(
             span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
             span class=(if bandaged { "attribute-health-cut bandaged-cut" } else { "attribute-health-cut" }) title=(if bandaged { "Bandaged cut damage" } else { "Cut damage" }) style=(format!("width:{:.1}%", cut * 100.0)) {}
             span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
-            span class="attribute-health-fracture" title="Fracture" style=(format!("width:{:.1}%", fracture * 100.0)) {}
+            span class=(if splinted { "attribute-health-fracture splinted-fracture" } else { "attribute-health-fracture" })
+                title=(if splinted { "Splinted fracture" } else { "Fracture" })
+                style=(format!("width:{:.1}%", fracture * 100.0)) {}
             @for (label, class, amount) in segments {
                 @if amount > 0.0 {
                     span class=(class) title=(label) style=(format!("width:{:.1}%", amount * 100.0)) {}
@@ -6514,6 +6522,42 @@ mod tests {
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
+    }
+
+    #[test]
+    fn treated_cuts_and_fractures_expose_banded_health_bar_states() {
+        let injury = LimbInjury {
+            id: "1:chest".into(),
+            character_id: 1,
+            limb: LimbRegion::Chest,
+            cut_damage: 0.2,
+            bruise_damage: 0.2,
+            fracture_damage: 0.2,
+            bandaged: true,
+            stitched: false,
+            stitch_quality: 0.0,
+            splint_owner_id: Some(2),
+            splint_inventory_item_id: Some(3),
+            infection_exposure: 0.0,
+            infection_checks: 0,
+            infection_origin_minute: None,
+        };
+        let markup = regional_health_bar(
+            "Chest",
+            0.6,
+            0.0,
+            &crate::medical::MedicalPresentation::default(),
+            4,
+            &[injury],
+            &[],
+        )
+        .into_string();
+
+        assert!(markup.contains("attribute-health-cut bandaged-cut"));
+        assert!(markup.contains("title=\"Bandaged cut damage\""));
+        assert!(markup.contains("attribute-health-fracture splinted-fracture"));
+        assert!(markup.contains("title=\"Splinted fracture\""));
+        assert!(markup.contains("20% splinted fracture"));
     }
 
     #[test]

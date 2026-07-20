@@ -3117,7 +3117,7 @@ button.party-portrait-action {
 .attribute-health-choleric,
 .attribute-health-melancholic { display: block; height: 100%; flex: 0 0 auto; }
 
-.attribute-health-current { background: #f4f1e8; }
+.attribute-health-current { background: #eee8dc; }
 .attribute-health-cut { background: #c63b3b; }
 .attribute-health-blunt { background: #c7a7e8; }
 .attribute-health-other { background: #5f9e55; }
@@ -3845,11 +3845,27 @@ body.chat-resizing {
 }
 
 .bandaged-cut {
-    background: #e88eaa !important;
+    background: repeating-linear-gradient(
+        135deg,
+        #e88eaa 0,
+        #e88eaa 4px,
+        #f3bacb 4px,
+        #f3bacb 7px
+    ) !important;
 }
 
 .attribute-health-fracture {
-    background: #8a6d52;
+    background: #666970;
+}
+
+.splinted-fracture {
+    background: repeating-linear-gradient(
+        135deg,
+        #a6b0ba 0,
+        #a6b0ba 4px,
+        #d2d8dd 4px,
+        #d2d8dd 7px
+    );
 }
 
 .surgery-projectile-icon {
