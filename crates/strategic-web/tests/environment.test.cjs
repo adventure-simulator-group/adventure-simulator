@@ -55,24 +55,26 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
 });
 
 test("settlement tabs layer tintable village buildings beneath service icons", () => {
-  assert.match(baseCss, /--settlement-header-height:112px/);
+  assert.match(baseCss, /--settlement-header-height:128px/);
   assert.match(layoutCss, /body:has\(\.settlement-top-bar\) \.main-grid \{[\s\S]*var\(--settlement-header-height\)/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building/);
   assert.match(layoutCss, /background-blend-mode: color, normal/);
   assert.match(layoutCss, /mask: var\(--service-building-image\) center bottom \/ contain no-repeat/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building \{[\s\S]*display: block/);
   assert.match(layoutCss, /filter: brightness\(var\(--building-light, 78%\)\)/);
-  assert.match(layoutCss, /inset: -0\.25rem -0\.35rem -0\.25rem/);
+  assert.match(layoutCss, /inset: -0\.35rem -0\.55rem -0\.25rem/);
   assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
   assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
   assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
   assert.match(layoutCss, /\.service-tab-icon::before[\s\S]*\.service-tab-icon::after[\s\S]*mask: var\(--service-tab-icon\)/);
   assert.match(layoutCss, /\.service-tab-icon::before \{[\s\S]*rgb\(18 17 16 \/ 92%\)[\s\S]*scale\(1\.16\)/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-icon \{[\s\S]*bottom: 0\.42rem[\s\S]*filter: brightness\(var\(--building-light, 78%\)\)/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.settlement-services \.nav-tab \{[\s\S]*width: 4\.25rem[\s\S]*height: 5\.75rem/);
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
   assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
   assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4[\s\S]*bottom: 0[\s\S]*height: 3px/);
   assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
-  assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 2\.75rem/);
+  assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 3\.5rem/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
   for (const service of ["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]) {

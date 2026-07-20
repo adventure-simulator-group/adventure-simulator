@@ -245,6 +245,13 @@ cartoon village, a textured painting, or a detailed model building.
 - The pale service mark, notification badge, focus treatment, and selected
   underline are separate interface overlays and do not count against the
   building's three architectural tones.
+- Keep the complete service mark inside the building silhouette, centered on
+  the reserved facade field rather than floating above or obscuring the roof.
+  Scale and space the buildings generously enough that the mark remains large
+  and legible within that field at the final rendered tab size.
+- Apply the same time-of-day lighting value to both the tinted building raster
+  and its service mark. Keep them as separate layers, but do not let the mark
+  remain at full daytime brightness while the architecture darkens.
 - Prefer simple gable roofs: two pitched planes meeting at a ridge, like a
   precisely folded sheet of paper. Use hipped or pyramidal roofs sparingly for
   justified variation. A row should be predominantly gabled.
