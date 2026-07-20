@@ -17,7 +17,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::spacetimedb::Settlement;
+use crate::spacetimedb::{Settlement, SettlementCategory};
 
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
@@ -300,6 +300,39 @@ pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
         && settlement.coord_y.is_finite()
 }
 
+fn settlement_symbol_kind(category: &SettlementCategory) -> &'static str {
+    match category {
+        SettlementCategory::City | SettlementCategory::Capital => "city",
+        SettlementCategory::Town => "town",
+        SettlementCategory::Unknown | SettlementCategory::Hamlet | SettlementCategory::Village => {
+            "village"
+        }
+    }
+}
+
+fn settlement_label_priority(
+    settlement: &Settlement,
+    is_current: bool,
+    is_connected: bool,
+    is_selected: bool,
+) -> u16 {
+    if is_current {
+        return 120;
+    }
+    if is_selected {
+        return 115;
+    }
+    let category_priority = match &settlement.category {
+        SettlementCategory::Capital => 80,
+        SettlementCategory::City => 70,
+        SettlementCategory::Town => 60,
+        SettlementCategory::Village => 50,
+        SettlementCategory::Hamlet => 40,
+        SettlementCategory::Unknown => 30,
+    };
+    category_priority + u16::from(is_connected) * 25
+}
+
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
@@ -351,6 +384,23 @@ pub fn strategic_map(
                 aria-labelledby="strategic-map-title strategic-map-description" tabindex="0" {
                 title id="strategic-map-title" { "Settlement road map" }
                 desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus and minus controls or the mouse wheel to zoom. Activate a settlement pin to inspect it." }
+                defs {
+                    g id="map-settlement-village-symbol" {
+                        path class="map-settlement-ground" d="M-10,3 Q0,5 10,3" {}
+                        path class="map-settlement-shape" d="M-6,3 V-5 L0,-10 L6,-5 V3 Z" {}
+                        path class="map-settlement-door" d="M-1.5,3 V-1 H1.5 V3 Z" {}
+                    }
+                    g id="map-settlement-town-symbol" {
+                        path class="map-settlement-ground" d="M-10,3 Q0,5 10,3" {}
+                        path class="map-settlement-shape" d="M-8,3 V-5 H-6 V-10 H-3 V-5 H2 V-12 H5 V-5 H8 V3 Z" {}
+                        path class="map-settlement-door" d="M-1.7,3 V-1.5 Q0,-4 1.7,-1.5 V3 Z" {}
+                    }
+                    g id="map-settlement-city-symbol" {
+                        path class="map-settlement-ground" d="M-10,3 Q0,5 10,3" {}
+                        path class="map-settlement-shape" d="M-9,3 V-6 H-7 V-11 H-4 V-6 H-2 V-14 H2 V-6 H4 V-11 H7 V-6 H9 V3 Z" {}
+                        path class="map-settlement-door" d="M-2,3 V-2 Q0,-5 2,-2 V3 Z" {}
+                    }
+                }
                 g data-map-viewport {
                     g class="map-tile-layer" data-map-tile-layer aria-hidden="true" {
                         @for (x, y, left, top) in initial_tiles {
@@ -366,19 +416,29 @@ pub fn strategic_map(
                             @let is_current = settlement.id == current_id;
                             @let is_connected = connected_ids.contains(settlement.id.as_str());
                             @let is_selected = selected_id == Some(settlement.id.as_str());
+                            @let symbol_kind = settlement_symbol_kind(&settlement.category);
+                            @let label_priority = settlement_label_priority(settlement, is_current, is_connected, is_selected);
+                            @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
                             @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
                                 class="map-pin-link" aria-label=(label) aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
-                                g class=(format!("map-pin{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
+                                g class=(format!("map-pin map-settlement map-settlement-{symbol_kind}{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
-                                        @if is_selected { circle class="map-pin-selection" r="10" {} }
-                                        path class="map-pin-shape" d="M0,-7 C4,-7 7,-4 7,0 C7,5 0,11 0,11 C0,11 -7,5 -7,0 C-7,-4 -4,-7 0,-7 Z" {}
-                                        circle class="map-pin-center" r="2.3" {}
-                                        @if is_current { path class="map-pin-current-mark" d="M-3,0 H3 M0,-3 V3" {} }
-                                        @if is_selected { path class="map-pin-selected-mark" d="M-4,14 H4" {} }
+                                        circle class="map-settlement-hit-area" r="13" {}
+                                        @if is_selected { circle class="map-pin-selection" cy="-3" r="12" {} }
+                                        use class="map-settlement-pictogram" aria-hidden="true"
+                                            href=(format!("#map-settlement-{symbol_kind}-symbol")) {}
+                                        @if is_current { path class="map-pin-current-mark" d="M0,-15 V-22 M0,-22 L7,-19 L0,-16 Z" {} }
+                                        @if is_selected { path class="map-pin-selected-mark" d="M-5,13 H5" {} }
                                         title { (&settlement.name) }
+                                    }
+                                    g class="map-settlement-label" data-map-label
+                                        data-map-x=(format!("{x:.3}")) data-map-y=(format!("{y:.3}"))
+                                        data-map-label-priority=(label_priority) data-map-label-width=(label_width)
+                                        data-map-label-essential=((is_current || is_selected).to_string()) {
+                                        text class="map-settlement-label-text" x="0" y="0" { (&settlement.name) }
                                     }
                                 }
                             }
@@ -389,8 +449,8 @@ pub fn strategic_map(
             p class="strategic-map-legend" {
                 span class="map-legend-elevation" aria-hidden="true" {} "Higher ground"
                 span class="map-legend-forest" aria-hidden="true" {} "Forest (partial)"
-                span class="map-legend-pin connected" aria-hidden="true" {} "Direct route"
-                span class="map-legend-pin" aria-hidden="true" {} "Other settlement"
+                span class="map-legend-settlement connected" aria-hidden="true" {} "Direct route"
+                span class="map-legend-settlement" aria-hidden="true" {} "Other settlement"
                 span class="map-legend-selected" aria-hidden="true" {} "Selected"
             }
             p class="strategic-map-attribution small-copy" {
@@ -621,6 +681,9 @@ mod tests {
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-pin-selection"));
         assert!(markup.contains("data-map-pin-symbol"));
+        assert!(markup.contains("map-settlement-town"));
+        assert!(markup.contains("data-map-label-priority"));
+        assert!(markup.contains("map-settlement-label-text"));
         assert!(markup.contains("map-tile-layer"));
         assert!(markup.contains("map-overlay-layer"));
         assert!(markup.contains(TILE_PATH_PREFIX));
@@ -634,6 +697,22 @@ mod tests {
         );
         assert!(markup.contains("Higher ground"));
         assert!(markup.contains("Forest (partial)"));
+    }
+
+    #[test]
+    fn settlement_labels_prioritize_state_and_population_class() {
+        let mut village = settlement("village", "Village", 10.0, 53.0);
+        village.category = SettlementCategory::Village;
+        let mut capital = settlement("capital", "Capital", 10.0, 53.0);
+        capital.category = SettlementCategory::Capital;
+
+        assert_eq!(settlement_symbol_kind(&village.category), "village");
+        assert_eq!(settlement_symbol_kind(&capital.category), "city");
+        assert_eq!(settlement_label_priority(&village, false, false, false), 50);
+        assert_eq!(settlement_label_priority(&capital, false, false, false), 80);
+        assert_eq!(settlement_label_priority(&village, false, true, false), 75);
+        assert_eq!(settlement_label_priority(&village, false, false, true), 115);
+        assert_eq!(settlement_label_priority(&village, true, false, false), 120);
     }
 
     #[test]

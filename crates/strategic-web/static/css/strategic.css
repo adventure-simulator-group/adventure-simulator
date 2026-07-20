@@ -4158,19 +4158,26 @@ body.chat-resizing {
 .map-overlay-layer { pointer-events: auto; }
 .strategic-map { --map-land: #e6e1cb; --map-water: #b8c9c5; --map-road: #6e654f; --map-ferry: #625f58; --map-pin: #6c6250; --map-connected: #8e2c24; --map-selected: #171511; --map-text: #241f18; --map-height-50: #ddd5ba; --map-height-100: #d4c9aa; --map-height-250: #c9b999; --map-height-500: #baa686; --map-height-1000: #aa9277; --map-height-1500: #987f6c; --map-height-2000: #826b60; --map-contour: #665b49; --map-forest: #73806a; --map-forest-conifer: #586a5d; }
 .map-pin-link:focus { outline: none; }
-.map-pin-shape { fill: var(--map-pin); stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
-.map-pin.connected .map-pin-shape { fill: var(--map-connected); }
-.map-pin.current .map-pin-shape { fill: #286436; }
-.map-pin-selection { fill: none; stroke: var(--map-selected); stroke-width: 3; stroke-dasharray: 2 1; vector-effect: non-scaling-stroke; }
-.map-pin-center { fill: #fff; }
-.map-pin-current-mark, .map-pin-selected-mark { fill: none; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.map-pin-link:focus-visible .map-pin-selection, .map-pin-link:focus-visible .map-pin-shape { stroke: #101010; stroke-width: 3; }
+.map-settlement-hit-area { fill: transparent; stroke: none; }
+.map-settlement-pictogram { color: var(--map-pin); }
+.map-pin.connected .map-settlement-pictogram { color: var(--map-connected); }
+.map-pin.current .map-settlement-pictogram { color: #286436; }
+.map-settlement-ground { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.map-settlement-shape { fill: color-mix(in srgb, currentColor 88%, var(--map-land)); stroke: #fffdf3; stroke-width: 1.15; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map-settlement-door { fill: #fffdf3; stroke: none; }
+.map-pin-selection { fill: color-mix(in srgb, var(--map-land) 30%, transparent); stroke: var(--map-selected); stroke-width: 2.5; stroke-dasharray: 2 1; vector-effect: non-scaling-stroke; }
+.map-pin-current-mark { fill: #286436; stroke: #fffdf3; stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map-pin-selected-mark { fill: none; stroke: var(--map-selected); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.map-pin-link:focus-visible .map-pin-selection, .map-pin-link:focus-visible .map-settlement-shape { stroke: #101010; stroke-width: 3; }
+.map-settlement-label { pointer-events: none; }
+.map-settlement-label-text { fill: var(--map-text); stroke: color-mix(in srgb, var(--map-land) 88%, #fff); stroke-width: var(--map-label-stroke-width, 1px); paint-order: stroke fill; stroke-linejoin: round; font-family: Georgia, "Times New Roman", serif; font-size: var(--map-label-font-size, 4px); font-weight: 700; letter-spacing: .05em; }
+.map-pin.current .map-settlement-label-text, .map-pin.selected .map-settlement-label-text { font-style: italic; font-weight: 800; }
 .strategic-map-legend { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: 0; padding: .35rem .55rem; background: color-mix(in srgb, var(--map-land) 90%, #fff); color: var(--map-text); font-size: .72rem; }
 .map-legend-elevation, .map-legend-forest { display: inline-block; width: .8rem; height: .65rem; margin-right: -.55rem; border: 1px solid color-mix(in srgb, var(--map-text) 48%, transparent); }
 .map-legend-elevation { background: linear-gradient(135deg, var(--map-height-50), var(--map-height-1000)); }
 .map-legend-forest { background: repeating-linear-gradient(45deg, var(--map-forest), var(--map-forest) 2px, transparent 2px, transparent 4px); }
-.map-legend-pin { display: inline-block; width: .65rem; height: .65rem; margin-right: -.55rem; border: 1px solid #fff; border-radius: 50%; background: var(--map-pin); }
-.map-legend-pin.connected { background: var(--map-connected); }
+.map-legend-settlement { display: inline-block; width: .7rem; height: .7rem; margin-right: -.55rem; background: var(--map-pin); clip-path: polygon(0 100%, 0 45%, 25% 45%, 25% 12%, 52% 12%, 52% 45%, 100% 45%, 100% 100%); }
+.map-legend-settlement.connected { background: var(--map-connected); }
 .map-legend-selected { display: inline-block; width: .75rem; height: .75rem; margin-right: -.55rem; border: 2px dashed var(--map-selected); border-radius: 50%; }
 .strategic-map-attribution { margin: 0; padding: .3rem .55rem; background: color-mix(in srgb, var(--map-land) 92%, #fff); color: var(--map-text); }
 .strategic-map-attribution a { color: inherit; }
