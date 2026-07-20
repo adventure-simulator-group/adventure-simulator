@@ -296,7 +296,7 @@
   position: absolute;
   z-index: 0;
   display: block;
-  inset: -0.45rem -0.65rem -0.25rem;
+  inset: -0.45rem -0.65rem -0.5rem;
   background-image:
     linear-gradient(var(--building-tint), var(--building-tint)),
     var(--service-building-image);
