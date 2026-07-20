@@ -95,13 +95,13 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
-    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
-    RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation,
-    Settlement, SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
+    CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
+    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
+    ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
+    PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -3122,36 +3122,14 @@ pub(crate) async fn medical_presentation(
             };
         }
     };
-    let cuts = match state
-        .db
-        .query::<CommittedCutRow>(&format!(
-            "SELECT * FROM backend_committed_cuts WHERE character_id = {target_id}"
-        ))
-        .await
-    {
-        Ok(rows) => rows,
-        Err(error) => {
-            tracing::error!(%error,target_id,"private damage query failed closed");
-            return crate::medical::MedicalPresentation {
-                unavailable: true,
-                ..Default::default()
-            };
-        }
-    };
-    let mut presentation = crate::medical::sanitize(
+    crate::medical::sanitize(
         &rows,
         &medications,
         examination.as_ref(),
         time,
         attributes.map_or(3.0, |a| a.immunity),
         viewer.map_or(0.0, |capability| capability.medicine),
-    );
-    presentation.obvious_cut = cuts
-        .iter()
-        .map(|cut| cut.severity)
-        .sum::<f32>()
-        .clamp(0.0, 1.0);
-    presentation
+    )
 }
 
 async fn examine_patient(

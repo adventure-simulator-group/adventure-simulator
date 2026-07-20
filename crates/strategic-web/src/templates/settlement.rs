@@ -1461,15 +1461,12 @@ pub fn party_personal_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (character_summary_rail(capability))
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
-            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail(
-                "Your skills", skills, limbs, schedule, Some(&schedule_action),
-                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
-                religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-            ))
+            (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
+            @if let Some(demand) = religious_demand {
+                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+            }
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1481,15 +1478,18 @@ pub fn party_personal_page(
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
-            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
-            @if let Some(demand) = religious_demand {
-                (religious_demand_rail(demand, &location.base_path(), active_character.id))
-            }
+            (character_summary_rail(capability))
             (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
+            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
+            (party_skills_rail(
+                "Your skills", skills, limbs, schedule, Some(&schedule_action),
+                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
+                religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
+            ))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -1548,13 +1548,9 @@ pub fn party_stats_page(
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
-            (character_summary_rail(capability))
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
-            (party_skills_rail(
-                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
-                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-            ))
+            (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1566,11 +1562,10 @@ pub fn party_stats_page(
             ))
             (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs))
+            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
-            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
+            (character_summary_rail(capability))
             (character_bio_rail(
                 selected,
                 religion_id,
@@ -1578,6 +1573,11 @@ pub fn party_stats_page(
                 personality,
                 selected.id == active_character.id,
                 &location.base_path(),
+            ))
+            (party_skills_rail(
+                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
+                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
             ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -3768,7 +3768,7 @@ fn strategic_condition_rail(
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
     ];
     html! {
-        (sidebar_section("Condition", html! {
+        (sidebar_section("Status", html! {
             div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
                 "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
@@ -3918,19 +3918,6 @@ fn medical_rail(
                 }
             }
         }))
-        @if medical.obvious_cut > 0.0 {
-            (sidebar_section("Visible injuries", html! {
-                div class="damage-family" {
-                    strong { "Cuts" }
-                    div class="damage-family-track" role="meter"
-                        aria-label=(format!("Visible cut impairment {:.0} percent", medical.obvious_cut * 100.0))
-                        aria-valuemin="0" aria-valuemax="100" aria-valuenow=(medical.obvious_cut * 100.0) {
-                        span class="damage-segment damage-physical obvious-cut"
-                            style=(format!("width:{:.0}%", medical.obvious_cut * 100.0)) {}
-                    }
-                }
-            }))
-        }
     }
 }
 
@@ -3939,6 +3926,8 @@ fn medical_examination_popup(
     location_path: &str,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let Some(examination_id) = medical.examination_id else {
         return html! {};
@@ -3963,13 +3952,12 @@ fn medical_examination_popup(
                     div class="examination-region-bars" aria-label="Examined body regions" {
                         h3 { "Body regions" }
                         @let health = regional_health_values(limbs);
-                        @let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
                         @for (index, name) in ["Left arm", "Right arm", "Left leg", "Right leg", "Chest", "Stomach", "Head"].into_iter().enumerate() {
                             @let reading = medical.regional_humours.map(|regions| regions[index]).unwrap_or_default();
                             @if health[index] < 1.0 || reading.sanguine + reading.phlegmatic + reading.choleric + reading.melancholic > 0.0 {
                                 div class="examination-region-row" {
                                     strong { (name) }
-                                    (regional_health_bar(name, health[index], cut_fraction, medical, index, &[], &[]))
+                                    (regional_health_bar(name, health[index], medical, index, injuries, projectiles))
                                 }
                             }
                         }
@@ -4020,18 +4008,6 @@ fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
     })
 }
 
-fn physical_cut_fraction(health: &[f32; 7], obvious_cut: f32) -> f32 {
-    let total = health
-        .iter()
-        .map(|health| (1.0 - health).max(0.0))
-        .sum::<f32>();
-    if total > 0.0 {
-        (obvious_cut / total).clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -4051,48 +4027,38 @@ fn party_attributes_rail(
     let right_arm_health = limbs.map_or(1.0, |limbs| limbs.right_arm_health);
     let left_leg_health = limbs.map_or(1.0, |limbs| limbs.left_leg_health);
     let right_leg_health = limbs.map_or(1.0, |limbs| limbs.right_leg_health);
-    let health = [
-        left_arm_health,
-        right_arm_health,
-        left_leg_health,
-        right_leg_health,
-        chest_health,
-        stomach_health,
-        head_health,
-    ];
-    let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", "head", head_health, cut_fraction, medical, 6, surgery_base, injuries, projectiles, &[
+                (attribute_group("Head", "head", head_health, medical, 6, surgery_base, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", "chest", chest_health, cut_fraction, medical, 4, surgery_base, injuries, projectiles, &[
+                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery_base, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", "stomach", stomach_health, cut_fraction, medical, 5, surgery_base, injuries, projectiles, &[
+                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery_base, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, cut_fraction, medical, 0, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, cut_fraction, medical, 1, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, cut_fraction, medical, 2, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, cut_fraction, medical, 3, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -4107,7 +4073,6 @@ fn limb_attribute_column(
     slug: &str,
     side: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
     surgery_base: Option<&str>,
@@ -4119,7 +4084,6 @@ fn limb_attribute_column(
         name,
         slug,
         health,
-        cut_fraction,
         medical,
         region,
         surgery_base,
@@ -4135,7 +4099,6 @@ fn attribute_group(
     name: &str,
     slug: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
     surgery_base: Option<&str>,
@@ -4147,7 +4110,6 @@ fn attribute_group(
         name,
         slug,
         health,
-        cut_fraction,
         medical,
         region,
         surgery_base,
@@ -4163,7 +4125,6 @@ fn attribute_group_with_labels(
     name: &str,
     slug: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
     surgery_base: Option<&str>,
@@ -4183,7 +4144,7 @@ fn attribute_group_with_labels(
                 a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {}
             }
             div class="attribute-group-heading" { (name) }
-            (regional_health_bar(name, health, cut_fraction, medical, region, injuries, projectiles))
+            (regional_health_bar(name, health, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
             }
@@ -4194,7 +4155,6 @@ fn attribute_group_with_labels(
 fn regional_health_bar(
     name: &str,
     physical_health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
     injuries: &[LimbInjury],
@@ -4213,7 +4173,7 @@ fn regional_health_bar(
     ][region];
     let injury = injuries.iter().find(|injury| injury.limb == limb);
     let cut = injury
-        .map_or(physical_damage * cut_fraction, |row| row.cut_damage)
+        .map_or(0.0, |row| row.cut_damage)
         .min(physical_damage);
     let total_blunt = injury
         .map_or(physical_damage - cut, |row| {
@@ -6408,7 +6368,6 @@ mod tests {
     fn low_medicine_medical_html_contains_no_hidden_payload() {
         let presentation = crate::medical::MedicalPresentation {
             unavailable: false,
-            obvious_cut: 0.0,
             symptoms: vec!["coughing"],
             diagnoses: Vec::new(),
             ..Default::default()
@@ -6416,6 +6375,7 @@ mod tests {
         let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
         assert!(markup.contains("coughing"));
         assert!(!markup.contains("Examine"));
+        assert!(!markup.contains("Visible injuries"));
         for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
             assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
         }
@@ -6486,7 +6446,8 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let popup = medical_examination_popup(&presentation, "/location", 2, None).into_string();
+        let popup =
+            medical_examination_popup(&presentation, "/location", 2, None, &[], &[]).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
@@ -6517,8 +6478,7 @@ mod tests {
             ),
             ..Default::default()
         };
-        let markup =
-            regional_health_bar("Chest", 1.0, 0.0, &presentation, 4, &[], &[]).into_string();
+        let markup = regional_health_bar("Chest", 1.0, &presentation, 4, &[], &[]).into_string();
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
@@ -6545,7 +6505,6 @@ mod tests {
         let markup = regional_health_bar(
             "Chest",
             0.6,
-            0.0,
             &crate::medical::MedicalPresentation::default(),
             4,
             &[injury],

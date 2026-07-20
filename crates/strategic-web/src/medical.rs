@@ -7,7 +7,6 @@ use crate::spacetimedb::{EquippedMedication, InfectionEpisodeRow, MedicalExamina
 #[derive(Clone, Debug, Default)]
 pub struct MedicalPresentation {
     pub unavailable: bool,
-    pub obvious_cut: f32,
     pub symptoms: Vec<&'static str>,
     pub medications: Vec<MedicationPresentation>,
     pub findings: Vec<String>,
@@ -136,7 +135,6 @@ pub fn sanitize(
     });
     MedicalPresentation {
         unavailable: false,
-        obvious_cut: 0.0,
         symptoms,
         medications,
         findings: examination.findings.clone(),
