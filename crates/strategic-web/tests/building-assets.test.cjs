@@ -20,6 +20,17 @@ const variants = ["inland", "coastal", "river"];
 const horizonRoot = path.join(buildingRoot, "..", "background");
 const serviceIconRoot = path.join(__dirname, "..", "static", "icons", "settlement-services");
 const religionIconRoot = path.join(__dirname, "..", "static", "icons", "religion");
+const facadeIconFiles = {
+  map: path.join(serviceIconRoot, "travel.png"),
+  merchants: path.join(serviceIconRoot, "market.png"),
+  weapons: path.join(serviceIconRoot, "weapons.png"),
+  armor: path.join(serviceIconRoot, "armor.png"),
+  clothing: path.join(serviceIconRoot, "clothing.png"),
+  herbalist: path.join(serviceIconRoot, "herbalist.png"),
+  inn: path.join(serviceIconRoot, "inn.png"),
+  religion: path.join(religionIconRoot, "catholic-cross-bottony.png"),
+};
+const facadeIconPlacement = { left: 194, top: 254, size: 125 };
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -77,6 +88,7 @@ function decodeRgbaPng(file) {
 
 test("all settlement building backgrounds are normalized tintable RGBA assets", () => {
   const baselines = [];
+  const silhouetteTops = Object.fromEntries(tiers.map((tier) => [tier, {}]));
   for (const tier of tiers) {
     const assetRoot = path.join(buildingRoot, tier);
     assert.deepEqual(
@@ -93,6 +105,7 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
 
       const tones = new Set();
       let visible = 0;
+      let top = height;
       let bottom = -1;
       for (let i = 0; i < rgba.length; i += 4) {
         const alpha = rgba[i + 3];
@@ -102,39 +115,47 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
         assert.equal(green, blue, `${label} is grayscale`);
         tones.add(red);
         visible += 1;
-        bottom = Math.max(bottom, Math.floor(i / 4 / width));
+        const y = Math.floor(i / 4 / width);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
       }
       assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220]);
       assert.ok(visible > width * height * 0.08, `${label} has useful visible coverage`);
       assert.ok(visible < width * height * 0.65, `${label} retains transparent padding`);
-      if (tier !== "village") {
-        let centralSupports = 0;
-        for (let y = 322; y < 450; y += 1) {
-          for (let x = 188; x < 324; x += 1) {
-            const offset = (y * width + x) * 4;
-            if (rgba[offset + 3] && rgba[offset] === 112) centralSupports += 1;
-          }
-        }
-        assert.equal(centralSupports, 0, `${label} keeps the overlaid icon field free of structural beams`);
-
-        for (let y = 260; y < bottom - 3; y += 1) {
-          for (let x = 0; x < width; x += 1) {
-            const offset = (y * width + x) * 4;
-            if (!rgba[offset + 3] || rgba[offset] !== 112) continue;
-            let touchesSilhouetteEdge = false;
-            for (let yy = Math.max(0, y - 24); yy <= Math.min(height - 1, y + 24); yy += 1) {
-              for (let xx = Math.max(0, x - 24); xx <= Math.min(width - 1, x + 24); xx += 1) {
-                if (!rgba[(yy * width + xx) * 4 + 3]) touchesSilhouetteEdge = true;
-              }
-            }
-            assert.ok(touchesSilhouetteEdge, `${label} has no interior secondary-tone beam at ${x},${y}`);
-          }
+      const icon = decodeRgbaPng(facadeIconFiles[service]);
+      for (let y = 0; y < facadeIconPlacement.size; y += 1) {
+        const iconY = Math.min(
+          icon.height - 1,
+          Math.floor(((y + 0.5) * icon.height) / facadeIconPlacement.size),
+        );
+        for (let x = 0; x < facadeIconPlacement.size; x += 1) {
+          const iconX = Math.min(
+            icon.width - 1,
+            Math.floor(((x + 0.5) * icon.width) / facadeIconPlacement.size),
+          );
+          const iconOffset = (iconY * icon.width + iconX) * 4;
+          if (icon.rgba[iconOffset + 3] < 192) continue;
+          const facadeX = facadeIconPlacement.left + x;
+          const facadeY = facadeIconPlacement.top + y;
+          const facadeOffset = (facadeY * width + facadeX) * 4;
+          assert.ok(rgba[facadeOffset + 3] >= 240, `${label} supports the white icon at ${facadeX},${facadeY}`);
+          assert.equal(rgba[facadeOffset], 220, `${label} keeps light negative space at ${facadeX},${facadeY}`);
         }
       }
+      silhouetteTops[tier][service] = top;
       baselines.push(bottom);
     }
   }
   assert.ok(Math.max(...baselines) - Math.min(...baselines) <= 1, "shared bottom baseline");
+  for (const tier of tiers) {
+    const ordinaryTop = Math.min(
+      ...services
+        .filter((service) => service !== "map" && service !== "religion")
+        .map((service) => silhouetteTops[tier][service]),
+    );
+    assert.ok(silhouetteTops[tier].map < ordinaryTop, `${tier} watchtower is taller than ordinary buildings`);
+    assert.ok(silhouetteTops[tier].religion < ordinaryTop, `${tier} church is taller than ordinary buildings`);
+  }
 });
 
 test("generated settlement service and Catholic marks are compact tintable PNG masks", () => {

@@ -25,6 +25,13 @@ variants, so the view is stable between visits without creating persistent
 geographic data. The imported selector is intended to replace that temporary
 hash directly.
 
+Across each architectural tier, churches and watchtowers rise above ordinary
+service buildings while retaining the shared ground line. Every facade keeps a
+common central light wall field for the separately layered white service mark;
+the mark stays at one height across the tier. Tall facades generally place their
+entrance beneath that field, with centered doors favored for churches and
+watchtowers and used selectively for other city buildings.
+
 Horizon art preserves its aspect ratio and stays centered on the bottom edge.
 Ordinary wider screens crop its sides instead of stretching fields, buildings,
 bridges, ships, or towers; ultrawide-specific composition is deferred.
