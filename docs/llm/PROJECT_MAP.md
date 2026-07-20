@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (814)
+## Files (815)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -708,6 +708,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/stopwatch.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/sun.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/sword-brandish.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/sword-clash.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/sword-hilt.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/templar-shield.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/terror.svg` — Vector UI or texture asset.
