@@ -14,7 +14,8 @@ mod raster;
 #[path = "build-strategic-map/tiles.rs"]
 mod tiles;
 
-const PACKAGE_SCHEMA: u32 = 2;
+const PACKAGE_SCHEMA: u32 = 3;
+const RENDERER_REVISION: u32 = 1;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -30,14 +31,11 @@ struct Args {
     elevation_dir: PathBuf,
     #[arg(long, default_value = "target/world-data-sources/raw/forest-cover")]
     forest_cover_dir: PathBuf,
-    #[arg(
-        long,
-        default_value = "crates/strategic-web/static/map/strategic-map-v1.json"
-    )]
+    #[arg(long, default_value = "target/strategic-map/strategic-map-v1.json")]
     output: PathBuf,
     #[arg(
         long,
-        default_value = "crates/strategic-web/static/map/strategic-map-tiles-v1.pack"
+        default_value = "target/strategic-map/strategic-map-tiles-v1.pack"
     )]
     tiles_output: PathBuf,
 }
@@ -75,11 +73,39 @@ struct Package {
     bounds: [f64; 4],
     source: Source,
     roads: Vec<Line>,
-    water: Vec<Vec<Point>>,
+    water: Vec<WaterPolygon>,
     elevation: ElevationLayer,
     forest: ForestLayer,
     tiles: TilePyramid,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct WaterPolygon {
+    rings: Vec<Vec<Point>>,
+}
+
+#[derive(Serialize)]
+struct DeploymentPackage<'a> {
+    schema: u32,
+    renderer_revision: u32,
+    year: i32,
+    bounds: [f64; 4],
+    source: &'a Source,
+    elevation: DeploymentLayer<'a>,
+    forest: DeploymentForestLayer<'a>,
+    tiles: &'a TilePyramid,
     package_sha256: String,
+}
+
+#[derive(Serialize)]
+struct DeploymentLayer<'a> {
+    source: &'a raster::LayerSource,
+}
+
+#[derive(Serialize)]
+struct DeploymentForestLayer<'a> {
+    source: &'a raster::LayerSource,
+    coverage_tiles: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -118,9 +144,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut package = build(&args.viabundus_dir, layers)?;
     let (tile_manifest, tile_bytes) = tiles::build(&package, tiles::TileConfig::default())?;
     package.tiles = tile_manifest;
-    package.package_sha256 = "0".repeat(64);
-    package.package_sha256 = package_digest(&package)?;
-    let mut bytes = serde_json::to_vec(&package)?;
+    let mut deployment = deployment_package(&package);
+    deployment.package_sha256 = package_digest(&deployment)?;
+    let mut bytes = serde_json::to_vec(&deployment)?;
     bytes.push(b'\n');
     if let Some(parent) = args.output.parent() {
         fs::create_dir_all(parent)?;
@@ -131,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::write(&args.tiles_output, tile_bytes)?;
     println!(
-        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, {} forest regions, and {} AVIF tiles to {} and {}",
+        "Wrote {} roads, {} water polygons, {} elevation cells, {} contours, {} forest regions, and {} AVIF tiles to {} and {}",
         package.roads.len(),
         package.water.len(),
         package.elevation.cells.len(),
@@ -233,14 +259,18 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
     for row in reader.records() {
         let row = row?;
         let Some(wkt) = row.get(0) else { continue };
-        for ring in wkt_rings(wkt) {
-            let points = simplify(&clip_polygon(&ring, BOUNDS), 0.002);
-            if points.len() >= 4 {
-                water.push(points);
+        for polygon in wkt_polygons(wkt) {
+            let rings: Vec<_> = polygon
+                .into_iter()
+                .map(|ring| simplify(&clip_polygon(&ring, BOUNDS), 0.002))
+                .filter(|ring| ring.len() >= 4)
+                .collect();
+            if !rings.is_empty() {
+                water.push(WaterPolygon { rings });
             }
         }
     }
-    water.sort_by(|a, b| point_order(a, b));
+    water.sort_by(|a, b| point_order(&a.rings[0], &b.rings[0]));
 
     let source = Source {
         name: "Viabundus Pre-modern Street Map 2",
@@ -254,7 +284,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
             "legacy-release-blocked-missing-sizes"
         },
     };
-    let mut package = Package {
+    let package = Package {
         schema: PACKAGE_SCHEMA,
         year: YEAR,
         bounds: BOUNDS,
@@ -271,15 +301,31 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
             content_sha256: String::new(),
             entries: Vec::new(),
         },
-        package_sha256: String::new(),
     };
-    package.package_sha256 = "0".repeat(64);
-    package.package_sha256 = package_digest(&package)?;
     validate_geometry(&package)?;
     Ok(package)
 }
 
-fn package_digest(package: &Package) -> Result<String, serde_json::Error> {
+fn deployment_package(package: &Package) -> DeploymentPackage<'_> {
+    DeploymentPackage {
+        schema: PACKAGE_SCHEMA,
+        renderer_revision: RENDERER_REVISION,
+        year: package.year,
+        bounds: package.bounds,
+        source: &package.source,
+        elevation: DeploymentLayer {
+            source: &package.elevation.source,
+        },
+        forest: DeploymentForestLayer {
+            source: &package.forest.source,
+            coverage_tiles: package.forest.coverage.len(),
+        },
+        tiles: &package.tiles,
+        package_sha256: "0".repeat(64),
+    }
+}
+
+fn package_digest(package: &DeploymentPackage<'_>) -> Result<String, serde_json::Error> {
     debug_assert_eq!(package.package_sha256, "0".repeat(64));
     Ok(format!(
         "{:x}",
@@ -310,20 +356,45 @@ fn coordinates(wkt: &str) -> Vec<Point> {
         .collect()
 }
 
-fn wkt_rings(wkt: &str) -> Vec<Vec<Point>> {
-    let mut rings = Vec::new();
-    for part in wkt
-        .split(")),((")
-        .flat_map(|part| part.split(")), (("))
-        .flat_map(|part| part.split("),("))
-        .flat_map(|part| part.split("), ("))
-    {
-        let points = coordinates(part);
-        if points.len() >= 4 {
-            rings.push(points);
+fn wkt_polygons(wkt: &str) -> Vec<Vec<Vec<Point>>> {
+    let polygon_depth = if wkt.trim_start().starts_with("MULTIPOLYGON") {
+        2
+    } else if wkt.trim_start().starts_with("POLYGON") {
+        1
+    } else {
+        return Vec::new();
+    };
+    let ring_depth = polygon_depth + 1;
+    let mut depth = 0_usize;
+    let mut polygons = Vec::new();
+    let mut polygon = Vec::new();
+    let mut ring = String::new();
+    for character in wkt.chars() {
+        match character {
+            '(' => {
+                depth += 1;
+                if depth == polygon_depth {
+                    polygon.clear();
+                } else if depth == ring_depth {
+                    ring.clear();
+                }
+            }
+            ')' => {
+                if depth == ring_depth {
+                    let points = coordinates(&ring);
+                    if points.len() >= 4 {
+                        polygon.push(points);
+                    }
+                } else if depth == polygon_depth && !polygon.is_empty() {
+                    polygons.push(std::mem::take(&mut polygon));
+                }
+                depth = depth.saturating_sub(1);
+            }
+            _ if depth == ring_depth => ring.push(character),
+            _ => {}
         }
     }
-    rings
+    polygons
 }
 
 fn clip_polyline(points: &[Point], bounds: [f64; 4]) -> Vec<Vec<Point>> {
@@ -455,10 +526,13 @@ fn validate_geometry(package: &Package) -> Result<(), Box<dyn std::error::Error>
         .roads
         .iter()
         .any(|line| line.points.len() < 2 || line.points.iter().any(|point| !valid(point)))
-        || package
-            .water
-            .iter()
-            .any(|ring| ring.len() < 4 || ring.iter().any(|point| !valid(point)))
+        || package.water.iter().any(|polygon| {
+            polygon.rings.is_empty()
+                || polygon
+                    .rings
+                    .iter()
+                    .any(|ring| ring.len() < 4 || ring.iter().any(|point| !valid(point)))
+        })
         || package.elevation.cells.iter().any(|cell| {
             !valid_bounds(cell.bounds, package.bounds)
                 || ![50, 100, 250, 500, 1_000, 1_500, 2_000].contains(&cell.band_m)
@@ -632,6 +706,16 @@ mod tests {
     }
 
     #[test]
+    fn wkt_water_parser_preserves_polygon_ring_groups() {
+        let polygons = wkt_polygons(
+            "MULTIPOLYGON (((0 0,10 0,10 10,0 0),(2 2,3 2,3 3,2 2)),((20 20,21 20,21 21,20 20)))",
+        );
+        assert_eq!(polygons.len(), 2);
+        assert_eq!(polygons[0].len(), 2);
+        assert_eq!(polygons[1].len(), 1);
+    }
+
+    #[test]
     fn fixture_build_is_deterministic_and_rejects_changed_source_bytes() {
         let root = fixture();
         let first = build(&root, layers()).unwrap();
@@ -650,6 +734,20 @@ mod tests {
         assert_eq!(first_manifest.gutter, 4);
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.water.len(), 1);
+        assert_eq!(first.water[0].rings.len(), 1);
+
+        let mut rendered = first.clone();
+        rendered.tiles = first_manifest;
+        let mut deployment = deployment_package(&rendered);
+        deployment.package_sha256 = package_digest(&deployment).unwrap();
+        let value = serde_json::to_value(&deployment).unwrap();
+        assert_eq!(value["schema"], PACKAGE_SCHEMA);
+        assert_eq!(value["renderer_revision"], RENDERER_REVISION);
+        for geometry in ["roads", "water", "cells", "contours", "regions"] {
+            assert!(value.get(geometry).is_none());
+        }
+        assert!(value["elevation"].get("cells").is_none());
+        assert!(value["forest"].get("regions").is_none());
         fs::write(root.join("edges.csv"), b"changed").unwrap();
         assert!(build(&root, layers()).is_err());
         fs::remove_dir_all(root).unwrap();

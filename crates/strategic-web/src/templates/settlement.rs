@@ -467,6 +467,7 @@ fn language_label(language: Option<&str>) -> &str {
 pub fn settlement_map_page(
     settlement: &Settlement,
     settlements: &[Settlement],
+    strategic_map: Option<&crate::strategic_map::StrategicMap>,
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
@@ -519,13 +520,18 @@ pub fn settlement_map_page(
         ))
         main class="center-content settlement-main settlement-map-main" {
             @if settlement.source_node_id.is_some() {
-                (crate::strategic_map::strategic_map(
-                    settlements,
-                    &settlement.id,
-                    &connected_ids,
-                    selected_id,
-                    &base_path,
-                ))
+                @if let Some(strategic_map) = strategic_map {
+                    (crate::strategic_map::strategic_map(
+                        strategic_map,
+                        settlements,
+                        &settlement.id,
+                        &connected_ids,
+                        selected_id,
+                        &base_path,
+                    ))
+                } @else {
+                    (crate::strategic_map::strategic_map_bundle_unavailable())
+                }
             } @else {
                 (crate::strategic_map::strategic_map_unavailable(&settlement.name))
             }

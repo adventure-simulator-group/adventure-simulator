@@ -4,6 +4,16 @@ version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
+
+[features]
+default = []
+strategic-map-renderer = ["dep:image", "dep:tiny-skia"]
+
+[[bin]]
+name = "build-strategic-map"
+path = "src/bin/build-strategic-map.rs"
+required-features = ["strategic-map-renderer"]
+
 [dependencies]
 adventuresim-world-schema.workspace = true
 blake3.workspace = true
@@ -16,7 +26,7 @@ proj4rs.workspace = true
 rayon.workspace = true
 rusqlite.workspace = true
 html-escape.workspace = true
-image.workspace = true
+image = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -24,7 +34,7 @@ netcdf-reader.workspace = true
 shapefile.workspace = true
 thiserror.workspace = true
 tiff.workspace = true
-tiny-skia.workspace = true
+tiny-skia = { workspace = true, optional = true }
 zip.workspace = true
 
 [lints]

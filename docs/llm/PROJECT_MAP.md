@@ -528,6 +528,9 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/stdb.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-world-import/src/bin/build-strategic-map.rs` — Rust source module.
+- `crates/adventuresim-world-import/src/bin/build-strategic-map/raster.rs` — Rust source module.
+- `crates/adventuresim-world-import/src/bin/build-strategic-map/tiles.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/builder.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/draft.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/error.rs` — Rust source module for this component.
@@ -587,6 +590,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/spacetimedb/client.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/mod.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/types.rs` — Strategic web SpacetimeDB integration module.
+- `crates/strategic-web/src/strategic_map.rs` — Rust source module for this component.
 - `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
@@ -775,6 +779,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/rest-duration.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
+- `crates/strategic-web/static/strategic-map.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/styles/timber-framed/background/city/coastal.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/background/city/inland.png` — Binary game or UI asset.
@@ -828,6 +833,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/party-action-contract.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/strategic-map-behavior.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.

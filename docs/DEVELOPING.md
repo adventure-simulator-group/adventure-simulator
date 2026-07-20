@@ -268,8 +268,8 @@ local download. The command records the source URLs and SHA-256 checksums in
 
 After Viabundus and the world-data inputs are installed, run `just
 build-strategic-map` to regenerate
-`crates/strategic-web/static/map/strategic-map-v1.json` and the derived
-`strategic-map-tiles-v1.pack`. These deterministic presentation assets verify
+`target/strategic-map/strategic-map-v1.json` and the derived
+`target/strategic-map/strategic-map-tiles-v1.pack`. These deterministic presentation assets verify
 the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
 ferries, sparsely samples installed GLO-30 tiles into elevation bands and
@@ -291,18 +291,44 @@ package schema changes. The elevation and forest directories default to
 `target/world-data-sources/raw/forest-cover/`; use the generator's explicit
 directory flags when regenerating from another reviewed installation.
 
-The JSON package and AVIF pack are compiled into strategic-web for bounds,
-attribution, indexed byte ranges, and integrity checks. Individual tile routes
+The offline compiler lives in `adventuresim-world-import` behind its opt-in
+`strategic-map-renderer` feature (enabled by the `just` recipe); it is not a
+`strategic-web` dependency, and normal workspace builds do not select its image
+renderer or encoder dependencies. At startup the server optionally loads the bundle directory from
+`STRATEGIC_MAP_BUNDLE_DIR` (default `target/strategic-map`) for bounds,
+attribution, indexed byte ranges, and integrity checks. If the bundle is absent
+or invalid, the server still starts and the surrounding HTML destination and
+direct-travel controls remain usable. Individual tile routes
 include the pack's SHA-256 in their query string and receive a one-year
 immutable cache policy. The browser requests only the Paper tiles covering its
 current view and replaces them as it pans or crosses a zoom level. The deepest
 level uses a higher AVIF quality setting for close inspection. Every encoded
 tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
-levels 5 and 6 retain elevation contours but replace coarse tint cells and
-forest squares with a cleaner close-view presentation.
+close levels replace coarse tint cells and dense contours with deterministic
+profile hills and ridges, including engraved shadow hatching. Forest regions
+become irregular period-style groves with distinct rounded deciduous and
+angular conifer glyphs. These symbols are positioned in world coordinates so
+they remain stable across tile gutters and repeated builds.
 Settlement pins, route availability, current location, and selection remain in
 the authenticated HTML/SVG overlay and are never cached as
 part of the world asset.
+
+For a small deterministic renderer preview without building the production
+bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
+`representative_paper_tile_has_deterministic_png_preview_hook` test with the
+`strategic-map-renderer` feature.
+
+The deployment manifest is schema 3 with renderer revision 1. It contains only
+bounds, attribution/source metadata, coverage counts, the tile index, and
+content digests; source roads, water rings, elevation cells/contours, and
+forest regions stay in the offline compiler and are not shipped to
+`strategic-web`. The server rejects stale renderer revisions and source URLs
+that do not exactly match the compiler's reviewed HTTPS DOI sources. Paper-only
+is intentional: the earlier Atlas-style option was superseded by the Paper-map
+direction. Full spatial bucketing remains outside this aesthetic pass because
+generation is offline and cacheable; mmap and an additional arbitrary cache
+buster are likewise deferred while the validated pack remains memory-backed
+and content-versioned.
 
 `just compile-world` retains active 1544 land and ferry segments, all nodes
 needed to connect those segments, active settlements and their alternative
