@@ -48,6 +48,19 @@ test("keyboard pan and reset change only the SVG viewBox", () => {
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
 });
 
+test("pin symbols retain their screen size while zooming and resetting", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<section data-strategic-map><button data-map-zoom="in"></button><button data-map-reset></button><svg data-map-svg viewBox="100 100 195 130"><g data-map-pin-symbol></g></svg></section>`;
+  const map = document.querySelector("section");
+  helpers.initializeMap(map, null);
+  const symbol = map.querySelector("[data-map-pin-symbol]");
+  assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
+  map.querySelector("[data-map-zoom]").click();
+  assert.equal(symbol.getAttribute("transform"), "scale(0.40000)");
+  map.querySelector("[data-map-reset]").click();
+  assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
+});
+
 test("pin links remain ordinary destination URLs", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="0 0 400 200"><a data-map-pin href="/locations/settlement/a/map?destination=b"><circle/></a></svg></section>`;

@@ -11,6 +11,11 @@ use crate::spacetimedb::Settlement;
 
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
+const VIEW_ASPECT_RATIO: f64 = WIDTH / HEIGHT;
+const DEFAULT_VIEW_WIDTH: f64 = 390.0;
+const DEFAULT_VIEW_HEIGHT: f64 = DEFAULT_VIEW_WIDTH / VIEW_ASPECT_RATIO;
+const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
+const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 const PACKAGE_JSON: &str = include_str!("../static/map/strategic-map-v1.json");
 const WORLD_SVG_BYTES: &[u8] = include_bytes!("../static/map/strategic-map-world-v1.svg");
 pub(crate) const WORLD_SVG_PATH: &str = "/static/map/strategic-map-world-v1.svg";
@@ -91,6 +96,47 @@ struct ForestRegion {
 
 static PACKAGE: OnceLock<Package> = OnceLock::new();
 static WORLD_SVG_SHA256: OnceLock<String> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ViewBox {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+fn centered_view_box(center: (f64, f64), width: f64, height: f64) -> ViewBox {
+    ViewBox {
+        x: (center.0 - width / 2.0).clamp(0.0, WIDTH - width),
+        y: (center.1 - height / 2.0).clamp(0.0, HEIGHT - height),
+        width,
+        height,
+    }
+}
+
+fn initial_view_box(origin: (f64, f64), destination: Option<(f64, f64)>) -> ViewBox {
+    let Some(destination) = destination else {
+        return centered_view_box(origin, DEFAULT_VIEW_WIDTH, DEFAULT_VIEW_HEIGHT);
+    };
+
+    let span_x = (destination.0 - origin.0).abs();
+    let span_y = (destination.1 - origin.1).abs();
+    let required_width = (span_x + 2.0 * (span_x * 0.12).max(18.0)).max(ROUTE_MIN_VIEW_WIDTH);
+    let required_height = (span_y + 2.0 * (span_y * 0.12).max(12.0)).max(ROUTE_MIN_VIEW_HEIGHT);
+    let width = required_width
+        .max(required_height * VIEW_ASPECT_RATIO)
+        .min(WIDTH);
+    let height = width / VIEW_ASPECT_RATIO;
+    centered_view_box(
+        (
+            (origin.0 + destination.0) / 2.0,
+            (origin.1 + destination.1) / 2.0,
+        ),
+        width,
+        height,
+    )
+}
+
 fn package() -> &'static Package {
     PACKAGE.get_or_init(|| {
         let package: Package = serde_json::from_str(PACKAGE_JSON)
@@ -139,13 +185,19 @@ pub fn strategic_map(
     let (origin_x, origin_y) = current.map_or((WIDTH / 2.0, HEIGHT / 2.0), |settlement| {
         project(settlement.coord_x, settlement.coord_y, package.bounds)
     });
-    let view_width = 390.0;
-    let view_height = 260.0;
+    let destination = selected_id
+        .and_then(|selected_id| {
+            settlements.iter().find(|settlement| {
+                settlement.id == selected_id && has_geographic_source(settlement)
+            })
+        })
+        .map(|settlement| project(settlement.coord_x, settlement.coord_y, package.bounds));
+    let initial_view = initial_view_box((origin_x, origin_y), destination);
     let view_box = format!(
-        "{:.2} {:.2} {view_width} {view_height}",
-        origin_x - view_width / 2.0,
-        origin_y - view_height / 2.0
+        "{:.2} {:.2} {:.2} {:.2}",
+        initial_view.x, initial_view.y, initial_view.width, initial_view.height
     );
+    let initial_pin_scale = initial_view.width / DEFAULT_VIEW_WIDTH;
     let world_svg_href = format!(
         "{WORLD_SVG_PATH}?v={}#{WORLD_SVG_FRAGMENT}",
         world_svg_sha256()
@@ -186,12 +238,14 @@ pub fn strategic_map(
                                 data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
                                 g class=(format!("map-pin{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
-                                    @if is_selected { circle class="map-pin-selection" r="10" {} }
-                                    path class="map-pin-shape" d="M0,-7 C4,-7 7,-4 7,0 C7,5 0,11 0,11 C0,11 -7,5 -7,0 C-7,-4 -4,-7 0,-7 Z" {}
-                                    circle class="map-pin-center" r="2.3" {}
-                                    @if is_current { path class="map-pin-current-mark" d="M-3,0 H3 M0,-3 V3" {} }
-                                    @if is_selected { path class="map-pin-selected-mark" d="M-4,14 H4" {} }
-                                    title { (&settlement.name) }
+                                    g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
+                                        @if is_selected { circle class="map-pin-selection" r="10" {} }
+                                        path class="map-pin-shape" d="M0,-7 C4,-7 7,-4 7,0 C7,5 0,11 0,11 C0,11 -7,5 -7,0 C-7,-4 -4,-7 0,-7 Z" {}
+                                        circle class="map-pin-center" r="2.3" {}
+                                        @if is_current { path class="map-pin-current-mark" d="M-3,0 H3 M0,-3 V3" {} }
+                                        @if is_selected { path class="map-pin-selected-mark" d="M-4,14 H4" {} }
+                                        title { (&settlement.name) }
+                                    }
                                 }
                             }
                         }
@@ -298,6 +352,38 @@ mod tests {
     }
 
     #[test]
+    fn selected_destination_uses_a_close_fitted_view() {
+        let view = initial_view_box((600.0, 400.0), Some((606.0, 404.0)));
+
+        assert_eq!(view.width, ROUTE_MIN_VIEW_WIDTH);
+        assert_eq!(view.height, ROUTE_MIN_VIEW_HEIGHT);
+        assert!(view.x <= 600.0 && view.x + view.width >= 606.0);
+        assert!(view.y <= 400.0 && view.y + view.height >= 404.0);
+    }
+
+    #[test]
+    fn selected_destination_frames_distant_endpoints_and_world_edges() {
+        let view = initial_view_box((0.0, 0.0), Some((900.0, 600.0)));
+
+        assert_eq!(view.x, 0.0);
+        assert_eq!(view.y, 0.0);
+        assert!(view.x + view.width >= 900.0);
+        assert!(view.y + view.height >= 600.0);
+        assert!((view.width / view.height - VIEW_ASPECT_RATIO).abs() < f64::EPSILON);
+        assert!(view.width <= WIDTH && view.height <= HEIGHT);
+    }
+
+    #[test]
+    fn map_without_a_destination_keeps_the_regional_default() {
+        let view = initial_view_box((600.0, 400.0), None);
+
+        assert_eq!(view.width, DEFAULT_VIEW_WIDTH);
+        assert_eq!(view.height, DEFAULT_VIEW_HEIGHT);
+        assert_eq!(view.x, 405.0);
+        assert_eq!(view.y, 270.0);
+    }
+
+    #[test]
     fn svg_has_two_themes_accessible_controls_and_canonical_pin_links() {
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
@@ -328,6 +414,7 @@ mod tests {
         assert!(!markup.contains("role=\"img\""));
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-pin-selection"));
+        assert!(markup.contains("data-map-pin-symbol"));
         assert!(markup.contains("map-world-layer"));
         assert!(markup.contains("map-overlay-layer"));
         assert!(markup.contains(WORLD_SVG_PATH));
