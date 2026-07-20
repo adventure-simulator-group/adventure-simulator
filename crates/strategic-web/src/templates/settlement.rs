@@ -1639,12 +1639,92 @@ fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
+#[derive(Clone, Copy)]
+enum SurgeryItemRequirement {
+    BandageConsumed,
+    SurgeryKitReusable,
+    SplintEquipped,
+}
+
+fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
+    let description = format!("{label}: {quantity} available");
+    html! {
+        div class="surgery-supply" data-tooltip=(&description)
+            aria-label=(&description) tabindex="0" {
+            (decorative_game_icon(icon))
+            span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x" (quantity) }
+        }
+    }
+}
+
+fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
+    let (label, accessible_label, icon) = match requirement {
+        SurgeryItemRequirement::BandageConsumed => {
+            ("Expend one bandage", "Expend one bandage", "bandage-roll")
+        }
+        SurgeryItemRequirement::SurgeryKitReusable => (
+            "Requires surgery kit",
+            "Requires surgery kit; reusable and not consumed",
+            "medical-pack",
+        ),
+        SurgeryItemRequirement::SplintEquipped => {
+            ("Equips 1 splint", "Equips 1 splint", "arm-bandage")
+        }
+    };
+    html! {
+        span class="surgery-item-requirement" data-tooltip=(label)
+            aria-label=(accessible_label) tabindex="0" {
+            (decorative_game_icon(icon))
+            @match requirement {
+                SurgeryItemRequirement::BandageConsumed => {
+                    span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x1" }
+                }
+                SurgeryItemRequirement::SurgeryKitReusable => {}
+                SurgeryItemRequirement::SplintEquipped => {
+                    span class="surgery-item-overlay surgery-item-equipped" aria-hidden="true" {
+                        (decorative_game_icon("check-mark"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn surgery_difficulty_meter(procedure_label: &str, dc: f32) -> Markup {
+    let difficulty = dc.max(0.0);
+    let scale_max = difficulty.max(5.0);
+    let over_cap = difficulty > 5.0;
+    let meter_label = format!("{procedure_label} Surgery difficulty");
+    html! {
+        div class=(if over_cap { "surgery-difficulty surgery-difficulty-over-cap" } else { "surgery-difficulty" })
+            title=[over_cap.then_some("Difficulty exceeds the normal Surgery skill scale")] {
+            (stat_icon(&meter_label, "skills", "surgeon", true))
+            div class="skill-rank-bar surgery-difficulty-meter"
+                role="meter" aria-valuemin="0" aria-valuemax=(format!("{scale_max:.1}"))
+                aria-label=(&meter_label) aria-valuenow=(format!("{difficulty:.1}")) {
+                span class="skill-rank-track" aria-hidden="true" {
+                    @for tier in 1..=5 {
+                        @let offset = (tier - 1) as f32;
+                        @let current = (difficulty - offset).clamp(0.0, 1.0) * 100.0;
+                        span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
+                            span class="rank-current" style=(format!("width:{current:.1}%")) {}
+                        }
+                    }
+                }
+            }
+            @if over_cap {
+                span class="surgery-difficulty-over-cap-marker" aria-hidden="true" { "+" }
+            }
+        }
+    }
+}
+
 fn surgery_procedure_row(
     action: &str,
     label: &str,
     icon: &str,
     procedure: &str,
-    requirement: &str,
+    item_requirements: &[SurgeryItemRequirement],
     duration: u64,
     dc: f32,
     disabled: Option<&str>,
@@ -1663,11 +1743,20 @@ fn surgery_procedure_row(
             }
             div class="surgery-procedure-copy" {
                 strong { (label) }
-                span { (requirement) }
             }
             dl class="surgery-procedure-facts" {
                 div { dt { "Time" } dd { (duration) " min" } }
-                div { dt { "DC" } dd { (format!("{dc:.1}")) } }
+                div class="surgery-procedure-difficulty" {
+                    dt class="visually-hidden" { "Difficulty" }
+                    dd { (surgery_difficulty_meter(label, dc)) }
+                }
+            }
+            @if !item_requirements.is_empty() {
+                ul class="surgery-item-requirements" aria-label="Required items" {
+                    @for requirement in item_requirements {
+                        li { (surgery_item_requirement(*requirement)) }
+                    }
+                }
             }
             @if let Some(reason) = disabled {
                 button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (reason) }
@@ -1696,7 +1785,7 @@ pub fn surgery_page(
     projectiles: &[RetainedProjectile],
     selected_limb: LimbRegion,
     bandages: u32,
-    has_kit: bool,
+    surgery_kits: u32,
     splints: u32,
     surgery_skill: f32,
 ) -> Markup {
@@ -1709,6 +1798,7 @@ pub fn surgery_page(
     let bandaged = selected.is_some_and(|injury| injury.bandaged);
     let stitched = selected.is_some_and(|injury| injury.stitched);
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
+    let has_kit = surgery_kits > 0;
     let effective_skill = adventuresim_core::surgery::effective_skill(
         surgery_skill,
         active_character.id == patient.id,
@@ -1727,22 +1817,24 @@ pub fn surgery_page(
         aside class="right-sidebar surgery-rail" {
             (sidebar_section(&format!("{} — {}", patient.name, surgery_limb_name(selected_limb)), html! {
                 div class="surgery-supplies" aria-label="Surgery supplies" {
-                    div { (game_icon("Bandages", "bandage-roll")) strong { (bandages) } span { "Bandages" } }
-                    div { (game_icon("Surgery kit", "medical-pack")) strong { (if has_kit { "Ready" } else { "None" }) } span { "Surgery kit" } }
-                    div { (game_icon("Splints", "arm-bandage")) strong { (splints) } span { "Splints" } }
+                    (surgery_supply("Bandages", "bandage-roll", bandages))
+                    (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
+                    (surgery_supply("Splints", "arm-bandage", splints))
                 }
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
-                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", "No item consumed", surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc, None, Some(projectile.id)))
+                        @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
                     }
-                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", "Consumes 1 bandage", surgery_duration("bandage", effective_skill, 0.0), 0.0,
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
                         if cut <= 0.0 { Some("No open cut") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
-                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", "Requires reusable surgery kit", surgery_duration("stitch", effective_skill, 2.0), 2.0,
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
                         if cut <= 0.0 { Some("No wound to stitch") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Requires Surgery 2") } else if !has_kit { Some("No surgery kit") } else { None }, None))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", "Returns the equipped splint", surgery_duration("remove-splint", effective_skill, 0.0), 0.0, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, None, None))
                     } @else {
-                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", "Equips 1 reusable splint", surgery_duration("splint", effective_skill, 1.0), 1.0,
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
                             if fracture <= 0.0 { Some("No fracture") } else if effective_skill <= 0.0 { Some("Requires Surgery training") } else if splints == 0 { Some("No splints") } else { None }, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
@@ -5169,6 +5261,53 @@ mod tests {
     }
 
     #[test]
+    fn surgery_supplies_are_icon_counts_with_hover_labels() {
+        let supply = surgery_supply("Bandages", "bandage-roll", 8).into_string();
+        assert!(supply.contains("class=\"surgery-supply\""));
+        assert!(supply.contains("data-tooltip=\"Bandages: 8 available\""));
+        assert!(supply.contains("bandage-roll.svg"));
+        assert!(supply.contains(">x8</span>"));
+        assert!(!supply.contains(">Bandages</span>"));
+    }
+
+    #[test]
+    fn surgery_item_icons_explain_consumed_reusable_and_equipped_supplies() {
+        let bandage =
+            surgery_item_requirement(SurgeryItemRequirement::BandageConsumed).into_string();
+        assert!(bandage.contains("data-tooltip=\"Expend one bandage\""));
+        assert!(bandage.contains(">x1</span>"));
+
+        let kit =
+            surgery_item_requirement(SurgeryItemRequirement::SurgeryKitReusable).into_string();
+        assert!(kit.contains("data-tooltip=\"Requires surgery kit\""));
+        assert!(kit.contains("aria-label=\"Requires surgery kit; reusable and not consumed\""));
+        assert!(kit.contains("medical-pack.svg"));
+        assert!(!kit.contains("surgery-item-overlay"));
+
+        let splint = surgery_item_requirement(SurgeryItemRequirement::SplintEquipped).into_string();
+        assert!(splint.contains("data-tooltip=\"Equips 1 splint\""));
+        assert!(splint.contains("check-mark.svg"));
+    }
+
+    #[test]
+    fn surgery_difficulty_uses_an_unlabelled_value_skill_meter() {
+        let meter = surgery_difficulty_meter("Stitch", 2.5).into_string();
+        assert!(meter.contains("stat-icon-surgeon"));
+        assert!(meter.contains("role=\"meter\""));
+        assert!(meter.contains("skill-rank-segment-3"));
+        assert!(!meter.contains("skill-rank-value"));
+        assert!(!meter.contains(">2.5<"));
+        assert!(meter.contains("aria-label=\"Stitch Surgery difficulty\""));
+        let over_cap = surgery_difficulty_meter("Remove ball", 7.2).into_string();
+        assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
+        assert!(over_cap.contains("aria-valuenow=\"7.2\""));
+        assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
+        assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
+            1.01
+        ));
+    }
+
+    #[test]
     fn schedule_table_uses_compact_accessible_icon_headers() {
         let skills = CharacterSkills {
             character_id: 1,
@@ -6290,7 +6429,8 @@ mod tests {
             ),
             ..Default::default()
         };
-        let markup = regional_health_bar("Chest", 1.0, 0.0, &presentation, 4).into_string();
+        let markup =
+            regional_health_bar("Chest", 1.0, 0.0, &presentation, 4, &[], &[]).into_string();
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));

@@ -4,6 +4,7 @@ pub const SELF_TREATMENT_PENALTY: f32 = 2.5;
 pub const MINUTES_PER_DAY: u64 = 1_440;
 pub const UNTREATED_CUT_DETERIORATION_PER_DAY: f32 = 0.025;
 pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
+pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
 
 pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     (skill
@@ -30,6 +31,10 @@ pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
 /// shallow low-energy projectile can be DC 0, while the scale remains uncapped.
 pub fn projectile_extraction_dc(total_hit_damage: f32, depth: f32) -> f32 {
     ((total_hit_damage.max(0.0) - 0.05) * 8.0 + depth.max(0.0) - 0.5).max(0.0)
+}
+
+pub fn extraction_requires_surgery_kit(dc: f32) -> bool {
+    dc > PROJECTILE_KIT_DC_THRESHOLD
 }
 
 pub fn standing_infection_multiplier(bandaged: bool, stitched: bool, stitch_quality: f32) -> f32 {
@@ -116,6 +121,14 @@ mod tests {
         assert_eq!(projectile_extraction_dc(0.02, 0.0), 0.0);
         assert!(projectile_extraction_dc(0.30, 0.8) > projectile_extraction_dc(0.10, 0.8));
         assert!(projectile_extraction_dc(1.0, 2.0) > 5.0);
+    }
+
+    #[test]
+    fn only_projectiles_above_dc_one_require_a_kit() {
+        assert!(!extraction_requires_surgery_kit(0.0));
+        assert!(!extraction_requires_surgery_kit(1.0));
+        assert!(extraction_requires_surgery_kit(1.000_1));
+        assert!(extraction_requires_surgery_kit(8.0));
     }
 
     #[test]

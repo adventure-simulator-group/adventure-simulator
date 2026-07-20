@@ -390,7 +390,7 @@ async fn surgery(
             &projectiles,
             selected_limb,
             quantity("bandage"),
-            quantity("surgery_kit") > 0,
+            quantity("surgery_kit"),
             available_splints,
             skill,
         )
@@ -402,6 +402,28 @@ async fn surgery(
 struct SurgeryProcedureForm {
     procedure: String,
     projectile_id: Option<u64>,
+}
+
+/// SpacetimeDB's raw HTTP reducer API expects algebraic `Option<T>` values,
+/// not Serde's scalar-or-null representation: `Some(v) = {"some": v}` and
+/// `None = {"none": []}`.
+fn spacetime_option_u64(value: Option<u64>) -> serde_json::Value {
+    match value {
+        Some(value) => json!({ "some": value }),
+        None => json!({ "none": [] }),
+    }
+}
+
+#[cfg(test)]
+mod surgery_reducer_argument_tests {
+    use super::spacetime_option_u64;
+    use serde_json::json;
+
+    #[test]
+    fn projectile_id_uses_spacetime_option_encoding() {
+        assert_eq!(spacetime_option_u64(Some(73)), json!({ "some": 73 }));
+        assert_eq!(spacetime_option_u64(None), json!({ "none": [] }));
+    }
 }
 
 async fn perform_surgery(
@@ -426,7 +448,7 @@ async fn perform_surgery(
                 json!(patient_id),
                 json!(limb),
                 json!(form.procedure),
-                json!(form.projectile_id),
+                spacetime_option_u64(form.projectile_id),
             ],
         )
         .await

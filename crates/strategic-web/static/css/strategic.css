@@ -3892,22 +3892,119 @@ body.chat-resizing {
 .surgery-supplies {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: .5rem;
+    gap: .7rem;
     margin-block-end: .75rem;
 }
 
-.surgery-supplies > div {
+.surgery-supply {
+    position: relative;
     display: grid;
-    justify-items: center;
-    gap: .15rem;
-    padding: .5rem .25rem;
+    min-height: 3.25rem;
+    place-items: center;
+    padding: .45rem;
     border: 1px solid rgb(255 255 255 / 14%);
     background: rgb(0 0 0 / 20%);
 }
 
+.surgery-supply::after,
+.surgery-item-requirement::after {
+    position: absolute;
+    z-index: 6;
+    right: 0;
+    bottom: calc(100% + .35rem);
+    max-width: 14rem;
+    padding: .3rem .45rem;
+    border: 1px solid rgb(255 255 255 / 20%);
+    background: var(--panel-bg, #241a15);
+    box-shadow: var(--shadow-sm);
+    color: var(--text-primary);
+    content: attr(data-tooltip);
+    font-size: .72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(.2rem);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    white-space: nowrap;
+}
+
+.surgery-supply:hover::after,
+.surgery-supply:focus-visible::after,
+.surgery-item-requirement:hover::after,
+.surgery-item-requirement:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.surgery-supply:focus-visible,
+.surgery-item-requirement:focus-visible {
+    outline: 2px solid var(--gold, #d8b36a);
+    outline-offset: 2px;
+}
+
+.surgery-supply > .game-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+}
+
+.surgery-item-overlay {
+    position: absolute;
+    z-index: 2;
+    right: -.25rem;
+    bottom: -.3rem;
+    display: grid;
+    min-width: 1.2rem;
+    min-height: 1.2rem;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 22%);
+    border-radius: 999px;
+    background: var(--panel-bg, #241a15);
+    color: var(--text-primary);
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.surgery-item-requirement {
+    position: relative;
+    display: grid;
+    width: 1.8rem;
+    height: 1.8rem;
+    place-items: center;
+}
+
+.surgery-item-requirement > .game-icon {
+    width: 1.55rem;
+    height: 1.55rem;
+}
+
+.surgery-item-requirement .surgery-item-overlay {
+    right: -.4rem;
+    bottom: -.4rem;
+}
+
+.surgery-item-requirements {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.surgery-item-requirements li {
+    display: contents;
+}
+
+.surgery-item-equipped .game-icon {
+    width: .75rem;
+    height: .75rem;
+    color: var(--success);
+}
+
 .surgery-procedure {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: .5rem;
     align-items: center;
     padding: .6rem;
@@ -3921,7 +4018,6 @@ body.chat-resizing {
     gap: .2rem;
 }
 
-.surgery-procedure-copy span,
 .surgery-procedure-facts {
     color: var(--text-muted, #b9b0a3);
     font-size: .8rem;
@@ -3934,6 +4030,36 @@ body.chat-resizing {
 
 .surgery-procedure-facts dt::after {
     content: ":";
+}
+
+.surgery-procedure-difficulty dt::after { content: none; }
+
+.surgery-difficulty {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    min-width: 6rem;
+}
+
+.surgery-difficulty > .stat-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+}
+
+.surgery-difficulty-meter {
+    width: 4.75rem;
+}
+
+.surgery-difficulty-meter .skill-rank-track {
+    width: 100%;
+}
+
+.surgery-difficulty-over-cap-marker {
+    color: var(--danger);
+    font-size: .8rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
 .surgery-procedure > button {

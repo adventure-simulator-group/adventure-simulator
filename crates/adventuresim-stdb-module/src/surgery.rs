@@ -777,6 +777,12 @@ pub fn treat_limb(
     if procedure == "stitch" && (skill < 2.0 || item_quantity(ctx, actor_id, "surgery_kit") == 0) {
         return Err("Stitching requires Surgery 2 and a surgery kit".into());
     }
+    if procedure == "extract"
+        && adventuresim_core::surgery::extraction_requires_surgery_kit(dc)
+        && item_quantity(ctx, actor_id, "surgery_kit") == 0
+    {
+        return Err("Extracting a projectile above DC 1 requires a surgery kit".into());
+    }
     if procedure == "splint" && skill <= 0.0 {
         return Err("Applying a splint requires a trained surgeon".into());
     }

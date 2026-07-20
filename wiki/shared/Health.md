@@ -107,6 +107,9 @@ not add a separate recurring complication roll.
 
 Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles can be attempted at Surgery 0 while difficult positions may exceed DC 5. Retention imposes only a flat 40% healing-rate penalty. Extraction adds cut damage and bleeding and may fail with extra trauma, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
 
+Projectile extraction above DC 1 requires a reusable surgery kit. Shallower
+projectiles remain removable without one.
+
 Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits immediate blood loss alongside final body-part injuries, open cuts continue draining blood on every authoritative personal-time path, and settlement rest recovers 1% of maximum blood volume per day. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
 
 ```rs
